@@ -200,7 +200,27 @@ const result = build(policy, manifest, state, evidence, {
 			beta: "Beta 正式机场"
 		},
 		automation: { enabled: true, selection_interval_seconds: 1800, poll_interval_seconds: 15, startup_grace_seconds: 120, runtime_grace_seconds: 45 },
-		supervisor: { installed: true, enabled: true, running: true }
+		supervisor: { installed: true, enabled: true, running: true },
+		subscription_refresh: {
+			enabled: true,
+			interval_seconds: 43200,
+			provider_count: 2,
+			last_run_at: 1700000000,
+			last_result: "unchanged",
+			last_ok: true,
+			last_changed_count: 0,
+			last_failed_count: 0,
+			last_reloaded: false,
+			last_initiator: "luci",
+			subscriptions: [{
+				section: "alpha",
+				ref: "subscription:alpha",
+				display_name: "Alpha 正式机场",
+				cache: { present: true, digest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", valid: true },
+				quota: { state: "available", remaining_bytes: 10, expires_at: "2026-12-31" },
+				last_refresh: { at: 1700000000, result: "unchanged", ok: true }
+			}]
+		}
 });
 
 const stale_evidence = json(sprintf("%J", evidence));
@@ -266,6 +286,13 @@ if (result.build?.version != "0.3.0" ||
 	parked?.enabled != false || parked?.compiled != false || parked?.data_path != "disabled" ||
 	parked?.base_group != "PARKED" || alpha?.available_count != 2 ||
 	result.actions?.can_enable != false || result.actions?.can_select_auto != true ||
+	result.actions?.can_refresh != true ||
+	result.subscription_refresh?.provider_count != 2 ||
+	result.subscriptions?.[0]?.section != "alpha" ||
+	result.subscriptions?.[0]?.ref != "subscription:alpha" ||
+	result.subscriptions?.[0]?.cache?.present != true ||
+	result.subscriptions?.[0]?.quota?.expires_at != "2026-12-31" ||
+	result.subscriptions?.[0]?.last_refresh?.result != "unchanged" ||
 	alpha?.best_delay_ms != 12 || alpha?.last_best_delay_ms != 12 ||
 	alpha?.average_best_delay_ms != 15 || alpha?.delay_sample_count != 2 || north?.selected != true ||
 	beta?.last_best_delay_ms != 20 || beta?.average_best_delay_ms != 20 || beta?.delay_sample_count != 1 ||

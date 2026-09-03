@@ -14,6 +14,7 @@ if command -v ucode >/dev/null 2>&1; then
 	ucode "$root_dir/tests/evidence_contract.uc"
 	ucode "$root_dir/tests/activation_contract.uc"
 	ucode "$root_dir/tests/events_contract.uc"
+	ucode "$root_dir/tests/subscription_contract.uc"
 	ucode "$root_dir/tests/config_contract.uc"
 	ucode "$root_dir/tests/onboarding_contract.uc"
 else

@@ -58,8 +58,9 @@ deployment bundle 只服务于多设备 Fleet、精确复现或需要预先声�
 命名 target overlay 合并，并在本机秘密边界内生成部署器现有的
 `policy.json`、`subscriptions.json`、`nikki-mixin.yaml`、`platform.json` 四文件。公开仓库
 不定义实际 target 名称、数量、地址或拓扑；共享机场、policy、能力和地区与 target-local
-身份、网络和上游 DNS 差异由 private Instance 分别拥有。Nikki 继续独占订阅下载、缓存、解析和
-metadata，NetFleet 不增加第二 downloader；渲染结果仍交给 canonical deploy
+身份、网络和上游 DNS 差异由 private Instance 分别拥有。Nikki 继续拥有订阅 URL/token、下载、
+缓存字节、解析和 metadata；第一阶段 SubscriptionOwner 只发现稳定 section 并调度官方 refresh，
+NetFleet 不增加第二 downloader 或第二 cache。渲染结果仍交给 canonical deploy
 owner 完成校验、snapshot、compile、activate、rollback 和 target-local
 readback。部署器可从已校验的 package 目录或 GitHub Release 本机缓存读取同一代码
 载体；目标端按 `apk/opkg` 安装，声明式路径仍由同一部署事务负责 snapshot、compile、activate、

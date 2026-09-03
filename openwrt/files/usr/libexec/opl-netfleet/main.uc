@@ -14,6 +14,7 @@ import { validate as validate_evidence, selection_snapshot, measurement_identity
 import { append as append_events, validate as validate_events } from "./core/events.uc";
 import { enable_precondition, is_active, recovery_owner, recovery_profile, passthrough_outcome, preferred_runtime_ready, expected_runtime_groups, expected_runtime_residue_groups } from "./core/activation.uc";
 import { build as build_status, resolve_runtime } from "./core/status.uc";
+import { enabled_sections as enabled_subscription_sections, quota_config as subscription_quota_config, cache_accepted, evaluate_entry, summarize as summarize_refresh, public_results as public_subscription_results, unavailable_results, project as project_subscriptions } from "./core/subscription.uc";
 import { discover as discover_onboarding } from "./core/onboarding.uc";
 import { service_state, set_service_state } from "./adapters/service.uc";
 import { ok, fail } from "./output.uc";
@@ -294,7 +295,8 @@ function refresh_event(result, requested) {
 		changed_count: result.changed_count ?? 0,
 		failed_count: result.failed_count ?? 0,
 		reloaded: result.reloaded == true,
-		ok: result.ok == true
+		ok: result.ok == true,
+		subscriptions: result.subscriptions ?? []
 	};
 };
 
@@ -320,41 +322,31 @@ function sorted_keys(object) {
 	return result;
 };
 
-function enabled_subscription_sections(policy) {
-	const result = [];
-	const seen = {};
-	const names = sorted_keys(policy?.providers ?? {});
-	for (let i = 0; i < length(names); i++) {
-		const provider = policy.providers[names[i]];
-		const section = provider?.section;
-		if (provider?.enabled == true && type(section) == "string" && seen[section] != true) {
-			seen[section] = true;
-			push(result, section);
-		}
+function subscription_facts(policy) {
+	const facts = [];
+	const sections = enabled_subscription_sections(policy);
+	for (let i = 0; i < length(sections); i++) {
+		const section = sections[i];
+		const path = resolve_profile(`subscription:${section}`);
+		const digest = path == null ? null : sha256(path);
+		const parsed = digest == null ? null : read_yaml(path);
+		push(facts, {
+			section: section,
+			ref: `subscription:${section}`,
+			display_name: subscription_display_name(section),
+			present: digest != null,
+			digest: digest,
+			valid: cache_accepted(parsed),
+			quota: subscription_quota(section, subscription_quota_config(policy, section))
+		});
 	}
-	return result;
+	return facts;
 };
 
 function subscription_refresh_projection(policy) {
-	const config = automation_config(policy);
 	const store = read_events();
 	const events = validate_events(store).ok ? store?.events ?? [] : [];
-	let latest = null;
-	for (let i = 0; i < length(events); i++) {
-		if (events[i]?.action == "refresh") latest = events[i];
-	}
-	return {
-		enabled: config.subscription_refresh_enabled == true,
-		interval_seconds: config.subscription_refresh_interval_seconds,
-		provider_count: length(enabled_subscription_sections(policy)),
-		last_run_at: latest?.at ?? null,
-		last_result: latest?.reason ?? null,
-		last_ok: latest?.ok ?? null,
-		last_changed_count: latest?.changed_count ?? null,
-		last_failed_count: latest?.failed_count ?? null,
-		last_reloaded: latest?.reloaded ?? null,
-		last_initiator: latest?.initiator ?? null
-	};
+	return project_subscriptions(automation_config(policy), subscription_facts(policy), events);
 };
 
 function automatic_capability_order(policy, manifest) {
@@ -2166,7 +2158,8 @@ function fail_refresh(snapshot, policy, selections, requested, error, detail) {
 		provider_count: length(snapshot?.entries ?? []),
 		changed_count: detail?.changed_count ?? 0,
 		failed_count: detail?.failed_count ?? 0,
-		reloaded: false
+		reloaded: false,
+		subscriptions: detail?.subscriptions ?? []
 	};
 	const events_recorded = record_events([refresh_event(event, requested)]);
 	cleanup_refresh_snapshot();
@@ -2196,7 +2189,8 @@ function refresh_action(policy) {
 	}
 	if (!upstream_ready()) {
 		const result = { ok: false, reason: "upstream_unavailable", provider_count: length(sections),
-			changed_count: 0, failed_count: length(sections), reloaded: false };
+			changed_count: 0, failed_count: length(sections), reloaded: false,
+			subscriptions: unavailable_results(sections) };
 		result.events_recorded = record_events([refresh_event(result, requested)]);
 		ok("refresh", { state: "failed", result: result });
 		return;
@@ -2211,7 +2205,8 @@ function refresh_action(policy) {
 		const baseline = protected_probes(policy);
 		if (runtime == null || !runtime.runtime_identity_ok || !captured.ok || !baseline.ok) {
 			const result = { ok: false, reason: "active_precondition_failed", provider_count: length(sections),
-				changed_count: 0, failed_count: 0, reloaded: false };
+				changed_count: 0, failed_count: 0, reloaded: false,
+				subscriptions: unavailable_results(sections) };
 			result.events_recorded = record_events([refresh_event(result, requested)]);
 			ok("refresh", { state: "skipped", result: result });
 			return;
@@ -2223,31 +2218,40 @@ function refresh_action(policy) {
 		cleanup_refresh_snapshot();
 		fail("refresh", snapshot.error, { section: snapshot.section ?? null });
 	}
-	let changed_count = 0;
-	let failed_count = 0;
+	const outcomes = [];
 	for (let i = 0; i < length(snapshot.entries); i++) {
 		const entry = snapshot.entries[i];
 		const updated = update_subscription(entry.section);
 		const digest = updated ? sha256(entry.path) : null;
-		if (!updated || digest == null || read_yaml(entry.path) == null) {
-			failed_count++;
-			if (!restore_refresh_entry(entry)) {
-				fail_refresh(snapshot, policy, selections, requested, "subscription_cache_restore_failed", {
-					changed_count: changed_count, failed_count: failed_count
-				});
-			}
-			continue;
+		const outcome = evaluate_entry({
+			section: entry.section,
+			updated: updated,
+			previous_digest: entry.digest,
+			digest: digest,
+			parsed: digest == null ? null : read_yaml(entry.path)
+		});
+		if (outcome.restore && !restore_refresh_entry(entry)) {
+			push(outcomes, outcome);
+			const failed = summarize_refresh(outcomes);
+			fail_refresh(snapshot, policy, selections, requested, "subscription_cache_restore_failed", {
+				changed_count: failed.changed_count,
+				failed_count: failed.failed_count,
+				subscriptions: public_subscription_results(outcomes)
+			});
 		}
-		if (digest != entry.digest) changed_count++;
+		push(outcomes, outcome);
 	}
-	if (changed_count == 0) {
+	const summary = summarize_refresh(outcomes);
+	const subscriptions = public_subscription_results(outcomes);
+	if (summary.changed_count == 0) {
 		const result = {
-			ok: failed_count == 0,
-			reason: failed_count == 0 ? "unchanged" : "update_failed",
-			provider_count: length(snapshot.entries),
+			ok: summary.ok,
+			reason: summary.cache_reason,
+			provider_count: summary.provider_count,
 			changed_count: 0,
-			failed_count: failed_count,
-			reloaded: false
+			failed_count: summary.failed_count,
+			reloaded: false,
+			subscriptions: subscriptions
 		};
 		cleanup_refresh_snapshot();
 		result.events_recorded = record_events([refresh_event(result, requested)]);
@@ -2256,12 +2260,13 @@ function refresh_action(policy) {
 	}
 	if (!active) {
 		const result = {
-			ok: failed_count == 0,
-			reason: failed_count == 0 ? "cache_updated" : "partially_updated",
-			provider_count: length(snapshot.entries),
-			changed_count: changed_count,
-			failed_count: failed_count,
-			reloaded: false
+			ok: summary.ok,
+			reason: summary.cache_reason,
+			provider_count: summary.provider_count,
+			changed_count: summary.changed_count,
+			failed_count: summary.failed_count,
+			reloaded: false,
+			subscriptions: subscriptions
 		};
 		cleanup_refresh_snapshot();
 		result.events_recorded = record_events([refresh_event(result, requested)]);
@@ -2271,20 +2276,23 @@ function refresh_action(policy) {
 	const compiled = compile_result(policy, true);
 	if (!compiled.ok) {
 		fail_refresh(snapshot, policy, selections, requested, compiled.error, {
-			compile_detail: compiled.detail, changed_count: changed_count, failed_count: failed_count
+			compile_detail: compiled.detail, changed_count: summary.changed_count,
+			failed_count: summary.failed_count, subscriptions: subscriptions
 		});
 	}
 	const manifest = read_json(MANIFEST_PATH);
 	if (manifest == null || !restart()) {
 		fail_refresh(snapshot, policy, selections, requested, "runtime_restart_failed", {
-			changed_count: changed_count, failed_count: failed_count
+			changed_count: summary.changed_count, failed_count: summary.failed_count,
+			subscriptions: subscriptions
 		});
 	}
 	const runtime = wait_active_runtime(manifest);
 	const secret = api_secret();
 	if (!runtime.ok || !secret || !restore_runtime_selections(secret, manifest, selections, policy)) {
 		fail_refresh(snapshot, policy, selections, requested, runtime.error ?? "runtime_selection_restore_failed", {
-			changed_count: changed_count, failed_count: failed_count
+			changed_count: summary.changed_count, failed_count: summary.failed_count,
+			subscriptions: subscriptions
 		});
 	}
 	const selection = run_refresh_selection(requested);
@@ -2293,17 +2301,19 @@ function refresh_action(policy) {
 	if (!selection.ok || !final_readback.runtime_identity_ok || !final_probes.ok) {
 		fail_refresh(snapshot, policy, selections, requested,
 			!selection.ok ? selection.error : !final_readback.runtime_identity_ok ? "owner_readback_failed" : "protected_probe_failed", {
-				changed_count: changed_count, failed_count: failed_count, selection: selection
+				changed_count: summary.changed_count, failed_count: summary.failed_count,
+				selection: selection, subscriptions: subscriptions
 			});
 	}
 	const result = {
-		ok: failed_count == 0,
-		reason: failed_count == 0 ? "updated" : "partially_updated",
-		provider_count: length(snapshot.entries),
-		changed_count: changed_count,
-		failed_count: failed_count,
+		ok: summary.ok,
+		reason: summary.active_reason,
+		provider_count: summary.provider_count,
+		changed_count: summary.changed_count,
+		failed_count: summary.failed_count,
 		reloaded: true,
-		selection_state: selection.state
+		selection_state: selection.state,
+		subscriptions: subscriptions
 	};
 	cleanup_refresh_snapshot();
 	result.events_recorded = record_events([refresh_event(result, requested)]);

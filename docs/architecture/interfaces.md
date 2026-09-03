@@ -5,11 +5,11 @@
 
 原生 LuCI 是当前第一个真实公开 caller，接口只提供：
 
-- `status`：一次读取 policy、manifest、最近一次 evidence、服务状态、package 自有 build identity（source 部署时回退部署器原子持久化身份），以及 Mihomo `/proxies` 和 `/providers/proxies` 各一次；安装身份只投影经过格式校验的 NetFleet 版本、source commit 和 source tree，供用户确认当前设备字节并用于静态资源缓存失效，不参与运行决策；`apk upgrade` 后 package identity 必须优先于可能仍属于上一次声明式部署的 `installed.json`，避免状态页继续报告旧代码；当前已承载流量的 capability 以健康的生成 URLTest 组、组内当前成员和 manifest 绑定 source 中唯一的真实代理身份投影当前叶子，`/providers/proxies` 的节点 `alive` 只补充下一轮候选与机场/地区库存健康，不能用可能滞后的单节点健康位推翻当前组和独立 protected probes 已证明的实际路径；该读取不测速、不探测、不修改 selector；
+- `status`：一次读取 policy、manifest、最近一次 evidence、服务状态、package 自有 build identity（source 部署时回退部署器原子持久化身份），以及 Mihomo `/proxies` 和 `/providers/proxies` 各一次；安装身份只投影经过格式校验的 NetFleet 版本、source commit 和 source tree，供用户确认当前设备字节并用于静态资源缓存失效，不参与运行决策；`apk upgrade` 后 package identity 必须优先于可能仍属于上一次声明式部署的 `installed.json`，避免状态页继续报告旧代码；当前已承载流量的 capability 以健康的生成 URLTest 组、组内当前成员和 manifest 绑定 source 中唯一的真实代理身份投影当前叶子，`/providers/proxies` 的节点 `alive` 只补充下一轮候选与机场/地区库存健康，不能用可能滞后的单节点健康位推翻当前组和独立 protected probes 已证明的实际路径；同一读取还经第一阶段 SubscriptionOwner 投影 `subscription_refresh` 与 `subscriptions`：每个已启用订阅只返回稳定 section/ref、显示名、cache 存在性/digest、quota/expiry 和最近 refresh 结果/时间，不得返回 URL、token 或订阅正文；该读取不测速、不探测、不修改 selector；
 - `events`：读取有界 NetFleet 决策事件和 Nikki/Mihomo core log 中最近的 `NETFLEET-` 行；不轮询、不修改 owner；
 - `enable`：在同一个 target-local mutation lock 内依次调用现有 `compile -> enable` owner；不接受浏览器上传的 policy、Profile 或候选；
 - `select_auto`：只接受 status 已公开且当前可执行的 automatic 根 capability ID，调用现有 `select <capability> auto` owner 执行一次有界轮次，并把可见 selector 恢复到“自动选优”；
-- `refresh`：不接受 URL、section 或订阅内容，只调用同一个 policy-driven refresh owner；
+- `refresh`：不接受 URL、section 或订阅内容，只调用同一个 policy-driven refresh owner；浏览器/LuCI 可以显示第一阶段订阅投影并请求 refresh，但不得提交 URL/token 或解析订阅内容；
 - `disable`：调用与 CLI 相同的 native Profile owner/runtime 恢复并独立返回 `business_ok`；只有 runtime 无法恢复时才转入官方 cleanup passthrough，并返回 `safe`、`persistent`、`business_ok`。
 
 UI 有两个明确宿主。`ui/` 的 React/Vite 应用只用于本机快速参考开发，可注入 target-private 实时只读 client 或使用脱敏 fixture client；生产设备只部署原生 LuCI `view.extend`/`E()` 页面，不动态加载、挂载或打包 React。运行观察面共享“概览 / 出口 / 机场 / 地区 / 事件与诊断”信息架构，原生 LuCI 另按 React 已确认的“基础接入 / 机场 / 地区映射 / 出口策略 / 自动运行 / 安全与恢复”提供配置页和首次设置向导。两端共享显示语义和交互合同，不共享组件实现或 bundle，也不要求像素一致。React 定稿只决定信息与交互参考，LuCI 原生 source 才是设备页面的部署 owner。当前视觉语言、主题映射、排版和组件规则由 [UI 设计合同](../design/ui.md)统一约束；它只负责 UI 设计，不拥有产品对象、状态或动作合同。

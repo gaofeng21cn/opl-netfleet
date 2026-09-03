@@ -8,10 +8,12 @@
 
 ## 当前产品边界
 
-NetFleet 当前是 OpenWrt + Nikki + Mihomo 的可选增强层。Nikki 继续拥有订阅、Mihomo
-生命周期、DNS、nft 和路由；Mihomo 继续拥有节点连接、组内健康检查和 URLTest。
-NetFleet 只增加显式出口绑定、跨机场和地区的资源组织、可验证的选择，以及安全的
-生成、启用、恢复事务。
+NetFleet 当前是 OpenWrt + Nikki + Mihomo 的可选增强层。第一阶段 SubscriptionOwner 只拥有
+已启用 Nikki subscription 的只读发现、脱敏状态投影，以及在唯一 mutation lock 内对官方
+`update_subscription` 的显式/定期刷新编排；Nikki 继续拥有订阅 URL/token、下载、格式校验、
+单机场 cache 原子替换、Mihomo 生命周期、DNS、nft 和路由。Mihomo 继续拥有节点连接、组内
+健康检查和 URLTest。NetFleet 另外只增加显式出口绑定、跨机场和地区的资源组织、可验证的
+选择，以及安全的生成、启用、恢复事务。这不是原生独立订阅 owner，也不接管数据面。
 
 当前仓库包含 UCode runtime、OpenWrt package source、薄 rpcd 适配器、原生 LuCI 页面，
 以及一个由 `procd` 直接监督的前台 supervisor。当前没有第二订阅下载器、远程 Host、
@@ -24,8 +26,9 @@ NetFleet 只增加显式出口绑定、跨机场和地区的资源组织、可�
 ## 当前纵向链
 
 当前实现入口为 `openwrt/files/usr/libexec/opl-netfleet/main.uc`。公开动作是 `status`、
-`events`、`probe`、`validate`、`compile`、`enable`、`disable` 和 `select`；内部动作是
-`maintain`、`recover`，以及仅供 canonical installer 调用的恢复准备与恢复动作。
+`events`、`probe`、`validate`、`compile`、`enable`、`disable`、`select` 和 `refresh`；内部动作是
+`maintain`、`recover`，以及仅供 canonical installer 调用的恢复准备与恢复动作。`refresh`
+复用同一个 one-shot owner 和设备锁，不另建订阅 writer。
 
 ```text
 target-local policy + PolicySource + Nikki subscription cache

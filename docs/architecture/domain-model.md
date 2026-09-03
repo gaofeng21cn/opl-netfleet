@@ -9,11 +9,11 @@ OpenWrt + Nikki + Mihomo 必须在没有 NetFleet 时独立提供可用网络。
 
 NetFleet 不能成为基础联网、订阅更新、DNS、nft、默认路由或 Mihomo 生命周期的前置条件。未安装、未启用、自身崩溃或被卸载时，用户必须仍能在 Nikki 中选择原始 Profile。
 
-这是当前 `nikki-mihomo` 运行合同，不是永久产品身份。长期产品方向见[设计白皮书](../product/whitepaper.md)：NetFleet 可以在 successor 已完整接管订阅、运行后端、OpenWrt 数据面生命周期和安全清理后不再依赖 Nikki，并允许同一时刻选择一个满足统一合同的 Mihomo、sing-box 或其他后端。当前 source 没有 `RuntimeBackend` 切换、原生订阅 owner、sing-box adapter 或内置 Zashboard 实时观察面；UI 不得把这些目标显示为当前可用选项，运行代码也不得为未来后端预建双写或 fallback。
+这是当前 `nikki-mihomo` 运行合同，不是永久产品身份。长期产品方向见[设计白皮书](../product/whitepaper.md)：NetFleet 可以在 successor 已完整接管订阅、运行后端、OpenWrt 数据面生命周期和安全清理后不再依赖 Nikki，并允许同一时刻选择一个满足统一合同的 Mihomo、sing-box 或其他后端。当前 source 已有第一阶段 SubscriptionOwner（只读发现、脱敏投影、显式 refresh 编排），但没有独立订阅 cache、`RuntimeBackend` 切换、原生 Mihomo 生命周期、sing-box adapter 或内置 Zashboard 实时观察面；UI 不得把这些未实现目标显示为当前可用选项，运行代码也不得为未来后端预建双写或 fallback。
 
 ## 能力分层与使用逻辑
 
-原生 OpenWrt + Nikki + Mihomo 已经负责流量分类、规则顺序、订阅下载与缓存、节点连接、组内健康检查、URLTest、DNS/nft、透明代理、默认路由和进程生命周期。NetFleet 只增加原生没有统一合同的部分：显式出口绑定、跨 provider/地区资源组织，以及可验证的生成/启用/退回事务。能由 Nikki 或 Mihomo 原生完成的功能不在 NetFleet 重做。
+原生 OpenWrt + Nikki + Mihomo 已经负责流量分类、规则顺序、订阅下载与缓存、节点连接、组内健康检查、URLTest、DNS/nft、透明代理、默认路由和进程生命周期。NetFleet 第一阶段只对已启用订阅做只读发现、脱敏投影和官方 refresh 编排；其余仍只增加原生没有统一合同的部分：显式出口绑定、跨 provider/地区资源组织，以及可验证的生成/启用/退回事务。能由 Nikki 或 Mihomo 原生完成的功能不在 NetFleet 重做。
 
 | 增强能力 | 用户怎样使用 | 准入阶段 |
 | --- | --- | --- |
@@ -46,7 +46,7 @@ automatic capability 必须形成无环依赖图，并且只有一个不声明 `
 3. 上游先决条件：enable 在切换 Profile 前必须确认 WAN interface 已 up 且存在 IPv4 默认路由；上游不可用时保持原 Profile，不触碰 Nikki。
 4. 原生退路：disable 和 Nikki 手工切回原始 Profile 都不依赖 NetFleet 后台进程。
 5. 安全卸载：NetFleet Profile active 时必须先恢复并验证原始 Profile，或完成已验证且持久的 Nikki passthrough；两条路径都不能证明时拒绝卸载。
-6. 生命周期归属不变：Nikki 继续拥有订阅、Mihomo、DNS、nft 和路由；NetFleet 不实现自己的 cleanup。
+6. 生命周期归属不变：Nikki 继续拥有订阅下载/cache 字节、Mihomo、DNS、nft 和路由；第一阶段 SubscriptionOwner 只编排官方 refresh 并投影脱敏状态。NetFleet 不实现自己的 cleanup，也不复制 Nikki GPLv3 源码。
 7. 单一控制面：每项状态和 mutation 只有一个 owner，不建立第二套事实、后台投影或恢复循环。
 8. 远程可恢复边界：NetFleet 的开发、部署、验收和故障恢复都不包含设备 `reboot`、`poweroff`、`sysupgrade`、固件写入或任何依赖现场/OOB 才能撤销的动作。软件路径无法恢复管理面时必须停止并返回 `needs_local_recovery`，不能把物理操作当成部署步骤。
 
@@ -58,7 +58,8 @@ automatic capability 必须形成无环依赖图，并且只有一个不声明 `
 | Recovery Profile | NetFleet 关闭、事务失败和进程级恢复时由 Nikki 选择的完整原生 owner；不参与正常选优 |
 | Platform declaration | 私有 `platform.json` 声明目标 Nikki UCI 与 OpenWrt flow-offload 值；canonical deploy owner 负责校验、快照、应用、官方 reload/restart 和 readback，不直接生成 nft/ip rule |
 | Ruleset lock | 公共 `rulesets.lock.json` 锁定上游 commit、URL、格式、大小、SHA-256 和许可证；提供内置 Policy Source 已引用的业务、地域和私网 MRS，不拥有规则顺序或自动更新 |
-| Nikki | 订阅下载与缓存、Profile 选择、Mihomo 生命周期、DNS/nft/路由清理 |
+| Nikki | 订阅 URL/token、官方下载与格式校验、单机场 cache 原子替换、Profile 选择、Mihomo 生命周期、DNS/nft/路由清理 |
+| 第一阶段 SubscriptionOwner | 只读发现 policy 中已启用的稳定 Nikki section，投影显示名、cache 存在性/digest、quota/expiry 和最近 refresh 结果；在唯一 mutation owner 与设备锁内逐个调用 Nikki 官方 `update_subscription`。失败保留该 section 上一份已验证 cache。不拥有 URL/token，不建立第二 cache，不接管 Mihomo/DNS/nft/路由 |
 | Mihomo | 节点连接、组内健康检查、URLTest delay 和叶子切换 |
 | latency adapter | 按 `checks.provider_healthcheck_timeout_ms` 并发触发 provider 原生 health-check，再对候选组当前代理链按 `checks.latency` 做一次有界 delay，输出标准化 delay 或 `unavailable`；不判断业务资格 |
 | quota adapter | 只读 Nikki 官方 subscription metadata，输出 `available|exhausted|unknown` 和可选剩余量 |

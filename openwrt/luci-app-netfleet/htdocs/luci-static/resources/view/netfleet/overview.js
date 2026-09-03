@@ -663,8 +663,21 @@ function exitsPage(status) {
 	return content;
 }
 
+function cacheDigest(value) {
+	const digest = value && value.cache && value.cache.digest;
+	if (!digest)
+		return value && value.cache && value.cache.present ? '已缓存' : '无缓存';
+	return value.cache.valid === false ? '缓存无效' : String(digest).slice(0, 12);
+}
+
+function subscriptionExpiry(entry) {
+	const value = entry && entry.quota && entry.quota.expires_at;
+	return text(value, '未提供').slice(0, 10);
+}
+
 function providersPage(status) {
 	const refresh = status.subscription_refresh || {};
+	const subscriptions = status.subscriptions || refresh.subscriptions || [];
 	const availabilityMeasured = Boolean(status.active && status.runtime.netfleet_present && status.runtime.controller_available);
 	const providers = (status.providers || []).slice().sort(function(a, b) {
 		return Number(Boolean(b.selected)) - Number(Boolean(a.selected)) ||
@@ -687,8 +700,20 @@ function providersPage(status) {
 				E('td', {}, providerExpiry(provider))
 			]);
 		});
+	const subscriptionRows = subscriptions.map(function(entry) {
+		const last = entry.last_refresh || {};
+		return E('tr', {}, [
+			E('td', {}, text(entry.display_name, entry.section)),
+			E('td', {}, text(entry.section, '未提供')),
+			E('td', {}, cacheDigest(entry)),
+			E('td', {}, sampledAt(last.at)),
+			E('td', {}, refreshResult(last.result)),
+			E('td', {}, quota(entry)),
+			E('td', {}, subscriptionExpiry(entry))
+		]);
+	});
 	return [
-		section('订阅更新', 'NetFleet 统一调度，下载、格式校验和单机场缓存仍由 Nikki 负责。', [ metricGrid([
+		section('订阅更新', 'NetFleet 只读发现并调度同一 refresh owner；下载、格式校验和单机场缓存仍由 Nikki 官方更新器负责。', [ metricGrid([
 			[ '自动更新', refresh.enabled ? '已启用' : '已关闭' ],
 			[ '更新周期', seconds(refresh.interval_seconds) ],
 			[ '最近执行', sampledAt(refresh.last_run_at) ],
@@ -696,6 +721,9 @@ function providersPage(status) {
 			[ '缓存变化', finite(refresh.last_changed_count) ? String(Number(refresh.last_changed_count)) + ' 个机场' : '未提供' ],
 			[ '更新失败', finite(refresh.last_failed_count) ? String(Number(refresh.last_failed_count)) + ' 个机场' : '未提供' ]
 		], 'is-six') ]),
+		section('订阅缓存', '只显示稳定 section、缓存摘要、配额和最近一次 refresh 结果，不包含 URL、token 或订阅正文。', [
+			simpleTable([ '机场', '订阅', '缓存', '最近更新', '结果', '剩余流量', '到期时间' ], subscriptionRows, '当前没有已启用的订阅', 'netfleet-data-table')
+		]),
 		section('机场', availabilityMeasured ? '运行资格、配额和到期时间来自同一次设备状态读取；历史按稳定机场 ID 持久化，平均最优至少汇总 2 个有效样本。' : 'NetFleet 当前未接管，实时可用性未测量；历史延迟、配额和到期时间仍可查看。', [
 			simpleTable([ '机场', '层级', '计费', '可用地区', '候选组', '最近最优', '平均最优', '样本', '最后测量', '剩余流量', '到期时间' ], rows, '设备未提供机场数据', 'netfleet-data-table')
 		])
