@@ -21,8 +21,9 @@ refresh 编排。它不是白皮书中的完整独立订阅 owner，也不授权
 
 ## 后果
 
-refresh 和 status 可以给出每个稳定 section 的显示名、cache digest、quota/expiry 和最近
-结果，同时保持单一 writer 与单一设备锁。后续若要不再依赖 Nikki，必须先有完整 successor
+refresh 和 status 可以给出每个稳定 section 的 `display_name`、`cache_present`、
+`cache_sha256`、`quota`、`last_attempt`、`last_success` 和 `last_result`，同时保持单一
+writer 与单一设备锁。后续若要不再依赖 Nikki，必须先有完整 successor
 接管订阅 cache、运行后端、数据面和安全清理，而不是在本仓库内 vendor Nikki。
 
 ## 未采用

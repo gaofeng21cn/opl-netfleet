@@ -216,9 +216,12 @@ const result = build(policy, manifest, state, evidence, {
 				section: "alpha",
 				ref: "subscription:alpha",
 				display_name: "Alpha 正式机场",
-				cache: { present: true, digest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", valid: true },
+				cache_present: true,
+				cache_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 				quota: { state: "available", remaining_bytes: 10, expires_at: "2026-12-31" },
-				last_refresh: { at: 1700000000, result: "unchanged", ok: true }
+				last_attempt: 1700000000,
+				last_success: 1700000000,
+				last_result: "unchanged"
 			}]
 		}
 });
@@ -290,9 +293,12 @@ if (result.build?.version != "0.3.0" ||
 	result.subscription_refresh?.provider_count != 2 ||
 	result.subscriptions?.[0]?.section != "alpha" ||
 	result.subscriptions?.[0]?.ref != "subscription:alpha" ||
-	result.subscriptions?.[0]?.cache?.present != true ||
+	result.subscriptions?.[0]?.cache_present != true ||
+	result.subscriptions?.[0]?.cache_sha256 != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ||
 	result.subscriptions?.[0]?.quota?.expires_at != "2026-12-31" ||
-	result.subscriptions?.[0]?.last_refresh?.result != "unchanged" ||
+	result.subscriptions?.[0]?.last_attempt != 1700000000 ||
+	result.subscriptions?.[0]?.last_success != 1700000000 ||
+	result.subscriptions?.[0]?.last_result != "unchanged" ||
 	alpha?.best_delay_ms != 12 || alpha?.last_best_delay_ms != 12 ||
 	alpha?.average_best_delay_ms != 15 || alpha?.delay_sample_count != 2 || north?.selected != true ||
 	beta?.last_best_delay_ms != 20 || beta?.average_best_delay_ms != 20 || beta?.delay_sample_count != 1 ||

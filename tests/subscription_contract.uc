@@ -128,6 +128,19 @@ const projected = project({
 	subscription_refresh_enabled: true,
 	subscription_refresh_interval_seconds: 43200
 }, facts, [{
+	at: 1699999900,
+	action: "refresh",
+	reason: "updated",
+	ok: true,
+	changed_count: 1,
+	failed_count: 0,
+	reloaded: false,
+	initiator: "cli",
+	subscriptions: [
+		{ section: "alpha", result: "updated", digest: previous },
+		{ section: "beta", result: "unchanged", digest: previous }
+	]
+}, {
 	at: 1700000000,
 	action: "refresh",
 	reason: "partially_updated",
@@ -146,19 +159,22 @@ if (projected.provider_count != 2 || projected.last_result != "partially_updated
 	projected.subscriptions[0].section != "alpha" ||
 	projected.subscriptions[0].ref != "subscription:alpha" ||
 	projected.subscriptions[0].display_name != "Alpha" ||
-	projected.subscriptions[0].cache.present != true ||
-	projected.subscriptions[0].cache.digest != previous ||
-	projected.subscriptions[0].cache.valid != true ||
+	projected.subscriptions[0].cache_present != true ||
+	projected.subscriptions[0].cache_sha256 != previous ||
 	projected.subscriptions[0].quota.remaining_bytes != 1024 ||
 	projected.subscriptions[0].quota.expires_at != "2026-12-31" ||
-	projected.subscriptions[0].last_refresh.result != "updated" ||
-	projected.subscriptions[0].last_refresh.ok != true ||
-	projected.subscriptions[1].last_refresh.result != "failed" ||
-	projected.subscriptions[1].last_refresh.ok != false ||
+	projected.subscriptions[0].last_attempt != 1700000000 ||
+	projected.subscriptions[0].last_success != 1700000000 ||
+	projected.subscriptions[0].last_result != "updated" ||
+	projected.subscriptions[1].last_attempt != 1700000000 ||
+	projected.subscriptions[1].last_success != 1699999900 ||
+	projected.subscriptions[1].last_result != "failed" ||
 	projected.subscriptions[0].url != null || projected.subscriptions[0].token != null ||
 	projected.subscriptions[0].parsed != null ||
+	projected.subscriptions[0].cache != null ||
+	projected.subscriptions[0].last_refresh != null ||
 	index(encoded, "secret.invalid") >= 0 || index(encoded, "secret-token") >= 0 ||
-	index(encoded, "node-a") >= 0) {
+	index(encoded, "node-a") >= 0 || index(encoded, "last_refresh") >= 0) {
 	print("metadata_projection_failed\n");
 	exit(1);
 }
@@ -178,8 +194,9 @@ const unavailable = project({
 	subscriptions: unavailable_results(["alpha", "beta"])
 }]);
 if (unavailable.last_result != "upstream_unavailable" ||
-	unavailable.subscriptions[0].last_refresh.result != "failed" ||
-	unavailable.subscriptions[1].cache.present != true) {
+	unavailable.subscriptions[0].last_result != "failed" ||
+	unavailable.subscriptions[0].last_success != null ||
+	unavailable.subscriptions[1].cache_present != true) {
 	print("unavailable_projection_failed\n");
 	exit(1);
 }

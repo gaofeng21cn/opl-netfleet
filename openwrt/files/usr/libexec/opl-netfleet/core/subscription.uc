@@ -130,7 +130,7 @@ function latest_refresh(events) {
 	return latest;
 };
 
-function last_refresh_by_section(events) {
+function section_refresh_state(events) {
 	const result = {};
 	const items = events ?? [];
 	for (let i = length(items) - 1; i >= 0; i--) {
@@ -138,12 +138,19 @@ function last_refresh_by_section(events) {
 		if (event?.action != "refresh" || type(event.subscriptions) != "array") continue;
 		for (let j = 0; j < length(event.subscriptions); j++) {
 			const item = event.subscriptions[j];
-			if (type(item?.section) != "string" || result[item.section] != null) continue;
-			result[item.section] = {
-				at: event.at ?? null,
-				result: item.result ?? null,
-				ok: item.result == "updated" || item.result == "unchanged"
-			};
+			const section = item?.section;
+			if (type(section) != "string") continue;
+			if (result[section] == null) {
+				result[section] = {
+					last_attempt: event.at ?? null,
+					last_result: item.result ?? null,
+					last_success: null
+				};
+			}
+			if (result[section].last_success == null &&
+				(item.result == "updated" || item.result == "unchanged")) {
+				result[section].last_success = event.at ?? null;
+			}
 		}
 	}
 	return result;
@@ -162,24 +169,24 @@ function public_quota(quota) {
 
 export function project(automation, facts, events) {
 	const latest = latest_refresh(events);
-	const by_section = last_refresh_by_section(events);
+	const by_section = section_refresh_state(events);
 	const subscriptions = [];
 	const entries = facts ?? [];
 	for (let i = 0; i < length(entries); i++) {
 		const fact = entries[i];
 		const section = fact?.section;
+		const history = type(section) == "string" ? by_section[section] ?? null : null;
 		push(subscriptions, {
 			section: section,
 			ref: type(fact?.ref) == "string" ? fact.ref : `subscription:${section}`,
 			display_name: type(fact?.display_name) == "string" && length(fact.display_name) > 0 ?
 				fact.display_name : section,
-			cache: {
-				present: fact?.present == true,
-				digest: type(fact?.digest) == "string" ? fact.digest : null,
-				valid: fact?.valid == true
-			},
+			cache_present: fact?.present == true,
+			cache_sha256: type(fact?.digest) == "string" ? fact.digest : null,
 			quota: public_quota(fact?.quota),
-			last_refresh: type(section) == "string" ? by_section[section] ?? null : null
+			last_attempt: history?.last_attempt ?? null,
+			last_success: history?.last_success ?? null,
+			last_result: history?.last_result ?? null
 		});
 	}
 	return {

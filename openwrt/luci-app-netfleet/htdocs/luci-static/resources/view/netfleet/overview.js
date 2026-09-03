@@ -664,10 +664,10 @@ function exitsPage(status) {
 }
 
 function cacheDigest(value) {
-	const digest = value && value.cache && value.cache.digest;
+	const digest = value && value.cache_sha256;
 	if (!digest)
-		return value && value.cache && value.cache.present ? '已缓存' : '无缓存';
-	return value.cache.valid === false ? '缓存无效' : String(digest).slice(0, 12);
+		return value && value.cache_present ? '已缓存' : '无缓存';
+	return String(digest).slice(0, 12);
 }
 
 function subscriptionExpiry(entry) {
@@ -701,13 +701,12 @@ function providersPage(status) {
 			]);
 		});
 	const subscriptionRows = subscriptions.map(function(entry) {
-		const last = entry.last_refresh || {};
 		return E('tr', {}, [
 			E('td', {}, text(entry.display_name, entry.section)),
 			E('td', {}, text(entry.section, '未提供')),
 			E('td', {}, cacheDigest(entry)),
-			E('td', {}, sampledAt(last.at)),
-			E('td', {}, refreshResult(last.result)),
+			E('td', {}, sampledAt(entry.last_attempt)),
+			E('td', {}, refreshResult(entry.last_result)),
 			E('td', {}, quota(entry)),
 			E('td', {}, subscriptionExpiry(entry))
 		]);
