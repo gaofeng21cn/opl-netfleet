@@ -246,6 +246,7 @@ etc/opl-netfleet/installed.json
 www/luci-static/resources/netfleet
 www/luci-static/resources/view/netfleet
 usr/share/luci/menu.d/luci-app-netfleet.json
+usr/share/opl-netfleet
 usr/share/rpcd/acl.d/luci-app-netfleet.json'
 
 state_paths='etc/opl-netfleet/policy.json
@@ -258,7 +259,9 @@ etc/apk/world
 lib/apk/db/installed
 etc/opkg/status
 usr/lib/opkg/status
-etc/apk/keys/opl-netfleet-apk.pem'
+etc/apk/keys/opl-netfleet-apk.pem
+etc/opl-netfleet/policy.example.json.apk-new
+etc/opl-netfleet/rulesets.lock.json.apk-new'
 
 # Snapshot only the state files, never /var or /var/lib themselves. The old
 # evidence path is retained solely for one-time migration and rollback.
@@ -497,9 +500,9 @@ verify_installed_files() {
 			/*|*../*|*' '*) return 1 ;;
 		esac
 		target=$(root_path "/$rel")
-		[ -f "$target" ] || return 1
+		[ -f "$target" ] || { error_detail="missing:$rel"; return 1; }
 		actual=$(sha256sum "$target" | awk '{print $1}')
-		[ "$actual" = "$expected" ] || return 1
+		[ "$actual" = "$expected" ] || { error_detail="digest:$rel"; return 1; }
 	done <"$bundle/FILES.sha256"
 }
 

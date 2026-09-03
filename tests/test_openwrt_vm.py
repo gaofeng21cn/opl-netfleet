@@ -153,6 +153,8 @@ class OpenWrtVmTests(unittest.TestCase):
         self.assertIn('package_arch\":\"noarch', package_source)
         self.assertIn('build_target_arch\":\"aarch64_generic', package_source)
         self.assertIn('package_metadata\":true', package_source)
+        self.assertIn('policy.example.json.apk-new', package_source)
+        self.assertIn("printf '{\"legacy\":true}", package_source)
         self.assertIn('probe_port=${4:?}', package_source)
         self.assertIn("DNS:www.gstatic.com", source)
         self.assertIn("dnat to \"192.168.1.2:$probe_port\"", package_source)

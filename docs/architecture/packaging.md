@@ -31,6 +31,9 @@ manifest v2 的 `feed_index` 字段绑定其 SHA-256。runtime 与 LuCI 均只�
 rpcd 当前执行上限低于 300 秒时提升到 300 秒、保留更高值；它不自动改变网络，用户确认后才由
 target-local owner 创建 `/etc/opl-netfleet/policy.json` 并启用。
 该模式复用当前原生 Profile 的规则、DNS 与策略组，不下载第二份订阅，也不需要内置 MRS。
+`policy.example.json`、内置 Policy Source 和 ruleset lock 是 package 拥有的只读基线；APK
+升级若为它们生成 `.apk-new`，runtime package 的 post-install 必须原子采用新字节。用户
+policy、订阅、mixin、生成 Profile 和证据不在该名单中，package 不得借此覆盖。
 
 官方 SDK 解压后尚未生成 `.config`。发布准备入口只执行 `defconfig` 并回读目标 package
 架构，不下载或扫描 feeds。原生 LuCI package 仅包含仓库内固定的静态页面、菜单和 ACL，

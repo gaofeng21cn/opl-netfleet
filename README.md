@@ -66,7 +66,7 @@ scripts/netfleet-package-build.sh --sdk /path/to/openwrt-sdk \
 Release 的两个 APK 作为一次事务覆盖安装：
 
 ```sh
-apk add --upgrade ./opl-netfleet-0.4.1-r1.apk ./luci-app-netfleet-0.4.1-r1.apk
+apk add --upgrade ./opl-netfleet-0.4.2-r1.apk ./luci-app-netfleet-0.4.2-r1.apk
 ```
 
 APK Release 同时提供签名的 `packages.adb`。将稳定的 latest feed 写入设备一次后，

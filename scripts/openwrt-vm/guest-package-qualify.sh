@@ -74,6 +74,13 @@ for index in 0 1; do
 	[ "$(sha256sum "$candidate/$name" | awk '{print $1}')" = "$expected" ]
 done
 
+# Source deployments predate package ownership and exercise APK's protected
+# /etc path migration. The runtime post-install must promote only these package
+# baselines while leaving the user policy outside its write set.
+printf '{"legacy":true}\n' >/etc/opl-netfleet/policy.example.json
+printf '{"legacy":true}\n' >/etc/opl-netfleet/policy-sources/base-v1.json
+printf '{"legacy":true}\n' >/etc/opl-netfleet/rulesets.lock.json
+
 stage=install
 real_apk=$(command -v apk)
 [ -x "$real_apk" ]
@@ -114,6 +121,9 @@ for package_name in opl-netfleet luci-app-netfleet; do
 	"$real_apk" list --installed "$package_name" |
 		grep -Eq "^${package_name}-${version}-r${release}[[:space:]]+noarch([[:space:]]|$)"
 done
+[ ! -e /etc/opl-netfleet/policy.example.json.apk-new ]
+[ ! -e /etc/opl-netfleet/policy-sources/base-v1.json.apk-new ]
+[ ! -e /etc/opl-netfleet/rulesets.lock.json.apk-new ]
 rpcd_timeout=$(uci -q get 'rpcd.@rpcd[0].timeout')
 [ "$rpcd_timeout" -ge 300 ]
 

@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet
-PKG_VERSION:=0.4.1
+PKG_VERSION:=0.4.2
 PKG_RELEASE:=1
 PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=OPL NetFleet
@@ -82,7 +82,20 @@ define Package/opl-netfleet/install
 	$(INSTALL_BIN) ./files/etc/init.d/opl-netfleet $(1)/etc/init.d/opl-netfleet
 	$(INSTALL_DATA) ./files/etc/opl-netfleet/policy.example.json $(1)/etc/opl-netfleet/policy.example.json
 	$(INSTALL_DATA) ./files/etc/opl-netfleet/policy-sources/*.json $(1)/etc/opl-netfleet/policy-sources/
+	$(INSTALL_DATA) ./files/etc/opl-netfleet/rulesets.lock.json $(1)/etc/opl-netfleet/rulesets.lock.json
 	$(INSTALL_DATA) ./files/usr/share/opl-netfleet/build.json $(1)/usr/share/opl-netfleet/build.json
+endef
+
+define Package/opl-netfleet/postinst
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+for path in \
+	/etc/opl-netfleet/policy.example.json \
+	/etc/opl-netfleet/policy-sources/base-v1.json \
+	/etc/opl-netfleet/rulesets.lock.json; do
+	[ ! -f "$$path.apk-new" ] || mv -f "$$path.apk-new" "$$path" || exit 1
+done
+exit 0
 endef
 
 $(eval $(call BuildPackage,opl-netfleet))

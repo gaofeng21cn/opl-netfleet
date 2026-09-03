@@ -196,7 +196,7 @@ class DeployOpenWrtTests(unittest.TestCase):
             with (release / "FILES.sha256").open("w") as stream:
                 for path in sorted(item for item in payload.rglob("*") if item.is_file()):
                     stream.write(f"{sha256(path)}  {path.relative_to(payload)}\n")
-            for name in ("opl-netfleet_0.4.1-r1.apk", "luci-app-netfleet_0.4.1-r1.apk"):
+            for name in ("opl-netfleet_0.4.2-r1.apk", "luci-app-netfleet_0.4.2-r1.apk"):
                 (release / name).write_text(name + "\n")
             (release / "opl-netfleet-apk.pem").write_text("test-public-key\n")
             (release / "packages.adb").write_bytes(b"test-feed-index\n")
@@ -214,7 +214,7 @@ class DeployOpenWrtTests(unittest.TestCase):
                 "schema": "opl-netfleet-package-manifest.v2",
                 "source_commit": commit,
                 "source_tree": tree,
-                "package_version": "0.4.1",
+                "package_version": "0.4.2",
                 "package_release": "1",
                 "package_format": "apk",
                 "package_arch": "noarch",
@@ -223,12 +223,12 @@ class DeployOpenWrtTests(unittest.TestCase):
                 "runtime_payload_sha256": runtime_digest,
                 "files_manifest": {"name": "FILES.sha256", "sha256": sha256(release / "FILES.sha256")},
                 "artifact_files": {
-                    "opl-netfleet": "opl-netfleet_0.4.1-r1.apk",
-                    "luci-app-netfleet": "luci-app-netfleet_0.4.1-r1.apk",
+                    "opl-netfleet": "opl-netfleet_0.4.2-r1.apk",
+                    "luci-app-netfleet": "luci-app-netfleet_0.4.2-r1.apk",
                 },
                 "artifacts": [
-                    {"package": "opl-netfleet", "name": "opl-netfleet_0.4.1-r1.apk", "sha256": sha256(release / "opl-netfleet_0.4.1-r1.apk"), "size": (release / "opl-netfleet_0.4.1-r1.apk").stat().st_size},
-                    {"package": "luci-app-netfleet", "name": "luci-app-netfleet_0.4.1-r1.apk", "sha256": sha256(release / "luci-app-netfleet_0.4.1-r1.apk"), "size": (release / "luci-app-netfleet_0.4.1-r1.apk").stat().st_size},
+                    {"package": "opl-netfleet", "name": "opl-netfleet_0.4.2-r1.apk", "sha256": sha256(release / "opl-netfleet_0.4.2-r1.apk"), "size": (release / "opl-netfleet_0.4.2-r1.apk").stat().st_size},
+                    {"package": "luci-app-netfleet", "name": "luci-app-netfleet_0.4.2-r1.apk", "sha256": sha256(release / "luci-app-netfleet_0.4.2-r1.apk"), "size": (release / "luci-app-netfleet_0.4.2-r1.apk").stat().st_size},
                 ],
                 "apk_public_key": {"name": "opl-netfleet-apk.pem", "sha256": sha256(release / "opl-netfleet-apk.pem")},
                 "feed_index": {"name": "packages.adb", "sha256": sha256(release / "packages.adb")},
@@ -1140,8 +1140,8 @@ esac
     def _make_package_bundle(self):
         payload = self.base / "payload"
         package_files = {
-            "opl-netfleet": "opl-netfleet_0.4.1-r1.apk",
-            "luci-app-netfleet": "luci-app-netfleet_0.4.1-r1.apk",
+            "opl-netfleet": "opl-netfleet_0.4.2-r1.apk",
+            "luci-app-netfleet": "luci-app-netfleet_0.4.2-r1.apk",
         }
         for name in package_files.values():
             (self.bundle / name).write_text(name + "\n")
@@ -1153,7 +1153,7 @@ esac
             "schema": "opl-netfleet-package-manifest.v2",
             "source_commit": manifest["source_commit"],
             "source_tree": manifest["source_tree"],
-            "package_version": "0.4.1",
+            "package_version": "0.4.2",
             "package_release": "1",
             "package_format": "apk",
             "package_arch": "noarch",
@@ -1472,7 +1472,7 @@ esac
 
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
         self.assertEqual(
-            ["opl-netfleet_0.4.1-r1.apk luci-app-netfleet_0.4.1-r1.apk"],
+            ["opl-netfleet_0.4.2-r1.apk luci-app-netfleet_0.4.2-r1.apk"],
             (self.state / "package-actions").read_text().splitlines(),
         )
         self.assertEqual("new-main\n", (self.device / "usr/libexec/opl-netfleet/main.uc").read_text())
