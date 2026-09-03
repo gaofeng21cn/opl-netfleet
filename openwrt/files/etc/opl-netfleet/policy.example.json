@@ -1,0 +1,187 @@
+{
+  "schema_version": 2,
+  "main": {
+    "target": "example-target",
+    "enabled": false
+  },
+  "policy_source": {
+    "kind": "bundle",
+    "ref": "bundle:base-v1"
+  },
+  "recovery_profile": {
+    "ref": "subscription:example"
+  },
+  "routing_rules": [],
+  "bindings": {
+    "海外加速": {
+      "capability": "standard",
+      "kind": "entry"
+    },
+    "Netflix": {
+      "capability": "standard",
+      "kind": "policy"
+    },
+    "AI 出口": {
+      "capability": "ai-compatible",
+      "kind": "entry"
+    },
+    "YouTube": {
+      "capability": "standard",
+      "kind": "policy"
+    },
+    "Steam": {
+      "capability": "standard",
+      "kind": "policy"
+    },
+    "Xbox": {
+      "capability": "standard",
+      "kind": "policy"
+    },
+    "PlayStation": {
+      "capability": "standard",
+      "kind": "policy"
+    },
+    "Nintendo Switch": {
+      "capability": "standard",
+      "kind": "policy"
+    },
+    "Telegram": {
+      "capability": "standard",
+      "kind": "policy"
+    },
+    "社交媒体": {
+      "capability": "standard",
+      "kind": "policy"
+    },
+    "微软服务": {
+      "capability": "standard",
+      "kind": "policy"
+    },
+    "苹果服务": {
+      "capability": "standard",
+      "kind": "policy"
+    },
+    "谷歌服务": {
+      "capability": "standard",
+      "kind": "policy"
+    },
+    "国内媒体": {
+      "capability": "standard",
+      "kind": "policy"
+    }
+  },
+  "providers": {
+    "example_provider": {
+      "section": "example",
+      "enabled": true,
+      "role": "primary",
+      "billing": "subscription",
+      "quota": {
+        "available_field": "avaliable",
+        "total_field": "total",
+        "used_field": "used"
+      }
+    },
+    "backup_provider": {
+      "section": "backup",
+      "enabled": true,
+      "role": "reserve",
+      "billing": "buyout"
+    }
+  },
+  "regions": {
+    "example_region": {
+      "flag": "🌐",
+      "display_name": "示例地区",
+      "mode": "automatic"
+    },
+    "hong_kong": {
+      "flag": "🇭🇰",
+      "display_name": "香港",
+      "mode": "automatic"
+    }
+  },
+  "provider_regions": {
+    "example_provider": [
+      {
+        "region": "example_region",
+        "filter": "example"
+      },
+      {
+        "region": "hong_kong",
+        "filter": "hong kong"
+      }
+    ],
+    "backup_provider": [
+      {
+        "region": "example_region",
+        "filter": "example"
+      },
+      {
+        "region": "hong_kong",
+        "filter": "hong kong"
+      }
+    ]
+  },
+  "capabilities": {
+    "standard": {
+      "display_name": "海外加速",
+      "display_order": 10,
+      "enabled": true,
+      "mode": "automatic"
+    },
+    "ai-compatible": {
+      "display_name": "AI 出口",
+      "display_order": 20,
+      "enabled": true,
+      "mode": "automatic",
+      "excluded_regions": ["hong_kong"],
+      "prefer_region_from": "standard"
+    }
+  },
+  "selection": {
+    "region_switch_margin_ms": 150,
+    "leaf_switch_margin_ms": 150
+  },
+  "automation": {
+    "enabled": true,
+    "selection_interval_seconds": 1800,
+    "subscription_refresh_enabled": true,
+    "subscription_refresh_interval_seconds": 43200,
+    "poll_interval_seconds": 15,
+    "startup_grace_seconds": 120,
+    "runtime_grace_seconds": 45
+  },
+  "checks": {
+    "provider_healthcheck_timeout_ms": 20000,
+    "latency": {
+      "method": "mihomo_delay",
+      "url": "https://www.gstatic.com/generate_204",
+      "timeout_ms": 2000,
+      "expected_status": 204
+    },
+    "quota": {
+      "source": "nikki_subscription_metadata",
+      "zero_is_exhausted": true
+    }
+  },
+  "evidence": {
+    "path": "/etc/opl-netfleet/evidence.json"
+  },
+  "fail_open": {
+    "healthcheck": {
+      "path_probe_id": "primary-egress",
+      "guard_probe_id": "primary-egress",
+      "timeout_ms": 5000,
+      "interval_seconds": 300,
+      "max_failed_times": 2
+    },
+    "probes": [
+      {
+        "id": "primary-egress",
+        "url": "https://status.example.invalid/health",
+        "expected_status": 204
+      }
+    ]
+  }
+}

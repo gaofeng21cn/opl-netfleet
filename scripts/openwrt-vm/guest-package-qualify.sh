@@ -1,0 +1,333 @@
+#!/bin/sh
+set -eu
+umask 077
+
+source_commit=${1:?}
+source_tree=${2:?}
+manifest_sha=${3:?}
+probe_port=${4:?}
+fixture=/tmp/netfleet-runtime-fixture
+candidate=/tmp/netfleet-package-candidate
+archive=/tmp/package-candidate.tar
+probe_url=https://netfleet-probe.test:$probe_port/generate_204
+stage=extract
+
+finish() {
+	rc=$?
+	trap - EXIT INT TERM
+	if [ "$rc" -eq 0 ] && [ "$stage" != complete ]; then
+		echo "OpenWrt package qualification exited before completion at stage: $stage" >&2
+		rc=1
+	fi
+	if [ "$rc" -ne 0 ]; then
+		echo "OpenWrt package qualification failed at stage: $stage" >&2
+		for path in "$candidate/manifest.json" "$fixture/package-onboarding.json" \
+			"$fixture/package-apply.json" "$fixture/package-disable.json" \
+			"$fixture/package-status.json" \
+			"$fixture/package-info.after" \
+			"$fixture/package-rpcd-direct.json" "$fixture/package-rpcd-ubus.txt" \
+			"$fixture/package-helper-primary.log" "$fixture/package-helper-reserve.log" \
+			/tmp/opl-netfleet-onboarding/*.json /etc/opl-netfleet/policy.json \
+			/etc/nikki/profiles/opl-netfleet/mvp.manifest.json; do
+			[ ! -s "$path" ] || { echo "--- $path" >&2; cat "$path" >&2; }
+		done
+		ps w >&2 || true
+		netstat -lnt >&2 || true
+		tail -n 100 "$fixture/package-manager.log" >&2 || true
+		logread | tail -n 100 >&2 || true
+	fi
+	exit "$rc"
+}
+trap finish EXIT INT TERM
+
+mkdir -p "$candidate"
+tar -C "$candidate" -xf "$archive"
+[ "$(sha256sum "$candidate/manifest.json" | awk '{print $1}')" = "$manifest_sha" ]
+[ "$(jsonfilter -i "$candidate/manifest.json" -e '@.source_commit')" = "$source_commit" ]
+[ "$(jsonfilter -i "$candidate/manifest.json" -e '@.source_tree')" = "$source_tree" ]
+[ "$(jsonfilter -i "$candidate/manifest.json" -e '@.package_format')" = apk ]
+[ "$(jsonfilter -i "$candidate/manifest.json" -e '@.package_arch')" = aarch64_generic ]
+
+runtime_apk=$(ucode -e '
+	import { readfile } from "fs";
+	const manifest = json(readfile(ARGV[0]));
+	print(manifest?.artifact_files?.["opl-netfleet"] ?? "");
+' "$candidate/manifest.json")
+luci_apk=$(ucode -e '
+	import { readfile } from "fs";
+	const manifest = json(readfile(ARGV[0]));
+	print(manifest?.artifact_files?.["luci-app-netfleet"] ?? "");
+' "$candidate/manifest.json")
+case "$runtime_apk $luci_apk" in
+	*/*|*'..'*) exit 1 ;;
+esac
+[ -f "$candidate/$runtime_apk" ]
+[ -f "$candidate/$luci_apk" ]
+[ -s "$candidate/packages.adb" ]
+feed_index_sha=$(jsonfilter -i "$candidate/manifest.json" -e '@.feed_index.sha256')
+[ "$(sha256sum "$candidate/packages.adb" | awk '{print $1}')" = "$feed_index_sha" ]
+for index in 0 1; do
+	name=$(jsonfilter -i "$candidate/manifest.json" -e "@.artifacts[$index].name")
+	expected=$(jsonfilter -i "$candidate/manifest.json" -e "@.artifacts[$index].sha256")
+	[ -f "$candidate/$name" ]
+	[ "$(sha256sum "$candidate/$name" | awk '{print $1}')" = "$expected" ]
+done
+
+stage=install
+real_apk=$(command -v apk)
+[ -x "$real_apk" ]
+PATH="$fixture/bin:$PATH"
+export PATH
+: >"$fixture/package-manager.log"
+printf 'apk_command=%s\n' "$real_apk" >>"$fixture/package-manager.log"
+"$real_apk" list --manifest >"$fixture/package-manifest.before"
+"$real_apk" --timeout 300 update >>"$fixture/package-manager.log" 2>&1 || true
+"$real_apk" --timeout 300 add luci-base >>"$fixture/package-manager.log" 2>&1
+
+# The runtime fixture supplies working Mihomo and yq binaries outside the package
+# database. Expose them at the same standard paths used by an already configured
+# target, then model their package ownership as APK virtual packages. The
+# NetFleet package itself still uses normal dependency and signature checks.
+cp "$fixture/bin/mihomo" /usr/bin/mihomo
+cp "$fixture/bin/yq" /usr/bin/yq
+env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin mihomo -v | grep -Fq 'v1.19.30'
+env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin yq --version | grep -Fq 'v4.53.6'
+"$real_apk" --timeout 300 add --virtual mihomo=1.19.30-r1 \
+	>>"$fixture/package-manager.log" 2>&1
+"$real_apk" --timeout 300 add --virtual yq=4.53.6-r1 \
+	>>"$fixture/package-manager.log" 2>&1
+cp "$candidate/opl-netfleet-apk.pem" /etc/apk/keys/opl-netfleet-apk.pem
+"$real_apk" --timeout 300 add "$candidate/$runtime_apk" "$candidate/$luci_apk" \
+	>>"$fixture/package-manager.log" 2>&1
+
+stage=package_database
+version=$(jsonfilter -i "$candidate/manifest.json" -e '@.package_version')
+release=$(jsonfilter -i "$candidate/manifest.json" -e '@.package_release')
+installed_manifest=$("$real_apk" list --manifest)
+printf '%s\n' "$installed_manifest" >"$fixture/package-manifest.after"
+"$real_apk" info -e opl-netfleet luci-app-netfleet >"$fixture/package-info.after" 2>&1
+printf '%s\n' "$installed_manifest" >>"$fixture/package-manager.log"
+printf '%s\n' "$installed_manifest" | grep -Fqx "opl-netfleet $version-r$release"
+printf '%s\n' "$installed_manifest" | grep -Fqx "luci-app-netfleet $version-r$release"
+rpcd_timeout=$(uci -q get 'rpcd.@rpcd[0].timeout')
+[ "$rpcd_timeout" -ge 300 ]
+
+stage=package_contents
+"$real_apk" info -L opl-netfleet | grep -Fqx 'usr/libexec/opl-netfleet/main.uc'
+"$real_apk" info -L opl-netfleet | grep -Fqx 'usr/share/opl-netfleet/build.json'
+build_identity=/usr/share/opl-netfleet/build.json
+[ "$(jsonfilter -i "$build_identity" -e '@.schema')" = opl-netfleet-package-build.v1 ]
+[ "$(jsonfilter -i "$build_identity" -e '@.version')" = "$version" ]
+[ "$(jsonfilter -i "$build_identity" -e '@.source_commit')" = "$source_commit" ]
+[ "$(jsonfilter -i "$build_identity" -e '@.source_tree')" = "$source_tree" ]
+view_version=$(printf '%s' "$version" | tr '.' '_')
+"$real_apk" info -L luci-app-netfleet | grep -Fqx "www/luci-static/resources/view/netfleet/overview-v${view_version}.js"
+
+stage=installed_bytes
+while read -r expected path extra; do
+	[ -n "$expected" ] || continue
+	[ -z "${extra:-}" ]
+	[ -f "/$path" ]
+	[ "$(sha256sum "/$path" | awk '{print $1}')" = "$expected" ]
+done <"$candidate/FILES.sha256"
+ucode -e '
+	import { readfile } from "fs";
+	const menu = json(readfile(ARGV[0]));
+	exit(menu?.["admin/services/netfleet/overview"]?.action?.path == ARGV[1] ? 0 : 1);
+' /usr/share/luci/menu.d/luci-app-netfleet.json "netfleet/overview-v${view_version}"
+ucode -e '
+	import { readfile } from "fs";
+	const acl = json(readfile(ARGV[0]));
+	exit(acl?.["luci-app-netfleet"]?.description ==
+		"Discover, configure, operate, and restore NetFleet over Nikki" ? 0 : 1);
+' /usr/share/rpcd/acl.d/luci-app-netfleet.json
+
+stage=rpcd
+/usr/libexec/rpcd/opl-netfleet list >"$fixture/package-rpcd-direct.json"
+
+# Package qualification restarts rpcd outside the runtime fixture's PATH, so
+# model the target's real WAN contract in netifd instead of relying on its ubus
+# shim. The VM's host route remains the actual upstream path.
+uci -q delete network.wan || true
+uci set network.wan=interface
+uci set network.wan.proto=none
+uci set network.wan.device=br-lan
+uci commit network
+ifup wan
+wan_ready=false
+for attempt in $(seq 1 20); do
+	if [ "$(ubus call network.interface.wan status 2>/dev/null |
+		jsonfilter -e '@.up' 2>/dev/null || true)" = true ]; then
+		wan_ready=true
+		break
+	fi
+	sleep 1
+done
+[ "$wan_ready" = true ]
+ip -4 route show default | grep -q '^default '
+
+/etc/init.d/rpcd restart >/dev/null 2>&1
+rpc_ready=false
+for attempt in $(seq 1 20); do
+	ubus -v list opl-netfleet >"$fixture/package-rpcd-ubus.txt" 2>/dev/null || true
+	if grep -q onboarding_apply "$fixture/package-rpcd-ubus.txt"; then
+		rpc_ready=true
+		break
+	fi
+	sleep 1
+done
+[ "$rpc_ready" = true ]
+
+stage=onboarding_prepare
+/etc/init.d/opl-netfleet stop >/dev/null 2>&1 || true
+/etc/init.d/opl-netfleet disable >/dev/null 2>&1 || true
+/etc/init.d/nikki stop >/dev/null 2>&1 || true
+rm -f /etc/opl-netfleet/policy.json /etc/opl-netfleet/evidence.json \
+	/var/lib/opl-netfleet/events.json /etc/nikki/profiles/OPL-NetFleet.json \
+	/etc/nikki/profiles/opl-netfleet/mvp.json \
+	/etc/nikki/profiles/opl-netfleet/mvp.manifest.json
+rm -rf "$fixture/package-helper-primary" "$fixture/package-helper-reserve"
+grep -Fq 'www.gstatic.com' /etc/hosts || printf '192.168.1.2 www.gstatic.com\n' >>/etc/hosts
+nft add table ip netfleet_vm_probe
+nft 'add chain ip netfleet_vm_probe output { type nat hook output priority -100; policy accept; }'
+nft add rule ip netfleet_vm_probe output ip daddr 192.168.1.2 tcp dport 443 \
+	dnat to "192.168.1.2:$probe_port"
+"$fixture/bin/netfleet-test-primary" -d "$fixture/package-helper-primary" \
+	-f "$fixture/helper-primary.json" >"$fixture/package-helper-primary.log" 2>&1 &
+"$fixture/bin/netfleet-test-reserve" -d "$fixture/package-helper-reserve" \
+	-f "$fixture/helper-reserve.json" >"$fixture/package-helper-reserve.log" 2>&1 &
+helpers_ready=false
+for attempt in $(seq 1 20); do
+	if curl -fsS --socks5-hostname 127.0.0.1:1081 --connect-timeout 2 --max-time 5 \
+		"$probe_url" >/dev/null && \
+		curl -fsS --socks5-hostname 127.0.0.1:1082 --connect-timeout 2 --max-time 5 \
+			"$probe_url" >/dev/null; then
+		helpers_ready=true
+		break
+	fi
+	[ "$attempt" -lt 20 ] || exit 1
+	sleep 1
+done
+[ "$helpers_ready" = true ]
+cat >/etc/nikki/subscriptions/base.yaml <<'EOF'
+mixed-port: 7890
+tproxy-port: 7892
+allow-lan: true
+external-controller: 0.0.0.0:9090
+secret: netfleet-vm-fixture
+mode: rule
+log-level: info
+ipv6: false
+hosts:
+  www.gstatic.com: 192.168.1.2
+proxies:
+  - name: Base SOCKS
+    type: socks5
+    server: 127.0.0.1
+    port: 1081
+proxy-groups:
+  - name: VM Egress
+    type: select
+    proxies:
+      - Base SOCKS
+      - DIRECT
+rules:
+  - MATCH,VM Egress
+EOF
+cat >/etc/nikki/subscriptions/alpha.yaml <<'EOF'
+proxies:
+  - name: Alpha Japan 01
+    type: socks5
+    server: 127.0.0.1
+    port: 1081
+  - name: Alpha Singapore 01
+    type: socks5
+    server: 127.0.0.1
+    port: 1081
+EOF
+cat >/etc/nikki/subscriptions/beta.yaml <<'EOF'
+proxies:
+  - name: Beta Japan 01
+    type: socks5
+    server: 127.0.0.1
+    port: 1082
+  - name: Beta Singapore 01
+    type: socks5
+    server: 127.0.0.1
+    port: 1082
+EOF
+uci set nikki.config.enabled=1
+uci set nikki.config.profile=subscription:base
+uci set nikki.mixin.api_secret=netfleet-vm-fixture
+uci set nikki.mixin.api_listen=0.0.0.0:9090
+uci set nikki.mixin.allow_lan=1
+uci set nikki.mixin.dns_enabled=1
+uci set nikki.mixin.dns_listen='[::]:1053'
+uci commit nikki
+yq -M -p yaml -o json /etc/nikki/subscriptions/base.yaml >/dev/null
+yq -M -p yaml -o json /etc/nikki/subscriptions/alpha.yaml >/dev/null
+yq -M -p yaml -o json /etc/nikki/subscriptions/beta.yaml >/dev/null
+/etc/init.d/nikki start >/dev/null 2>&1
+runtime_ready=false
+for attempt in $(seq 1 20); do
+	if /etc/init.d/nikki running >/dev/null 2>&1 && \
+		curl -fsS --connect-timeout 2 --max-time 3 \
+			-H 'Authorization: Bearer netfleet-vm-fixture' http://127.0.0.1:9090/version >/dev/null; then
+		runtime_ready=true
+		break
+	fi
+	sleep 1
+done
+[ "$runtime_ready" = true ]
+[ "$(uci -q get nikki.config.enabled)" = 1 ]
+[ "$(uci -q get nikki.config.profile)" = subscription:base ]
+[ -s /etc/nikki/subscriptions/base.yaml ]
+[ -s /etc/nikki/subscriptions/alpha.yaml ]
+[ -s /etc/nikki/subscriptions/beta.yaml ]
+[ ! -e /etc/nikki/profiles/OPL-NetFleet.json ]
+[ ! -e /etc/nikki/profiles/opl-netfleet/mvp.json ]
+[ ! -e /etc/nikki/profiles/opl-netfleet/mvp.manifest.json ]
+
+stage=onboarding_get
+ubus call opl-netfleet onboarding_get '{}' >"$fixture/package-onboarding.json"
+[ "$(jsonfilter -i "$fixture/package-onboarding.json" -e '@.result.required')" = true ]
+[ "$(jsonfilter -i "$fixture/package-onboarding.json" -e '@.result.ready')" = true ]
+revision=$(jsonfilter -i "$fixture/package-onboarding.json" -e '@.result.revision')
+[ -n "$revision" ]
+
+stage=onboarding_apply
+ubus -t 300 call opl-netfleet onboarding_apply \
+	"{\"request\":{\"revision\":\"$revision\",\"confirmed\":true}}" >"$fixture/package-apply.json"
+[ "$(jsonfilter -i "$fixture/package-apply.json" -e '@.result.state')" = active ]
+cat >/etc/opl-netfleet/installed.json <<'EOF'
+{"product_version":"0.0.1","source_commit":"0000000000000000000000000000000000000000","source_tree":"1111111111111111111111111111111111111111"}
+EOF
+ubus call opl-netfleet status '{}' >"$fixture/package-status.json"
+[ "$(jsonfilter -i "$fixture/package-status.json" -e '@.result.build.version')" = "$version" ]
+[ "$(jsonfilter -i "$fixture/package-status.json" -e '@.result.build.source_commit')" = "$source_commit" ]
+[ "$(jsonfilter -i "$fixture/package-status.json" -e '@.result.build.source_tree')" = "$source_tree" ]
+rm -f /etc/opl-netfleet/installed.json
+[ "$(uci -q get nikki.config.profile)" = file:OPL-NetFleet.json ]
+/etc/init.d/opl-netfleet status >/dev/null 2>&1
+
+stage=disable
+ubus call opl-netfleet disable '{}' >"$fixture/package-disable.json"
+[ "$(jsonfilter -i "$fixture/package-disable.json" -e '@.result.state')" = native_profile ]
+[ "$(uci -q get nikki.config.profile)" = subscription:base ]
+/etc/init.d/nikki running >/dev/null 2>&1
+
+stage=uninstall
+"$real_apk" del luci-app-netfleet opl-netfleet >>"$fixture/package-manager.log" 2>&1
+! "$real_apk" info -e opl-netfleet >/dev/null 2>&1
+! "$real_apk" info -e luci-app-netfleet >/dev/null 2>&1
+[ "$(uci -q get nikki.config.profile)" = subscription:base ]
+/etc/init.d/nikki running >/dev/null 2>&1
+[ ! -e /etc/nikki/profiles/OPL-NetFleet.json ]
+[ ! -e /etc/nikki/profiles/opl-netfleet/mvp.json ]
+[ ! -e /etc/nikki/profiles/opl-netfleet/mvp.manifest.json ]
+[ ! -e /usr/libexec/opl-netfleet/main.uc ]
+[ ! -e /usr/share/luci/menu.d/luci-app-netfleet.json ]
+
+stage=complete
+printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_release":"%s","package_format":"apk","package_arch":"aarch64_generic","checks":{"manifest":true,"signing_key":true,"install":true,"package_database":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
+	"$source_commit" "$source_tree" "$manifest_sha" "$version" "$release"

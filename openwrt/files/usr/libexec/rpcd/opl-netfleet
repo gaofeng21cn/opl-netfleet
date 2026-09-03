@@ -1,0 +1,123 @@
+#!/bin/sh
+
+main=/usr/libexec/opl-netfleet/main.uc
+lock=/var/lock/opl-netfleet-deploy.lock
+
+lock_mutation() {
+	exec 9>"$lock"
+	if ! flock -n 9; then
+		printf '%s\n' '{"ok":false,"error":"mutation_busy"}'
+		exit 0
+	fi
+}
+
+respond_owner() {
+	output=$("$@")
+	status=$?
+	if [ -n "$output" ]; then
+		printf '%s\n' "$output"
+	else
+		printf '{"ok":false,"error":"owner_no_response","exit_code":%s}\n' "$status"
+	fi
+	exit 0
+}
+
+enable_current_policy() {
+	lock_mutation
+	if ! compile_output=$(ucode "$main" compile 9>&-); then
+		printf '%s\n' "$compile_output"
+		exit 0
+	fi
+	respond_owner ucode "$main" enable luci 9>&-
+}
+
+select_automatic() {
+	payload=$(cat)
+	capability=$(jsonfilter -s "$payload" -e '@.capability' 2>/dev/null || true)
+	case "$capability" in
+		""|*[!A-Za-z0-9._-]*)
+			printf '%s\n' '{"ok":false,"error":"invalid_capability"}'
+			exit 0
+			;;
+	esac
+	lock_mutation
+	respond_owner ucode "$main" select "$capability" auto luci 9>&-
+}
+
+config_request() {
+	action=$1
+	mutating=$2
+	payload=$(cat)
+	[ "${#payload}" -le 65536 ] || {
+		printf '%s\n' '{"ok":false,"error":"config_request_too_large"}'
+		exit 0
+	}
+	umask 077
+	temporary="/tmp/opl-netfleet-${action}.$$"
+	trap 'rm -f "$temporary"' EXIT INT TERM
+	printf '%s' "$payload" >"$temporary" || {
+		printf '%s\n' '{"ok":false,"error":"config_request_unreadable"}'
+		exit 0
+	}
+	[ "$mutating" = "1" ] && lock_mutation
+	respond_owner ucode "$main" "$action" "$temporary" 9>&-
+}
+
+case "$1" in
+	list)
+		printf '%s\n' '{"onboarding_get":{},"onboarding_apply":{"request":"Table"},"status":{},"events":{},"connections":{},"config_get":{},"config_validate":{"request":"Table"},"config_save":{"request":"Table"},"config_apply":{"request":"Table"},"enable":{},"select_auto":{"capability":"String"},"refresh":{},"disable":{}}'
+		;;
+	call)
+		case "$2" in
+			onboarding_get)
+				respond_owner ucode "$main" onboarding-get
+				;;
+			onboarding_apply)
+				config_request onboarding-apply 1
+				;;
+			status)
+				respond_owner ucode "$main" status
+				;;
+				events)
+					respond_owner ucode "$main" events
+					;;
+				connections)
+					respond_owner ucode "$main" connections
+					;;
+				config_get)
+					exec ucode "$main" config-get
+					;;
+				config_validate)
+					config_request config-validate 0
+					;;
+				config_save)
+					config_request config-save 1
+					;;
+				config_apply)
+					config_request config-apply 1
+					;;
+			enable)
+				enable_current_policy
+				;;
+			select_auto)
+				select_automatic
+				;;
+			refresh)
+				lock_mutation
+				respond_owner ucode "$main" refresh luci 9>&-
+				;;
+			disable)
+				lock_mutation
+				respond_owner ucode "$main" disable luci 9>&-
+				;;
+			*)
+				printf '%s\n' '{"ok":false,"error":"unknown_method"}'
+				exit 0
+				;;
+		esac
+		;;
+	*)
+		printf '%s\n' '{"ok":false,"error":"invalid_rpcd_invocation"}'
+		exit 0
+		;;
+esac

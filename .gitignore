@@ -1,0 +1,13 @@
+.DS_Store
+dist/
+.netfleet-package-build/
+.codegraph/
+__pycache__/
+/log/
+/ui/node_modules/
+/ui/dist/
+/ui/.playwright-cli/
+/ui/*.tsbuildinfo
+
+# Private target topology and device-operation context
+/AGENTS.local.md
