@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet
-PKG_VERSION:=0.4.0
+PKG_VERSION:=0.4.1
 PKG_RELEASE:=1
 PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=OPL NetFleet
@@ -13,6 +13,7 @@ define Package/opl-netfleet
   CATEGORY:=Network
   TITLE:=OPL NetFleet minimal enhancement layer
   DEPENDS:=+ucode +yq +mihomo
+  PKGARCH:=all
 endef
 
 define Package/opl-netfleet/description

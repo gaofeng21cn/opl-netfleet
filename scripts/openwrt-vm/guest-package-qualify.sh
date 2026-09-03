@@ -46,7 +46,8 @@ tar -C "$candidate" -xf "$archive"
 [ "$(jsonfilter -i "$candidate/manifest.json" -e '@.source_commit')" = "$source_commit" ]
 [ "$(jsonfilter -i "$candidate/manifest.json" -e '@.source_tree')" = "$source_tree" ]
 [ "$(jsonfilter -i "$candidate/manifest.json" -e '@.package_format')" = apk ]
-[ "$(jsonfilter -i "$candidate/manifest.json" -e '@.package_arch')" = aarch64_generic ]
+[ "$(jsonfilter -i "$candidate/manifest.json" -e '@.package_arch')" = noarch ]
+[ "$(jsonfilter -i "$candidate/manifest.json" -e '@.build_target_arch')" = aarch64_generic ]
 
 runtime_apk=$(ucode -e '
 	import { readfile } from "fs";
@@ -109,6 +110,10 @@ printf '%s\n' "$installed_manifest" >"$fixture/package-manifest.after"
 printf '%s\n' "$installed_manifest" >>"$fixture/package-manager.log"
 printf '%s\n' "$installed_manifest" | grep -Fqx "opl-netfleet $version-r$release"
 printf '%s\n' "$installed_manifest" | grep -Fqx "luci-app-netfleet $version-r$release"
+for package_name in opl-netfleet luci-app-netfleet; do
+	"$real_apk" list --installed "$package_name" |
+		grep -Eq "^${package_name}-${version}-r${release}[[:space:]]+noarch([[:space:]]|$)"
+done
 rpcd_timeout=$(uci -q get 'rpcd.@rpcd[0].timeout')
 [ "$rpcd_timeout" -ge 300 ]
 
@@ -329,5 +334,5 @@ stage=uninstall
 [ ! -e /usr/share/luci/menu.d/luci-app-netfleet.json ]
 
 stage=complete
-printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_release":"%s","package_format":"apk","package_arch":"aarch64_generic","checks":{"manifest":true,"signing_key":true,"install":true,"package_database":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
+printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_release":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","checks":{"manifest":true,"signing_key":true,"install":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
 	"$source_commit" "$source_tree" "$manifest_sha" "$version" "$release"

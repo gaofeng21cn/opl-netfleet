@@ -114,8 +114,12 @@ if [[ -n "$packages" ]]; then
 import json, sys
 from pathlib import Path
 manifest = json.loads(Path(sys.argv[1]).read_text())
-if manifest.get("package_format") != "apk" or manifest.get("package_arch") != "aarch64_generic":
-    raise SystemExit("openwrt-vm: package candidate must be an aarch64_generic APK set")
+if (
+    manifest.get("package_format") != "apk"
+    or manifest.get("package_arch") != "noarch"
+    or manifest.get("build_target_arch") != "aarch64_generic"
+):
+    raise SystemExit("openwrt-vm: package candidate must be a noarch APK set built for aarch64_generic")
 PY
 	package_archive=$work_dir/package-candidate.tar
 	tar -cf "$package_archive" -C "$packages" .

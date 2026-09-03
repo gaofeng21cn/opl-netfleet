@@ -43,9 +43,11 @@ UCode runtime、rpcd、supervisor、init 脚本和原生 LuCI 页面；它不包
 `policy.json`、`subscriptions.json`、`nikki-mixin.yaml`、`platform.json`、订阅 URL/token、
 节点或任何目标设备秘密。官方 OpenWrt SDK 解压后只需生成目标构建配置；原生 LuCI
 静态文件由标准 OpenWrt `package.mk` 显式安装，不下载或扫描 feeds。再使用打包入口
-构建两个 package 及其带 source commit/tree、目标架构和 SHA-256 的
+构建两个 package 及其带 source commit/tree、实际 package 架构、SDK 构建目标和 SHA-256 的
 manifest；没有 SDK 时脚本会失败，不会生成伪包。25.12/APK SDK 必须提供本机
-APK 私钥，构建器会启用逐包签名并只把公钥放入发布目录；私钥不会进入输出：
+APK 私钥，构建器会启用逐包签名并只把公钥放入发布目录；私钥不会进入输出。两个包都只含
+脚本、配置和静态资源，发布 APK 的实际架构为 `noarch`，可安装到不同 CPU 架构；
+`build_target_arch` 只记录构建所用 SDK 目标：
 
 ```bash
 scripts/prepare-openwrt-sdk.sh --sdk /path/to/openwrt-sdk
@@ -64,7 +66,7 @@ scripts/netfleet-package-build.sh --sdk /path/to/openwrt-sdk \
 Release 的两个 APK 作为一次事务覆盖安装：
 
 ```sh
-apk add --upgrade ./opl-netfleet-0.3.1-r1.apk ./luci-app-netfleet-0.3.1-r1.apk
+apk add --upgrade ./opl-netfleet-0.4.1-r1.apk ./luci-app-netfleet-0.4.1-r1.apk
 ```
 
 APK Release 同时提供签名的 `packages.adb`。将稳定的 latest feed 写入设备一次后，
@@ -109,10 +111,10 @@ scripts/deploy-openwrt.sh <ssh-target> --ref v0.3.0 --release v0.3.0 \
   --instance /private/path/deployment-bundle
 ```
 
-`--packages` 与 `--release` 互斥；发布目录必须包含 manifest、两个同一架构的
+`--packages` 与 `--release` 互斥；发布目录必须包含 manifest、两个同一 package 架构的
 `.apk`/`.ipk` 和 `FILES.sha256`。入口会校验 source commit/tree、包摘要、运行时
 摘要和 APK 公钥；APK 目标还会回读 `apk --print-arch`，架构不匹配时在触碰 Nikki
-数据面前拒绝。发布包路径只传两个包、manifest、公钥和 deployment bundle，不再传重复的
+数据面前拒绝；`noarch` 包兼容任意目标架构。发布包路径只传两个包、manifest、公钥和 deployment bundle，不再传重复的
 runtime tar；旧的 Git bundle 路径继续作为兼容回退。
 
 部署器会在 stderr 输出 `prepare_elapsed_ms`、

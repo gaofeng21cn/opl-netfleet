@@ -326,6 +326,17 @@ if package_format not in {"apk", "ipk"}:
 arch = manifest.get("package_arch")
 if not isinstance(arch, str) or not re.fullmatch(r"[A-Za-z0-9_.+-]+", arch):
     raise SystemExit("deploy-openwrt: package architecture is invalid")
+legacy_versions = {"0.2.0", "0.3.0", "0.3.1", "0.3.2", "0.3.3", "0.4.0"}
+build_target_arch = manifest.get("build_target_arch")
+if build_target_arch is None and manifest.get("package_version") not in legacy_versions:
+    raise SystemExit("deploy-openwrt: package build target architecture is missing")
+if build_target_arch is not None and (
+    not isinstance(build_target_arch, str)
+    or not re.fullmatch(r"[A-Za-z0-9_.+-]+", build_target_arch)
+):
+    raise SystemExit("deploy-openwrt: package build target architecture is invalid")
+if package_format == "apk" and manifest.get("package_version") not in legacy_versions and arch != "noarch":
+    raise SystemExit("deploy-openwrt: release APK architecture must be noarch")
 required = []
 for field in ("files_manifest",):
     value = manifest.get(field)
@@ -349,7 +360,7 @@ if package_format == "apk":
         if not isinstance(feed_index, dict) or feed_index.get("name") != "packages.adb":
             raise SystemExit("deploy-openwrt: APK release feed index identity is invalid")
         required.append(feed_index)
-    elif manifest.get("package_version") not in {"0.2.0", "0.3.0", "0.3.1", "0.3.2", "0.3.3", "0.4.0"}:
+    elif manifest.get("package_version") not in legacy_versions:
         raise SystemExit("deploy-openwrt: APK release is missing packages.adb feed index")
 elif key is not None:
     raise SystemExit("deploy-openwrt: IPK release must not declare an APK key")
@@ -364,7 +375,7 @@ for item in required:
     if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
         raise SystemExit(f"deploy-openwrt: package artifact identity mismatch: {name}")
     names.add(name)
-print(f"format={package_format} arch={arch}")
+print(f"format={package_format} arch={arch} build_target={build_target_arch or 'legacy'}")
 PY
 	) || exit 1
 	release_mode=package

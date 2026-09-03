@@ -21,8 +21,8 @@ def sha256(path: Path) -> str:
 
 def write_release(directory: Path, commit: str, tree: str) -> None:
     packages = {
-        'opl-netfleet': 'opl-netfleet-0.2.0-r1.apk',
-        'luci-app-netfleet': 'luci-app-netfleet-0.2.0-r1.apk',
+        'opl-netfleet': 'opl-netfleet-0.4.1-r1.apk',
+        'luci-app-netfleet': 'luci-app-netfleet-0.4.1-r1.apk',
     }
     artifacts = []
     for package, name in packages.items():
@@ -44,10 +44,11 @@ def write_release(directory: Path, commit: str, tree: str) -> None:
         'schema': 'opl-netfleet-package-manifest.v2',
         'source_commit': commit,
         'source_tree': tree,
-        'package_version': '0.2.0',
+        'package_version': '0.4.1',
         'package_release': '1',
         'package_format': 'apk',
-        'package_arch': 'aarch64_generic',
+        'package_arch': 'noarch',
+        'build_target_arch': 'aarch64_generic',
         'policy_schema': 2,
         'runtime_payload_sha256': '1' * 64,
         'files_manifest': {'name': files_manifest.name, 'sha256': sha256(files_manifest)},
@@ -100,11 +101,13 @@ class ReleaseToolsTests(unittest.TestCase):
     def test_package_sources_are_versioned_and_do_not_embed_instance_inputs(self):
         runtime = (ROOT / 'openwrt/Makefile').read_text()
         luci = (ROOT / 'openwrt/luci-app-netfleet/Makefile').read_text()
-        self.assertIn('PKG_VERSION:=0.4.0', runtime)
+        self.assertIn('PKG_VERSION:=0.4.1', runtime)
         self.assertIn('PKG_RELEASE:=1', runtime)
         self.assertIn('PKG_LICENSE:=Apache-2.0', runtime)
         self.assertIn('PKG_MAINTAINER:=OPL NetFleet', runtime)
-        self.assertIn('PKG_VERSION:=0.4.0', luci)
+        self.assertIn('PKGARCH:=all', runtime)
+        self.assertIn('PKG_VERSION:=0.4.1', luci)
+        self.assertIn('PKGARCH:=all', luci)
         self.assertIn('include $(INCLUDE_DIR)/package.mk', luci)
         self.assertNotIn('feeds/luci/luci.mk', luci)
         self.assertIn('Package/luci-app-netfleet/install', luci)
@@ -124,6 +127,9 @@ class ReleaseToolsTests(unittest.TestCase):
         self.assertIn('opl-netfleet-package-build.v1', packager)
         self.assertIn('/usr/share/opl-netfleet/build.json', runtime)
         self.assertIn("'runtime_payload_sha256':runtime_payload_sha256", packager)
+        self.assertIn("'package_arch':package_arch", packager)
+        self.assertIn("'build_target_arch':build_target_arch", packager)
+        self.assertIn('opl-netfleet-${version}-r${release}.apk', packager)
         for path in (ROOT / 'scripts/netfleet-package-build.sh', ROOT / 'openwrt/Makefile', ROOT / 'openwrt/luci-app-netfleet/Makefile'):
             text = path.read_text()
             self.assertNotIn('subscriptions.json', text)
@@ -194,7 +200,7 @@ class ReleaseToolsTests(unittest.TestCase):
             readback = Path(second)
             write_release(built, commit, tree)
             write_release(readback, commit, tree)
-            (readback / 'opl-netfleet-0.2.0-r1.apk').write_text('changed\n')
+            (readback / 'opl-netfleet-0.4.1-r1.apk').write_text('changed\n')
             result = subprocess.run(
                 [
                     str(VERIFIER),
@@ -236,6 +242,34 @@ class ReleaseToolsTests(unittest.TestCase):
             (release / 'manifest.json').write_text(json.dumps(manifest) + '\n')
             result = subprocess.run([str(VERIFIER), '--directory', str(release), '--source-commit', 'a' * 40, '--source-tree', 'b' * 40], text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_release_verifier_rejects_current_release_without_build_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            release = Path(directory)
+            write_release(release, 'a' * 40, 'b' * 40)
+            manifest = json.loads((release / 'manifest.json').read_text())
+            manifest.pop('build_target_arch')
+            (release / 'manifest.json').write_text(json.dumps(manifest) + '\n')
+            result = subprocess.run(
+                [str(VERIFIER), '--directory', str(release), '--source-commit', 'a' * 40, '--source-tree', 'b' * 40],
+                text=True, capture_output=True, check=False,
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('build target architecture is missing', result.stderr)
+
+    def test_release_verifier_rejects_current_native_arch_apk(self):
+        with tempfile.TemporaryDirectory() as directory:
+            release = Path(directory)
+            write_release(release, 'a' * 40, 'b' * 40)
+            manifest = json.loads((release / 'manifest.json').read_text())
+            manifest['package_arch'] = 'aarch64_generic'
+            (release / 'manifest.json').write_text(json.dumps(manifest) + '\n')
+            result = subprocess.run(
+                [str(VERIFIER), '--directory', str(release), '--source-commit', 'a' * 40, '--source-tree', 'b' * 40],
+                text=True, capture_output=True, check=False,
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('APK architecture must be noarch', result.stderr)
 
     def test_release_workflow_builds_a_candidate_without_publishing(self):
         workflow = WORKFLOW.read_text()

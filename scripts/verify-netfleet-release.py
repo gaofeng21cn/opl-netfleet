@@ -14,6 +14,7 @@ import sys
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 PACKAGE_NAMES = {"opl-netfleet", "luci-app-netfleet"}
+LEGACY_PACKAGE_VERSIONS = {"0.2.0", "0.3.0", "0.3.1", "0.3.2", "0.3.3", "0.4.0"}
 
 
 def fail(message: str) -> None:
@@ -61,8 +62,22 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
     package_format = manifest.get("package_format")
     if package_format not in {"apk", "ipk"}:
         fail("release package format is unsupported")
-    if not isinstance(manifest.get("package_arch"), str) or not manifest["package_arch"]:
+    package_arch = manifest.get("package_arch")
+    if not isinstance(package_arch, str) or not package_arch:
         fail("release package architecture is missing")
+    build_target_arch = manifest.get("build_target_arch")
+    if build_target_arch is None and manifest.get("package_version") not in LEGACY_PACKAGE_VERSIONS:
+        fail("release build target architecture is missing")
+    if build_target_arch is not None and (
+        not isinstance(build_target_arch, str) or not build_target_arch
+    ):
+        fail("release build target architecture is invalid")
+    if (
+        package_format == "apk"
+        and manifest.get("package_version") not in LEGACY_PACKAGE_VERSIONS
+        and package_arch != "noarch"
+    ):
+        fail("release APK architecture must be noarch")
     require_digest(manifest.get("runtime_payload_sha256"), "runtime payload identity")
 
     artifacts = manifest.get("artifacts")
@@ -113,7 +128,7 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
         index_path = files.get("packages.adb")
         if index_path is None or require_digest(feed_index.get("sha256"), "packages.adb") != digest(index_path):
             fail("packages.adb bytes do not match manifest")
-    elif package_format == "apk" and manifest.get("package_version") not in {"0.2.0", "0.3.0", "0.3.1", "0.3.2", "0.3.3", "0.4.0"}:
+    elif package_format == "apk" and manifest.get("package_version") not in LEGACY_PACKAGE_VERSIONS:
         fail("APK release is missing packages.adb feed index")
     elif package_format != "apk" and feed_index is not None:
         fail("IPK release must not declare an APK feed index")
@@ -131,7 +146,8 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
         "source_commit": source_commit,
         "source_tree": source_tree,
         "package_format": package_format,
-        "package_arch": manifest["package_arch"],
+        "package_arch": package_arch,
+        "build_target_arch": build_target_arch,
         "file_count": len(files),
     }
 

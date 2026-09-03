@@ -196,7 +196,7 @@ class DeployOpenWrtTests(unittest.TestCase):
             with (release / "FILES.sha256").open("w") as stream:
                 for path in sorted(item for item in payload.rglob("*") if item.is_file()):
                     stream.write(f"{sha256(path)}  {path.relative_to(payload)}\n")
-            for name in ("opl-netfleet_0.2.0-r1.apk", "luci-app-netfleet_0.2.0-r1.apk"):
+            for name in ("opl-netfleet_0.4.1-r1.apk", "luci-app-netfleet_0.4.1-r1.apk"):
                 (release / name).write_text(name + "\n")
             (release / "opl-netfleet-apk.pem").write_text("test-public-key\n")
             (release / "packages.adb").write_bytes(b"test-feed-index\n")
@@ -214,20 +214,21 @@ class DeployOpenWrtTests(unittest.TestCase):
                 "schema": "opl-netfleet-package-manifest.v2",
                 "source_commit": commit,
                 "source_tree": tree,
-                "package_version": "0.2.0",
+                "package_version": "0.4.1",
                 "package_release": "1",
                 "package_format": "apk",
-                "package_arch": "aarch64_generic",
+                "package_arch": "noarch",
+                "build_target_arch": "aarch64_generic",
                 "policy_schema": 2,
                 "runtime_payload_sha256": runtime_digest,
                 "files_manifest": {"name": "FILES.sha256", "sha256": sha256(release / "FILES.sha256")},
                 "artifact_files": {
-                    "opl-netfleet": "opl-netfleet_0.2.0-r1.apk",
-                    "luci-app-netfleet": "luci-app-netfleet_0.2.0-r1.apk",
+                    "opl-netfleet": "opl-netfleet_0.4.1-r1.apk",
+                    "luci-app-netfleet": "luci-app-netfleet_0.4.1-r1.apk",
                 },
                 "artifacts": [
-                    {"package": "opl-netfleet", "name": "opl-netfleet_0.2.0-r1.apk", "sha256": sha256(release / "opl-netfleet_0.2.0-r1.apk"), "size": (release / "opl-netfleet_0.2.0-r1.apk").stat().st_size},
-                    {"package": "luci-app-netfleet", "name": "luci-app-netfleet_0.2.0-r1.apk", "sha256": sha256(release / "luci-app-netfleet_0.2.0-r1.apk"), "size": (release / "luci-app-netfleet_0.2.0-r1.apk").stat().st_size},
+                    {"package": "opl-netfleet", "name": "opl-netfleet_0.4.1-r1.apk", "sha256": sha256(release / "opl-netfleet_0.4.1-r1.apk"), "size": (release / "opl-netfleet_0.4.1-r1.apk").stat().st_size},
+                    {"package": "luci-app-netfleet", "name": "luci-app-netfleet_0.4.1-r1.apk", "sha256": sha256(release / "luci-app-netfleet_0.4.1-r1.apk"), "size": (release / "luci-app-netfleet_0.4.1-r1.apk").stat().st_size},
                 ],
                 "apk_public_key": {"name": "opl-netfleet-apk.pem", "sha256": sha256(release / "opl-netfleet-apk.pem")},
                 "feed_index": {"name": "packages.adb", "sha256": sha256(release / "packages.adb")},
@@ -241,7 +242,7 @@ class DeployOpenWrtTests(unittest.TestCase):
         receipt = json.loads(result.stdout)
         self.assertEqual("package", receipt["release_mode"])
         self.assertEqual("apk", receipt["release_format"])
-        self.assertIn("format=apk arch=aarch64_generic", result.stderr)
+        self.assertIn("format=apk arch=noarch build_target=aarch64_generic", result.stderr)
 
     def test_host_activation_requires_matching_vm_qualification(self):
         commit = subprocess.check_output(
@@ -724,7 +725,7 @@ class DeployOpenWrtTests(unittest.TestCase):
             import sys
 
             if sys.argv[1:] == ["--print-arch"]:
-                print("aarch64_generic")
+                print(os.environ.get("FAKE_APK_ARCH", "aarch64"))
                 sys.exit(0)
             if "add" not in sys.argv:
                 sys.exit(1)
@@ -1139,8 +1140,8 @@ esac
     def _make_package_bundle(self):
         payload = self.base / "payload"
         package_files = {
-            "opl-netfleet": "opl-netfleet_0.2.0-r1.apk",
-            "luci-app-netfleet": "luci-app-netfleet_0.2.0-r1.apk",
+            "opl-netfleet": "opl-netfleet_0.4.1-r1.apk",
+            "luci-app-netfleet": "luci-app-netfleet_0.4.1-r1.apk",
         }
         for name in package_files.values():
             (self.bundle / name).write_text(name + "\n")
@@ -1152,10 +1153,11 @@ esac
             "schema": "opl-netfleet-package-manifest.v2",
             "source_commit": manifest["source_commit"],
             "source_tree": manifest["source_tree"],
-            "package_version": "0.2.0",
+            "package_version": "0.4.1",
             "package_release": "1",
             "package_format": "apk",
-            "package_arch": "aarch64_generic",
+            "package_arch": "noarch",
+            "build_target_arch": "aarch64_generic",
             "policy_schema": 2,
             "runtime_payload_sha256": manifest["runtime_payload_sha256"],
             "files_manifest": {"name": "FILES.sha256", "sha256": sha256(self.bundle / "FILES.sha256")},
@@ -1223,6 +1225,7 @@ esac
         presentation_only: bool = False,
         stage_only: bool = False,
         instance: bool = False,
+        apk_arch: str = "aarch64",
     ):
         env = os.environ.copy()
         env.update({
@@ -1233,6 +1236,7 @@ esac
             "OPL_NETFLEET_DEPLOY_ROOT": str(self.device),
             "OPL_NETFLEET_DEPLOY_TESTING": "1",
             "FAKE_PACKAGE_CANDIDATE": str(self.base / "payload"),
+            "FAKE_APK_ARCH": apk_arch,
         })
         if fail_action:
             env["FAKE_FAIL_ACTION"] = fail_action
@@ -1270,6 +1274,12 @@ esac
         with (self.bundle / "SHA256SUMS").open("w") as stream:
             for name in names:
                 stream.write(f"{sha256(self.bundle / name)}  {name}\n")
+
+    def _rewrite_package_manifest(self, **changes):
+        manifest = json.loads((self.bundle / "package-manifest.json").read_text())
+        manifest.update(changes)
+        (self.bundle / "package-manifest.json").write_text(json.dumps(manifest) + "\n")
+        self._rewrite_bundle_manifest()
 
     def _profile(self) -> str:
         return json.loads((self.device / "etc/config/nikki").read_text()).get("config.profile", "")
@@ -1462,13 +1472,40 @@ esac
 
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
         self.assertEqual(
-            ["opl-netfleet_0.2.0-r1.apk luci-app-netfleet_0.2.0-r1.apk"],
+            ["opl-netfleet_0.4.1-r1.apk luci-app-netfleet_0.4.1-r1.apk"],
             (self.state / "package-actions").read_text().splitlines(),
         )
         self.assertEqual("new-main\n", (self.device / "usr/libexec/opl-netfleet/main.uc").read_text())
         self.assertTrue((self.device / "etc/apk/keys/opl-netfleet-apk.pem").is_file())
         installed = json.loads((self.device / "etc/opl-netfleet/installed.json").read_text())
         self.assertEqual("package", installed["release_mode"])
+
+    def test_legacy_aarch64_generic_package_accepts_aarch64_target(self):
+        self._make_package_bundle()
+        self._rewrite_package_manifest(
+            package_version="0.4.0",
+            package_arch="aarch64_generic",
+            build_target_arch=None,
+        )
+
+        result = self._run(apk_arch="aarch64")
+
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+
+    def test_native_package_arch_mismatch_is_rejected_before_install(self):
+        self._make_package_bundle()
+        self._rewrite_package_manifest(
+            package_version="0.4.0",
+            package_arch="x86_64",
+            build_target_arch=None,
+        )
+
+        result = self._run(apk_arch="aarch64")
+
+        self.assertNotEqual(0, result.returncode)
+        receipt = json.loads(result.stdout)
+        self.assertEqual("package_arch_mismatch", receipt["error"])
+        self.assertEqual([], (self.state / "package-actions").read_text().splitlines())
 
     def test_fresh_device_default_stage_does_not_enable_netfleet(self):
         self._make_fresh_device()

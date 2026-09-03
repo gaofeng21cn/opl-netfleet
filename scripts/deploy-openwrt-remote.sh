@@ -642,6 +642,7 @@ install_release_packages() {
 		command -v apk >/dev/null 2>&1 || { error_code=package_manager_unavailable; return 1; }
 		target_arch=$(apk --print-arch 2>/dev/null || true)
 		arch_compatible=false
+		[ "$package_arch" = "noarch" ] && arch_compatible=true
 		[ "$target_arch" = "$package_arch" ] && arch_compatible=true
 		[ "$package_arch" = "aarch64_generic" ] && [ "$target_arch" = "aarch64" ] && arch_compatible=true
 		[ "$arch_compatible" = true ] || { error_code=package_arch_mismatch; error_detail=$target_arch; return 1; }

@@ -109,5 +109,6 @@ jobs:
               "source_tree": manifest["source_tree"],
               "package_version": manifest["package_version"],
               "package_arch": manifest["package_arch"],
+              "build_target_arch": manifest["build_target_arch"],
           }, sort_keys=True))
           PY
