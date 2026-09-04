@@ -15,6 +15,7 @@ probe_url=https://netfleet-probe.test:$probe_port/generate_204
 supervisor_pid=""
 helper_primary_pid=""
 helper_reserve_pid=""
+probe_relay_pid=""
 stage=bootstrap
 
 cleanup() {
@@ -23,6 +24,7 @@ cleanup() {
 	/etc/init.d/nikki stop >/dev/null 2>&1
 	[ -z "$helper_primary_pid" ] || kill "$helper_primary_pid" >/dev/null 2>&1
 	[ -z "$helper_reserve_pid" ] || kill "$helper_reserve_pid" >/dev/null 2>&1
+	[ -z "$probe_relay_pid" ] || kill "$probe_relay_pid" >/dev/null 2>&1
 }
 finish() {
 	rc=$?
@@ -61,7 +63,7 @@ PATH="$bin:$PATH"
 export PATH
 
 ip route replace default via 192.168.1.2 dev br-lan
-grep -Fq 'netfleet-probe.test' /etc/hosts || printf '192.168.1.2 netfleet-probe.test\n' >>/etc/hosts
+grep -Fq 'netfleet-probe.test' /etc/hosts || printf '192.168.1.2 netfleet-probe.test\n127.0.0.1 www.gstatic.com\n' >>/etc/hosts
 /etc/init.d/dnsmasq restart
 printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
 stage=install_dependencies
@@ -73,14 +75,15 @@ for dependency_attempt in 1 2 3; do
 	package_result=true
 	if command -v apk >/dev/null 2>&1; then
 		apk --timeout 300 update >>"$work/package-manager.log" 2>&1 || true
-		apk --timeout 300 add curl flock coreutils-date >>"$work/package-manager.log" 2>&1 || package_result=false
+		apk --timeout 300 add curl flock coreutils-date socat >>"$work/package-manager.log" 2>&1 || package_result=false
 	else
 		opkg update >>"$work/package-manager.log" 2>&1 || true
-		opkg install curl flock coreutils-date >>"$work/package-manager.log" 2>&1 || package_result=false
+		opkg install curl flock coreutils-date socat >>"$work/package-manager.log" 2>&1 || package_result=false
 	fi
 	if [ "$package_result" = true ] &&
 		command -v curl >/dev/null 2>&1 &&
 		command -v flock >/dev/null 2>&1 &&
+		command -v socat >/dev/null 2>&1 &&
 		date +%s%3N >/dev/null 2>&1; then
 		dependencies_installed=true
 		break
@@ -91,6 +94,9 @@ done
 cat /tmp/local-probe.crt >>/etc/ssl/certs/ca-certificates.crt
 SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 export SSL_CERT_FILE
+socat TCP-LISTEN:443,bind=127.0.0.1,reuseaddr,fork TCP:192.168.1.2:"$probe_port" \
+	>"$work/probe-relay.log" 2>&1 &
+probe_relay_pid=$!
 
 stage=install_runtime_decompress
 gzip -dc /tmp/mihomo-linux-arm64-v1.19.30.gz >"$bin/mihomo"
@@ -308,10 +314,10 @@ cat >"$work/manual-policy.json" <<EOF
 EOF
 
 cat >"$work/helper-primary.json" <<'EOF'
-{"socks-port":1081,"mode":"rule","log-level":"silent","ipv6":false,"hosts":{"netfleet-probe.test":"192.168.1.2"},"rules":["MATCH,DIRECT"]}
+{"socks-port":1081,"mode":"rule","log-level":"silent","ipv6":false,"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"127.0.0.1"},"rules":["MATCH,DIRECT"]}
 EOF
 cat >"$work/helper-reserve.json" <<'EOF'
-{"socks-port":1082,"mode":"rule","log-level":"silent","ipv6":false,"hosts":{"netfleet-probe.test":"192.168.1.2"},"rules":["MATCH,DIRECT"]}
+{"socks-port":1082,"mode":"rule","log-level":"silent","ipv6":false,"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"127.0.0.1"},"rules":["MATCH,DIRECT"]}
 EOF
 cat >"$work/runtime-owner.uc" <<'EOF'
 import { readfile, writefile } from "fs";
