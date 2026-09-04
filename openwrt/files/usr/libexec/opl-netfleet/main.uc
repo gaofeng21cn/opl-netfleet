@@ -2124,7 +2124,8 @@ function run_refresh_selection(requested) {
 	const trigger = requested == "scheduled" ? "scheduled" : "refresh";
 	const initiator = event_initiator(requested, requested == "scheduled" ? "scheduled" : null);
 	const output = `${REFRESH_DIR}/selection.json`;
-	const exit_code = system(`ucode ${shell_quote(MAIN_PATH)} maintain ${shell_quote(trigger)} ${shell_quote(initiator)} >${shell_quote(output)} 2>&1`);
+	const error_output = `${REFRESH_DIR}/selection.stderr`;
+	const exit_code = system(`ucode ${shell_quote(MAIN_PATH)} maintain ${shell_quote(trigger)} ${shell_quote(initiator)} >${shell_quote(output)} 2>${shell_quote(error_output)}`);
 	const response = read_json(output);
 	return {
 		ok: exit_code == 0 && response?.ok == true,
