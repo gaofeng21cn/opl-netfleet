@@ -92,7 +92,7 @@ function diagnostic(path) {
 		push(lines, trim(line));
 	}
 	process.close();
-	return length(lines) > 0 ? join(lines, "\n") : null;
+	return length(lines) > 0 ? join("\n", lines) : null;
 };
 
 function run_owner(action) {
@@ -102,7 +102,7 @@ function run_owner(action) {
 	const response = read_json(output);
 	return { ok: exit_code == 0 && response?.ok == true, response: response,
 		error: response?.error ?? `${action}_failed`, exit_code: exit_code,
-		diagnostic: response == null ? (diagnostic(error_output) ?? diagnostic(output)) : null };
+		diagnostic: response == null ? { stderr: diagnostic(error_output), stdout: diagnostic(output) } : null };
 };
 
 function cleanup(found, snapshot) {

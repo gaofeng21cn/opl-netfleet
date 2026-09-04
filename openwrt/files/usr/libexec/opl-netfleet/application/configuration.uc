@@ -162,7 +162,7 @@ function diagnostic(path) {
 		push(lines, trim(line));
 	}
 	process.close();
-	return length(lines) > 0 ? join(lines, "\n") : null;
+	return length(lines) > 0 ? join("\n", lines) : null;
 };
 
 function run_owner(action) {
@@ -172,7 +172,7 @@ function run_owner(action) {
 	const response = read_json(output);
 	return { ok: exit_code == 0 && response?.ok == true, exit_code: exit_code, response: response,
 		error: response?.error ?? (exit_code == 0 ? "owner_readback_failed" : `${action}_failed`),
-		diagnostic: response == null ? (diagnostic(error_output) ?? diagnostic(output)) : null };
+		diagnostic: response == null ? { stderr: diagnostic(error_output), stdout: diagnostic(output) } : null };
 };
 
 function cleanup_snapshot() {
