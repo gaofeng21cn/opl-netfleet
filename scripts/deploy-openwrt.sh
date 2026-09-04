@@ -564,7 +564,8 @@ while read -r expected path extra; do
 	case "$path" in
 		www/luci-static/resources/netfleet/*|\
 		www/luci-static/resources/view/netfleet/*|\
-		usr/share/luci/menu.d/luci-app-netfleet.json)
+		usr/share/luci/menu.d/luci-app-netfleet.json|\
+		usr/share/rpcd/acl.d/luci-app-netfleet.json)
 			continue
 			;;
 	esac

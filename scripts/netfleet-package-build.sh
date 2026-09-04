@@ -117,7 +117,7 @@ while read -r expected path extra; do
   [[ -n "$expected" ]] || continue
   [[ -z "${extra:-}" ]] || die "invalid payload manifest entry: $path"
   case "$path" in
-    www/luci-static/resources/netfleet/*|www/luci-static/resources/view/netfleet/*|usr/share/luci/menu.d/luci-app-netfleet.json) continue ;;
+    www/luci-static/resources/netfleet/*|www/luci-static/resources/view/netfleet/*|usr/share/luci/menu.d/luci-app-netfleet.json|usr/share/rpcd/acl.d/luci-app-netfleet.json) continue ;;
   esac
   printf '%s  %s\n' "$expected" "$path" >>"$runtime_files_manifest"
 done <"$files_manifest"

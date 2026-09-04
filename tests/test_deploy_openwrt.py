@@ -207,6 +207,7 @@ class DeployOpenWrtTests(unittest.TestCase):
                     "www/luci-static/resources/view/netfleet/overview.js",
                     "www/luci-static/resources/view/netfleet/log.js",
                     "usr/share/luci/menu.d/luci-app-netfleet.json",
+                    "usr/share/rpcd/acl.d/luci-app-netfleet.json",
                 }:
                     runtime_lines.append(line)
             runtime_digest = hashlib.sha256(("\n".join(runtime_lines) + "\n").encode()).hexdigest()
@@ -1062,6 +1063,9 @@ esac
         (payload / "www/luci-static/resources/view/netfleet/overview.js").write_text(
             "updated-view\n"
         )
+        (payload / "usr/share/rpcd/acl.d/luci-app-netfleet.json").write_text(
+            '{"presentation":true}\n'
+        )
         with (self.bundle / "FILES.sha256").open("w") as stream:
             for path in sorted(item for item in payload.rglob("*") if item.is_file()):
                 stream.write(f"{sha256(path)}  {path.relative_to(payload)}\n")
@@ -1835,6 +1839,10 @@ esac
         self.assertEqual(
             "updated-view\n",
             (self.device / "www/luci-static/resources/view/netfleet/overview.js").read_text(),
+        )
+        self.assertEqual(
+            '{"presentation":true}\n',
+            (self.device / "usr/share/rpcd/acl.d/luci-app-netfleet.json").read_text(),
         )
         after = (self.state / "actions").read_text().splitlines()
         self.assertEqual(before.count("disable"), after.count("disable"))
