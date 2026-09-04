@@ -1749,6 +1749,7 @@ esac
         self.assertEqual("300", json.loads((self.device / "etc/config/uhttpd").read_text())["main.script_timeout"])
         self.assertEqual("file:OPL-NetFleet.json", self._profile())
         self.assertEqual(["restart"], (self.state / "rpcd-actions").read_text().splitlines())
+        self.assertEqual(["restart"], (self.state / "uhttpd-actions").read_text().splitlines())
         before = (self.state / "actions").read_text().splitlines()
         self.assertEqual(2, before.count("probe"))
 

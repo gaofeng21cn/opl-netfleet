@@ -439,6 +439,7 @@ uhttpd_timeout_ready() {
 
 ensure_rpc_timeouts() {
 	timeout_changed=false
+	uhttpd_timeout_changed=false
 	if ! rpcd_timeout_ready; then
 		uci set rpcd.@rpcd[0].timeout=300 >/dev/null 2>&1 || return 1
 		uci commit rpcd >/dev/null 2>&1 || return 1
@@ -447,6 +448,7 @@ ensure_rpc_timeouts() {
 	if ! uhttpd_timeout_ready; then
 		uci set uhttpd.main.script_timeout=300 >/dev/null 2>&1 || return 1
 		uci commit uhttpd >/dev/null 2>&1 || return 1
+		uhttpd_timeout_changed=true
 		timeout_changed=true
 	fi
 	if [ "$timeout_changed" = true ]; then
@@ -511,7 +513,11 @@ ensure_rpcd_surface() {
 	for attempt in 1 2 3 4; do
 		if ubus call system board >/dev/null 2>&1 && rpcd_timeout_ready && uhttpd_timeout_ready && rpcd_surface_ready; then
 			local_surface_ready=true
-			luci_http_surface_ready && return 0
+			if luci_http_surface_ready; then
+				[ "$uhttpd_timeout_changed" = true ] || return 0
+				restart_uhttpd_for_rpc
+				return $?
+			fi
 			break
 		fi
 		[ "$attempt" -eq 4 ] || sleep 1
