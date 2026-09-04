@@ -416,7 +416,7 @@ rpcd_surface_ready() {
 	printf '%s\n' "$luci_methods" | grep -q '"getFeatures":' || return 1
 
 	methods=$(ubus -v list opl-netfleet 2>/dev/null || true)
-	for method in status events connections config_get config_validate config_save config_apply enable select_auto refresh disable; do
+	for method in status events connections probe config_get config_validate config_save config_apply enable select_auto refresh disable; do
 		printf '%s\n' "$methods" | grep -q "\"$method\":" || return 1
 	done
 }

@@ -244,8 +244,10 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertIn('ucode "$main" disable luci 9>&-', rpcd)
         self.assertIn('"onboarding_get":{}', rpcd)
         self.assertIn('"onboarding_apply":{"request":"Table"}', rpcd)
+        self.assertIn('"probe":{}', rpcd)
         self.assertIn('config_request onboarding-apply 1', rpcd)
         self.assertIn('respond_owner ucode "$main" onboarding-get', rpcd)
+        self.assertIn('respond_owner ucode "$main" probe', rpcd)
         self.assertIn('respond_owner ucode "$main" enable luci 9>&-', rpcd)
         self.assertIn('"owner_no_response"', rpcd)
         self.assertNotIn("exit 1", rpcd)
@@ -303,6 +305,10 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertEqual(
             ["profile"],
             acl["luci-app-netfleet"]["read"]["ubus"]["luci.nikki"],
+        )
+        self.assertIn(
+            "probe",
+            acl["luci-app-netfleet"]["read"]["ubus"]["opl-netfleet"],
         )
 
         native_style = (

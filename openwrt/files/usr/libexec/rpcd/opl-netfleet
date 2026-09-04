@@ -65,7 +65,7 @@ config_request() {
 
 case "$1" in
 	list)
-		printf '%s\n' '{"onboarding_get":{},"onboarding_apply":{"request":"Table"},"status":{},"events":{},"connections":{},"config_get":{},"config_validate":{"request":"Table"},"config_save":{"request":"Table"},"config_apply":{"request":"Table"},"enable":{},"select_auto":{"capability":"String"},"refresh":{},"disable":{}}'
+		printf '%s\n' '{"onboarding_get":{},"onboarding_apply":{"request":"Table"},"status":{},"events":{},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":"Table"},"config_save":{"request":"Table"},"config_apply":{"request":"Table"},"enable":{},"select_auto":{"capability":"String"},"refresh":{},"disable":{}}'
 		;;
 	call)
 		case "$2" in
@@ -83,6 +83,9 @@ case "$1" in
 					;;
 				connections)
 					respond_owner ucode "$main" connections
+					;;
+				probe)
+					respond_owner ucode "$main" probe
 					;;
 				config_get)
 					exec ucode "$main" config-get

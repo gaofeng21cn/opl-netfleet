@@ -797,7 +797,7 @@ class DeployOpenWrtTests(unittest.TestCase):
             else:
                 print("'opl-netfleet' @fixture")
                 for method in (
-                    "status", "events", "connections", "config_get", "config_validate", "config_save",
+                    "status", "events", "connections", "probe", "config_get", "config_validate", "config_save",
                     "config_apply", "enable", "select_auto", "refresh", "disable",
                 ):
                     print(f'\t"{method}":{{}}')

@@ -3,7 +3,7 @@
     "description": "Discover, configure, operate, and restore NetFleet over Nikki",
     "read": {
       "ubus": {
-        "opl-netfleet": [ "onboarding_get", "status", "events", "connections", "config_get", "config_validate" ],
+        "opl-netfleet": [ "onboarding_get", "status", "events", "connections", "probe", "config_get", "config_validate" ],
         "luci.nikki": [ "profile" ]
       }
     },

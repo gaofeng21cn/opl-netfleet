@@ -325,6 +325,11 @@ rm -f /etc/opl-netfleet/installed.json
 [ "$(uci -q get nikki.config.profile)" = file:OPL-NetFleet.json ]
 /etc/init.d/opl-netfleet status >/dev/null 2>&1
 
+stage=probe_rpc
+ubus call opl-netfleet probe '{}' >"$fixture/package-probe.json"
+[ "$(jsonfilter -i "$fixture/package-probe.json" -e '@.ok')" = true ]
+[ "$(jsonfilter -i "$fixture/package-probe.json" -e '@.result.ok')" = true ]
+
 stage=disable
 ubus call opl-netfleet disable '{}' >"$fixture/package-disable.json"
 [ "$(jsonfilter -i "$fixture/package-disable.json" -e '@.result.state')" = native_profile ]
@@ -344,5 +349,5 @@ stage=uninstall
 [ ! -e /usr/share/luci/menu.d/luci-app-netfleet.json ]
 
 stage=complete
-printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_release":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","checks":{"manifest":true,"signing_key":true,"install":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
+printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_release":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","checks":{"manifest":true,"signing_key":true,"install":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"probe_rpc":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
 	"$source_commit" "$source_tree" "$manifest_sha" "$version" "$release"
