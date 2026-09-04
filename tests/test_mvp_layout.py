@@ -548,12 +548,49 @@ function createPage(storage, api, notifications) {
     assert(nodeText(root).includes('默认走此出口'));
     assert(nodeText(root).includes('默认直连，可在 Zashboard 临时切换'));
     assert(nodeText(root).includes('Netflix'));
-    assert(nodeText(root).includes('Steam'));
-    assert(!nodeText(root).includes('接管的原始策略组'));
-    assert(String(root.children[3].attrs.class).includes('netfleet-source'), 'data source must follow page content');
-    assert(String(root.children[4].attrs.class).includes('cbi-page-actions'), 'actions must follow data source');
+	assert(nodeText(root).includes('Steam'));
+	assert(!nodeText(root).includes('接管的原始策略组'));
+	assert(String(root.children[3].attrs.class).includes('netfleet-source'), 'data source must follow page content');
+	assert(String(root.children[4].attrs.class).includes('cbi-page-actions'), 'actions must follow data source');
 
-    page.currentView = 'events';
+	page.status.providers = [ {
+		id: 'primary', display_name: 'Alpha 正式机场', subscription_section: 'primary', selected: true,
+		role: 'primary', billing: 'subscription', available_region_count: 2, region_count: 2,
+		available_count: 3, candidate_count: 4, last_best_delay_ms: 18,
+		average_best_delay_ms: 20, delay_sample_count: 3, delay_sampled_at: 1700000000,
+		quota: { state: 'available', remaining_bytes: 1024, expires_at: '2027-01-01' }
+	} ];
+	page.status.subscription_refresh = {
+		enabled: true, interval_seconds: 43200, provider_count: 1, last_run_at: 1700000000,
+		last_result: 'unchanged'
+	};
+	page.status.subscriptions = [ {
+		section: 'primary', ref: 'subscription:primary', display_name: 'Alpha 正式机场',
+		cache_present: true, cache_sha256: 'c'.repeat(64), last_attempt: 1700000000,
+		last_success: 1700000000, last_result: 'updated'
+	} ];
+	page.currentView = 'providers';
+	page.redraw();
+	const providerPageText = nodeText(root.children[2]);
+	assert(providerPageText.includes('1 / 1 正常'));
+	assert(providerPageText.includes('每行汇总订阅状态和运行质量'));
+	assert(providerPageText.includes('缓存已更新'));
+	assert(!providerPageText.includes('更新完成并已重载'));
+	assert(!providerPageText.includes('订阅缓存'));
+	const providerDetailRow = findNode(root, function(node) {
+		return node.tag === 'tr' && String(node.attrs.class || '').includes('netfleet-provider-detail-row');
+	});
+	const providerDetailToggle = findNode(root, function(node) {
+		return node.tag === 'button' && nodeText(node) === '详情';
+	});
+	assert(providerDetailRow && providerDetailRow.hidden === true, 'provider diagnostics must start collapsed');
+	assert(providerDetailToggle && providerDetailToggle.attrs['aria-expanded'] === 'false');
+	providerDetailToggle.attrs.click();
+	assert.strictEqual(providerDetailRow.hidden, false);
+	assert.strictEqual(providerDetailToggle.attrs['aria-expanded'], 'true');
+	assert.strictEqual(nodeText(providerDetailToggle), '收起');
+
+	page.currentView = 'events';
     page.redraw();
     const eventPageText = nodeText(root.children[2]);
     assert(eventPageText.indexOf('选路事件') < eventPageText.indexOf('诊断状态'));

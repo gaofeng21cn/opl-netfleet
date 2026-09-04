@@ -14,8 +14,8 @@ const policy = {
 		PARKED: { capability: "parked", kind: "policy" }
 	},
 	providers: {
-		alpha: { enabled: true, role: "primary", billing: "subscription" },
-		beta: { enabled: true, role: "reserve", billing: "buyout" }
+		alpha: { enabled: true, section: "alpha", role: "primary", billing: "subscription" },
+		beta: { enabled: true, section: "beta", role: "reserve", billing: "buyout" }
 	},
 	regions: {
 		south: { mode: "automatic", display_name: "南方", display_order: 20 },
@@ -291,6 +291,7 @@ if (result.build?.version != "0.3.0" ||
 	result.actions?.can_enable != false || result.actions?.can_select_auto != true ||
 	result.actions?.can_refresh != true ||
 	result.subscription_refresh?.provider_count != 2 ||
+	alpha?.subscription_section != "alpha" || beta?.subscription_section != "beta" ||
 	result.subscriptions?.[0]?.section != "alpha" ||
 	result.subscriptions?.[0]?.ref != "subscription:alpha" ||
 	result.subscriptions?.[0]?.cache_present != true ||

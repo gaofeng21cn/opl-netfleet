@@ -378,6 +378,7 @@ export function build(policy, manifest, state, evidence, owner) {
 		providers[name] = {
 			id: name,
 			display_name: owner.provider_names?.[name] ?? name,
+			subscription_section: provider?.section ?? null,
 			role: provider?.role ?? "primary",
 			billing: provider?.billing ?? "unknown",
 			quota: owner.quotas?.[name] ?? { state: provider?.enabled == true ? "unknown" : "disabled" },

@@ -54,6 +54,7 @@ export interface Capability {
 export interface Provider {
   id: string;
   display_name?: string;
+  subscription_section?: string | null;
   role: string;
   billing: string;
   quota?: Quota;
@@ -67,6 +68,18 @@ export interface Provider {
   average_best_delay_ms?: number | null;
   delay_sample_count?: number | null;
   delay_sampled_at?: number | null;
+}
+
+export interface SubscriptionStatus {
+  section: string;
+  ref?: string | null;
+  display_name?: string | null;
+  cache_present?: boolean;
+  cache_sha256?: string | null;
+  quota?: Quota;
+  last_attempt?: number | null;
+  last_success?: number | null;
+  last_result?: string | null;
 }
 
 export interface Region {
@@ -172,6 +185,7 @@ export interface StatusSnapshot {
     last_reloaded?: boolean | null;
     last_initiator?: string | null;
   } | null;
+  subscriptions?: SubscriptionStatus[];
   capabilities: Capability[];
   providers: Provider[];
   regions: Region[];

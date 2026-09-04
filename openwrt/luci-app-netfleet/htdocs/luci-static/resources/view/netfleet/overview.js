@@ -265,6 +265,7 @@ function refreshResult(value) {
 		cache_updated: '缓存已更新',
 		partially_updated: '部分机场更新成功',
 		unchanged: '订阅无变化',
+		failed: '更新失败，继续使用旧版本',
 		update_failed: '更新失败，继续使用旧缓存',
 		upstream_unavailable: '上游不可用，未更新',
 		active_precondition_failed: '运行状态不满足安全更新条件',
@@ -666,18 +667,43 @@ function exitsPage(status) {
 function cacheDigest(value) {
 	const digest = value && value.cache_sha256;
 	if (!digest)
-		return value && value.cache_present ? '已缓存' : '无缓存';
+		return value && value.cache_present ? '已缓存' : '无可用缓存';
 	return String(digest).slice(0, 12);
 }
 
-function subscriptionExpiry(entry) {
-	const value = entry && entry.quota && entry.quota.expires_at;
-	return text(value, '未提供').slice(0, 10);
+function subscriptionForProvider(subscriptions, provider) {
+	const section = provider && provider.subscription_section;
+	if (!section)
+		return null;
+	return subscriptions.find(function(entry) { return entry.section === section; }) || null;
+}
+
+function subscriptionFailed(entry) {
+	return !entry || entry.cache_present !== true || [
+		'failed', 'update_failed', 'upstream_unavailable', 'active_precondition_failed',
+		'rollback_restored', 'rollback_failed'
+	].indexOf(entry.last_result) >= 0;
+}
+
+function subscriptionState(entry) {
+	if (!entry)
+		return '未提供';
+	if (entry.cache_present !== true)
+		return '没有可用缓存';
+	return entry.last_result === 'updated' ? '缓存已更新' :
+		(entry.last_result ? refreshResult(entry.last_result) : '缓存可用');
+}
+
+function subscriptionSummary(refresh, subscriptions) {
+	if (!subscriptions.length)
+		return '未提供';
+	const healthy = subscriptions.filter(function(entry) { return !subscriptionFailed(entry); }).length;
+	return String(healthy) + ' / ' + String(finite(refresh.provider_count) ? Number(refresh.provider_count) : subscriptions.length) + ' 正常';
 }
 
 function providersPage(status) {
 	const refresh = status.subscription_refresh || {};
-	const subscriptions = status.subscriptions || refresh.subscriptions || [];
+	const subscriptions = status.subscriptions || [];
 	const availabilityMeasured = Boolean(status.active && status.runtime.netfleet_present && status.runtime.controller_available);
 	const providers = (status.providers || []).slice().sort(function(a, b) {
 		return Number(Boolean(b.selected)) - Number(Boolean(a.selected)) ||
@@ -685,46 +711,58 @@ function providersPage(status) {
 			(Number(a.last_best_delay_ms ?? a.best_delay_ms) || Infinity) - (Number(b.last_best_delay_ms ?? b.best_delay_ms) || Infinity) ||
 			providerName(status, a.id).localeCompare(providerName(status, b.id), 'zh-CN');
 	});
-	const rows = providers.map(function(provider) {
-		return E('tr', { 'class': provider.selected ? 'cbi-rowstyle-1' : '' }, [
-			E('td', {}, providerName(status, provider.id) + (provider.selected ? '（当前使用）' : '')),
-			E('td', {}, provider.role === 'reserve' ? '备用' : '主用'),
-			E('td', {}, ({ subscription: '订阅制', buyout: '买断制' })[provider.billing] || text(provider.billing, '未知')),
-			E('td', {}, availabilityMeasured ? countPair(provider.available_region_count, provider.region_count) : '未测量'),
-			E('td', {}, availabilityMeasured ? countPair(provider.available_count, provider.candidate_count) : '未测量'),
-				E('td', {}, delay(provider.last_best_delay_ms ?? provider.best_delay_ms)),
-				E('td', {}, averageDelay(provider.average_best_delay_ms, provider.delay_sample_count)),
-				E('td', {}, finite(provider.delay_sample_count) ? String(Number(provider.delay_sample_count)) : '未提供'),
-				E('td', {}, sampledAt(provider.delay_sampled_at)),
-				E('td', {}, quota(provider)),
-				E('td', {}, providerExpiry(provider))
-			]);
-		});
-	const subscriptionRows = subscriptions.map(function(entry) {
-		return E('tr', {}, [
-			E('td', {}, text(entry.display_name, entry.section)),
-			E('td', {}, text(entry.section, '未提供')),
-			E('td', {}, cacheDigest(entry)),
-			E('td', {}, sampledAt(entry.last_attempt)),
-			E('td', {}, refreshResult(entry.last_result)),
-			E('td', {}, quota(entry)),
-			E('td', {}, subscriptionExpiry(entry))
+	const rows = [];
+	providers.forEach(function(provider) {
+		const subscription = subscriptionForProvider(subscriptions, provider);
+		const details = E('div', { 'class': 'netfleet-provider-detail-grid' }, [
+			E('dl', {}, [ E('dt', {}, '订阅标识'), E('dd', {}, text(subscription && subscription.section, '未提供')) ]),
+			E('dl', {}, [ E('dt', {}, '缓存版本'), E('dd', {}, cacheDigest(subscription)) ]),
+			E('dl', {}, [ E('dt', {}, '最近尝试'), E('dd', {}, sampledAt(subscription && subscription.last_attempt)) ]),
+			E('dl', {}, [ E('dt', {}, '最近成功'), E('dd', {}, sampledAt(subscription && subscription.last_success)) ]),
+			E('dl', {}, [ E('dt', {}, '最后测量'), E('dd', {}, sampledAt(provider.delay_sampled_at)) ])
 		]);
+		const detailRow = E('tr', { 'class': 'netfleet-provider-detail-row' }, [ E('td', { 'colspan': 9 }, details) ]);
+		detailRow.hidden = true;
+		let toggle;
+		toggle = E('button', {
+			'class': 'btn cbi-button netfleet-provider-detail-toggle',
+			'title': '查看' + providerName(status, provider.id) + '详情',
+			'aria-expanded': 'false',
+			'click': function() {
+				detailRow.hidden = !detailRow.hidden;
+				toggle.setAttribute('aria-expanded', detailRow.hidden ? 'false' : 'true');
+				toggle.replaceChildren(detailRow.hidden ? '详情' : '收起');
+			}
+		}, '详情');
+		rows.push(E('tr', { 'class': provider.selected ? 'cbi-rowstyle-1' : '' }, [
+			E('td', {}, providerName(status, provider.id) + (provider.selected ? '（当前使用）' : '')),
+			E('td', {}, (provider.role === 'reserve' ? '备用' : '主用') + ' · ' + (({ subscription: '订阅制', buyout: '买断制' })[provider.billing] || text(provider.billing, '未知'))),
+			E('td', {}, availabilityMeasured ? [
+				E('span', {}, countPair(provider.available_region_count, provider.region_count) + ' 地区'),
+				E('small', {}, countPair(provider.available_count, provider.candidate_count) + ' 节点')
+			] : '未测量'),
+			E('td', {}, delay(provider.last_best_delay_ms ?? provider.best_delay_ms)),
+			E('td', {}, [
+				E('span', {}, averageDelay(provider.average_best_delay_ms, provider.delay_sample_count)),
+				E('small', {}, (finite(provider.delay_sample_count) ? String(Number(provider.delay_sample_count)) : '未提供') + ' 个样本')
+			]),
+			E('td', { 'class': subscriptionFailed(subscription) ? 'is-warning' : '' }, subscriptionState(subscription)),
+			E('td', {}, quota(provider)),
+			E('td', {}, providerExpiry(provider)),
+			E('td', {}, toggle)
+		]));
+		rows.push(detailRow);
 	});
 	return [
-		section('订阅更新', 'NetFleet 只读发现并调度同一 refresh owner；下载、格式校验和单机场缓存仍由 Nikki 官方更新器负责。', [ metricGrid([
+		section('订阅更新', '订阅内容由设备安全缓存；更新失败时继续使用上次可用版本。', [ metricGrid([
 			[ '自动更新', refresh.enabled ? '已启用' : '已关闭' ],
 			[ '更新周期', seconds(refresh.interval_seconds) ],
 			[ '最近执行', sampledAt(refresh.last_run_at) ],
-			[ '最近结果', refreshResult(refresh.last_result) ],
-			[ '缓存变化', finite(refresh.last_changed_count) ? String(Number(refresh.last_changed_count)) + ' 个机场' : '未提供' ],
-			[ '更新失败', finite(refresh.last_failed_count) ? String(Number(refresh.last_failed_count)) + ' 个机场' : '未提供' ]
-		], 'is-six') ]),
-		section('订阅缓存', '只显示稳定 section、缓存摘要、配额和最近一次 refresh 结果，不包含 URL、token 或订阅正文。', [
-			simpleTable([ '机场', '订阅', '缓存', '最近更新', '结果', '剩余流量', '到期时间' ], subscriptionRows, '当前没有已启用的订阅', 'netfleet-data-table')
-		]),
-		section('机场', availabilityMeasured ? '运行资格、配额和到期时间来自同一次设备状态读取；历史按稳定机场 ID 持久化，平均最优至少汇总 2 个有效样本。' : 'NetFleet 当前未接管，实时可用性未测量；历史延迟、配额和到期时间仍可查看。', [
-			simpleTable([ '机场', '层级', '计费', '可用地区', '候选组', '最近最优', '平均最优', '样本', '最后测量', '剩余流量', '到期时间' ], rows, '设备未提供机场数据', 'netfleet-data-table')
+			[ '订阅状态', subscriptionSummary(refresh, subscriptions) ],
+			[ '最近结果', refreshResult(refresh.last_result) ]
+		], 'is-five') ]),
+		section('机场', availabilityMeasured ? '每行汇总订阅状态和运行质量；平均最优至少汇总 2 个有效样本。' : 'NetFleet 当前未接管，实时可用性未测量；订阅状态、历史延迟、配额和到期时间仍可查看。', [
+			simpleTable([ '机场', '定位', '可用资源', '最近最优', '平均最优', '订阅状态', '剩余流量', '到期时间', '详情' ], rows, '设备未提供机场数据', 'netfleet-data-table netfleet-provider-table')
 		])
 	];
 }

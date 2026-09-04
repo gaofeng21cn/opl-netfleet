@@ -68,8 +68,34 @@ describe('概览信息层级', () => {
     expect(html).toContain('未测量<small> NetFleet 未接管</small>');
     expect(html).not.toContain('不可用机场：');
     expect(providers).toContain('NetFleet 当前未接管，实时可用性未测量');
-    expect(providers).toContain('<td>未测量</td>');
+    expect(providers).toContain('<span>未测量</span>');
     expect(providers).not.toContain('<td>0 /');
+  });
+
+  it('机场页聚合订阅状态和运行质量，诊断信息默认折叠', () => {
+    const html = renderToStaticMarkup(<ProviderTable snapshot={fixtureScenarios.healthy.status} full />);
+
+    expect(html).toContain('3 / 3 正常');
+    expect(html).toContain('每行汇总订阅状态和运行质量');
+    expect(html).toContain('<th>定位</th>');
+    expect(html).toContain('<th>可用资源</th>');
+    expect(html).toContain('<th>订阅状态</th>');
+    expect(html).toContain('缓存已更新');
+    expect(html).not.toContain('更新完成并已重载</td>');
+    expect(html).toContain('缓存版本');
+    expect(html).toContain('hidden=""');
+    expect(html).not.toContain('<h2>订阅缓存</h2>');
+  });
+
+  it('机场与订阅只通过明确绑定聚合，不按显示名猜测', () => {
+    const status = structuredClone(fixtureScenarios.healthy.status);
+    status.providers[0].subscription_section = 'missing';
+    status.subscriptions![0].display_name = status.providers[0].display_name;
+
+    const html = renderToStaticMarkup(<ProviderTable snapshot={status} full />);
+
+    expect(html).toContain('未提供');
+    expect(html).not.toContain('aaaaaaaaaaaa');
   });
 
   it('零路径目录项不进入当前地区规划或首页警告', () => {
