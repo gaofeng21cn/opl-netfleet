@@ -437,6 +437,18 @@ uhttpd_timeout_ready() {
 	[ "$value" -ge 300 ]
 }
 
+uhttpd_runtime_timeout_ready() {
+	[ -n "$root_prefix" ] && return 0
+	ps w 2>/dev/null | awk '
+		$0 ~ /[u]httpd/ {
+			for (i = 1; i < NF; i++)
+				if ($i == "-t" && $(i + 1) ~ /^[0-9]+$/ && $(i + 1) >= 300)
+					ok = 1
+		}
+		END { exit(ok ? 0 : 1) }
+	'
+}
+
 ensure_rpc_timeouts() {
 	timeout_changed=false
 	uhttpd_timeout_changed=false
@@ -500,6 +512,10 @@ ensure_rpcd_surface() {
 		status=$?
 		[ "$status" -eq 2 ] || return 1
 		restart_required=true
+	fi
+	if ! uhttpd_runtime_timeout_ready; then
+		restart_required=true
+		uhttpd_timeout_changed=true
 	fi
 	if [ "$restart_required" = "false" ] && rpcd_surface_ready; then
 		luci_http_surface_ready && return 0

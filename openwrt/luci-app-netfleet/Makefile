@@ -61,6 +61,8 @@ define Package/luci-app-netfleet/postinst
 	rm -f /tmp/luci-indexcache.*
 	rm -rf /tmp/luci-modulecache/
 	/etc/init.d/rpcd restart 2>/dev/null
+	[ "$$changed" = 1 ] || exit 0
+	/etc/init.d/uhttpd restart 2>/dev/null
 	exit 0
 }
 endef

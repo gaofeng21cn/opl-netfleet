@@ -121,6 +121,7 @@ class ReleaseToolsTests(unittest.TestCase):
         self.assertIn("uci set 'uhttpd.main.script_timeout=300'", luci)
         self.assertIn('[ "$$rpcd_timeout" -ge 300 ]', luci)
         self.assertIn('/etc/init.d/rpcd restart', luci)
+        self.assertIn('/etc/init.d/uhttpd restart', luci)
         packager = PACKAGER.read_text()
         self.assertIn('opl-netfleet-package-manifest.v2', packager)
         self.assertNotIn('CONFIG_SIGN_EACH_PACKAGE', packager)
