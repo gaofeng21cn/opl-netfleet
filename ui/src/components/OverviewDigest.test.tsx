@@ -87,7 +87,7 @@ describe('概览信息层级', () => {
     expect(html).toContain('缓存版本');
     expect(html).toContain('hidden=""');
     expect(html).not.toContain('<h2>订阅缓存</h2>');
-    expect(html).toContain('管理机场订阅');
+    expect(html).toContain('管理订阅');
     expect(html).toContain('/cgi-bin/luci/admin/services/nikki/profile');
   });
 

@@ -11,11 +11,15 @@ describe('Vite 开发入口', () => {
     const main = read('main.tsx');
     const app = read('App.tsx');
     const liveClient = read('api/liveClient.ts');
+    const shell = read('components/Shell.tsx');
 
     expect(main).not.toContain('StrictMode');
     expect(main).toContain('reactRoot.render(<DevApp />)');
     expect(liveClient).not.toContain('inflightRead');
     expect(liveClient.match(/\/__netfleet_live\/snapshot/g)).toEqual(['/__netfleet_live/snapshot']);
     expect(app.match(/client\.read\(\)/g)).toEqual(['client.read()']);
+    expect(shell).toContain("label: '实时运行'");
+    expect(shell).toContain('if (item.external) onOpenDashboard()');
+    expect(shell).toContain('disabled={item.external && !dashboardReady}');
   });
 });

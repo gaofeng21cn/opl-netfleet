@@ -3,6 +3,7 @@
 'use strict';
 'require view';
 'require ui';
+'require tools.nikki as nikki';
 'require netfleet.api as netfleet';
 'require netfleet.config as netfleetConfig';
 
@@ -11,6 +12,7 @@ const NAVIGATION = [
 	[ 'exits', '出口' ],
 	[ 'providers', '机场' ],
 	[ 'regions', '地区' ],
+	[ 'runtime', '实时运行', true ],
 	[ 'config', '配置' ],
 	[ 'events', '事件与诊断' ]
 ];
@@ -127,6 +129,24 @@ function countPair(available, total) {
 	return finite(available) && finite(total)
 		? String(Number(available)) + '/' + String(Number(total))
 		: '未提供';
+}
+
+function dashboardReady(status) {
+	const runtime = status && status.runtime || {};
+	const lan = runtime.lan_runtime || {};
+	return runtime.mihomo_running === true && runtime.controller_available === true && lan.dashboard_lan_ready === true;
+}
+
+function dashboardUnavailableReason(status) {
+	const runtime = status && status.runtime || {};
+	const lan = runtime.lan_runtime || {};
+	if (runtime.mihomo_running !== true)
+		return 'Mihomo 当前未运行';
+	if (runtime.controller_available !== true)
+		return 'Mihomo 控制接口当前不可读取';
+	if (lan.dashboard_lan_ready !== true)
+		return 'Zashboard 的局域网访问条件尚未就绪';
+	return 'Zashboard 当前不可用';
 }
 
 function regionalDisplayName(value) {
@@ -773,11 +793,12 @@ function providersPage(status) {
 					E('div', { 'class': 'cbi-section-descr' }, '订阅地址和凭据由设备端 Nikki 管理；NetFleet 负责安全更新、机场角色和自动选优。')
 				]),
 				E('a', {
-					'class': 'btn cbi-button netfleet-summary-link',
+					'class': 'netfleet-inline-link',
 					'href': L.url('admin/services/nikki/profile'),
 					'target': '_blank',
-					'rel': 'noopener'
-				}, '管理机场订阅')
+					'rel': 'noopener',
+					'title': '在新标签页打开 Nikki 订阅管理'
+				}, '管理订阅 ↗')
 			]),
 			metricGrid([
 			[ '自动更新', refresh.enabled ? '已启用' : '已关闭' ],
@@ -1039,16 +1060,28 @@ return view.extend({
 		}
 		const title = ({ overview: '网络概览', exits: '出口', providers: '机场', regions: '地区', config: '配置', events: '事件与诊断' })[this.currentView];
 		const tabs = E('ul', { 'class': 'cbi-tabmenu' }, NAVIGATION.map(function(item) {
-			return E('li', { 'class': self.currentView === item[0] ? 'cbi-tab' : 'cbi-tab-disabled' }, [
-				E('a', { 'href': '#', 'click': function(event) {
+			const external = item[2] === true;
+			const ready = !external || dashboardReady(self.status);
+			const control = external ? E('button', {
+				'type': 'button',
+				'disabled': ready ? null : true,
+				'title': ready ? '在新标签页打开完整 Zashboard' : dashboardUnavailableReason(self.status),
+				'click': function() { self.openDashboard(); }
+			}, item[1] + ' ↗') : E('a', {
+				'href': '#',
+				'click': function(event) {
 					event.preventDefault();
 					self.currentView = item[0];
 					if (item[0] === 'events')
 						self.refreshConnections();
 					else
 						self.redraw();
-				} }, item[1])
-			]);
+				}
+			}, item[1]);
+			return E('li', {
+				'class': (self.currentView === item[0] ? 'cbi-tab' : 'cbi-tab-disabled') +
+					(external ? ' netfleet-external-tab' : '') + (ready ? '' : ' is-disabled')
+			}, [ control ]);
 		}));
 
 		const actions = this.status.actions || {};
@@ -1099,6 +1132,16 @@ return view.extend({
 		], 'is-six') ], 'netfleet-source' + (this.liveDataReady ? '' : ' is-stale'));
 
 		this.root.replaceChildren(pageHeading(title, this.status), tabs, E('div', {}, content), source, E('div', { 'class': 'cbi-page-actions' }, buttons));
+	},
+
+	openDashboard: function() {
+		if (!dashboardReady(this.status)) {
+			ui.addNotification(null, E('p', {}, dashboardUnavailableReason(this.status)), 'warning');
+			return Promise.resolve();
+		}
+		return nikki.openDashboard().catch(function(error) {
+			ui.addNotification(null, E('p', {}, '无法打开 Zashboard：' + text(error && error.message, text(error, '设备未返回可用地址'))), 'error');
+		});
 	},
 
 	refreshOnboarding: function() {

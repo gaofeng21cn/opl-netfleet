@@ -10,17 +10,23 @@ import {
   RefreshCw,
   Route,
   Settings,
+  SquareArrowOutUpRight,
   Target,
 } from 'lucide-react';
 import type { PreviewControls, ViewId } from '../types';
 
-const nav = [
-  { id: 'overview' as const, label: '概览', icon: House },
-  { id: 'exits' as const, label: '出口', icon: Route },
-  { id: 'providers' as const, label: '机场', icon: PlaneTakeoff },
-  { id: 'regions' as const, label: '地区', icon: Globe2 },
-  { id: 'config' as const, label: '配置', icon: Settings },
-  { id: 'events' as const, label: '事件与诊断', icon: BellRing },
+type NavigationItem =
+  | { id: ViewId; label: string; icon: typeof House; external: false }
+  | { id: 'runtime'; label: string; icon: typeof House; external: true };
+
+const nav: NavigationItem[] = [
+  { id: 'overview', label: '概览', icon: House, external: false },
+  { id: 'exits', label: '出口', icon: Route, external: false },
+  { id: 'providers', label: '机场', icon: PlaneTakeoff, external: false },
+  { id: 'regions', label: '地区', icon: Globe2, external: false },
+  { id: 'runtime' as const, label: '实时运行', icon: SquareArrowOutUpRight, external: true },
+  { id: 'config', label: '配置', icon: Settings, external: false },
+  { id: 'events', label: '事件与诊断', icon: BellRing, external: false },
 ];
 
 interface ShellProps {
@@ -32,9 +38,11 @@ interface ShellProps {
   readOnly: boolean;
   canSelect: boolean;
   canDisable: boolean;
+  dashboardReady: boolean;
   onRefresh(): void;
   onSelect(): void;
   onDisable(): void;
+  onOpenDashboard(): void;
   children: React.ReactNode;
 }
 
@@ -47,9 +55,11 @@ export function Shell({
   readOnly,
   canSelect,
   canDisable,
+  dashboardReady,
   onRefresh,
   onSelect,
   onDisable,
+  onOpenDashboard,
   children,
 }: ShellProps) {
   return (
@@ -64,13 +74,18 @@ export function Shell({
             const Icon = item.icon;
             return (
               <button
-                className={view === item.id ? 'is-active' : ''}
+                className={`${view === item.id ? 'is-active' : ''}${item.external ? ' is-external' : ''}`}
                 key={item.id}
-                onClick={() => onViewChange(item.id)}
+                onClick={() => {
+                  if (item.external) onOpenDashboard();
+                  else onViewChange(item.id);
+                }}
+                disabled={item.external && !dashboardReady}
+                title={item.external ? (dashboardReady ? '在新标签页打开完整 Zashboard' : 'Zashboard 当前不可用') : undefined}
                 type="button"
               >
                 <Icon aria-hidden="true" />
-                <span>{item.label}</span>
+                <span>{item.label}{item.external ? ' ↗' : ''}</span>
               </button>
             );
           })}
@@ -119,9 +134,12 @@ export function Shell({
         {nav.map((item) => {
           const Icon = item.icon;
           return (
-            <button className={view === item.id ? 'is-active' : ''} key={item.id} onClick={() => onViewChange(item.id)} type="button">
+            <button className={`${view === item.id ? 'is-active' : ''}${item.external ? ' is-external' : ''}`} key={item.id} onClick={() => {
+              if (item.external) onOpenDashboard();
+              else onViewChange(item.id);
+            }} disabled={item.external && !dashboardReady} title={item.external ? (dashboardReady ? '在新标签页打开完整 Zashboard' : 'Zashboard 当前不可用') : undefined} type="button">
               <Icon aria-hidden="true" />
-              <span>{item.label}</span>
+              <span>{item.label}{item.external ? ' ↗' : ''}</span>
             </button>
           );
         })}

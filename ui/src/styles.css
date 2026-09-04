@@ -44,6 +44,7 @@
 .nf-nav button:hover { background: var(--nf-accent-soft); }
 .nf-nav button.is-active { color: var(--nf-accent); background: var(--nf-accent-soft); font-weight: 650; }
 .nf-nav button.is-active::before { content: ''; position: absolute; left: -10px; top: 6px; bottom: 6px; width: 3px; background: var(--nf-accent); }
+.nf-nav button.is-external { color: var(--nf-accent); }
 .nf-nav svg { width: 18px; height: 18px; stroke-width: 1.8; }
 .nf-sidebar-foot { margin: auto 18px 20px; padding-top: 18px; border-top: 1px solid var(--nf-border); display: flex; align-items: flex-start; gap: 10px; font-size: 12px; }
 .nf-sidebar-foot strong, .nf-sidebar-foot small { display: block; }
@@ -74,6 +75,9 @@
 .nf-button-primary { border: 1px solid var(--nf-accent-strong); color: #fff; background: var(--nf-accent); }
 .nf-button-secondary { border: 1px solid var(--nf-border); color: #34363b; background: #fff; }
 .nf-button-secondary:hover { border-color: var(--nf-accent-border); color: var(--nf-accent); background: var(--nf-accent-soft); }
+.nf-inline-link { min-height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 4px 2px; color: var(--nf-accent); font-size: 13px; font-weight: 650; line-height: 1.35; text-decoration: none; white-space: nowrap; }
+.nf-inline-link:hover { text-decoration: underline; }
+.nf-inline-link svg { width: 15px; height: 15px; }
 .nf-button-danger { border: 1px solid #b71b26; color: #fff; background: var(--nf-red); }
 .nf-button-primary svg { width: 16px; height: 16px; }
 .nf-mobile-preview { display: none; }
@@ -464,7 +468,7 @@
   .nf-table-wrap table { min-width: 660px; }
   .nf-region-table table { min-width: 760px; }
   .nf-table-wrap th, .nf-table-wrap td { height: 40px; padding: 0 10px; }
-  .nf-mobile-nav { position: fixed; inset: auto 0 0; z-index: 30; height: 64px; display: grid; grid-template-columns: repeat(6, 1fr); border-top: 1px solid var(--nf-border); background: rgba(255, 255, 255, .97); padding-bottom: env(safe-area-inset-bottom); }
+  .nf-mobile-nav { position: fixed; inset: auto 0 0; z-index: 30; height: 64px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-top: 1px solid var(--nf-border); background: rgba(255, 255, 255, .97); padding-bottom: env(safe-area-inset-bottom); }
   .nf-mobile-nav button { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; color: #777a81; background: transparent; font-size: 9px; }
   .nf-mobile-nav button.is-active { color: var(--nf-accent); font-weight: 650; }
   .nf-mobile-nav svg { width: 19px; height: 19px; stroke-width: 1.8; }

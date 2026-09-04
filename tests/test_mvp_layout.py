@@ -297,6 +297,13 @@ class MvpLayoutTests(unittest.TestCase):
             f"netfleet/overview-v{version.replace('.', '_')}",
             menu["admin/services/netfleet/overview"]["action"]["path"],
         )
+        acl = json.loads(
+            (LUCI / "root" / "usr" / "share" / "rpcd" / "acl.d" / "luci-app-netfleet.json").read_text()
+        )
+        self.assertEqual(
+            ["profile"],
+            acl["luci-app-netfleet"]["read"]["ubus"]["luci.nikki"],
+        )
 
         native_style = (
             LUCI / "htdocs" / "luci-static" / "resources" / "netfleet" / "native.css"
@@ -322,6 +329,7 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertRegex(native_style, r"\.netfleet-native \.netfleet-exit-heading h3,[^}]*padding:\s*0 !important", re.S)
         self.assertRegex(native_style, r"\.netfleet-native \.netfleet-business-routing h4\s*\{[^}]*padding:\s*0 !important", re.S)
         self.assertRegex(native_style, r"\.netfleet-native \.cbi-tabmenu > li\s*\{[^}]*background:\s*transparent !important", re.S)
+        self.assertRegex(native_style, r"\.netfleet-native \.netfleet-inline-link\s*\{[^}]*background:\s*transparent !important", re.S)
         self.assertNotIn("#6f9966", native_style)
         self.assertNotIn("rgba(90, 132, 84", native_style)
 
@@ -417,7 +425,7 @@ function status(active, actions) {
             mihomo_running: active,
             controller_available: true,
             supervisor: {},
-            lan_runtime: {}
+            lan_runtime: { dashboard_lan_ready: active }
         }
     };
 }
@@ -461,12 +469,15 @@ function createPage(storage, api, notifications) {
         dirty: function() { return false; },
         render: function() { return E('div', {}, 'config'); }
     };
-    const factory = new Function('view', 'ui', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', source);
-    const page = factory(view, ui, api, netfleetConfig, E, {
+    let dashboardOpens = 0;
+    const nikki = { openDashboard: function() { dashboardOpens++; return Promise.resolve(); } };
+    const factory = new Function('view', 'ui', 'nikki', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', source);
+    const page = factory(view, ui, nikki, api, netfleetConfig, E, {
         resource: function(value) { return value; },
         url: function(value) { return '/cgi-bin/luci/' + value; }
     }, { localStorage: storage }, document);
     page.styleLink = styleLink;
+    page.dashboardOpens = function() { return dashboardOpens; };
     return page;
 }
 
@@ -526,6 +537,17 @@ function createPage(storage, api, notifications) {
     const persisted = JSON.parse(storage.value(cacheKey));
     assert.deepStrictEqual(persisted.events.nikki_lines, [], 'raw logs must not be persisted');
     assert.strictEqual(persisted.status.active, true);
+    const runtimeEntry = findNode(root, function(node) { return node.tag === 'button' && nodeText(node) === '实时运行 ↗'; });
+    assert(runtimeEntry && runtimeEntry.attrs.disabled !== true, 'healthy dashboard entry must be enabled');
+    runtimeEntry.attrs.click();
+    assert.strictEqual(page.dashboardOpens(), 1, 'dashboard entry must reuse Nikki openDashboard');
+    page.status.runtime.lan_runtime.dashboard_lan_ready = false;
+    page.redraw();
+    const disabledRuntimeEntry = findNode(root, function(node) { return node.tag === 'button' && nodeText(node) === '实时运行 ↗'; });
+    assert(disabledRuntimeEntry && disabledRuntimeEntry.attrs.disabled === true, 'unready dashboard entry must use native disabled state');
+    assert.strictEqual(disabledRuntimeEntry.attrs.title, 'Zashboard 的局域网访问条件尚未就绪');
+    page.status.runtime.lan_runtime.dashboard_lan_ready = true;
+    page.redraw();
 
     page.status.capabilities = [ {
         id: 'standard', display_name: '海外加速', base_group: '海外加速',
@@ -583,7 +605,11 @@ function createPage(storage, api, notifications) {
 	assert(providerPageText.includes('47/50 节点 · 订阅 52 条'));
 	assert(!providerPageText.includes('3/4 节点'));
 	assert(providerPageText.includes('缓存已更新'));
-	assert(providerPageText.includes('管理机场订阅'));
+	assert(providerPageText.includes('管理订阅 ↗'));
+	const subscriptionLink = findNode(root.children[2], function(node) {
+		return node.tag === 'a' && nodeText(node) === '管理订阅 ↗';
+	});
+	assert(subscriptionLink && subscriptionLink.attrs.class === 'netfleet-inline-link');
 	assert(providerPageText.includes('订阅更新时间'));
 	assert(!providerPageText.includes('更新完成并已重载'));
 	assert(!providerPageText.includes('订阅缓存'));

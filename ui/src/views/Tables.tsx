@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react';
-import { ArrowDownUp, ChevronDown } from 'lucide-react';
+import { ArrowDownUp, ChevronDown, ExternalLink } from 'lucide-react';
 import { averageDelay, countPair, delay, delayClass, providerExpiry, providerName, quota, regionName, sortProvidersForDisplay, sortRegionsForDisplay } from '../lib/format';
 import type { Provider, StatusSnapshot, SubscriptionStatus } from '../types';
 
@@ -72,7 +72,7 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
   return (
     <>
     {full && <section className="nf-policy-summary">
-      <div className="nf-section-heading"><div><h2>订阅更新</h2><p>订阅地址和凭据由设备端 Nikki 管理；NetFleet 负责安全更新、机场角色和自动选优。</p></div><a className="nf-button-secondary" href="/cgi-bin/luci/admin/services/nikki/profile" target="_blank" rel="noreferrer" title="设备端进入 Nikki Profile 管理">管理机场订阅</a></div>
+      <div className="nf-section-heading"><div><h2>订阅更新</h2><p>订阅地址和凭据由设备端 Nikki 管理；NetFleet 负责安全更新、机场角色和自动选优。</p></div><a className="nf-inline-link" href="/cgi-bin/luci/admin/services/nikki/profile" target="_blank" rel="noreferrer" title="在新标签页打开 Nikki 订阅管理"><ExternalLink aria-hidden="true" />管理订阅</a></div>
       <div className="nf-policy-grid is-five">
         <dl><dt>自动更新</dt><dd>{refresh?.enabled ? '已启用' : '已关闭'}</dd></dl>
         <dl><dt>更新周期</dt><dd>{duration(refresh?.interval_seconds)}</dd></dl>

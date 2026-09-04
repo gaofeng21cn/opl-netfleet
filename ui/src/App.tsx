@@ -168,9 +168,11 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
         readOnly={source.read_only}
         canSelect={false}
         canDisable={false}
+        dashboardReady={false}
         onRefresh={() => void (view === 'events' ? Promise.all([refresh(), refreshConnections()]) : refresh())}
         onSelect={() => undefined}
         onDisable={() => undefined}
+        onOpenDashboard={() => undefined}
       >
         <div className="nf-page-heading"><div><h1>网络概览</h1></div></div>
         <DataSourceBar source={source} statusError={statusError} eventsError={eventsError} />
@@ -182,6 +184,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
   const visibleEvents = events || { events: [] };
   const healthy = Boolean(status.runtime.mihomo_running && status.runtime.nikki_enabled && status.runtime.controller_available &&
     (!status.active || (status.runtime.netfleet_present && status.runtime.lan_runtime?.transparent_proxy_ready)));
+  const dashboardReady = Boolean(status.runtime.mihomo_running && status.runtime.controller_available && status.runtime.lan_runtime?.dashboard_lan_ready);
   const title = { overview: '网络概览', exits: '出口', providers: '机场', regions: '地区', config: '配置', events: '事件与诊断' }[view];
 
   return (
@@ -194,9 +197,11 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
       readOnly={source.read_only}
       canSelect={status.actions?.can_select_auto === true}
       canDisable={status.actions?.can_disable === true}
+      dashboardReady={dashboardReady}
       onRefresh={() => void (view === 'events' ? Promise.all([refresh(), refreshConnections()]) : refresh())}
       onSelect={() => setDialog('select')}
       onDisable={() => setDialog('disable')}
+      onOpenDashboard={() => setError('本机参考界面只展示入口；设备版会在新标签页打开完整 Zashboard。')}
     >
       <div className="nf-page-heading">
         <div><h1>{title}</h1>{view !== 'overview' && <p>{view === 'config' ? '使用当前设备状态设计配置流程；所有更改仅用于本地预览。' : '所有状态来自同一次设备状态读取。'}</p>}</div>

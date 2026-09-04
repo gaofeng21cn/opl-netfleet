@@ -109,13 +109,13 @@ UI 只解释当前事实和提交有限动作，不在浏览器里解析订阅�
 
 后端迁移本身也是一次受保护事务：先在不改变数据面的条件下验证新后端配置和依赖，再建立 DIRECT 护栏，停止旧 owner，启动并探测新 owner；失败时恢复旧 owner，成功并完成 target-local readback 后才提交后端身份。迁移不能同时维持 Nikki 与原生后端双写，也不能把“自动回退到另一个代理核心”变成长期运行模式。
 
-### Zashboard 作为 Mihomo 高级实时观察面
+### Zashboard 作为 Mihomo 独立完整运行面
 
-NetFleet 自有页面负责稳定摘要、配置和受保护命令，不应重写 Mihomo 已经成熟的实时连接、流量、内存、规则命中、代理组和 Provider 观察体验。对 `native-mihomo` 及仍使用 Mihomo 的过渡后端，Zashboard 应作为 NetFleet 内的“实时运行”高级观察面，随 Mihomo 发行载体提供固定版本的静态资源，并在用户打开该页时才加载；不依赖公网 CDN，也不增加常驻前端进程或 NetFleet 后台轮询。
+NetFleet 自有页面负责稳定摘要、持久配置和受保护生命周期命令，不应重写 Mihomo 已经成熟的实时连接、流量、内存、规则命中、代理组、Provider 和即时控制体验。对 `native-mihomo` 及仍使用 Mihomo 的过渡后端，Zashboard 是 NetFleet “实时运行”入口打开的独立完整页面；不嵌在 NetFleet 内容区，不增加常驻前端进程或 NetFleet 后台轮询。
 
-集成后的 Zashboard 是 `ObservationSurface`，不是第五个 owner。默认能力只读取当前启用后端暴露的 controller 状态和事件流；配置重载、核心启停、升级、连接关闭和任意 raw controller mutation 必须禁用或由同源桥接拒绝。若保留 Mihomo 已支持的临时改路，只允许操作 manifest 明确公开的用户 selector，并由 NetFleet 命令桥接校验、加锁和回读，不允许 Zashboard 直接改内部组或持久配置。LuCI 登录态应通过同源、受 ACL 约束的 HTTP/WebSocket 桥接访问 controller，controller secret 留在设备 owner，不能注入 URL、页面源码或浏览器持久存储。
+完整 Zashboard 是 Mihomo 当前运行态的操作面，不是 NetFleet 的持久配置、订阅或恢复 owner。用户可以在其中进行上游已提供的即时 selector 切换和连接管理；这些操作不会自动写回 NetFleet policy，后续刷新、重新编译或启用仍以 NetFleet owner 为准。过渡期 NetFleet 复用 Nikki 的静态资源、controller 和官方打开方式，统一管理导航和可用性；`native-mihomo` 成立后再把资源发行、controller 配置和打开入口一起迁入 NetFleet。
 
-“实时运行”只在当前后端声明兼容的实时观察能力时出现。它不复制概览、机场、地区、配置和事件页的稳定摘要，也不为 sing-box 强行伪装 Mihomo API；未来其他后端可以提供自己的观察适配器，但必须遵守相同的只读、按需加载和秘密边界。若上游 Zashboard 版本不能关闭写操作或适配同源桥接，该版本就不能直接嵌入生产 NetFleet。
+“实时运行”只在当前后端能够提供对应运行面时启用。它不复制概览、机场、地区、配置和事件页的稳定摘要，也不为 sing-box 强行伪装 Mihomo API；未来其他后端可以提供自己的独立运行面。当前 Nikki 打开方式会把 controller secret 放入新标签页 URL，NetFleet 不读取、记录或缓存该 URL；原生后端建立后应优先收敛浏览器认证方式，但不能以削弱完整运行能力换取形式上的统一。
 
 ## 理想形态：机场无关的策略基线
 
@@ -178,7 +178,7 @@ Policy Bundle 只有在完成规则等价、DNS 行为、关键业务分类、DI
 | 分层选择 | 充分 | 继续校准少量显式门槛和周期，保持同轮实时 delay | 综合评分、历史加权、固定 Top-N、入口 ping 排名 |
 | Fail-Open | 设计充分 | 重点是真实目标环境的故障注入和 owner readback，不是增加更多恢复层 | 自写 DNS/nft cleanup、多个 supervisor、连接重放承诺 |
 | Capability | 充分且可扩展 | 新能力必须有不同资格或回退合同 | 按网站无限拆组、动态插件系统、名称猜测 |
-| 安全激活与可观测 | 当前增强链充分 | 保持设备端唯一配置 owner；增加受 ACL 约束的 Zashboard 只读实时面；长期用等价安全合同替换 Nikki 产品依赖 | 浏览器持有秘密、raw policy 编辑器、后台 projection、无限历史、并行控制面 |
+| 安全激活与可观测 | 当前增强链充分 | 保持设备端唯一持久配置 owner；以独立完整 Zashboard 承载 Mihomo 实时操作；长期把 dashboard 与 controller owner 迁入 NetFleet | raw policy 编辑器、后台 projection、无限历史、并行持久控制面 |
 
 五类增强已经覆盖产品需要的核心网络能力，当前也已经具备机场无关 Policy Bundle 和设备端结构化配置 owner。NetFleet 可以据此先作为依赖 Nikki/Mihomo 的独立发行物交付；完整产品独立性仍取决于原生订阅、运行后端和 OpenWrt 数据面 owner 的纵向替换。后端替换必须沿真实链路推进，不能先建立没有 caller 的通用插件系统；Zashboard 只补充观察体验，不能替代任何 owner 迁移。
 

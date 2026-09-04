@@ -73,11 +73,15 @@ The current release includes native LuCI pages and a device-side runtime with:
 - provider, region, and node health checks;
 - protected probes, layered Fail-Open, and native profile recovery;
 - provider, region, node, subscription, event, and connection diagnostics;
+- a separate full Zashboard for live Mihomo connections, traffic, rule matches, and proxy groups;
 - scheduled subscription refresh, configuration compilation, and automatic selection;
 - OpenWrt APK/IPK packages, signed APK feeds, and Fleet declarative deployment.
 
-The connections page currently focuses on practical read-only diagnosis. A
-full Mihomo real-time observation surface is being designed separately.
+NetFleet keeps stable operational summaries on its Events and Diagnostics page.
+The **Live Runtime** entry opens the full Zashboard in a new tab. With the
+current `nikki-mihomo` backend, NetFleet reuses Nikki's installed Zashboard,
+Mihomo controller, and secure opening path; it manages only entry availability
+and does not copy the page or its credentials.
 
 ## Installation
 

@@ -56,10 +56,11 @@ Nikki 继续负责订阅、配置和 OpenWrt 数据面的生命周期，Mihomo �
 - Provider、地区与节点三级健康检查；
 - 保护探针、分层 Fail-Open 和原生 Profile 恢复；
 - 机场、地区、节点、订阅用量、事件与连接诊断；
+- 独立打开完整 Zashboard，观察 Mihomo 实时连接、流量、规则命中和代理组；
 - 周期性订阅刷新、配置重编译和自动选优；
 - OpenWrt APK/IPK 软件包、签名 APK feed 和 Fleet 声明式部署。
 
-连接页面目前提供适合日常排查的只读信息。更完整的 Mihomo 实时观察界面仍在设计中，相关方案见[产品白皮书](docs/product/whitepaper.md)。
+NetFleet 的事件与诊断页保留适合日常排查的稳定摘要；“实时运行”会在新标签页打开完整 Zashboard。当前 `nikki-mihomo` 后端复用设备上 Nikki 已安装的 Zashboard、Mihomo 控制接口和安全打开方式，NetFleet 只统一管理入口和可用性，不复制页面或凭据。
 
 ## 安装
 
