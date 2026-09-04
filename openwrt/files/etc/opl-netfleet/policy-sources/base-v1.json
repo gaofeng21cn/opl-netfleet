@@ -5,11 +5,12 @@
       "119.29.29.29"
     ],
     "nameserver": [
-      "dhcp://wan"
+      "https://dns.alidns.com/dns-query",
+      "https://doh.pub/dns-query"
     ],
     "proxy-server-nameserver": [
-      "tls://1.1.1.1",
-      "tls://8.8.8.8"
+      "https://dns.alidns.com/dns-query",
+      "https://doh.pub/dns-query"
     ],
     "respect-rules": false,
     "nameserver-policy": {
@@ -36,9 +37,7 @@
         "+.facebook.com",
         "+.youtube.com"
       ]
-    },
-    "direct-nameserver": ["dhcp://wan"],
-    "direct-nameserver-follow-policy": false
+    }
   },
   "rule-providers": {
     "private-domain": {"type": "file", "behavior": "domain", "format": "mrs", "path": "/etc/nikki/run/rulesets/private-domain.mrs"},
