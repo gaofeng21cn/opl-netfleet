@@ -59,8 +59,23 @@ const resources = {
 	],
 	recovery_profile_options: [
 		{ ref: "subscription:alpha", display_name: "Alpha 机场" },
-		{ ref: "subscription:beta", display_name: "Beta 机场" }
-	]
+		{ ref: "subscription:beta", display_name: "Beta 机场" },
+		{ ref: "subscription:gamma", display_name: "Gamma 机场" }
+	],
+	provider_options: [
+		{ id: "alpha", section: "alpha", display_name: "Alpha 机场", region_ids: ["hong_kong", "japan"] },
+		{ id: "beta", section: "beta", display_name: "Beta 机场", region_ids: ["hong_kong", "japan"] },
+		{ id: "gamma", section: "gamma", display_name: "Gamma 机场", region_ids: ["singapore"] }
+	],
+	region_options: [
+		{ id: "hong_kong", code: "HK", display_name: "香港", display_order: 10, filter: "Hong Kong" },
+		{ id: "japan", code: "JP", display_name: "日本", display_order: 20, filter: "Japan" },
+		{ id: "singapore", code: "SG", display_name: "新加坡", display_order: 30, filter: "Singapore" }
+	],
+	policy_source_groups: {
+		"bundle|bundle:base-v1": ["OUTBOUND", "Media"],
+		"profile|subscription:alpha": ["OUTBOUND", "AI", "Media"]
+	}
 };
 
 const projection = project(policy, resources);
@@ -79,16 +94,19 @@ const request = {
 	policy_source: { kind: "profile", ref: "subscription:alpha" },
 	recovery_profile_ref: "subscription:beta",
 	providers: {
-		alpha: { enabled: true, role: "primary", billing: "buyout" },
-		beta: { enabled: true, role: "reserve", billing: "subscription" }
+		alpha: { section: "alpha", enabled: true, role: "primary", billing: "buyout", region_ids: ["hong_kong", "japan"] },
+		gamma: { section: "gamma", enabled: true, role: "reserve", billing: "subscription", region_ids: ["singapore"] }
 	},
 	regions: {
 		hong_kong: { display_name: "香港", mode: "manual_only" },
-		japan: { display_name: "日本", mode: "automatic" }
+		japan: { display_name: "日本", mode: "automatic" },
+		singapore: { display_name: "新加坡", mode: "automatic" }
 	},
 	capabilities: {
-		standard: { enabled: true, mode: "automatic", region_ids: ["japan"] }
+		standard: { display_name: "常规出口", enabled: true, mode: "automatic", region_ids: ["japan"], prefer_region_from: null, entry_group: "OUTBOUND", policy_groups: ["Media"] },
+		ai: { display_name: "AI 出口", enabled: true, mode: "automatic", region_ids: ["singapore"], prefer_region_from: "standard", entry_group: "AI", policy_groups: [] }
 	},
+	routing_rules: [{ kind: "domain_suffix", value: "example.com", capability: "ai" }],
 	automation: {
 		enabled: true,
 		selection_interval_seconds: 3600,
@@ -111,13 +129,18 @@ if (!merged.ok || merged.policy.policy_source.kind != "profile" ||
 	merged.policy.providers.alpha.section != "alpha" ||
 	merged.policy.providers.alpha.billing != "buyout" ||
 	merged.policy.providers.alpha.role != "primary" ||
-	merged.policy.providers.alpha.quota?.available_field != "available" ||
-	merged.policy.provider_regions.alpha?.[0]?.filter != "Hong Kong" ||
-	merged.policy.bindings.OUTBOUND?.capability != "standard" ||
-	merged.policy.regions.hong_kong.flag != "🇭🇰" ||
-	merged.policy.capabilities.standard.allowed_regions != null ||
-	merged.policy.capabilities.standard.excluded_regions?.[0] != "hong_kong" ||
-	merged.policy.fail_open.probes?.[0]?.url != "https://new-path.example.invalid" ||
+		merged.policy.providers.alpha.quota?.available_field != "available" ||
+		merged.policy.provider_regions.alpha?.[0]?.filter != "Hong Kong" ||
+		merged.policy.bindings.OUTBOUND?.capability != "standard" ||
+		merged.policy.bindings.AI?.capability != "ai" ||
+		merged.policy.providers.beta != null || merged.policy.providers.gamma?.section != "gamma" ||
+		merged.policy.regions.hong_kong.flag != "🇭🇰" ||
+		merged.policy.regions.singapore.flag != "SG" ||
+		merged.policy.capabilities.standard.allowed_regions != null ||
+		index(merged.policy.capabilities.standard.excluded_regions, "hong_kong") < 0 ||
+		merged.policy.capabilities.ai.prefer_region_from != "standard" ||
+		merged.policy.routing_rules?.[0]?.value != "example.com" ||
+		merged.policy.fail_open.probes?.[0]?.url != "https://new-path.example.invalid" ||
 	merged.policy.fail_open.probes?.[1]?.url != "https://new-guard.example.invalid" ||
 	length(changes(policy, merged.policy, resources)) < 8) {
 	print("config_merge_failed\n");
@@ -131,8 +154,17 @@ if (validate_request(policy, raw, resources).ok) {
 	exit(1);
 }
 
+const missing_sections = json(sprintf("%J", request));
+delete missing_sections.policy_source;
+delete missing_sections.automation;
+delete missing_sections.safety;
+if (validate_request(policy, missing_sections, resources).ok) {
+	print("missing_request_sections_accepted\n");
+	exit(1);
+}
+
 const unknown = json(sprintf("%J", request));
-unknown.providers.unknown = { enabled: true, role: "primary", billing: "subscription" };
+unknown.providers.unknown = { section: "unknown", enabled: true, role: "primary", billing: "subscription", region_ids: ["japan"] };
 if (validate_request(policy, unknown, resources).ok) {
 	print("unknown_provider_accepted\n");
 	exit(1);
@@ -153,11 +185,34 @@ if (apply(policy, no_primary, resources).ok) {
 }
 
 const all_regions = json(sprintf("%J", request));
-all_regions.capabilities.standard.region_ids = ["hong_kong", "japan"];
+all_regions.capabilities.standard.region_ids = ["hong_kong", "japan", "singapore"];
 const all_regions_merged = apply(policy, all_regions, resources);
 if (!all_regions_merged.ok || all_regions_merged.policy.capabilities.standard.allowed_regions != null ||
 	all_regions_merged.policy.capabilities.standard.excluded_regions != null) {
 	print("all_regions_constraint_failed\n");
+	exit(1);
+}
+
+const duplicate_binding = json(sprintf("%J", request));
+duplicate_binding.capabilities.ai.entry_group = "OUTBOUND";
+if (validate_request(policy, duplicate_binding, resources).ok) {
+	print("duplicate_binding_accepted\n");
+	exit(1);
+}
+
+const invented_region = json(sprintf("%J", request));
+invented_region.regions.mars = { display_name: "火星", mode: "automatic" };
+invented_region.providers.alpha.region_ids = ["hong_kong", "mars"];
+if (validate_request(policy, invented_region, resources).ok) {
+	print("invented_region_accepted\n");
+	exit(1);
+}
+
+const computed_changes = changes(policy, merged.policy, resources);
+if (length(filter(computed_changes, item => item.scope == "provider" && item.id == "beta" && item.field == "item")) != 1 ||
+	length(filter(computed_changes, item => item.scope == "provider" && item.id == "gamma" && item.field == "item")) != 1 ||
+	length(filter(computed_changes, item => item.scope == "capability" && item.id == "ai" && item.field == "item")) != 1) {
+	print("identity_change_detection_failed\n");
 	exit(1);
 }
 

@@ -17,6 +17,7 @@ describe('LiveNetFleetClient', () => {
     const payload = {
       status: fixtureScenarios.healthy.status,
       events: fixtureScenarios.healthy.events,
+      config: { revision: 'a'.repeat(64), active: true, pending_apply: false },
       source,
     };
     let requested: [RequestInfo | URL, RequestInit | undefined] | null = null;

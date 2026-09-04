@@ -331,6 +331,12 @@ class ReleaseToolsTests(unittest.TestCase):
             apk = bin_dir / 'apk'
             apk.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >>"$NETFLEET_APK_LOG"\n')
             apk.chmod(0o755)
+            uci = bin_dir / 'uci'
+            uci.write_text('#!/bin/sh\nprintf "%s\\n" "subscription:fixture"\n')
+            uci.chmod(0o755)
+            nikki = root / 'nikki'
+            nikki.write_text('#!/bin/sh\nexit 0\n')
+            nikki.chmod(0o755)
             log = root / 'apk.log'
             result = subprocess.run(
                 [str(INSTALLER)],
@@ -343,6 +349,7 @@ class ReleaseToolsTests(unittest.TestCase):
                     'NETFLEET_APK_KEYS_DIR': str(keys),
                     'NETFLEET_APK_REPOSITORY_FILE': str(repository),
                     'NETFLEET_APK_LOG': str(log),
+                    'NETFLEET_NIKKI_INIT': str(nikki),
                 },
                 text=True, capture_output=True, check=False,
             )
@@ -372,6 +379,12 @@ class ReleaseToolsTests(unittest.TestCase):
             apk = bin_dir / 'apk'
             apk.write_text('#!/bin/sh\nprintf called >>"$NETFLEET_APK_LOG"\n')
             apk.chmod(0o755)
+            uci = bin_dir / 'uci'
+            uci.write_text('#!/bin/sh\nprintf "%s\\n" "subscription:fixture"\n')
+            uci.chmod(0o755)
+            nikki = root / 'nikki'
+            nikki.write_text('#!/bin/sh\nexit 0\n')
+            nikki.chmod(0o755)
             log = root / 'apk.log'
             result = subprocess.run(
                 [str(INSTALLER)],
@@ -384,11 +397,39 @@ class ReleaseToolsTests(unittest.TestCase):
                     'NETFLEET_APK_KEYS_DIR': str(root / 'keys'),
                     'NETFLEET_APK_REPOSITORY_FILE': str(root / 'repositories.d/opl-netfleet.list'),
                     'NETFLEET_APK_LOG': str(log),
+                    'NETFLEET_NIKKI_INIT': str(nikki),
                 },
                 text=True, capture_output=True, check=False,
             )
             self.assertNotEqual(0, result.returncode)
             self.assertIn('public key is invalid', result.stderr)
+            self.assertFalse(log.exists())
+
+    def test_feed_bootstrap_rejects_missing_nikki_before_feed_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bin_dir = root / 'bin'
+            bin_dir.mkdir()
+            apk = bin_dir / 'apk'
+            apk.write_text('#!/bin/sh\nprintf called >>"$NETFLEET_APK_LOG"\n')
+            apk.chmod(0o755)
+            log = root / 'apk.log'
+            repository = root / 'repositories.d' / 'opl-netfleet.list'
+            result = subprocess.run(
+                [str(INSTALLER)],
+                env={
+                    **os.environ,
+                    'PATH': f'{bin_dir}:{os.environ["PATH"]}',
+                    'NETFLEET_INSTALL_TESTING': '1',
+                    'NETFLEET_NIKKI_INIT': str(root / 'missing-nikki'),
+                    'NETFLEET_APK_REPOSITORY_FILE': str(repository),
+                    'NETFLEET_APK_LOG': str(log),
+                },
+                text=True, capture_output=True, check=False,
+            )
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('Nikki must be installed', result.stderr)
+            self.assertFalse(repository.exists())
             self.assertFalse(log.exists())
 
     def test_release_workflow_builds_a_candidate_without_publishing(self):

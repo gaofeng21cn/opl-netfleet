@@ -88,7 +88,7 @@ uclient-fetch -q -O /tmp/install-netfleet.sh https://github.com/gaofeng21cn/opl-
 3. 在用户确认后生成策略、编译配置并启动 NetFleet；
 4. 回读运行状态和保护探针结果。
 
-整个过程由设备本地完成。订阅 URL 和令牌继续保存在 Nikki 与设备私有配置中；NetFleet 使用现有缓存组织节点，并让用户在接管后明确设置机场角色、地区范围、自动周期和保护探针。
+整个过程由设备本地完成。订阅 URL 和令牌继续保存在 Nikki 与设备私有配置中；NetFleet 使用现有缓存组织节点，并让用户在接管后维护机场角色、机场地区映射、出口能力、业务组绑定、私有域名规则、自动周期和保护探针。Nikki mixin、透明代理、DNS 与 OpenWrt 平台参数继续由 Nikki/OpenWrt 管理，不进入浏览器配置请求。
 
 ## 升级
 

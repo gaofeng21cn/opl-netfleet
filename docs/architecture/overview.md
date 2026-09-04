@@ -16,7 +16,9 @@ NetFleet 当前是 OpenWrt + Nikki + Mihomo 的可选增强层。第一阶段 Su
 选择，以及安全的生成、启用、恢复事务。这不是原生独立订阅 owner，也不接管数据面。
 
 当前仓库包含 UCode runtime、OpenWrt package source、薄 rpcd 适配器、原生 LuCI 页面，
-以及一个由 `procd` 直接监督的前台 supervisor。当前没有第二订阅下载器、远程 Host、
+以及一个由 `procd` 直接监督的前台 supervisor。设备配置可以在已有 Nikki subscription、
+共享地区目录和当前 Policy Source 组边界内维护完整 NetFleet policy 结构，但不接触订阅凭据、
+自定义地区正则、Nikki mixin 或 OpenWrt platform。当前没有第二订阅下载器、远程 Host、
 第二选择器、后台投影、原生 sing-box 后端或内置 Zashboard。
 
 当前运行后端身份是 `nikki-mihomo`，不是永久产品身份。NetFleet 只有在 successor 已完整

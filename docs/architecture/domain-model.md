@@ -88,7 +88,7 @@ RecoveryProfileRef
     -> Nikki official cleanup / passthrough
 ```
 
-解耦规则如下：Policy Source 只提供编译输入；Recovery Profile 只负责原生恢复；binding 只负责把策略来源中的精确组名接到 capability；capability 只负责开关、资格、地区范围和选择参数；region/provider 是 capability 可复用的网络资源；provider 只引用 Nikki section；measurement adapters 只负责采样；qualification/comparator 只处理标准化结果；compiler 只做一次性转换，并拥有生成 Profile 的用户可见组名模板；activation owner 只做全部启用 capability 的原子事务，事务编排留在 `main.uc`；UI/transport 只投影和转发。任何模块都不得维护第二份可刷新的订阅事实、维护选择历史、改写 DNS/nft/路由或从 runtime snapshot 反向修改配置。若设备不能消费 `type:file` provider source，compile 必须失败并保持 Recovery Profile，不得引入第二下载器或节点副本。没有新的激活合同和真实 caller 时，不把 `main.uc` 拆成第二模块、不把组名模板做成配置系统、不为伪节点卫生正则增加独立 policy 分区。
+解耦规则如下：Policy Source 只提供编译输入；Recovery Profile 只负责原生恢复；binding 只负责把策略来源中的精确组名接到 capability；capability 只负责开关、资格、地区范围和选择参数；region/provider 是 capability 可复用的网络资源；provider 只引用 Nikki section；measurement adapters 只负责采样；qualification/comparator 只处理标准化结果；compiler 只做一次性转换，并拥有生成 Profile 的用户可见组名模板；`main.uc` 是唯一命令入口和 mutation owner，`application/onboarding.uc`、`application/configuration.uc` 只承载同一进程内的事务实现；UI/transport 只投影和转发。任何模块都不得维护第二份可刷新的订阅事实、维护选择历史、改写 DNS/nft/路由或从 runtime snapshot 反向修改配置。若设备不能消费 `type:file` provider source，compile 必须失败并保持 Recovery Profile，不得引入第二下载器或节点副本。没有新的激活合同和真实 caller 时，不增加第二进程、daemon、锁、状态或 owner，不把组名模板做成配置系统，也不为伪节点卫生正则增加独立 policy 分区。
 
 ### 解耦审查结论
 
@@ -102,7 +102,7 @@ RecoveryProfileRef
 | Qualification -> Comparator | 必须保持单向：先过滤，再排序 | comparator 不读取 URL、UCI、订阅原文或 runtime 文本 |
 | Compiler -> Activation | 通过 staged artifact + manifest 解耦；不能共享可变缓存 | enable 前检查输入身份，readback 用 manifest 对账 |
 | Compiler -> 用户可见组名 | 当前由 compiler 用固定中文模板拼接 Mihomo 组名（自动选优 / 主用机场 / 备用机场 / 当前优选 / 代理路径）；`display_name`、`flag` 和 Nikki metadata 只填充可变部分 | 组名变化改 compiler；UI 不得再实现一套拓扑命名；不为 i18n 增加组名配置 |
-| Activation 实现边界 | 事务编排留在 `main.uc`；`core/activation.uc` 只判定，supervisor/UI/rpcd 只调用 | 没有新的激活合同和真实 caller 时不拆分事务脚本，不复制恢复路径 |
+| Application 实现边界 | `main.uc` 是唯一命令入口和 mutation owner；`application/*.uc` 只拆分同一进程内的 onboarding、配置和 provider 读取事务；`core/activation.uc` 只判定，supervisor/UI/rpcd 只调用 | 不增加第二进程、daemon、锁、状态或 owner，不复制恢复路径 |
 | Activation -> Nikki/Mihomo | 是平台适配边界，不应把 Nikki 生命周期复制进 NetFleet | 只调用官方切换/restart/cleanup，并做 effective/runtime readback |
 | Runtime selection -> history | 选择器不得依赖历史；evidence 只作有界展示输入 | supervisor 只复用当前轮次，不读取历史、LKG、排名或 generation |
 | UI/RPC -> owner | 只读投影/命令转发，不能成为事实源；门槛和延迟着色读 `status.selection` | 无订阅解析、无客户端候选排序或资格判定、无隐式 mutation；展示排序只影响表格，不得写死 150，不得按 capability id 子串猜测图标或文案 |
@@ -111,7 +111,7 @@ RecoveryProfileRef
 
 NetFleet 自有 policy、platform、ruleset lock、evidence、manifest 和 artifact 均使用 JSON，避免设备版 YAML 工具参与核心对象解析。Nikki/Mihomo 的外部 Profile 仍是 YAML，因此 adapter 只允许用 `yq -M -p yaml -o json` 做一次只读转换；禁止原地编辑、复杂表达式、订阅重写或把 YAML 转换变成第二配置源。真实 canary 已证明 Mihomo 可直接校验 JSON artifact，因此不再保留 JSON -> YAML 转换。yq 不可执行或不支持该最小转换时，compile 直接失败且不改变当前 Profile、DNS、nft 或路由。
 
-因此产品对象和 artifact 边界已经解耦：compiler 经 staged manifest 交给 activation，selector 不读 I/O，UI 不拥有事实，策略输入身份与恢复目标身份也各自绑定。机场无关 `PolicySource(kind=bundle)` 已是默认正常输入；`kind=profile` 只保留为现有目标迁移期间的只读输入，并与 bundle 共用同一个 compiler 和 activation owner。这不等于一文件一 owner；quota I/O 与 JSON/YAML/evidence 同在 `adapters/uci.uc`，enable/disable/select/recover 编排同在 `main.uc`。运行时必须继续证明：Policy Source 变化不会静默套用旧 binding；Recovery Profile 变化不会复用旧 manifest；Nikki cache 刷新不会生成第二份节点事实；supervisor 消失时数据面保持、由 `procd` 重启 owner，用户仍能独立从 Nikki 切回。任一 gate 失败都应缩小功能，而不是增加状态层。
+因此产品对象和 artifact 边界已经解耦：compiler 经 staged manifest 交给 activation，selector 不读 I/O，UI 不拥有事实，策略输入身份与恢复目标身份也各自绑定。机场无关 `PolicySource(kind=bundle)` 已是默认正常输入；`kind=profile` 只保留为现有目标迁移期间的只读输入，并与 bundle 共用同一个 compiler 和 activation owner。这不等于一文件一 owner；quota I/O 与 JSON/YAML/evidence 同在 `adapters/uci.uc`，`application/*.uc` 只从过大的入口文件拆出同一进程内的 onboarding、配置与 provider 事务，enable/disable/select/recover 仍由 `main.uc` 这一唯一入口拥有。运行时必须继续证明：Policy Source 变化不会静默套用旧 binding；Recovery Profile 变化不会复用旧 manifest；Nikki cache 刷新不会生成第二份节点事实；supervisor 消失时数据面保持、由 `procd` 重启 owner，用户仍能独立从 Nikki 切回。任一 gate 失败都应缩小功能，而不是增加状态层。
 
 纯 Mihomo 拓扑能完成节点/provider/DIRECT 数据面 fallback，但不能在 Mihomo 永久退出、Nikki 的有限 respawn 已耗尽后调用 Nikki 官方 cleanup，也不能按用户要求定期执行跨地区 comparator。因此准入唯一一个前台、无持久调度状态的 `procd` supervisor。它不得扩展为 worker、第二健康算法、业务 URL 轮询器或第二 mutation owner。
 
@@ -168,6 +168,8 @@ target-local 配置只保留下列 owner 分区：
 - `fail_open`：protected probe 列表，以及 path/guard probe ID、timeout、interval 和失败次数组成的 Mihomo fallback healthcheck。
 
 不创建 `ProviderBinding` 与 `ProviderPolicy` 两套存储，不提交订阅 URL、token、节点、resolver 或完整配置。跨设备安装所需的订阅凭据、target-local `routing_rules`、provider bootstrap DNS mixin 和 `platform.json` 属于用户私有 OPL Instance 所生成的 deployment bundle；只有稳定 section ID 被 policy 引用。mixin 只保留确有设备证据的 provider 入口 DNS 例外，不能重新拥有规则、策略组或全局平台值；platform 不是 engine 配置，也不能成为算法分支。未知组、未知能力、歧义引用、未知地区和 AI 香港候选必须在 compile 阶段拒绝或排除。provider source、生成文件和运行快照留在设备私有 state，Git 只保存脱敏合同、机场无关规则与真正被 caller 消费的实现。
+
+设备配置 owner 可以通过结构化 LuCI 请求增删上述 policy 中的 provider、region、capability、binding 和 `routing_rules`，但只能引用设备已经存在的稳定 Nikki subscription、共享地区目录及当前 Policy Source 已存在的策略组。provider ID 使用 subscription section；自动发现与高级编辑共用同一个地区目录和 filter owner，浏览器不能创建正则或节点副本。该能力只把单设备的 policy 结构从 private renderer 迁入 target-local owner，不改变订阅、mixin、platform、Nikki 或 Mihomo 的责任。
 
 ### CompiledProfile
 

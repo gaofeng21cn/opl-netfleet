@@ -81,6 +81,7 @@ exit 0
 endef
 
 define Package/opl-netfleet/install
+	$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/application
 	$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/core
 	$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/adapters
 	$(INSTALL_DIR) $(1)/usr/libexec/rpcd
@@ -91,6 +92,7 @@ define Package/opl-netfleet/install
 	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet/main.uc $(1)/usr/libexec/opl-netfleet/main.uc
 	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet/supervisor.uc $(1)/usr/libexec/opl-netfleet/supervisor.uc
 	$(INSTALL_DATA) ./files/usr/libexec/opl-netfleet/output.uc $(1)/usr/libexec/opl-netfleet/output.uc
+	$(INSTALL_DATA) ./files/usr/libexec/opl-netfleet/application/*.uc $(1)/usr/libexec/opl-netfleet/application/
 	$(INSTALL_DATA) ./files/usr/libexec/opl-netfleet/core/*.uc $(1)/usr/libexec/opl-netfleet/core/
 	$(INSTALL_DATA) ./files/usr/libexec/opl-netfleet/adapters/*.uc $(1)/usr/libexec/opl-netfleet/adapters/
 	$(INSTALL_BIN) ./files/usr/libexec/rpcd/opl-netfleet $(1)/usr/libexec/rpcd/opl-netfleet

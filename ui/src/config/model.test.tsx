@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { fixtureScenarios } from '../data/fixtures';
+import type { DeviceConfigSnapshot } from '../types';
 import { ConfigView } from './ConfigView';
 import { configSummary, createConfigDraft, validateConfigDraft } from './model';
 
@@ -29,7 +30,7 @@ describe('本地配置参考模型', () => {
     expect(draft.regions.map((item) => item.id)).not.toContain('detached');
     expect(draft.regions).toHaveLength(status.regions.length - 2);
     expect(draft.capabilities.map((item) => item.displayName)).toEqual(['海外加速', 'AI 出口']);
-    expect(draft.capabilities[1].excludedRegions).toEqual(['hong_kong']);
+    expect(draft.capabilities[1].regionIds).not.toContain('hong_kong');
     expect(configSummary(draft)).toMatchObject({ providerCount: 3, primaryCount: 2, reserveCount: 1, capabilityCount: 2 });
   });
 
@@ -42,6 +43,38 @@ describe('本地配置参考模型', () => {
       '至少需要一个主用机场。',
       '至少启用一个出口能力。',
     ]));
+  });
+
+  it('优先使用设备 config projection，不从运行状态猜映射和绑定', () => {
+    const status = structuredClone(fixtureScenarios.healthy.status);
+    const config: DeviceConfigSnapshot = {
+      revision: 'a'.repeat(64), active: true, pending_apply: false,
+      backend: { id: 'nikki-mihomo', display_name: 'Nikki + Mihomo' },
+      policy_source: { kind: 'bundle', ref: 'bundle:base-v1', display_name: 'NetFleet 内置基础策略' },
+      policy_source_options: [{ kind: 'bundle', ref: 'bundle:base-v1', display_name: 'NetFleet 内置基础策略' }],
+      policy_groups: ['OUTBOUND', 'AI'],
+      recovery_profile: { ref: 'subscription:recovery', display_name: '示例恢复配置' },
+      recovery_profile_options: [{ ref: 'subscription:recovery', display_name: '示例恢复配置' }],
+      providers: [{ id: 'alpha', section: 'alpha-source', display_name: 'Alpha 正式机场', enabled: true, role: 'primary', billing: 'subscription', region_ids: ['japan'] }],
+      provider_options: [{ id: 'alpha', section: 'alpha-source', display_name: 'Alpha 正式机场', region_ids: ['japan', 'singapore'] }],
+      regions: [{ id: 'japan', flag: 'JP', display_name: '日本', display_order: 10, mode: 'automatic' }],
+      region_options: [
+        { id: 'japan', code: 'JP', display_name: '日本', display_order: 10 },
+        { id: 'singapore', code: 'SG', display_name: '新加坡', display_order: 20 },
+      ],
+      capabilities: [{ id: 'standard', display_name: '海外加速', enabled: true, mode: 'automatic', region_ids: ['japan'], prefer_region_from: null, entry_group: 'OUTBOUND', policy_groups: [], base_groups: ['OUTBOUND'] }],
+      routing_rules: [{ kind: 'domain_suffix', value: 'example.com', capability: 'standard' }],
+      automation: { enabled: true, selection_interval_seconds: 1800, subscription_refresh_enabled: true, subscription_refresh_interval_seconds: 43200 },
+      safety: { region_switch_margin_ms: 150, leaf_switch_margin_ms: 150, runtime_grace_seconds: 45, latency_url: 'https://latency.invalid', path_probe_url: 'https://path.invalid', guard_probe_url: 'https://guard.invalid' },
+    };
+
+    const draft = createConfigDraft(status, config);
+    expect(draft.providers).toHaveLength(1);
+    expect(draft.providers[0].section).toBe('alpha-source');
+    expect(draft.providers[0].regionIds).toEqual(['japan']);
+    expect(draft.regions.map((item) => item.id)).toEqual(['japan']);
+    expect(draft.capabilities[0]).toMatchObject({ entryGroup: 'OUTBOUND', policyGroups: [] });
+    expect(draft.routingRules).toEqual([{ kind: 'domain_suffix', value: 'example.com', capability: 'standard' }]);
   });
 
   it('明确本地预览边界且不展示未实现后端选项', () => {

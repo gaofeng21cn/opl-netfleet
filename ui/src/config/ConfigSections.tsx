@@ -1,4 +1,5 @@
-import { CheckCircle2, CircleAlert, Gauge, Network, RefreshCw, ShieldCheck } from 'lucide-react';
+import { useState } from 'react';
+import { CheckCircle2, CircleAlert, Gauge, Network, Plus, RefreshCw, Route, ShieldCheck, Trash2 } from 'lucide-react';
 import type { ConfigDraft } from './model';
 import type { StatusSnapshot } from '../types';
 import { regionalDisplayName } from '../lib/format';
@@ -40,14 +41,13 @@ export function FoundationSection({ draft, status, onChange }: SectionProps) {
       <fieldset className="nf-form-row">
         <div><legend>策略基础</legend><p>决定规则和稳定出口组从哪里开始生成。</p></div>
         <div className="nf-choice-list">
-          <label><input type="radio" name="policy-source" checked={draft.policySource === 'bundle'} onChange={() => onChange({ ...draft, policySource: 'bundle' })} /><span><strong>NetFleet 内置基础策略</strong><small>机场无关，适合新安装</small></span></label>
-          <label><input type="radio" name="policy-source" checked={draft.policySource === 'profile'} onChange={() => onChange({ ...draft, policySource: 'profile' })} /><span><strong>沿用当前 Nikki 配置</strong><small>用于迁移已有规则和策略组</small></span></label>
+          {draft.policySourceOptions.map((option) => <label key={`${option.kind}|${option.ref}`}><input type="radio" name="policy-source" checked={draft.policySource.kind === option.kind && draft.policySource.ref === option.ref} onChange={() => onChange({ ...draft, policySource: option })} /><span><strong>{option.displayName}</strong><small>{option.kind === 'bundle' ? '机场无关，适合新安装' : '沿用该配置的规则和策略组'}</small></span></label>)}
         </div>
       </fieldset>
       <div className="nf-form-row">
         <div><label htmlFor="nf-recovery-profile">退出与故障恢复</label><p>NetFleet 关闭或启用失败时优先恢复这份原生配置。</p></div>
-        <select id="nf-recovery-profile" value={draft.recoveryProfile} onChange={(event) => onChange({ ...draft, recoveryProfile: event.target.value })}>
-          <option value={draft.recoveryProfile}>{draft.recoveryProfile}</option>
+        <select id="nf-recovery-profile" value={draft.recoveryProfile.ref} onChange={(event) => onChange({ ...draft, recoveryProfile: draft.recoveryProfileOptions.find((item) => item.ref === event.target.value) || draft.recoveryProfile })}>
+          {draft.recoveryProfileOptions.map((option) => <option key={option.ref} value={option.ref}>{option.displayName}</option>)}
         </select>
       </div>
     </div>
@@ -55,65 +55,136 @@ export function FoundationSection({ draft, status, onChange }: SectionProps) {
 }
 
 export function ProvidersSection({ draft, onChange }: SectionProps) {
+  const available = draft.providerOptions.filter((option) => !draft.providers.some((item) => item.id === option.id));
+  const [selected, setSelected] = useState('');
+  const selectedId = available.some((item) => item.id === selected) ? selected : available[0]?.id || '';
   return <section className="nf-config-section">
     <SectionHeading title="机场" description="只选择 Nikki 已有订阅；订阅地址、节点和下载仍不在浏览器中编辑。" />
     <div className="nf-table-wrap nf-config-table">
-      <table><thead><tr><th>参与</th><th>机场</th><th>真实资源</th><th>故障层级</th><th>计费方式</th></tr></thead>
+      <table><thead><tr><th>参与</th><th>机场</th><th>真实资源</th><th>故障层级</th><th>计费方式</th><th>操作</th></tr></thead>
         <tbody>{draft.providers.map((provider) => <tr key={provider.id}>
           <td><input aria-label={`${provider.displayName} 参与 NetFleet`} type="checkbox" checked={provider.enabled} onChange={(event) => onChange({ ...draft, providers: replaceAt(draft.providers, provider.id, { enabled: event.target.checked }) })} /></td>
           <td><strong>{provider.displayName}</strong><small>{provider.id}</small></td>
           <td>{provider.availableRegions ?? '未提供'} 个地区 / {provider.availableNodes ?? '未提供'} 个节点</td>
           <td><select aria-label={`${provider.displayName} 故障层级`} value={provider.role} disabled={!provider.enabled} onChange={(event) => onChange({ ...draft, providers: replaceAt(draft.providers, provider.id, { role: event.target.value as 'primary' | 'reserve' }) })}><option value="primary">主用机场</option><option value="reserve">备用机场</option></select></td>
           <td><select aria-label={`${provider.displayName} 计费方式`} value={provider.billing} disabled={!provider.enabled} onChange={(event) => onChange({ ...draft, providers: replaceAt(draft.providers, provider.id, { billing: event.target.value as 'subscription' | 'buyout' }) })}><option value="subscription">订阅制</option><option value="buyout">买断制</option></select></td>
+          <td><button className="nf-icon-button" type="button" title="移除机场" aria-label={`移除 ${provider.displayName}`} onClick={() => onChange({ ...draft, providers: draft.providers.filter((item) => item.id !== provider.id) })}><Trash2 aria-hidden="true" /></button></td>
         </tr>)}</tbody>
       </table>
     </div>
+    {available.length > 0 && <div className="nf-inline-add"><select aria-label="可添加机场" value={selectedId} onChange={(event) => setSelected(event.target.value)}>{available.map((option) => <option key={option.id} value={option.id}>{option.displayName}</option>)}</select><button type="button" onClick={() => {
+      const option = available.find((item) => item.id === selectedId);
+      if (!option) return;
+      const missingRegions = option.regionIds.filter((id) => !draft.regions.some((region) => region.id === id)).map((id) => {
+        const region = draft.regionOptions.find((item) => item.id === id);
+        return region ? { id: region.id, displayName: region.displayName, flag: region.code, displayOrder: region.displayOrder, mode: 'automatic' as const } : null;
+      }).filter((item): item is NonNullable<typeof item> => item !== null);
+      onChange({ ...draft, providers: [...draft.providers, { ...option, enabled: true, role: 'primary', billing: 'subscription' }], regions: [...draft.regions, ...missingRegions] });
+    }}><Plus aria-hidden="true" />添加机场</button></div>}
   </section>;
 }
 
 export function RegionsSection({ draft, onChange }: SectionProps) {
+  const available = draft.regionOptions.filter((option) => !draft.regions.some((item) => item.id === option.id) && draft.providers.some((provider) => {
+    const providerOption = draft.providerOptions.find((item) => item.id === provider.id);
+    return providerOption?.regionIds.includes(option.id);
+  }));
+  const [selected, setSelected] = useState('');
+  const selectedId = available.some((item) => item.id === selected) ? selected : available[0]?.id || '';
   return <section className="nf-config-section">
     <SectionHeading title="地区映射" description="地区来自当前机场的真实节点；只修正识别结果，不预设必须存在的地区。" />
     <div className="nf-table-wrap nf-config-table">
-      <table><thead><tr><th>识别状态</th><th>地区名称</th><th>真实覆盖</th><th>自动选优</th></tr></thead>
+      <table><thead><tr><th>识别状态</th><th>地区名称</th><th>真实覆盖</th><th>使用机场</th><th>自动选优</th><th>操作</th></tr></thead>
         <tbody>{draft.regions.map((region) => <tr key={region.id}>
           <td><span className="nf-mapping-ok"><CheckCircle2 aria-hidden="true" />已识别</span></td>
           <td><input aria-label={`${regionalDisplayName(region.displayName)} 地区名称`} value={regionalDisplayName(region.displayName)} onChange={(event) => onChange({ ...draft, regions: replaceAt(draft.regions, region.id, { displayName: event.target.value }) })} /></td>
           <td>{region.availableProviders ?? '未提供'} 个机场 / {region.availableNodes ?? '未提供'} 个节点</td>
+          <td><div className="nf-region-checks">{draft.providers.map((provider) => {
+            const option = draft.providerOptions.find((item) => item.id === provider.id);
+            const supported = provider.regionIds.includes(region.id) || option?.regionIds.includes(region.id);
+            return <label key={provider.id}><input type="checkbox" checked={provider.regionIds.includes(region.id)} disabled={!supported} onChange={(event) => {
+              const regionIds = event.target.checked ? [...provider.regionIds, region.id] : provider.regionIds.filter((id) => id !== region.id);
+              onChange({ ...draft, providers: replaceAt(draft.providers, provider.id, { regionIds }) });
+            }} />{provider.displayName}</label>;
+          })}</div></td>
           <td><select aria-label={`${regionalDisplayName(region.displayName)} 地区模式`} value={region.mode} onChange={(event) => onChange({ ...draft, regions: replaceAt(draft.regions, region.id, { mode: event.target.value as 'automatic' | 'manual_only' }) })}><option value="automatic">参与自动选优</option><option value="manual_only">仅手动使用</option></select></td>
+          <td><button className="nf-icon-button" type="button" title="移除地区" aria-label={`移除 ${region.displayName}`} onClick={() => onChange({
+            ...draft,
+            regions: draft.regions.filter((item) => item.id !== region.id),
+            providers: draft.providers.map((item) => ({ ...item, regionIds: item.regionIds.filter((id) => id !== region.id) })),
+            capabilities: draft.capabilities.map((item) => ({ ...item, regionIds: item.regionIds.filter((id) => id !== region.id) })),
+          })}><Trash2 aria-hidden="true" /></button></td>
         </tr>)}</tbody>
       </table>
     </div>
+    {available.length > 0 && <div className="nf-inline-add"><select aria-label="可添加地区" value={selectedId} onChange={(event) => setSelected(event.target.value)}>{available.map((option) => <option key={option.id} value={option.id}>{option.code} {option.displayName}</option>)}</select><button type="button" onClick={() => {
+      const option = available.find((item) => item.id === selectedId);
+      if (!option) return;
+      onChange({
+        ...draft,
+        regions: [...draft.regions, { id: option.id, displayName: option.displayName, flag: option.code, displayOrder: option.displayOrder, mode: 'automatic' }],
+        providers: draft.providers.map((provider) => {
+          const providerOption = draft.providerOptions.find((item) => item.id === provider.id);
+          return providerOption?.regionIds.includes(option.id) ? { ...provider, regionIds: [...provider.regionIds, option.id] } : provider;
+        }),
+      });
+    }}><Plus aria-hidden="true" />添加地区</button></div>}
   </section>;
 }
 
 export function ExitsSection({ draft, onChange }: SectionProps) {
   const capabilityName = (id?: string | null) => draft.capabilities.find((item) => item.id === id)?.displayName || '其他出口';
+  const [newId, setNewId] = useState('');
+  const [newName, setNewName] = useState('');
+  const usedGroups = (exceptId?: string) => new Set(draft.capabilities.filter((item) => item.id !== exceptId).flatMap((item) => [item.entryGroup, ...item.policyGroups].filter(Boolean)) as string[]);
+  const availableEntryGroups = draft.policyGroups.filter((group) => !usedGroups().has(group));
+  const [newEntry, setNewEntry] = useState('');
+  const selectedEntry = availableEntryGroups.includes(newEntry) ? newEntry : availableEntryGroups[0] || '';
   return <section className="nf-config-section">
     <SectionHeading title="出口策略" description="决定哪些业务出口由 NetFleet 增强，以及自动选择可以使用哪些地区。" />
     <div className="nf-config-exits">
       {draft.capabilities.map((capability) => <article className="nf-config-exit" key={capability.id}>
         <div className="nf-config-exit-head">
-          <div><strong>{capability.displayName}</strong><small>{capability.baseGroups.length ? `接管：${capability.baseGroups.join('、')}` : '尚未绑定原始策略组'}</small></div>
-          <label className="nf-switch"><input type="checkbox" checked={capability.enabled} onChange={(event) => onChange({ ...draft, capabilities: replaceAt(draft.capabilities, capability.id, { enabled: event.target.checked }) })} /><span aria-hidden="true" /><b>{capability.enabled ? '已启用' : '已关闭'}</b></label>
+          <div><input aria-label={`${capability.id} 出口名称`} value={capability.displayName} onChange={(event) => onChange({ ...draft, capabilities: replaceAt(draft.capabilities, capability.id, { displayName: event.target.value }) })} /><small>{capability.id}</small></div>
+          <div className="nf-inline-actions"><label className="nf-switch"><input type="checkbox" checked={capability.enabled} onChange={(event) => onChange({ ...draft, capabilities: replaceAt(draft.capabilities, capability.id, { enabled: event.target.checked }) })} /><span aria-hidden="true" /><b>{capability.enabled ? '已启用' : '已关闭'}</b></label><button className="nf-icon-button" type="button" title="移除出口" aria-label={`移除 ${capability.displayName}`} onClick={() => onChange({ ...draft, capabilities: draft.capabilities.filter((item) => item.id !== capability.id).map((item) => item.preferRegionFrom === capability.id ? { ...item, preferRegionFrom: null } : item), routingRules: draft.routingRules.filter((rule) => rule.capability !== capability.id) })}><Trash2 aria-hidden="true" /></button></div>
         </div>
         <div className="nf-config-exit-body">
           <div><span className="nf-form-label">运行方式</span><div className="nf-segmented" role="group" aria-label={`${capability.displayName} 运行方式`}>
             <button type="button" className={capability.mode === 'automatic' ? 'is-active' : ''} disabled={!capability.enabled} onClick={() => onChange({ ...draft, capabilities: replaceAt(draft.capabilities, capability.id, { mode: 'automatic' }) })}>自动选优</button>
             <button type="button" className={capability.mode === 'manual' ? 'is-active' : ''} disabled={!capability.enabled} onClick={() => onChange({ ...draft, capabilities: replaceAt(draft.capabilities, capability.id, { mode: 'manual' }) })}>手动选择</button>
           </div></div>
+          <div><span className="nf-form-label">默认出口组</span><select value={capability.entryGroup || ''} disabled={!capability.enabled} onChange={(event) => onChange({ ...draft, capabilities: replaceAt(draft.capabilities, capability.id, { entryGroup: event.target.value || null }) })}><option value="">请选择</option>{draft.policyGroups.map((group) => <option key={group} value={group} disabled={usedGroups(capability.id).has(group)}>{group}</option>)}</select></div>
+          <div><span className="nf-form-label">业务分类</span><div className="nf-region-checks">{draft.policyGroups.filter((group) => group !== capability.entryGroup).map((group) => <label key={group}><input type="checkbox" checked={capability.policyGroups.includes(group)} disabled={!capability.enabled || usedGroups(capability.id).has(group)} onChange={(event) => {
+            const policyGroups = event.target.checked ? [...capability.policyGroups, group] : capability.policyGroups.filter((item) => item !== group);
+            onChange({ ...draft, capabilities: replaceAt(draft.capabilities, capability.id, { policyGroups }) });
+          }} />{group}</label>)}</div></div>
           <div><span className="nf-form-label">地区限制</span><div className="nf-region-checks">
-            {draft.regions.map((region) => <label key={region.id}><input type="checkbox" checked={!capability.excludedRegions.includes(region.id)} disabled={!capability.enabled} onChange={(event) => {
-              const excludedRegions = event.target.checked
-                ? capability.excludedRegions.filter((id) => id !== region.id)
-                : [...capability.excludedRegions, region.id];
-              onChange({ ...draft, capabilities: replaceAt(draft.capabilities, capability.id, { excludedRegions }) });
+            {draft.regions.map((region) => <label key={region.id}><input type="checkbox" checked={capability.regionIds.includes(region.id)} disabled={!capability.enabled} onChange={(event) => {
+              const regionIds = event.target.checked
+                ? [...capability.regionIds, region.id]
+                : capability.regionIds.filter((id) => id !== region.id);
+              onChange({ ...draft, capabilities: replaceAt(draft.capabilities, capability.id, { regionIds }) });
             }} />{regionalDisplayName(region.displayName)}</label>)}
           </div></div>
-          {capability.preferRegionFrom && <p className="nf-config-follow">优先跟随“{capabilityName(capability.preferRegionFrom)}”的合规地区；该地区不合规时独立选择。</p>}
+          <div><span className="nf-form-label">地区协同</span><select value={capability.preferRegionFrom || ''} disabled={!capability.enabled || capability.mode !== 'automatic'} onChange={(event) => onChange({ ...draft, capabilities: replaceAt(draft.capabilities, capability.id, { preferRegionFrom: event.target.value || null }) })}><option value="">独立选择</option>{draft.capabilities.filter((item) => item.id !== capability.id && item.enabled && item.mode === 'automatic').map((item) => <option value={item.id} key={item.id}>跟随 {item.displayName}</option>)}</select>{capability.preferRegionFrom && <p className="nf-config-follow">优先跟随“{capabilityName(capability.preferRegionFrom)}”的合规地区；该地区不合规时独立选择。</p>}</div>
         </div>
       </article>)}
     </div>
+    {availableEntryGroups.length > 0 && <div className="nf-inline-add"><input value={newId} placeholder="稳定 ID，如 streaming" onChange={(event) => setNewId(event.target.value)} /><input value={newName} placeholder="显示名称" onChange={(event) => setNewName(event.target.value)} /><select value={selectedEntry} onChange={(event) => setNewEntry(event.target.value)}>{availableEntryGroups.map((group) => <option key={group} value={group}>{group}</option>)}</select><button type="button" disabled={!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(newId) || !newName.trim() || draft.capabilities.some((item) => item.id === newId)} onClick={() => {
+      onChange({ ...draft, capabilities: [...draft.capabilities, { id: newId, displayName: newName.trim(), enabled: true, mode: 'manual', entryGroup: selectedEntry, policyGroups: [], regionIds: draft.regions.map((region) => region.id), preferRegionFrom: null }] });
+      setNewId(''); setNewName(''); setNewEntry('');
+    }}><Plus aria-hidden="true" />添加出口</button></div>}
+  </section>;
+}
+
+export function RoutingSection({ draft, onChange }: SectionProps) {
+  const [suffix, setSuffix] = useState('');
+  const [capability, setCapability] = useState('');
+  const selectedCapability = draft.capabilities.some((item) => item.id === capability) ? capability : draft.capabilities[0]?.id || '';
+  return <section className="nf-config-section">
+    <SectionHeading title="业务规则" description="为少量私有域名指定出口；只接受域名后缀，不包含协议、路径或端口。" />
+    <div className="nf-table-wrap nf-config-table"><table><thead><tr><th>域名后缀</th><th>使用出口</th><th>操作</th></tr></thead><tbody>{draft.routingRules.map((rule, index) => <tr key={`${rule.value}-${index}`}><td><input value={rule.value} onChange={(event) => onChange({ ...draft, routingRules: draft.routingRules.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value.trim() } : item) })} /></td><td><select value={rule.capability} onChange={(event) => onChange({ ...draft, routingRules: draft.routingRules.map((item, itemIndex) => itemIndex === index ? { ...item, capability: event.target.value } : item) })}>{draft.capabilities.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}</select></td><td><button className="nf-icon-button" type="button" title="移除规则" aria-label={`移除 ${rule.value}`} onClick={() => onChange({ ...draft, routingRules: draft.routingRules.filter((_, itemIndex) => itemIndex !== index) })}><Trash2 aria-hidden="true" /></button></td></tr>)}</tbody></table></div>
+    <div className="nf-inline-add"><input value={suffix} placeholder="example.com" onChange={(event) => setSuffix(event.target.value)} /><select value={selectedCapability} onChange={(event) => setCapability(event.target.value)}>{draft.capabilities.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}</select><button type="button" disabled={!suffix.trim() || !selectedCapability} onClick={() => { onChange({ ...draft, routingRules: [...draft.routingRules, { kind: 'domain_suffix', value: suffix.trim(), capability: selectedCapability }] }); setSuffix(''); }}><Plus aria-hidden="true" />添加规则</button></div>
   </section>;
 }
 
@@ -133,7 +204,7 @@ export function SafetySection({ draft, onChange }: SectionProps) {
   return <section className="nf-config-section">
     <SectionHeading title="安全与恢复" description="默认值适合日常使用；只有明确需要时才调整高级门槛和检查地址。" />
     <div className="nf-safety-summary">
-      <ShieldCheck aria-hidden="true" /><div><strong>优先恢复：{draft.recoveryProfile}</strong><p>只有原生配置恢复失败时，最终退路才是停止 Nikki 并恢复网络直通。</p></div>
+      <ShieldCheck aria-hidden="true" /><div><strong>优先恢复：{draft.recoveryProfile.displayName} 原生配置</strong><p>只有原生配置恢复失败时，最终退路才是停止 Nikki 并恢复网络直通。</p></div>
     </div>
     <details className="nf-advanced-settings">
       <summary>高级设置</summary>
@@ -153,6 +224,7 @@ export const sectionMeta = [
   { id: 'providers' as const, label: '机场', icon: RefreshCw },
   { id: 'regions' as const, label: '地区映射', icon: CheckCircle2 },
   { id: 'exits' as const, label: '出口策略', icon: Gauge },
+  { id: 'routing' as const, label: '业务规则', icon: Route },
   { id: 'automation' as const, label: '自动运行', icon: RefreshCw },
   { id: 'safety' as const, label: '安全与恢复', icon: ShieldCheck },
 ];

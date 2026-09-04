@@ -8,6 +8,7 @@ import {
   FoundationSection,
   ProvidersSection,
   RegionsSection,
+  RoutingSection,
   SafetySection,
   sectionMeta,
 } from './ConfigSections';
@@ -56,6 +57,7 @@ export function ConfigView({ draft, savedDraft, status, onChange, onSave }: Conf
     providers: <ProvidersSection {...sectionProps} />,
     regions: <RegionsSection {...sectionProps} />,
     exits: <ExitsSection {...sectionProps} />,
+    routing: <RoutingSection {...sectionProps} />,
     automation: <AutomationSection {...sectionProps} />,
     safety: <SafetySection {...sectionProps} />,
   }[section];
@@ -91,7 +93,7 @@ export function ConfigView({ draft, savedDraft, status, onChange, onSave }: Conf
 
     {review && <section className="nf-config-review">
       <div className="nf-config-section-heading"><h2>配置摘要</h2><p>这里只展示产品语义，不展示底层配置字段。</p></div>
-      <dl><div><dt>策略基础</dt><dd>{draft.policySource === 'bundle' ? 'NetFleet 内置基础策略' : '沿用当前 Nikki 配置'}</dd></div><div><dt>参与机场</dt><dd>{summary.providerCount} 个，其中主用 {summary.primaryCount}、备用 {summary.reserveCount}</dd></div><div><dt>地区</dt><dd>{summary.automaticRegionCount} 个参与自动选优</dd></div><div><dt>出口</dt><dd>{summary.capabilityCount} 个已启用</dd></div><div><dt>周期选优</dt><dd>{draft.automation.enabled ? `${draft.automation.selectionIntervalSeconds / 60} 分钟` : '已关闭'}</dd></div><div><dt>恢复配置</dt><dd>{draft.recoveryProfile}</dd></div></dl>
+      <dl><div><dt>策略基础</dt><dd>{draft.policySource.displayName}</dd></div><div><dt>参与机场</dt><dd>{summary.providerCount} 个，其中主用 {summary.primaryCount}、备用 {summary.reserveCount}</dd></div><div><dt>地区</dt><dd>{summary.automaticRegionCount} 个参与自动选优</dd></div><div><dt>出口</dt><dd>{summary.capabilityCount} 个已启用</dd></div><div><dt>业务规则</dt><dd>{draft.routingRules.length} 条</dd></div><div><dt>周期选优</dt><dd>{draft.automation.enabled ? `${draft.automation.selectionIntervalSeconds / 60} 分钟` : '已关闭'}</dd></div><div><dt>恢复配置</dt><dd>{draft.recoveryProfile.displayName}</dd></div></dl>
     </section>}
 
     {validation && <div className={`nf-config-validation ${validation.length ? 'is-error' : 'is-success'}`} role="status">

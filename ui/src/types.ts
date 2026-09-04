@@ -115,11 +115,33 @@ export interface DataSourceInfo {
 export interface ClientReadResult {
   status?: StatusSnapshot;
   events?: EventsSnapshot;
+  config?: DeviceConfigSnapshot;
   errors?: {
     status?: string;
     events?: string;
+    config?: string;
   };
   source: DataSourceInfo;
+}
+
+export interface DeviceConfigSnapshot {
+  revision: string;
+  active: boolean;
+  pending_apply: boolean;
+  backend: { id: string; display_name: string };
+  policy_source: { kind: 'bundle' | 'profile'; ref: string; display_name: string };
+  policy_source_options: Array<{ kind: 'bundle' | 'profile'; ref: string; display_name: string }>;
+  policy_groups: string[];
+  recovery_profile: { ref: string; display_name: string };
+  recovery_profile_options: Array<{ ref: string; display_name: string }>;
+  providers: Array<{ id: string; section: string; display_name: string; enabled: boolean; role: 'primary' | 'reserve'; billing: 'subscription' | 'buyout'; region_ids: string[] }>;
+  provider_options: Array<{ id: string; section: string; display_name: string; region_ids: string[] }>;
+  regions: Array<{ id: string; flag?: string | null; display_name: string; display_order?: number | null; mode: 'automatic' | 'manual_only' }>;
+  region_options: Array<{ id: string; code: string; display_name: string; display_order: number }>;
+  capabilities: Array<{ id: string; display_name: string; enabled: boolean; mode: 'automatic' | 'manual'; region_ids: string[]; prefer_region_from?: string | null; entry_group?: string | null; policy_groups: string[]; base_groups?: string[] }>;
+  routing_rules: Array<{ kind: 'domain_suffix'; value: string; capability: string }>;
+  automation: { enabled: boolean; selection_interval_seconds: number; subscription_refresh_enabled: boolean; subscription_refresh_interval_seconds: number };
+  safety: { region_switch_margin_ms: number; leaf_switch_margin_ms: number; runtime_grace_seconds: number; latency_url: string; path_probe_url: string; guard_probe_url: string };
 }
 
 export interface StatusSnapshot {

@@ -34,7 +34,11 @@ Profile、稳定 subscription cache 和节点地区，返回脱敏预览、阻�
 policy、compile、enable、启动 supervisor 并回读。已有有效 policy 时 onboarding 接口只返回
 `required=false`，不能覆盖现有配置；失败时必须恢复原生 Profile、服务状态和本次创建的文件。
 
-设备端配置由 `config_get / config_validate / config_save / config_apply` 四个结构化 RPC 暴露。浏览器每次配置操作先读取 fresh `config_get`，并携带 policy SHA-256 revision；陈旧 revision 必须拒绝，展示缓存不得授权配置 mutation。唯一 target-local 配置 owner 发现 Nikki 已有稳定命名订阅和内置 Policy Source、把白名单用户选择 merge 到现有 canonical policy、校验全部引用，并用同目录临时文件原子替换。`config_save` 只允许在 NetFleet 未接管时更新 policy，不改变数据面；active 配置必须使用 `config_apply`，后者先返回可解释变更供 LuCI 二次确认，再在全局 mutation lock 内快照旧 policy/artifact/manifest，复用 `disable -> compile -> enable` activation owner 切换，失败恢复旧字节和旧 active owner。配置 owner 不接受 raw policy、订阅 URL/token、节点正文、DNS/nft 命令、浏览器生成的 Profile，也不允许新增/删除 provider、region、capability 或改写 section、binding、provider_regions 和 quota 映射。
+设备端配置由 `config_get / config_validate / config_save / config_apply` 四个结构化 RPC 暴露。浏览器每次配置操作先读取 fresh `config_get`，并携带 policy SHA-256 revision；陈旧 revision 必须拒绝，展示缓存不得授权配置 mutation。唯一 target-local 配置 owner 发现 Nikki 已有稳定命名订阅、订阅 cache 中可识别的地区、当前 Policy Source 策略组和内置 Policy Source，把白名单结构化选择 merge 到现有 canonical policy、校验全部引用，并用同目录临时文件原子替换。`config_save` 只允许在 NetFleet 未接管时更新 policy，不改变数据面；active 配置必须使用 `config_apply`，后者先返回可解释变更供 LuCI 二次确认，再在全局 mutation lock 内快照旧 policy/artifact/manifest，复用 `disable -> compile -> enable` activation owner 切换，失败恢复旧字节和旧 active owner。
+
+高级配置允许用户在设备已经存在的资源边界内维护结构：从 Nikki 已有稳定命名 subscription 新增或移除 provider；使用同一共享地区目录维护 provider-region mapping；新增、移除和命名 capability，设置其自动依赖和地区许可；把当前 Policy Source 已存在的策略组声明为 `entry|policy` binding；新增或移除只支持 `domain_suffix` 的 target-local routing rule。新增 provider 的稳定 ID 固定使用 Nikki section，地区 filter 固定来自设备 owner 返回的共享目录，浏览器不能提交自定义正则。所有结构变化仍先经过完整 policy validator，并且必须保留至少一个启用的主用 provider、每个启用 capability 恰好一个 entry、automatic 依赖无环且恰好一个根。
+
+配置 owner 仍不接受 raw policy、订阅 URL/token、节点正文、DNS/nft 命令、浏览器生成的 Profile、自定义 provider cache 路径、自定义地区正则或 quota metadata 映射。订阅凭据与下载仍由 Nikki 管理；Nikki mixin、透明代理参数、DNS 和 OpenWrt flow-offload 仍属于 Nikki/OpenWrt 或声明式 Fleet 的 platform owner，不因结构化 policy UI 而转移给浏览器。
 
 ## LuCI 显示层合同
 

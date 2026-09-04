@@ -8,11 +8,12 @@ import {
   FoundationSection,
   ProvidersSection,
   RegionsSection,
+  RoutingSection,
   SafetySection,
 } from './ConfigSections';
 import type { StatusSnapshot } from '../types';
 
-const steps = ['环境与恢复', '机场', '地区', '出口', '运行与安全'];
+const steps = ['环境与恢复', '机场', '地区', '出口', '业务规则', '运行与安全'];
 
 interface SetupWizardProps {
   draft: ConfigDraft;
@@ -51,7 +52,8 @@ export function SetupWizard({ draft, status, onChange, onFinish, onCancel }: Set
       {step === 1 && <ProvidersSection draft={draft} status={status} onChange={onChange} />}
       {step === 2 && <RegionsSection draft={draft} status={status} onChange={onChange} />}
       {step === 3 && <ExitsSection draft={draft} status={status} onChange={onChange} />}
-      {step === 4 && <>
+      {step === 4 && <RoutingSection draft={draft} status={status} onChange={onChange} />}
+      {step === 5 && <>
         <AutomationSection draft={draft} status={status} onChange={onChange} />
         <SafetySection draft={draft} status={status} onChange={onChange} />
         <section className="nf-wizard-review">

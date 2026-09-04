@@ -1,8 +1,9 @@
-import type { ClientReadResult, ConnectionsSnapshot, EventsSnapshot, NetFleetClient, StatusSnapshot } from '../types';
+import type { ClientReadResult, ConnectionsSnapshot, DeviceConfigSnapshot, EventsSnapshot, NetFleetClient, StatusSnapshot } from '../types';
 
 interface BridgeResponse extends ClientReadResult {
   status?: StatusSnapshot;
   events?: EventsSnapshot;
+  config?: DeviceConfigSnapshot;
 }
 
 export class LiveNetFleetClient implements NetFleetClient {

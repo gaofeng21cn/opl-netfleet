@@ -1,13 +1,12 @@
 #!/usr/bin/ucode
 
-import { read_yaml, read_json, write_json_atomic, sha256, sha256_text, file_mtime, device_name, current_profile, nikki_enabled, set_nikki_enabled, api_secret, set_profile, shell_quote, subscription_exists, subscription_display_name, subscription_options, subscription_quota, upstream_ready, write_evidence, POLICY_PATH, EVIDENCE_PATH } from "./adapters/uci.uc";
-import { resolve_profile, profile_exists, restart, update_subscription, stop as stop_nikki, cleanup_state, running, lan_runtime_state, install_artifact, remove_artifact, test_profile_object, prepare_provider_links, remove_provider_links, provider_runtime_path, ARTIFACT_PATH, MANIFEST_PATH, PROFILE_ENTRY_PATH, COMPILED_PROFILE } from "./adapters/nikki.uc";
+import { read_yaml, read_json, sha256, file_mtime, current_profile, nikki_enabled, set_nikki_enabled, api_secret, set_profile, shell_quote, subscription_display_name, subscription_quota, upstream_ready, write_evidence, POLICY_PATH, EVIDENCE_PATH } from "./adapters/uci.uc";
+import { resolve_profile, profile_exists, restart, update_subscription, stop as stop_nikki, cleanup_state, running, lan_runtime_state, install_artifact, remove_artifact, test_profile_object, prepare_provider_links, remove_provider_links, ARTIFACT_PATH, MANIFEST_PATH, PROFILE_ENTRY_PATH, COMPILED_PROFILE } from "./adapters/nikki.uc";
 import { resolve as resolve_policy_source, load as load_policy_source } from "./adapters/policy_source.uc";
 import { test_profile, test_runtime, controller_ready, proxies, proxy_providers, connections as current_connections, select as select_proxy, unfix as unfix_proxy, protected_probes, direct_probes } from "./adapters/mihomo.uc";
 import { measure as measure_latency, measure_providers, complete_from_fresh_history } from "./adapters/latency.uc";
 import { read_events, write_events, nikki_netfleet_lines } from "./adapters/events.uc";
 import { validate as validate_policy, automation as automation_config, guard_probe_url } from "./core/policy.uc";
-import { project as project_config, apply as apply_config_request, changes as config_changes } from "./core/config.uc";
 import { compile as compile_profile } from "./core/compiler.uc";
 import { manual_member, choose_automatic, provider_group_leaf, provider_round_summary } from "./core/selector.uc";
 import { validate as validate_evidence, selection_snapshot, measurement_identity } from "./core/evidence.uc";
@@ -15,13 +14,13 @@ import { append as append_events, validate as validate_events } from "./core/eve
 import { enable_precondition, is_active, recovery_owner, recovery_profile, passthrough_outcome, preferred_runtime_ready, expected_runtime_groups, expected_runtime_residue_groups } from "./core/activation.uc";
 import { build as build_status, resolve_runtime } from "./core/status.uc";
 import { enabled_sections as enabled_subscription_sections, quota_config as subscription_quota_config, cache_accepted, evaluate_entry, summarize as summarize_refresh, public_results as public_subscription_results, unavailable_results, project as project_subscriptions } from "./core/subscription.uc";
-import { discover as discover_onboarding } from "./core/onboarding.uc";
-import { service_state, set_service_state } from "./adapters/service.uc";
+import { service_state } from "./adapters/service.uc";
+import { load as load_provider_profiles } from "./application/providers.uc";
+import { get as onboarding_get, apply as onboarding_apply } from "./application/onboarding.uc";
+import { get as config_get, validate as config_validate, save as config_save, apply as config_apply } from "./application/configuration.uc";
 import { ok, fail } from "./output.uc";
 
 const REFRESH_DIR = "/tmp/opl-netfleet-subscription-refresh";
-const CONFIG_APPLY_DIR = "/tmp/opl-netfleet-config-apply";
-const ONBOARDING_DIR = "/tmp/opl-netfleet-onboarding";
 const MAIN_PATH = "/usr/libexec/opl-netfleet/main.uc";
 const INSTALLED_IDENTITY_PATH = "/etc/opl-netfleet/installed.json";
 const PACKAGE_BUILD_PATH = "/usr/share/opl-netfleet/build.json";
@@ -60,232 +59,6 @@ function load_evidence() {
 	const evidence = read_json(EVIDENCE_PATH);
 	const validation = validate_evidence(evidence);
 	return validation.ok ? evidence : null;
-};
-
-function onboarding_profile_display_name(reference) {
-	const prefix = "subscription:";
-	if (type(reference) == "string" && index(reference, prefix) == 0) {
-		const section = substr(reference, length(prefix));
-		const display = subscription_display_name(section);
-		if (display != section) return display;
-	}
-	return "当前原生配置";
-};
-
-function onboarding_discovery() {
-	const profile_ref = current_profile();
-	const profile_path = resolve_profile(profile_ref);
-	const profile_digest = profile_path == null ? null : sha256(profile_path);
-	const profile = profile_digest == null ? null : read_yaml(profile_path);
-	const subscriptions = [];
-	const options = subscription_options();
-	for (let i = 0; i < length(options); i++) {
-		const reference = options[i]?.ref;
-		const section = type(reference) == "string" && index(reference, "subscription:") == 0 ?
-			substr(reference, length("subscription:")) : null;
-		const path = resolve_profile(reference);
-		const digest = path == null ? null : sha256(path);
-		push(subscriptions, {
-			section: section,
-			display_name: options[i]?.display_name ?? section,
-			digest: digest,
-			profile: digest == null ? null : read_yaml(path)
-		});
-	}
-	const secret = api_secret();
-	const generated_artifacts_present = system(`test -e ${shell_quote(ARTIFACT_PATH)} -o -e ${shell_quote(MANIFEST_PATH)} -o -e ${shell_quote(PROFILE_ENTRY_PATH)}`) == 0;
-	const result = discover_onboarding({
-		target: device_name(),
-		current_profile: profile_ref,
-		current_profile_display_name: onboarding_profile_display_name(profile_ref),
-		current_profile_digest: profile_digest,
-		current_profile_object: profile,
-		subscriptions: subscriptions,
-		nikki_enabled: nikki_enabled(),
-		mihomo_running: running(),
-		runtime_valid: test_runtime(),
-		controller_ready: type(secret) == "string" && length(secret) > 0 && controller_ready(secret, 2),
-		generated_artifacts_present: generated_artifacts_present
-	});
-	if (system(`test -e ${shell_quote(POLICY_PATH)}`) == 0) {
-		result.ready = false;
-		push(result.blockers, { code: "existing_policy_unreadable", detail: null });
-	}
-	if (result.ready) {
-		const validation = validate_policy(result.policy);
-		if (!validation.ok) {
-			result.ready = false;
-			push(result.blockers, { code: "generated_policy_invalid", detail: validation.errors });
-		}
-	}
-	result.revision = result.ready ? sha256_text(sprintf("%J", result.revision_input)) : null;
-	if (result.ready && result.revision == null) {
-		result.ready = false;
-		push(result.blockers, { code: "revision_unavailable", detail: null });
-	}
-	return result;
-};
-
-function onboarding_projection(discovery) {
-	return {
-		required: true,
-		ready: discovery.ready == true,
-		revision: discovery.revision ?? null,
-		blockers: discovery.blockers ?? [],
-		warnings: discovery.warnings ?? [],
-		preview: discovery.preview
-	};
-};
-
-function onboarding_get_action(configured_policy) {
-	if (configured_policy != null) {
-		ok("onboarding-get", { required: false, ready: false, revision: null, blockers: [], warnings: [], preview: null });
-		return;
-	}
-	ok("onboarding-get", onboarding_projection(onboarding_discovery()));
-};
-
-function onboarding_request() {
-	const envelope = read_json(ARGV[1]);
-	const request = envelope?.request;
-	if (type(request) != "object") fail("onboarding-apply", "onboarding_request_unreadable", null);
-	if (request.confirmed != true) fail("onboarding-apply", "explicit_confirmation_required", null);
-	return request;
-};
-
-function run_onboarding_owner(action) {
-	const output = `${ONBOARDING_DIR}/${action}.json`;
-	const exit_code = system(`ucode ${shell_quote(MAIN_PATH)} ${shell_quote(action)} luci >${shell_quote(output)} 2>&1`);
-	const response = read_json(output);
-	return {
-		ok: exit_code == 0 && response?.ok == true,
-		response: response,
-		error: response?.error ?? `${action}_failed`
-	};
-};
-
-function provider_profiles_result(policy) {
-	const result = {};
-	const provider_names = keys(policy.providers);
-	for (let i = 0; i < length(provider_names); i++) {
-		const name = provider_names[i];
-		const provider = policy.providers[name];
-		if (provider?.enabled != true) {
-			continue;
-		}
-		if (!subscription_exists(provider.section)) {
-			return { ok: false, error: "provider_section_missing", detail: { provider: name, section: provider.section } };
-		}
-		const reference = `subscription:${provider.section}`;
-		const path = resolve_profile(reference);
-		if (path == null || system(`test -f ${shell_quote(path)}`) != 0) {
-			return { ok: false, error: "provider_cache_missing", detail: { provider: name, section: provider.section } };
-		}
-		const profile = read_yaml(path);
-		if (profile == null) {
-			return { ok: false, error: "provider_cache_unreadable", detail: { provider: name, section: provider.section } };
-		}
-		result[name] = {
-			path: path,
-			runtime_path: provider_runtime_path(name),
-			display_name: subscription_display_name(provider.section),
-			profile: profile,
-			quota: subscription_quota(provider.section, provider.quota)
-		};
-	}
-	return { ok: true, profiles: result };
-};
-
-function onboarding_cleanup(discovery, snapshot) {
-	let disabled = { ok: true, response: null };
-	if (system(`test -e ${shell_quote(MANIFEST_PATH)}`) == 0 || is_active(current_profile()))
-		disabled = run_onboarding_owner("disable");
-	const provider_result = provider_profiles_result(discovery?.policy);
-	if (provider_result.ok) remove_provider_links(provider_result.profiles);
-	let native_ok = current_profile() == snapshot.profile && nikki_enabled() == true &&
-		running() && test_runtime();
-	if (!native_ok && set_profile(snapshot.profile) && set_nikki_enabled(true) && restart()) {
-		native_ok = current_profile() == snapshot.profile && nikki_enabled() == true &&
-			running() && test_runtime();
-	}
-	const artifact_removed = remove_artifact();
-	const policy_removed = system(`rm -f ${shell_quote(POLICY_PATH)}`) == 0;
-	let evidence_restored = true;
-	if (snapshot.evidence_existed == true) {
-		evidence_restored = system(`cp -p ${shell_quote(snapshot.evidence_backup)} ${shell_quote(EVIDENCE_PATH)}`) == 0 &&
-			sha256(EVIDENCE_PATH) == snapshot.evidence_digest;
-	} else {
-		evidence_restored = system(`rm -f ${shell_quote(EVIDENCE_PATH)}`) == 0;
-	}
-	const service = set_service_state(snapshot.service);
-	return {
-		ok: disabled.ok && native_ok && artifact_removed && policy_removed && evidence_restored && service.ok,
-		disable: disabled.response,
-		native_profile_restored: native_ok,
-		artifact_removed: artifact_removed,
-		policy_removed: policy_removed,
-		evidence_restored: evidence_restored,
-		service: service.readback
-	};
-};
-
-function fail_onboarding_apply(discovery, snapshot, error, detail) {
-	const rollback = onboarding_cleanup(discovery, snapshot);
-	system(`rm -rf ${shell_quote(ONBOARDING_DIR)}`);
-	if (!rollback.ok) fail("onboarding-apply", "onboarding_rollback_failed", { error: error, detail: detail, rollback: rollback });
-	fail("onboarding-apply", error, { detail: detail, rollback: rollback });
-};
-
-function onboarding_apply_action() {
-	if (load_policy() != null || system(`test -e ${shell_quote(POLICY_PATH)}`) == 0)
-		fail("onboarding-apply", "already_configured", null);
-	const request = onboarding_request();
-	const discovery = onboarding_discovery();
-	if (!discovery.ready) fail("onboarding-apply", "onboarding_not_ready", onboarding_projection(discovery));
-	if (request.revision != discovery.revision)
-		fail("onboarding-apply", "onboarding_revision_conflict", { expected: discovery.revision, received: request.revision ?? null });
-	if (system(`rm -rf ${shell_quote(ONBOARDING_DIR)}`) != 0 ||
-		system(`mkdir -p ${shell_quote(ONBOARDING_DIR)}`) != 0)
-		fail("onboarding-apply", "onboarding_snapshot_failed", null);
-	const evidence_existed = system(`test -f ${shell_quote(EVIDENCE_PATH)}`) == 0;
-	const evidence_backup = `${ONBOARDING_DIR}/evidence.json`;
-	const evidence_digest = evidence_existed ? sha256(EVIDENCE_PATH) : null;
-	if (evidence_existed && (evidence_digest == null ||
-		system(`cp -p ${shell_quote(EVIDENCE_PATH)} ${shell_quote(evidence_backup)}`) != 0 ||
-		sha256(evidence_backup) != evidence_digest)) {
-		system(`rm -rf ${shell_quote(ONBOARDING_DIR)}`);
-		fail("onboarding-apply", "onboarding_snapshot_failed", null);
-	}
-	const snapshot = {
-		profile: current_profile(),
-		service: service_state(),
-		evidence_existed: evidence_existed,
-		evidence_backup: evidence_backup,
-		evidence_digest: evidence_digest
-	};
-	if (!write_json_atomic(POLICY_PATH, discovery.policy) || load_policy() == null)
-		fail_onboarding_apply(discovery, snapshot, "policy_write_failed", null);
-	const compiled = run_onboarding_owner("compile");
-	if (!compiled.ok) fail_onboarding_apply(discovery, snapshot, compiled.error, compiled.response);
-	const enabled = run_onboarding_owner("enable");
-	if (!enabled.ok) fail_onboarding_apply(discovery, snapshot, enabled.error, enabled.response);
-	const service = set_service_state({ enabled: true, running: true });
-	if (!service.ok) fail_onboarding_apply(discovery, snapshot, "supervisor_start_failed", service.readback);
-	const readback = run_onboarding_owner("status");
-	if (!readback.ok || current_profile() != COMPILED_PROFILE ||
-		service.readback.enabled != true || service.readback.running != true)
-		fail_onboarding_apply(discovery, snapshot, "onboarding_readback_failed", readback.response);
-	system(`rm -rf ${shell_quote(ONBOARDING_DIR)}`);
-	ok("onboarding-apply", {
-		state: "active",
-		recovery_profile_display_name: discovery.preview.recovery_profile_display_name,
-		provider_count: length(discovery.preview.providers),
-		region_count: length(discovery.preview.regions),
-		entry_group: discovery.preview.entry_group,
-		activation: enabled.response?.result ?? null,
-		service: service.readback,
-		status: readback.response?.result ?? null
-	});
 };
 
 function record_events(additions) {
@@ -441,7 +214,7 @@ function automatic_provider_sources(manifest, capability_names) {
 };
 
 function load_provider_profiles(policy, stage) {
-	const result = provider_profiles_result(policy);
+	const result = load_provider_profiles(policy);
 	if (!result.ok) {
 		fail(stage, result.error, result.detail);
 	}
@@ -609,7 +382,7 @@ function compile_result(policy, allow_active) {
 	if (recovery_path == null || system(`test -f ${shell_quote(recovery_path)}`) != 0) {
 		return { ok: false, error: "recovery_profile_missing", detail: policy.recovery_profile.ref };
 	}
-	const provider_result = provider_profiles_result(policy);
+	const provider_result = load_provider_profiles(policy);
 	if (!provider_result.ok) {
 		return provider_result;
 	}
@@ -1265,235 +1038,6 @@ function profile_display_name(profile) {
 		return display == section ? null : display;
 	}
 	return null;
-};
-
-function has_reference(options, kind, ref) {
-	for (let i = 0; i < length(options); i++) {
-		if ((kind == null || options[i]?.kind == kind) && options[i]?.ref == ref) return true;
-	}
-	return false;
-};
-
-function config_resources(policy) {
-	const subscriptions = subscription_options();
-	const recovery_options = [];
-	const source_options = [];
-	const bundle = { kind: "bundle", ref: "bundle:base-v1" };
-	const bundle_path = resolve_policy_source(bundle);
-	if (bundle_path != null && sha256(bundle_path) != null) {
-		push(source_options, { kind: "bundle", ref: bundle.ref, display_name: "NetFleet 内置基础策略" });
-	}
-	for (let i = 0; i < length(subscriptions); i++) {
-		push(recovery_options, subscriptions[i]);
-		push(source_options, {
-			kind: "profile",
-			ref: subscriptions[i].ref,
-			display_name: subscriptions[i].display_name
-		});
-	}
-	if (!has_reference(source_options, policy.policy_source.kind, policy.policy_source.ref) &&
-		resolve_policy_source(policy.policy_source) != null) {
-		push(source_options, {
-			kind: policy.policy_source.kind,
-			ref: policy.policy_source.ref,
-			display_name: policy.policy_source.kind == "bundle" ? "当前内置基础策略" :
-				(profile_display_name(policy.policy_source.ref) ?? "当前 Nikki 配置")
-		});
-	}
-	if (!has_reference(recovery_options, null, policy.recovery_profile.ref) &&
-		profile_exists(policy.recovery_profile.ref)) {
-		push(recovery_options, {
-			ref: policy.recovery_profile.ref,
-			display_name: profile_display_name(policy.recovery_profile.ref) ?? "当前原生配置"
-		});
-	}
-	return {
-		provider_names: provider_display_names(policy),
-		policy_source_options: source_options,
-		recovery_profile_options: recovery_options
-	};
-};
-
-function config_projection(policy, resources) {
-	const result = project_config(policy, resources);
-	result.revision = sha256(POLICY_PATH);
-	result.active = is_active(current_profile());
-	const manifest = read_json(MANIFEST_PATH);
-	result.pending_apply = manifest?.policy_sha256 != result.revision;
-	return result;
-};
-
-function load_config_change(policy, action) {
-	const envelope = read_json(ARGV[1]);
-	const request = envelope?.request;
-	if (type(request) != "object") fail(action, "config_request_unreadable", null);
-	const revision = sha256(POLICY_PATH);
-	if (request.revision != revision) {
-		fail(action, "config_revision_conflict", { expected: revision, received: request.revision ?? null });
-	}
-	const resources = config_resources(policy);
-	const merged = apply_config_request(policy, request, resources);
-	if (!merged.ok) fail(action, "config_invalid", { errors: merged.errors });
-	return {
-		request: request,
-		resources: resources,
-		policy: merged.policy,
-		changes: config_changes(policy, merged.policy, resources)
-	};
-};
-
-function config_get_action(policy) {
-	ok("config-get", config_projection(policy, config_resources(policy)));
-};
-
-function config_validate_action(policy) {
-	const change = load_config_change(policy, "config-validate");
-	ok("config-validate", {
-		valid: true,
-		change_count: length(change.changes),
-		changes: change.changes,
-		current_revision: sha256(POLICY_PATH)
-	});
-};
-
-function config_save_action(policy) {
-	if (is_active(current_profile())) fail("config-save", "active_requires_apply", null);
-	const change = load_config_change(policy, "config-save");
-	if (length(change.changes) == 0) {
-		ok("config-save", { state: "unchanged", config: config_projection(policy, change.resources) });
-		return;
-	}
-	if (!write_json_atomic(POLICY_PATH, change.policy)) fail("config-save", "policy_write_failed", null);
-	const saved = load_policy();
-	if (saved == null) fail("config-save", "policy_readback_failed", null);
-	ok("config-save", {
-		state: "saved",
-		change_count: length(change.changes),
-		changes: change.changes,
-		config: config_projection(saved, config_resources(saved))
-	});
-};
-
-function snapshot_config_file(path, name, required) {
-	const exists = system(`test -f ${shell_quote(path)}`) == 0;
-	if (!exists) return required ? null : { path: path, existed: false };
-	const digest = sha256(path);
-	const backup = `${CONFIG_APPLY_DIR}/${name}`;
-	if (digest == null || system(`cp -p ${shell_quote(path)} ${shell_quote(backup)}`) != 0 ||
-		sha256(backup) != digest) return null;
-	return { path: path, backup: backup, digest: digest, existed: true };
-};
-
-function prepare_config_snapshot() {
-	if (system(`rm -rf ${shell_quote(CONFIG_APPLY_DIR)}`) != 0 ||
-		system(`mkdir -p ${shell_quote(CONFIG_APPLY_DIR)}`) != 0) return null;
-	const files = [
-		snapshot_config_file(POLICY_PATH, "policy.json", true),
-		snapshot_config_file(ARTIFACT_PATH, "artifact.json", false),
-		snapshot_config_file(MANIFEST_PATH, "manifest.json", false)
-	];
-	for (let i = 0; i < length(files); i++) {
-		if (files[i] == null) return null;
-	}
-	return { files: files, active: is_active(current_profile()) };
-};
-
-function restore_config_snapshot(snapshot) {
-	let restored = true;
-	for (let i = 0; i < length(snapshot?.files ?? []); i++) {
-		const entry = snapshot.files[i];
-		if (entry.existed != true) {
-			if (system(`rm -f ${shell_quote(entry.path)}`) != 0) restored = false;
-			continue;
-		}
-		const temporary = `${entry.path}.config-rollback`;
-		if (system(`cp -p ${shell_quote(entry.backup)} ${shell_quote(temporary)}`) != 0 ||
-			sha256(temporary) != entry.digest || system(`mv -f ${shell_quote(temporary)} ${shell_quote(entry.path)}`) != 0 ||
-			sha256(entry.path) != entry.digest) restored = false;
-	}
-	return restored;
-};
-
-function run_config_owner(action) {
-	const output = `${CONFIG_APPLY_DIR}/${action}.json`;
-	const exit_code = system(`ucode ${shell_quote(MAIN_PATH)} ${shell_quote(action)} luci >${shell_quote(output)} 2>&1`);
-	const response = read_json(output);
-	return {
-		ok: exit_code == 0 && response?.ok == true,
-		exit_code: exit_code,
-		response: response,
-		error: response?.error ?? (exit_code == 0 ? "owner_readback_failed" : `${action}_failed`)
-	};
-};
-
-function cleanup_config_snapshot() {
-	system(`rm -rf ${shell_quote(CONFIG_APPLY_DIR)}`);
-};
-
-function rollback_config_apply(snapshot) {
-	if (!restore_config_snapshot(snapshot)) return { ok: false, error: "snapshot_restore_failed" };
-	const disabled = run_config_owner("disable");
-	if (!disabled.ok) return { ok: false, error: "rollback_disable_failed", disable: disabled.response };
-	if (snapshot.active != true) return { ok: true, state: "inactive_restored", disable: disabled.response };
-	const restored_policy = load_policy();
-	const providers = provider_profiles_result(restored_policy);
-	if (!providers.ok) {
-		return { ok: false, error: "rollback_provider_read_failed", detail: providers };
-	}
-	if (!prepare_provider_links(providers.profiles)) {
-		remove_provider_links(providers.profiles);
-		return { ok: false, error: "rollback_provider_prepare_failed" };
-	}
-	const enabled = run_config_owner("enable");
-	return enabled.ok ? { ok: true, state: "active_restored", enable: enabled.response } :
-		{ ok: false, error: "rollback_enable_failed", enable: enabled.response };
-};
-
-function fail_config_apply(snapshot, error, detail) {
-	const rollback = rollback_config_apply(snapshot);
-	cleanup_config_snapshot();
-	if (!rollback.ok) fail("config-apply", "config_apply_rollback_failed", {
-		error: error, detail: detail, rollback: rollback
-	});
-	fail("config-apply", error, { detail: detail, rollback: rollback });
-};
-
-function config_apply_action(policy) {
-	const change = load_config_change(policy, "config-apply");
-	const current = config_projection(policy, change.resources);
-	if (length(change.changes) == 0 && current.active == true && current.pending_apply != true) {
-		ok("config-apply", { state: "unchanged", config: current });
-		return;
-	}
-	const snapshot = prepare_config_snapshot();
-	if (snapshot == null) {
-		cleanup_config_snapshot();
-		fail("config-apply", "config_snapshot_failed", null);
-	}
-	if (snapshot.active == true) {
-		const disabled = run_config_owner("disable");
-		if (!disabled.ok) {
-			cleanup_config_snapshot();
-			fail("config-apply", "active_disable_failed", disabled.response);
-		}
-	}
-	if (!write_json_atomic(POLICY_PATH, change.policy) || load_policy() == null)
-		fail_config_apply(snapshot, "policy_write_failed", null);
-	const compiled = run_config_owner("compile");
-	if (!compiled.ok) fail_config_apply(snapshot, compiled.error, compiled.response);
-	const enabled = run_config_owner("enable");
-	if (!enabled.ok) fail_config_apply(snapshot, enabled.error, enabled.response);
-	const applied = load_policy();
-	const result = {
-		state: "applied",
-		previously_active: snapshot.active,
-		change_count: length(change.changes),
-		changes: change.changes,
-		activation: enabled.response?.result ?? null,
-		config: config_projection(applied, config_resources(applied))
-	};
-	cleanup_config_snapshot();
-	ok("config-apply", result);
 };
 
 function candidate_group_names(entry) {
@@ -2676,11 +2220,11 @@ if (action == "connections") {
 	exit(0);
 }
 if (action == "onboarding-get") {
-	onboarding_get_action(load_policy());
+	onboarding_get(load_policy());
 	exit(0);
 }
 if (action == "onboarding-apply") {
-	onboarding_apply_action();
+	onboarding_apply(ARGV[1]);
 	exit(0);
 }
 if (action == "package-cleanup") {
@@ -2701,13 +2245,13 @@ const evidence = load_evidence();
 if (action == "status") {
 	status_action(policy, evidence);
 } else if (action == "config-get") {
-	config_get_action(policy);
+	config_get(policy);
 } else if (action == "config-validate") {
-	config_validate_action(policy);
+	config_validate(policy, ARGV[1]);
 } else if (action == "config-save") {
-	config_save_action(policy);
+	config_save(policy, ARGV[1]);
 } else if (action == "config-apply") {
-	config_apply_action(policy);
+	config_apply(policy, ARGV[1]);
 } else if (action == "probe") {
 	const result = protected_probes_after_restart(policy);
 	if (!result.ok) {

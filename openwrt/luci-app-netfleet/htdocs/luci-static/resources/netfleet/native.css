@@ -1119,6 +1119,40 @@
 	color: var(--nf-muted);
 }
 
+.netfleet-capability-head > div:last-child,
+.netfleet-inline-add {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.netfleet-inline-add {
+	margin-top: 16px;
+	padding-top: 16px;
+	border-top: 1px solid rgba(127, 127, 127, 0.18);
+}
+
+.netfleet-inline-add select,
+.netfleet-inline-add input {
+	min-width: 190px;
+	min-height: 38px;
+}
+
+.netfleet-capability-add input {
+	flex: 1 1 190px;
+}
+
+.netfleet-compact-button {
+	min-height: 34px;
+	padding: 0 10px;
+}
+
+.netfleet-empty-note {
+	margin: 16px 0 0;
+	color: var(--nf-muted);
+}
+
 .netfleet-region-checks {
 	display: grid;
 	grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1198,7 +1232,7 @@
 
 .netfleet-wizard-steps {
 	display: grid;
-	grid-template-columns: repeat(5, minmax(0, 1fr));
+	grid-template-columns: repeat(6, minmax(0, 1fr));
 	gap: 4px;
 	margin: 0 0 18px;
 	padding: 0;

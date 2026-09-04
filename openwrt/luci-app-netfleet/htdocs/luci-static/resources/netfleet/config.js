@@ -9,6 +9,7 @@ const SECTIONS = [
 	[ 'providers', '机场' ],
 	[ 'regions', '地区映射' ],
 	[ 'capabilities', '出口策略' ],
+	[ 'routing', '业务规则' ],
 	[ 'automation', '自动运行' ],
 	[ 'safety', '安全与恢复' ]
 ];
@@ -33,10 +34,23 @@ function regionalDisplayName(flag, name) {
 }
 
 function visibleRegions(controller) {
-	return controller.configDraft.regions.filter(function(region) {
-		const status = statusById(controller.status.regions, region.id);
-		return Number(status.available_node_count || 0) > 0 && Number(status.available_provider_count || 0) > 0;
-	});
+	return controller.configDraft.regions || [];
+}
+
+function removeById(items, id) {
+	return (items || []).filter(function(item) { return item.id !== id; });
+}
+
+function optionById(items, id) {
+	return (items || []).find(function(item) { return item.id === id; }) || null;
+}
+
+function stableId(value) {
+	return /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(String(value || ''));
+}
+
+function compactButton(label, onclick, destructive) {
+	return E('button', { 'class': 'btn cbi-button netfleet-compact-button' + (destructive ? ' cbi-button-negative' : ''), 'type': 'button', 'click': onclick }, label);
 }
 
 function fieldRow(label, help, control) {
@@ -120,6 +134,7 @@ function foundation(controller) {
 }
 
 function providers(controller) {
+	const draft = controller.configDraft;
 	const rows = controller.configDraft.providers.map(function(provider) {
 		const status = statusById(controller.status.providers, provider.id);
 		const enabledAttrs = { 'type': 'checkbox', 'aria-label': provider.display_name + ' 参与 NetFleet', 'change': function(event) {
@@ -129,25 +144,49 @@ function providers(controller) {
 		return E('tr', {}, [
 			E('td', {}, E('input', enabledAttrs)),
 			E('td', {}, [ E('strong', {}, provider.display_name), E('small', {}, provider.id) ]),
-			E('td', {}, String(status.available_region_count ?? 0) + ' 个地区 / ' + (status.node_count_known === true ? String(status.available_node_count ?? 0) + ' 个节点' : '节点未提供')),
+			E('td', {}, status.id ? String(status.available_region_count ?? 0) + ' 个地区 / ' + (status.node_count_known === true ? String(status.available_node_count ?? 0) + ' 个节点' : '节点未提供') : provider.region_ids.length + ' 个已识别地区 / 待应用'),
 			E('td', {}, select(provider.role, [ [ 'primary', '主用机场' ], [ 'reserve', '备用机场' ] ], function(event) {
 				update(controller, function(next) { next.providers.find(function(item) { return item.id === provider.id; }).role = event.target.value; });
 			}, !provider.enabled)),
 			E('td', {}, select(provider.billing, [ [ 'subscription', '订阅制' ], [ 'buyout', '买断制' ] ], function(event) {
 				update(controller, function(next) { next.providers.find(function(item) { return item.id === provider.id; }).billing = event.target.value; });
-			}, !provider.enabled))
+			}, !provider.enabled)),
+			E('td', {}, compactButton('移除', function() {
+				update(controller, function(next) { next.providers = removeById(next.providers, provider.id); });
+			}, true))
 		]);
 	});
+	const available = (draft.provider_options || []).filter(function(option) {
+		return !draft.providers.some(function(provider) { return provider.id === option.id; });
+	});
+	let selected = available[0] ? available[0].id : '';
+	const addControls = available.length ? E('div', { 'class': 'netfleet-inline-add' }, [
+		select(selected, available.map(function(option) { return [ option.id, option.display_name ]; }), function(event) { selected = event.target.value; }),
+		compactButton('添加机场', function() {
+			const option = optionById(draft.provider_options, selected);
+			if (!option) return;
+			update(controller, function(next) {
+				next.providers.push({ id: option.id, section: option.section, display_name: option.display_name, enabled: true, role: 'primary', billing: 'subscription', region_ids: (option.region_ids || []).slice() });
+				(option.region_ids || []).forEach(function(regionId) {
+					if (next.regions.some(function(region) { return region.id === regionId; })) return;
+					const region = optionById(next.region_options, regionId);
+					if (region) next.regions.push({ id: region.id, flag: region.code, display_name: region.display_name, display_order: region.display_order, mode: 'automatic' });
+				});
+			});
+		})
+	]) : E('p', { 'class': 'netfleet-empty-note' }, 'Nikki 中没有尚未接管的订阅。');
 	return E('section', {}, [
 		sectionHeading('机场', '只选择 Nikki 已有订阅；订阅地址、节点和下载不在此页面编辑。'),
 		E('div', { 'class': 'table netfleet-config-table' }, [
-			E('table', {}, [ E('thead', {}, E('tr', {}, [ E('th', {}, '参与'), E('th', {}, '机场'), E('th', {}, '真实资源'), E('th', {}, '故障层级'), E('th', {}, '计费方式') ])), E('tbody', {}, rows) ])
-		])
+			E('table', {}, [ E('thead', {}, E('tr', {}, [ E('th', {}, '参与'), E('th', {}, '机场'), E('th', {}, '真实资源'), E('th', {}, '故障层级'), E('th', {}, '计费方式'), E('th', {}, '操作') ])), E('tbody', {}, rows) ])
+		]),
+		addControls
 	]);
 }
 
 function regions(controller) {
 	const visible = visibleRegions(controller);
+	const providers = controller.configDraft.providers || [];
 	const rows = visible.map(function(region) {
 		const status = statusById(controller.status.regions, region.id);
 		const input = E('input', {
@@ -158,35 +197,108 @@ function regions(controller) {
 		return E('tr', {}, [
 			E('td', {}, E('span', { 'class': 'netfleet-mapping-ok' }, '已识别')),
 			E('td', {}, [ E('strong', { 'class': 'netfleet-region-code' }, regionalDisplayName(region.flag, '')), input ]),
-			E('td', {}, String(status.available_provider_count) + ' 个机场 / ' + String(status.available_node_count) + ' 个节点'),
+			E('td', {}, status.id ? String(status.available_provider_count ?? 0) + ' 个机场 / ' + String(status.available_node_count ?? 0) + ' 个节点' : '待应用'),
+			E('td', {}, E('div', { 'class': 'netfleet-region-checks' }, providers.map(function(provider) {
+				const option = optionById(controller.configDraft.provider_options, provider.id);
+				const supported = provider.region_ids.indexOf(region.id) >= 0 || (option && option.region_ids.indexOf(region.id) >= 0);
+				return checkbox(provider.region_ids.indexOf(region.id) >= 0, provider.display_name, function(event) {
+					update(controller, function(next) {
+						const target = next.providers.find(function(item) { return item.id === provider.id; });
+						target.region_ids = event.target.checked ? target.region_ids.concat([ region.id ]) : target.region_ids.filter(function(id) { return id !== region.id; });
+					});
+				}, !supported);
+			}))),
 			E('td', {}, select(region.mode, [ [ 'automatic', '参与自动选优' ], [ 'manual_only', '仅手动使用' ] ], function(event) {
 				update(controller, function(next) { next.regions.find(function(item) { return item.id === region.id; }).mode = event.target.value; });
-			}))
+			})),
+			E('td', {}, compactButton('移除', function() {
+				update(controller, function(next) {
+					next.regions = removeById(next.regions, region.id);
+					next.providers.forEach(function(provider) { provider.region_ids = provider.region_ids.filter(function(id) { return id !== region.id; }); });
+					next.capabilities.forEach(function(capability) { capability.region_ids = capability.region_ids.filter(function(id) { return id !== region.id; }); });
+				});
+			}, true))
 		]);
 	});
+	const available = (controller.configDraft.region_options || []).filter(function(option) {
+		if (visible.some(function(region) { return region.id === option.id; })) return false;
+		return providers.some(function(provider) {
+			const providerOption = optionById(controller.configDraft.provider_options, provider.id);
+			return providerOption && providerOption.region_ids.indexOf(option.id) >= 0;
+		});
+	});
+	let selected = available[0] ? available[0].id : '';
+	const addControls = available.length ? E('div', { 'class': 'netfleet-inline-add' }, [
+		select(selected, available.map(function(option) { return [ option.id, option.code + ' ' + option.display_name ]; }), function(event) { selected = event.target.value; }),
+		compactButton('添加地区', function() {
+			const option = optionById(controller.configDraft.region_options, selected);
+			if (!option) return;
+			update(controller, function(next) {
+				next.regions.push({ id: option.id, flag: option.code, display_name: option.display_name, display_order: option.display_order, mode: 'automatic' });
+				next.providers.forEach(function(provider) {
+					const providerOption = optionById(next.provider_options, provider.id);
+					if (providerOption && providerOption.region_ids.indexOf(option.id) >= 0 && provider.region_ids.indexOf(option.id) < 0)
+						provider.region_ids.push(option.id);
+				});
+			});
+		})
+	]) : E('p', { 'class': 'netfleet-empty-note' }, '当前机场缓存没有更多可添加地区。');
 	return E('section', {}, [
 		sectionHeading('地区映射', '地区来自当前机场的真实节点；只修正识别结果，不预设必须存在的地区。'),
 		E('div', { 'class': 'table netfleet-config-table' }, [
-			E('table', {}, [ E('thead', {}, E('tr', {}, [ E('th', {}, '识别状态'), E('th', {}, '地区名称'), E('th', {}, '真实覆盖'), E('th', {}, '自动选优') ])), E('tbody', {}, rows) ])
-		])
+			E('table', {}, [ E('thead', {}, E('tr', {}, [ E('th', {}, '识别状态'), E('th', {}, '地区名称'), E('th', {}, '真实覆盖'), E('th', {}, '使用机场'), E('th', {}, '自动选优'), E('th', {}, '操作') ])), E('tbody', {}, rows) ])
+		]),
+		addControls
 	]);
 }
 
 function capabilities(controller) {
 	const draft = controller.configDraft;
+	const groups = draft.policy_groups || [];
+	function groupOwner(group, exceptId) {
+		return draft.capabilities.find(function(item) {
+			return item.id !== exceptId && (item.entry_group === group || (item.policy_groups || []).indexOf(group) >= 0);
+		});
+	}
 	return E('section', {}, [
 		sectionHeading('出口策略', '决定哪些业务出口由 NetFleet 增强，以及自动选择可以使用哪些地区。'),
 		E('div', { 'class': 'netfleet-capability-config' }, draft.capabilities.map(function(capability) {
 			const rows = [
 				E('div', { 'class': 'netfleet-capability-head' }, [
-					E('div', {}, [ E('strong', {}, capability.display_name), E('small', {}, '接管：' + (capability.base_groups || []).join('、')) ]),
-					checkbox(capability.enabled, capability.enabled ? '已启用' : '已关闭', function(event) {
+					E('div', {}, [ E('input', { 'class': 'cbi-input-text', 'value': capability.display_name, 'aria-label': capability.id + ' 出口名称', 'change': function(event) {
+						update(controller, function(next) { next.capabilities.find(function(item) { return item.id === capability.id; }).display_name = event.target.value; });
+					} }), E('small', {}, capability.id) ]),
+					E('div', {}, [ checkbox(capability.enabled, capability.enabled ? '已启用' : '已关闭', function(event) {
 						update(controller, function(next) { next.capabilities.find(function(item) { return item.id === capability.id; }).enabled = event.target.checked; });
-					})
+					}), compactButton('移除', function() {
+						update(controller, function(next) {
+							next.capabilities = removeById(next.capabilities, capability.id);
+							next.capabilities.forEach(function(item) { if (item.prefer_region_from === capability.id) item.prefer_region_from = null; });
+							next.routing_rules = (next.routing_rules || []).filter(function(rule) { return rule.capability !== capability.id; });
+						});
+					}, true) ])
 				]),
 				fieldRow('运行方式', null, select(capability.mode, [ [ 'automatic', '自动选优' ], [ 'manual', '手动选择' ] ], function(event) {
 					update(controller, function(next) { next.capabilities.find(function(item) { return item.id === capability.id; }).mode = event.target.value; });
 				}, !capability.enabled)),
+				fieldRow('默认出口组', '每个已启用出口必须有一个唯一入口组。', select(capability.entry_group || '', [ [ '', '请选择' ] ].concat(groups.map(function(group) {
+					const owner = groupOwner(group, capability.id);
+					return [ group, owner ? group + '（已用于 ' + owner.display_name + '）' : group ];
+				})), function(event) {
+					update(controller, function(next) { next.capabilities.find(function(item) { return item.id === capability.id; }).entry_group = event.target.value || null; });
+				}, !capability.enabled)),
+				fieldRow('业务分类', '这些组仍保持原规则语义，但默认使用此出口。', E('div', { 'class': 'netfleet-region-checks' }, groups.filter(function(group) {
+					return group !== capability.entry_group;
+				}).map(function(group) {
+					const owner = groupOwner(group, capability.id);
+					const selected = (capability.policy_groups || []).indexOf(group) >= 0;
+					return checkbox(selected, group, function(event) {
+						update(controller, function(next) {
+							const target = next.capabilities.find(function(item) { return item.id === capability.id; });
+							target.policy_groups = event.target.checked ? target.policy_groups.concat([ group ]) : target.policy_groups.filter(function(item) { return item !== group; });
+						});
+					}, !capability.enabled || Boolean(owner));
+				}))),
 				fieldRow('地区限制', '取消选择的地区不会进入该出口的候选集合。',
 					E('div', { 'class': 'netfleet-region-checks' }, visibleRegions(controller).map(function(region) {
 						const selected = capability.region_ids.indexOf(region.id) >= 0;
@@ -196,12 +308,38 @@ function capabilities(controller) {
 								target.region_ids = event.target.checked ? target.region_ids.concat([ region.id ]) : target.region_ids.filter(function(id) { return id !== region.id; });
 							});
 						}, !capability.enabled);
-						})))
+						}))),
+				fieldRow('地区协同', '可优先跟随另一个自动出口的地区；不合规时仍会独立选择。', select(capability.prefer_region_from || '', [ [ '', '独立选择' ] ].concat(draft.capabilities.filter(function(item) {
+					return item.id !== capability.id && item.enabled && item.mode === 'automatic';
+				}).map(function(item) { return [ item.id, '跟随 ' + item.display_name ]; })), function(event) {
+					update(controller, function(next) { next.capabilities.find(function(item) { return item.id === capability.id; }).prefer_region_from = event.target.value || null; });
+				}, !capability.enabled || capability.mode !== 'automatic'))
 			];
-			if (capability.prefer_region_from)
-				rows.push(E('p', { 'class': 'netfleet-follow-note' }, '优先跟随其他自动出口的合规地区；不合规时独立选择。'));
 			return E('div', { 'class': 'netfleet-capability-editor' }, rows);
-		}))
+		})),
+		capabilityAddControls(controller, groups, groupOwner)
+	]);
+}
+
+function capabilityAddControls(controller, groups, groupOwner) {
+	let id = '';
+	let name = '';
+	let entry = groups.find(function(group) { return !groupOwner(group, null); }) || '';
+	const idInput = E('input', { 'class': 'cbi-input-text', 'placeholder': '稳定 ID，如 streaming', 'input': function(event) { id = event.target.value.trim(); } });
+	const nameInput = E('input', { 'class': 'cbi-input-text', 'placeholder': '显示名称', 'input': function(event) { name = event.target.value.trim(); } });
+	return E('div', { 'class': 'netfleet-inline-add netfleet-capability-add' }, [
+		idInput,
+		nameInput,
+		select(entry, [ [ '', '选择默认出口组' ] ].concat(groups.map(function(group) { return [ group, group ]; })), function(event) { entry = event.target.value; }),
+		compactButton('添加出口', function() {
+			if (!stableId(id) || !name || !entry || groupOwner(entry, null)) {
+				ui.addNotification(null, E('p', {}, '请填写唯一稳定 ID、显示名称，并选择尚未使用的默认出口组。'), 'warning');
+				return;
+			}
+			update(controller, function(next) {
+				next.capabilities.push({ id: id, display_name: name, enabled: true, mode: 'manual', region_ids: next.regions.map(function(region) { return region.id; }), prefer_region_from: null, entry_group: entry, policy_groups: [], base_groups: [ entry ] });
+			});
+		})
 	]);
 }
 
@@ -225,6 +363,42 @@ function automation(controller) {
 				[ [ 21600, '6 小时' ], [ 43200, '12 小时' ], [ 86400, '24 小时' ] ], function(event) {
 					update(controller, function(next) { next.automation.subscription_refresh_interval_seconds = Number(event.target.value); });
 				}, !value.subscription_refresh_enabled))
+		])
+	]);
+}
+
+function routing(controller) {
+	const draft = controller.configDraft;
+	let suffix = '';
+	let capability = draft.capabilities[0] ? draft.capabilities[0].id : '';
+	const rows = (draft.routing_rules || []).map(function(rule, index) {
+		return E('tr', {}, [
+			E('td', {}, E('input', { 'class': 'cbi-input-text', 'type': 'text', 'value': rule.value, 'aria-label': '域名后缀', 'change': function(event) {
+				update(controller, function(next) { next.routing_rules[index].value = event.target.value.trim(); });
+			} })),
+			E('td', {}, select(rule.capability, draft.capabilities.map(function(item) { return [ item.id, item.display_name ]; }), function(event) {
+				update(controller, function(next) { next.routing_rules[index].capability = event.target.value; });
+			})),
+			E('td', {}, compactButton('移除', function() {
+				update(controller, function(next) { next.routing_rules.splice(index, 1); });
+			}, true))
+		]);
+	});
+	return E('section', {}, [
+		sectionHeading('业务规则', '为少量私有域名指定出口；只接受域名后缀，不包含协议、路径或端口。'),
+		E('div', { 'class': 'table netfleet-config-table' }, [
+			E('table', {}, [ E('thead', {}, E('tr', {}, [ E('th', {}, '域名后缀'), E('th', {}, '使用出口'), E('th', {}, '操作') ])), E('tbody', {}, rows) ])
+		]),
+		E('div', { 'class': 'netfleet-inline-add' }, [
+			E('input', { 'class': 'cbi-input-text', 'type': 'text', 'placeholder': 'example.com', 'input': function(event) { suffix = event.target.value.trim(); } }),
+			select(capability, draft.capabilities.map(function(item) { return [ item.id, item.display_name ]; }), function(event) { capability = event.target.value; }),
+			compactButton('添加规则', function() {
+				if (!suffix || !capability) {
+					ui.addNotification(null, E('p', {}, '请填写域名后缀并选择出口。'), 'warning');
+					return;
+				}
+				update(controller, function(next) { next.routing_rules.push({ kind: 'domain_suffix', value: suffix, capability: capability }); });
+			})
 		])
 	]);
 }
@@ -267,6 +441,7 @@ function content(controller) {
 		providers: providers,
 		regions: regions,
 		capabilities: capabilities,
+		routing: routing,
 		automation: automation,
 		safety: safety
 	})[controller.configSection](controller);
@@ -274,11 +449,11 @@ function content(controller) {
 
 function request(config) {
 	const providers = {};
-	(config.providers || []).forEach(function(item) { providers[item.id] = { enabled: item.enabled, role: item.role, billing: item.billing }; });
+	(config.providers || []).forEach(function(item) { providers[item.id] = { section: item.section, enabled: item.enabled, role: item.role, billing: item.billing, region_ids: (item.region_ids || []).slice() }; });
 	const regions = {};
 	(config.regions || []).forEach(function(item) { regions[item.id] = { display_name: item.display_name, mode: item.mode }; });
 	const capabilities = {};
-	(config.capabilities || []).forEach(function(item) { capabilities[item.id] = { enabled: item.enabled, mode: item.mode, region_ids: item.region_ids.slice() }; });
+	(config.capabilities || []).forEach(function(item) { capabilities[item.id] = { display_name: item.display_name, enabled: item.enabled, mode: item.mode, region_ids: item.region_ids.slice(), prefer_region_from: item.prefer_region_from || null, entry_group: item.entry_group || null, policy_groups: (item.policy_groups || []).slice() }; });
 	return {
 		revision: config.revision,
 		policy_source: { kind: config.policy_source.kind, ref: config.policy_source.ref },
@@ -286,6 +461,7 @@ function request(config) {
 		providers: providers,
 		regions: regions,
 		capabilities: capabilities,
+		routing_rules: clone(config.routing_rules || []),
 		automation: clone(config.automation),
 		safety: clone(config.safety)
 	};
@@ -328,7 +504,8 @@ function render(controller) {
 function changeText(change, controller) {
 	const labels = {
 		enabled: '启用状态', role: '故障层级', billing: '计费方式', mode: '运行方式', display_name: '显示名称',
-		region_ids: '可用地区', policy_source: '策略基础', recovery_profile: '退出与故障恢复',
+		region_ids: '可用地区', policy_source: '策略基础', recovery_profile: '退出与故障恢复', item: '配置项',
+		entry_group: '默认出口组', policy_groups: '业务分类', prefer_region_from: '地区协同', routing_rules: '域名规则',
 		selection_interval_seconds: '选优周期', subscription_refresh_enabled: '定期更新订阅',
 		subscription_refresh_interval_seconds: '订阅更新周期', region_switch_margin_ms: '地区切换门槛',
 		leaf_switch_margin_ms: '节点切换门槛', runtime_grace_seconds: '运行失联保护', latency_url: '测速地址',
@@ -351,13 +528,13 @@ function changeText(change, controller) {
 }
 
 function wizard(controller, step) {
-	const groups = [ 'foundation', 'providers', 'regions', 'capabilities', 'automation' ];
-	const labels = [ '环境与恢复', '机场', '地区', '出口', '运行与安全' ];
+	const groups = [ 'foundation', 'providers', 'regions', 'capabilities', 'routing', 'automation' ];
+	const labels = [ '环境与恢复', '机场', '地区', '出口', '业务规则', '运行与安全' ];
 	const oldSection = controller.configSection;
 	controller.configSection = groups[step];
 	let body = content(controller);
 	controller.configSection = oldSection;
-	if (step === 4)
+	if (step === 5)
 		body = E('div', {}, [ body, safety(controller) ]);
 	return [
 		E('ol', { 'class': 'netfleet-wizard-steps' }, labels.map(function(label, index) {
@@ -367,7 +544,7 @@ function wizard(controller, step) {
 		E('div', { 'class': 'right' }, [
 			E('button', { 'class': 'btn', 'click': step === 0 ? function() { ui.hideModal(); } : function() { controller.showConfigWizard(step - 1); } }, step === 0 ? '退出向导' : '上一步'),
 			' ',
-			step < 4 ? E('button', { 'class': 'btn cbi-button-action', 'click': function() { controller.showConfigWizard(step + 1); } }, '下一步') :
+			step < 5 ? E('button', { 'class': 'btn cbi-button-action', 'click': function() { controller.showConfigWizard(step + 1); } }, '下一步') :
 				E('button', { 'class': 'btn cbi-button-action', 'click': function() { ui.hideModal(); controller.previewConfigChanges(); } }, '完成并查看变更')
 		])
 	];

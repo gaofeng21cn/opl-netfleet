@@ -16,6 +16,9 @@ class MvpLayoutTests(unittest.TestCase):
             RUNTIME / "main.uc",
             RUNTIME / "supervisor.uc",
             RUNTIME / "output.uc",
+            RUNTIME / "application" / "providers.uc",
+            RUNTIME / "application" / "onboarding.uc",
+            RUNTIME / "application" / "configuration.uc",
             RUNTIME / "core" / "policy.uc",
             RUNTIME / "core" / "compiler.uc",
             RUNTIME / "core" / "selector.uc",
@@ -24,6 +27,7 @@ class MvpLayoutTests(unittest.TestCase):
             RUNTIME / "core" / "status.uc",
             RUNTIME / "core" / "events.uc",
             RUNTIME / "core" / "onboarding.uc",
+            RUNTIME / "core" / "regions.uc",
             RUNTIME / "adapters" / "uci.uc",
             RUNTIME / "adapters" / "nikki.uc",
             RUNTIME / "adapters" / "mihomo.uc",
@@ -49,6 +53,13 @@ class MvpLayoutTests(unittest.TestCase):
         )
         self.assertFalse(
             any("worker" in path.name or "projection" in path.name for path in package_files)
+        )
+
+        makefile = (ROOT / "openwrt" / "Makefile").read_text()
+        self.assertIn("$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/application", makefile)
+        self.assertIn(
+            "./files/usr/libexec/opl-netfleet/application/*.uc $(1)/usr/libexec/opl-netfleet/application/",
+            makefile,
         )
 
     def test_shell_entrypoints_parse_and_expose_current_deployment_modes(self):
@@ -743,14 +754,21 @@ const deviceConfig = {
     backend: { id: 'nikki-mihomo', display_name: 'Nikki + Mihomo' },
     policy_source: { kind: 'bundle', ref: 'bundle:base-v1', display_name: 'NetFleet 内置基础策略' },
     policy_source_options: [ { kind: 'bundle', ref: 'bundle:base-v1', display_name: 'NetFleet 内置基础策略' } ],
+    policy_groups: [ '节点选择', '流媒体' ],
     recovery_profile: { ref: 'subscription:base', display_name: '当前原生配置' },
     recovery_profile_options: [ { ref: 'subscription:base', display_name: '当前原生配置' } ],
     providers: [],
+    provider_options: [ { id: 'alpha', section: 'alpha', display_name: 'Alpha 机场', region_ids: [ 'japan', 'singapore' ] } ],
     regions: [
         { id: 'japan', flag: '🇯🇵', display_name: '日本', mode: 'automatic' },
         { id: 'switzerland', flag: '🇨🇭', display_name: '瑞士', mode: 'automatic' }
     ],
-    capabilities: [ { id: 'standard', display_name: '常规出口', enabled: true, mode: 'automatic', region_ids: [ 'japan', 'switzerland' ], base_groups: [ '节点选择' ] } ],
+    region_options: [
+        { id: 'japan', code: 'JP', display_name: '日本', display_order: 10 },
+        { id: 'singapore', code: 'SG', display_name: '新加坡', display_order: 20 }
+    ],
+    capabilities: [ { id: 'standard', display_name: '常规出口', enabled: true, mode: 'automatic', region_ids: [ 'japan', 'switzerland' ], entry_group: '节点选择', policy_groups: [], base_groups: [ '节点选择' ] } ],
+    routing_rules: [],
     automation: { enabled: true, selection_interval_seconds: 1800, subscription_refresh_enabled: true, subscription_refresh_interval_seconds: 43200 },
     safety: { region_switch_margin_ms: 150, leaf_switch_margin_ms: 150, runtime_grace_seconds: 45, latency_url: 'https://latency.invalid', path_probe_url: 'https://path.invalid', guard_probe_url: 'https://guard.invalid' }
 };
@@ -769,16 +787,25 @@ let root = config.render(controller);
 assert(text(root).includes('JP'));
 const japanInput = find(root, function(node) { return node.tag === 'input' && node.attrs.value === '日本'; });
 assert(japanInput);
-assert(!text(root).includes('瑞士'));
+assert(find(root, function(node) { return node.tag === 'input' && node.attrs.value === '瑞士'; }), 'configured regions must remain removable even when currently unavailable');
 let save = find(root, function(node) { return node.tag === 'button' && text(node) === '保存配置'; });
 assert(save && save.attrs.disabled === true);
 let apply = find(root, function(node) { return node.tag === 'button' && text(node) === '应用配置'; });
 assert(apply && apply.attrs.disabled === true);
 
+controller.configSection = 'providers';
+root = config.render(controller);
+const addProvider = find(root, function(node) { return node.tag === 'button' && text(node) === '添加机场'; });
+assert(addProvider, 'an available Nikki subscription must be addable');
+addProvider.attrs.click();
+assert.strictEqual(controller.configDraft.providers.length, 1);
+assert.strictEqual(controller.configDraft.providers[0].section, 'alpha');
+assert(controller.configDraft.regions.some(function(region) { return region.id === 'singapore'; }), 'adding a provider must bring in discovered regions');
+
 controller.configSection = 'capabilities';
 root = config.render(controller);
 assert(text(root).includes('JP 日本'));
-assert(!text(root).includes('瑞士'));
+assert(text(root).includes('瑞士'));
 assert(!text(root).includes('null'));
 
 controller.configDraft.regions[0].display_name = '日本线路';

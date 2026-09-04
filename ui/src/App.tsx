@@ -13,7 +13,7 @@ import { ConfigView } from './config/ConfigView';
 import { createConfigDraft, type ConfigDraft } from './config/model';
 import { EventsView } from './views/EventsView';
 import { ProviderTable, RegionTable } from './views/Tables';
-import type { ConnectionsSnapshot, DataSourceInfo, EventsSnapshot, NetFleetClient, PreviewControls, StatusSnapshot, ViewId } from './types';
+import type { ConnectionsSnapshot, DataSourceInfo, DeviceConfigSnapshot, EventsSnapshot, NetFleetClient, PreviewControls, StatusSnapshot, ViewId } from './types';
 import './styles.css';
 
 type DialogAction = 'enable' | 'select' | 'disable' | null;
@@ -30,6 +30,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
   const [view, setView] = useState<ViewId>('overview');
   const [status, setStatus] = useState<StatusSnapshot | null>(initialStatus || null);
   const [events, setEvents] = useState<EventsSnapshot | null>(initialEvents || null);
+  const [deviceConfig, setDeviceConfig] = useState<DeviceConfigSnapshot | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -61,6 +62,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
         const snapshot = await client.read();
         setStatus(snapshot.status || null);
         setEvents(snapshot.events || null);
+        setDeviceConfig(snapshot.config || null);
         setStatusError(snapshot.status ? null : snapshot.errors?.status || '设备状态读取失败');
         setEventsError(snapshot.events ? null : snapshot.errors?.events || '设备事件读取失败');
         setSource(snapshot.source);
@@ -128,14 +130,15 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
       status.providers.map((item) => item.id).join(','),
       status.regions.map((item) => item.id).join(','),
       status.capabilities.map((item) => item.id).join(','),
+      deviceConfig?.revision || '',
     ].join('|')
     : '';
 
   useEffect(() => {
     if (!status || (configState && configState.key === configKey)) return;
-    const next = createConfigDraft(status);
+    const next = createConfigDraft(status, deviceConfig || undefined);
     setConfigState({ key: configKey, draft: next, saved: next });
-  }, [configKey, configState, status]);
+  }, [configKey, configState, deviceConfig, status]);
 
   const performAction = async () => {
     if (!dialog || !status) return;

@@ -14,7 +14,7 @@ function sendJson(response: import('node:http').ServerResponse, status: number, 
   response.end(JSON.stringify(payload));
 }
 
-async function readRemote(target: string, method: 'status' | 'events' | 'connections') {
+async function readRemote(target: string, method: 'status' | 'events' | 'connections' | 'config_get') {
   const { stdout } = await execFileAsync('ssh', [
     '-o', 'BatchMode=yes',
     '-o', 'PasswordAuthentication=no',
@@ -47,7 +47,8 @@ function liveBridgePlugin(target?: string, targetLabel = '设备'): Plugin {
         const started = Date.now();
         let status: unknown;
         let events: unknown;
-        const errors: { status?: string; events?: string } = {};
+        let config: unknown;
+        const errors: { status?: string; events?: string; config?: string } = {};
         try {
           status = await readRemote(validTarget, 'status');
         } catch {
@@ -58,9 +59,15 @@ function liveBridgePlugin(target?: string, targetLabel = '设备'): Plugin {
         } catch {
           errors.events = '设备事件读取失败';
         }
-        sendJson(response, status || events ? 200 : 502, {
+        try {
+          config = await readRemote(validTarget, 'config_get');
+        } catch {
+          errors.config = '设备配置读取失败';
+        }
+        sendJson(response, status || events || config ? 200 : 502, {
           status,
           events,
+          config,
           errors,
           source: {
             mode: 'live',
