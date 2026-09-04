@@ -137,6 +137,8 @@ class ReleaseToolsTests(unittest.TestCase):
         self.assertIn('/etc/init.d/opl-netfleet stop', runtime)
         self.assertIn('stop_netfleet()', runtime)
         self.assertIn('/etc/init.d/opl-netfleet running', runtime)
+        init = (ROOT / 'openwrt/files/etc/init.d/opl-netfleet').read_text()
+        self.assertIn('[ -s /etc/opl-netfleet/policy.json ] || return 0', init)
         self.assertIn('"$$path.apk-new"', runtime)
         self.assertIn('./files/etc/opl-netfleet/rulesets.lock.json', runtime)
         self.assertNotIn('/etc/opl-netfleet/policy.json', runtime)

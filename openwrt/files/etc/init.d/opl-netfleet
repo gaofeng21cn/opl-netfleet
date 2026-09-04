@@ -5,6 +5,9 @@ START=96
 STOP=04
 
 start_service() {
+	# Package installation must not start automation before onboarding has
+	# produced an owner-approved policy.
+	[ -s /etc/opl-netfleet/policy.json ] || return 0
 	procd_open_instance supervisor
 	procd_set_param command /usr/libexec/opl-netfleet/supervisor.uc
 	procd_set_param respawn 3600 5 5
