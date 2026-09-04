@@ -58,6 +58,20 @@ export function sha256(path) {
 	return split(trim(line), " ")[0];
 };
 
+export function file_mtime(path) {
+	if (system(`test -f ${shell_quote(path)}`) != 0) {
+		return null;
+	}
+	const process = popen(`stat -c %Y ${shell_quote(path)}`);
+	if (!process) {
+		return null;
+	}
+	const line = process.read("line");
+	process.close();
+	const value = line ? int(trim(line)) : 0;
+	return value > 0 ? value : null;
+};
+
 export function sha256_text(value) {
 	const process = popen(`printf '%s' ${shell_quote(value)} | sha256sum`);
 	if (!process) return null;

@@ -1,6 +1,6 @@
 #!/usr/bin/ucode
 
-import { read_yaml, read_json, write_json_atomic, sha256, sha256_text, device_name, current_profile, nikki_enabled, set_nikki_enabled, api_secret, set_profile, shell_quote, subscription_exists, subscription_display_name, subscription_options, subscription_quota, upstream_ready, write_evidence, POLICY_PATH, EVIDENCE_PATH } from "./adapters/uci.uc";
+import { read_yaml, read_json, write_json_atomic, sha256, sha256_text, file_mtime, device_name, current_profile, nikki_enabled, set_nikki_enabled, api_secret, set_profile, shell_quote, subscription_exists, subscription_display_name, subscription_options, subscription_quota, upstream_ready, write_evidence, POLICY_PATH, EVIDENCE_PATH } from "./adapters/uci.uc";
 import { resolve_profile, profile_exists, restart, update_subscription, stop as stop_nikki, cleanup_state, running, lan_runtime_state, install_artifact, remove_artifact, test_profile_object, prepare_provider_links, remove_provider_links, provider_runtime_path, ARTIFACT_PATH, MANIFEST_PATH, PROFILE_ENTRY_PATH, COMPILED_PROFILE } from "./adapters/nikki.uc";
 import { resolve as resolve_policy_source, load as load_policy_source } from "./adapters/policy_source.uc";
 import { test_profile, test_runtime, controller_ready, proxies, proxy_providers, connections as current_connections, select as select_proxy, unfix as unfix_proxy, protected_probes, direct_probes } from "./adapters/mihomo.uc";
@@ -338,6 +338,7 @@ function subscription_facts(policy) {
 			digest: digest,
 			valid: cache_accepted(parsed),
 			node_count: type(parsed?.proxies) == "array" ? length(parsed.proxies) : null,
+			updated_at: path == null ? null : file_mtime(path),
 			quota: subscription_quota(section, subscription_quota_config(policy, section))
 		});
 	}

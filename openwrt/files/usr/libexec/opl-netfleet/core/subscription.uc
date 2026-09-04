@@ -186,7 +186,8 @@ export function project(automation, facts, events) {
 			node_count: type(fact?.node_count) == "int" && fact.node_count >= 0 ? fact.node_count : null,
 			quota: public_quota(fact?.quota),
 			last_attempt: history?.last_attempt ?? null,
-			last_success: history?.last_success ?? null,
+			last_success: history?.last_success ??
+				(type(fact?.updated_at) == "int" && fact.updated_at > 0 ? fact.updated_at : null),
 			last_result: history?.last_result ?? null
 		});
 	}

@@ -110,6 +110,7 @@ const facts = [
 		digest: previous,
 		valid: true,
 		node_count: 4,
+		updated_at: 1699999800,
 		quota: { state: "available", remaining_bytes: 1024, expires_at: "2026-12-31" },
 		url: "https://secret.invalid/token",
 		token: "secret-token",
@@ -123,6 +124,7 @@ const facts = [
 		digest: previous,
 		valid: true,
 		node_count: 2,
+		updated_at: 1699999700,
 		quota: { state: "unknown" }
 	}
 ];
@@ -198,7 +200,8 @@ const unavailable = project({
 }]);
 if (unavailable.last_result != "upstream_unavailable" ||
 	unavailable.subscriptions[0].last_result != "failed" ||
-	unavailable.subscriptions[0].last_success != null ||
+	unavailable.subscriptions[0].last_success != 1699999800 ||
+	unavailable.subscriptions[1].last_success != 1699999700 ||
 	unavailable.subscriptions[1].cache_present != true) {
 	print("unavailable_projection_failed\n");
 	exit(1);
