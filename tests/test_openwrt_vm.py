@@ -124,6 +124,7 @@ class OpenWrtVmTests(unittest.TestCase):
         for gate in (
             "feed_bootstrap",
             "feed_install",
+            "feed_install_inactive",
             "feed_upgrade_transaction",
             "package_database",
             "package_contents",

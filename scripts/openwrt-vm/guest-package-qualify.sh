@@ -100,6 +100,9 @@ NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 \
 	sh "$candidate/install-netfleet.sh" >>"$fixture/package-manager.log" 2>&1
 [ "$(cat /etc/apk/repositories.d/opl-netfleet.list)" = "$feed_url/packages.adb" ]
 [ -s /etc/apk/keys/opl-netfleet-apk.pem ]
+! /etc/init.d/opl-netfleet enabled >/dev/null 2>&1
+! /etc/init.d/opl-netfleet running >/dev/null 2>&1
+[ ! -e /etc/opl-netfleet/policy.json ]
 
 stage=feed_upgrade
 before_upgrade=$("$real_apk" list --manifest | grep -E '^(opl-netfleet|luci-app-netfleet) ')
@@ -349,5 +352,5 @@ stage=uninstall
 [ ! -e /usr/share/luci/menu.d/luci-app-netfleet.json ]
 
 stage=complete
-printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_release":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","checks":{"manifest":true,"signing_key":true,"feed_bootstrap":true,"feed_install":true,"feed_upgrade_transaction":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"probe_rpc":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
+printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_release":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","checks":{"manifest":true,"signing_key":true,"feed_bootstrap":true,"feed_install":true,"feed_install_inactive":true,"feed_upgrade_transaction":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"probe_rpc":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
 	"$source_commit" "$source_tree" "$manifest_sha" "$version" "$release"

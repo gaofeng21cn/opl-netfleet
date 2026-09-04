@@ -22,6 +22,9 @@ manifest v2 的 `feed_index` 字段绑定其 SHA-256。Release 同时包含 `ins
 `apk` 以 `ndx` 模式从同目录解析 package，而不是按目录型仓库扩展架构子目录。随后脚本在一次
 `apk add --upgrade` 事务中安装两个
 package。它不得写入 policy、订阅或 Nikki mixin，也不得启用 NetFleet 或切换数据面。
+OpenWrt 默认 package lifecycle 会启动新安装或升级后的 init script；runtime package 必须在
+首次安装后显式停止并禁用服务，升级时则记录并恢复升级前的 enabled/running 状态，不能把
+“文件升级”变成隐式接管或停用。
 runtime 与 LuCI 均只包含脚本、配置和静态
 资源，因此 OpenWrt package 声明为 `PKGARCH:=all`：APK 元数据中的实际架构必须是
 `noarch`，而 `build_target_arch` 单独保留生成该 Release 的 SDK 目标，例如

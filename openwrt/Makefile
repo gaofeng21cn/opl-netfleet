@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet
-PKG_VERSION:=0.4.5
+PKG_VERSION:=0.4.6
 PKG_RELEASE:=1
 PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=OPL NetFleet
@@ -65,6 +65,21 @@ endef
 define Build/Compile
 endef
 
+define Package/opl-netfleet/preinst
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+upgrade_state=/tmp/opl-netfleet-package-upgrade-state
+rm -f "$$upgrade_state"
+if [ "$${PKG_UPGRADE:-0}" = 1 ] && [ -x /etc/init.d/opl-netfleet ]; then
+	enabled=0
+	running=0
+	/etc/init.d/opl-netfleet enabled >/dev/null 2>&1 && enabled=1
+	/etc/init.d/opl-netfleet running >/dev/null 2>&1 && running=1
+	printf '%s %s\n' "$$enabled" "$$running" >"$$upgrade_state"
+fi
+exit 0
+endef
+
 define Package/opl-netfleet/install
 	$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/core
 	$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/adapters
@@ -95,6 +110,17 @@ for path in \
 	/etc/opl-netfleet/rulesets.lock.json; do
 	[ ! -f "$$path.apk-new" ] || mv -f "$$path.apk-new" "$$path" || exit 1
 done
+upgrade_state=/tmp/opl-netfleet-package-upgrade-state
+if [ "$${PKG_UPGRADE:-0}" != 1 ]; then
+	/etc/init.d/opl-netfleet stop >/dev/null 2>&1 || true
+	/etc/init.d/opl-netfleet disable >/dev/null 2>&1 || exit 1
+	rm -f "$$upgrade_state"
+elif [ -s "$$upgrade_state" ]; then
+	read -r was_enabled was_running <"$$upgrade_state"
+	rm -f "$$upgrade_state"
+	[ "$$was_enabled" = 1 ] || /etc/init.d/opl-netfleet disable >/dev/null 2>&1 || exit 1
+	[ "$$was_running" = 1 ] || /etc/init.d/opl-netfleet stop >/dev/null 2>&1 || true
+fi
 exit 0
 endef
 
