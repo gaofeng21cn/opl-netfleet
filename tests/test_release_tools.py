@@ -339,7 +339,7 @@ class ReleaseToolsTests(unittest.TestCase):
             )
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual((feed / 'opl-netfleet-apk.pem').read_bytes(), (keys / 'opl-netfleet-apk.pem').read_bytes())
-            self.assertEqual('https://fixture.invalid/release\n', repository.read_text())
+            self.assertEqual('https://fixture.invalid/release/packages.adb\n', repository.read_text())
             self.assertEqual(
                 ['--timeout 300 update', '--timeout 300 add --upgrade opl-netfleet luci-app-netfleet'],
                 log.read_text().splitlines(),

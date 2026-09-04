@@ -18,14 +18,16 @@ Git、发布目录或设备。没有真实 OpenWrt SDK 时，构建入口必须�
 package 或 manifest。APK 发布还包含同一私钥签名的 `packages.adb` feed index，并在
 manifest v2 的 `feed_index` 字段绑定其 SHA-256。Release 同时包含 `install-netfleet.sh`，由
 `feed_bootstrap` 字段绑定脚本名称与 SHA-256；该脚本下载公钥、原子写入公钥和
-`/etc/apk/repositories.d/opl-netfleet.list`，然后在一次 `apk add --upgrade` 事务中安装两个
+`/etc/apk/repositories.d/opl-netfleet.list`；仓库声明直接指向 `$feed_base/packages.adb`，使
+`apk` 以 `ndx` 模式从同目录解析 package，而不是按目录型仓库扩展架构子目录。随后脚本在一次
+`apk add --upgrade` 事务中安装两个
 package。它不得写入 policy、订阅或 Nikki mixin，也不得启用 NetFleet 或切换数据面。
 runtime 与 LuCI 均只包含脚本、配置和静态
 资源，因此 OpenWrt package 声明为 `PKGARCH:=all`：APK 元数据中的实际架构必须是
 `noarch`，而 `build_target_arch` 单独保留生成该 Release 的 SDK 目标，例如
 `aarch64_generic`。部署器允许 `noarch` 安装到任意目标架构；旧 Release 的原生架构兼容
 规则只用于读取既有产物，不能用于生成新 Release。Release 的
-`latest/download` 地址可作为稳定仓库入口，目标机只需安装一次公钥并写入
+`latest/download/packages.adb` 可作为稳定仓库索引，目标机只需安装一次公钥并写入
 `/etc/apk/repositories.d/opl-netfleet.list`，之后即可使用 `apk update`、`apk policy`
 和 `apk upgrade`。feed 只拥有代码包，不拥有订阅、policy、Nikki mixin 或运行时数据。
 

@@ -98,7 +98,7 @@ env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin yq --version | grep -Fq 'v4.53.6'
 	>>"$fixture/package-manager.log" 2>&1
 NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 \
 	sh "$candidate/install-netfleet.sh" >>"$fixture/package-manager.log" 2>&1
-[ "$(cat /etc/apk/repositories.d/opl-netfleet.list)" = "$feed_url" ]
+[ "$(cat /etc/apk/repositories.d/opl-netfleet.list)" = "$feed_url/packages.adb" ]
 [ -s /etc/apk/keys/opl-netfleet-apk.pem ]
 
 stage=feed_upgrade
