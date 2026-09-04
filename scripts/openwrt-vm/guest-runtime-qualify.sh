@@ -323,10 +323,10 @@ cat >"$work/manual-policy.json" <<EOF
 EOF
 
 cat >"$work/helper-primary.json" <<'EOF'
-{"socks-port":1081,"mode":"rule","log-level":"silent","ipv6":false,"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"127.0.0.1"},"rules":["MATCH,DIRECT"]}
+{"socks-port":1081,"mode":"rule","log-level":"silent","ipv6":false,"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"192.168.1.2"},"rules":["MATCH,DIRECT"]}
 EOF
 cat >"$work/helper-reserve.json" <<'EOF'
-{"socks-port":1082,"mode":"rule","log-level":"silent","ipv6":false,"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"127.0.0.1"},"rules":["MATCH,DIRECT"]}
+{"socks-port":1082,"mode":"rule","log-level":"silent","ipv6":false,"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"192.168.1.2"},"rules":["MATCH,DIRECT"]}
 EOF
 cat >"$work/runtime-owner.uc" <<'EOF'
 import { readfile, writefile } from "fs";
@@ -338,7 +338,7 @@ config["tproxy-port"] = 7892;
 config["allow-lan"] = true;
 config.secret = ARGV[1];
 config["external-controller"] = "0.0.0.0:9090";
-config.hosts = { "netfleet-probe.test": "192.168.1.2", "www.gstatic.com": "127.0.0.1" };
+config.hosts = { "netfleet-probe.test": "192.168.1.2", "www.gstatic.com": "192.168.1.2" };
 config.dns = { enable: true, listen: "[::]:1053", nameserver: ["system"] };
 config.mode = "rule";
 config["log-level"] = "warning";

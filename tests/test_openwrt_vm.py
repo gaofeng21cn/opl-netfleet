@@ -109,6 +109,7 @@ class OpenWrtVmTests(unittest.TestCase):
         self.assertIn("apk --timeout 300 add curl flock coreutils-date", runtime_source)
         self.assertIn("nft add table ip netfleet_vm_runtime_probe", runtime_source)
         self.assertIn('dnat to "192.168.1.2:$probe_port"', runtime_source)
+        self.assertIn('"www.gstatic.com":"192.168.1.2"', runtime_source)
         self.assertNotIn("socat TCP-LISTEN:443", runtime_source)
         self.assertIn("flock -n /var/lock/opl-netfleet-deploy.lock true", runtime_source)
         self.assertIn("prepare-recovery subscription:base", runtime_source)
