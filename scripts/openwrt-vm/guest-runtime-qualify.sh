@@ -48,7 +48,7 @@ finish() {
 			jsonfilter -i "$work/enable.json" -e '@.detail.automatic.provider_state_available' >&2 || true
 		fi
 		for log in "$work"/package-manager.log "$work"/helper-primary.log "$work"/helper-reserve.log \
-			"$work"/mihomo.log "$work"/*.stderr "$work"/*.txt; do
+			"$work"/mihomo.log "$work"/probe-relay.log "$work"/*.stderr "$work"/*.txt; do
 			[ ! -f "$log" ] || { echo "--- $log" >&2; cat "$log" >&2; }
 		done
 	fi
@@ -99,7 +99,7 @@ socat TCP-LISTEN:443,bind=127.0.0.1,reuseaddr,fork TCP:192.168.1.2:"$probe_port"
 probe_relay_pid=$!
 stage=probe_relay
 for relay_attempt in 1 2 3 4 5; do
-	if curl -fsS --connect-timeout 2 --max-time 5 --resolve www.gstatic.com:443:127.0.0.1 \
+	if curl -fsS --noproxy '*' --connect-timeout 2 --max-time 5 --resolve www.gstatic.com:443:127.0.0.1 \
 		https://www.gstatic.com/generate_204 >/dev/null; then
 		break
 	fi

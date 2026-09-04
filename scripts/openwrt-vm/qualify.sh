@@ -135,10 +135,25 @@ tar -cf "$work/runtime-source.tar" -C "$workspace" \
 	openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json \
 	openwrt/files/etc/opl-netfleet/rulesets.lock.json
 openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
-	-keyout "$work/local-probe.key" -out "$work/local-probe.crt" \
-	-subj /CN=www.gstatic.com \
-	-addext subjectAltName=DNS:netfleet-probe.test,DNS:www.gstatic.com,IP:192.168.1.2 >/dev/null 2>&1
-python3 - "$work/local-probe.crt" "$work/local-probe.key" "$probe_port" >"$work/local-probe.log" 2>&1 <<'PY' &
+	-keyout "$work/local-probe-ca.key" -out "$work/local-probe.crt" \
+	-subj '/CN=NetFleet QEMU Test CA' \
+	-addext basicConstraints=critical,CA:TRUE \
+	-addext keyUsage=critical,keyCertSign,cRLSign >/dev/null 2>&1
+openssl req -newkey rsa:2048 -sha256 -nodes \
+	-keyout "$work/local-probe-server.key" -out "$work/local-probe-server.csr" \
+	-subj /CN=www.gstatic.com >/dev/null 2>&1
+cat >"$work/local-probe-server.ext" <<'EOF'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:netfleet-probe.test,DNS:www.gstatic.com,IP:192.168.1.2
+EOF
+openssl x509 -req -sha256 -days 1 \
+	-in "$work/local-probe-server.csr" \
+	-CA "$work/local-probe.crt" -CAkey "$work/local-probe-ca.key" -CAcreateserial \
+	-extfile "$work/local-probe-server.ext" \
+	-out "$work/local-probe-server.crt" >/dev/null 2>&1
+python3 - "$work/local-probe-server.crt" "$work/local-probe-server.key" "$probe_port" >"$work/local-probe.log" 2>&1 <<'PY' &
 import http.server
 import ssl
 import sys
