@@ -37,7 +37,7 @@ runtime 与 LuCI 均只包含脚本、配置和静态
 独立插件模式不要求开发机生成 deployment bundle。目标 OpenWrt 已安装并配置好 Nikki、
 当前原生 Profile 可用且至少一个稳定命名 subscription 已有有效 cache 时，安装两个 package
 后由 LuCI 首次设置完成设备端发现和一键接管。package post-install 只刷新 LuCI/rpcd，并在
-rpcd 当前执行上限低于 300 秒时提升到 300 秒、保留更高值；它不自动改变网络，用户确认后才由
+rpcd 或 uhttpd 当前执行上限低于 300 秒时提升到 300 秒、保留更高值并重启对应控制面；它不自动改变网络，用户确认后才由
 target-local owner 创建 `/etc/opl-netfleet/policy.json` 并启用。
 该模式复用当前原生 Profile 的规则、DNS 与策略组，不下载第二份订阅，也不需要内置 MRS。
 `policy.example.json`、内置 Policy Source 和 ruleset lock 是 package 拥有的只读基线；APK
