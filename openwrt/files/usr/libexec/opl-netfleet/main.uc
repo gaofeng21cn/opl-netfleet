@@ -15,7 +15,7 @@ import { enable_precondition, is_active, recovery_owner, recovery_profile, passt
 import { build as build_status, resolve_runtime } from "./core/status.uc";
 import { enabled_sections as enabled_subscription_sections, quota_config as subscription_quota_config, cache_accepted, evaluate_entry, summarize as summarize_refresh, public_results as public_subscription_results, unavailable_results, project as project_subscriptions } from "./core/subscription.uc";
 import { service_state } from "./adapters/service.uc";
-import { load as load_provider_profiles } from "./application/providers.uc";
+import { load as load_provider_profile_result } from "./application/providers.uc";
 import { get as onboarding_get, apply as onboarding_apply } from "./application/onboarding.uc";
 import { get as config_get, validate as config_validate, save as config_save, apply as config_apply } from "./application/configuration.uc";
 import { ok, fail } from "./output.uc";
@@ -213,8 +213,8 @@ function automatic_provider_sources(manifest, capability_names) {
 	return result;
 };
 
-function load_provider_profiles(policy, stage) {
-	const result = load_provider_profiles(policy);
+function require_provider_profiles(policy, stage) {
+	const result = load_provider_profile_result(policy);
 	if (!result.ok) {
 		fail(stage, result.error, result.detail);
 	}
@@ -382,7 +382,7 @@ function compile_result(policy, allow_active) {
 	if (recovery_path == null || system(`test -f ${shell_quote(recovery_path)}`) != 0) {
 		return { ok: false, error: "recovery_profile_missing", detail: policy.recovery_profile.ref };
 	}
-	const provider_result = load_provider_profiles(policy);
+	const provider_result = load_provider_profile_result(policy);
 	if (!provider_result.ok) {
 		return provider_result;
 	}
@@ -2270,7 +2270,7 @@ if (action == "status") {
 	if (recovery_path == null || system(`test -f ${shell_quote(recovery_path)}`) != 0) {
 		fail("validate", "recovery_profile_missing", policy.recovery_profile.ref);
 	}
-	const provider_profiles = load_provider_profiles(policy, "validate");
+	const provider_profiles = require_provider_profiles(policy, "validate");
 	const result = compile_profile(baseline, policy, sha256(source_path), sha256(recovery_path),
 		sha256(policy_path), provider_profiles);
 	if (!result.ok) {

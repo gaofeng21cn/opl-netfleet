@@ -270,6 +270,8 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertIn('action == "package-cleanup"', main)
         self.assertIn('remove_artifact()', main)
         self.assertIn('"provider_link_cleanup_failed"', main)
+        self.assertIn("load as load_provider_profile_result", main)
+        self.assertNotIn("function load_provider_profiles", main)
         self.assertIn("return removed", nikki)
         self.assertEqual(5, api.count("withRpcTimeout(300"))
         self.assertNotIn("withRpcTimeout(120", api)
