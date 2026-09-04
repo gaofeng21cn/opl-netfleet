@@ -661,22 +661,41 @@ rm -f "$work/fail-alpha"
 
 stage=subscription_refresh_rollback
 artifact_digest=$(sha256sum /etc/nikki/profiles/opl-netfleet/mvp.json | awk '{print $1}')
-cat >"$work/subscription-alpha.next.yaml" <<'EOF'
-proxies:
-  - name: Alpha Invalid 01
-    type: not-a-real-proxy-type
-    server: 127.0.0.1
-    port: 1081
-EOF
-if ucode "$main" refresh vm >"$work/refresh_rollback.json" 2>"$work/refresh_rollback.stderr"; then
+policy_source=/etc/opl-netfleet/policy-sources/base-v1.json
+cp -p "$policy_source" "$work/base-v1.json.bak"
+cp /etc/nikki/subscriptions/alpha.yaml "$work/subscription-alpha.next.yaml"
+printf '%s\n' '# rollback fixture' >>"$work/subscription-alpha.next.yaml"
+if ! ucode -e '
+	import { readfile, writefile } from "fs";
+	const path = ARGV[0];
+	const profile = json(readfile(path));
+	if (type(profile?.["proxy-groups"]) != "array") {
+		exit(1);
+	}
+	push(profile["proxy-groups"], {
+		name: "NetFleet · 直连护栏",
+		type: "select",
+		proxies: ["DIRECT"]
+	});
+	if (!writefile(path, sprintf("%J\n", profile))) {
+		exit(1);
+	}
+' "$policy_source"; then
+	cp -p "$work/base-v1.json.bak" "$policy_source"
 	exit 1
 fi
-[ "$(jsonfilter -i "$work/refresh_rollback.json" -e '@.error')" = staged_profile_test_failed ]
+refresh_failed=1
+if ucode "$main" refresh vm >"$work/refresh_rollback.json" 2>"$work/refresh_rollback.stderr"; then
+	refresh_failed=0
+fi
+cp -p "$work/base-v1.json.bak" "$policy_source"
+rm -f "$work/subscription-alpha.next.yaml"
+[ "$refresh_failed" -eq 1 ]
+[ "$(jsonfilter -i "$work/refresh_rollback.json" -e '@.error')" = compile_rejected ]
 [ "$(sha256sum /etc/nikki/subscriptions/alpha.yaml | awk '{print $1}')" = "$alpha_digest" ]
 [ "$(sha256sum /etc/nikki/profiles/opl-netfleet/mvp.json | awk '{print $1}')" = "$artifact_digest" ]
 [ "$(uci -q get nikki.config.profile)" = file:OPL-NetFleet.json ]
 /etc/init.d/nikki running >/dev/null 2>&1
-rm -f "$work/subscription-alpha.next.yaml"
 ucode "$main" status >"$work/refresh-status.json"
 [ "$(jsonfilter -i "$work/refresh-status.json" -e '@.result.subscription_refresh.last_result')" = rollback_restored ]
 
