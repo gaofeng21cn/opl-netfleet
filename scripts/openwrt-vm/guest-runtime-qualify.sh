@@ -250,7 +250,16 @@ proxies:
     port: 1082
 EOF
 
-printf '{}\n' >/etc/nikki/subscriptions/invalid_source.yaml
+cat >/etc/nikki/subscriptions/invalid_source.yaml <<'EOF'
+dns: invalid
+proxy-groups:
+  - name: Invalid Egress
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - MATCH,Invalid Egress
+EOF
 
 cat >"$work/manual-policy.json" <<EOF
 {
@@ -510,8 +519,9 @@ write_config_request() {
 	policy_source_ref=$4
 	selection_interval=$5
 	japan_display_name=$6
+	entry_group=$7
 	cat >"$output" <<EOF
-{"request":{"revision":"$revision","policy_source":{"kind":"$policy_source_kind","ref":"$policy_source_ref"},"recovery_profile_ref":"subscription:base","providers":{"alpha":{"section":"alpha","enabled":true,"role":"primary","billing":"subscription","region_ids":["japan","singapore"]},"beta":{"section":"beta","enabled":true,"role":"reserve","billing":"buyout","region_ids":["japan","singapore"]}},"regions":{"japan":{"display_name":"$japan_display_name","mode":"automatic"},"singapore":{"display_name":"Singapore","mode":"automatic"}},"capabilities":{"standard":{"display_name":"Standard","enabled":true,"mode":"automatic","region_ids":["japan","singapore"],"prefer_region_from":null,"entry_group":"VM Egress","policy_groups":[]}},"routing_rules":[],"automation":{"enabled":true,"selection_interval_seconds":$selection_interval,"subscription_refresh_enabled":true,"subscription_refresh_interval_seconds":3600},"safety":{"region_switch_margin_ms":150,"leaf_switch_margin_ms":150,"runtime_grace_seconds":30,"latency_url":"$probe_url","path_probe_url":"$probe_url","guard_probe_url":"$probe_url"}}}
+{"request":{"revision":"$revision","policy_source":{"kind":"$policy_source_kind","ref":"$policy_source_ref"},"recovery_profile_ref":"subscription:base","providers":{"alpha":{"section":"alpha","enabled":true,"role":"primary","billing":"subscription","region_ids":["japan","singapore"]},"beta":{"section":"beta","enabled":true,"role":"reserve","billing":"buyout","region_ids":["japan","singapore"]}},"regions":{"japan":{"display_name":"$japan_display_name","mode":"automatic"},"singapore":{"display_name":"Singapore","mode":"automatic"}},"capabilities":{"standard":{"display_name":"Standard","enabled":true,"mode":"automatic","region_ids":["japan","singapore"],"prefer_region_from":null,"entry_group":"$entry_group","policy_groups":[]}},"routing_rules":[],"automation":{"enabled":true,"selection_interval_seconds":$selection_interval,"subscription_refresh_enabled":true,"subscription_refresh_interval_seconds":3600},"safety":{"region_switch_margin_ms":150,"leaf_switch_margin_ms":150,"runtime_grace_seconds":30,"latency_url":"$probe_url","path_probe_url":"$probe_url","guard_probe_url":"$probe_url"}}}
 EOF
 }
 
@@ -528,7 +538,7 @@ run_timed config_get_inactive ucode "$main" config-get
 [ "$(jsonfilter -i "$work/config_get_inactive.json" -e '@.result.active')" = false ]
 [ "$(jsonfilter -i "$work/config_get_inactive.json" -e '@.result.recovery_profile.display_name')" = 'VM Base' ]
 inactive_revision=$(jsonfilter -i "$work/config_get_inactive.json" -e '@.result.revision')
-write_config_request "$work/config-request.json" "$inactive_revision" bundle bundle:base-v1 600 Japan
+write_config_request "$work/config-request.json" "$inactive_revision" bundle bundle:base-v1 600 Japan '海外加速'
 run_timed config_validate ucode "$main" config-validate "$work/config-request.json"
 [ "$(jsonfilter -i "$work/config_validate.json" -e '@.result.valid')" = true ]
 [ "$(jsonfilter -i "$work/config_validate.json" -e '@.result.change_count')" -gt 0 ]
@@ -538,7 +548,7 @@ run_timed config_save ucode "$main" config-save "$work/config-request.json"
 [ "$(uci -q get nikki.config.profile)" = subscription:base ]
 [ "$(cat /var/run/nikki/mihomo.pid)" = "$recovery_pid_before" ]
 saved_revision=$(jsonfilter -i "$work/config_save.json" -e '@.result.config.revision')
-write_config_request "$work/config-request.json" "$saved_revision" bundle bundle:base-v1 600 Japan
+write_config_request "$work/config-request.json" "$saved_revision" bundle bundle:base-v1 600 Japan '海外加速'
 run_timed config_apply_saved ucode "$main" config-apply "$work/config-request.json"
 [ "$(jsonfilter -i "$work/config_apply_saved.json" -e '@.result.state')" = applied ]
 [ "$(jsonfilter -i "$work/config_apply_saved.json" -e '@.result.change_count')" = 0 ]
@@ -612,7 +622,7 @@ stage=config_active_apply
 run_timed config_get_active ucode "$main" config-get
 [ "$(jsonfilter -i "$work/config_get_active.json" -e '@.result.active')" = true ]
 active_revision=$(jsonfilter -i "$work/config_get_active.json" -e '@.result.revision')
-write_config_request "$work/config-request.json" "$active_revision" bundle bundle:base-v1 600 'Japan Updated'
+write_config_request "$work/config-request.json" "$active_revision" bundle bundle:base-v1 600 'Japan Updated' '海外加速'
 run_timed config_apply ucode "$main" config-apply "$work/config-request.json"
 [ "$(jsonfilter -i "$work/config_apply.json" -e '@.result.state')" = applied ]
 [ "$(jsonfilter -i "$work/config_apply.json" -e '@.result.config.active')" = true ]
@@ -624,11 +634,11 @@ stage=config_active_rollback
 policy_digest_before=$(sha256sum /etc/opl-netfleet/policy.json | awk '{print $1}')
 run_timed config_get_rollback ucode "$main" config-get
 rollback_revision=$(jsonfilter -i "$work/config_get_rollback.json" -e '@.result.revision')
-write_config_request "$work/config-request.json" "$rollback_revision" profile subscription:invalid_source 600 'Japan Updated'
+write_config_request "$work/config-request.json" "$rollback_revision" profile subscription:invalid_source 600 'Japan Updated' 'Invalid Egress'
 if ucode "$main" config-apply "$work/config-request.json" >"$work/config-rollback.json" 2>"$work/config-rollback.stderr"; then
 	exit 1
 fi
-[ "$(jsonfilter -i "$work/config-rollback.json" -e '@.error')" = compile_rejected ]
+[ "$(jsonfilter -i "$work/config-rollback.json" -e '@.error')" = staged_profile_test_failed ]
 [ "$(jsonfilter -i "$work/config-rollback.json" -e '@.detail.rollback.state')" = active_restored ]
 [ "$(sha256sum /etc/opl-netfleet/policy.json | awk '{print $1}')" = "$policy_digest_before" ]
 [ "$(uci -q get nikki.config.profile)" = file:OPL-NetFleet.json ]
