@@ -116,6 +116,7 @@ class OpenWrtVmTests(unittest.TestCase):
         self.assertIn("call session create", guest_source)
         self.assertIn('"objects":[["luci","getFeatures"]]', guest_source)
         self.assertIn("-v list luci", guest_source)
+        self.assertIn('\t"probe":{}', guest_source)
         self.assertIn("http://127.0.0.1/ubus", guest_source)
         for gate in (
             "package_database",
@@ -124,6 +125,7 @@ class OpenWrtVmTests(unittest.TestCase):
             "rpcd_methods",
             "onboarding_get",
             "onboarding_apply",
+            "probe_rpc",
             "disable_native",
             "uninstall",
             "active_artifact_removed",

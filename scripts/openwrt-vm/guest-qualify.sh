@@ -122,6 +122,7 @@ if [ "$1 $2 $3" = '-v list opl-netfleet' ]; then
 	"status":{}
 	"events":{}
 	"connections":{}
+	"probe":{}
 	"config_get":{}
 	"config_validate":{}
 	"config_save":{}
