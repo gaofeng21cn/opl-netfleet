@@ -1,6 +1,6 @@
 import { read_yaml, read_json, write_json_atomic, sha256, sha256_text, device_name, current_profile, nikki_enabled, set_nikki_enabled, api_secret, set_profile, shell_quote, subscription_display_name, subscription_options, POLICY_PATH, EVIDENCE_PATH } from "../adapters/uci.uc";
-import { resolve_profile, restart, remove_artifact, remove_provider_links, running, test_runtime, ARTIFACT_PATH, MANIFEST_PATH, PROFILE_ENTRY_PATH, COMPILED_PROFILE } from "../adapters/nikki.uc";
-import { controller_ready } from "../adapters/mihomo.uc";
+import { resolve_profile, restart, remove_artifact, remove_provider_links, running, ARTIFACT_PATH, MANIFEST_PATH, PROFILE_ENTRY_PATH, COMPILED_PROFILE } from "../adapters/nikki.uc";
+import { controller_ready, test_runtime } from "../adapters/mihomo.uc";
 import { service_state, set_service_state } from "../adapters/service.uc";
 import { validate as validate_policy } from "../core/policy.uc";
 import { is_active } from "../core/activation.uc";
