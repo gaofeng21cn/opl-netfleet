@@ -21,8 +21,8 @@ def sha256(path: Path) -> str:
 
 def write_release(directory: Path, commit: str, tree: str) -> None:
     packages = {
-        'opl-netfleet': 'opl-netfleet-0.4.2-r1.apk',
-        'luci-app-netfleet': 'luci-app-netfleet-0.4.2-r1.apk',
+        'opl-netfleet': 'opl-netfleet-0.4.3-r1.apk',
+        'luci-app-netfleet': 'luci-app-netfleet-0.4.3-r1.apk',
     }
     artifacts = []
     for package, name in packages.items():
@@ -44,7 +44,7 @@ def write_release(directory: Path, commit: str, tree: str) -> None:
         'schema': 'opl-netfleet-package-manifest.v2',
         'source_commit': commit,
         'source_tree': tree,
-        'package_version': '0.4.2',
+        'package_version': '0.4.3',
         'package_release': '1',
         'package_format': 'apk',
         'package_arch': 'noarch',
@@ -101,12 +101,12 @@ class ReleaseToolsTests(unittest.TestCase):
     def test_package_sources_are_versioned_and_do_not_embed_instance_inputs(self):
         runtime = (ROOT / 'openwrt/Makefile').read_text()
         luci = (ROOT / 'openwrt/luci-app-netfleet/Makefile').read_text()
-        self.assertIn('PKG_VERSION:=0.4.2', runtime)
+        self.assertIn('PKG_VERSION:=0.4.3', runtime)
         self.assertIn('PKG_RELEASE:=1', runtime)
         self.assertIn('PKG_LICENSE:=Apache-2.0', runtime)
         self.assertIn('PKG_MAINTAINER:=OPL NetFleet', runtime)
         self.assertIn('PKGARCH:=all', runtime)
-        self.assertIn('PKG_VERSION:=0.4.2', luci)
+        self.assertIn('PKG_VERSION:=0.4.3', luci)
         self.assertIn('PKGARCH:=all', luci)
         self.assertIn('include $(INCLUDE_DIR)/package.mk', luci)
         self.assertNotIn('feeds/luci/luci.mk', luci)
@@ -203,7 +203,7 @@ class ReleaseToolsTests(unittest.TestCase):
             readback = Path(second)
             write_release(built, commit, tree)
             write_release(readback, commit, tree)
-            (readback / 'opl-netfleet-0.4.2-r1.apk').write_text('changed\n')
+            (readback / 'opl-netfleet-0.4.3-r1.apk').write_text('changed\n')
             result = subprocess.run(
                 [
                     str(VERIFIER),
