@@ -526,6 +526,26 @@ verify_installed_runtime_files() {
 	done <"$bundle/FILES.sha256"
 }
 
+current_runtime_payload_digest() {
+	runtime_manifest="$action_dir/runtime-files.sha256"
+	: >"$runtime_manifest"
+	while read -r expected rel extra; do
+		[ -n "$expected" ] || continue
+		[ -z "${extra:-}" ] || return 1
+		case "$rel" in
+			/*|*../*|*' '*) return 1 ;;
+			www/luci-static/resources/netfleet/*|\
+			www/luci-static/resources/view/netfleet/*|\
+			usr/share/luci/menu.d/luci-app-netfleet.json|\
+			usr/share/rpcd/acl.d/luci-app-netfleet.json)
+				continue
+				;;
+		esac
+		printf '%s  %s\n' "$expected" "$rel" >>"$runtime_manifest"
+	done <"$bundle/FILES.sha256"
+	sha256sum "$runtime_manifest" | awk '{print $1}'
+}
+
 json_semantically_equal() {
 	left=$1
 	right=$2
@@ -1707,13 +1727,10 @@ if [ -f "$installed_identity" ] &&
 	[ "$(sha256sum "$installed_identity" | awk '{print $1}')" = "$(sha256sum "$bundle/bundle.json" | awk '{print $1}')" ]; then
 	identity_matches=true
 fi
-installed_runtime_payload_digest=""
-if [ -f "$installed_identity" ]; then
-	installed_runtime_payload_digest=$(jsonfilter -i "$installed_identity" -e '@.runtime_payload_sha256' 2>/dev/null || true)
-fi
+candidate_runtime_payload_digest=$(current_runtime_payload_digest 2>/dev/null || true)
 runtime_payload_matches=false
 if [ -n "$runtime_payload_digest" ] &&
-	[ "$installed_runtime_payload_digest" = "$runtime_payload_digest" ] &&
+	[ "$candidate_runtime_payload_digest" = "$runtime_payload_digest" ] &&
 	verify_installed_runtime_files; then
 	runtime_payload_matches=true
 fi

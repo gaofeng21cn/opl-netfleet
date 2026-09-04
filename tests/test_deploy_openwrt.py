@@ -1025,6 +1025,17 @@ esac
         with (self.bundle / "FILES.sha256").open("w") as stream:
             for path in sorted(item for item in payload.rglob("*") if item.is_file()):
                 stream.write(f"{sha256(path)}  {path.relative_to(payload)}\n")
+        runtime_lines = []
+        for line in (self.bundle / "FILES.sha256").read_text().splitlines():
+            rel = line.split(None, 1)[1]
+            if not rel.startswith("www/luci-static/resources/netfleet/") and not rel.startswith(
+                "www/luci-static/resources/view/netfleet/"
+            ) and rel not in {
+                "usr/share/luci/menu.d/luci-app-netfleet.json",
+                "usr/share/rpcd/acl.d/luci-app-netfleet.json",
+            }:
+                runtime_lines.append(line)
+        runtime_digest = hashlib.sha256(("\n".join(runtime_lines) + "\n").encode()).hexdigest()
         with tarfile.open(self.bundle / "payload.tar", "w") as archive:
             for path in sorted(payload.rglob("*")):
                 archive.add(path, arcname=path.relative_to(payload), recursive=False)
@@ -1036,7 +1047,7 @@ esac
             "source_tree": "b" * 40,
             "policy_schema": 2,
             "file_count": len(files),
-            "runtime_payload_sha256": "f" * 64,
+            "runtime_payload_sha256": runtime_digest,
             "release_mode": "source",
             "release_format": "source",
             "instance": False,
@@ -1827,6 +1838,10 @@ esac
         first = self._run(instance=True)
         self.assertEqual(0, first.returncode, first.stderr + first.stdout)
         before = (self.state / "actions").read_text().splitlines()
+        installed_path = self.device / "etc/opl-netfleet/installed.json"
+        installed = json.loads(installed_path.read_text())
+        installed["runtime_payload_sha256"] = "f" * 64
+        installed_path.write_text(json.dumps(installed) + "\n")
         self._change_presentation_payload()
         self._rewrite_bundle_manifest(activation_qualified=False, qualification_sha256="")
 
