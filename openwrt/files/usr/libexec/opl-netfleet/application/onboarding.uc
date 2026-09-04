@@ -82,12 +82,17 @@ function projection(value) {
 		blockers: value.blockers ?? [], warnings: value.warnings ?? [], preview: value.preview };
 };
 
-function first_line(path) {
-	const process = popen(`head -n 1 ${shell_quote(path)} 2>/dev/null`);
+function diagnostic(path) {
+	const process = popen(`head -n 16 ${shell_quote(path)} 2>/dev/null`);
 	if (!process) return null;
-	const line = process.read("line");
+	const lines = [];
+	for (let i = 0; i < 16; i++) {
+		const line = process.read("line");
+		if (!line) break;
+		push(lines, trim(line));
+	}
 	process.close();
-	return line ? trim(line) : null;
+	return length(lines) > 0 ? join(lines, "\n") : null;
 };
 
 function run_owner(action) {
@@ -97,7 +102,7 @@ function run_owner(action) {
 	const response = read_json(output);
 	return { ok: exit_code == 0 && response?.ok == true, response: response,
 		error: response?.error ?? `${action}_failed`, exit_code: exit_code,
-		diagnostic: response == null ? (first_line(error_output) ?? first_line(output)) : null };
+		diagnostic: response == null ? (diagnostic(error_output) ?? diagnostic(output)) : null };
 };
 
 function cleanup(found, snapshot) {
