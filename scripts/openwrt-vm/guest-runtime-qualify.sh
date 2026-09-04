@@ -661,11 +661,17 @@ rm -f "$work/fail-alpha"
 
 stage=subscription_refresh_rollback
 artifact_digest=$(sha256sum /etc/nikki/profiles/opl-netfleet/mvp.json | awk '{print $1}')
-printf '%s\n' '{}' >"$work/subscription-alpha.next.yaml"
+cat >"$work/subscription-alpha.next.yaml" <<'EOF'
+proxies:
+  - name: Alpha Invalid 01
+    type: not-a-real-proxy-type
+    server: 127.0.0.1
+    port: 1081
+EOF
 if ucode "$main" refresh vm >"$work/refresh_rollback.json" 2>"$work/refresh_rollback.stderr"; then
 	exit 1
 fi
-[ "$(jsonfilter -i "$work/refresh_rollback.json" -e '@.error')" = compile_rejected ]
+[ "$(jsonfilter -i "$work/refresh_rollback.json" -e '@.error')" = staged_profile_test_failed ]
 [ "$(sha256sum /etc/nikki/subscriptions/alpha.yaml | awk '{print $1}')" = "$alpha_digest" ]
 [ "$(sha256sum /etc/nikki/profiles/opl-netfleet/mvp.json | awk '{print $1}')" = "$artifact_digest" ]
 [ "$(uci -q get nikki.config.profile)" = file:OPL-NetFleet.json ]
