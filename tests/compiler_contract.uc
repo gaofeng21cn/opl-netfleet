@@ -4,6 +4,15 @@ import { compile } from "../openwrt/files/usr/libexec/opl-netfleet/core/compiler
 import { validate } from "../openwrt/files/usr/libexec/opl-netfleet/core/policy.uc";
 
 const profile = {
+	dns: {
+		"default-nameserver": ["223.5.5.5", "119.29.29.29"],
+		nameserver: ["https://dns.alidns.com/dns-query", "https://doh.pub/dns-query"],
+		"proxy-server-nameserver": ["https://dns.alidns.com/dns-query", "https://doh.pub/dns-query"],
+		"respect-rules": true,
+		"nameserver-policy": {
+			"rule-set:geolocation-non-cn": ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"]
+		}
+	},
 	"proxy-groups": [
 		{ name: "Outbound", type: "select", proxies: ["Auto", "NearLegacy", "DIRECT"] },
 		{ name: "AI", type: "select", proxies: ["DIRECT"] },
@@ -103,7 +112,8 @@ for (let i = 0; i < length(result.profile?.["proxy-groups"] ?? []); i++) {
 	groups[group.name] = group;
 }
 
-if (!result.ok || length(keys(result.manifest.generated_groups)) != 2 ||
+if (!result.ok || sprintf("%J", result.profile?.dns) != sprintf("%J", profile.dns) ||
+	length(keys(result.manifest.generated_groups)) != 2 ||
 	result.manifest.generated_groups.standard.mode != "automatic" ||
 	result.manifest.generated_groups["ai-compatible"].mode != "automatic" ||
 	result.manifest.generated_groups["ai-compatible"].prefer_region_from != "standard" ||

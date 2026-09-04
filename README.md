@@ -157,7 +157,7 @@ deployment bundle 目录固定包含四项，不接受部署时临时拼参数�
 
 - `policy.json`：NetFleet capability/provider/region/binding 与 Fail-Open 配置；
 - `subscriptions.json`：私有订阅凭据及稳定命名 section，格式为 `{"schema_version":1,"subscriptions":[{"section":"provider_id","name":"显示名","url":"https://...","user_agent":"mihomo"}]}`；
-- `nikki-mixin.yaml`：由用户维护的原生 Nikki mixin，包括目标网络所需 DNS 兼容和关键域名规则。
+- `nikki-mixin.yaml`：由用户维护的原生 Nikki mixin，只补充目标网络或特定 provider 所需的 DNS 兼容和关键域名规则；通用的防污染加密 DNS 基线由内置 `bundle:base-v1` 提供。
 - `platform.json`：目标 Nikki/OpenWrt 平台声明；API secret 只要求设备已有，不写入该文件。锁定 MRS 安装到 Mihomo home 内的专用目录，保证 Nikki 启动前校验、procd runtime 和手工 restart 使用同一文件边界。
 
 “全新兼容 OpenWrt”不要求预装 NetFleet、Nikki、订阅或 cache。安装器先确认 root、OpenWrt 身份、默认路由和包管理器；通用依赖只从 OpenWrt 官方签名源安装。APK 目标缺少 Nikki/Mihomo 时，安装器根据固件版本和 `DISTRIB_ARCH` 注册 Nikki 官方签名 feed，校验固定公钥后再安装；不执行系统升级、不使用 `--allow-untrusted`。若固件版本、架构或签名软件源不受支持，则在触碰 Nikki 数据面前返回 `unsupported_target`/`dependency_bootstrap_failed`；不能诚实地把任意 OpenWrt 版本和架构都宣称为兼容。

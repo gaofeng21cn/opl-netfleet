@@ -29,7 +29,7 @@ NetFleet 不能成为基础联网、订阅更新、DNS、nft、默认路由或 M
 
 capability 是 policy 中的可组合增强单元，不是动态代码插件、进程或第二控制面。`main.enabled` 是全局启用许可；每个 capability 再独立声明 `enabled`、`manual|automatic`、允许或排除地区和选择门槛；可选 `display_order` 只控制 Profile/status 的显示顺序，同值时按稳定 ID 排序，不能影响选路。每个启用能力必须恰有一个 `entry` binding；它是规则与组引用改写到 capability 可见 selector 的唯一接入点。零个或多个 `policy` binding 保留原业务分类组名称，但把其成员标准化为该 capability 的同一套用户选择面，不复制算法、节点或状态。机场运行层级只由 provider 的 `primary|reserve` role 决定：当前优选失效后先在全部主用机场中选择，主用层全部失效才进入备用机场，最后进入 `DIRECT`。生成 Profile 不复制策略来源组作为第二条 native 路径；恢复整个 Recovery Profile 只属于 enable/select/disable 的事务恢复。该差异完全由数据配置决定，engine 不按 AI、地区、机场或组名分支。全局关闭时允许全部 capability 关闭并保留配置；全局允许启用时至少要有一个 capability 开启。多个 capability 共享 provider/region 资源和同一 activation/Fail-Open owner；disabled capability 可以保留配置和 binding，compiler 直接忽略它并保持对应策略来源组原样。Fail-Open、activation 和 Nikki adapter 是公共且不可关闭的安全底座。
 
-`policy_source`、`recovery_profile`、`platform.json` 与 provider role 是四个独立 owner 边界：`policy_source` 只决定正常编译所读取的规则和策略组；`recovery_profile` 只决定 NetFleet 关闭、事务失败或用户手工切回时由 Nikki 完整恢复的原生 Profile；私有 `platform.json` 只声明 Nikki/OpenWrt 的透明代理、DNS 模式、controller、sniffer、日志和 flow-offload 平台参数；provider role 只决定 NetFleet Profile active 时的主用/备用机场层级。`kind=bundle` 从 `/etc/opl-netfleet/policy-sources/<stable-id>.json` 读取机场无关的 JSON 基线，`kind=profile` 仍可只读引用完整 Nikki Profile 作为迁移输入；两者共用同一个 compiler、manifest、activation 和 status 路径。恢复 Profile 可以与某个 provider 使用同一个机场，但二者不能互相冒充，也不能复制该机场的节点、DNS 或订阅字节。每个 target 只能选择一份已经独立验证过规则、DNS、保护业务和可用额度的恢复 Profile；机场计费属性不能替代独立验收，也不允许影响 active Profile 的可见策略组或自动排序。
+`policy_source`、`recovery_profile`、`platform.json` 与 provider role 是四个独立 owner 边界：`policy_source` 只决定正常编译所读取的规则、DNS 和策略组；`recovery_profile` 只决定 NetFleet 关闭、事务失败或用户手工切回时由 Nikki 完整恢复的原生 Profile；私有 `platform.json` 只声明 Nikki/OpenWrt 的透明代理、DNS 模式、controller、sniffer、日志和 flow-offload 平台参数；provider role 只决定 NetFleet Profile active 时的主用/备用机场层级。`kind=bundle` 从 `/etc/opl-netfleet/policy-sources/<stable-id>.json` 读取机场无关的 JSON 基线，`kind=profile` 仍可只读引用完整 Nikki Profile 作为迁移输入；两者共用同一个 compiler、manifest、activation 和 status 路径。恢复 Profile 可以与某个 provider 使用同一个机场，但二者不能互相冒充，也不能复制该机场的节点、DNS 或订阅字节。每个 target 只能选择一份已经独立验证过规则、DNS、保护业务和可用额度的恢复 Profile；机场计费属性不能替代独立验收，也不允许影响 active Profile 的可见策略组或自动排序。
 
 automatic capability 必须形成无环依赖图，并且只有一个不声明 `prefer_region_from` 的根能力。跟随能力先过滤自身的 allowed/excluded 地区和候选资格；根能力选中的地区仍合格时直接复用该地区，否则在自身 primary、reserve 层级中按同一轮 delay 选择最快地区。每轮只对每个 provider 触发一次原生 health-check，再依依赖顺序测量各 capability selector；所有 selector 写入、protected probes 和失败恢复仍属于同一个原子 activation owner。supervisor 只负责到期调度和进程失联 grace，不实现 comparator、不持久化排名，也不增加第二循环。
 
@@ -54,7 +54,7 @@ automatic capability 必须形成无环依赖图，并且只有一个不声明 `
 
 | Owner | 唯一责任 |
 | --- | --- |
-| Policy Source | 提供流量分类、首条命中规则顺序、原始组名、DNS 和未绑定组行为；内置 bundle 使用锁定 MRS 做业务分类，`kind=profile` 继续保留原 Profile 规则；只作为 compiler 输入 |
+| Policy Source | 提供流量分类、首条命中规则顺序、原始组名、DNS 和未绑定组行为；内置 bundle 使用锁定 MRS 做业务分类，并提供国内加密上游与境外规则集加密解析的无秘密 DNS 基线；`kind=profile` 继续逐字保留原 Profile 规则和 DNS；只作为 compiler 输入 |
 | Recovery Profile | NetFleet 关闭、事务失败和进程级恢复时由 Nikki 选择的完整原生 owner；不参与正常选优 |
 | Platform declaration | 私有 `platform.json` 声明目标 Nikki UCI 与 OpenWrt flow-offload 值；canonical deploy owner 负责校验、快照、应用、官方 reload/restart 和 readback，不直接生成 nft/ip rule |
 | Ruleset lock | 公共 `rulesets.lock.json` 锁定上游 commit、URL、格式、大小、SHA-256 和许可证；提供内置 Policy Source 已引用的业务、地域和私网 MRS，不拥有规则顺序或自动更新 |
