@@ -136,7 +136,7 @@ tar -cf "$work/runtime-source.tar" -C "$workspace" \
 	openwrt/files/etc/opl-netfleet/rulesets.lock.json
 openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
 	-keyout "$work/local-probe.key" -out "$work/local-probe.crt" \
-	-subj /CN=netfleet-probe.test \
+	-subj /CN=www.gstatic.com \
 	-addext subjectAltName=DNS:netfleet-probe.test,DNS:www.gstatic.com,IP:192.168.1.2 >/dev/null 2>&1
 python3 - "$work/local-probe.crt" "$work/local-probe.key" "$probe_port" >"$work/local-probe.log" 2>&1 <<'PY' &
 import http.server
