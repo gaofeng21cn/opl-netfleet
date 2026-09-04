@@ -16,7 +16,11 @@ init 和 LuCI 页面。package 不包含 target-local policy、订阅、Nikki mi
 两个 package 文件和 APK 公钥（仅 APK）；APK 逐包签名必须使用本机私钥，私钥不进入
 Git、发布目录或设备。没有真实 OpenWrt SDK 时，构建入口必须明确失败，不能伪造
 package 或 manifest。APK 发布还包含同一私钥签名的 `packages.adb` feed index，并在
-manifest v2 的 `feed_index` 字段绑定其 SHA-256。runtime 与 LuCI 均只包含脚本、配置和静态
+manifest v2 的 `feed_index` 字段绑定其 SHA-256。Release 同时包含 `install-netfleet.sh`，由
+`feed_bootstrap` 字段绑定脚本名称与 SHA-256；该脚本下载公钥、原子写入公钥和
+`/etc/apk/repositories.d/opl-netfleet.list`，然后在一次 `apk add --upgrade` 事务中安装两个
+package。它不得写入 policy、订阅或 Nikki mixin，也不得启用 NetFleet 或切换数据面。
+runtime 与 LuCI 均只包含脚本、配置和静态
 资源，因此 OpenWrt package 声明为 `PKGARCH:=all`：APK 元数据中的实际架构必须是
 `noarch`，而 `build_target_arch` 单独保留生成该 Release 的 SDK 目标，例如
 `aarch64_generic`。部署器允许 `noarch` 安装到任意目标架构；旧 Release 的原生架构兼容
@@ -44,10 +48,12 @@ clone 和 package index 成本。
 GitHub candidate workflow 必须先把用户选择的 `source_ref` checkout 为一个精确提交，再以
 该 checkout 的 `HEAD` commit/tree 构建；workflow event 自身的 `GITHUB_SHA` 不能冒充
 package source。workflow 只产生短期候选，不直接创建 Release。候选必须在同一 commit/tree
-的 ARM64 OpenWrt VM 中完成签名安装、数据库回读、installed bytes、LuCI/RPC、首次设置、
+的干净 ARM64 OpenWrt VM 中通过候选目录提供的临时 feed 和同一 bootstrap 完成签名安装及
+重复升级事务，再完成数据库回读、installed bytes、LuCI/RPC、首次设置、
 退出恢复和卸载验证，之后才允许发布入口创建不可变 Release。发布完成后必须从公开 Release
 重新下载全部文件，校验文件集合、逐文件摘要以及 manifest 中的 source commit/tree，才可
-报告发布成功；已有 Release 不允许覆盖资产。当前 `noarch` Release 可跨 CPU 架构复用，
+报告发布成功；已有 Release 不允许覆盖资产。VM 的 HTTP feed 覆盖只允许用于本机受控资格
+验证，公开安装入口默认只接受 HTTPS。当前 `noarch` Release 可跨 CPU 架构复用，
 但仍只由 manifest 中记录的一个 SDK 构建目标生成和验证。
 
 术语固定：OPL Instance 是用户私有 desired-configuration 权威；deployment bundle

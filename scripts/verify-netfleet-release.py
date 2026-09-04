@@ -15,6 +15,7 @@ HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 PACKAGE_NAMES = {"opl-netfleet", "luci-app-netfleet"}
 LEGACY_PACKAGE_VERSIONS = {"0.2.0", "0.3.0", "0.3.1", "0.3.2", "0.3.3", "0.4.0"}
+BOOTSTRAP_MINIMUM_VERSION = (0, 4, 5)
 
 
 def fail(message: str) -> None:
@@ -42,6 +43,12 @@ def require_digest(value: object, label: str) -> str:
     return value
 
 
+def version_tuple(value: object) -> tuple[int, int, int]:
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", value):
+        fail("release package version is invalid")
+    return tuple(int(part) for part in value.split("."))  # type: ignore[return-value]
+
+
 def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, object]:
     if not HEX40.fullmatch(source_commit) or not HEX40.fullmatch(source_tree):
         fail("expected source identity must use full lowercase Git object IDs")
@@ -59,6 +66,8 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
     if manifest.get("source_commit") != source_commit or manifest.get("source_tree") != source_tree:
         fail("release manifest source identity does not match the checked-out source")
 
+    package_version = manifest.get("package_version")
+    parsed_version = version_tuple(package_version)
     package_format = manifest.get("package_format")
     if package_format not in {"apk", "ipk"}:
         fail("release package format is unsupported")
@@ -133,11 +142,25 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
     elif package_format != "apk" and feed_index is not None:
         fail("IPK release must not declare an APK feed index")
 
+    feed_bootstrap = manifest.get("feed_bootstrap")
+    if package_format == "apk" and parsed_version >= BOOTSTRAP_MINIMUM_VERSION:
+        if not isinstance(feed_bootstrap, dict) or feed_bootstrap.get("name") != "install-netfleet.sh":
+            fail("release is missing its feed bootstrap")
+        bootstrap_path = files.get("install-netfleet.sh")
+        if bootstrap_path is None or require_digest(feed_bootstrap.get("sha256"), "install-netfleet.sh") != digest(bootstrap_path):
+            fail("feed bootstrap bytes do not match manifest")
+        if not bootstrap_path.read_bytes().startswith(b"#!/bin/sh\n"):
+            fail("feed bootstrap is not an OpenWrt shell script")
+    elif feed_bootstrap is not None:
+        fail("legacy release must not declare a feed bootstrap")
+
     expected_names = {"manifest.json", "FILES.sha256", *artifact_files.values()}
     if package_format == "apk":
         expected_names.add("opl-netfleet-apk.pem")
         if feed_index is not None:
             expected_names.add("packages.adb")
+    if feed_bootstrap is not None:
+        expected_names.add("install-netfleet.sh")
     if set(files) != expected_names:
         fail("release file set does not match the manifest")
 

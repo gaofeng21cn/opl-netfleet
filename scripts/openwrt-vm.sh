@@ -101,6 +101,7 @@ git -C "$repo_dir" archive "$source_commit" \
 	scripts/openwrt-vm/guest-qualify.sh \
 	scripts/openwrt-vm/guest-runtime-qualify.sh \
 	scripts/openwrt-vm/guest-package-qualify.sh \
+	scripts/install-netfleet.sh \
 	scripts/verify-netfleet-release.py |
 	tar -C "$source_dir" -xf -
 

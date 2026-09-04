@@ -6,11 +6,11 @@ source_commit=${1:?}
 source_tree=${2:?}
 manifest_sha=${3:?}
 probe_port=${4:?}
+feed_url=${5:?}
 fixture=/tmp/netfleet-runtime-fixture
-candidate=/tmp/netfleet-package-candidate
-archive=/tmp/package-candidate.tar
+candidate=$fixture/feed-readback
 probe_url=https://netfleet-probe.test:$probe_port/generate_204
-stage=extract
+stage=feed_readback
 
 finish() {
 	rc=$?
@@ -41,7 +41,9 @@ finish() {
 trap finish EXIT INT TERM
 
 mkdir -p "$candidate"
-tar -C "$candidate" -xf "$archive"
+uclient-fetch -q -O "$candidate/manifest.json" "$feed_url/manifest.json"
+uclient-fetch -q -O "$candidate/install-netfleet.sh" "$feed_url/install-netfleet.sh"
+uclient-fetch -q -O "$candidate/FILES.sha256" "$feed_url/FILES.sha256"
 [ "$(sha256sum "$candidate/manifest.json" | awk '{print $1}')" = "$manifest_sha" ]
 [ "$(jsonfilter -i "$candidate/manifest.json" -e '@.source_commit')" = "$source_commit" ]
 [ "$(jsonfilter -i "$candidate/manifest.json" -e '@.source_tree')" = "$source_tree" ]
@@ -62,17 +64,10 @@ luci_apk=$(ucode -e '
 case "$runtime_apk $luci_apk" in
 	*/*|*'..'*) exit 1 ;;
 esac
-[ -f "$candidate/$runtime_apk" ]
-[ -f "$candidate/$luci_apk" ]
-[ -s "$candidate/packages.adb" ]
-feed_index_sha=$(jsonfilter -i "$candidate/manifest.json" -e '@.feed_index.sha256')
-[ "$(sha256sum "$candidate/packages.adb" | awk '{print $1}')" = "$feed_index_sha" ]
-for index in 0 1; do
-	name=$(jsonfilter -i "$candidate/manifest.json" -e "@.artifacts[$index].name")
-	expected=$(jsonfilter -i "$candidate/manifest.json" -e "@.artifacts[$index].sha256")
-	[ -f "$candidate/$name" ]
-	[ "$(sha256sum "$candidate/$name" | awk '{print $1}')" = "$expected" ]
-done
+bootstrap_sha=$(jsonfilter -i "$candidate/manifest.json" -e '@.feed_bootstrap.sha256')
+[ "$(sha256sum "$candidate/install-netfleet.sh" | awk '{print $1}')" = "$bootstrap_sha" ]
+files_sha=$(jsonfilter -i "$candidate/manifest.json" -e '@.files_manifest.sha256')
+[ "$(sha256sum "$candidate/FILES.sha256" | awk '{print $1}')" = "$files_sha" ]
 
 # Source deployments predate package ownership and exercise APK's protected
 # /etc path migration. The runtime post-install must promote only these package
@@ -89,9 +84,6 @@ export PATH
 : >"$fixture/package-manager.log"
 printf 'apk_command=%s\n' "$real_apk" >>"$fixture/package-manager.log"
 "$real_apk" list --manifest >"$fixture/package-manifest.before"
-"$real_apk" --timeout 300 update >>"$fixture/package-manager.log" 2>&1 || true
-"$real_apk" --timeout 300 add luci-base >>"$fixture/package-manager.log" 2>&1
-
 # The runtime fixture supplies working Mihomo and yq binaries outside the package
 # database. Expose them at the same standard paths used by an already configured
 # target, then model their package ownership as APK virtual packages. The
@@ -104,9 +96,17 @@ env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin yq --version | grep -Fq 'v4.53.6'
 	>>"$fixture/package-manager.log" 2>&1
 "$real_apk" --timeout 300 add --virtual yq=4.53.6-r1 \
 	>>"$fixture/package-manager.log" 2>&1
-cp "$candidate/opl-netfleet-apk.pem" /etc/apk/keys/opl-netfleet-apk.pem
-"$real_apk" --timeout 300 add "$candidate/$runtime_apk" "$candidate/$luci_apk" \
-	>>"$fixture/package-manager.log" 2>&1
+NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 \
+	sh "$candidate/install-netfleet.sh" >>"$fixture/package-manager.log" 2>&1
+[ "$(cat /etc/apk/repositories.d/opl-netfleet.list)" = "$feed_url" ]
+[ -s /etc/apk/keys/opl-netfleet-apk.pem ]
+
+stage=feed_upgrade
+before_upgrade=$("$real_apk" list --manifest | grep -E '^(opl-netfleet|luci-app-netfleet) ')
+NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 \
+	sh "$candidate/install-netfleet.sh" >>"$fixture/package-manager.log" 2>&1
+after_upgrade=$("$real_apk" list --manifest | grep -E '^(opl-netfleet|luci-app-netfleet) ')
+[ "$after_upgrade" = "$before_upgrade" ]
 
 stage=package_database
 version=$(jsonfilter -i "$candidate/manifest.json" -e '@.package_version')
@@ -349,5 +349,5 @@ stage=uninstall
 [ ! -e /usr/share/luci/menu.d/luci-app-netfleet.json ]
 
 stage=complete
-printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_release":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","checks":{"manifest":true,"signing_key":true,"install":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"probe_rpc":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
+printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_release":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","checks":{"manifest":true,"signing_key":true,"feed_bootstrap":true,"feed_install":true,"feed_upgrade_transaction":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"probe_rpc":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
 	"$source_commit" "$source_tree" "$manifest_sha" "$version" "$release"

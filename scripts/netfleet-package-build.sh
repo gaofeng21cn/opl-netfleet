@@ -41,7 +41,7 @@ trap restore_sdk EXIT
 for name in .config private-key.pem public-key.pem; do
   [[ ! -e "$sdk/$name" ]] || cp -p "$sdk/$name" "$backup/$name"
 done
-git -C "$repo_dir" archive "$commit" openwrt | tar -C "$work" -xf -
+git -C "$repo_dir" archive "$commit" openwrt scripts/install-netfleet.sh | tar -C "$work" -xf -
 version=$(awk -F':=' '/^PKG_VERSION[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/Makefile")
 release=$(awk -F':=' '/^PKG_RELEASE[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/Makefile")
 [[ -n "$version" && -n "$release" ]] || die 'package version metadata is missing'
@@ -134,8 +134,15 @@ else
 fi
 while IFS= read -r file; do artifacts+=("$file"); done < <(find "$sdk/bin/packages" -type f \( "${artifact_patterns[@]}" \) -print 2>/dev/null | sort)
 [[ ${#artifacts[@]} -eq 2 ]] || die "expected exactly two package artifacts, found ${#artifacts[@]}"
+bootstrap_sha256=''
 public_key=''
 if [[ "$package_format" == apk ]]; then
+	bootstrap_source=$work/scripts/install-netfleet.sh
+	[[ -f "$bootstrap_source" ]] || die 'feed bootstrap is missing from source'
+	bootstrap_target=$output/install-netfleet.sh
+	cp "$bootstrap_source" "$bootstrap_target"
+	chmod 0755 "$bootstrap_target"
+	bootstrap_sha256=$(sha256sum "$bootstrap_target" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$bootstrap_target" | awk '{print $1}')
   public_key=$sdk/public-key.pem
   signed_dir=$work/signed
   trusted_dir=$work/trusted
@@ -152,10 +159,10 @@ if [[ "$package_format" == apk ]]; then
   "$sdk/staging_dir/host/bin/apk" verify --keys-dir "$trusted_dir" "${signed_artifacts[@]}"
   artifacts=("${signed_artifacts[@]}")
 fi
-python3 - "$output" "$commit" "$tree" "$version" "$release" "$package_format" "$package_arch" "$build_target_arch" "$policy_schema" "$public_key" "$runtime_payload_sha256" "$files_sha256" "${artifacts[@]}" <<'PY'
+python3 - "$output" "$commit" "$tree" "$version" "$release" "$package_format" "$package_arch" "$build_target_arch" "$policy_schema" "$public_key" "$runtime_payload_sha256" "$files_sha256" "$bootstrap_sha256" "${artifacts[@]}" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
-output, commit, tree, version, release, package_format, package_arch, build_target_arch, policy_schema, public_key, runtime_payload_sha256, files_sha256, *artifacts = sys.argv[1:]
+output, commit, tree, version, release, package_format, package_arch, build_target_arch, policy_schema, public_key, runtime_payload_sha256, files_sha256, bootstrap_sha256, *artifacts = sys.argv[1:]
 items=[]
 for source in artifacts:
     data=Path(source).read_bytes(); name=Path(source).name
@@ -164,6 +171,8 @@ for source in artifacts:
     items.append({'package':package_name,'name':name,'sha256':hashlib.sha256(data).hexdigest(),'size':len(data)})
 manifest={'schema':'opl-netfleet-package-manifest.v2','source_commit':commit,'source_tree':tree,'package_version':version,'package_release':release,'package_format':package_format,'package_arch':package_arch,'build_target_arch':build_target_arch,'policy_schema':int(policy_schema),'runtime_payload_sha256':runtime_payload_sha256,'files_manifest':{'name':'FILES.sha256','sha256':files_sha256},'artifacts':items}
 manifest['artifact_files']={item['package']: item['name'] for item in items}
+if bootstrap_sha256:
+    manifest['feed_bootstrap']={'name':'install-netfleet.sh','sha256':bootstrap_sha256}
 if public_key:
     key_data=Path(public_key).read_bytes(); key_name='opl-netfleet-apk.pem'
     key_target=Path(output)/key_name; key_target.write_bytes(key_data); key_target.chmod(0o600)

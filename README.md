@@ -73,11 +73,13 @@ NetFleet 的事件与诊断页保留适合日常排查的稳定摘要；“实�
 - 一份可独立使用的原生 Nikki Profile；
 - 至少一个稳定命名、已有有效缓存的订阅。
 
-从同一 Release 下载并安装 `opl-netfleet` 与 `luci-app-netfleet`。OpenWrt 25.12 的 APK 示例：
+在 OpenWrt 25.12 上，用一次性安装入口加入签名软件源并安装两个 package：
 
 ```sh
-apk add --upgrade ./opl-netfleet-<版本>.apk ./luci-app-netfleet-<版本>.apk
+uclient-fetch -q -O /tmp/install-netfleet.sh https://github.com/gaofeng21cn/opl-netfleet/releases/latest/download/install-netfleet.sh && sh /tmp/install-netfleet.sh
 ```
+
+该命令只安装 APK 公钥、软件源和程序文件，不写入 policy、订阅或 Nikki mixin，也不自动接管网络。
 
 安装完成后，打开 LuCI 的“服务 -> NetFleet”。首次设置会依次完成：
 
@@ -90,13 +92,13 @@ apk add --upgrade ./opl-netfleet-<版本>.apk ./luci-app-netfleet-<版本>.apk
 
 ## 升级
 
-一次性升级可以同时安装同一 Release 中的两个软件包：
+完成首次安装后，OpenWrt 可以直接从已配置的软件源升级：
 
 ```sh
-apk add --upgrade ./opl-netfleet-<版本>.apk ./luci-app-netfleet-<版本>.apk
+apk update && apk add --upgrade opl-netfleet luci-app-netfleet
 ```
 
-发布版还提供签名的 `packages.adb`，可以加入 OpenWrt APK 软件源，通过系统软件包管理器检查和升级。软件包升级只更新程序文件，现有策略、订阅缓存和当前运行配置会继续保留；升级完成后可在 NetFleet 页面检查状态并决定何时应用新配置。
+软件包升级只更新程序文件，现有策略、订阅缓存和当前运行配置会继续保留；升级完成后可在 NetFleet 页面检查状态并决定何时应用新配置。也可以重新执行一次性安装入口，它使用同一个 `apk add --upgrade` 事务，不会重复创建实例配置。
 
 ## 日常使用
 

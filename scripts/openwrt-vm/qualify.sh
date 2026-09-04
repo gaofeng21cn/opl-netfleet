@@ -34,7 +34,7 @@ ports=$(python3 - <<'PY'
 import socket
 
 sockets = []
-for _ in range(2):
+for _ in range(3):
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
     sockets.append(sock)
@@ -42,9 +42,12 @@ print(*(sock.getsockname()[1] for sock in sockets))
 PY
 )
 ssh_port=${ports%% *}
-probe_port=${ports##* }
+remaining_ports=${ports#* }
+probe_port=${remaining_ports%% *}
+feed_port=${remaining_ports##* }
 stage=assets
 probe_pid=
+feed_pid=
 qemu_pid=
 now_ms() {
 	python3 -c 'import time; print(time.time_ns() // 1000000)'
@@ -68,6 +71,10 @@ cleanup() {
 	if [ -n "$probe_pid" ]; then
 		kill "$probe_pid" >/dev/null 2>&1 || true
 		wait "$probe_pid" >/dev/null 2>&1 || true
+	fi
+	if [ -n "$feed_pid" ]; then
+		kill "$feed_pid" >/dev/null 2>&1 || true
+		wait "$feed_pid" >/dev/null 2>&1 || true
 	fi
 	rm -rf -- "$work"
 }
@@ -179,6 +186,28 @@ wait_for_probe() {
 	done
 }
 wait_for_probe
+
+feed_url=
+if [ -n "$package_archive" ]; then
+	feed_dir=$work/package-feed
+	mkdir -p "$feed_dir"
+	tar -C "$feed_dir" -xf "$package_archive"
+	[ "$(sha256_file "$feed_dir/manifest.json")" = "$package_manifest_sha" ] || {
+		echo "OpenWrt qualification package manifest mismatch" >&2
+		exit 1
+	}
+	python3 -m http.server "$feed_port" --bind 0.0.0.0 --directory "$feed_dir" \
+		>"$work/package-feed.log" 2>&1 &
+	feed_pid=$!
+	for attempt in $(seq 1 20); do
+		if curl -fsS --connect-timeout 2 "http://127.0.0.1:$feed_port/manifest.json" >/dev/null; then
+			break
+		fi
+		[ "$attempt" -lt 20 ] || { cat "$work/package-feed.log" >&2; exit 1; }
+		sleep 1
+	done
+	feed_url="http://192.168.1.2:$feed_port"
+fi
 assets_elapsed_ms=$(($(now_ms) - assets_started_ms))
 
 stage=qemu_boot
@@ -305,17 +334,6 @@ actual_transfer=$(ssh $ssh_common root@127.0.0.1 \
 	echo "OpenWrt qualification source transfer mismatch" >&2
 	exit 1
 }
-if [ -n "$package_archive" ]; then
-	cp "$package_archive" "$work/package-candidate.tar"
-	package_archive_sha=$(sha256_file "$work/package-candidate.tar")
-	tar -cf - -C "$work" package-candidate.tar |
-		ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf -'
-	actual_package_archive_sha=$(ssh $ssh_common root@127.0.0.1 'sha256sum /tmp/package-candidate.tar' | awk '{print $1}')
-	[ "$actual_package_archive_sha" = "$package_archive_sha" ] || {
-		echo "OpenWrt qualification package transfer mismatch" >&2
-		exit 1
-	}
-fi
 ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf /tmp/runtime-source.tar && rm -f /tmp/runtime-source.tar'
 transfer_elapsed_ms=$(($(now_ms) - transfer_started_ms))
 stage=management_guest
@@ -347,7 +365,7 @@ if [ -n "$package_archive" ]; then
 	package_started_ms=$(now_ms)
 	package_result="$work/package-result.json"
 	if ! ssh $ssh_common root@127.0.0.1 \
-		"sh /tmp/guest-package-qualify.sh '$source_commit' '$source_tree' '$package_manifest_sha' '$probe_port'" \
+		"sh /tmp/guest-package-qualify.sh '$source_commit' '$source_tree' '$package_manifest_sha' '$probe_port' '$feed_url'" \
 		>"$package_result" 2>"$work/package-result.stderr"; then
 		cat "$work/package-result.stderr" >&2
 		exit 1

@@ -94,11 +94,16 @@ The target device should have:
 - a native Nikki profile that can be used independently;
 - at least one stable named subscription with a valid local cache.
 
-Download both packages from the same release. For OpenWrt 25.12 with APK:
+On OpenWrt 25.12, use the one-time installer to add the signed feed and install
+both packages:
 
 ```sh
-apk add --upgrade ./opl-netfleet-<version>.apk ./luci-app-netfleet-<version>.apk
+uclient-fetch -q -O /tmp/install-netfleet.sh https://github.com/gaofeng21cn/opl-netfleet/releases/latest/download/install-netfleet.sh && sh /tmp/install-netfleet.sh
 ```
+
+This command installs only the APK key, repository, and program files. It does
+not write policy, subscriptions, or Nikki mixins, and it does not take over the
+network automatically.
 
 Open **Services -> NetFleet** in LuCI. First-run setup will:
 
@@ -113,16 +118,18 @@ protected probes can be adjusted from the configuration page.
 
 ## Upgrading
 
-Install the two packages from the same release together:
+After the first installation, OpenWrt can upgrade directly from the configured
+feed:
 
 ```sh
-apk add --upgrade ./opl-netfleet-<version>.apk ./luci-app-netfleet-<version>.apk
+apk update && apk add --upgrade opl-netfleet luci-app-netfleet
 ```
 
-Releases also provide a signed `packages.adb` feed for OpenWrt's package
-manager. Package upgrades refresh program files while keeping policy,
-subscription caches, and the active configuration in place. Review the status
-page after the upgrade and apply a new configuration when ready.
+Package upgrades refresh program files while keeping policy, subscription
+caches, and the active configuration in place. Re-running the one-time
+installer uses the same `apk add --upgrade` transaction and does not recreate
+instance configuration. Review the status page after the upgrade and apply a
+new configuration when ready.
 
 ## Everyday Use
 

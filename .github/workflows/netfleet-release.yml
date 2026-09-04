@@ -83,6 +83,7 @@ jobs:
       - name: Verify built package identity
         run: |
           test -s "$RUNNER_TEMP/netfleet-output/packages.adb"
+          test -s "$RUNNER_TEMP/netfleet-output/install-netfleet.sh"
           scripts/verify-netfleet-release.py \
             --directory "$RUNNER_TEMP/netfleet-output" \
             --source-commit "$NETFLEET_SOURCE_COMMIT" \

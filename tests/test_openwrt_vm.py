@@ -13,6 +13,7 @@ RUNNER = ROOT / "scripts" / "openwrt-vm" / "qualify.sh"
 GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-qualify.sh"
 RUNTIME_GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-runtime-qualify.sh"
 PACKAGE_GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-package-qualify.sh"
+INSTALLER = ROOT / "scripts" / "install-netfleet.sh"
 RECOVERY = ROOT / "scripts" / "recover-openwrt-local.sh"
 
 
@@ -26,7 +27,7 @@ class OpenWrtVmTests(unittest.TestCase):
         self.assertIn("Apple Silicon QEMU/HVF", result.stdout)
         self.assertNotIn("--rebuild", result.stdout)
 
-        scripts = (WRAPPER, RUNNER, GUEST, RUNTIME_GUEST, PACKAGE_GUEST, RECOVERY)
+        scripts = (WRAPPER, RUNNER, GUEST, RUNTIME_GUEST, PACKAGE_GUEST, INSTALLER, RECOVERY)
         for script in scripts:
             parsed = subprocess.run(
                 ["bash", "-n", str(script)], text=True, capture_output=True, check=False
@@ -60,6 +61,8 @@ class OpenWrtVmTests(unittest.TestCase):
         self.assertIn('sock.bind(("127.0.0.1", 0))', runner)
         self.assertIn("'$probe_port'", runner)
         self.assertIn("NETFLEET_PACKAGE_ARCHIVE", wrapper + runner)
+        self.assertIn('python3 -m http.server "$feed_port"', runner)
+        self.assertIn('feed_url="http://192.168.1.2:$feed_port"', runner)
         self.assertIn("opl-netfleet-openwrt-vm-qualification.v2", runner)
         self.assertIn('"accelerator": "hvf"', runner)
         self.assertIn('"qemu_version": sys.argv[11]', runner)
@@ -119,6 +122,9 @@ class OpenWrtVmTests(unittest.TestCase):
         self.assertIn('\t"probe":{}', guest_source)
         self.assertIn("http://127.0.0.1/ubus", guest_source)
         for gate in (
+            "feed_bootstrap",
+            "feed_install",
+            "feed_upgrade_transaction",
             "package_database",
             "package_contents",
             "installed_bytes",
@@ -137,7 +143,9 @@ class OpenWrtVmTests(unittest.TestCase):
         self.assertIn('cp "$fixture/bin/mihomo" /usr/bin/mihomo', package_source)
         self.assertIn('cp "$fixture/bin/yq" /usr/bin/yq', package_source)
         self.assertIn('env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin yq --version', package_source)
-        self.assertIn('"$real_apk" --timeout 300 add "$candidate/$runtime_apk"', package_source)
+        self.assertIn('uclient-fetch -q -O "$candidate/install-netfleet.sh"', package_source)
+        self.assertIn('NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1', package_source)
+        self.assertNotIn('add "$candidate/$runtime_apk"', package_source)
         self.assertIn("uci set network.wan.proto=none", package_source)
         self.assertIn("ubus call network.interface.wan status", package_source)
         self.assertIn("ip -4 route show default", package_source)
@@ -151,7 +159,7 @@ class OpenWrtVmTests(unittest.TestCase):
         self.assertIn('ubus -t 300 call opl-netfleet onboarding_apply', package_source)
         self.assertIn('[ "$rpcd_timeout" -ge 300 ]', package_source)
         self.assertIn('/etc/apk/keys/opl-netfleet-apk.pem', package_source)
-        self.assertIn('packages.adb', package_source)
+        self.assertIn('/etc/apk/repositories.d/opl-netfleet.list', package_source)
         self.assertIn('package_arch\":\"noarch', package_source)
         self.assertIn('build_target_arch\":\"aarch64_generic', package_source)
         self.assertIn('package_metadata\":true', package_source)
@@ -164,7 +172,7 @@ class OpenWrtVmTests(unittest.TestCase):
         self.assertIn('"$fixture/bin/netfleet-test-primary"', package_source)
         self.assertIn('"$fixture/bin/netfleet-test-reserve"', package_source)
         self.assertIn('"$helpers_ready" = true', package_source)
-        self.assertIn("'$package_manifest_sha' '$probe_port'", RUNNER.read_text())
+        self.assertIn("'$package_manifest_sha' '$probe_port' '$feed_url'", RUNNER.read_text())
 
         self.assertIn('/etc/nikki/profiles/opl-netfleet/mvp.manifest.json', package_source)
         self.assertNotIn('/etc/nikki/profiles/opl-netfleet/manifest.json', package_source)
@@ -182,6 +190,7 @@ class OpenWrtVmTests(unittest.TestCase):
             GUEST,
             RUNTIME_GUEST,
             PACKAGE_GUEST,
+            INSTALLER,
             ROOT / "scripts" / "deploy-openwrt.sh",
             ROOT / "scripts" / "deploy-openwrt-remote.sh",
             RECOVERY,
