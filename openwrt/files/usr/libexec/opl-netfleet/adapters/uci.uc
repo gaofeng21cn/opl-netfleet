@@ -62,7 +62,7 @@ export function file_mtime(path) {
 	if (system(`test -f ${shell_quote(path)}`) != 0) {
 		return null;
 	}
-	const process = popen(`stat -c %Y ${shell_quote(path)}`);
+	const process = popen(`date -r ${shell_quote(path)} +%s 2>/dev/null`);
 	if (!process) {
 		return null;
 	}
