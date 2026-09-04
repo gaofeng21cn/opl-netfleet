@@ -75,6 +75,10 @@ files_sha=$(jsonfilter -i "$candidate/manifest.json" -e '@.files_manifest.sha256
 printf '{"legacy":true}\n' >/etc/opl-netfleet/policy.example.json
 printf '{"legacy":true}\n' >/etc/opl-netfleet/policy-sources/base-v1.json
 printf '{"legacy":true}\n' >/etc/opl-netfleet/rulesets.lock.json
+policy_before=absent
+if [ -e /etc/opl-netfleet/policy.json ]; then
+	policy_before=$(sha256sum /etc/opl-netfleet/policy.json | awk '{print $1}')
+fi
 
 stage=install
 real_apk=$(command -v apk)
@@ -102,7 +106,12 @@ NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 \
 [ -s /etc/apk/keys/opl-netfleet-apk.pem ]
 ! /etc/init.d/opl-netfleet enabled >/dev/null 2>&1
 ! /etc/init.d/opl-netfleet running >/dev/null 2>&1
-[ ! -e /etc/opl-netfleet/policy.json ]
+if [ "$policy_before" = absent ]; then
+	[ ! -e /etc/opl-netfleet/policy.json ]
+else
+	[ -f /etc/opl-netfleet/policy.json ]
+	[ "$(sha256sum /etc/opl-netfleet/policy.json | awk '{print $1}')" = "$policy_before" ]
+fi
 
 stage=feed_upgrade
 before_upgrade=$("$real_apk" list --manifest | grep -E '^(opl-netfleet|luci-app-netfleet) ')

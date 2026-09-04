@@ -147,6 +147,8 @@ class OpenWrtVmTests(unittest.TestCase):
         self.assertIn('uclient-fetch -q -O "$candidate/install-netfleet.sh"', package_source)
         self.assertIn('NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1', package_source)
         self.assertNotIn('add "$candidate/$runtime_apk"', package_source)
+        self.assertIn('policy_before=absent', package_source)
+        self.assertIn('sha256sum /etc/opl-netfleet/policy.json', package_source)
         self.assertIn("uci set network.wan.proto=none", package_source)
         self.assertIn("ubus call network.interface.wan status", package_source)
         self.assertIn("ip -4 route show default", package_source)
