@@ -111,15 +111,23 @@ for path in \
 	[ ! -f "$$path.apk-new" ] || mv -f "$$path.apk-new" "$$path" || exit 1
 done
 upgrade_state=/tmp/opl-netfleet-package-upgrade-state
-if [ "$${PKG_UPGRADE:-0}" != 1 ]; then
+stop_netfleet() {
 	/etc/init.d/opl-netfleet stop >/dev/null 2>&1 || true
+	for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+		/etc/init.d/opl-netfleet running >/dev/null 2>&1 || return 0
+		sleep 1
+	done
+	return 1
+}
+if [ "$${PKG_UPGRADE:-0}" != 1 ]; then
+	stop_netfleet || exit 1
 	/etc/init.d/opl-netfleet disable >/dev/null 2>&1 || exit 1
 	rm -f "$$upgrade_state"
 elif [ -s "$$upgrade_state" ]; then
 	read -r was_enabled was_running <"$$upgrade_state"
 	rm -f "$$upgrade_state"
 	[ "$$was_enabled" = 1 ] || /etc/init.d/opl-netfleet disable >/dev/null 2>&1 || exit 1
-	[ "$$was_running" = 1 ] || /etc/init.d/opl-netfleet stop >/dev/null 2>&1 || true
+	[ "$$was_running" = 1 ] || stop_netfleet || exit 1
 fi
 exit 0
 endef

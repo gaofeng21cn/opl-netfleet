@@ -135,6 +135,8 @@ class ReleaseToolsTests(unittest.TestCase):
         self.assertIn('$${PKG_UPGRADE:-0}', runtime)
         self.assertIn('/etc/init.d/opl-netfleet disable', runtime)
         self.assertIn('/etc/init.d/opl-netfleet stop', runtime)
+        self.assertIn('stop_netfleet()', runtime)
+        self.assertIn('/etc/init.d/opl-netfleet running', runtime)
         self.assertIn('"$$path.apk-new"', runtime)
         self.assertIn('./files/etc/opl-netfleet/rulesets.lock.json', runtime)
         self.assertNotIn('/etc/opl-netfleet/policy.json', runtime)
