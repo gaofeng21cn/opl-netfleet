@@ -15,7 +15,6 @@ probe_url=https://www.gstatic.com:$probe_port/generate_204
 supervisor_pid=""
 helper_primary_pid=""
 helper_reserve_pid=""
-probe_relay_pid=""
 stage=bootstrap
 
 cleanup() {
@@ -24,7 +23,7 @@ cleanup() {
 	/etc/init.d/nikki stop >/dev/null 2>&1
 	[ -z "$helper_primary_pid" ] || kill "$helper_primary_pid" >/dev/null 2>&1
 	[ -z "$helper_reserve_pid" ] || kill "$helper_reserve_pid" >/dev/null 2>&1
-	[ -z "$probe_relay_pid" ] || kill "$probe_relay_pid" >/dev/null 2>&1
+	nft delete table ip netfleet_vm_runtime_probe >/dev/null 2>&1 || true
 }
 finish() {
 	rc=$?
@@ -48,7 +47,7 @@ finish() {
 			jsonfilter -i "$work/enable.json" -e '@.detail.automatic.provider_state_available' >&2 || true
 		fi
 		for log in "$work"/package-manager.log "$work"/helper-primary.log "$work"/helper-reserve.log \
-			"$work"/mihomo.log "$work"/probe-relay.log "$work"/*.stderr "$work"/*.txt; do
+			"$work"/mihomo.log "$work"/*.stderr "$work"/*.txt; do
 			[ ! -f "$log" ] || { echo "--- $log" >&2; cat "$log" >&2; }
 		done
 	fi
@@ -63,7 +62,8 @@ PATH="$bin:$PATH"
 export PATH
 
 ip route replace default via 192.168.1.2 dev br-lan
-grep -Fq 'netfleet-probe.test' /etc/hosts || printf '192.168.1.2 netfleet-probe.test\n127.0.0.1 www.gstatic.com\n' >>/etc/hosts
+grep -Fq 'netfleet-probe.test' /etc/hosts || printf '192.168.1.2 netfleet-probe.test\n' >>/etc/hosts
+grep -Fq 'www.gstatic.com' /etc/hosts || printf '192.168.1.2 www.gstatic.com\n' >>/etc/hosts
 /etc/init.d/dnsmasq restart
 printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
 stage=install_dependencies
@@ -75,15 +75,14 @@ for dependency_attempt in 1 2 3; do
 	package_result=true
 	if command -v apk >/dev/null 2>&1; then
 		apk --timeout 300 update >>"$work/package-manager.log" 2>&1 || true
-		apk --timeout 300 add curl flock coreutils-date socat >>"$work/package-manager.log" 2>&1 || package_result=false
+		apk --timeout 300 add curl flock coreutils-date >>"$work/package-manager.log" 2>&1 || package_result=false
 	else
 		opkg update >>"$work/package-manager.log" 2>&1 || true
-		opkg install curl flock coreutils-date socat >>"$work/package-manager.log" 2>&1 || package_result=false
+		opkg install curl flock coreutils-date >>"$work/package-manager.log" 2>&1 || package_result=false
 	fi
 	if [ "$package_result" = true ] &&
 		command -v curl >/dev/null 2>&1 &&
 		command -v flock >/dev/null 2>&1 &&
-		command -v socat >/dev/null 2>&1 &&
 		date +%s%3N >/dev/null 2>&1; then
 		dependencies_installed=true
 		break
@@ -94,12 +93,13 @@ done
 cat /tmp/local-probe.crt >>/etc/ssl/certs/ca-certificates.crt
 SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 export SSL_CERT_FILE
-socat TCP-LISTEN:443,bind=127.0.0.1,reuseaddr,fork TCP:192.168.1.2:"$probe_port" \
-	>"$work/probe-relay.log" 2>&1 &
-probe_relay_pid=$!
-stage=probe_relay
+nft add table ip netfleet_vm_runtime_probe
+nft 'add chain ip netfleet_vm_runtime_probe output { type nat hook output priority -100; policy accept; }'
+nft add rule ip netfleet_vm_runtime_probe output ip daddr 192.168.1.2 tcp dport 443 \
+	dnat to "192.168.1.2:$probe_port"
+stage=probe_redirect
 for relay_attempt in 1 2 3 4 5; do
-	if curl -fsS --noproxy '*' --connect-timeout 2 --max-time 5 --resolve www.gstatic.com:443:127.0.0.1 \
+	if curl -fsS --noproxy '*' --connect-timeout 2 --max-time 5 --resolve www.gstatic.com:443:192.168.1.2 \
 		https://www.gstatic.com/generate_204 >/dev/null; then
 		break
 	fi
