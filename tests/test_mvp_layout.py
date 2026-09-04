@@ -134,7 +134,7 @@ class MvpLayoutTests(unittest.TestCase):
 
         dns = baseline["dns"]
         self.assertEqual(["223.5.5.5", "119.29.29.29"], dns["default-nameserver"])
-        self.assertTrue(dns["respect-rules"])
+        self.assertFalse(dns["respect-rules"])
         self.assertEqual(
             [
                 "https://dns.alidns.com/dns-query",
@@ -147,7 +147,13 @@ class MvpLayoutTests(unittest.TestCase):
             ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"],
             dns["nameserver-policy"]["rule-set:geolocation-non-cn"],
         )
-        self.assertNotIn("fallback", dns)
+        self.assertEqual(["tls://1.1.1.1", "tls://8.8.8.8"], dns["fallback"])
+        self.assertEqual(True, dns["fallback-filter"]["geoip"])
+        self.assertEqual("CN", dns["fallback-filter"]["geoip-code"])
+        self.assertEqual(
+            ["240.0.0.0/4", "0.0.0.0/32", "127.0.0.1/32", "100.64.0.0/10"],
+            dns["fallback-filter"]["ipcidr"],
+        )
         self.assertNotIn("system", dns["nameserver"])
 
         provider_ids = set(baseline["rule-providers"])

@@ -8,9 +8,16 @@ const profile = {
 		"default-nameserver": ["223.5.5.5", "119.29.29.29"],
 		nameserver: ["https://dns.alidns.com/dns-query", "https://doh.pub/dns-query"],
 		"proxy-server-nameserver": ["https://dns.alidns.com/dns-query", "https://doh.pub/dns-query"],
-		"respect-rules": true,
+		"respect-rules": false,
 		"nameserver-policy": {
 			"rule-set:geolocation-non-cn": ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"]
+		},
+		fallback: ["tls://1.1.1.1", "tls://8.8.8.8"],
+		"fallback-filter": {
+			geoip: true,
+			"geoip-code": "CN",
+			ipcidr: ["240.0.0.0/4", "0.0.0.0/32", "127.0.0.1/32", "100.64.0.0/10"],
+			domain: ["+.google.com", "+.facebook.com", "+.youtube.com"]
 		}
 	},
 	"proxy-groups": [

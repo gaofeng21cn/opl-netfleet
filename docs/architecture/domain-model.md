@@ -54,7 +54,7 @@ automatic capability 必须形成无环依赖图，并且只有一个不声明 `
 
 | Owner | 唯一责任 |
 | --- | --- |
-| Policy Source | 提供流量分类、首条命中规则顺序、原始组名、DNS 和未绑定组行为；内置 bundle 使用锁定 MRS 做业务分类，并提供国内加密上游与境外规则集加密解析的无秘密 DNS 基线；`kind=profile` 继续逐字保留原 Profile 规则和 DNS；只作为 compiler 输入 |
+| Policy Source | 提供流量分类、首条命中规则顺序、原始组名、DNS 和未绑定组行为；内置 bundle 使用锁定 MRS 做业务分类，并提供国内加密主上游、境外规则集加密解析、GeoIP-CN 过滤的境外 fallback 的无秘密 DNS 基线；`kind=profile` 继续逐字保留原 Profile 规则和 DNS；只作为 compiler 输入 |
 | Recovery Profile | NetFleet 关闭、事务失败和进程级恢复时由 Nikki 选择的完整原生 owner；不参与正常选优 |
 | Platform declaration | 私有 `platform.json` 声明目标 Nikki UCI 与 OpenWrt flow-offload 值；canonical deploy owner 负责校验、快照、应用、官方 reload/restart 和 readback，不直接生成 nft/ip rule |
 | Ruleset lock | 公共 `rulesets.lock.json` 锁定上游 commit、URL、格式、大小、SHA-256 和许可证；提供内置 Policy Source 已引用的业务、地域和私网 MRS，不拥有规则顺序或自动更新 |
