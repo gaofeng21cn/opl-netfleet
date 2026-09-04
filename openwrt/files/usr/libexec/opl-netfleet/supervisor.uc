@@ -42,7 +42,7 @@ for (;;) {
 		unhealthy_since = null;
 		next_selection_at = null;
 		next_refresh_at = null;
-		system("sleep 30");
+		sleep(30000);
 		continue;
 	}
 	const config = settings_value.automation;
@@ -84,5 +84,5 @@ for (;;) {
 			if (run_owner("recover", reason)) unhealthy_since = null;
 		}
 	}
-	system(`sleep ${config.poll_interval_seconds}`);
+	sleep(config.poll_interval_seconds * 1000);
 }
