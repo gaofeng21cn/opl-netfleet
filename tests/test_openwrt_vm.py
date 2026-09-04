@@ -105,6 +105,7 @@ class OpenWrtVmTests(unittest.TestCase):
         self.assertNotIn('cat >"$bin/ucode"', runtime_source)
         self.assertNotIn('cat >"$bin/mihomo"', runtime_source)
         self.assertIn("netfleet-probe.test", runtime_source)
+        self.assertIn("probe_url=https://netfleet-probe.test:$probe_port/generate_204", runtime_source)
         self.assertIn("run_locked", runtime_source)
         self.assertIn("apk --timeout 300 add curl flock coreutils-date", runtime_source)
         self.assertIn("nft add table ip netfleet_vm_runtime_probe", runtime_source)
