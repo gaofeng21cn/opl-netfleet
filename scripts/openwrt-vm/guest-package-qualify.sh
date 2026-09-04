@@ -138,6 +138,8 @@ done
 [ ! -e /etc/opl-netfleet/rulesets.lock.json.apk-new ]
 rpcd_timeout=$(uci -q get 'rpcd.@rpcd[0].timeout')
 [ "$rpcd_timeout" -ge 300 ]
+uhttpd_timeout=$(uci -q get 'uhttpd.main.script_timeout')
+[ "$uhttpd_timeout" -ge 300 ]
 
 stage=package_contents
 "$real_apk" info -L opl-netfleet | grep -Fqx 'usr/libexec/opl-netfleet/main.uc'

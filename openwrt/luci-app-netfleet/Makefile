@@ -41,14 +41,20 @@ endef
 define Package/luci-app-netfleet/postinst
 #!/bin/sh
 [ -n "$${IPKG_INSTROOT}" ] || {
-	current_timeout=$$(uci -q get 'rpcd.@rpcd[0].timeout' 2>/dev/null || true)
-	case "$$current_timeout" in
-		''|*[!0-9]*) raise_timeout=1 ;;
-		*) [ "$$current_timeout" -ge 300 ] && raise_timeout=0 || raise_timeout=1 ;;
+	changed=0
+	rpcd_timeout=$$(uci -q get 'rpcd.@rpcd[0].timeout' 2>/dev/null || true)
+	case "$$rpcd_timeout" in
+		''|*[!0-9]*) uci set 'rpcd.@rpcd[0].timeout=300' || exit 1; changed=1 ;;
+		*) [ "$$rpcd_timeout" -ge 300 ] || { uci set 'rpcd.@rpcd[0].timeout=300' || exit 1; changed=1; } ;;
 	esac
-	if [ "$$raise_timeout" = 1 ]; then
-		uci set 'rpcd.@rpcd[0].timeout=300' && uci commit rpcd || {
-			printf '%s\n' 'luci-app-netfleet: cannot configure rpcd execution timeout' >&2
+	uhttpd_timeout=$$(uci -q get 'uhttpd.main.script_timeout' 2>/dev/null || true)
+	case "$$uhttpd_timeout" in
+		''|*[!0-9]*) uci set 'uhttpd.main.script_timeout=300' || exit 1; changed=1 ;;
+		*) [ "$$uhttpd_timeout" -ge 300 ] || { uci set 'uhttpd.main.script_timeout=300' || exit 1; changed=1; } ;;
+	esac
+	if [ "$$changed" = 1 ]; then
+		uci commit rpcd && uci commit uhttpd || {
+			printf '%s\n' 'luci-app-netfleet: cannot configure RPC execution timeout' >&2
 			exit 1
 		}
 	fi

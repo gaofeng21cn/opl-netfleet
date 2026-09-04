@@ -237,6 +237,17 @@ class MvpLayoutTests(unittest.TestCase):
             / "netfleet"
             / "api.js"
         ).read_text()
+        overview = (
+            ROOT
+            / "openwrt"
+            / "luci-app-netfleet"
+            / "htdocs"
+            / "luci-static"
+            / "resources"
+            / "view"
+            / "netfleet"
+            / "overview.js"
+        ).read_text()
 
         self.assertIn("startup_grace_seconds: configured.startup_grace_seconds ?? 120", policy)
         self.assertIn("runtime_grace_seconds: configured.runtime_grace_seconds ?? 45", policy)
@@ -276,6 +287,9 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertEqual(5, api.count("withRpcTimeout(300"))
         self.assertNotIn("withRpcTimeout(120", api)
         self.assertNotIn("withRpcTimeout(90", api)
+        self.assertIn("annotateRpcError", api)
+        self.assertIn("request_aborted", api)
+        self.assertIn("浏览器连接已中止", overview)
 
     def test_reference_ui_and_native_luci_remain_separate_surfaces(self):
         self.assertTrue((ROOT / "ui" / "package.json").is_file())

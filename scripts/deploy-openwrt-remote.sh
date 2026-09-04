@@ -210,7 +210,7 @@ source_commit=""
 source_tree=""
 was_active=false
 rollback_dir=$(root_path /etc/opl-netfleet/deploy-rollback)
-external_state_paths="etc/config/rpcd"
+external_state_paths="etc/config/rpcd etc/config/uhttpd"
 subscriptions_match=true
 default_placeholder_present=false
 platform_matches=true
@@ -429,6 +429,32 @@ rpcd_timeout_ready() {
 	[ "$value" -ge 300 ]
 }
 
+uhttpd_timeout_ready() {
+	value=$(uci -q get uhttpd.main.script_timeout 2>/dev/null || true)
+	case "$value" in
+		''|*[!0-9]*) return 1 ;;
+	esac
+	[ "$value" -ge 300 ]
+}
+
+ensure_rpc_timeouts() {
+	timeout_changed=false
+	if ! rpcd_timeout_ready; then
+		uci set rpcd.@rpcd[0].timeout=300 >/dev/null 2>&1 || return 1
+		uci commit rpcd >/dev/null 2>&1 || return 1
+		timeout_changed=true
+	fi
+	if ! uhttpd_timeout_ready; then
+		uci set uhttpd.main.script_timeout=300 >/dev/null 2>&1 || return 1
+		uci commit uhttpd >/dev/null 2>&1 || return 1
+		timeout_changed=true
+	fi
+	if [ "$timeout_changed" = true ]; then
+		return 2
+	fi
+	return 0
+}
+
 luci_http_surface_ready() {
 	session_json=$(ubus call session create '{"timeout":30}' 2>/dev/null) || return 1
 	session_id=$(jsonfilter -s "$session_json" -e '@.ubus_rpc_session' 2>/dev/null || true)
@@ -466,9 +492,11 @@ restart_uhttpd_for_rpc() {
 ensure_rpcd_surface() {
 	force_restart=${1:-false}
 	restart_required=$force_restart
-	if ! rpcd_timeout_ready; then
-		uci set rpcd.@rpcd[0].timeout=300 >/dev/null 2>&1 &&
-			uci commit rpcd >/dev/null 2>&1 || return 1
+	if ensure_rpc_timeouts; then
+		:
+	else
+		status=$?
+		[ "$status" -eq 2 ] || return 1
 		restart_required=true
 	fi
 	if [ "$restart_required" = "false" ] && rpcd_surface_ready; then
@@ -481,7 +509,7 @@ ensure_rpcd_surface() {
 	"$rpcd_init" restart >/dev/null 2>&1 || return 1
 	local_surface_ready=false
 	for attempt in 1 2 3 4; do
-		if ubus call system board >/dev/null 2>&1 && rpcd_timeout_ready && rpcd_surface_ready; then
+		if ubus call system board >/dev/null 2>&1 && rpcd_timeout_ready && uhttpd_timeout_ready && rpcd_surface_ready; then
 			local_surface_ready=true
 			luci_http_surface_ready && return 0
 			break

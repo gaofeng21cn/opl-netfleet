@@ -913,6 +913,9 @@ esac
         (self.device / "etc/config/rpcd").write_text(json.dumps({
             "@rpcd[0].timeout": "30",
         }, sort_keys=True) + "\n")
+        (self.device / "etc/config/uhttpd").write_text(json.dumps({
+            "main.script_timeout": "60",
+        }, sort_keys=True) + "\n")
         (self.device / "etc/config/firewall").write_text(json.dumps({
             "@defaults[0].flow_offloading": "0",
             "@defaults[0].flow_offloading_hw": "0",
@@ -1743,6 +1746,7 @@ esac
         self.assertFalse((self.device / "var/lib/opl-netfleet/evidence.json").exists())
         self.assertEqual('{"old":true}\n', (self.device / "etc/opl-netfleet/evidence.json").read_text())
         self.assertEqual("300", json.loads((self.device / "etc/config/rpcd").read_text())["@rpcd[0].timeout"])
+        self.assertEqual("300", json.loads((self.device / "etc/config/uhttpd").read_text())["main.script_timeout"])
         self.assertEqual("file:OPL-NetFleet.json", self._profile())
         self.assertEqual(["restart"], (self.state / "rpcd-actions").read_text().splitlines())
         before = (self.state / "actions").read_text().splitlines()
@@ -1756,14 +1760,17 @@ esac
         self.assertEqual(before.count("enable"), after.count("enable"))
         self.assertEqual(["restart"], (self.state / "rpcd-actions").read_text().splitlines())
 
-    def test_higher_rpcd_timeout_is_preserved_while_changed_menu_reloads(self):
+    def test_higher_rpc_and_uhttpd_timeouts_are_preserved_while_changed_menu_reloads(self):
         rpcd = self.device / "etc/config/rpcd"
         rpcd.write_text(json.dumps({"@rpcd[0].timeout": "360"}) + "\n")
+        uhttpd = self.device / "etc/config/uhttpd"
+        uhttpd.write_text(json.dumps({"main.script_timeout": "420"}) + "\n")
 
         result = self._run()
 
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
         self.assertEqual("360", json.loads(rpcd.read_text())["@rpcd[0].timeout"])
+        self.assertEqual("420", json.loads(uhttpd.read_text())["main.script_timeout"])
         self.assertEqual(["restart"], (self.state / "rpcd-actions").read_text().splitlines())
 
     def test_same_version_reloads_rpcd_when_config_methods_are_missing(self):
@@ -1979,6 +1986,7 @@ esac
         self.assertEqual("rpcd_surface_unavailable", receipt["error"])
         self.assertEqual("old-rpcd\n", (self.device / "usr/libexec/rpcd/opl-netfleet").read_text())
         self.assertEqual("30", json.loads((self.device / "etc/config/rpcd").read_text())["@rpcd[0].timeout"])
+        self.assertEqual("60", json.loads((self.device / "etc/config/uhttpd").read_text())["main.script_timeout"])
         self.assertEqual("subscription:base", self._profile())
         self.assertFalse((self.device / "etc/opl-netfleet/installed.json").exists())
 

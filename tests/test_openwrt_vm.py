@@ -166,6 +166,7 @@ class OpenWrtVmTests(unittest.TestCase):
         self.assertNotIn('ubus -S -v list opl-netfleet', package_source)
         self.assertIn('ubus -t 300 call opl-netfleet onboarding_apply', package_source)
         self.assertIn('[ "$rpcd_timeout" -ge 300 ]', package_source)
+        self.assertIn("uhttpd.main.script_timeout", package_source)
         self.assertIn('/etc/apk/keys/opl-netfleet-apk.pem', package_source)
         self.assertIn('/etc/apk/repositories.d/opl-netfleet.list', package_source)
         self.assertIn('package_arch\":\"noarch', package_source)

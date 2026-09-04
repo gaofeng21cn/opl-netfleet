@@ -1418,7 +1418,10 @@ return view.extend({
 				ui.addNotification(null, E('p', {}, ({ enable: 'NetFleet 已启用。', select: '自动选优已完成。', refresh: '机场订阅更新已完成。', disable: 'NetFleet 已关闭。' })[action]), 'info');
 		}).catch(function(error) {
 			ui.hideModal();
-			ui.addNotification(null, E('p', {}, '操作失败：' + text(error && error.message, '设备未返回成功结果')), 'error');
+			if (error && error.netfleetKind === 'request_aborted')
+				ui.addNotification(null, E('p', {}, '浏览器连接已中止，设备端结果尚未确认；请刷新状态并查看事件。'), 'warning');
+			else
+				ui.addNotification(null, E('p', {}, '操作失败：' + text(error && error.message, '设备未返回成功结果')), 'error');
 			self.busy = false;
 			self.redraw();
 		});

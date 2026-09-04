@@ -25,6 +25,8 @@ function execute(method) {
 		if (!response || response.ok !== true)
 			throw new Error(response?.error || 'operation_failed');
 		return response.result;
+	}, function(error) {
+		throw annotateRpcError(error);
 	});
 }
 
@@ -36,7 +38,15 @@ function executeRequest(method, request) {
 			throw error;
 		}
 		return response.result;
+	}, function(error) {
+		throw annotateRpcError(error);
 	});
+}
+
+function annotateRpcError(error) {
+	if (error && /XHR request aborted by browser/i.test(String(error.message || error)))
+		error.netfleetKind = 'request_aborted';
+	return error;
 }
 
 function withRpcTimeout(seconds, callback) {
@@ -47,7 +57,7 @@ function withRpcTimeout(seconds, callback) {
 		return result;
 	}, function(error) {
 		L.env.rpctimeout = previous;
-		throw error;
+		throw annotateRpcError(error);
 	});
 }
 
