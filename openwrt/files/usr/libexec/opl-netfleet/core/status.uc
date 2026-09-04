@@ -137,7 +137,7 @@ function provider_nodes(provider_state, source_name) {
 	for (let i = 0; i < length(nodes); i++) {
 		const node = nodes[i];
 		if (type(node?.name) == "string" && length(trim(node.name)) > 0) {
-			result[node.name] = node?.alive == true;
+			result[node.name] = result[node.name] == true || node?.alive == true;
 		}
 	}
 	return result;
@@ -371,6 +371,7 @@ export function build(policy, manifest, state, evidence, owner) {
 	const capabilities = [];
 	const providers = {};
 	const regions = {};
+	const provider_sources = {};
 	const provider_names = keys(policy.providers ?? {});
 	for (let i = 0; i < length(provider_names); i++) {
 		const name = provider_names[i];
@@ -382,6 +383,9 @@ export function build(policy, manifest, state, evidence, owner) {
 			role: provider?.role ?? "primary",
 			billing: provider?.billing ?? "unknown",
 			quota: owner.quotas?.[name] ?? { state: provider?.enabled == true ? "unknown" : "disabled" },
+			node_count: null,
+			available_node_count: null,
+			node_count_known: false,
 			candidate_count: 0,
 			available_count: 0,
 			region_count: 0,
@@ -476,6 +480,19 @@ export function build(policy, manifest, state, evidence, owner) {
 				reason: { kind: capability_policy.enabled == true ? "not_compiled" : "disabled" }
 			});
 			continue;
+		}
+		const entry_provider_names = keys(entry?.providers ?? {});
+		for (let j = 0; j < length(entry_provider_names); j++) {
+			const provider_id = entry_provider_names[j];
+			const source_name = entry.providers[provider_id]?.source_name;
+			if (providers[provider_id] == null || type(source_name) != "string" || length(trim(source_name)) == 0) {
+				continue;
+			}
+			if (provider_sources[provider_id] == null) {
+				provider_sources[provider_id] = { source_name: source_name, conflicted: false };
+			} else if (provider_sources[provider_id].source_name != source_name) {
+				provider_sources[provider_id].conflicted = true;
+			}
 		}
 		const runtime = resolve_runtime(entry, state);
 		if (owner.active != true && owner.netfleet_present != true) {
@@ -647,6 +664,18 @@ export function build(policy, manifest, state, evidence, owner) {
 	}
 	for (let i = 0; i < length(provider_names); i++) {
 		const provider = providers[provider_names[i]];
+		const source = provider_sources[provider_names[i]];
+		const inventory = source != null && source.conflicted != true ?
+			provider_nodes(provider_state, source.source_name) : null;
+		if (inventory != null) {
+			const node_names = keys(inventory);
+			provider.node_count = length(node_names);
+			provider.available_node_count = 0;
+			for (let j = 0; j < length(node_names); j++) {
+				provider.available_node_count += inventory[node_names[j]] ? 1 : 0;
+			}
+			provider.node_count_known = true;
+		}
 		const region_values = provider_regions[provider_names[i]] ?? {};
 		const names = keys(region_values);
 		provider.region_count = length(names);

@@ -27,7 +27,7 @@ export function OverviewDigest({
     status.active && status.runtime.netfleet_present && status.runtime.controller_available,
   );
   const availableProviders = status.providers.filter((provider) => (
-    availabilityMeasured && Number(provider.available_count) > 0 && Number(provider.available_region_count) > 0
+    availabilityMeasured && Number(provider.available_node_count) > 0 && Number(provider.available_region_count) > 0
   ));
   const selectedProviders = availabilityMeasured ? status.providers.filter((provider) => provider.selected) : [];
   const fastestProvider = fastest(availableProviders, (provider) => provider.last_best_delay_ms ?? provider.best_delay_ms);
@@ -46,7 +46,7 @@ export function OverviewDigest({
   const latest = events.events.reduce((current, event) => !current || event.at > current.at ? event : current, events.events[0]);
 
   const unavailableProviders = status.providers.filter((provider) => (
-    (provider.available_count != null && Number(provider.available_count) === 0) ||
+    (provider.available_node_count != null && Number(provider.available_node_count) === 0) ||
     (provider.available_region_count != null && Number(provider.available_region_count) === 0)
   ));
   const exhaustedProviders = status.providers.filter((provider) => provider.quota?.state === 'exhausted');

@@ -80,11 +80,28 @@ describe('概览信息层级', () => {
     expect(html).toContain('<th>定位</th>');
     expect(html).toContain('<th>可用资源</th>');
     expect(html).toContain('<th>订阅状态</th>');
+    expect(html).toContain('42/46 节点 · 订阅 48 条');
+    expect(html).not.toContain('18/20 节点');
     expect(html).toContain('缓存已更新');
     expect(html).not.toContain('更新完成并已重载</td>');
     expect(html).toContain('缓存版本');
     expect(html).toContain('hidden=""');
     expect(html).not.toContain('<h2>订阅缓存</h2>');
+    expect(html).toContain('管理机场订阅');
+    expect(html).toContain('/cgi-bin/luci/admin/services/nikki/profile');
+  });
+
+  it('尚未运行订阅更新时不把空时间显示成数据缺失', () => {
+    const status = structuredClone(fixtureScenarios.healthy.status);
+    status.subscription_refresh!.last_run_at = null;
+    status.subscriptions![0].last_attempt = null;
+    status.subscriptions![0].last_success = null;
+
+    const html = renderToStaticMarkup(<ProviderTable snapshot={status} full />);
+
+    expect(html).toContain('<dt>最近执行</dt><dd>尚未执行</dd>');
+    expect(html).toContain('<dt>最近尝试</dt><dd>尚未执行</dd>');
+    expect(html).toContain('<dt>订阅更新时间</dt><dd>尚未执行</dd>');
   });
 
   it('机场与订阅只通过明确绑定聚合，不按显示名猜测', () => {

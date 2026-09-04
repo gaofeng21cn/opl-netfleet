@@ -46,9 +46,9 @@ const healthy: StatusSnapshot = {
     last_result: 'unchanged', last_ok: true, last_changed_count: 0, last_failed_count: 0, last_reloaded: false,
   },
   subscriptions: [
-    { section: 'alpha-source', ref: 'subscription:alpha-source', display_name: 'Alpha 正式机场', cache_present: true, cache_sha256: 'a'.repeat(64), quota: { state: 'available', remaining_bytes: gib(812.6) }, last_attempt: 1788146100, last_success: 1788146100, last_result: 'unchanged' },
-    { section: 'beta-source', ref: 'subscription:beta-source', display_name: 'Beta 高级机场', cache_present: true, cache_sha256: 'b'.repeat(64), quota: { state: 'available', remaining_bytes: gib(526.3) }, last_attempt: 1788146100, last_success: 1788146100, last_result: 'updated' },
-    { section: 'gamma-source', ref: 'subscription:gamma-source', display_name: 'Gamma 备用机场', cache_present: true, cache_sha256: 'c'.repeat(64), quota: { state: 'unknown' }, last_attempt: null, last_success: null, last_result: null },
+    { section: 'alpha-source', ref: 'subscription:alpha-source', display_name: 'Alpha 正式机场', cache_present: true, cache_sha256: 'a'.repeat(64), node_count: 48, quota: { state: 'available', remaining_bytes: gib(812.6) }, last_attempt: 1788146100, last_success: 1788146100, last_result: 'unchanged' },
+    { section: 'beta-source', ref: 'subscription:beta-source', display_name: 'Beta 高级机场', cache_present: true, cache_sha256: 'b'.repeat(64), node_count: 34, quota: { state: 'available', remaining_bytes: gib(526.3) }, last_attempt: 1788146100, last_success: 1788146100, last_result: 'updated' },
+    { section: 'gamma-source', ref: 'subscription:gamma-source', display_name: 'Gamma 备用机场', cache_present: true, cache_sha256: 'c'.repeat(64), node_count: 21, quota: { state: 'unknown' }, last_attempt: null, last_success: null, last_result: null },
   ],
   capabilities: [
     {
@@ -74,9 +74,9 @@ const healthy: StatusSnapshot = {
     },
   ],
   providers: [
-    { id: 'alpha', display_name: 'Alpha 正式机场', subscription_section: 'alpha-source', role: 'primary', billing: 'subscription', selected: true, available_region_count: 4, region_count: 5, available_count: 18, candidate_count: 20, best_delay_ms: 78, last_best_delay_ms: 78, average_best_delay_ms: 84, delay_sample_count: 24, quota: { state: 'available', remaining_bytes: gib(812.6) } },
-    { id: 'beta', display_name: 'Beta 高级机场', subscription_section: 'beta-source', role: 'primary', billing: 'subscription', selected: true, available_region_count: 5, region_count: 5, available_count: 16, candidate_count: 18, best_delay_ms: 102, last_best_delay_ms: 102, average_best_delay_ms: 118, delay_sample_count: 24, quota: { state: 'available', remaining_bytes: gib(526.3) } },
-    { id: 'gamma', display_name: 'Gamma 备用机场', subscription_section: 'gamma-source', role: 'reserve', billing: 'buyout', selected: false, available_region_count: 3, region_count: 4, available_count: 8, candidate_count: 12, best_delay_ms: 168, last_best_delay_ms: 168, average_best_delay_ms: 168, delay_sample_count: 1, quota: { state: 'unknown' } },
+    { id: 'alpha', display_name: 'Alpha 正式机场', subscription_section: 'alpha-source', role: 'primary', billing: 'subscription', selected: true, available_region_count: 4, region_count: 5, available_node_count: 42, node_count: 46, node_count_known: true, available_count: 18, candidate_count: 20, best_delay_ms: 78, last_best_delay_ms: 78, average_best_delay_ms: 84, delay_sample_count: 24, quota: { state: 'available', remaining_bytes: gib(812.6) } },
+    { id: 'beta', display_name: 'Beta 高级机场', subscription_section: 'beta-source', role: 'primary', billing: 'subscription', selected: true, available_region_count: 5, region_count: 5, available_node_count: 31, node_count: 34, node_count_known: true, available_count: 16, candidate_count: 18, best_delay_ms: 102, last_best_delay_ms: 102, average_best_delay_ms: 118, delay_sample_count: 24, quota: { state: 'available', remaining_bytes: gib(526.3) } },
+    { id: 'gamma', display_name: 'Gamma 备用机场', subscription_section: 'gamma-source', role: 'reserve', billing: 'buyout', selected: false, available_region_count: 3, region_count: 4, available_node_count: 14, node_count: 19, node_count_known: true, available_count: 8, candidate_count: 12, best_delay_ms: 168, last_best_delay_ms: 168, average_best_delay_ms: 168, delay_sample_count: 1, quota: { state: 'unknown' } },
   ],
   regions: [
     { id: 'japan', display_name: '🇯🇵 日本', mode: 'automatic', selected: true, available_provider_count: 2, provider_count: 3, available_node_count: 11, node_count: 13, last_best_delay_ms: 78, average_best_delay_ms: 84, delay_sample_count: 24 },

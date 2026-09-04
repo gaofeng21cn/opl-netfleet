@@ -479,7 +479,10 @@ function createPage(storage, api, notifications) {
         render: function() { return E('div', {}, 'config'); }
     };
     const factory = new Function('view', 'ui', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', source);
-    const page = factory(view, ui, api, netfleetConfig, E, { resource: function(value) { return value; } }, { localStorage: storage }, document);
+    const page = factory(view, ui, api, netfleetConfig, E, {
+        resource: function(value) { return value; },
+        url: function(value) { return '/cgi-bin/luci/' + value; }
+    }, { localStorage: storage }, document);
     page.styleLink = styleLink;
     return page;
 }
@@ -575,6 +578,7 @@ function createPage(storage, api, notifications) {
 	page.status.providers = [ {
 		id: 'primary', display_name: 'Alpha 正式机场', subscription_section: 'primary', selected: true,
 		role: 'primary', billing: 'subscription', available_region_count: 2, region_count: 2,
+		available_node_count: 47, node_count: 50, node_count_known: true,
 		available_count: 3, candidate_count: 4, last_best_delay_ms: 18,
 		average_best_delay_ms: 20, delay_sample_count: 3, delay_sampled_at: 1700000000,
 		quota: { state: 'available', remaining_bytes: 1024, expires_at: '2027-01-01' }
@@ -585,7 +589,7 @@ function createPage(storage, api, notifications) {
 	};
 	page.status.subscriptions = [ {
 		section: 'primary', ref: 'subscription:primary', display_name: 'Alpha 正式机场',
-		cache_present: true, cache_sha256: 'c'.repeat(64), last_attempt: 1700000000,
+		cache_present: true, cache_sha256: 'c'.repeat(64), node_count: 52, last_attempt: 1700000000,
 		last_success: 1700000000, last_result: 'updated'
 	} ];
 	page.currentView = 'providers';
@@ -593,7 +597,11 @@ function createPage(storage, api, notifications) {
 	const providerPageText = nodeText(root.children[2]);
 	assert(providerPageText.includes('1 / 1 正常'));
 	assert(providerPageText.includes('每行汇总订阅状态和运行质量'));
+	assert(providerPageText.includes('47/50 节点 · 订阅 52 条'));
+	assert(!providerPageText.includes('3/4 节点'));
 	assert(providerPageText.includes('缓存已更新'));
+	assert(providerPageText.includes('管理机场订阅'));
+	assert(providerPageText.includes('订阅更新时间'));
 	assert(!providerPageText.includes('更新完成并已重载'));
 	assert(!providerPageText.includes('订阅缓存'));
 	const providerDetailRow = findNode(root, function(node) {

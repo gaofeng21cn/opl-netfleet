@@ -129,7 +129,7 @@ function providers(controller) {
 		return E('tr', {}, [
 			E('td', {}, E('input', enabledAttrs)),
 			E('td', {}, [ E('strong', {}, provider.display_name), E('small', {}, provider.id) ]),
-			E('td', {}, String(status.available_region_count ?? 0) + ' 个地区 / ' + String(status.available_node_count ?? status.available_count ?? 0) + ' 个节点'),
+			E('td', {}, String(status.available_region_count ?? 0) + ' 个地区 / ' + (status.node_count_known === true ? String(status.available_node_count ?? 0) + ' 个节点' : '节点未提供')),
 			E('td', {}, select(provider.role, [ [ 'primary', '主用机场' ], [ 'reserve', '备用机场' ] ], function(event) {
 				update(controller, function(next) { next.providers.find(function(item) { return item.id === provider.id; }).role = event.target.value; });
 			}, !provider.enabled)),

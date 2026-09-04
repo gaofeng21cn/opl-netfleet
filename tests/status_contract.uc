@@ -138,6 +138,7 @@ const state = {
 	providers: {
 		"SOURCE-ALPHA": { proxies: [
 			{ name: "node-a", type: "Hysteria2", alive: true },
+			{ name: "node-a", type: "Hysteria2", alive: false },
 			{ name: "node-ai", type: "Hysteria2", alive: true },
 			{ name: "node-shared", type: "Hysteria2", alive: false },
 			{ name: "provider-only-alpha", type: "Hysteria2", alive: true }
@@ -218,6 +219,7 @@ const result = build(policy, manifest, state, evidence, {
 				display_name: "Alpha 正式机场",
 				cache_present: true,
 				cache_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				node_count: 4,
 				quota: { state: "available", remaining_bytes: 10, expires_at: "2026-12-31" },
 				last_attempt: 1700000000,
 				last_success: 1700000000,
@@ -229,6 +231,17 @@ const result = build(policy, manifest, state, evidence, {
 const stale_evidence = json(sprintf("%J", evidence));
 stale_evidence.identity.artifact_sha256 = "stale";
 const stale_evidence_result = build(policy, manifest, state, stale_evidence, {
+	active: true,
+	profile: "file:OPL-NetFleet.json",
+	netfleet_present: true,
+	nikki_enabled: true,
+	mihomo_running: true,
+	quotas: {}
+});
+
+const missing_inventory_state = json(sprintf("%J", state));
+missing_inventory_state.providers = {};
+const missing_inventory_result = build(policy, manifest, missing_inventory_state, evidence, {
 	active: true,
 	profile: "file:OPL-NetFleet.json",
 	netfleet_present: true,
@@ -288,6 +301,8 @@ if (result.build?.version != "0.3.0" ||
 	ai?.reason.decision_reason != "followed_capability_region" ||
 	parked?.enabled != false || parked?.compiled != false || parked?.data_path != "disabled" ||
 	parked?.base_group != "PARKED" || alpha?.available_count != 2 ||
+	alpha?.node_count != 4 || alpha?.available_node_count != 3 || alpha?.node_count_known != true ||
+	beta?.node_count != 1 || beta?.available_node_count != 1 || beta?.node_count_known != true ||
 	result.actions?.can_enable != false || result.actions?.can_select_auto != true ||
 	result.actions?.can_refresh != true ||
 	result.subscription_refresh?.provider_count != 2 ||
@@ -296,6 +311,7 @@ if (result.build?.version != "0.3.0" ||
 	result.subscriptions?.[0]?.ref != "subscription:alpha" ||
 	result.subscriptions?.[0]?.cache_present != true ||
 	result.subscriptions?.[0]?.cache_sha256 != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ||
+	result.subscriptions?.[0]?.node_count != 4 ||
 	result.subscriptions?.[0]?.quota?.expires_at != "2026-12-31" ||
 	result.subscriptions?.[0]?.last_attempt != 1700000000 ||
 	result.subscriptions?.[0]?.last_success != 1700000000 ||
@@ -314,6 +330,9 @@ if (result.build?.version != "0.3.0" ||
 	south?.last_best_delay_ms != 20 || south?.average_best_delay_ms != 20 ||
 	find_by_id(stale_evidence_result.regions, "north")?.last_best_delay_ms != null ||
 	find_by_id(stale_evidence_result.providers, "alpha")?.last_best_delay_ms != null ||
+	find_by_id(missing_inventory_result.providers, "alpha")?.node_count != null ||
+	find_by_id(missing_inventory_result.providers, "alpha")?.available_node_count != null ||
+	find_by_id(missing_inventory_result.providers, "alpha")?.node_count_known != false ||
 	stale_evidence_result.capabilities[0].reason.kind != "initial_or_manual" ||
 	find_by_id(legacy_result.capabilities, "ai-compatible")?.business_routes?.[0]?.default_route != "direct" ||
 	result.runtime?.supervisor?.running != true || result.selection?.automation_paused != false) {

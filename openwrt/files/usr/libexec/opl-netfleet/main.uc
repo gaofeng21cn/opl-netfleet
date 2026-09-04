@@ -337,6 +337,7 @@ function subscription_facts(policy) {
 			present: digest != null,
 			digest: digest,
 			valid: cache_accepted(parsed),
+			node_count: type(parsed?.proxies) == "array" ? length(parsed.proxies) : null,
 			quota: subscription_quota(section, subscription_quota_config(policy, section))
 		});
 	}

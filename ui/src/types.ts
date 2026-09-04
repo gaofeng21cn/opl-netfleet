@@ -61,6 +61,9 @@ export interface Provider {
   selected?: boolean;
   available_region_count?: number | null;
   region_count?: number | null;
+  available_node_count?: number | null;
+  node_count?: number | null;
+  node_count_known?: boolean;
   available_count?: number | null;
   candidate_count?: number | null;
   best_delay_ms?: number | null;
@@ -76,6 +79,7 @@ export interface SubscriptionStatus {
   display_name?: string | null;
   cache_present?: boolean;
   cache_sha256?: string | null;
+  node_count?: number | null;
   quota?: Quota;
   last_attempt?: number | null;
   last_success?: number | null;

@@ -183,6 +183,7 @@ export function project(automation, facts, events) {
 				fact.display_name : section,
 			cache_present: fact?.present == true,
 			cache_sha256: type(fact?.digest) == "string" ? fact.digest : null,
+			node_count: type(fact?.node_count) == "int" && fact.node_count >= 0 ? fact.node_count : null,
 			quota: public_quota(fact?.quota),
 			last_attempt: history?.last_attempt ?? null,
 			last_success: history?.last_success ?? null,

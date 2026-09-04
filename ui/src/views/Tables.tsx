@@ -9,6 +9,7 @@ const mode = (value: string) => ({ automatic: '自动选优', manual: '手动选
 const sampledAt = (value?: number | null) => value
   ? new Date(value * 1000).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
   : '未提供';
+const executionAt = (value?: number | null) => value ? sampledAt(value) : '尚未执行';
 const duration = (value?: number | null) => value == null ? '未提供'
   : value % 86400 === 0 ? `${value / 86400} 天`
     : value % 3600 === 0 ? `${value / 3600} 小时`
@@ -46,6 +47,13 @@ const cacheVersion = (entry?: SubscriptionStatus) => {
   if (!entry?.cache_present) return '无可用缓存';
   return entry.cache_sha256 ? entry.cache_sha256.slice(0, 12) : '已缓存';
 };
+const providerNodes = (provider: Provider, entry?: SubscriptionStatus) => {
+  if (!provider.node_count_known) return '节点未提供';
+  const loaded = `${countPair(provider.available_node_count, provider.node_count)} 节点`;
+  return entry?.node_count != null && Number(entry.node_count) !== Number(provider.node_count)
+    ? `${loaded} · 订阅 ${entry.node_count} 条`
+    : loaded;
+};
 const subscriptionSummary = (snapshot: StatusSnapshot) => {
   const entries = subscriptions(snapshot);
   if (!entries.length) return '未提供';
@@ -64,11 +72,11 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
   return (
     <>
     {full && <section className="nf-policy-summary">
-      <div className="nf-section-heading"><div><h2>订阅更新</h2><p>订阅内容由设备安全缓存；更新失败时继续使用上次可用版本。</p></div></div>
+      <div className="nf-section-heading"><div><h2>订阅更新</h2><p>订阅地址和凭据由设备端 Nikki 管理；NetFleet 负责安全更新、机场角色和自动选优。</p></div><a className="nf-button-secondary" href="/cgi-bin/luci/admin/services/nikki/profile" target="_blank" rel="noreferrer" title="设备端进入 Nikki Profile 管理">管理机场订阅</a></div>
       <div className="nf-policy-grid is-five">
         <dl><dt>自动更新</dt><dd>{refresh?.enabled ? '已启用' : '已关闭'}</dd></dl>
         <dl><dt>更新周期</dt><dd>{duration(refresh?.interval_seconds)}</dd></dl>
-        <dl><dt>最近执行</dt><dd>{sampledAt(refresh?.last_run_at)}</dd></dl>
+        <dl><dt>最近执行</dt><dd>{executionAt(refresh?.last_run_at)}</dd></dl>
         <dl><dt>订阅状态</dt><dd>{subscriptionSummary(snapshot)}</dd></dl>
         <dl><dt>最近结果</dt><dd>{refreshResult(refresh?.last_result)}</dd></dl>
       </div>
@@ -85,7 +93,7 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
               <tr className={provider.selected ? 'is-selected' : ''}>
                 <td><span className="nf-table-name">{providerName(snapshot, provider.id)}</span>{provider.selected && <small>当前使用</small>}</td>
                 <td>{role(provider.role)} · {billing(provider.billing)}</td>
-                <td><span>{availabilityMeasured ? `${countPair(provider.available_region_count, provider.region_count)} 地区` : '未测量'}</span>{availabilityMeasured && <small>{countPair(provider.available_count, provider.candidate_count)} 节点</small>}</td>
+                <td><span>{availabilityMeasured ? `${countPair(provider.available_region_count, provider.region_count)} 地区` : '未测量'}</span>{availabilityMeasured && <small>{providerNodes(provider, subscription)}</small>}</td>
                 <td className={delayClass(provider.last_best_delay_ms ?? provider.best_delay_ms, regionMargin)}>{delay(provider.last_best_delay_ms ?? provider.best_delay_ms)}</td>
                 <td><span>{averageDelay(provider.average_best_delay_ms, provider.delay_sample_count)}</span><small>{provider.delay_sample_count ?? '未提供'} 个样本</small></td>
                 <td className={subscriptionStateClass(subscription)}>{subscriptionState(subscription)}</td>
@@ -97,8 +105,8 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
                 <td colSpan={9}><div className="nf-provider-detail-grid">
                   <dl><dt>订阅标识</dt><dd>{subscription?.section || '未提供'}</dd></dl>
                   <dl><dt>缓存版本</dt><dd>{cacheVersion(subscription)}</dd></dl>
-                  <dl><dt>最近尝试</dt><dd>{sampledAt(subscription?.last_attempt)}</dd></dl>
-                  <dl><dt>最近成功</dt><dd>{sampledAt(subscription?.last_success)}</dd></dl>
+                  <dl><dt>最近尝试</dt><dd>{executionAt(subscription?.last_attempt)}</dd></dl>
+                  <dl><dt>订阅更新时间</dt><dd>{executionAt(subscription?.last_success)}</dd></dl>
                   <dl><dt>最后测量</dt><dd>{sampledAt(provider.delay_sampled_at)}</dd></dl>
                 </div></td>
               </tr>

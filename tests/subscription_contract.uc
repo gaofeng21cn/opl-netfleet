@@ -109,6 +109,7 @@ const facts = [
 		present: true,
 		digest: previous,
 		valid: true,
+		node_count: 4,
 		quota: { state: "available", remaining_bytes: 1024, expires_at: "2026-12-31" },
 		url: "https://secret.invalid/token",
 		token: "secret-token",
@@ -121,6 +122,7 @@ const facts = [
 		present: true,
 		digest: previous,
 		valid: true,
+		node_count: 2,
 		quota: { state: "unknown" }
 	}
 ];
@@ -161,6 +163,7 @@ if (projected.provider_count != 2 || projected.last_result != "partially_updated
 	projected.subscriptions[0].display_name != "Alpha" ||
 	projected.subscriptions[0].cache_present != true ||
 	projected.subscriptions[0].cache_sha256 != previous ||
+	projected.subscriptions[0].node_count != 4 ||
 	projected.subscriptions[0].quota.remaining_bytes != 1024 ||
 	projected.subscriptions[0].quota.expires_at != "2026-12-31" ||
 	projected.subscriptions[0].last_attempt != 1700000000 ||

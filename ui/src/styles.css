@@ -70,8 +70,10 @@
 .nf-page-heading { min-height: 48px; margin-bottom: 18px; display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .nf-page-heading h1 { margin: 0; font-size: 26px; line-height: 1.25; letter-spacing: 0; }
 .nf-page-heading p, .nf-section-heading p { margin: 5px 0 0; color: var(--nf-muted); font-size: 13px; }
-.nf-button-primary, .nf-button-danger { min-height: 38px; display: inline-flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 5px; font-size: 13px; font-weight: 650; }
+.nf-button-primary, .nf-button-secondary, .nf-button-danger { min-height: 38px; display: inline-flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 5px; font-size: 13px; font-weight: 650; text-decoration: none; }
 .nf-button-primary { border: 1px solid var(--nf-accent-strong); color: #fff; background: var(--nf-accent); }
+.nf-button-secondary { border: 1px solid var(--nf-border); color: #34363b; background: #fff; }
+.nf-button-secondary:hover { border-color: var(--nf-accent-border); color: var(--nf-accent); background: var(--nf-accent-soft); }
 .nf-button-danger { border: 1px solid #b71b26; color: #fff; background: var(--nf-red); }
 .nf-button-primary svg { width: 16px; height: 16px; }
 .nf-mobile-preview { display: none; }

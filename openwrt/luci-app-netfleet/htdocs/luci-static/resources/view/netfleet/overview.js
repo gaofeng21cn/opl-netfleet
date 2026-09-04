@@ -259,6 +259,10 @@ function sampledAt(value) {
 	return finite(value) && Number(value) > 0 ? new Date(Number(value) * 1000).toLocaleString() : '未提供';
 }
 
+function executionAt(value) {
+	return finite(value) && Number(value) > 0 ? sampledAt(value) : '尚未执行';
+}
+
 function refreshResult(value) {
 	return ({
 		updated: '更新完成并已重载',
@@ -701,6 +705,14 @@ function subscriptionSummary(refresh, subscriptions) {
 	return String(healthy) + ' / ' + String(finite(refresh.provider_count) ? Number(refresh.provider_count) : subscriptions.length) + ' 正常';
 }
 
+function providerNodes(provider, subscription) {
+	if (provider.node_count_known !== true)
+		return '节点未提供';
+	const loaded = countPair(provider.available_node_count, provider.node_count) + ' 节点';
+	return finite(subscription && subscription.node_count) && Number(subscription.node_count) !== Number(provider.node_count) ?
+		loaded + ' · 订阅 ' + String(Number(subscription.node_count)) + ' 条' : loaded;
+}
+
 function providersPage(status) {
 	const refresh = status.subscription_refresh || {};
 	const subscriptions = status.subscriptions || [];
@@ -717,8 +729,8 @@ function providersPage(status) {
 		const details = E('div', { 'class': 'netfleet-provider-detail-grid' }, [
 			E('dl', {}, [ E('dt', {}, '订阅标识'), E('dd', {}, text(subscription && subscription.section, '未提供')) ]),
 			E('dl', {}, [ E('dt', {}, '缓存版本'), E('dd', {}, cacheDigest(subscription)) ]),
-			E('dl', {}, [ E('dt', {}, '最近尝试'), E('dd', {}, sampledAt(subscription && subscription.last_attempt)) ]),
-			E('dl', {}, [ E('dt', {}, '最近成功'), E('dd', {}, sampledAt(subscription && subscription.last_success)) ]),
+			E('dl', {}, [ E('dt', {}, '最近尝试'), E('dd', {}, executionAt(subscription && subscription.last_attempt)) ]),
+			E('dl', {}, [ E('dt', {}, '订阅更新时间'), E('dd', {}, executionAt(subscription && subscription.last_success)) ]),
 			E('dl', {}, [ E('dt', {}, '最后测量'), E('dd', {}, sampledAt(provider.delay_sampled_at)) ])
 		]);
 		const detailRow = E('tr', { 'class': 'netfleet-provider-detail-row' }, [ E('td', { 'colspan': 9 }, details) ]);
@@ -739,7 +751,7 @@ function providersPage(status) {
 			E('td', {}, (provider.role === 'reserve' ? '备用' : '主用') + ' · ' + (({ subscription: '订阅制', buyout: '买断制' })[provider.billing] || text(provider.billing, '未知'))),
 			E('td', {}, availabilityMeasured ? [
 				E('span', {}, countPair(provider.available_region_count, provider.region_count) + ' 地区'),
-				E('small', {}, countPair(provider.available_count, provider.candidate_count) + ' 节点')
+				E('small', {}, providerNodes(provider, subscription))
 			] : '未测量'),
 			E('td', {}, delay(provider.last_best_delay_ms ?? provider.best_delay_ms)),
 			E('td', {}, [
@@ -754,13 +766,27 @@ function providersPage(status) {
 		rows.push(detailRow);
 	});
 	return [
-		section('订阅更新', '订阅内容由设备安全缓存；更新失败时继续使用上次可用版本。', [ metricGrid([
+		E('div', { 'class': 'cbi-section' }, [
+			E('div', { 'class': 'netfleet-section-heading' }, [
+				E('div', {}, [
+					E('h3', {}, '订阅更新'),
+					E('div', { 'class': 'cbi-section-descr' }, '订阅地址和凭据由设备端 Nikki 管理；NetFleet 负责安全更新、机场角色和自动选优。')
+				]),
+				E('a', {
+					'class': 'btn cbi-button netfleet-summary-link',
+					'href': L.url('admin/services/nikki/profile'),
+					'target': '_blank',
+					'rel': 'noopener'
+				}, '管理机场订阅')
+			]),
+			metricGrid([
 			[ '自动更新', refresh.enabled ? '已启用' : '已关闭' ],
 			[ '更新周期', seconds(refresh.interval_seconds) ],
-			[ '最近执行', sampledAt(refresh.last_run_at) ],
+			[ '最近执行', executionAt(refresh.last_run_at) ],
 			[ '订阅状态', subscriptionSummary(refresh, subscriptions) ],
 			[ '最近结果', refreshResult(refresh.last_result) ]
-		], 'is-five') ]),
+			], 'is-five')
+		]),
 		section('机场', availabilityMeasured ? '每行汇总订阅状态和运行质量；平均最优至少汇总 2 个有效样本。' : 'NetFleet 当前未接管，实时可用性未测量；订阅状态、历史延迟、配额和到期时间仍可查看。', [
 			simpleTable([ '机场', '定位', '可用资源', '最近最优', '平均最优', '订阅状态', '剩余流量', '到期时间', '详情' ], rows, '设备未提供机场数据', 'netfleet-data-table netfleet-provider-table')
 		])

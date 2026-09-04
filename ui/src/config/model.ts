@@ -70,7 +70,7 @@ export function createConfigDraft(status: StatusSnapshot): ConfigDraft {
       role: providerRole(provider.role),
       billing: providerBilling(provider.billing),
       availableRegions: provider.available_region_count,
-      availableNodes: provider.available_count,
+      availableNodes: provider.available_node_count,
     })),
     regions: status.regions
       .filter((region) => (
