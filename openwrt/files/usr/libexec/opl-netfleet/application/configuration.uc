@@ -45,6 +45,14 @@ function source_group_names(source) {
 	return result;
 };
 
+function provider_display_names(policy) {
+	const result = {};
+	const names = keys(policy?.providers ?? {});
+	for (let i = 0; i < length(names); i++)
+		result[names[i]] = subscription_display_name(policy.providers[names[i]].section);
+	return result;
+};
+
 function resources(policy) {
 	const subscriptions = subscription_options();
 	const recovery_options = [];
@@ -92,13 +100,6 @@ function resources(policy) {
 	return { provider_names: provider_display_names(policy), policy_source_options: source_options,
 		recovery_profile_options: recovery_options, provider_options: provider_options,
 		region_options: region_options, policy_source_groups: source_groups };
-};
-
-function provider_display_names(policy) {
-	const result = {};
-	const names = keys(policy?.providers ?? {});
-	for (let i = 0; i < length(names); i++) result[names[i]] = subscription_display_name(policy.providers[names[i]].section);
-	return result;
 };
 
 function projection(policy, inputs) {
