@@ -97,6 +97,15 @@ export SSL_CERT_FILE
 socat TCP-LISTEN:443,bind=127.0.0.1,reuseaddr,fork TCP:192.168.1.2:"$probe_port" \
 	>"$work/probe-relay.log" 2>&1 &
 probe_relay_pid=$!
+stage=probe_relay
+for relay_attempt in 1 2 3 4 5; do
+	if curl -fsS --connect-timeout 2 --max-time 5 --resolve www.gstatic.com:443:127.0.0.1 \
+		https://www.gstatic.com/generate_204 >/dev/null; then
+		break
+	fi
+	[ "$relay_attempt" -lt 5 ] || exit 1
+	sleep 1
+done
 
 stage=install_runtime_decompress
 gzip -dc /tmp/mihomo-linux-arm64-v1.19.30.gz >"$bin/mihomo"
@@ -329,7 +338,7 @@ config["tproxy-port"] = 7892;
 config["allow-lan"] = true;
 config.secret = ARGV[1];
 config["external-controller"] = "0.0.0.0:9090";
-config.hosts = { "netfleet-probe.test": "192.168.1.2" };
+config.hosts = { "netfleet-probe.test": "192.168.1.2", "www.gstatic.com": "127.0.0.1" };
 config.dns = { enable: true, listen: "[::]:1053", nameserver: ["system"] };
 config.mode = "rule";
 config["log-level"] = "warning";
