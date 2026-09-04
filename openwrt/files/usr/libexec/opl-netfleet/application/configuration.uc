@@ -1,4 +1,5 @@
 import { read_yaml, read_json, write_json_atomic, sha256, current_profile, shell_quote, subscription_display_name, subscription_options, POLICY_PATH } from "../adapters/uci.uc";
+import { popen } from "fs";
 import { resolve_profile, profile_exists, prepare_provider_links, remove_provider_links, ARTIFACT_PATH, MANIFEST_PATH } from "../adapters/nikki.uc";
 import { resolve as resolve_policy_source, load as load_policy_source } from "../adapters/policy_source.uc";
 import { validate as validate_policy } from "../core/policy.uc";
@@ -151,12 +152,22 @@ function restore_snapshot(snapshot) {
 	return restored;
 };
 
+function first_line(path) {
+	const process = popen(`head -n 1 ${shell_quote(path)} 2>/dev/null`);
+	if (!process) return null;
+	const line = process.read("line");
+	process.close();
+	return line ? trim(line) : null;
+};
+
 function run_owner(action) {
 	const output = `${WORK_DIR}/${action}.json`;
-	const exit_code = system(`ucode ${shell_quote(MAIN_PATH)} ${shell_quote(action)} luci >${shell_quote(output)} 2>&1`);
+	const error_output = `${WORK_DIR}/${action}.stderr`;
+	const exit_code = system(`ucode ${shell_quote(MAIN_PATH)} ${shell_quote(action)} luci >${shell_quote(output)} 2>${shell_quote(error_output)}`);
 	const response = read_json(output);
 	return { ok: exit_code == 0 && response?.ok == true, exit_code: exit_code, response: response,
-		error: response?.error ?? (exit_code == 0 ? "owner_readback_failed" : `${action}_failed`) };
+		error: response?.error ?? (exit_code == 0 ? "owner_readback_failed" : `${action}_failed`),
+		diagnostic: response == null ? (first_line(error_output) ?? first_line(output)) : null };
 };
 
 function cleanup_snapshot() {
@@ -231,9 +242,9 @@ export function apply(policy, envelope_path) {
 	}
 	if (!write_json_atomic(POLICY_PATH, change.policy) || load_policy() == null) fail_apply(snapshot, "policy_write_failed", null);
 	const compiled = run_owner("compile");
-	if (!compiled.ok) fail_apply(snapshot, compiled.error, compiled.response);
+	if (!compiled.ok) fail_apply(snapshot, compiled.error, compiled);
 	const enabled = run_owner("enable");
-	if (!enabled.ok) fail_apply(snapshot, enabled.error, enabled.response);
+	if (!enabled.ok) fail_apply(snapshot, enabled.error, enabled);
 	const applied = load_policy();
 	const result = { state: "applied", previously_active: snapshot.active, change_count: length(change.changes),
 		changes: change.changes, activation: enabled.response?.result ?? null,

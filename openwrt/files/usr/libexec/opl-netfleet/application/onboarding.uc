@@ -1,4 +1,5 @@
 import { read_yaml, read_json, write_json_atomic, sha256, sha256_text, device_name, current_profile, nikki_enabled, set_nikki_enabled, api_secret, set_profile, shell_quote, subscription_display_name, subscription_options, POLICY_PATH, EVIDENCE_PATH } from "../adapters/uci.uc";
+import { popen } from "fs";
 import { resolve_profile, restart, remove_artifact, remove_provider_links, running, ARTIFACT_PATH, MANIFEST_PATH, PROFILE_ENTRY_PATH, COMPILED_PROFILE } from "../adapters/nikki.uc";
 import { controller_ready, test_runtime } from "../adapters/mihomo.uc";
 import { service_state, set_service_state } from "../adapters/service.uc";
@@ -81,12 +82,22 @@ function projection(value) {
 		blockers: value.blockers ?? [], warnings: value.warnings ?? [], preview: value.preview };
 };
 
+function first_line(path) {
+	const process = popen(`head -n 1 ${shell_quote(path)} 2>/dev/null`);
+	if (!process) return null;
+	const line = process.read("line");
+	process.close();
+	return line ? trim(line) : null;
+};
+
 function run_owner(action) {
 	const output = `${WORK_DIR}/${action}.json`;
-	const exit_code = system(`ucode ${shell_quote(MAIN_PATH)} ${shell_quote(action)} luci >${shell_quote(output)} 2>&1`);
+	const error_output = `${WORK_DIR}/${action}.stderr`;
+	const exit_code = system(`ucode ${shell_quote(MAIN_PATH)} ${shell_quote(action)} luci >${shell_quote(output)} 2>${shell_quote(error_output)}`);
 	const response = read_json(output);
 	return { ok: exit_code == 0 && response?.ok == true, response: response,
-		error: response?.error ?? `${action}_failed` };
+		error: response?.error ?? `${action}_failed`, exit_code: exit_code,
+		diagnostic: response == null ? (first_line(error_output) ?? first_line(output)) : null };
 };
 
 function cleanup(found, snapshot) {
@@ -146,14 +157,14 @@ export function apply(envelope_path) {
 		evidence_backup: evidence_backup, evidence_digest: evidence_digest };
 	if (!write_json_atomic(POLICY_PATH, found.policy) || load_policy() == null) fail_apply(found, snapshot, "policy_write_failed", null);
 	const compiled = run_owner("compile");
-	if (!compiled.ok) fail_apply(found, snapshot, compiled.error, compiled.response);
+	if (!compiled.ok) fail_apply(found, snapshot, compiled.error, compiled);
 	const enabled = run_owner("enable");
-	if (!enabled.ok) fail_apply(found, snapshot, enabled.error, enabled.response);
+	if (!enabled.ok) fail_apply(found, snapshot, enabled.error, enabled);
 	const service = set_service_state({ enabled: true, running: true });
 	if (!service.ok) fail_apply(found, snapshot, "supervisor_start_failed", service.readback);
 	const readback = run_owner("status");
 	if (!readback.ok || current_profile() != COMPILED_PROFILE || service.readback.enabled != true || service.readback.running != true)
-		fail_apply(found, snapshot, "onboarding_readback_failed", readback.response);
+		fail_apply(found, snapshot, "onboarding_readback_failed", readback);
 	system(`rm -rf ${shell_quote(WORK_DIR)}`);
 	ok("onboarding-apply", { state: "active", recovery_profile_display_name: found.preview.recovery_profile_display_name,
 		provider_count: length(found.preview.providers), region_count: length(found.preview.regions),
