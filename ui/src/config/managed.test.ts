@@ -16,9 +16,14 @@ const label = (element: Element): string => element.children.map((item) => typeo
 
 function harness(active = false) {
   let modal: Array<Element | string> = [];
-  const state = { managed_by: 'netfleet', revision: 'revision-1', sources: [{ id: 'alpha', name: 'Alpha', node_count: 8, has_url: true, has_info_url: true }] };
+  const state = { managed_by: 'netfleet', revision: 'revision-1', sources: [{ id: 'alpha', name: 'Alpha', node_count: 8, has_url: true, has_info_url: true, url: 'https://example.test/subscription', user_agent: 'custom-client/1.0', info_url: 'https://example.test/quota' }] };
   const api = { subscriptionsGet: vi.fn(async () => state), subscriptionsSet: vi.fn(async (_request: unknown) => ({})), subscriptionsRefresh: vi.fn(async (_id: string) => ({})), migrationGet: vi.fn(async () => ({ ready: true, revision: 'migration-1' })), migrationApply: vi.fn(async (_request: unknown) => ({})) };
-  const ui = { showModal: (_title: string, children: Array<Element | string>) => { modal = children; }, hideModal: vi.fn(), addNotification: vi.fn() };
+  const ui = { showModal: (_title: string, children: Array<Element | string>) => { modal = children; }, hideModal: vi.fn(), addNotification: vi.fn(), Combobox: class {
+    input: Element;
+    constructor(value: string, choices: Record<string, string>, options: Record<string, unknown>) { this.input = E('input', { ...options, value, choices, role: 'combobox' }); }
+    render() { return this.input; }
+    getValue() { return this.input.value; }
+  } };
   const source = readFileSync(new URL('../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/managed.js', import.meta.url), 'utf8');
   const managed = new Function('baseclass', 'ui', 'api', 'E', 'L', source)({ extend: (value: unknown) => value }, ui, api, E, { url: (path: string) => path });
   const controller = { status: { active }, refreshData: vi.fn(async () => ({})), redraw: vi.fn() };
@@ -62,15 +67,27 @@ describe('native LuCI managed operations', () => {
     expect(h.api.subscriptionsGet).toHaveBeenCalledTimes(2);
   });
 
-  it('edits a source without exposing or resubmitting stored secrets', async () => {
+  it('prefills authenticated source fields and preserves a custom User-Agent on save', async () => {
     const h = harness();
     await h.managed.subscriptions(h.controller);
     h.button('编辑').attrs.click();
     const inputs = h.nodes().filter((node) => node.tag === 'input');
-    expect(inputs.filter((input) => input.attrs.type === 'password').map((input) => input.value)).toEqual(['', '']);
+    expect(inputs.map((input) => input.value)).toEqual(['alpha', 'Alpha', 'https://example.test/subscription', 'custom-client/1.0', 'https://example.test/quota']);
+    expect(inputs[3].attrs.choices).toEqual({ clash: 'clash', 'clash.meta': 'clash.meta', mihomo: 'mihomo' });
     inputs[1].value = 'New Name';
     h.button('保存订阅').attrs.click();
-    await vi.waitFor(() => expect(h.api.subscriptionsSet).toHaveBeenCalledWith({ revision: 'revision-1', source: { id: 'alpha', name: 'New Name' } }));
+    await vi.waitFor(() => expect(h.api.subscriptionsSet).toHaveBeenCalledWith({ revision: 'revision-1', source: { id: 'alpha', name: 'New Name', url: 'https://example.test/subscription', user_agent: 'custom-client/1.0', info_url: 'https://example.test/quota' } }));
+  });
+
+  it('allows choosing a preset and clearing the usage address without changing the subscription', async () => {
+    const h = harness();
+    await h.managed.subscriptions(h.controller);
+    h.button('编辑').attrs.click();
+    const inputs = h.nodes().filter((node) => node.tag === 'input');
+    inputs[3].value = 'mihomo';
+    inputs[4].value = '';
+    h.button('保存订阅').attrs.click();
+    await vi.waitFor(() => expect(h.api.subscriptionsSet).toHaveBeenCalledWith({ revision: 'revision-1', source: { id: 'alpha', name: 'Alpha', url: 'https://example.test/subscription', user_agent: 'mihomo', info_url: '' } }));
   });
 
   it('allows source edits while active without implicitly refreshing or stopping the runtime', async () => {

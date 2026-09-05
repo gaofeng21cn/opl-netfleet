@@ -12,7 +12,6 @@ const NAVIGATION = [
 	[ 'exits', '出口' ],
 	[ 'providers', '机场' ],
 	[ 'regions', '地区' ],
-	[ 'runtime', '实时运行', true ],
 	[ 'config', '配置' ],
 	[ 'events', '事件与诊断' ]
 ];
@@ -108,10 +107,10 @@ function buildLabel(status) {
 	return 'NetFleet' + (version ? ' v' + version : '') + (commit ? ' · ' + commit.slice(0, 7) : '');
 }
 
-function pageHeading(title, status) {
+function pageHeading(title, status, dashboard) {
 	return E('div', { 'class': 'netfleet-page-heading' }, [
 		E('h2', {}, title),
-		E('span', { 'class': 'netfleet-build' }, buildLabel(status))
+		E('div', { 'class': 'netfleet-page-tools' }, [ dashboard, E('span', { 'class': 'netfleet-build' }, buildLabel(status)) ])
 	]);
 }
 
@@ -1075,6 +1074,8 @@ return view.extend({
 			const host = window.location.hostname;
 			const url = new URL(result.protocol + '://' + host + ':' + result.port + '/ui/' + (result.ui_name ? encodeURIComponent(result.ui_name) + '/' : ''));
 			url.search = new URLSearchParams({ hostname: host, host: host, port: String(result.port), secret: result.secret || '' }).toString();
+			// Zashboard only accepts a new connection on setup when a saved backend already exists.
+			url.hash = '/setup';
 			self.dashboardUrl = url.toString();
 		}).catch(function() { self.dashboardUrl = null; }).finally(function() { self.redraw(); });
 	},
@@ -1120,16 +1121,7 @@ return view.extend({
 		}
 		const title = ({ overview: '网络概览', exits: '出口', providers: '机场', regions: '地区', config: '配置', events: '事件与诊断' })[this.currentView];
 		const tabs = E('ul', { 'class': 'cbi-tabmenu' }, NAVIGATION.map(function(item) {
-			const external = item[2] === true;
-			const ready = !external || (dashboardReady(self.status) && self.dashboardUrl);
-			const control = external ? E('a', {
-				'href': ready ? self.dashboardUrl : '#',
-				'target': ready ? '_blank' : null,
-				'rel': 'noopener',
-				'aria-disabled': ready ? null : 'true',
-				'title': ready ? '在新标签页打开完整 Zashboard' : dashboardUnavailableReason(self.status),
-				'click': function(event) { if (!ready) { event.preventDefault(); self.openDashboard(); } }
-			}, item[1] + ' ↗') : E('a', {
+			const control = E('a', {
 				'href': '#',
 				'click': function(event) {
 					event.preventDefault();
@@ -1141,8 +1133,7 @@ return view.extend({
 				}
 			}, item[1]);
 			return E('li', {
-				'class': (self.currentView === item[0] ? 'cbi-tab' : 'cbi-tab-disabled') +
-					(external ? ' netfleet-external-tab' : '') + (ready ? '' : ' is-disabled')
+				'class': self.currentView === item[0] ? 'cbi-tab' : 'cbi-tab-disabled'
 			}, [ control ]);
 		}));
 
@@ -1193,7 +1184,14 @@ return view.extend({
 			[ '设备控制', deviceControl ]
 		], 'is-six') ], 'netfleet-source' + (this.liveDataReady ? '' : ' is-stale'));
 
-		this.root.replaceChildren(pageHeading(title, this.status), tabs, E('div', {}, content), source, E('div', { 'class': 'cbi-page-actions' }, buttons));
+		const dashboard = dashboardReady(this.status) && this.dashboardUrl ? E('a', {
+			'class': 'netfleet-dashboard-link', 'href': this.dashboardUrl, 'target': '_blank', 'rel': 'noopener',
+			'title': '在新标签页打开完整 Zashboard'
+		}, 'Zashboard ↗') : E('button', {
+			'class': 'netfleet-dashboard-link', 'type': 'button', 'disabled': true,
+			'title': dashboardReady(this.status) ? '正在读取连接信息' : dashboardUnavailableReason(this.status)
+		}, 'Zashboard ↗');
+		this.root.replaceChildren(pageHeading(title, this.status, dashboard), tabs, E('div', {}, content), source, E('div', { 'class': 'cbi-page-actions' }, buttons));
 	},
 
 	openDashboard: function() {

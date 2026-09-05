@@ -42,34 +42,36 @@ function button(label, click, disabled, destructive) {
 	return E('button', { 'class': 'btn cbi-button' + (destructive ? ' cbi-button-negative' : ''), 'type': 'button', 'disabled': disabled || null, 'click': click }, label);
 }
 
+function userAgentControl(value) {
+	return new ui.Combobox(value || 'clash.meta', { 'clash': 'clash', 'clash.meta': 'clash.meta', 'mihomo': 'mihomo' }, {
+		id: 'netfleet-source-user-agent', sort: false, custom_placeholder: '自定义 User-Agent'
+	});
+}
+
 function editSource(controller, state, existing) {
 	const values = {};
 	const fields = [
 		[ 'id', '订阅标识', 'text', existing && existing.id, !existing ],
 		[ 'name', '名称', 'text', existing && existing.name, true ],
-		[ 'url', '订阅地址', 'password', '', !existing ],
-		[ 'user_agent', 'User-Agent（可选）', 'text', '', false ],
-		[ 'info_url', '用量查询地址（可选）', 'password', '', false ]
+		[ 'url', '订阅地址', 'url', existing && existing.url, true ],
+		[ 'info_url', '用量查询地址（可选）', 'url', existing && existing.info_url, false ]
 	];
 	const controls = fields.map(function(field) {
 		const input = E('input', { 'class': 'cbi-input-text', 'type': field[2], 'value': field[3] || '', 'required': field[4] || null,
-			'disabled': field[0] === 'id' && existing ? true : null, 'autocomplete': 'off',
-			'placeholder': existing && ((field[0] === 'url' && existing.has_url) || (field[0] === 'info_url' && existing.has_info_url)) ? '已保存，留空保持不变' : '' });
+			'disabled': field[0] === 'id' && existing ? true : null, 'autocomplete': 'off', 'spellcheck': 'false', 'id': 'netfleet-source-' + field[0] });
 		values[field[0]] = input;
-		return E('div', { 'class': 'netfleet-config-row' }, [ E('label', {}, field[1]), input ]);
+		return E('div', { 'class': 'netfleet-source-row' }, [ E('label', { 'for': 'netfleet-source-' + field[0] }, field[1]), input ]);
 	});
-	const clearInfo = E('input', { 'type': 'checkbox' });
-	if (existing && existing.has_info_url)
-		controls.push(E('label', { 'class': 'netfleet-check' }, [ clearInfo, '清除已保存的用量查询地址' ]));
+	const userAgent = userAgentControl(existing && existing.user_agent);
+	controls.splice(3, 0, E('div', { 'class': 'netfleet-source-row' }, [ E('label', { 'for': 'netfleet-source-user-agent' }, 'User-Agent'), userAgent.render() ]));
 	const errorBox = E('p', { 'class': 'is-warning', 'role': 'alert' });
 	const save = button('保存订阅', function() {
 		if (fields.some(function(field) { return field[4] && !values[field[0]].value.trim(); }) || !/^[A-Za-z0-9_]+$/.test(values.id.value.trim())) {
 			errorBox.textContent = '请填写名称和地址；订阅标识仅限英文字母、数字和下划线。';
 			return;
 		}
-		const source = { id: values.id.value.trim(), name: values.name.value.trim() };
-		[ 'url', 'user_agent', 'info_url' ].forEach(function(key) { if (values[key].value.trim()) source[key] = values[key].value.trim(); });
-		if (clearInfo.checked) source.info_url = '';
+		const source = { id: values.id.value.trim(), name: values.name.value.trim(),
+			url: values.url.value.trim(), user_agent: (userAgent.getValue() || 'clash.meta').trim(), info_url: values.info_url.value.trim() };
 		save.disabled = true;
 		api.subscriptionsSet({ revision: state.revision, source: source }).then(function(saved) {
 			controller.subscriptionState = saved && Array.isArray(saved.sources) ? saved : null;
@@ -78,8 +80,8 @@ function editSource(controller, state, existing) {
 			return showSubscriptions(controller);
 		}).catch(function(error) { errorBox.textContent = failure(error); save.disabled = false; });
 	});
-	ui.showModal(existing ? '编辑订阅' : '新增订阅', controls.concat([ errorBox,
-		E('div', { 'class': 'right' }, [ button('返回', function() { showSubscriptions(controller); }), ' ', save ]) ]));
+	ui.showModal(existing ? '编辑订阅' : '新增订阅', [ E('div', { 'class': 'netfleet-native netfleet-source-form' }, controls.concat([ errorBox,
+		E('div', { 'class': 'right' }, [ button('返回', function() { showSubscriptions(controller); }), ' ', save ]) ])) ]);
 }
 
 function loadSubscriptions(controller) {
@@ -180,19 +182,19 @@ function nativeSetup(controller) {
 		}
 		const id = E('input', { 'class': 'cbi-input-text', 'required': true });
 		const name = E('input', { 'class': 'cbi-input-text', 'required': true });
-		const url = E('input', { 'class': 'cbi-input-text', 'type': 'password', 'required': true, 'autocomplete': 'off' });
-		const userAgent = E('input', { 'class': 'cbi-input-text' });
+		const url = E('input', { 'class': 'cbi-input-text', 'type': 'url', 'required': true, 'autocomplete': 'off' });
+		const userAgent = userAgentControl();
 		const errorBox = E('p', { 'class': 'is-warning', 'role': 'alert' });
 		const submit = button('确认接入', function() {
 			if (!id.value.trim() || !name.value.trim() || !url.value.trim()) { errorBox.textContent = '请填写标识、名称和订阅地址。'; return; }
 			submit.disabled = true;
-			api.nativeSetupApply({ revision: state.revision, confirmed: true, source: { id: id.value.trim(), name: name.value.trim(), url: url.value.trim(), user_agent: userAgent.value.trim() || undefined } }).then(function() {
+			api.nativeSetupApply({ revision: state.revision, confirmed: true, source: { id: id.value.trim(), name: name.value.trim(), url: url.value.trim(), user_agent: userAgent.getValue() || 'clash.meta' } }).then(function() {
 				url.value = ''; ui.hideModal(); return controller.refreshOnboarding();
 			}).catch(function(error) { errorBox.textContent = failure(error); submit.disabled = false; });
 		});
 		ui.showModal('首次接入 Mihomo', [ E('p', {}, 'NetFleet 将下载订阅并启动原生后端，接管 DNS 与透明代理。失败时撤销本次网络接管。'),
-			E('div', { 'class': 'netfleet-config-rows' }, [ [ '订阅标识', id ], [ '名称', name ], [ '订阅地址', url ], [ 'User-Agent（可选）', userAgent ] ].map(function(field) {
-				return E('div', { 'class': 'netfleet-config-row' }, [ E('label', {}, field[0]), field[1] ]);
+			E('div', { 'class': 'netfleet-native netfleet-source-form' }, [ [ '订阅标识', id ], [ '名称', name ], [ '订阅地址', url ], [ 'User-Agent', userAgent.render() ] ].map(function(field) {
+				return E('label', { 'class': 'netfleet-source-row' }, [ E('span', {}, field[0]), field[1] ]);
 			})), errorBox, E('div', { 'class': 'right' }, [ button('取消', ui.hideModal), ' ', submit ]) ]);
 	}).catch(function(error) { ui.showModal('首次接入失败', [ E('p', {}, failure(error)), button('关闭', ui.hideModal) ]); });
 }

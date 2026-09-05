@@ -580,11 +580,15 @@ function createPage(storage, api, notifications) {
     const persisted = JSON.parse(storage.value(cacheKey));
     assert.deepStrictEqual(persisted.events.core_lines, [], 'raw logs must not be persisted');
     assert.strictEqual(persisted.status.active, true);
-    const runtimeEntry = findNode(root, function(node) { return node.tag === 'a' && nodeText(node) === '实时运行 ↗'; });
+    const runtimeEntry = findNode(root, function(node) { return node.tag === 'a' && nodeText(node) === 'Zashboard ↗'; });
     assert(runtimeEntry && runtimeEntry.attrs['aria-disabled'] !== 'true', 'healthy dashboard entry must be enabled');
     const dashboardUrl = new URL(runtimeEntry.attrs.href);
     assert.strictEqual(dashboardUrl.hostname, 'router.example');
     assert.strictEqual(dashboardUrl.pathname, '/ui/zashboard/');
+    assert.strictEqual(dashboardUrl.hash, '#/setup', 'saved backend credentials must not bypass the new connection');
+    const tabs = findNode(root, function(node) { return node.tag === 'ul' && node.attrs.class === 'cbi-tabmenu'; });
+    assert.strictEqual(tabs.children.length, 6);
+    assert(!nodeText(tabs).includes('Zashboard'), 'external tool must not be an internal tab');
     assert.strictEqual(dashboardUrl.searchParams.get('secret'), 'private-secret');
     assert.strictEqual(runtimeEntry.attrs.target, '_blank');
     assert.strictEqual(runtimeEntry.attrs.rel, 'noopener');
@@ -593,9 +597,8 @@ function createPage(storage, api, notifications) {
     await new Promise(function(resolve) { setImmediate(resolve); });
     page.status.runtime.lan_runtime.dashboard_lan_ready = false;
     page.redraw();
-    const disabledRuntimeEntry = findNode(root, function(node) { return node.tag === 'a' && nodeText(node) === '实时运行 ↗'; });
-    assert(disabledRuntimeEntry && disabledRuntimeEntry.attrs['aria-disabled'] === 'true', 'unready dashboard entry must be disabled');
-    assert.strictEqual(disabledRuntimeEntry.attrs.href, '#');
+    const disabledRuntimeEntry = findNode(root, function(node) { return node.tag === 'button' && nodeText(node) === 'Zashboard ↗'; });
+    assert(disabledRuntimeEntry && disabledRuntimeEntry.attrs.disabled === true, 'unready dashboard entry must be disabled');
     assert.strictEqual(disabledRuntimeEntry.attrs.title, 'Zashboard 的局域网访问条件尚未就绪');
     page.status.runtime.lan_runtime.dashboard_lan_ready = true;
     page.redraw();

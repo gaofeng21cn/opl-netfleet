@@ -260,6 +260,13 @@ run_main native-setup-apply "$work/setup-request.json" >"$work/setup-apply-resul
 assert_json "$work/setup-apply-result.json" '@.ok' true
 assert_json "$work/setup-apply-result.json" '@.result.state' native_ready
 assert_json "$work/setup-apply-result.json" '@.result.onboarding_required' true
+run_main subscriptions-get >"$work/subscriptions-get-result.json"
+ucode -e '
+import { readfile } from "fs";
+const input = json(readfile(ARGV[0])).request.source;
+const managed = json(readfile(ARGV[1])).result.sources[0];
+if (managed.id != input.id || managed.url != input.url || managed.user_agent != "clash.meta" || managed.info_url != "") exit(1);
+' "$work/setup-request.json" "$work/subscriptions-get-result.json"
 assert_json /etc/opl-netfleet/backend.json '@.kind' native-mihomo
 [ "$(uci -q get netfleet.config.profile)" = subscription:setup ]
 [ "$(uci -q get netfleet.mixin.outbound_interface)" = wan ]

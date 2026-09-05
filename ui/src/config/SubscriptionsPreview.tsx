@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { ExternalLink, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import type { StatusSnapshot } from '../types';
 
+interface PreviewSource { id: string; name: string; nodeCount: number; pending: boolean; url?: string; user_agent?: string; info_url?: string }
+
 export function SubscriptionsPreview({ status }: { status: StatusSnapshot }) {
   const [open, setOpen] = useState(false);
-  const [sources, setSources] = useState(() => (status.subscriptions || []).map((source) => ({ id: source.section, name: source.display_name || source.section, nodeCount: source.node_count || 0, pending: false })));
-  const [editing, setEditing] = useState<{ id: string; name: string; nodeCount: number; pending: boolean } | null>(null);
+  const [sources, setSources] = useState<PreviewSource[]>(() => (status.subscriptions || []).map((source) => ({ id: source.section, name: source.display_name || source.section, nodeCount: source.node_count || 0, pending: false })));
+  const [editing, setEditing] = useState<PreviewSource | null>(null);
   const [adding, setAdding] = useState(false);
   if (status.runtime.backend?.id !== 'native-mihomo') return <a className="nf-inline-link" href="/cgi-bin/luci/admin/services/nikki/profile" target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" />管理订阅</a>;
   return <>
@@ -16,17 +18,18 @@ export function SubscriptionsPreview({ status }: { status: StatusSnapshot }) {
       {adding || editing ? <form onSubmit={(event) => {
         event.preventDefault();
         const values = new FormData(event.currentTarget);
-        const pending = !editing || editing.pending || ['url', 'user_agent', 'info_url'].some((key) => Boolean(String(values.get(key) || '').trim()));
-        const source = { id: editing?.id || String(values.get('id')), name: String(values.get('name')), nodeCount: editing?.nodeCount || 0, pending };
+        const fields = { url: String(values.get('url') || '').trim() || editing?.url, user_agent: String(values.get('user_agent') || 'clash.meta').trim(), info_url: String(values.get('info_url') || '').trim() };
+        const pending = !editing || editing.pending || (Object.keys(fields) as Array<keyof typeof fields>).some((key) => fields[key] !== editing[key]);
+        const source = { id: editing?.id || String(values.get('id')), name: String(values.get('name')), nodeCount: editing?.nodeCount || 0, pending, ...fields };
         setSources((items) => editing ? items.map((item) => item.id === editing.id ? source : item) : [...items, source]);
         event.currentTarget.reset(); setAdding(false); setEditing(null);
       }}>
         <div className="nf-form-rows">
           <label className="nf-form-row">订阅标识<input name="id" required pattern="[A-Za-z0-9_]+" defaultValue={editing?.id} disabled={Boolean(editing)} /></label>
           <label className="nf-form-row">名称<input name="name" required defaultValue={editing?.name} /></label>
-          <label className="nf-form-row">订阅地址<input name="url" type="password" autoComplete="off" required={!editing} placeholder={editing ? '已保存，留空保持不变' : ''} /></label>
-          <label className="nf-form-row">User-Agent（可选）<input name="user_agent" /></label>
-          <label className="nf-form-row">用量查询地址（可选）<input name="info_url" type="password" autoComplete="off" /></label>
+          <label className="nf-form-row">订阅地址<input name="url" type="url" autoComplete="off" defaultValue={editing?.url} required={!editing} placeholder={editing && !editing.url ? '本机未读取私有地址' : ''} /></label>
+          <label className="nf-form-row">User-Agent<input name="user_agent" list="netfleet-user-agents" defaultValue={editing?.user_agent || 'clash.meta'} /><datalist id="netfleet-user-agents"><option value="clash" /><option value="clash.meta" /><option value="mihomo" /></datalist></label>
+          <label className="nf-form-row">用量查询地址（可选）<input name="info_url" type="url" autoComplete="off" defaultValue={editing?.info_url} /></label>
         </div>
         <footer><button type="button" onClick={() => { setAdding(false); setEditing(null); }}>返回</button><button type="submit">保存本地预览</button></footer>
       </form> : <>

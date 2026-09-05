@@ -96,9 +96,14 @@ export function get() {
 		const cached = private_file(path) ? read_yaml(path, true) : null;
 		const present = cache_accepted(cached);
 		const digest = present ? sha256(path) : null;
-		push(sources, public_source(source, { present: present,
+		const entry = public_source(source, { present: present,
 			current: present && cache_current(source, digest), digest: digest,
-			node_count: present ? length(cached.proxies) : null }));
+			node_count: present ? length(cached.proxies) : null });
+		// Authenticated management only; status keeps the redacted public projection.
+		entry.url = source.url ?? "";
+		entry.user_agent = source.user_agent ?? "clash.meta";
+		entry.info_url = source.info_url ?? "";
+		push(sources, entry);
 	});
 	return { ok: true, result: { managed_by: "netfleet", manage_externally: false, sources: sources, revision: revision() } };
 };

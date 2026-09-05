@@ -62,7 +62,7 @@ done
 
 [[ -n "$output" ]] || die "--output is required"
 [[ "$diagnostic" != package || -n "$packages" ]] || die "package diagnostic requires --packages"
-[[ "$diagnostic" == all || "$diagnostic" == package || -z "$packages" ]] || die "only the package diagnostic accepts --packages"
+[[ "$diagnostic" == all || "$diagnostic" == package || "$diagnostic" == setup || -z "$packages" ]] || die "only setup and package diagnostics accept --packages"
 [[ "$source_ref" != -* ]] || die "source ref cannot begin with '-'"
 [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] ||
 	die "native QEMU qualification requires macOS on Apple Silicon"

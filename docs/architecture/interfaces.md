@@ -10,11 +10,11 @@ apply 接受绑定 revision 的明确确认和一份私有订阅输入，完成�
 就绪后进入现有 onboarding。已有 Nikki 或原生 owner 时拒绝覆盖；已有 Nikki 的迁移使用
 独立 `migration_get / migration_apply`，不能借首次接入隐式替换运行 owner。
 
-`subscriptions_get / subscriptions_set` 是当前原生订阅管理接口，分别用于脱敏读取和保存
-单项来源或删除。`get` 返回 `managed_by`、revision 和来源列表，来源只暴露地址是否已配置、
-缓存身份、节点数、更新时间、配额及 pending 状态，不返回 URL、User-Agent 或节点正文。
+`subscriptions_get / subscriptions_set` 是当前经过 LuCI 认证的原生订阅管理接口，分别用于读取
+和保存单项来源或删除。`get` 返回 `managed_by`、revision 和来源列表，包括当前
+`url/user_agent/info_url` 编辑值、缓存身份、节点数、更新时间、配额及 pending 状态，不返回节点正文。
 `set` 的私有请求为 `{revision, source:{id,name,url?,user_agent?,info_url?,prefer?}, delete?}`；
-浏览器已保存的秘密输入保持空白，未提交的字段由 owner 保留。来源修改不立即重启或下载，
+编辑表单显示当前真实地址和 User-Agent；未提交的字段由 owner 保留。来源修改不立即重启或下载，
 运行继续使用上次可用缓存，`pending_update/cache_current/using_previous_cache` 明确区分待更新
 与已接受缓存；只有显式更新成功后新来源才生效。`subscriptions_refresh` 只接受稳定来源 ID，
 未被启用 policy 引用的来源只下载并校验缓存，不重启；使用中的来源复用完整 refresh 事务，
@@ -24,7 +24,7 @@ apply 接受绑定 revision 的明确确认和一份私有订阅输入，完成�
 
 LuCI 在机场页和配置的机场区提供同一个订阅管理入口，新增、编辑、删除均调用上述 owner。
 订阅来源持久保存在设备 UCI，接受后的正文保存在设备私有缓存；打开管理器不下载或测速。
-页面预读取脱敏来源列表，在当前页面内复用，返回和再次打开直接显示；保存、删除、更新后
+页面预读取管理来源列表，仅在当前页面内存中复用，返回和再次打开直接显示；保存、删除、更新后
 失效并读取 owner 新状态。浏览器不持久保存凭据，也不复制一份可写来源配置。
 配置的基础接入区提供后端迁移：`migration_get` 返回 ready、revision 和缺失条件；
 `migration_apply` 接受 `{revision,confirmed:true,backend:"native-mihomo"}`，执行当前后端
@@ -54,13 +54,14 @@ gateway 的准备、附加或清理动作，不建立第二条核心生命周期
 - `refresh`：不接受 URL、section 或订阅内容，只调用同一个 policy-driven refresh owner；来源凭据修改由独立 subscriptions_set 完成，浏览器不解析订阅内容；
 - `disable`：调用与 CLI 相同的 native Profile owner/runtime 恢复并独立返回 `business_ok`；只有 runtime 无法恢复时才转入官方 cleanup passthrough，并返回 `safe`、`persistent`、`business_ok`。
 
-UI 有两个明确宿主。`ui/` 的 React/Vite 应用只用于本机快速参考开发，可注入 target-private 实时只读 client 或使用脱敏 fixture client；生产设备只部署原生 LuCI `view.extend`/`E()` 页面，不动态加载、挂载或打包 React。运行观察面共享“概览 / 出口 / 机场 / 地区 / 实时运行 / 配置 / 事件与诊断”信息架构，其中“实时运行”是打开独立 Zashboard 的外部入口，不是 NetFleet 内容页；原生 LuCI 另按 React 已确认的“基础接入 / 机场 / 地区映射 / 出口策略 / 自动运行 / 安全与恢复”提供配置页和首次设置向导。两端共享显示语义和交互合同，不共享组件实现或 bundle，也不要求像素一致。React 定稿只决定信息与交互参考，LuCI 原生 source 才是设备页面的部署 owner。当前视觉语言、主题映射、排版和组件规则由 [UI 设计合同](../design/ui.md)统一约束；它只负责 UI 设计，不拥有产品对象、状态或动作合同。
+UI 有两个明确宿主。`ui/` 的 React/Vite 应用只用于本机快速参考开发，可注入 target-private 实时只读 client 或使用脱敏 fixture client；生产设备只部署原生 LuCI `view.extend`/`E()` 页面，不动态加载、挂载或打包 React。运行观察面共享“概览 / 出口 / 机场 / 地区 / 配置 / 事件与诊断”六页信息架构，Zashboard 在工具区提供独立外链；原生 LuCI 另按 React 已确认的“基础接入 / 机场 / 地区映射 / 出口策略 / 自动运行 / 安全与恢复”提供配置页和首次设置向导。两端共享显示语义和交互合同，不共享组件实现或 bundle，也不要求像素一致。React 定稿只决定信息与交互参考，LuCI 原生 source 才是设备页面的部署 owner。当前视觉语言、主题映射、排版和组件规则由 [UI 设计合同](../design/ui.md)统一约束；它只负责 UI 设计，不拥有产品对象、状态或动作合同。
 
 实时只读桥接的目标只从本机环境变量取得，只允许固定读取 `status`、`events` 和 `connections`，浏览器不持有 SSH 凭据，也不能通过该桥接调用任何 mutation；桥接结果必须显示目标、连接状态、最后读取时间和读取耗时。`connections` 只在用户打开或刷新“事件与诊断”时从 Mihomo 当前 `/connections` 读取最多 50 条活动连接，投影目标 host/IP、目标端口、网络、命中规则、规则载荷和实际代理链；不得返回 source IP、进程、连接 ID、流量计数或其他不必要字段，也不得写入事件 owner、fixture 或浏览器展示缓存。该诊断使用 Mihomo 已执行的真实首条命中结果，不在 NetFleet 或浏览器中重做规则匹配。事件页以 NetFleet 持久化选路事件为主，活动连接只在默认折叠的辅助区显示；瞬时连接快照不能累计或外推为规则组触发频数，除非未来真实 owner 提供可去重、可定义生命周期的持久计数。fixture 仅用于离线、异常和边界场景，可在内存中模拟命令后的投影变化；它必须遵守当前 `status`/`events` 形状且不得包含订阅、完整节点清单、设备地址或其他私有 target 数据，不是运行事实，也不能被生产 LuCI 页面读取。
 
-NetFleet LuCI 在“地区”和“配置”之间提供“实时运行”入口，以 `dashboard_get` 返回的
+NetFleet LuCI 在页面标题的工具区提供独立的“Zashboard”外链，不作为内部标签页，以 `dashboard_get` 返回的
 可用性、controller 端口、协议、可选 UI 名称和 secret 打开独立完整的 Zashboard。
-浏览器只使用当前页面 hostname 构造 `/ui/` 路径与上游认可的连接参数，不加载 `tools.nikki`，
+浏览器只使用当前页面 hostname 构造 `/ui/` 路径与上游认可的连接参数，通过 `#/setup`
+让 Zashboard 校验并选用本次连接，避免已有浏览器后端记录继续使用旧凭据；不加载 `tools.nikki`，
 也不需要 `luci.nikki.profile` 权限。Nikki 模式的资源与 controller 仍来自当前后端 owner；
 原生模式使用 NetFleet 的资源与 controller，不创建第二控制器。Mihomo 未运行、controller
 不可读或局域网条件未就绪时禁用入口。

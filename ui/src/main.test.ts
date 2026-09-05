@@ -18,8 +18,7 @@ describe('Vite 开发入口', () => {
     expect(liveClient).not.toContain('inflightRead');
     expect(liveClient.match(/\/__netfleet_live\/snapshot/g)).toEqual(['/__netfleet_live/snapshot']);
     expect(app.match(/client\.read\(\)/g)).toEqual(['client.read()']);
-    expect(shell).toContain("label: '实时运行'");
-    expect(shell).toContain('if (item.external) onOpenDashboard()');
-    expect(shell).toContain('disabled={item.external && !dashboardReady}');
+    expect(shell).not.toContain("id: 'runtime'");
+    expect(shell).toContain('onClick={onOpenDashboard} disabled={!dashboardReady}');
   });
 });

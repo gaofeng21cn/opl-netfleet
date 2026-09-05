@@ -110,29 +110,33 @@
 	color: var(--nf-accent);
 }
 
-.netfleet-native .cbi-tabmenu > li.netfleet-external-tab > button {
+.netfleet-native .netfleet-page-tools {
 	display: flex;
 	align-items: center;
-	min-height: 42px;
+	justify-content: flex-end;
+	flex-wrap: wrap;
+	gap: 8px 18px;
+}
+
+.netfleet-native .netfleet-dashboard-link {
+	white-space: nowrap;
 	margin: 0 !important;
-	padding: 0 17px !important;
+	padding: 6px 0 !important;
 	border: 0 !important;
-	border-bottom: 3px solid transparent !important;
 	border-radius: 0 !important;
 	background: transparent !important;
 	box-shadow: none !important;
-	color: var(--nf-accent);
+	color: var(--nf-accent) !important;
 	font: inherit;
-	font-size: 15px;
 	font-weight: 600;
 	cursor: pointer;
 }
 
-.netfleet-native .cbi-tabmenu > li.netfleet-external-tab > button:hover:not(:disabled) {
-	background: var(--nf-accent-soft) !important;
+.netfleet-native a.netfleet-dashboard-link:hover {
+	text-decoration: underline;
 }
 
-.netfleet-native .cbi-tabmenu > li.netfleet-external-tab > button:disabled {
+.netfleet-native .netfleet-dashboard-link:disabled {
 	cursor: not-allowed;
 	opacity: 0.45;
 }
@@ -988,6 +992,37 @@
 
 .netfleet-config-rows {
 	border-top: 1px solid rgba(127, 127, 127, 0.18);
+}
+
+.netfleet-source-form .netfleet-source-row {
+	display: grid;
+	grid-template-columns: 150px minmax(0, 1fr);
+	align-items: center;
+	gap: 16px;
+	margin: 0;
+	padding: 10px 0;
+	border-bottom: 1px solid var(--nf-border-subtle);
+}
+
+.netfleet-source-form .netfleet-source-row > * {
+	min-width: 0;
+	max-width: 100%;
+	margin: 0;
+}
+
+.netfleet-source-form .netfleet-source-row > input,
+.netfleet-source-form .netfleet-source-row > .cbi-dropdown {
+	width: 100% !important;
+	min-width: 0 !important;
+	min-height: 38px;
+	font-size: 15px;
+}
+
+@media (max-width: 600px) {
+	.netfleet-source-form .netfleet-source-row {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 6px;
+	}
 }
 
 .netfleet-config-row {

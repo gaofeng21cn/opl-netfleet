@@ -15,18 +15,15 @@ import {
 } from 'lucide-react';
 import type { PreviewControls, ViewId } from '../types';
 
-type NavigationItem =
-  | { id: ViewId; label: string; icon: typeof House; external: false }
-  | { id: 'runtime'; label: string; icon: typeof House; external: true };
+type NavigationItem = { id: ViewId; label: string; icon: typeof House };
 
 const nav: NavigationItem[] = [
-  { id: 'overview', label: '概览', icon: House, external: false },
-  { id: 'exits', label: '出口', icon: Route, external: false },
-  { id: 'providers', label: '机场', icon: PlaneTakeoff, external: false },
-  { id: 'regions', label: '地区', icon: Globe2, external: false },
-  { id: 'runtime' as const, label: '实时运行', icon: SquareArrowOutUpRight, external: true },
-  { id: 'config', label: '配置', icon: Settings, external: false },
-  { id: 'events', label: '事件与诊断', icon: BellRing, external: false },
+  { id: 'overview', label: '概览', icon: House },
+  { id: 'exits', label: '出口', icon: Route },
+  { id: 'providers', label: '机场', icon: PlaneTakeoff },
+  { id: 'regions', label: '地区', icon: Globe2 },
+  { id: 'config', label: '配置', icon: Settings },
+  { id: 'events', label: '事件与诊断', icon: BellRing },
 ];
 
 interface ShellProps {
@@ -74,18 +71,13 @@ export function Shell({
             const Icon = item.icon;
             return (
               <button
-                className={`${view === item.id ? 'is-active' : ''}${item.external ? ' is-external' : ''}`}
+                className={view === item.id ? 'is-active' : ''}
                 key={item.id}
-                onClick={() => {
-                  if (item.external) onOpenDashboard();
-                  else onViewChange(item.id);
-                }}
-                disabled={item.external && !dashboardReady}
-                title={item.external ? (dashboardReady ? '在新标签页打开完整 Zashboard' : 'Zashboard 当前不可用') : undefined}
+                onClick={() => onViewChange(item.id)}
                 type="button"
               >
                 <Icon aria-hidden="true" />
-                <span>{item.label}{item.external ? ' ↗' : ''}</span>
+                <span>{item.label}</span>
               </button>
             );
           })}
@@ -112,6 +104,9 @@ export function Shell({
             </div>
           ) : <span />}
           <div className="nf-toolbar-actions">
+            <button type="button" onClick={onOpenDashboard} disabled={!dashboardReady} title={dashboardReady ? '在新标签页打开完整 Zashboard' : 'Zashboard 当前不可用'}>
+              <SquareArrowOutUpRight aria-hidden="true" /><span>Zashboard</span>
+            </button>
             {readOnly && <span className="nf-readonly-badge"><LockKeyhole aria-hidden="true" />实时只读</span>}
             <button type="button" onClick={onRefresh} disabled={busy} title="刷新状态">
               <RefreshCw aria-hidden="true" className={busy ? 'is-spinning' : ''} />
@@ -134,12 +129,9 @@ export function Shell({
         {nav.map((item) => {
           const Icon = item.icon;
           return (
-            <button className={`${view === item.id ? 'is-active' : ''}${item.external ? ' is-external' : ''}`} key={item.id} onClick={() => {
-              if (item.external) onOpenDashboard();
-              else onViewChange(item.id);
-            }} disabled={item.external && !dashboardReady} title={item.external ? (dashboardReady ? '在新标签页打开完整 Zashboard' : 'Zashboard 当前不可用') : undefined} type="button">
+            <button className={view === item.id ? 'is-active' : ''} key={item.id} onClick={() => onViewChange(item.id)} type="button">
               <Icon aria-hidden="true" />
-              <span>{item.label}{item.external ? ' ↗' : ''}</span>
+              <span>{item.label}</span>
             </button>
           );
         })}
