@@ -1,38 +1,30 @@
-# 0006：Nikki GPLv3 边界与第一阶段订阅编排
+# 0006：Nikki 开源复用与 GPLv3 分发边界
 
 ## 上下文
 
-Nikki 上游是 GPLv3。NetFleet runtime package 是 Apache-2.0，LuCI 是 MIT。若把 Nikki
-源码、init、mixin 或 LuCI/RPC 实现复制进本仓库，会把 GPLv3 传染到 Apache/MIT 分发物。
-同时，第一阶段需要稳定发现已启用订阅并安全刷新缓存，但不能变成第二个下载器，也不能
-接管 Mihomo、DNS、nft 或路由。
+NetFleet 需要直接管理 Mihomo、DNS 与透明代理。Nikki 已有经过实际使用的配置合成、
+防火墙模板和辅助模块；重新实现会重复承担相同的网络兼容性与维护成本。Nikki 使用
+GPLv3，原有 NetFleet 文件使用 Apache-2.0，LuCI 文件使用 MIT。
 
 ## 决定
 
-只把已安装的 Nikki 进程当作协议/生命周期边界：通过稳定 UCI section 名称和官方
-`/etc/init.d/nikki update_subscription <section>` 调用刷新。NetFleet 可以快照、校验摘要、
-拒绝空/损坏内容并恢复上一份已验证 cache，但 cache 路径、URL/token、下载和单机场原子
-替换仍由 Nikki 拥有。仓库、package、日志、fixture 和浏览器不得包含 Nikki GPLv3 源码，
-也不得包含订阅 URL/token 或订阅正文。
+复用需要的 Nikki 模块，固定上游 commit，保留版权、许可证和修改说明。包含这些模块
+的组合分发遵循 GPLv3，同时保留原文件的 Apache-2.0/MIT 声明，不把原作者的代码改称
+NetFleet 原创。具体来源和适配范围以随包的
+[NOTICE](../../openwrt/files/usr/share/opl-netfleet/nikki/NOTICE) 为准。
 
-第一阶段 SubscriptionOwner 因此只覆盖只读发现、脱敏投影和唯一 mutation owner 内的
-refresh 编排。它不是白皮书中的完整独立订阅 owner，也不授权 native Mihomo 或 OpenWrt
-数据面迁移。
-
-## 后果
-
-refresh 和 status 可以给出每个稳定 section 的 `display_name`、`cache_present`、
-`cache_sha256`、`quota`、`last_attempt`、`last_success` 和 `last_result`，同时保持单一
-writer 与单一设备锁。后续若要不再依赖 Nikki，必须先有完整 successor
-接管订阅 cache、运行后端、数据面和安全清理，而不是在本仓库内 vendor Nikki。
+复用代码不等于保留第二个运行 owner。原生模式由 NetFleet 统一持有配置、订阅、核心
+生命周期和数据面清理；Nikki 模式仍通过官方服务边界操作，两者显式选择、排他运行。
+当前行为只在[运行与恢复合同](../architecture/runtime-and-recovery.md)维护。
 
 ## 未采用
 
-- 把 Nikki GPLv3 源码、init 或 LuCI 复制进本仓库再改；
-- 建立第二套订阅 cache、selector、cleanup 或 generic multi-backend 抽象；
-- 让浏览器持有 token，或在 RPC 中接受 URL/section/订阅内容。
+- 为维持单一宽松许可证而从头重写成熟的数据面模块；
+- 复制整个 Nikki 产品及其 UI，形成两套配置入口和长期双写；
+- 不固定上游版本或不保留许可证，直接复制零散实现。
 
-## 重审条件
+## 后果与重审条件
 
-只有 successor 已完整拥有订阅发现/缓存、Mihomo 生命周期和 OpenWrt 数据面，并通过同一
-恢复合同后，才可以停止调用 Nikki 官方 updater；GPLv3 源码仍不得进入本仓库。
+发布必须同时提供对应源码和第三方许可；上游更新按实际兼容性需要同步，并验证配置
+合成、透明代理和退出清理，不自动追随最新版本。订阅凭据、私有策略和实例配置仍不
+进入源码或软件包。只有上游许可、平台合同或所需能力发生实质变化时才重审复用边界。
