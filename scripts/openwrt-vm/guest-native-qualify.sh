@@ -23,7 +23,7 @@ finish() {
 		secret=$(uci -q get netfleet.mixin.api_secret)
 		for endpoint in proxies providers/proxies; do
 			curl -fsS --noproxy '*' --max-time 3 -H "Authorization: Bearer $secret" \
-				"http://127.0.0.1:9090/$endpoint" >"$work/controller-${endpoint##*/}.log"
+				"http://127.0.0.1:9090/$endpoint" >"$work/controller-${endpoint%%/*}.log"
 		done
 	fi
 	/etc/init.d/opl-netfleet stop >/dev/null 2>&1
