@@ -108,7 +108,7 @@ git -C "$repo_dir" archive "$source_commit" \
 	scripts/deploy-openwrt-remote.sh \
 	scripts/openwrt-vm \
 	scripts/install-netfleet.sh \
-	scripts/verify-netfleet-release.py |
+	scripts/verify-netfleet-release.py tests |
 	tar -C "$source_dir" -xf -
 
 package_archive=""
