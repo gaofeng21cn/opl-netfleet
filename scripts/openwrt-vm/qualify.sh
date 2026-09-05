@@ -88,6 +88,12 @@ finish() {
 			"$work"/package-result.json "$work"/package-result.stderr "$qemu_log"; do
 			[ ! -s "$dump" ] || { echo "--- $dump" >&2; cat "$dump" >&2; }
 		done
+		if [ "${NETFLEET_VM_DEBUG_KEEP:-0}" = 1 ]; then
+			printf 'Debug VM retained: work=%s ssh_port=%s qemu_pid=%s probe_pid=%s feed_pid=%s\n' \
+				"$work" "$ssh_port" "$qemu_pid" "$probe_pid" "$feed_pid" >&2
+			printf '%s\n' 'No qualification receipt: stop these exact processes and remove this directory after debugging.' >&2
+			exit "$rc"
+		fi
 	fi
 	cleanup
 	exit "$rc"

@@ -3,7 +3,7 @@ const NATIVE = "/etc/opl-netfleet/native";
 
 export function relative_path(value) {
 	return type(value) == "string" && length(value) > 0 && substr(value, 0, 1) != "/" &&
-		!match(value, /[\x00-\x1f\\]/) &&
+		!match(value, /[[:cntrl:]]/) && index(value, "\\") < 0 &&
 		length(filter(split(value, "/"), (part) => part == ".." || part == "")) == 0;
 };
 
