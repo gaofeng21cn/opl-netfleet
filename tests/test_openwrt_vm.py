@@ -1,10 +1,15 @@
 from pathlib import Path
+import ast
+import http.client
+import http.server
 import json
 import os
 import re
 import subprocess
 import tempfile
+import threading
 import unittest
+from urllib.parse import parse_qs, urlsplit
 
 
 ROOT = Path(__file__).parents[1]
@@ -21,6 +26,31 @@ RECOVERY = ROOT / "scripts" / "recover-openwrt-local.sh"
 
 
 class OpenWrtVmTests(unittest.TestCase):
+    def test_probe_serves_mihomo_head_and_business_get(self):
+        snippet = RUNNER.read_text().split('python3 - "$work/local-probe-server.crt"', 1)[1]
+        snippet = snippet.split("<<'PY' &\n", 1)[1].split('\nPY\n', 1)[0]
+        handler = next(node for node in ast.parse(snippet).body
+                       if isinstance(node, ast.ClassDef) and node.name == 'Handler')
+        scope = dict(http=http, json=json, urlsplit=urlsplit, parse_qs=parse_qs)
+        exec(compile(ast.Module(body=[handler], type_ignores=[]), '<vm-probe-handler>', 'exec'), scope)
+        with http.server.ThreadingHTTPServer(('127.0.0.1', 0), scope['Handler']) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                for method in ('GET', 'HEAD'):
+                    with self.subTest(method=method):
+                        connection = http.client.HTTPConnection(*server.server_address, timeout=3)
+                        try:
+                            connection.request(method, '/generate_204')
+                            response = connection.getresponse()
+                            self.assertEqual(response.status, 204)
+                            self.assertEqual(response.read(), b'')
+                        finally:
+                            connection.close()
+            finally:
+                server.shutdown()
+                thread.join(timeout=3)
+
     def test_vm_cli_and_shell_sources_parse(self):
         result = subprocess.run(
             [str(WRAPPER), "--help"], text=True, capture_output=True, check=False

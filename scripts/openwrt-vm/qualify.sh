@@ -175,6 +175,11 @@ from urllib.parse import urlsplit, parse_qs
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
+    # Mihomo URLTest uses HEAD; curl business probes use GET.
+    def do_HEAD(self):
+        self.send_response(204)
+        self.end_headers()
+
     def do_GET(self):
         url = urlsplit(self.path)
         if url.path.startswith("/native-subscriptions/"):
@@ -240,9 +245,11 @@ PY
 probe_pid=$!
 probe_ready() {
 	kill -0 "$probe_pid" >/dev/null 2>&1 || return 1
-	[ "$(curl -sS --cacert "$work/local-probe.crt" \
-		--resolve "192.168.1.2:$probe_port:127.0.0.1" -o /dev/null -w '%{http_code}' \
-		"https://192.168.1.2:$probe_port/generate_204" || true)" = 204 ]
+	for method in GET HEAD; do
+		[ "$(curl -sS --request "$method" --cacert "$work/local-probe.crt" \
+			--resolve "192.168.1.2:$probe_port:127.0.0.1" -o /dev/null -w '%{http_code}' \
+			"https://192.168.1.2:$probe_port/generate_204" || true)" = 204 ] || return 1
+	done
 }
 wait_for_probe() {
 	for attempt in $(seq 1 20); do
