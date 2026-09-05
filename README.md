@@ -95,10 +95,10 @@ uclient-fetch -q -O /tmp/install-netfleet.sh https://github.com/gaofeng21cn/opl-
 完成首次安装后，OpenWrt 可以直接从已配置的软件源升级：
 
 ```sh
-apk update && apk add --upgrade opl-netfleet luci-app-netfleet
+apk update && apk upgrade opl-netfleet luci-app-netfleet
 ```
 
-软件包升级只更新程序文件，现有策略、订阅缓存和当前运行配置会继续保留；升级完成后可在 NetFleet 页面检查状态并决定何时应用新配置。也可以重新执行一次性安装入口，它使用同一个 `apk add --upgrade` 事务，不会重复创建实例配置。
+软件包升级只更新程序文件，现有策略、订阅缓存和当前运行配置会继续保留；升级完成后可在 NetFleet 页面检查状态并决定何时应用新配置。也可以重新执行一次性安装入口，它会补齐缺失的 NetFleet 包，再定向升级这两个包，不会重复创建实例配置或主动升级已满足约束的基础依赖。不要省略升级命令中的包名，以免变成全系统升级。
 
 ## 日常使用
 

@@ -235,6 +235,8 @@ export interface DecisionEvent {
   to_group?: string | null;
   delay_ms?: number | null;
   reason?: string;
+  changed_count?: number;
+  failed_count?: number;
 }
 
 export interface EventsSnapshot {

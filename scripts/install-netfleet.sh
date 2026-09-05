@@ -71,6 +71,10 @@ mv -f "$key_staged" "$key_target"
 mv -f "$repository_staged" "$repository_file"
 
 apk --timeout 300 update
-apk --timeout 300 add --upgrade opl-netfleet luci-app-netfleet
+if ! apk info -e opl-netfleet >/dev/null 2>&1 || ! apk info -e luci-app-netfleet >/dev/null 2>&1; then
+	apk --timeout 300 add opl-netfleet luci-app-netfleet
+fi
+# Named upgrades keep already-satisfied dependencies at their installed versions.
+apk --timeout 300 upgrade opl-netfleet luci-app-netfleet
 
 printf 'NetFleet packages installed from %s; open LuCI to review and confirm first takeover.\n' "$feed_base"

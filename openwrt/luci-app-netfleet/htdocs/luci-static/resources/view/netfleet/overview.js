@@ -504,14 +504,7 @@ function overviewDigest(status, events, navigate) {
 		return Number(region.delay_sample_count) >= 2;
 	}), function(region) { return region.average_best_delay_ms; });
 
-	const latest = (events.events || []).reduce(function(current, event) {
-		return !current || Number(event.at) > Number(current.at) ? event : current;
-	}, null);
-	const latestRoute = latest ? [
-		displayEventName(events, 'regions', latest.region_id),
-		displayEventName(events, 'providers', latest.provider_id),
-		latest.leaf
-	].filter(function(item) { return item && item !== '全局'; }).join(' / ') : '';
+	const latest = latestDecision(events.events || []);
 
 	const providerFacts = [
 		overviewFact('当前使用', joined(selectedProviders.map(function(provider) { return providerName(status, provider.id); }))),
@@ -526,9 +519,9 @@ function overviewDigest(status, events, navigate) {
 	const decision = latest ? [
 		E('time', {}, finite(latest.at) ? new Date(Number(latest.at) * 1000).toLocaleString() : '未提供'),
 		E('strong', {}, displayEventName(events, 'capabilities', latest.capability)),
-		E('p', {}, latestRoute || 'Nikki 原生配置'),
+		E('p', {}, eventResult(events, latest)),
 		E('dl', { 'class': 'netfleet-overview-decision-meta' }, [
-			overviewFact('延迟', delay(latest.delay_ms)),
+			overviewFact('延迟', eventDelay(latest)),
 			overviewFact('原因', eventReason(status, latest))
 		])
 	] : [ E('p', { 'class': 'netfleet-overview-empty' }, '暂无决策记录') ];
@@ -847,6 +840,30 @@ function displayEventName(events, kind, id) {
 	return kind === 'regions' ? regionalDisplayName(value) : value;
 }
 
+function latestDecision(events) {
+	return events.reduce(function(latest, event) {
+		return ['enable', 'select', 'disable'].indexOf(event.action) >= 0 &&
+			(!latest || Number(event.at) >= Number(latest.at)) ? event : latest;
+	}, null);
+}
+
+function eventResult(events, event) {
+	if (event.action === 'refresh') {
+		if (event.reason === 'rollback_restored') return '更新未生效，已恢复更新前状态';
+		return finite(event.changed_count) && finite(event.failed_count)
+			? '更新 ' + event.changed_count + ' 个机场，失败 ' + event.failed_count + ' 个' : '订阅更新';
+	}
+	if (event.action === 'disable' && event.reason === 'native_restored') return '已恢复原生配置';
+	if (event.action === 'disable' && event.reason === 'native_restore_failed_passthrough') return '已恢复网络直通';
+	if (event.to_group === 'DIRECT') return '直连';
+	return [displayEventName(events, 'regions', event.region_id), displayEventName(events, 'providers', event.provider_id), event.leaf]
+		.filter(function(item) { return item && item !== '全局'; }).join(' / ') || '未记录选路结果';
+}
+
+function eventDelay(event) {
+	return event.action === 'refresh' || event.action === 'disable' ? '不适用' : delay(event.delay_ms, '未记录');
+}
+
 function eventReason(status, event) {
 	if (event.reason === 'followed_capability_region') {
 		const capability = byId(status.capabilities, event.capability);
@@ -858,6 +875,7 @@ function eventReason(status, event) {
 		kept_current_region: '收益不足，保持当前地区',
 		current_region_fastest: '当前地区仍为最快',
 			native_restored: '已恢复 Nikki 原生配置',
+			native_restore_failed_passthrough: '原生配置恢复失败，已停止 Nikki 并恢复网络直通',
 			updated: '订阅更新完成并重载',
 			cache_updated: '订阅缓存已更新',
 			partially_updated: '部分机场更新成功',
@@ -873,19 +891,15 @@ function eventsPage(status, events, connections, connectionsLoading, connections
 	const currentPage = Math.min(Math.max(0, requestedPage || 0), pageCount - 1);
 	const eventRows = orderedEvents.slice(currentPage * EVENTS_PAGE_SIZE, (currentPage + 1) * EVENTS_PAGE_SIZE).map(function(event) {
 		const action = event.action === 'select'
-			? (event.trigger === 'scheduled' ? '定期选优' : '手动选优')
+			? (event.trigger === 'scheduled' ? '定期选优' : event.trigger === 'refresh' ? '订阅更新后选优' : '手动选优')
 				: ({ enable: '启用', refresh: '更新订阅', disable: '关闭' })[event.action] || text(event.action, '未提供');
 		const initiator = ({ luci: 'LuCI', cli: '命令行', deployer: '部署流程', supervisor: '后台选优' })[event.initiator] || text(event.initiator, '未提供');
-		const result = [
-			displayEventName(events, 'regions', event.region_id),
-			displayEventName(events, 'providers', event.provider_id),
-			event.leaf
-		].filter(function(item) { return item && item !== '全局'; }).join(' / ') || 'Nikki 原生配置';
+		const result = eventResult(events, event);
 		return E('tr', {}, [
 			E('td', {}, finite(event.at) ? new Date(Number(event.at) * 1000).toLocaleString() : '未提供'),
 			E('td', {}, action), E('td', {}, initiator),
 			E('td', {}, displayEventName(events, 'capabilities', event.capability)),
-			E('td', {}, result), E('td', {}, delay(event.delay_ms, '未记录')),
+			E('td', {}, result), E('td', {}, eventDelay(event)),
 			E('td', {}, eventReason(status, event))
 		]);
 	});

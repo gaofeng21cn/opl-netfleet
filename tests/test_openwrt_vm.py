@@ -145,7 +145,7 @@ class OpenWrtVmTests(unittest.TestCase):
             self.assertIn(gate, package_source)
         self.assertIn('real_apk=$(command -v apk)', package_source)
         self.assertIn('add --virtual mihomo=1.19.30-r1', package_source)
-        self.assertIn('add --virtual yq=4.53.6-r1', package_source)
+        self.assertIn('add --virtual yq=0.0.1-r1', package_source)
         self.assertIn('cp "$fixture/bin/mihomo" /usr/bin/mihomo', package_source)
         self.assertIn('cp "$fixture/bin/yq" /usr/bin/yq', package_source)
         self.assertIn('env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin yq --version', package_source)

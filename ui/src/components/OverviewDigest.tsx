@@ -1,5 +1,5 @@
 import { AlertTriangle, BellRing, ChevronRight, Globe2, PlaneTakeoff } from 'lucide-react';
-import { averageDelay, delay, displayEventName, eventReason, providerName, regionName, sortRegionsForDisplay } from '../lib/format';
+import { averageDelay, delay, displayEventName, eventDelay, eventReason, eventResult, latestDecision, providerName, regionName, sortRegionsForDisplay } from '../lib/format';
 import type { EventsSnapshot, StatusSnapshot } from '../types';
 
 type SummaryTarget = 'providers' | 'regions' | 'events';
@@ -43,7 +43,7 @@ export function OverviewDigest({
     availableRegions.filter((region) => Number(region.delay_sample_count) >= 2),
     (region) => region.average_best_delay_ms,
   );
-  const latest = events.events.reduce((current, event) => !current || event.at > current.at ? event : current, events.events[0]);
+  const latest = latestDecision(events.events);
 
   const unavailableProviders = status.providers.filter((provider) => (
     (provider.available_node_count != null && Number(provider.available_node_count) === 0) ||
@@ -63,12 +63,6 @@ export function OverviewDigest({
     exhaustedProviders.length > 0 ? `流量已耗尽：${exhaustedProviders.map((provider) => providerName(status, provider.id)).join('、')}` : null,
     unavailableSelectedRegions.length > 0 ? `当前使用地区已无可用路径：${unavailableSelectedRegions.map((region) => regionName(status, region.id)).join('、')}` : null,
   ].filter((item): item is string => Boolean(item));
-
-  const latestRoute = latest ? [
-    displayEventName(events, 'regions', latest.region_id),
-    displayEventName(events, 'providers', latest.provider_id),
-    latest.leaf,
-  ].filter((item) => item && item !== '全局').join(' / ') : '';
 
   return (
     <>
@@ -98,9 +92,9 @@ export function OverviewDigest({
           {latest ? <>
             <time dateTime={new Date(latest.at * 1000).toISOString()}>{new Date(latest.at * 1000).toLocaleString()}</time>
             <strong>{displayEventName(events, 'capabilities', latest.capability)}</strong>
-            <p>{latestRoute || 'Nikki 原生配置'}</p>
+            <p>{eventResult(events, latest)}</p>
             <dl className="nf-overview-decision-meta">
-              <div><dt>延迟</dt><dd>{delay(latest.delay_ms)}</dd></div>
+              <div><dt>延迟</dt><dd>{eventDelay(latest)}</dd></div>
               <div><dt>原因</dt><dd>{eventReason(status, latest)}</dd></div>
             </dl>
           </> : <p className="nf-overview-empty">暂无决策记录</p>}

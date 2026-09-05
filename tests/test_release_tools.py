@@ -105,12 +105,12 @@ class ReleaseToolsTests(unittest.TestCase):
     def test_package_sources_are_versioned_and_do_not_embed_instance_inputs(self):
         runtime = (ROOT / 'openwrt/Makefile').read_text()
         luci = (ROOT / 'openwrt/luci-app-netfleet/Makefile').read_text()
-        self.assertIn('PKG_VERSION:=0.4.7', runtime)
+        self.assertIn('PKG_VERSION:=0.4.8', runtime)
         self.assertIn('PKG_RELEASE:=1', runtime)
         self.assertIn('PKG_LICENSE:=Apache-2.0', runtime)
         self.assertIn('PKG_MAINTAINER:=OPL NetFleet', runtime)
         self.assertIn('PKGARCH:=all', runtime)
-        self.assertIn('PKG_VERSION:=0.4.7', luci)
+        self.assertIn('PKG_VERSION:=0.4.8', luci)
         self.assertIn('PKGARCH:=all', luci)
         self.assertIn('include $(INCLUDE_DIR)/package.mk', luci)
         self.assertNotIn('feeds/luci/luci.mk', luci)
@@ -331,7 +331,13 @@ class ReleaseToolsTests(unittest.TestCase):
             )
             fetcher.chmod(0o755)
             apk = bin_dir / 'apk'
-            apk.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >>"$NETFLEET_APK_LOG"\n')
+            apk.write_text(
+                '#!/bin/sh\n'
+                'if [ "$1" = info ]; then\n'
+                '  case " $NETFLEET_INSTALLED " in *" $3 "*) exit 0 ;; *) exit 1 ;; esac\n'
+                'fi\n'
+                'printf "%s\\n" "$*" >>"$NETFLEET_APK_LOG"\n'
+            )
             apk.chmod(0o755)
             uci = bin_dir / 'uci'
             uci.write_text('#!/bin/sh\nprintf "%s\\n" "subscription:fixture"\n')
@@ -340,9 +346,7 @@ class ReleaseToolsTests(unittest.TestCase):
             nikki.write_text('#!/bin/sh\nexit 0\n')
             nikki.chmod(0o755)
             log = root / 'apk.log'
-            result = subprocess.run(
-                [str(INSTALLER)],
-                env={
+            env = {
                     **os.environ,
                     'PATH': f'{bin_dir}:{os.environ["PATH"]}',
                     'NETFLEET_INSTALL_TESTING': '1',
@@ -352,16 +356,22 @@ class ReleaseToolsTests(unittest.TestCase):
                     'NETFLEET_APK_REPOSITORY_FILE': str(repository),
                     'NETFLEET_APK_LOG': str(log),
                     'NETFLEET_NIKKI_INIT': str(nikki),
-                },
-                text=True, capture_output=True, check=False,
-            )
-            self.assertEqual(0, result.returncode, result.stderr)
+                }
+            for installed in ('', 'opl-netfleet', 'luci-app-netfleet', 'opl-netfleet luci-app-netfleet'):
+                with self.subTest(installed=installed):
+                    log.write_text('')
+                    result = subprocess.run(
+                        [str(INSTALLER)], env={**env, 'NETFLEET_INSTALLED': installed},
+                        text=True, capture_output=True, check=False,
+                    )
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    expected = ['--timeout 300 update']
+                    if installed != 'opl-netfleet luci-app-netfleet':
+                        expected.append('--timeout 300 add opl-netfleet luci-app-netfleet')
+                    expected.append('--timeout 300 upgrade opl-netfleet luci-app-netfleet')
+                    self.assertEqual(expected, log.read_text().splitlines())
             self.assertEqual((feed / 'opl-netfleet-apk.pem').read_bytes(), (keys / 'opl-netfleet-apk.pem').read_bytes())
             self.assertEqual('https://fixture.invalid/release/packages.adb\n', repository.read_text())
-            self.assertEqual(
-                ['--timeout 300 update', '--timeout 300 add --upgrade opl-netfleet luci-app-netfleet'],
-                log.read_text().splitlines(),
-            )
 
     def test_feed_bootstrap_rejects_invalid_key_before_package_mutation(self):
         with tempfile.TemporaryDirectory() as directory:

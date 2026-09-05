@@ -1,9 +1,9 @@
-import { displayEventName, eventReason } from '../lib/format';
+import { displayEventName, eventDelay, eventReason, eventResult } from '../lib/format';
 import type { ConnectionsSnapshot, EventsSnapshot, StatusSnapshot } from '../types';
 
 const actionName = (action: string, trigger?: string) => action === 'select' && trigger === 'scheduled'
   ? '定期选优'
-  : action === 'select' ? '手动选优' : ({ enable: '启用', refresh: '更新订阅', disable: '关闭' }[action] || action);
+  : action === 'select' ? (trigger === 'refresh' ? '订阅更新后选优' : '手动选优') : ({ enable: '启用', refresh: '更新订阅', disable: '关闭' }[action] || action);
 
 const initiatorName = (initiator?: string) => ({
   luci: 'LuCI',
@@ -53,8 +53,8 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
             <tr key={`${event.at}-${index}`}>
               <td>{new Date(event.at * 1000).toLocaleString()}</td><td>{actionName(event.action, event.trigger)}</td>
               <td>{initiatorName(event.initiator)}</td><td>{displayEventName(snapshot, 'capabilities', event.capability)}</td>
-              <td>{[displayEventName(snapshot, 'regions', event.region_id), displayEventName(snapshot, 'providers', event.provider_id), event.leaf].filter((item) => item && item !== '全局').join(' / ') || 'Nikki 原生配置'}</td>
-              <td>{event.delay_ms == null ? '未记录' : `${event.delay_ms} ms`}</td><td>{eventReason(status, event)}</td>
+              <td>{eventResult(snapshot, event)}</td>
+              <td>{eventDelay(event)}</td><td>{eventReason(status, event)}</td>
             </tr>
           ))}</tbody>
         </table></div>

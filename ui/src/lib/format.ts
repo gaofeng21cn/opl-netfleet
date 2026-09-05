@@ -44,10 +44,10 @@ export const sortRegionsForDisplay = (snapshot: StatusSnapshot): Region[] => sna
     regionName(snapshot, a.id).localeCompare(regionName(snapshot, b.id), 'zh-CN')
   );
 
-export function delay(value: NullableNumber): string {
+export function delay(value: NullableNumber, missing = '未测量'): string {
   return value !== null && value !== undefined && Number.isFinite(Number(value))
     ? `${Number(value)} ms`
-    : '未测量';
+    : missing;
 }
 
 export function delayClass(value?: number | null, margin?: number | null): string {
@@ -170,6 +170,28 @@ export const displayEventName = (
   return kind === 'regions' ? regionalDisplayName(value) : value;
 };
 
+export function latestDecision(events: DecisionEvent[]): DecisionEvent | null {
+  return events.reduce<DecisionEvent | null>((latest, event) =>
+    ['enable', 'select', 'disable'].includes(event.action) && (!latest || event.at >= latest.at) ? event : latest, null);
+}
+
+export function eventResult(snapshot: EventsSnapshot, event: DecisionEvent): string {
+  if (event.action === 'refresh') {
+    if (event.reason === 'rollback_restored') return '更新未生效，已恢复更新前状态';
+    return event.changed_count != null && event.failed_count != null
+      ? `更新 ${event.changed_count} 个机场，失败 ${event.failed_count} 个`
+      : '订阅更新';
+  }
+  if (event.action === 'disable' && event.reason === 'native_restored') return '已恢复原生配置';
+  if (event.action === 'disable' && event.reason === 'native_restore_failed_passthrough') return '已恢复网络直通';
+  if (event.to_group === 'DIRECT') return '直连';
+  return [displayEventName(snapshot, 'regions', event.region_id), displayEventName(snapshot, 'providers', event.provider_id), event.leaf]
+    .filter((item) => item && item !== '全局').join(' / ') || '未记录选路结果';
+}
+
+export const eventDelay = (event: DecisionEvent): string =>
+  event.action === 'refresh' || event.action === 'disable' ? '不适用' : delay(event.delay_ms, '未记录');
+
 export function eventReason(status: StatusSnapshot, event: DecisionEvent): string {
   if (event.reason === 'followed_capability_region') {
     const capability = status.capabilities.find((item) => item.id === event.capability);
@@ -181,6 +203,7 @@ export function eventReason(status: StatusSnapshot, event: DecisionEvent): strin
     kept_current_region: '收益不足，保持当前地区',
     current_region_fastest: '当前地区仍为最快',
     native_restored: '已恢复 Nikki 原生配置',
+    native_restore_failed_passthrough: '原生配置恢复失败，已停止 Nikki 并恢复网络直通',
     updated: '订阅更新完成并重载',
     cache_updated: '订阅缓存已更新',
     partially_updated: '部分机场更新成功',

@@ -122,12 +122,14 @@ After the first installation, OpenWrt can upgrade directly from the configured
 feed:
 
 ```sh
-apk update && apk add --upgrade opl-netfleet luci-app-netfleet
+apk update && apk upgrade opl-netfleet luci-app-netfleet
 ```
 
 Package upgrades refresh program files while keeping policy, subscription
 caches, and the active configuration in place. Re-running the one-time
-installer uses the same `apk add --upgrade` transaction and does not recreate
+installer adds any missing NetFleet packages, then upgrades only the two named
+packages without proactively upgrading already-satisfied dependencies. Keep the
+package names in the upgrade command to avoid a system-wide upgrade. It does not recreate
 instance configuration. Review the status page after the upgrade and apply a
 new configuration when ready.
 

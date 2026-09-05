@@ -19,9 +19,11 @@ package 或 manifest。APK 发布还包含同一私钥签名的 `packages.adb` f
 manifest v2 的 `feed_index` 字段绑定其 SHA-256。Release 同时包含 `install-netfleet.sh`，由
 `feed_bootstrap` 字段绑定脚本名称与 SHA-256；该脚本下载公钥、原子写入公钥和
 `/etc/apk/repositories.d/opl-netfleet.list`；仓库声明直接指向 `$feed_base/packages.adb`，使
-`apk` 以 `ndx` 模式从同目录解析 package，而不是按目录型仓库扩展架构子目录。随后脚本在一次
-`apk add --upgrade` 事务中安装两个
-package。它不得写入 policy、订阅或 Nikki mixin，也不得启用 NetFleet 或切换数据面。
+`apk` 以 `ndx` 模式从同目录解析 package，而不是按目录型仓库扩展架构子目录。随后脚本在缺少
+任一 NetFleet package 时使用不带 `--upgrade` 的 `apk add` 补齐两个包，再执行
+`apk upgrade opl-netfleet luci-app-netfleet` 定向升级；完整安装后的重复运行只执行定向升级。
+已有依赖满足约束时不得主动升级，不固定版本到 world，也不执行全系统升级。
+它不得写入 policy、订阅或 Nikki mixin，也不得启用 NetFleet 或切换数据面。
 OpenWrt 默认 package lifecycle 会启动新安装或升级后的 init script；runtime package 必须在
 首次安装后显式停止并禁用服务，升级时则记录并恢复升级前的 enabled/running 状态，不能把
 “文件升级”变成隐式接管或停用。
