@@ -178,7 +178,7 @@ EOF
 cat /tmp/local-probe.crt >>/etc/ssl/certs/ca-certificates.crt
 printf '192.168.1.2 netfleet-probe.test\n' >>/etc/hosts
 ucode "$work/compile.uc" "https://192.168.1.2:$probe_port/generate_204" >"$work/compile.log" 2>&1
-mihomo -t -d "$work/run" -f "$work/run/config.json" >"$work/validate.log" 2>&1
+SAFE_PATHS=/etc/opl-netfleet/native/cache mihomo -t -d "$work/run" -f "$work/run/config.json" >"$work/validate.log" 2>&1
 
 stage=service_owner
 # This disposable owner intentionally has no boot enable, migration or refresh.
@@ -186,6 +186,7 @@ cat >"$work/owner.sh" <<'EOF'
 #!/bin/sh
 set -eu
 work=/tmp/netfleet-native-fixture
+export SAFE_PATHS=/etc/opl-netfleet/native/cache
 child=
 cleanup() {
 	trap - EXIT INT TERM
@@ -356,4 +357,4 @@ sleep 2
 assert_clean
 cp "$work/valid.json" "$work/run/config.json"
 stage=complete
-printf '{"ok":true,"scope":"native-ipv4-experiment","production_ready":false,"source_commit":"%s","source_tree":"%s","checks":{"no_nikki":true,"shared_compiler":true,"config_validation":true,"procd_owner":true,"controller":true,"owner_conflict_zero_mutation":true,"bypass_negative_control":true,"provider_proxy_traffic":true,"lan_tcp_tproxy":true,"lan_udp_tproxy":true,"lan_dns_udp":true,"lan_dns_tcp":true,"normal_stop_cleanup":true,"repeated_stop":true,"core_crash_cleanup":true,"direct_after_stop":true,"direct_after_crash":true,"invalid_config_no_interception":true,"foreign_rules_preserved":true}}\n' "$commit" "$tree"
+printf '{"ok":true,"scope":"native-ipv4-experiment","production_ready":false,"source_commit":"%s","source_tree":"%s","checks":{"source_contracts":true,"source_cli_download":true,"source_unchanged_cache":true,"source_failure_retains_cache":true,"source_identity_isolation":true,"source_partial_refresh":true,"source_removal_cleanup":true,"source_lock_zero_mutation":true,"source_private_storage":true,"source_no_credentials_in_output":true,"no_nikki":true,"shared_compiler":true,"config_validation":true,"procd_owner":true,"controller":true,"owner_conflict_zero_mutation":true,"bypass_negative_control":true,"provider_proxy_traffic":true,"lan_tcp_tproxy":true,"lan_udp_tproxy":true,"lan_dns_udp":true,"lan_dns_tcp":true,"normal_stop_cleanup":true,"repeated_stop":true,"core_crash_cleanup":true,"direct_after_stop":true,"direct_after_crash":true,"invalid_config_no_interception":true,"foreign_rules_preserved":true}}\n' "$commit" "$tree"
