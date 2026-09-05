@@ -7,7 +7,9 @@ Usage: scripts/openwrt-vm.sh --output <receipt.json> [--ref <git-ref>] [--packag
 
 Boot a pinned official OpenWrt image with native Apple Silicon QEMU/HVF and
 qualify the exact Git commit/tree.
-The VM uses a synthetic Nikki lifecycle around real UCode/Mihomo and never contacts real devices.
+The default suite uses a synthetic Nikki lifecycle around real UCode/Mihomo.
+The optional native experiment uses no Nikki and cannot authorize deployment.
+Neither mode contacts real devices.
 
 Options:
   --ref <git-ref>   Source ref to qualify (default: origin/main)
@@ -104,11 +106,7 @@ git -C "$repo_dir" archive "$source_commit" \
 	openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json \
 	openwrt/files/etc/opl-netfleet/rulesets.lock.json \
 	scripts/deploy-openwrt-remote.sh \
-	scripts/openwrt-vm/qualify.sh \
-	scripts/openwrt-vm/guest-qualify.sh \
-	scripts/openwrt-vm/guest-runtime-qualify.sh \
-	scripts/openwrt-vm/guest-package-qualify.sh \
-	scripts/openwrt-vm/guest-native-qualify.sh \
+	scripts/openwrt-vm \
 	scripts/install-netfleet.sh \
 	scripts/verify-netfleet-release.py |
 	tar -C "$source_dir" -xf -

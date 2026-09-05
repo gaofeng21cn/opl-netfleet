@@ -13,6 +13,7 @@ RUNNER = ROOT / "scripts" / "openwrt-vm" / "qualify.sh"
 GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-qualify.sh"
 RUNTIME_GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-runtime-qualify.sh"
 PACKAGE_GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-package-qualify.sh"
+NATIVE_GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-native-qualify.sh"
 INSTALLER = ROOT / "scripts" / "install-netfleet.sh"
 RECOVERY = ROOT / "scripts" / "recover-openwrt-local.sh"
 
@@ -27,7 +28,7 @@ class OpenWrtVmTests(unittest.TestCase):
         self.assertIn("Apple Silicon QEMU/HVF", result.stdout)
         self.assertNotIn("--rebuild", result.stdout)
 
-        scripts = (WRAPPER, RUNNER, GUEST, RUNTIME_GUEST, PACKAGE_GUEST, INSTALLER, RECOVERY)
+        scripts = (WRAPPER, RUNNER, GUEST, RUNTIME_GUEST, PACKAGE_GUEST, NATIVE_GUEST, INSTALLER, RECOVERY)
         for script in scripts:
             parsed = subprocess.run(
                 ["bash", "-n", str(script)], text=True, capture_output=True, check=False
@@ -70,6 +71,15 @@ class OpenWrtVmTests(unittest.TestCase):
             combined, r"docker|linux/amd64|qemu-system-x86|-accel tcg|virtio-net-pci"
         )
         self.assertFalse((ROOT / "scripts" / "openwrt-vm" / "Dockerfile").exists())
+
+    def test_native_experiment_cannot_qualify_a_package(self):
+        result = subprocess.run(
+            [str(WRAPPER), "--native-experiment", "--packages", "/not-a-candidate",
+             "--output", "/tmp/not-a-receipt.json"],
+            text=True, capture_output=True, check=False,
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("native experiment cannot qualify packages", result.stderr)
 
     def test_vm_keeps_real_management_runtime_and_recovery_gates(self):
         runtime_source = RUNTIME_GUEST.read_text()
@@ -199,6 +209,7 @@ class OpenWrtVmTests(unittest.TestCase):
             GUEST,
             RUNTIME_GUEST,
             PACKAGE_GUEST,
+            NATIVE_GUEST,
             INSTALLER,
             ROOT / "scripts" / "deploy-openwrt.sh",
             ROOT / "scripts" / "deploy-openwrt-remote.sh",

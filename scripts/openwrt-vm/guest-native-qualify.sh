@@ -96,7 +96,7 @@ dns_pid=$!
 socat UDP4-RECVFROM:19999,bind=127.0.0.1,fork EXEC:/bin/cat >"$work/udp.log" 2>&1 &
 udp_pid=$!
 cat >"$work/helper.json" <<'EOF'
-{"mixed-port":1081,"mode":"direct","log-level":"warning","ipv6":false}
+{"mixed-port":1081,"external-controller":"127.0.0.1:19091","mode":"direct","log-level":"warning","ipv6":false}
 EOF
 "$work/bin/nf-proxy-fixture" -d "$work" -f "$work/helper.json" >"$work/helper.log" 2>&1 &
 helper_pid=$!
@@ -107,6 +107,7 @@ cat >"$work/compile.uc" <<'EOF'
 import { compile } from "/usr/libexec/opl-netfleet/core/compiler.uc";
 import * as fs from "fs";
 const dir = "/tmp/netfleet-native-fixture";
+const probe_url = ARGV[0];
 const nodes = { proxies: [{ name: "native-region-node", type: "socks5", server: "127.0.0.1", port: 1081, udp: true }] };
 fs.writefile(`${dir}/run/provider.json`, sprintf("%J", nodes));
 const source = {
@@ -123,9 +124,9 @@ const policy = {
  provider_regions: { fixture: [{ region: "test", filter: "native-region" }] },
  capabilities: { standard: { enabled: true, mode: "manual" } },
  selection: { region_switch_margin_ms: 150, leaf_switch_margin_ms: 150 },
- checks: { provider_healthcheck_timeout_ms: 2000, latency: { method: "mihomo_delay", url: "http://127.0.0.1", timeout_ms: 1000, expected_status: 200 } },
+ checks: { provider_healthcheck_timeout_ms: 2000, latency: { method: "mihomo_delay", url: probe_url, timeout_ms: 1000, expected_status: 204 } },
  fail_open: { healthcheck: { path_probe_id: "test", guard_probe_id: "test", timeout_ms: 1000, interval_seconds: 300, max_failed_times: 2 },
-  probes: [{ id: "test", url: "http://127.0.0.1", expected_status: 200 }] }
+  probes: [{ id: "test", url: probe_url, expected_status: 204 }] }
 };
 const result = compile(source, policy, "fixture", "fixture", "fixture", {
  fixture: { path: `${dir}/run/provider.json`, runtime_path: `${dir}/run/provider.json`, profile: nodes }
@@ -145,7 +146,9 @@ config.dns = { enable: true, listen: "0.0.0.0:1054", "enhanced-mode": "redir-hos
 fs.writefile(`${dir}/run/config.json`, sprintf("%J", config));
 fs.writefile(`${dir}/manifest.json`, sprintf("%J", result.manifest));
 EOF
-ucode "$work/compile.uc" >"$work/compile.log" 2>&1
+cat /tmp/local-probe.crt >>/etc/ssl/certs/ca-certificates.crt
+printf '192.168.1.2 netfleet-probe.test\n' >>/etc/hosts
+ucode "$work/compile.uc" "https://netfleet-probe.test:$probe_port/generate_204" >"$work/compile.log" 2>&1
 mihomo -t -d "$work/run" -f "$work/run/config.json" >"$work/validate.log" 2>&1
 
 stage=service_owner
@@ -166,7 +169,7 @@ cleanup() {
 # A conflicting owner is rejected before any network mutation.
 test -z "$(pidof mihomo 2>/dev/null || true)"
 test ! -e /etc/init.d/nikki
-! nft list table ip opl_netfleet_native_vm >/dev/null 2>&1
+if nft list table ip opl_netfleet_native_vm >/dev/null 2>&1; then exit 1; fi
 "$work/bin/mihomo" -t -d "$work/run" -f "$work/run/config.json" >"$work/validate.log" 2>&1
 trap cleanup EXIT
 trap 'exit 0' INT TERM
@@ -227,18 +230,31 @@ start_native() {
 	return 1
 }
 assert_clean() {
-	! nft list table ip opl_netfleet_native_vm >/dev/null 2>&1
-	! ip -4 rule show | grep -q '11900:'
-	[ -z "$(ip -4 route show table 11900 2>/dev/null)" ]
-	[ -z "$(pidof mihomo 2>/dev/null || true)" ]
+	if nft list table ip opl_netfleet_native_vm >/dev/null 2>&1; then return 1; fi
+	if ip -4 rule show | grep -q '11900:'; then return 1; fi
+	[ -z "$(ip -4 route show table 11900 2>/dev/null)" ] || return 1
+	[ -z "$(pidof mihomo 2>/dev/null || true)" ] || return 1
 	nft list table ip netfleet_native_fixture >/dev/null
+}
+wait_clean() {
+	for attempt in 1 2 3 4 5 6; do
+		if assert_clean; then return 0; fi
+		sleep 1
+	done
+	return 1
 }
 tcp_probe() {
 	ip netns exec nf-client curl -fsS --noproxy '*' --connect-timeout 2 --max-time 5 \
 		--cacert /tmp/local-probe.crt --resolve "netfleet-probe.test:$probe_port:198.19.0.1" \
 		"https://netfleet-probe.test:$probe_port/generate_204"
 }
+direct_probe() {
+	ip netns exec nf-client curl -fsS --noproxy '*' --connect-timeout 2 --max-time 5 \
+		--cacert /tmp/local-probe.crt --resolve "netfleet-probe.test:$probe_port:192.168.1.2" \
+		"https://netfleet-probe.test:$probe_port/generate_204"
+}
 stage=negative_control
+direct_probe >"$work/direct-before.log" 2>&1
 if tcp_probe >"$work/bypass.log" 2>&1; then exit 1; fi
 start_native
 stage=owner_readback
@@ -249,8 +265,23 @@ tr '\0' ' ' <"/proc/$core_pid/cmdline" | grep -Fq "$work/run/config.json"
 curl -fsS --noproxy '*' -H 'Authorization: Bearer native-vm-fixture' \
 	http://127.0.0.1:19090/proxies >"$work/proxies.json"
 grep -q 'native-region-node' "$work/proxies.json"
+# Select the compiled region through the actual controller, then require the
+# helper's byte counters to move so a DIRECT fallback cannot pass this proof.
+ucode -e '
+ import * as fs from "fs";
+ const m = json(fs.readfile("/tmp/netfleet-native-fixture/manifest.json"));
+ print(sprintf("%J", { name: m.generated_groups.standard.region_groups[0].name }));
+' >"$work/choice.json"
+curl -fsS --noproxy '*' -X PUT -H 'Authorization: Bearer native-vm-fixture' \
+	-H 'Content-Type: application/json' --data-binary "@$work/choice.json" \
+	http://127.0.0.1:19090/proxies/standard
+helper_bytes() {
+	curl -fsS --noproxy '*' http://127.0.0.1:19091/connections | jsonfilter -e '@.downloadTotal'
+}
+before_bytes=$(helper_bytes)
 stage=lan_tcp
 tcp_probe >"$work/tcp.log" 2>&1
+[ "$(helper_bytes)" -gt "$before_bytes" ]
 stage=lan_udp
 answer=$(printf 'native-udp-proof\n' | ip netns exec nf-client socat -T 2 - UDP4:198.19.0.1:19999)
 [ "$answer" = native-udp-proof ]
@@ -261,7 +292,8 @@ ip netns exec nf-client dig +tcp +short +tries=1 +time=2 @203.0.113.53 native-pr
 grep -qx 203.0.113.42 "$work/dns-tcp.log"
 stage=normal_stop
 /etc/init.d/netfleet-native-vm stop
-assert_clean
+wait_clean
+direct_probe >"$work/direct-after-stop.log" 2>&1
 /etc/init.d/netfleet-native-vm stop
 assert_clean
 stage=core_failure
@@ -271,7 +303,8 @@ for attempt in 1 2 3 4 5; do
 	[ -f "$work/ready" ] || break
 	sleep 1
 done
-assert_clean
+wait_clean
+direct_probe >"$work/direct-after-crash.log" 2>&1
 stage=invalid_config
 cp "$work/run/config.json" "$work/valid.json"
 printf '{broken' >"$work/run/config.json"
