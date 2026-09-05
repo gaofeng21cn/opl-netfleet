@@ -148,7 +148,7 @@ else
 	cp /tmp/openwrt/files/etc/config/netfleet /usr/share/opl-netfleet/netfleet.config
 	cp /tmp/openwrt/files/etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet-core
 	cp /tmp/openwrt/files/etc/init.d/opl-netfleet /etc/init.d/opl-netfleet
-	chmod 0755 "$main" "$gateway" /etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet
+	chmod 0755 "$main" /usr/libexec/opl-netfleet/supervisor.uc "$gateway" /etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet
 fi
 # The helper is a private fixture copy, never the production core or a virtual package.
 cp "$(readlink -f /usr/bin/mihomo)" "$work/bin/nf-setup-proxy"

@@ -92,7 +92,7 @@ mkdir -p /usr/share/opl-netfleet
 cp -R /tmp/openwrt/files/usr/share/opl-netfleet/nikki /usr/share/opl-netfleet/
 cp /tmp/openwrt/files/etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet-core
 cp /tmp/openwrt/files/etc/init.d/opl-netfleet /etc/init.d/opl-netfleet
-chmod 0755 "$main" /etc/init.d/opl-netfleet /etc/init.d/opl-netfleet-core
+chmod 0755 "$main" /usr/libexec/opl-netfleet/supervisor.uc /etc/init.d/opl-netfleet /etc/init.d/opl-netfleet-core
 /etc/init.d/opl-netfleet stop
 /etc/init.d/opl-netfleet disable
 /etc/init.d/opl-netfleet-core disable

@@ -63,7 +63,7 @@ cp -R /tmp/openwrt/files/usr/share/opl-netfleet/nikki /usr/share/opl-netfleet/
 cp /tmp/openwrt/files/etc/config/netfleet /etc/config/netfleet
 cp /tmp/openwrt/files/etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet-core
 cp /tmp/openwrt/files/etc/init.d/opl-netfleet /etc/init.d/opl-netfleet
-chmod 0755 "$main" "$gateway" /etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet
+chmod 0755 "$main" /usr/libexec/opl-netfleet/supervisor.uc "$gateway" /etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet
 chmod 0700 /etc/opl-netfleet/native /etc/opl-netfleet/native/profiles /etc/opl-netfleet/native/subscriptions
 chmod 0600 /etc/config/netfleet
 stage=source_contracts
