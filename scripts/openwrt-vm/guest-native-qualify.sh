@@ -59,6 +59,17 @@ ip netns exec nf-client ip link set lo up
 ip netns exec nf-client ip addr add 198.18.0.2/30 dev nf-peer
 ip netns exec nf-client ip link set nf-peer up
 ip netns exec nf-client ip route add default via 198.18.0.1
+# Give only the disposable LAN endpoint an explicit fw4 zone.
+uci set firewall.nfexperiment=zone
+uci set firewall.nfexperiment.name=nfexperiment
+uci add_list firewall.nfexperiment.device=nf-lan
+uci set firewall.nfexperiment.input=ACCEPT
+uci set firewall.nfexperiment.output=ACCEPT
+uci set firewall.nfexperiment.forward=ACCEPT
+uci set firewall.nfexperiment_forward=forwarding
+uci set firewall.nfexperiment_forward.src=nfexperiment
+uci set firewall.nfexperiment_forward.dest=lan
+/etc/init.d/firewall reload >"$work/firewall.log" 2>&1
 # The fixture redirects only router-originated traffic to local test servers.
 # A forwarded client request to the test address must fail without TProxy.
 nft -f - <<EOF
@@ -71,6 +82,10 @@ table ip netfleet_native_fixture {
 	chain forward {
 		type filter hook forward priority -1; policy accept;
 		iifname "nf-lan" ip daddr 198.19.0.1 counter reject
+	}
+	chain postrouting {
+		type nat hook postrouting priority 101; policy accept;
+		ip saddr 198.18.0.0/30 oifname "br-lan" masquerade
 	}
 }
 EOF
@@ -148,13 +163,13 @@ cleanup() {
 	ip -4 route del local default dev lo table 11900 2>/dev/null || true
 	if [ -n "$child" ]; then kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; fi
 }
-trap cleanup EXIT
-trap 'exit 0' INT TERM
 # A conflicting owner is rejected before any network mutation.
 test -z "$(pidof mihomo 2>/dev/null || true)"
 test ! -e /etc/init.d/nikki
 ! nft list table ip opl_netfleet_native_vm >/dev/null 2>&1
 "$work/bin/mihomo" -t -d "$work/run" -f "$work/run/config.json" >"$work/validate.log" 2>&1
+trap cleanup EXIT
+trap 'exit 0' INT TERM
 "$work/bin/mihomo" -d "$work/run" -f "$work/run/config.json" >"$work/core.log" 2>&1 &
 child=$!
 echo "$child" >"$work/core.pid"
