@@ -29,7 +29,7 @@ finish() {
 	nft delete table ip netfleet_native_fixture 2>/dev/null
 	if [ "$rc" -ne 0 ]; then
 		echo "Native experiment failed at: $stage" >&2
-		for file in "$work"/*.log; do
+		for file in "$work"/*.log "$work/proxies.json" "$work/delay.json"; do
 			[ ! -f "$file" ] || { echo "--- $file" >&2; tail -60 "$file" >&2; }
 		done
 	fi
@@ -148,7 +148,7 @@ fs.writefile(`${dir}/manifest.json`, sprintf("%J", result.manifest));
 EOF
 cat /tmp/local-probe.crt >>/etc/ssl/certs/ca-certificates.crt
 printf '192.168.1.2 netfleet-probe.test\n' >>/etc/hosts
-ucode "$work/compile.uc" "https://netfleet-probe.test:$probe_port/generate_204" >"$work/compile.log" 2>&1
+ucode "$work/compile.uc" "https://192.168.1.2:$probe_port/generate_204" >"$work/compile.log" 2>&1
 mihomo -t -d "$work/run" -f "$work/run/config.json" >"$work/validate.log" 2>&1
 
 stage=service_owner
@@ -265,6 +265,12 @@ tr '\0' ' ' <"/proc/$core_pid/cmdline" | grep -Fq "$work/run/config.json"
 curl -fsS --noproxy '*' -H 'Authorization: Bearer native-vm-fixture' \
 	http://127.0.0.1:19090/proxies >"$work/proxies.json"
 grep -q 'native-region-node' "$work/proxies.json"
+stage=provider_readiness
+curl -fsS --noproxy '*' --max-time 8 -H 'Authorization: Bearer native-vm-fixture' \
+	http://127.0.0.1:19090/providers/proxies/NETFLEET-SOURCE-fixture/healthcheck >"$work/health.log"
+curl -fsS --noproxy '*' --max-time 8 -H 'Authorization: Bearer native-vm-fixture' --get \
+	--data-urlencode "url=https://192.168.1.2:$probe_port/generate_204" --data-urlencode timeout=3000 \
+	http://127.0.0.1:19090/group/standard/delay >"$work/delay.json"
 # Select the compiled region through the actual controller, then require the
 # helper's byte counters to move so a DIRECT fallback cannot pass this proof.
 ucode -e '
