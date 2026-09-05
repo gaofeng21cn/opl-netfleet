@@ -46,6 +46,11 @@ target-local owner 创建 `/etc/opl-netfleet/policy.json` 并启用。
 升级若为它们生成 `.apk-new`，runtime package 的 post-install 必须原子采用新字节。用户
 policy、订阅、mixin、生成 Profile 和证据不在该名单中，package 不得借此覆盖。
 
+显式原生核心没有 init 自动启动项。卸载前置脚本先停止并回读本包注册的 procd 核心；
+存在不匹配的服务身份或无法确认停止时拒绝卸载。没有 Nikki 配置或服务的设备不调用
+Nikki 退出事务；有 Nikki 时仍执行原有恢复与卸载检查。`/etc/opl-netfleet/native/` 的
+来源、缓存与 stage 属于用户私有输入，不进入 package，卸载不删除这些数据。
+
 官方 SDK 解压后尚未生成 `.config`。发布准备入口只执行 `defconfig` 并回读目标 package
 架构，不下载或扫描 feeds。原生 LuCI package 仅包含仓库内固定的静态页面、菜单和 ACL，
 使用标准 OpenWrt `package.mk` 显式安装这些文件，不依赖 `luci.mk` 或 LuCI host build

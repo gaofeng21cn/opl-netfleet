@@ -19,7 +19,7 @@ set/refresh 内部取得现有全局 mutation lock，锁忙时零写入拒绝，
 原生核心另提供 root CLI：`native-core-stage <private-compiled-json-file>`、
 `native-core-start`、`native-core-status`、`native-core-stop`。stage 的可选 mixed 端口取编译
 输入的 `mixed-port`，缺省为 `17890`，只接受非特权 TCP 端口。状态仅报告 prepared、running、
-controller_ready、mixed_port 和配置摘要，不返回节点或编译正文；`transparent_proxy=false`
+controller_ready、listener_ready、mixed_port 和配置摘要，不返回节点或编译正文；`transparent_proxy=false`
 明确表示没有接管 LAN。详细边界见[原生核心生命周期](runtime-and-recovery.md#原生核心生命周期)。
 这些命令不暴露为 LuCI/RPC，也不由现有 Nikki supervisor 调度。
 

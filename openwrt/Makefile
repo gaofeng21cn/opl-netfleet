@@ -28,10 +28,21 @@ define Package/opl-netfleet/prerm
 #!/bin/sh
 main=/usr/libexec/opl-netfleet/main.uc
 if [ -x "$$main" ]; then
-	ucode "$$main" native-core-stop >/dev/null || {
-		printf '%s\n' 'opl-netfleet: native core stop unconfirmed; refusing removal' >&2
+	core_status=$$(ucode "$$main" native-core-status) || {
+		printf '%s\n' 'opl-netfleet: native core state unknown; refusing removal' >&2
 		exit 1
 	}
+	core_registered=$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.registered')
+	case "$$core_registered" in
+		true)
+			ucode "$$main" native-core-stop >/dev/null || {
+				printf '%s\n' 'opl-netfleet: native core stop unconfirmed; refusing removal' >&2
+				exit 1
+			}
+			;;
+		false) ;;
+		*) exit 1 ;;
+	esac
 	if [ ! -e /etc/config/nikki ] && [ ! -e /etc/init.d/nikki ]; then
 		/etc/init.d/opl-netfleet stop >/dev/null 2>&1 || true
 		/etc/init.d/opl-netfleet disable >/dev/null 2>&1 || true

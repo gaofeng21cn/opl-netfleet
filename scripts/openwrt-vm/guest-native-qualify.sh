@@ -186,6 +186,16 @@ stage=native_core_lifecycle
 nft -s list ruleset >"$work/core-before.nft"
 ip -4 rule show >"$work/core-before.rules"
 ucode /tmp/tests/native_core_integration.uc "$probe_port" >"$work/core-integration.log" 2>&1
+stage=native_core_uninstall_hook
+awk '/^define Package\/opl-netfleet\/prerm$/{copy=1;next} copy && /^endef$/{exit} copy {gsub(/\$\$/, "$"); print}' \
+	/tmp/openwrt/Makefile >"$work/prerm.sh"
+ucode "$main" native-core-start >"$work/core-uninstall-start.log"
+sh "$work/prerm.sh" >"$work/core-uninstall.log" 2>&1
+flock /var/lock/opl-netfleet-deploy.lock sh "$work/prerm.sh" >"$work/core-uninstall-locked.log" 2>&1
+ucode "$main" native-core-status >"$work/core-uninstall-status.log"
+[ "$(jsonfilter -i "$work/core-uninstall-status.log" -e '@.result.registered')" = false ]
+test -s /etc/opl-netfleet/native/sources.json
+test -s /etc/opl-netfleet/native/cache/fixture.json
 nft -s list ruleset | cmp - "$work/core-before.nft"
 ip -4 rule show | cmp - "$work/core-before.rules"
 test -z "$(pidof mihomo 2>/dev/null || true)"
@@ -377,4 +387,4 @@ sleep 2
 assert_clean
 cp "$work/valid.json" "$work/run/config.json"
 stage=complete
-printf '{"ok":true,"scope":"native-ipv4-experiment","production_ready":false,"source_commit":"%s","source_tree":"%s","checks":{"source_contracts":true,"source_cli_download":true,"source_unchanged_cache":true,"source_failure_retains_cache":true,"source_identity_isolation":true,"source_partial_refresh":true,"source_removal_cleanup":true,"source_lock_zero_mutation":true,"source_private_storage":true,"source_no_credentials_in_output":true,"no_nikki":true,"shared_compiler":true,"config_validation":true,"procd_owner":true,"controller":true,"owner_conflict_zero_mutation":true,"bypass_negative_control":true,"provider_proxy_traffic":true,"lan_tcp_tproxy":true,"lan_udp_tproxy":true,"lan_dns_udp":true,"lan_dns_tcp":true,"normal_stop_cleanup":true,"repeated_stop":true,"core_crash_cleanup":true,"direct_after_stop":true,"direct_after_crash":true,"invalid_config_no_interception":true,"foreign_rules_preserved":true}}\n' "$commit" "$tree"
+printf '{"ok":true,"scope":"native-ipv4-experiment","production_ready":false,"source_commit":"%s","source_tree":"%s","checks":{"source_contracts":true,"source_cli_download":true,"source_unchanged_cache":true,"source_failure_retains_cache":true,"source_identity_isolation":true,"source_partial_refresh":true,"source_removal_cleanup":true,"source_lock_zero_mutation":true,"source_private_storage":true,"source_no_credentials_in_output":true,"core_cli_lifecycle":true,"core_real_proxy_traffic":true,"core_listener_ownership":true,"core_port_conflict_cleanup":true,"core_stale_source_rejected":true,"core_registered_inputs_frozen":true,"core_foreign_owner_preserved":true,"core_crash_readback":true,"core_uninstall_hook":true,"core_no_network_mutation":true,"no_nikki":true,"shared_compiler":true,"config_validation":true,"procd_owner":true,"controller":true,"owner_conflict_zero_mutation":true,"bypass_negative_control":true,"provider_proxy_traffic":true,"lan_tcp_tproxy":true,"lan_udp_tproxy":true,"lan_dns_udp":true,"lan_dns_tcp":true,"normal_stop_cleanup":true,"repeated_stop":true,"core_crash_cleanup":true,"direct_after_stop":true,"direct_after_crash":true,"invalid_config_no_interception":true,"foreign_rules_preserved":true}}\n' "$commit" "$tree"

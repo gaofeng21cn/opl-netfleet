@@ -101,6 +101,7 @@ trap 'rm -rf -- "$work_dir"' EXIT
 source_dir=$work_dir/source
 mkdir -p "$source_dir"
 git -C "$repo_dir" archive "$source_commit" \
+	openwrt/Makefile \
 	openwrt/files/usr/libexec/opl-netfleet \
 	openwrt/files/etc/init.d/opl-netfleet \
 	openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json \

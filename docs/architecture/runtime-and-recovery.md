@@ -22,8 +22,9 @@ provider；不接收内联节点、远程 provider 或规则下载器。规则�
 摘要和配置，避免把已经变化的缓存用于旧编译结果。stage 不等于网络接管。
 
 procd 注册存在期间拒绝 stage 和订阅 set/refresh，包括核心异常退出但尚未显式 stop 的
-状态；这样不会产生未经过运行事务的 cache 热更新。start 以有界 controller 回读确认
-启动，失败删除本 owner 的 procd 服务；stop 只停止经命令身份验证的本服务，重复调用无害。
+状态；这样不会产生未经过运行事务的 cache 热更新。start 以有界 controller 回读和对应
+PID 的 loopback 监听 socket 确认启动，端口被其他进程占用不能冒充成功。失败删除本 owner
+的 procd 服务；stop 只停止经命令身份验证的本服务，重复调用无害。
 核心退出不会留下 DNS/nft/路由截获，因为此阶段从不写这些对象。停止后保留私有来源和
 stage，包卸载先停止本核心；不删除用户输入。
 

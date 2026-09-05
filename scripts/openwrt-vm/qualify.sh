@@ -131,6 +131,7 @@ fetch_asset() {
 fetch_asset "$mihomo_name" "$mihomo_sha" "$mihomo_url"
 fetch_asset "$yq_name" "$yq_sha" "$yq_url"
 tar -cf "$work/runtime-source.tar" -C "$workspace" \
+	openwrt/Makefile \
 	openwrt/files/usr/libexec/opl-netfleet \
 	openwrt/files/etc/init.d/opl-netfleet \
 	openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json \
