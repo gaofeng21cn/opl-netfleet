@@ -109,9 +109,16 @@ export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 ip route replace default via 192.168.1.2 dev br-lan
 printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
-apk --timeout 120 update >"$work/packages.log" 2>&1 || true
-apk --timeout 120 add curl flock ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket \
-	ucode-mod-fs ucode-mod-uci ucode-mod-ubus ucode-mod-uloop >>"$work/packages.log" 2>&1
+: >"$work/packages.log"
+for attempt in 1 2 3; do
+	apk --timeout 120 update >>"$work/packages.log" 2>&1 || true
+	if apk --timeout 120 add curl flock ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket \
+		ucode-mod-fs ucode-mod-uci ucode-mod-ubus ucode-mod-uloop >>"$work/packages.log" 2>&1; then
+		break
+	fi
+	[ "$attempt" -lt 3 ] || exit 1
+	sleep "$((attempt * 2))"
+done
 if [ -n "$feed_url" ]; then
 	stage=signed_package_install
 	mkdir -p "$candidate"

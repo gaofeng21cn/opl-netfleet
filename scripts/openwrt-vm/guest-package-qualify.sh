@@ -159,8 +159,11 @@ stage=installed_bytes
 while read -r expected path extra; do
 	[ -n "$expected" ] || continue
 	[ -z "${extra:-}" ]
-	[ -f "/$path" ]
-	[ "$(sha256sum "/$path" | awk '{print $1}')" = "$expected" ]
+	[ -f "/$path" ] || { echo "Package file missing: /$path" >&2; exit 1; }
+	[ "$(sha256sum "/$path" | awk '{print $1}')" = "$expected" ] || {
+		echo "Package file mismatch: /$path" >&2
+		exit 1
+	}
 done <"$candidate/FILES.sha256"
 ucode -e '
 	import { readfile } from "fs";
@@ -170,8 +173,13 @@ ucode -e '
 ucode -e '
 	import { readfile } from "fs";
 	const acl = json(readfile(ARGV[0]));
-	exit(acl?.["luci-app-netfleet"]?.description ==
-		"Discover, configure, operate, and restore NetFleet over Nikki" ? 0 : 1);
+	const grant = acl?.["luci-app-netfleet"];
+	const reads = grant?.read?.ubus?.["opl-netfleet"] ?? [];
+	const writes = grant?.write?.ubus?.["opl-netfleet"] ?? [];
+	for (let method in ["status", "probe", "native_setup_get", "migration_get", "subscriptions_get"])
+		if (index(reads, method) < 0) exit(1);
+	for (let method in ["native_setup_apply", "migration_apply", "subscriptions_set", "subscriptions_refresh"])
+		if (index(writes, method) < 0 || index(reads, method) >= 0) exit(1);
 ' /usr/share/rpcd/acl.d/luci-app-netfleet.json
 
 stage=rpcd

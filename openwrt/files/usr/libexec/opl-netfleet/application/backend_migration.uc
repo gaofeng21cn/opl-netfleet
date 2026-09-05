@@ -26,6 +26,7 @@ function capture(command) {
 function parsed_command(command) {
 	try { return json(capture(command)); } catch (error) { return null; }
 };
+function gateway() { return parsed_command(`ucode ${shell_quote(GATEWAY)} status`); };
 function directory(path) {
 	if (fs.lstat(path) != null) return private_directory(path);
 	return shell(`umask 077; mkdir -p -m 0700 ${shell_quote(path)}`) && private_directory(path);
@@ -176,7 +177,6 @@ function owner(action, work) {
 	const response = read_json(path);
 	return { ok: ok && response?.ok == true, response: response };
 };
-function gateway() { return parsed_command(`ucode ${shell_quote(GATEWAY)} status`); };
 function save_file(path, work, name) {
 	const info = fs.lstat(path);
 	if (info != null && info.type != "file") return null;
