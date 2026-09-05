@@ -4,8 +4,30 @@
 权威合同。对象身份见[产品对象与 Owner](domain-model.md)，选择规则见
 [测量、资格与选择](selection.md)。
 
-本文描述当前 `nikki-mihomo` 运行链。独立的[原生订阅准备](domain-model.md#原生订阅准备)
-只写候选缓存，不调用本文的 compile、enable、refresh 或恢复事务。
+除下一节外，本文描述当前 `nikki-mihomo` 运行链。独立的[原生订阅准备](domain-model.md#原生订阅准备)
+不调用 Nikki 的 compile、enable、refresh 或恢复事务。
+
+## 原生核心生命周期
+
+`application/native_core.uc` 是显式代理阶段的 one-shot owner，通过现有设备 mutation lock
+串行完成 stage、start、stop；由 OpenWrt procd 直接持有唯一 Mihomo 子进程，不增加常驻
+控制器、自动重启或开机启动项。状态从 procd 和核心私有 Unix socket 回读，不用文件存在
+冒充核心运行。Nikki 已安装或其他 Mihomo 存在时拒绝启动，不自动停止或迁移其他 owner。
+
+stage 接收 root 私有 JSON 编译结果，只投影代理组、规则和指向原生已就绪缓存的 file
+provider；不接收内联节点、远程 provider 或规则下载器。强制关闭 DNS、TUN、透明代理与
+额外监听器，只提供绑定 `127.0.0.1` 的 mixed 端口和私有目录内的 Unix controller。
+配置与来源内容摘要经 `mihomo -t` 后原子保存为单个 stage 对象；start 再验证来源身份、
+摘要和配置，避免把已经变化的缓存用于旧编译结果。stage 不等于网络接管。
+
+procd 注册存在期间拒绝 stage 和订阅 set/refresh，包括核心异常退出但尚未显式 stop 的
+状态；这样不会产生未经过运行事务的 cache 热更新。start 以有界 controller 回读确认
+启动，失败删除本 owner 的 procd 服务；stop 只停止经命令身份验证的本服务，重复调用无害。
+核心退出不会留下 DNS/nft/路由截获，因为此阶段从不写这些对象。停止后保留私有来源和
+stage，包卸载先停止本核心；不删除用户输入。
+
+该入口不是完整 `native-mihomo` 接管：周期选优、透明代理、DNS、迁移和完整用户配置入口
+仍未接线。既有原生 IPv4 VM 实验继续单独验证这些数据面原语，不能据此宣称生产就绪。
 
 ## 唯一纵向链
 

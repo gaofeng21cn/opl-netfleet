@@ -3,45 +3,9 @@ import { read_json, read_yaml, sha256, shell_quote } from "../adapters/uci.uc";
 import { cache_accepted } from "../core/subscription.uc";
 import { validate, valid_id, project } from "../core/native_sources.uc";
 import { ok, fail } from "../output.uc";
+import { BASE, CACHE, LOCK, private_file, private_directory, write_private, atomic_json, core_service } from "../adapters/native.uc";
 
-const BASE = "/etc/opl-netfleet/native";
 const CONFIG = `${BASE}/sources.json`;
-const CACHE = `${BASE}/cache`;
-const LOCK = "/var/lock/opl-netfleet-deploy.lock";
-
-function private_file(path) {
-	const info = type(path) == "string" ? fs.lstat(path) : null;
-	return info?.type == "file" && info.uid == 0 && (info.mode & 077) == 0;
-};
-
-function private_directory(path) {
-	const info = fs.lstat(path);
-	return info?.type == "directory" && info.uid == 0 && (info.mode & 077) == 0;
-};
-
-function write_private(path, content) {
-	const file = fs.open(path, "w", 0600);
-	if (file == null) return false;
-	const written = file.write(content);
-	const closed = file.close();
-	return written == length(content) && closed == true && fs.chmod(path, 0600) == true;
-};
-
-function atomic_json(path, value) {
-	const temporary = `${path}.tmp`;
-	if (fs.lstat(temporary) != null && !private_file(temporary)) return false;
-	const content = sprintf("%J", value);
-	if (!write_private(temporary, content) || read_json(temporary) == null) {
-		fs.unlink(temporary);
-		return false;
-	}
-	const digest = sha256(temporary);
-	if (digest == null || !fs.rename(temporary, path)) {
-		fs.unlink(temporary);
-		return false;
-	}
-	return sha256(path) == digest;
-};
 
 function source_identity(source, scratch) {
 	// Credentials go through a private file, never a shell argument or log.
@@ -140,6 +104,9 @@ function execute(action, argument, scratch) {
 	const config = fs.lstat(CONFIG) == null ? { schema_version: 1, sources: [] } : read_json(CONFIG);
 	if (!validate(config).ok) return { ok: false, error: "source_config_unreadable" };
 	if (action == "native-sources-get") return projection(config, scratch);
+	const runtime = core_service();
+	if (!runtime.ok) return { ok: false, error: "procd_unavailable" };
+	if (runtime.service != null) return { ok: false, error: "native_core_registered" };
 	if (action == "native-sources-set") {
 		if (!private_file(argument) || fs.stat(argument).size > 1048576)
 			return { ok: false, error: "private_input_file_required" };
@@ -162,6 +129,17 @@ function execute(action, argument, scratch) {
 	}
 	if (!private_directory(CACHE)) return { ok: false, error: "native_sources_not_configured" };
 	return refresh(config, argument, scratch);
+};
+
+export function get_state() {
+	const scratch = fs.mkdtemp("/tmp/opl-netfleet-native.XXXXXX");
+	if (scratch == null) return { ok: false, error: "scratch_directory_failed" };
+	let result;
+	try { result = execute("native-sources-get", null, scratch); }
+	catch (error) { result = { ok: false, error: "native_source_operation_failed" }; }
+	for (let name in fs.lsdir(scratch) ?? []) fs.unlink(`${scratch}/${name}`);
+	fs.rmdir(scratch);
+	return result;
 };
 
 export function run(action, argument) {

@@ -21,6 +21,7 @@ finish() {
 	trap - EXIT INT TERM
 	set +e
 	/etc/init.d/netfleet-native-vm stop >/dev/null 2>&1
+	ucode /usr/libexec/opl-netfleet/main.uc native-core-stop >/dev/null 2>&1
 	for pid in "$helper_pid" "$dns_pid" "$udp_pid"; do
 		[ -z "$pid" ] || kill "$pid" 2>/dev/null
 	done
@@ -45,6 +46,7 @@ apk --timeout 120 add curl ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket soc
 	>>"$work/packages.log" 2>&1
 gzip -dc /tmp/mihomo-linux-arm64-v1.19.30.gz >"$work/bin/mihomo"
 chmod 0755 "$work/bin/mihomo"
+ln -s "$work/bin/mihomo" /usr/bin/mihomo
 ln "$work/bin/mihomo" "$work/bin/nf-proxy-fixture"
 cp /tmp/yq_linux_arm64-v4.53.6 "$work/bin/yq"
 chmod 0755 "$work/bin/yq"
@@ -179,6 +181,23 @@ cat /tmp/local-probe.crt >>/etc/ssl/certs/ca-certificates.crt
 printf '192.168.1.2 netfleet-probe.test\n' >>/etc/hosts
 ucode "$work/compile.uc" "https://192.168.1.2:$probe_port/generate_204" >"$work/compile.log" 2>&1
 SAFE_PATHS=/etc/opl-netfleet/native/cache mihomo -t -d "$work/run" -f "$work/run/config.json" >"$work/validate.log" 2>&1
+
+stage=native_core_lifecycle
+ucode "$main" native-core-stage "$work/run/config.json" >"$work/core-stage.log"
+ucode "$main" native-core-start >"$work/core-start.log"
+[ "$(jsonfilter -i "$work/core-start.log" -e '@.result.controller_ready')" = true ]
+[ "$(jsonfilter -i "$work/core-start.log" -e '@.result.transparent_proxy')" = false ]
+curl -fsS --cacert /tmp/local-probe.crt --noproxy '' --proxy http://127.0.0.1:17890 \
+	"https://192.168.1.2:$probe_port/generate_204" >/dev/null
+ucode "$main" native-core-start >"$work/core-repeat.log"
+if ucode "$main" native-sources-refresh fixture >"$work/core-source-busy.log"; then exit 1; fi
+[ "$(jsonfilter -i "$work/core-source-busy.log" -e '@.error')" = native_core_registered ]
+if ucode "$main" native-core-stage "$work/run/config.json" >"$work/core-stage-busy.log"; then exit 1; fi
+ucode "$main" native-core-stop >"$work/core-stop.log"
+ucode "$main" native-core-stop >"$work/core-stop-repeat.log"
+[ "$(jsonfilter -i "$work/core-stop.log" -e '@.result.running')" = false ]
+test -z "$(pidof mihomo 2>/dev/null || true)"
+test ! -e /etc/opl-netfleet/native/core/controller.sock
 
 stage=service_owner
 # This disposable owner intentionally has no boot enable, migration or refresh.
