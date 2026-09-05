@@ -860,7 +860,8 @@ function activate_preferred_choice(secret, entry, choice, policy, after_restart,
 			error: "preferred_path_unavailable",
 			choice: choice,
 			leaf: leaf.leaf,
-			data_path: fallback.runtime?.data_path ?? "unknown"
+			data_path: fallback.runtime?.data_path ?? "unknown",
+			runtime: fallback.runtime
 		};
 	}
 	let probes = null;
