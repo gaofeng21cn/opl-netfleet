@@ -99,7 +99,7 @@ env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin yq --version | grep -Fq 'v4.53.6'
 	>>"$fixture/package-manager.log" 2>&1
 NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 \
 	sh "$candidate/install-netfleet.sh" >>"$fixture/package-manager.log" 2>&1
-"$real_apk" info -e mihomo-meta
+"$real_apk" info -e mihomo-meta >>"$fixture/package-manager.log" 2>&1
 [ "$(readlink /usr/bin/mihomo)" = /usr/libexec/mihomo ]
 env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin mihomo -v | grep -Fq 'v1.19.30'
 core_sha=$(sha256sum /usr/libexec/mihomo | awk '{print $1}')
