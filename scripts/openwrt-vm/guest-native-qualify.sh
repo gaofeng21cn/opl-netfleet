@@ -29,7 +29,7 @@ finish() {
 	nft delete table ip netfleet_native_fixture 2>/dev/null
 	if [ "$rc" -ne 0 ]; then
 		echo "Native experiment failed at: $stage" >&2
-		for file in "$work"/*.log "$work/proxies.json" "$work/delay.json"; do
+		for file in "$work"/*.log "$work"/source-*.json "$work/proxies.json" "$work/delay.json"; do
 			[ ! -f "$file" ] || { echo "--- $file" >&2; tail -60 "$file" >&2; }
 		done
 	fi
