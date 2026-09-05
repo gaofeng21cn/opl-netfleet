@@ -29,6 +29,14 @@ reconcile
         self.assertEqual(result.returncode, 7)
         self.assertEqual(result.stdout.splitlines(), ["lock", "gateway:reconcile"])
 
+    def test_running_checks_core_not_lifecycle_observer(self):
+        result = self.run_init('''
+procd_running() { echo "$1:$2"; return 1; }
+service_running
+''')
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout.strip(), "opl-netfleet-core:core")
+
     def test_failed_attach_cleans_before_core_stop(self):
         result = self.run_init('''
 ucode() { echo "gateway:$2" >&2; [ "$2" != attach ]; }

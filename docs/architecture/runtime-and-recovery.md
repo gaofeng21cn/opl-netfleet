@@ -24,6 +24,9 @@
 `/etc/opl-netfleet/native/run/config.yaml`；扩展名供既有适配器使用，正文仍是 JSON。
 procd 直接持有 Mihomo 子进程，并提供有限 respawn。gateway 通过精确命令、真实 PID、
 私有 Unix controller 和服务 cgroup 确认运行 owner；LAN controller 仍由 API secret 保护。
+同服务的轻量生命周期实例订阅 procd 的真实 service 通知，在通知回调退出后调用同一
+加锁 reconcile：核心退出时清理截获，新核心就绪后重新 attach，重试耗尽时保持直通。
+它不测速、不选路，也不构成核心存活证据。正常 restart 等待旧核心退出后才启动新核心。
 
 `attach` 在核心就绪后渲染上游 nft 模板，先检查规则语法、既有 table/路由冲突，再写入
 本 owner 的 IPv4/IPv6 策略路由和 `inet netfleet` table。cgroup 排除避免核心流量再次

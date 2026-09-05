@@ -8,6 +8,10 @@ gateway=/usr/libexec/opl-netfleet/application/native_gateway.uc
 extra_command update_subscription 'Refresh one configured native subscription'
 extra_command reconcile 'Reconcile native core lifecycle events'
 
+service_running() {
+	procd_running opl-netfleet-core core
+}
+
 gateway_action() {
 	local result
 	result=$(ucode "$gateway" "$1") && return 0

@@ -104,6 +104,13 @@ class OpenWrtVmTests(unittest.TestCase):
                 expected += ['boot', 'package-management', 'package-runtime', 'package']
             self.assertEqual(result.stdout.splitlines(), expected)
 
+    def test_migration_fixture_interface_names_fit_linux_limit(self):
+        pairs = re.findall(r'ip link add (\S+) type veth peer name (\S+)', MIGRATION_GUEST.read_text())
+        self.assertTrue(pairs)
+        for pair in pairs:
+            for name in pair:
+                self.assertLessEqual(len(name.encode()), 15, name)
+
     def test_aggregate_receipt_requires_all_lanes_exact_identity_and_true_checks(self):
         program = RUNNER.read_text().rsplit("<<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
         names = ('native', 'setup', 'management', 'runtime', 'migration',

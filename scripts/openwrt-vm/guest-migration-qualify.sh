@@ -40,7 +40,7 @@ finish() {
 	nft delete table ip netfleet_vm_migration_probe >/dev/null 2>&1
 	if [ "$wan_created" = true ]; then
 		ubus call network.interface.wan down >/dev/null 2>&1
-		ip link del nf-migration-wan >/dev/null 2>&1
+		ip link del nf-migrate-wan >/dev/null 2>&1
 	fi
 	if [ "$rc" -eq 0 ] && { [ "$stage" != complete ] || [ ! -s "$work/qualification.json" ]; }; then rc=1; fi
 	if [ "$rc" -ne 0 ]; then
@@ -100,11 +100,11 @@ chmod 0755 "$main" /etc/init.d/opl-netfleet /etc/init.d/opl-netfleet-core
 stage=real_network_prerequisites
 wan_up=$(ubus call network.interface.wan status 2>/dev/null | jsonfilter -e '@.up' 2>/dev/null || true)
 if [ "$wan_up" != true ]; then
-	ip link add nf-migration-wan type veth peer name nf-migration-peer
-	ip link set nf-migration-wan up
-	ip link set nf-migration-peer up
+	ip link add nf-migrate-wan type veth peer name nf-migrate-peer
+	ip link set nf-migrate-wan up
+	ip link set nf-migrate-peer up
 	wan_created=true
-	ubus call network add_dynamic '{"name":"wan","proto":"static","device":"nf-migration-wan","ipaddr":["198.18.2.1/30"]}' >"$work/wan-result.json"
+	ubus call network add_dynamic '{"name":"wan","proto":"static","device":"nf-migrate-wan","ipaddr":["198.18.2.1/30"]}' >"$work/wan-result.json"
 fi
 for attempt in 1 2 3 4 5; do
 	[ "$(ubus call network.interface.wan status | jsonfilter -e '@.up')" != true ] || break

@@ -48,7 +48,7 @@ ip route replace default via 192.168.1.2 dev br-lan
 printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
 apk --timeout 120 update >"$work/packages.log" 2>&1 || true
 apk --timeout 120 add curl ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket socat bind-dig \
-	ucode-mod-fs ucode-mod-uci ucode-mod-ubus >>"$work/packages.log" 2>&1
+	ucode-mod-fs ucode-mod-uci ucode-mod-ubus ucode-mod-uloop >>"$work/packages.log" 2>&1
 gzip -dc /tmp/mihomo-linux-arm64-v1.19.30.gz >"$work/bin/mihomo"
 chmod 0755 "$work/bin/mihomo"
 ln -s "$work/bin/mihomo" /usr/bin/mihomo
@@ -338,15 +338,28 @@ wait_ready
 ubus call service list '{"name":"opl-netfleet-core"}' >"$work/service-result.json"
 core_pid=$(jsonfilter -i "$work/service-result.json" -e '@["opl-netfleet-core"].instances.core.pid')
 kill -KILL "$core_pid"
-# A valid respawn or complete cleanup is acceptable, dead interception is not.
-recovered=false
-for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-	ucode "$gateway" status >"$work/crash-result.json"
-	if assert_json "$work/crash-result.json" '@.result.ready' true; then recovered=true; break; fi
-	if assert_clean; then recovered=true; break; fi
+sleep 1
+wait_ready
+ubus call service list '{"name":"opl-netfleet-core"}' >"$work/service-result.json"
+[ "$(jsonfilter -i "$work/service-result.json" -e '@["opl-netfleet-core"].instances.core.pid')" != "$core_pid" ]
+stage=firewall_reload
+/etc/init.d/firewall reload >>"$work/firewall.log" 2>&1
+wait_ready
+assert_foreign
+direct_probe >"$work/direct-after-respawn.log" 2>&1
+stage=respawn_exhaustion
+# One failure already occurred; five more exhaust procd's retry budget.
+for crash in 2 3 4 5 6; do
+	ubus call service list '{"name":"opl-netfleet-core"}' >"$work/service-result.json"
+	core_pid=$(jsonfilter -i "$work/service-result.json" -e '@["opl-netfleet-core"].instances.core.pid')
+	kill -KILL "$core_pid"
 	sleep 1
+	if [ "$crash" -lt 6 ]; then wait_ready; fi
 done
-[ "$recovered" = true ]
+wait_clean
+sleep 6
+assert_clean
+direct_probe >"$work/direct-after-exhaustion.log" 2>&1
 /etc/init.d/opl-netfleet-core stop
 wait_clean
 direct_probe >"$work/direct-after-crash.log" 2>&1

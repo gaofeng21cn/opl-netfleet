@@ -68,6 +68,8 @@ Nikki 退出事务；有 Nikki 时仍执行原有恢复与卸载检查。`/etc/o
 使用标准 OpenWrt `package.mk` 显式安装这些文件，不依赖 `luci.mk` 或 LuCI host build
 dependencies。准备完成的 SDK 才能交给 package builder，因此首次发布不承担无关 feed
 clone 和 package index 成本。
+这三个 package 只有脚本、静态资源与官方预编译核心，定向构建使用 SDK 的 `NO_DEPS=1`，
+不重建整套内核模块；APK 的运行依赖仍完整保留，由设备包管理器从签名 feed 解析安装。
 
 GitHub candidate workflow 必须先把用户选择的 `source_ref` checkout 为一个精确提交，再以
 该 checkout 的 `HEAD` commit/tree 构建；workflow event 自身的 `GITHUB_SHA` 不能冒充

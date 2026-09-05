@@ -233,17 +233,21 @@ function watch() {
 		if (!shell(`/etc/init.d/${SERVICE} reconcile`))
 			shell(`logger -t ${SERVICE} lifecycle_reconcile_failed`);
 	};
+	const pending = loop.timer(-1, synchronize);
+	if (pending == null) return { ok: false, error: "lifecycle_timer_unavailable" };
 	// procd emits object notifications, not service trigger events.
 	const subscriber = connection.subscriber((request) => {
 		const ours = request.data?.service == SERVICE && request.data?.instance == "core" &&
 			index(["instance.start", "instance.stop", "instance.fail", "instance.respawn"], request.type) >= 0;
 		request.reply({});
-		if (ours) synchronize();
+		// The start notification precedes completion of the child's exec.
+		// Leave the notify callback before inspecting its final command and PID.
+		if (ours) pending.set(1000);
 	}, () => loop.end());
 	if (subscriber == null || !subscriber.subscribe("service"))
 		return { ok: false, error: "lifecycle_subscription_failed" };
 	// A core can already be running when this observer starts or respawns.
-	synchronize();
+	pending.set(1000);
 	loop.run();
 	return { ok: false, error: "lifecycle_subscription_ended" };
 };

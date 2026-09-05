@@ -368,7 +368,7 @@ while time.monotonic() < deadline:
         marker += sock.recv(65536)
     except TimeoutError:
         continue
-    if b"NETFLEET_VM_READY" in marker:
+    if b"NETFLEET_VM_READY" in marker.splitlines():
         break
 else:
     raise SystemExit("OpenWrt SSH bootstrap did not complete")
@@ -377,15 +377,14 @@ PY
 
 ssh_common="-i $ssh_key -p $ssh_port -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5"
 for attempt in $(seq 1 30); do
-	if ssh $ssh_common root@127.0.0.1 true >/dev/null 2>&1; then
+	if ssh $ssh_common root@127.0.0.1 \
+		'test "$(uname -m)" = aarch64 && test "$(readlink /var)" = tmp && ubus call system board >/dev/null && /etc/init.d/rpcd status >/dev/null' >/dev/null 2>&1; then
 		break
 	fi
 	[ "$attempt" -lt 30 ] || { echo "OpenWrt SSH did not become ready" >&2; exit 1; }
 	sleep 1
 done
 
-ssh $ssh_common root@127.0.0.1 \
-	'test "$(uname -m)" = aarch64 && test "$(readlink /var)" = tmp && ubus call system board >/dev/null && /etc/init.d/rpcd status >/dev/null'
 boot_elapsed_ms=$((boot_elapsed_ms + $(now_ms) - boot_started_ms))
 runner_arch=$(uname -m)
 guest_arch=$(ssh $ssh_common root@127.0.0.1 uname -m)
@@ -430,6 +429,9 @@ run_guest() {
 		native|setup|migration)
 			ssh $ssh_common root@127.0.0.1 "touch /tmp/netfleet-${guest_kind}-vm-authorized" ;;
 	esac
+	if [ "$guest_kind" = setup ] && [ -n "$package_archive" ]; then
+		guest_arguments="$guest_arguments '$feed_url'"
+	fi
 	if ! ssh $ssh_common root@127.0.0.1 \
 		"sh /tmp/$guest_script '$source_commit' '$source_tree' $guest_arguments" \
 		>"$work/$result_name-result.json" 2>"$work/$result_name-result.stderr"; then
