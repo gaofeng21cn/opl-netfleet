@@ -22,9 +22,12 @@ finish() {
 	/etc/init.d/opl-netfleet stop >/dev/null 2>&1
 	/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1
 	for pid in $fixture_pids; do kill "$pid" 2>/dev/null; done
+	ubus call network.interface.wan remove >/dev/null 2>&1
+	ubus call network.interface.nfclient remove >/dev/null 2>&1
 	ip netns del nf-client 2>/dev/null
+	ip netns del nf-upstream 2>/dev/null
 	ip link del nf-lan 2>/dev/null
-	ip link del nf-wan 2>/dev/null
+	ip link del nf-uplink 2>/dev/null
 	nft delete table ip netfleet_native_fixture 2>/dev/null
 	nft delete table ip6 netfleet_native_fixture 2>/dev/null
 	if [ "$rc" -ne 0 ]; then
@@ -84,19 +87,31 @@ ip netns exec nf-client ip route add default via 198.18.0.1
 ip netns exec nf-client ip -6 route add default via 2001:db8:1::1
 # A disposable real netifd WAN supplies the upstream API. QEMU's isolated
 # br-lan remains the actual default route; no ubus or networking stubs are used.
-ip link add nf-wan type veth peer name nf-wan-peer
-ip link set nf-wan up
-ip link set nf-wan-peer up
-ubus call network add_dynamic '{"name":"wan","proto":"static","device":"nf-wan","ipaddr":["198.18.1.1/30"]}' >"$work/wan-result.json"
+ip netns add nf-upstream
+ip netns exec nf-upstream ip link add nf-wan-peer type veth peer name nf-uplink netns 1
+ip link set nf-uplink up
+ip netns exec nf-upstream ip link set lo up
+ip netns exec nf-upstream ip link set nf-wan-peer up
+ip netns exec nf-upstream ip addr add 198.18.1.2/30 dev nf-wan-peer
+ip netns exec nf-upstream ip addr add 198.19.0.1/32 dev lo
+ip netns exec nf-upstream ip -6 addr add 2001:db8:3::2/64 dev nf-wan-peer nodad
+ip netns exec nf-upstream ip -6 addr add 2001:db8:2::1/128 dev lo nodad
+ip netns exec nf-upstream ip route add default via 198.18.1.1
+ip netns exec nf-upstream ip -6 route add default via 2001:db8:3::1
+ubus call network add_dynamic '{"name":"wan","proto":"static","device":"nf-uplink","ipaddr":["198.18.1.1/30"],"ip6addr":["2001:db8:3::1/64"]}' >"$work/wan-result.json"
+ubus call network.interface.wan up >>"$work/wan-result.json"
 for attempt in 1 2 3 4 5; do
 	[ "$(ubus call network.interface.wan status | jsonfilter -e '@.up')" != true ] || break
 	sleep 1
 done
 [ "$(ubus call network.interface.wan status | jsonfilter -e '@.up')" = true ]
-ip -6 route add 2001:db8::/32 dev nf-lan
+ip route add 198.19.0.1/32 via 198.18.1.2 dev nf-uplink
+ip -6 route add 2001:db8:2::1/128 via 2001:db8:3::2 dev nf-uplink
+ip -6 route add 2001:db8:ffff::/48 via 2001:db8:3::2 dev nf-uplink
 uci set firewall.nfexperiment=zone
 uci set firewall.nfexperiment.name=nfexperiment
 uci add_list firewall.nfexperiment.device=nf-lan
+uci add_list firewall.nfexperiment.device=nf-uplink
 uci set firewall.nfexperiment.input=ACCEPT
 uci set firewall.nfexperiment.output=ACCEPT
 uci set firewall.nfexperiment.forward=ACCEPT
@@ -110,8 +125,7 @@ nft -f - <<EOF
 table ip netfleet_native_fixture {
 	chain output {
 		type nat hook output priority -101; policy accept;
-		ip daddr 198.19.0.1 tcp dport $probe_port dnat to 192.168.1.2:$probe_port
-		ip daddr 198.19.0.1 udp dport 19999 dnat to 127.0.0.1:19999
+		meta mark & 0x20000000 != 0 ip daddr 198.19.0.1 tcp dport $probe_port dnat to 192.168.1.2:$probe_port
 	}
 	chain forward {
 		type filter hook forward priority -1; policy accept;
@@ -119,14 +133,13 @@ table ip netfleet_native_fixture {
 	}
 	chain postrouting {
 		type nat hook postrouting priority 101; policy accept;
-		ip saddr 198.18.0.0/30 oifname "br-lan" masquerade
+		ip saddr { 198.18.0.0/30, 198.18.1.0/30 } oifname "br-lan" masquerade
 	}
 }
 table ip6 netfleet_native_fixture {
 	chain output {
 		type nat hook output priority -101; policy accept;
-		ip6 daddr 2001:db8:2::1 tcp dport $probe_port dnat to [::1]:$probe_port
-		ip6 daddr 2001:db8:2::1 udp dport 19999 dnat to [::1]:19999
+		meta mark & 0x20000000 != 0 ip6 daddr 2001:db8:2::1 tcp dport $probe_port dnat to [::1]:$probe_port
 	}
 	chain forward {
 		type filter hook forward priority -1; policy accept;
@@ -141,9 +154,9 @@ dnsmasq --keep-in-foreground --port=1054 --listen-address=127.0.0.1 --bind-inter
 	--address=/netfleet-probe.test/192.168.1.2 --address=/www.gstatic.com/192.168.1.2 \
 	--pid-file="$work/dns.pid" >"$work/dns.log" 2>&1 &
 fixture_pids="$fixture_pids $!"
-socat UDP4-RECVFROM:19999,bind=127.0.0.1,fork EXEC:/bin/cat >"$work/udp4.log" 2>&1 &
-fixture_pids="$fixture_pids $!"
-socat UDP6-RECVFROM:19999,bind=::1,ipv6only=1,fork EXEC:/bin/cat >"$work/udp6.log" 2>&1 &
+ip netns exec nf-upstream dnsmasq --keep-in-foreground --port=19999 \
+	--listen-address=198.19.0.1,2001:db8:2::1 --bind-interfaces --no-resolv --no-hosts \
+	--address=/native-udp.test/203.0.113.43 --pid-file="$work/upstream-dns.pid" >"$work/udp.log" 2>&1 &
 fixture_pids="$fixture_pids $!"
 socat TCP6-LISTEN:"$probe_port",bind=::1,ipv6only=1,reuseaddr,fork TCP4:192.168.1.2:"$probe_port" >"$work/tcp6.log" 2>&1 &
 fixture_pids="$fixture_pids $!"
@@ -176,7 +189,8 @@ cat >/etc/opl-netfleet/policy.json <<EOF
  "provider_regions":{"fixture":[{"region":"test","filter":"native-region"}]},
  "capabilities":{"standard":{"enabled":true,"mode":"automatic"}},
  "selection":{"region_switch_margin_ms":150,"leaf_switch_margin_ms":150},
- "automation":{"enabled":true,"selection_interval_seconds":300,"subscription_refresh_enabled":true,"subscription_refresh_interval_seconds":3600,"poll_interval_seconds":5,"startup_grace_seconds":30,"runtime_grace_seconds":10},
+ "automation":{"enabled":true,"selection_interval_seconds":300,"subscription_refresh_enabled":true,"subscription_refresh_interval_seconds":3600,"poll_interval_seconds":5,"startup_grace_seconds":120,"runtime_grace_seconds":30},
+ "evidence":{"path":"/etc/opl-netfleet/evidence.json"},
  "checks":{"provider_healthcheck_timeout_ms":5000,"latency":{"method":"mihomo_delay","url":"https://192.168.1.2:$probe_port/generate_204","timeout_ms":3000,"expected_status":204}},
  "fail_open":{"healthcheck":{"path_probe_id":"test","guard_probe_id":"test","timeout_ms":3000,"interval_seconds":30,"max_failed_times":1},"probes":[{"id":"test","url":"https://192.168.1.2:$probe_port/generate_204","expected_status":204}]}
 }
@@ -272,14 +286,15 @@ for client in lan router; do
 		[ "$(helper_bytes)" -gt "$before" ]
 		stage="${client}_ipv${family}_udp"
 		before=$(helper_bytes)
-		destination=UDP4:198.19.0.1:19999
-		[ "$family" != 6 ] || destination='UDP6:[2001:db8:2::1]:19999'
+		destination=198.19.0.1
+		[ "$family" != 6 ] || destination=2001:db8:2::1
 		if [ "$client" = lan ]; then
-			answer=$(printf 'native-udp-proof\n' | ip netns exec nf-client socat -T 3 - "$destination")
+			answer=$(ip netns exec nf-client dig +notcp +short +tries=1 +time=3 -p 19999 "@$destination" native-udp.test)
 		else
-			answer=$(printf 'native-udp-proof\n' | socat -T 3 - "$destination")
+			answer=$(dig +notcp +short +tries=1 +time=3 -p 19999 "@$destination" native-udp.test)
 		fi
-		[ "$answer" = native-udp-proof ]
+		printf '%s\n' "$answer" >"$work/$stage.log"
+		[ "$answer" = 203.0.113.43 ]
 		[ "$(helper_bytes)" -gt "$before" ]
 		for transport in +notcp +tcp; do
 			stage="${client}_ipv${family}_dns_${transport}"
@@ -297,16 +312,17 @@ done
 stage=shared_refresh
 cache=/etc/opl-netfleet/native/subscriptions/fixture.yaml
 before_digest=$(sha256sum "$cache")
-before_mtime=$(stat -c %Y "$cache")
+before_mtime=$(ucode -e 'import { stat } from "fs"; print(stat(ARGV[0]).mtime);' "$cache")
 run_main refresh vm >"$work/refresh-result.json"
 [ "$(sha256sum "$cache")" = "$before_digest" ]
-[ "$(stat -c %Y "$cache")" = "$before_mtime" ]
+[ "$(ucode -e 'import { stat } from "fs"; print(stat(ARGV[0]).mtime);' "$cache")" = "$before_mtime" ]
 ucode "$main" status >"$work/refreshed-result.json"
 assert_json "$work/refreshed-result.json" '@.result.active' true
 ucode "$main" subscriptions-get >"$work/subscriptions-result.json"
 assert_json "$work/subscriptions-result.json" '@.result.sources[0].pending_update' false
 stage=shared_disable
 run_main disable vm >"$work/disable-result.json"
+assert_json "$work/disable-result.json" '@.result.state' native_profile
 [ "$(uci get netfleet.config.profile)" = file:fixture.json ]
 ucode "$main" status >"$work/disabled-result.json"
 assert_json "$work/disabled-result.json" '@.result.active' false

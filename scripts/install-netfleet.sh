@@ -11,11 +11,7 @@ die() {
 	die 'must run as root on OpenWrt'
 command -v apk >/dev/null 2>&1 || die 'OpenWrt APK package manager is required'
 
-nikki_init=${NETFLEET_NIKKI_INIT:-/etc/init.d/nikki}
-[ -x "$nikki_init" ] || die 'Nikki must be installed before NetFleet'
-command -v uci >/dev/null 2>&1 || die 'OpenWrt UCI is required to inspect Nikki'
-nikki_profile=$(uci -q get nikki.config.profile 2>/dev/null || true)
-[ -n "$nikki_profile" ] || die 'Nikki must have an active Profile configured before NetFleet installation'
+command -v uci >/dev/null 2>&1 || die 'OpenWrt UCI is required'
 
 feed_base=${NETFLEET_FEED_BASE:-https://github.com/gaofeng21cn/opl-netfleet/releases/latest/download}
 feed_base=${feed_base%/}

@@ -91,7 +91,11 @@ function remove_work(work) {
 };
 function initialize(found, source) {
 	if (!write_private(CONFIG, fs.readfile(TEMPLATE))) return false;
-	const secret = trim(capture("od -An -N32 -tx1 /dev/urandom | tr -d ' \n'") ?? "");
+	const random = fs.open("/dev/urandom", "r");
+	if (random == null) return false;
+	const bytes = random.read(32);
+	random.close();
+	const secret = type(bytes) == "string" ? hexenc(bytes) : "";
 	if (!match(secret, /^[0-9a-f]{64}$/)) return false;
 	const uci = cursor();
 	uci.set("netfleet", "config", "enabled", "1");

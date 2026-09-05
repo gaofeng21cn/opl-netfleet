@@ -12,6 +12,7 @@ check(desired({ url: "" }, source).source.url == source.url, "blank URL preserve
 check(!desired({ url: "" }, null).ok, "new subscription requires URL");
 check(desired({ name: "Renamed" }, source).source_changed == false, "display edit retains cache identity");
 check(desired({ url: "https://example.test/new" }, source).source_changed, "URL edit changes desired source identity");
+check(desired({ info_url: "https://example.test/quota" }, source).source_changed, "quota source edits also await refresh");
 check(sprintf("%J", source_identity_input(source)) == sprintf("%J", source_identity_input({ ...source, name: "Renamed" })),
 	"display name does not change downloaded source identity");
 check(sprintf("%J", source_identity_input(source)) != sprintf("%J", source_identity_input({ ...source, url: "https://example.test/new" })),

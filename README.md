@@ -14,10 +14,10 @@
 <p align="center">
   <a href="https://github.com/gaofeng21cn/opl-netfleet/actions"><img src="https://img.shields.io/github/actions/workflow/status/gaofeng21cn/opl-netfleet/netfleet-release.yml?label=checks" alt="Checks" /></a>
   <a href="https://github.com/gaofeng21cn/opl-netfleet/releases/latest"><img src="https://img.shields.io/github/v/release/gaofeng21cn/opl-netfleet" alt="最新版本" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="Apache-2.0 许可证" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="GPL-3.0 许可证" /></a>
 </p>
 
-NetFleet 为使用 Nikki 和 Mihomo 的 OpenWrt 设备提供更省心的多机场网络管理。它把不同订阅中的节点按机场、地区和用途整理到统一界面，根据实时连接质量选择合适的出口，并在路径变化时自动完成切换。
+NetFleet 为 OpenWrt 设备提供多机场网络管理。它可以增强已有 Nikki + Mihomo，也可以通过原生后端直接管理 Mihomo。不同订阅中的节点按机场、地区和用途组织，根据实时连接质量选择出口，并在路径变化时切换。
 
 你仍然可以在熟悉的 LuCI 中查看状态、调整偏好和随时关闭增强。NetFleet 会保留一份可独立使用的原生配置；接管过程遇到问题时，设备会自动恢复到这份配置，尽量保持网络可用。
 
@@ -28,7 +28,7 @@ NetFleet 为使用 Nikki 和 Mihomo 的 OpenWrt 设备提供更省心的多机�
 - **按用途选择出口。** 常规网络与有地区要求的服务可以使用不同能力，也可以在条件合适时共享同一地区。
 - **主用与备用分层。** 日常优先使用主用机场，主用路径均不可用时再进入备用层，最后回到直连。
 - **持续检查运行状态。** 设备会定期刷新订阅、重新测量并检查透明代理和 DNS；异常持续超过保护时间后自动恢复。
-- **可控的启用与关闭。** 安装、生成配置和正式接管分开进行，每一步都有清晰状态，关闭后回到原生 Nikki 配置。
+- **可控的启用与关闭。** 安装、生成配置和正式接管分开进行，每一步都有清晰状态，关闭后回到选定的原生恢复配置。
 
 ## 设计思路
 
@@ -42,15 +42,17 @@ NetFleet 把“访问需求”和“具体节点”分开管理。规则只需�
 
 每一轮都使用最新测量结果，并设置切换门槛，避免线路在细小延迟波动中来回跳动。历史数据用于帮助用户理解运行情况，当前选择始终以当轮可用性和实时测量为准。
 
-Nikki 继续负责订阅、配置和 OpenWrt 数据面的生命周期，Mihomo 继续负责连接与节点健康检查，NetFleet 在两者之上提供统一的策略组织、自动选择和恢复体验。这种分工复用了成熟能力，也让接管与退出都更直接。
+Mihomo 负责连接与节点健康检查，NetFleet 负责统一策略、跨机场选优与恢复事务。Nikki 模式沿用 Nikki 的订阅和数据面生命周期；原生模式由 NetFleet 在独立命名空间管理这些能力，并复用固定版本 Nikki 的配置投影和 nft 模板，不重新实现另一套节点选择器或并行控制器。
 
 完整设计理念见[产品白皮书](docs/product/whitepaper.md)，当前实现与运行行为见[架构总览](docs/architecture/overview.md)。
 
 ## 当前功能
 
-当前版本提供原生 LuCI 页面和设备端运行服务，支持：
+当前源码提供原生 LuCI 页面和设备端运行服务，支持以下入口。源码能力不等于某个 Release 或设备已经验收；安装前应确认发布资产对应的源码和后端支持范围。
 
-- 首次设置向导，自动发现当前 Nikki Profile、订阅缓存、地区和主入口组；
+- 首次设置向导，发现所选后端的原生配置、订阅缓存、地区和主入口组；
+- 空白设备显式接入原生 Mihomo；已有 Nikki 设备通过预检、确认和失败恢复事务迁移；
+- 原生订阅的新增、编辑、删除和单项更新，秘密输入不进入公开状态；
 - 多机场主用/备用角色配置和地区范围设置；
 - `standard` 与 `ai-compatible` 等能力的自动地区选择；
 - Provider、地区与节点三级健康检查；
@@ -58,23 +60,21 @@ Nikki 继续负责订阅、配置和 OpenWrt 数据面的生命周期，Mihomo �
 - 机场、地区、节点、订阅用量、事件与连接诊断；
 - 独立打开完整 Zashboard，观察 Mihomo 实时连接、流量、规则命中和代理组；
 - 周期性订阅刷新、配置重编译和自动选优；
+- 原生后端的 IPv4/IPv6 TCP、UDP 透明代理，以及 LAN 和路由器本机 DNS 接管；
 - OpenWrt APK/IPK 软件包、签名 APK feed 和 Fleet 声明式部署。
 
-NetFleet 的事件与诊断页保留适合日常排查的稳定摘要；“实时运行”会在新标签页打开完整 Zashboard。当前 `nikki-mihomo` 后端复用设备上 Nikki 已安装的 Zashboard、Mihomo 控制接口和安全打开方式，NetFleet 只统一管理入口和可用性，不复制页面或凭据。
+NetFleet 的事件与诊断页保留日常排查摘要；“实时运行”在新标签页打开完整 Zashboard。两种后端共用独立入口，读取当前 controller 和资源状态。连接参数沿用 Zashboard 的带密钥 URL 方式，不写入 NetFleet 日志或展示缓存。
 
 ## 安装
-
-原生后端开发已有独立的 [root CLI 订阅准备入口](docs/architecture/interfaces.md)，可以保存
-自有来源、下载和校验节点缓存，但尚不接管网络，也不替代下面的 Nikki 安装前提。
 
 ### 准备工作
 
 开始前，目标设备需要：
 
 - 可用的 OpenWrt 软件包管理器；
-- 已安装并正常运行的 Nikki 与 Mihomo；
-- 一份可独立使用的原生 Nikki Profile；
-- 至少一个稳定命名、已有有效缓存的订阅。
+- Mihomo 及该发布包要求的 OpenWrt 依赖；
+- Nikki 接入：已正常运行的 Nikki、一份可独立使用的原生配置，以及至少一个有效订阅缓存；
+- 原生接入：包含原生后端支持的包、可用上游 DNS 和一个有效机场订阅；接入前不得有其他代理核心占用网络。
 
 在 OpenWrt 25.12 上，用一次性安装入口加入签名软件源并安装两个 package：
 
@@ -84,14 +84,16 @@ uclient-fetch -q -O /tmp/install-netfleet.sh https://github.com/gaofeng21cn/opl-
 
 该命令只安装 APK 公钥、软件源和程序文件，不写入 policy、订阅或 Nikki mixin，也不自动接管网络。
 
-安装完成后，打开 LuCI 的“服务 -> NetFleet”。首次设置会依次完成：
+安装完成后，打开 LuCI 的“服务 -> NetFleet”。使用已运行 Nikki 时直接进入发现；空白设备先选择“首次接入 Mihomo”，明确确认下载订阅及网络接管，再进入共享首次设置：
 
 1. 发现当前原生 Profile、机场缓存、地区和 `MATCH` 主入口组；
 2. 检查当前环境并展示推荐配置；
 3. 在用户确认后生成策略、编译配置并启动 NetFleet；
 4. 回读运行状态和保护探针结果。
 
-整个过程由设备本地完成。订阅 URL 和令牌继续保存在 Nikki 与设备私有配置中；NetFleet 使用现有缓存组织节点，并让用户在接管后维护机场角色、机场地区映射、出口能力、业务组绑定、私有域名规则、自动周期和保护探针。Nikki mixin、透明代理、DNS 与 OpenWrt 平台参数继续由 Nikki/OpenWrt 管理，不进入浏览器配置请求。
+整个过程由设备本地完成。订阅 URL 和令牌保存在所选后端的私有配置中，不进入 policy 或公开状态。接管后可维护机场角色、地区映射、出口能力、业务绑定、私有域名规则、自动周期和保护探针。原生订阅地址由独立“管理订阅”入口保存；修改来源不会自动停网，更新成功前继续使用上次可用缓存。
+
+已有 Nikki 设备需要切换后端时，在“配置 -> 基础接入”选择“迁移到 NetFleet 原生后端”。迁移前检查真实资源和业务；成功后只运行原生后端，失败恢复旧后端，不长期双写。后端迁移与普通软件升级不是同一操作。
 
 ## 升级
 
@@ -119,7 +121,7 @@ apk update && apk upgrade opl-netfleet luci-app-netfleet
 
 ### 关闭与恢复
 
-关闭 NetFleet 时，设备会切回首次设置时选定的 Recovery Profile，并回读 Nikki、Mihomo、透明代理与 DNS 状态。若原生 Profile 本身无法恢复，设备会调用 Nikki 的官方清理流程进入直通模式，并报告实际业务探针结果。
+关闭 NetFleet 时，设备切回选定的恢复配置，并回读当前后端、Mihomo、透明代理与 DNS。只有原生配置无法恢复时，才调用该后端的清理流程恢复网络直通，并报告真实业务探针结果。原生 gateway 只清理自己持有的网络状态，不删除其他服务的规则或路由。
 
 ## 面向多设备部署
 
@@ -131,7 +133,7 @@ scripts/deploy-openwrt.sh <ssh-target> --ref <release-or-commit> \
   --instance /private/path/deployment-bundle
 ```
 
-deployment bundle 由私有 OPL Instance 生成，包含策略、订阅引用、Nikki mixin 和平台声明。默认部署会完成安装、编译和 staged 回读；增加 `--activate` 后，部署器会先确认同一源码已经通过 OpenWrt QEMU qualification，再启用并回读目标设备。
+deployment bundle 由私有 OPL Instance 生成，包含策略、订阅引用、后端 mixin 和平台声明。默认部署会完成安装、编译和 staged 回读；增加 `--activate` 后，部署器会先确认同一源码已经通过 OpenWrt QEMU qualification，再启用并回读目标设备。已有 Nikki bundle 的投影与原生迁移是独立入口，不能通过改一个后端名称代替迁移。
 
 多设备推广建议先在可本地恢复的 canary 完成一次“编译、启用、回读、关闭”全流程，再把同一发布包和配置推广到其他设备。完整步骤见[Canary 推广与复原](docs/operations/canary-promotion.md)。
 
@@ -167,4 +169,4 @@ NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
 
 ## 许可证
 
-OPL NetFleet 采用 [Apache License 2.0](./LICENSE)。
+包含 Nikki 派生模块的组合分发遵循 [GNU GPL 3.0](./LICENSE)。原有 NetFleet 文件的 Apache-2.0 声明继续保留，许可正文见 [Apache-2.0](openwrt/files/usr/share/opl-netfleet/LICENSE.Apache-2.0)；复用的 Nikki 模块保留其 GPL-3.0 许可证、版权、固定上游版本和[修改说明](openwrt/files/usr/share/opl-netfleet/nikki/NOTICE)。第三方原始声明不因组合分发而移除。

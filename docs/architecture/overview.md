@@ -8,44 +8,46 @@
 
 ## 当前产品边界
 
-NetFleet 当前是 OpenWrt + Nikki + Mihomo 的可选增强层。第一阶段 SubscriptionOwner 只拥有
-已启用 Nikki subscription 的只读发现、脱敏状态投影，以及在唯一 mutation lock 内对官方
-`update_subscription` 的显式/定期刷新编排；Nikki 继续拥有订阅 URL/token、下载、格式校验、
-单机场 cache 原子替换、Mihomo 生命周期、DNS、nft 和路由。Mihomo 继续拥有节点连接、组内
-健康检查和 URLTest。NetFleet 另外只增加显式出口绑定、跨机场和地区的资源组织、可验证的
-选择，以及安全的生成、启用、恢复事务。这条运行链不接管数据面。另有只经显式 root CLI
-调用的[原生订阅准备 owner](domain-model.md#原生订阅准备)和
-[显式代理核心生命周期](runtime-and-recovery.md#原生核心生命周期)，不改变当前 Nikki 运行链。
+NetFleet 是 OpenWrt 上的多机场网络增强插件，当前源码有 `nikki-mihomo` 与
+`native-mihomo` 两条明确选择的后端路径。两者共用 Policy、编译、选优、证据、刷新与
+恢复事务；Mihomo 始终拥有节点连接、组内健康检查和 URLTest。
+
+Nikki 模式继续使用 Nikki 的订阅和数据面 owner。原生模式由 NetFleet 管理订阅私有输入、
+缓存和服务，正式 gateway 复用固定版本 Nikki 的配置投影与 nft 模板，管理自身命名空间的
+DNS、IPv4/IPv6 透明代理和策略路由。原生模式不继续读写 Nikki 的配置或启动其服务。
+两种模式不会并行运行代理核心，也不建立双写或运行时自动回落到另一后端。
 
 当前仓库包含 UCode runtime、OpenWrt package source、薄 rpcd 适配器、原生 LuCI 页面，
-以及一个由 `procd` 直接监督的前台 supervisor。设备配置可以在已有 Nikki subscription、
-共享地区目录和当前 Policy Source 组边界内维护完整 NetFleet policy 结构，但不接触订阅凭据、
-自定义地区正则、Nikki mixin 或 OpenWrt platform。当前没有并行订阅刷新循环、远程 Host、
-第二选择器、后台投影、原生 sing-box 后端或内置 Zashboard。
+以及一个由 `procd` 直接监督的前台 supervisor。设备配置可在所选后端订阅、共享地区目录
+和 Policy Source 组边界内维护完整 NetFleet policy。原生订阅凭据通过独立 subscriptions
+owner 保存，不进入 policy；浏览器不管理 DNS/nft 或解析节点。Zashboard 仍是独立完整
+页面，由当前后端提供资源和 controller。没有并行刷新循环、第二选择器或 sing-box 后端。
 
-当前运行后端身份是 `nikki-mihomo`，不是永久产品身份。NetFleet 只有在 successor 已完整
-接管订阅、后端生命周期、OpenWrt 数据面和安全清理，并通过同一恢复合同后，才可以不再
-依赖 Nikki。长期方向不能提前表现为当前 UI 选项或运行时 fallback。
+后端身份由设备私有 selector 明确选择，缺省使用 Nikki 路径，未知身份拒绝。
+空白设备通过显式原生接入建立初始环境；已有 Nikki 设备只通过绑定 revision 的迁移事务
+交接 owner。源码能力、发布包和具体设备验收是独立事实；后端实现存在不代表任意发布资产
+或设备已经通过等功能验证。入口和权限见[公开接口](interfaces.md)。
 
 ## 当前纵向链
 
-当前实现入口为 `openwrt/files/usr/libexec/opl-netfleet/main.uc`。公开动作是 `status`、
+当前实现入口为 `openwrt/files/usr/libexec/opl-netfleet/main.uc`。常用运行动作是 `status`、
 `events`、`probe`、`validate`、`compile`、`enable`、`disable`、`select` 和 `refresh`；内部动作是
 `maintain`、`recover`，以及仅供 canonical installer 调用的恢复准备与恢复动作。`refresh`
-复用同一个 one-shot owner 和设备锁，不另建订阅 writer。
+复用同一个 one-shot owner 和设备锁，不另建订阅 writer。接入、迁移、订阅与 Dashboard
+管理动作由[接口合同](interfaces.md)统一列出。
 
 ```text
-target-local policy + PolicySource + Nikki subscription cache
+target-local policy + PolicySource + selected backend subscription cache
     -> one-shot compiler
     -> staged Profile + manifest
     -> activation owner
-    -> Nikki official Profile switch/restart
+    -> selected backend Profile switch/restart
     -> Mihomo current owner state
 
 RecoveryProfileRef
     -> rollback / disable / recover
-    -> Nikki official Profile switch/restart
-    -> Nikki official cleanup / network passthrough
+    -> selected backend Profile switch/restart
+    -> selected backend cleanup / network passthrough
 ```
 
 `validate` 可以只读校验显式 policy 路径；其他动作只读取 canonical target-local policy。
@@ -55,13 +57,13 @@ RecoveryProfileRef
 
 ## 跨主题硬下限
 
-1. 安装、`validate` 和 `compile` 默认无数据面副作用；只有显式启用才可切换 Nikki Profile。
+1. 安装、`validate` 和 `compile` 默认无数据面副作用；接入、迁移和启用必须显式确认。
 2. 启用前必须确认 WAN 已 up 且存在 IPv4 默认路由；不满足时保持原 Profile。
 3. NetFleet 未安装、未启用、崩溃或被卸载时，OpenWrt 基础联网必须仍可独立恢复。
 4. disable、事务回滚和进程级恢复优先恢复独立的 Recovery Profile；原生 runtime 仍失败时，
-   才允许 Nikki 官方 stop/cleanup 恢复网络直通。
-5. NetFleet 当前运行链不自行清理 DNS、nft 或路由，不对 Nikki cache 建立第二 writer，
-   原生缓存不参与 Nikki 运行链的选路或恢复；原生显式代理没有 LAN 截获。
+   才允许所选后端 stop/cleanup 恢复网络直通。
+5. Nikki 模式使用官方数据面生命周期；原生 gateway 只清理自己持有且身份可回读的
+   DNS、nft 和路由状态，不对其他后端缓存或网络状态建立第二 writer。
 6. 每项状态和 mutation 只有一个 owner；投影不得反向成为事实源。
 7. 设备软件操作不授权重启、关机、系统升级、固件写入或依赖现场才能撤销的动作。
 8. source 测试、package 构建和设备运行分别是不同证据层，不能互相替代。
@@ -105,7 +107,7 @@ successor 已接管真实 caller；caller-zero 后在同一批次删除实现、
 - 多个后台循环、worker 身份链或与 activation owner 竞争的 mutation owner；
 - 综合评分、固定 Top-N、入口 ICMP 代替出口 RTT，或把历史平均值用于当前选择；
 - 自动激活、后台 compile、健康期无触发的全地区扫描；
-- NetFleet 自写 DNS、nft、路由 cleanup；
+- 绕过正式 gateway 或所选后端 owner 的 DNS、nft、路由清理；
 - 没有真实 caller 的 facade、公开 schema、兼容版本或 UI。
 
 ## 准入证据
@@ -113,7 +115,7 @@ successor 已接管真实 caller；caller-zero 后在同一批次删除实现、
 每个新增机制必须回答：当前需求是什么，现有 owner 为什么不能完成，不增加会失败哪项验收，
 最小真实路径如何证明。缺少其中任何一项时，该机制不进入 source。
 
-设备完成必须分别取得 installed artifact、staged/active 身份、Nikki effective Profile、Mihomo
-current chain、DNS/nft/IPv4、业务访问、恢复和 LuCI DOM 的 target-local readback。推广先在一台
+设备完成必须分别取得 installed artifact、staged/active 身份、所选后端 effective Profile、Mihomo
+current chain、DNS/nft/IPv4/IPv6、业务访问、恢复和 LuCI DOM 的 target-local readback。推广先在一台
 可恢复 canary 上证明，再把同一 canonical artifact 复制到单独授权的 replica；任何一台设备的
 成功都不能替代另一台设备的验收。

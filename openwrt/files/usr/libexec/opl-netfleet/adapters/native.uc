@@ -2,11 +2,7 @@ import * as fs from "fs";
 import { read_json, sha256 } from "./uci.uc";
 
 export const BASE = "/etc/opl-netfleet/native";
-export const CACHE = `${BASE}/cache`;
-export const CORE = `${BASE}/core`;
 export const SERVICE = "opl-netfleet-core";
-export const LOCK = "/var/lock/opl-netfleet-deploy.lock";
-export const COMMAND = ["/usr/bin/mihomo", "-d", CORE, "-f", `${CORE}/config.json`];
 
 export function private_file(path) {
 	const info = type(path) == "string" ? fs.lstat(path) : null;
@@ -49,25 +45,4 @@ export function core_service() {
 	try { result = json(process); } catch (error) {}
 	if (process.close() != 0 || type(result) != "object") return { ok: false };
 	return { ok: true, service: result[SERVICE] };
-};
-
-export function owned_service(service) {
-	const instances = service?.instances;
-	return type(instances) == "object" && length(keys(instances)) == 1 &&
-		sprintf("%J", instances?.core?.command) == sprintf("%J", COMMAND);
-};
-
-export function owns_mixed_listener(pid, port) {
-	const inodes = {};
-	for (let fd in fs.lsdir(`/proc/${pid}/fd`) ?? []) {
-		const target = fs.readlink(`/proc/${pid}/fd/${fd}`);
-		const socket = type(target) == "string" ? match(target, /^socket:\[([0-9]+)\]$/) : null;
-		if (socket != null) inodes[socket[1]] = true;
-	}
-	const endpoint = sprintf("0100007F:%04X", port);
-	for (let line in split(fs.readfile("/proc/net/tcp") ?? "", "\n")) {
-		const fields = split(trim(line), /[[:space:]]+/);
-		if (fields[1] == endpoint && fields[3] == "0A" && inodes[fields[9]]) return true;
-	}
-	return false;
 };

@@ -274,4 +274,4 @@ grep -q '"rollback":"restored_previous_bytes_native_profile"' "$work/result.json
 [ "$(cat /usr/libexec/opl-netfleet/main.uc)" = old-main ]
 "$real_ubus" call system board >/dev/null
 test -S /var/run/ubus/ubus.sock
-printf '{"ok":true,"rollback":true}\n'
+printf '{"ok":true,"rollback":true,"source_commit":"%s","source_tree":"%s","checks":{"deploy_failure_rollback":true,"post_failure_management":true,"var_symlink":true,"ubus":true}}\n' "$source_commit" "$source_tree"

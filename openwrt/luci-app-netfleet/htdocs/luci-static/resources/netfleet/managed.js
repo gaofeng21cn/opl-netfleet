@@ -4,12 +4,38 @@
 'require ui';
 'require netfleet.api as api';
 
+function errorLabel(code) {
+	return ({
+		subscription_revision_changed: '订阅已被其他操作修改，请重新读取后保存',
+		invalid_subscription_id: '订阅标识只能包含英文字母、数字和下划线',
+		invalid_subscription_url: '订阅地址必须是有效的 HTTP 或 HTTPS 地址',
+		subscription_referenced_by_policy: '订阅仍被机场策略引用，请先调整配置',
+		subscription_selected_as_profile: '订阅仍是当前运行配置，不能删除',
+		subscription_referenced_by_runtime: '运行配置仍使用该订阅，不能删除',
+		running_profile_unreadable: '无法确认运行配置的引用关系，暂不能删除',
+		subscription_cache_owner_unknown: '已有同名缓存但无法确认其归属，未覆盖',
+		mutation_busy: '设备正在执行其他操作，请稍后重试',
+		already_native: '已经使用 NetFleet 原生后端',
+		existing_native_configuration: '已有原生后端配置，不能覆盖',
+		existing_backend_owner: '已有代理后端运行，不能覆盖',
+		existing_native_owner: '原生后端尚未清理，不能重复接入',
+		source_backend_not_running: '请先恢复当前 Nikki 后端正常运行',
+		source_backend_disabled: '当前 Nikki 后端未启用',
+		policy_disabled: '请先启用 NetFleet 并验证运行正常',
+		native_gateway_unavailable: '尚未安装原生网络接管组件',
+		native_dependencies_unavailable: '原生后端依赖尚未齐备',
+		upstream_dns_unavailable: '没有可用的上游 DNS',
+		source_resource_unavailable: '缺少当前配置引用的本地资源',
+		profile_or_subscription_unavailable: '当前原生配置或订阅缓存不可读取'
+	})[code] || String(code || '设备未返回成功结果');
+}
+
 function failure(error) {
 	const detail = error && error.detail;
 	if (detail && detail.rollback)
-		return String(error && error.message || '执行失败') + '；' + (detail.rollback.ok === true ? '已恢复旧后端' : '旧后端恢复未确认，请检查网络') + (detail.rollback.error ? '（' + String(detail.rollback.error) + '）' : '');
+		return errorLabel(error && error.message) + '；' + (detail.rollback.ok === true ? '已恢复更新前状态' : '恢复未确认，请检查网络') + (detail.rollback.error ? '（' + String(detail.rollback.error) + '）' : '');
 	const outcome = detail && (detail.outcome || detail.recovery_result || detail.error);
-	return String(error && error.message || '设备未返回成功结果') + (outcome ? '；恢复结果：' + String(outcome) : '');
+	return errorLabel(error && error.message) + (outcome ? '；恢复结果：' + String(outcome) : '');
 }
 
 function button(label, click, disabled, destructive) {
@@ -38,7 +64,7 @@ function editSource(controller, state, existing) {
 	const errorBox = E('p', { 'class': 'is-warning', 'role': 'alert' });
 	const save = button('保存订阅', function() {
 		if (fields.some(function(field) { return field[4] && !values[field[0]].value.trim(); }) || !/^[A-Za-z0-9_]+$/.test(values.id.value.trim())) {
-			errorBox.textContent = '请填写订阅标识、名称和新订阅地址。';
+			errorBox.textContent = '请填写名称和地址；订阅标识仅限英文字母、数字和下划线。';
 			return;
 		}
 		const source = { id: values.id.value.trim(), name: values.name.value.trim() };
@@ -103,7 +129,7 @@ function migration(controller) {
 	ui.showModal('迁移到 NetFleet 原生后端', [ E('p', { 'class': 'spinning' }, '正在检查迁移条件…') ]);
 	return api.migrationGet().then(function(state) {
 		const controls = [ E('p', {}, '确认后，NetFleet 将接管机场订阅、Mihomo、DNS 和透明代理。设备会检查新后端；失败时恢复旧后端。迁移期间网络可能短暂中断。') ];
-		if (!state.ready) controls.push(E('p', { 'class': 'is-warning' }, '当前不能迁移：' + (state.missing || []).map(function(item) { return typeof item === 'string' ? item : item.error || item.code || item.name; }).join('、')));
+		if (!state.ready) controls.push(E('p', { 'class': 'is-warning' }, '当前不能迁移：' + (state.missing || []).map(function(item) { return errorLabel(typeof item === 'string' ? item : item.error || item.code || item.name); }).join('、')));
 		controls.push(E('div', { 'class': 'right' }, [ button('取消', ui.hideModal), ' ', button('确认迁移', function() {
 			controller.busy = true;
 			ui.showModal('迁移到 NetFleet 原生后端', [ E('p', { 'class': 'spinning' }, '正在迁移并等待设备回读…') ]);
@@ -121,7 +147,7 @@ function nativeSetup(controller) {
 	ui.showModal('首次接入 Mihomo', [ E('p', { 'class': 'spinning' }, '正在检查运行环境…') ]);
 	return api.nativeSetupGet().then(function(state) {
 		if (!state.ready) {
-			ui.showModal('首次接入 Mihomo', [ E('p', { 'class': 'is-warning' }, '当前不能接入：' + (state.missing || []).map(function(item) { return typeof item === 'string' ? item : item.code || item.error; }).join('、')), button('关闭', ui.hideModal) ]);
+			ui.showModal('首次接入 Mihomo', [ E('p', { 'class': 'is-warning' }, '当前不能接入：' + (state.missing || []).map(function(item) { return errorLabel(typeof item === 'string' ? item : item.code || item.error); }).join('、')), button('关闭', ui.hideModal) ]);
 			return;
 		}
 		const id = E('input', { 'class': 'cbi-input-text', 'required': true });

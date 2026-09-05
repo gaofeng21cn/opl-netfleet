@@ -27,10 +27,12 @@ tree=$(git -C "$repo_dir" rev-parse "$commit^{tree}")
 output_explicit=$output
 work=$(mktemp -d "${TMPDIR:-/tmp}/opl-netfleet-sdk.XXXXXX")
 backup=$(mktemp -d "${TMPDIR:-/tmp}/opl-netfleet-sdk-backup.XXXXXX")
+staged_packages=()
 restore_sdk() {
-  rm -rf "$sdk/package/opl-netfleet" "$sdk/package/luci-app-netfleet"
-  [[ -e "$backup/opl-netfleet" ]] && mv "$backup/opl-netfleet" "$sdk/package/opl-netfleet"
-  [[ -e "$backup/luci-app-netfleet" ]] && mv "$backup/luci-app-netfleet" "$sdk/package/luci-app-netfleet"
+  for package_name in "${staged_packages[@]}"; do
+    rm -rf "$sdk/package/$package_name"
+    [[ ! -e "$backup/$package_name" ]] || mv "$backup/$package_name" "$sdk/package/$package_name"
+  done
   for name in .config private-key.pem public-key.pem; do
     rm -f "$sdk/$name"
     [[ ! -e "$backup/$name" ]] || mv "$backup/$name" "$sdk/$name"
@@ -63,14 +65,21 @@ build_target_arch=$(make -s -C "$sdk" val.ARCH_PACKAGES 2>/dev/null | tail -1)
 [[ -n "$build_target_arch" && "$build_target_arch" != *' undefined' ]] || die 'SDK package architecture is unreadable'
 [[ -n "$output_explicit" ]] || output="${XDG_CACHE_HOME:-$HOME/.cache}/opl-netfleet/packages/$commit-$tree/$build_target_arch"
 mkdir -p "$output"; chmod 0700 "$output"
-for package_name in opl-netfleet luci-app-netfleet; do
+core_lock=$work/openwrt/mihomo-meta/source.json
+core_arch=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["architecture"])' "$core_lock")
+core_version=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$core_lock")
+[[ "$build_target_arch" == "$core_arch" ]] || die "no pinned core asset for SDK architecture: $build_target_arch"
+for package_name in opl-netfleet luci-app-netfleet mihomo-meta; do
   if [[ -e "$sdk/package/$package_name" ]]; then mv "$sdk/package/$package_name" "$backup/$package_name"; fi
+  staged_packages+=("$package_name")
 done
 mkdir -p "$sdk/package/opl-netfleet"
 cp -R "$work/openwrt/Makefile" "$sdk/package/opl-netfleet/"
 cp -R "$work/openwrt/files" "$sdk/package/opl-netfleet/"
 mkdir -p "$sdk/package/luci-app-netfleet"
 cp -R "$work/openwrt/luci-app-netfleet/." "$sdk/package/luci-app-netfleet/"
+cp -R "$work/openwrt/mihomo-meta" "$sdk/package/mihomo-meta"
+cp "$work/openwrt/files/usr/share/opl-netfleet/nikki/LICENSE" "$sdk/package/mihomo-meta/LICENSE"
 package_format=ipk
 package_arch=all
 if grep -Eq '^CONFIG_USE_APK=y$' "$sdk/.config" 2>/dev/null; then
@@ -82,7 +91,7 @@ if grep -Eq '^CONFIG_USE_APK=y$' "$sdk/.config" 2>/dev/null; then
   "$sdk/staging_dir/host/bin/openssl" ec -in "$sdk/private-key.pem" -pubout >"$sdk/public-key.pem"
 fi
 make -C "$sdk" package/opl-netfleet/clean package/luci-app-netfleet/clean
-make -C "$sdk" package/opl-netfleet/compile package/luci-app-netfleet/compile V=s
+make -C "$sdk" package/mihomo-meta/compile package/opl-netfleet/compile package/luci-app-netfleet/compile V=s
 
 payload=$work/payload
 mkdir -p "$payload/usr/libexec" "$payload/usr/libexec/rpcd" \
@@ -137,6 +146,15 @@ else
 fi
 while IFS= read -r file; do artifacts+=("$file"); done < <(find "$sdk/bin/packages" -type f \( "${artifact_patterns[@]}" \) -print 2>/dev/null | sort)
 [[ ${#artifacts[@]} -eq 2 ]] || die "expected exactly two package artifacts, found ${#artifacts[@]}"
+if [[ "$package_format" == apk ]]; then
+  core_pattern="mihomo-meta-${core_version}-r1.apk"
+else
+  core_pattern="mihomo-meta_${core_version}-r1_${build_target_arch}.ipk"
+fi
+core_artifacts=()
+while IFS= read -r file; do core_artifacts+=("$file"); done < <(find "$sdk/bin/packages" -type f -name "$core_pattern" -print | sort)
+[[ ${#core_artifacts[@]} -eq 1 ]] || die 'expected exactly one pinned Mihomo dependency package'
+artifacts+=("${core_artifacts[0]}")
 bootstrap_sha256=''
 public_key=''
 if [[ "$package_format" == apk ]]; then
@@ -162,18 +180,26 @@ if [[ "$package_format" == apk ]]; then
   "$sdk/staging_dir/host/bin/apk" verify --keys-dir "$trusted_dir" "${signed_artifacts[@]}"
   artifacts=("${signed_artifacts[@]}")
 fi
-python3 - "$output" "$commit" "$tree" "$version" "$release" "$package_format" "$package_arch" "$build_target_arch" "$policy_schema" "$public_key" "$runtime_payload_sha256" "$files_sha256" "$bootstrap_sha256" "${artifacts[@]}" <<'PY'
+python3 - "$output" "$commit" "$tree" "$version" "$release" "$package_format" "$package_arch" "$build_target_arch" "$policy_schema" "$public_key" "$runtime_payload_sha256" "$files_sha256" "$bootstrap_sha256" "$core_lock" "${artifacts[@]}" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
-output, commit, tree, version, release, package_format, package_arch, build_target_arch, policy_schema, public_key, runtime_payload_sha256, files_sha256, bootstrap_sha256, *artifacts = sys.argv[1:]
+output, commit, tree, version, release, package_format, package_arch, build_target_arch, policy_schema, public_key, runtime_payload_sha256, files_sha256, bootstrap_sha256, core_lock, *artifacts = sys.argv[1:]
 items=[]
+dependencies=[]
+core_source=json.loads(Path(core_lock).read_text())
 for source in artifacts:
     data=Path(source).read_bytes(); name=Path(source).name
     target=Path(output)/name; target.write_bytes(data); target.chmod(0o600)
-    package_name='luci-app-netfleet' if name.startswith(('luci-app-netfleet_', 'luci-app-netfleet-')) else 'opl-netfleet'
-    items.append({'package':package_name,'name':name,'sha256':hashlib.sha256(data).hexdigest(),'size':len(data)})
+    package_name='mihomo-meta' if name.startswith(('mihomo-meta_', 'mihomo-meta-')) else ('luci-app-netfleet' if name.startswith(('luci-app-netfleet_', 'luci-app-netfleet-')) else 'opl-netfleet')
+    item={'package':package_name,'name':name,'sha256':hashlib.sha256(data).hexdigest(),'size':len(data)}
+    if package_name == 'mihomo-meta':
+        item.update({'package_arch':build_target_arch, 'version':core_source['version'], 'upstream':core_source})
+        dependencies.append(item)
+    else:
+        items.append(item)
 manifest={'schema':'opl-netfleet-package-manifest.v2','source_commit':commit,'source_tree':tree,'package_version':version,'package_release':release,'package_format':package_format,'package_arch':package_arch,'build_target_arch':build_target_arch,'policy_schema':int(policy_schema),'runtime_payload_sha256':runtime_payload_sha256,'files_manifest':{'name':'FILES.sha256','sha256':files_sha256},'artifacts':items}
 manifest['artifact_files']={item['package']: item['name'] for item in items}
+manifest['dependency_artifacts']=dependencies
 if bootstrap_sha256:
     manifest['feed_bootstrap']={'name':'install-netfleet.sh','sha256':bootstrap_sha256}
 if public_key:

@@ -14,11 +14,12 @@
 <p align="center">
   <a href="https://github.com/gaofeng21cn/opl-netfleet/actions"><img src="https://img.shields.io/github/actions/workflow/status/gaofeng21cn/opl-netfleet/netfleet-release.yml?label=checks" alt="Checks" /></a>
   <a href="https://github.com/gaofeng21cn/opl-netfleet/releases/latest"><img src="https://img.shields.io/github/v/release/gaofeng21cn/opl-netfleet" alt="Latest release" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="Apache-2.0 license" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="GPL-3.0 license" /></a>
 </p>
 
-NetFleet makes multi-provider network management easier on OpenWrt devices that
-use Nikki and Mihomo. It organizes nodes by provider, region, and purpose,
+NetFleet provides multi-provider network management on OpenWrt, either alongside
+an existing Nikki + Mihomo installation or through its native Mihomo backend.
+It organizes nodes by provider, region, and purpose,
 chooses an appropriate exit from current measurements, and switches paths as
 network conditions change.
 
@@ -54,10 +55,11 @@ Each round uses current measurements and a switch margin, keeping the active
 path stable during small latency fluctuations. History helps explain what the
 device has seen; the current choice follows the latest healthy measurements.
 
-Nikki continues to manage subscriptions, profiles, and the OpenWrt data-plane
-lifecycle. Mihomo continues to manage connections and node health. NetFleet
-adds the shared policy model, automatic selection, and recovery experience on
-top of those capabilities.
+Mihomo owns connections and node health; NetFleet owns the shared policy,
+cross-provider selection, and recovery transactions. Nikki mode retains Nikki's
+subscription and data-plane lifecycle. Native mode manages these resources in
+an independent namespace, reusing pinned Nikki configuration projections and
+nft templates rather than adding another node selector or parallel controller.
 
 Read the [product whitepaper](docs/product/whitepaper.md) for the full rationale
 and the [architecture overview](docs/architecture/overview.md) for current
@@ -65,9 +67,14 @@ implementation behavior.
 
 ## Current Features
 
-The current release includes native LuCI pages and a device-side runtime with:
+The current source provides native LuCI pages and a device-side runtime with the
+following interfaces. Source availability does not establish that a particular
+release asset or device has passed qualification; check the release's source
+identity and supported backend before installation.
 
-- first-run discovery of the native Nikki profile, provider caches, regions, and the `MATCH` entry group;
+- first-run discovery of the selected backend's profile, provider caches, regions, and entry group;
+- explicit native Mihomo setup on an unconfigured device and transactional migration from a working Nikki installation;
+- native subscription creation, editing, deletion, and individual refresh without exposing saved credentials in public status;
 - primary/reserve provider roles and region scope settings;
 - automatic region selection for `standard` and `ai-compatible` capabilities;
 - provider, region, and node health checks;
@@ -75,13 +82,14 @@ The current release includes native LuCI pages and a device-side runtime with:
 - provider, region, node, subscription, event, and connection diagnostics;
 - a separate full Zashboard for live Mihomo connections, traffic, rule matches, and proxy groups;
 - scheduled subscription refresh, configuration compilation, and automatic selection;
+- native IPv4/IPv6 TCP and UDP transparent proxying, plus LAN and router-local DNS handling;
 - OpenWrt APK/IPK packages, signed APK feeds, and Fleet declarative deployment.
 
 NetFleet keeps stable operational summaries on its Events and Diagnostics page.
-The **Live Runtime** entry opens the full Zashboard in a new tab. With the
-current `nikki-mihomo` backend, NetFleet reuses Nikki's installed Zashboard,
-Mihomo controller, and secure opening path; it manages only entry availability
-and does not copy the page or its credentials.
+The **Live Runtime** entry opens the full Zashboard in a new tab using the
+selected backend's controller and resources. Both backends use the same entry
+and Zashboard's secret-bearing connection URL. These temporary credentials must
+not enter NetFleet logs or display caches.
 
 ## Installation
 
@@ -90,9 +98,9 @@ and does not copy the page or its credentials.
 The target device should have:
 
 - a working OpenWrt package manager;
-- Nikki and Mihomo installed and running;
-- a native Nikki profile that can be used independently;
-- at least one stable named subscription with a valid local cache.
+- Mihomo and the OpenWrt dependencies required by the selected package;
+- for Nikki mode: a working Nikki installation, an independently usable native profile, and at least one valid subscription cache;
+- for native setup: a package containing native-backend support, working upstream DNS, and a valid subscription, without another proxy core occupying the network.
 
 On OpenWrt 25.12, use the one-time installer to add the signed feed and install
 both packages:
@@ -105,16 +113,28 @@ This command installs only the APK key, repository, and program files. It does
 not write policy, subscriptions, or Nikki mixins, and it does not take over the
 network automatically.
 
-Open **Services -> NetFleet** in LuCI. First-run setup will:
+Open **Services -> NetFleet** in LuCI. A working Nikki installation enters
+discovery directly. An unconfigured device first uses **Set Up Mihomo**, with
+explicit confirmation before subscription download and network takeover. The
+shared first-run setup then:
 
 1. discover the native profile, provider caches, regions, and the `MATCH` entry group;
 2. check the environment and show a recommended configuration;
 3. generate and compile the policy after your confirmation;
 4. start NetFleet and read back runtime and probe status.
 
-Subscriptions remain managed by Nikki and stored in the device's private
-configuration. After setup, provider roles, region scope, refresh interval, and
-protected probes can be adjusted from the configuration page.
+Subscriptions remain in the selected backend's private configuration, outside
+policy and public status. After setup, LuCI can maintain provider roles, region
+scope, capabilities, business bindings, private domain rules, automation, and
+protected probes. Native credentials use the separate subscription management
+entry. Saving a changed source does not stop the network; the last accepted
+cache remains in use until an explicit refresh succeeds.
+
+To move a working Nikki installation, use **Configuration -> Foundation ->
+Migrate to NetFleet Native Backend**. The transaction checks resources and
+business connectivity, leaves only the native backend running on success, and
+restores the previous backend on failure. Backend migration is distinct from a
+normal package upgrade and never establishes permanent dual writes.
 
 ## Upgrading
 
@@ -155,9 +175,10 @@ fallback state.
 ### Closing And Recovery
 
 Disabling NetFleet switches back to the Recovery Profile selected during setup
-and checks Nikki, Mihomo, transparent proxy, and DNS state. If that native
-profile cannot be restored, Nikki's official cleanup path provides direct
-traffic and the device reports the actual probe result.
+and checks the selected backend, Mihomo, transparent proxy, and DNS state. Only
+if the recovery profile cannot be restored does that backend's cleanup restore
+direct networking. The native gateway removes only the network state it owns,
+and the device reports the actual business probe result.
 
 ## Fleet Deployment
 
@@ -171,10 +192,12 @@ scripts/deploy-openwrt.sh <ssh-target> --ref <release-or-commit> \
   --instance /private/path/deployment-bundle
 ```
 
-The bundle contains policy, subscription references, a Nikki mixin, and a
+The bundle contains policy, subscription references, a backend mixin, and a
 platform declaration. The default path installs, compiles, and reads back a
 staged result. Add `--activate` after the same source has passed OpenWrt QEMU
-qualification to enable the target and perform the final readback.
+qualification to enable the target and perform the final readback. An existing
+Nikki bundle and native migration remain distinct entry points; changing a
+backend name is not a substitute for migration.
 
 For rollout, complete the full compile, enable, readback, and disable cycle on
 a locally recoverable canary before promoting the same package and configuration
@@ -211,4 +234,9 @@ NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
 - [Product whitepaper](docs/product/whitepaper.md)
 - [Development and device-operation rules](AGENTS.md)
 
-OPL NetFleet is released under the [Apache License 2.0](./LICENSE).
+The combined distribution containing Nikki-derived modules is distributed under
+[GNU GPL 3.0](./LICENSE). Original NetFleet files retain their Apache-2.0 notices;
+the license text remains in [LICENSE.Apache-2.0](openwrt/files/usr/share/opl-netfleet/LICENSE.Apache-2.0).
+Imported Nikki modules retain their GPL-3.0 license, copyright, pinned upstream
+revision, and [modification notice](openwrt/files/usr/share/opl-netfleet/nikki/NOTICE).
+Combining the distribution does not remove third-party notices.

@@ -47,7 +47,8 @@ export function desired_source(envelope, previous) {
 	if (index(["remote", "local"], source.prefer) < 0)
 		return { ok: false, error: "invalid_subscription_preference" };
 	return { ok: true, source: source, source_changed: previous != null &&
-		(source.url != previous.url || source.user_agent != (previous.user_agent || "clash.meta")) };
+		(source.url != previous.url || source.user_agent != (previous.user_agent || "clash.meta") ||
+			source.info_url != (previous.info_url ?? "")) };
 };
 
 // Subscription-Userinfo is the same wire contract consumed by Nikki.
@@ -83,7 +84,7 @@ export function referenced(policy, id) {
 };
 
 export function source_identity_input(source) {
-	return { url: source?.url ?? "", user_agent: source?.user_agent || "clash.meta" };
+	return { url: source?.url ?? "", user_agent: source?.user_agent || "clash.meta", info_url: source?.info_url ?? "" };
 };
 
 export function public_source(source, cache) {

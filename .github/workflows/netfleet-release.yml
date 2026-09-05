@@ -66,6 +66,12 @@ jobs:
           scripts/prepare-openwrt-sdk.sh --sdk "$sdk"
           printf 'NETFLEET_SDK=%s\n' "$sdk" >> "$GITHUB_ENV"
 
+      - name: Restore pinned prebuilt core
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.NETFLEET_SDK }}/dl
+          key: netfleet-mihomo-prebuilt-${{ hashFiles('openwrt/mihomo-meta/source.json') }}
+
       - name: Build signed package set
         env:
           NETFLEET_APK_PRIVATE_KEY: ${{ secrets.NETFLEET_APK_PRIVATE_KEY }}

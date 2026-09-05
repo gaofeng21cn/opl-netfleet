@@ -6,9 +6,10 @@ version=25.12.5
 image_name="openwrt-${version}-armsr-armv8-generic-ext4-combined-efi.img.gz"
 image_sha=d7dcf013547e8be28006d83ce2c2232cd065755b803f4a5ee6b2e22391cfbc76
 image_url="https://downloads.openwrt.org/releases/${version}/targets/armsr/armv8/${image_name}"
-mihomo_name=mihomo-linux-arm64-v1.19.30.gz
-mihomo_sha=58896873736d28628f66de3677c8654fa0f180662523148e136cff4f6e890069
-mihomo_url=https://api.github.com/repos/MetaCubeX/mihomo/releases/assets/516687149
+core_lock=${NETFLEET_WORKSPACE:?}/openwrt/mihomo-meta/source.json
+mihomo_name=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["filename"])' "$core_lock")
+mihomo_sha=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$core_lock")
+mihomo_url=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["api_url"])' "$core_lock")
 yq_name=yq_linux_arm64-v4.53.6
 yq_sha=88a1016bc1d657375a35864e4f44b6f333df8ff97b559f51bba0adcb2169df09
 yq_url=https://api.github.com/repos/mikefarah/yq/releases/assets/522028007
@@ -21,6 +22,9 @@ firmware=${NETFLEET_QEMU_FIRMWARE:?}
 qemu_version=${NETFLEET_QEMU_VERSION:?}
 package_archive=${NETFLEET_PACKAGE_ARCHIVE:-}
 package_manifest_sha=${NETFLEET_PACKAGE_MANIFEST_SHA256:-}
+lane_mode=${NETFLEET_VM_LANE:-all}
+case "$lane_mode" in all|native|setup|migration|runtime|package) ;; *) echo 'Unknown VM lane' >&2; exit 1 ;; esac
+[ "$lane_mode" != package ] || [ -n "$package_archive" ] || { echo 'Package lane requires candidate' >&2; exit 1; }
 if { [ -z "$package_archive" ] && [ -n "$package_manifest_sha" ]; } ||
 	{ [ -n "$package_archive" ] && [ -z "$package_manifest_sha" ]; }; then
 	echo "Package archive and manifest identity must be provided together" >&2
@@ -83,9 +87,7 @@ finish() {
 	trap - EXIT INT TERM
 	if [ "$rc" -ne 0 ]; then
 		echo "OpenWrt qualification failed at stage: $stage" >&2
-		for dump in "$work"/guest-result.stderr "$work"/runtime-result.json "$work"/runtime-result.stderr \
-			"$work"/native-result.stderr \
-			"$work"/package-result.json "$work"/package-result.stderr "$qemu_log"; do
+		for dump in "$work"/*-result.json "$work"/*-result.stderr "$qemu_log"; do
 			[ ! -s "$dump" ] || { echo "--- $dump" >&2; cat "$dump" >&2; }
 		done
 		if [ "${NETFLEET_VM_DEBUG_KEEP:-0}" = 1 ]; then
@@ -192,7 +194,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "server": "127.0.0.1", "port": 1081, "udp": True}],
                 "dns": {"enable": True, "nameserver": ["udp://127.0.0.1:1054"]},
                 "mixed-port": 1111, "rules": ["MATCH,REJECT"]}).encode()
-            if kind == "invalid":
+            if kind == "setup":
+                body = json.dumps({"proxies": [{"name": "JP Japan setup-node", "type": "socks5",
+                    "server": "198.18.1.2", "port": 1081, "udp": True}],
+                    "proxy-groups": [{"name": "Outbound", "type": "select", "proxies": ["JP Japan setup-node"]}],
+                    "rules": ["MATCH,Outbound"]}).encode()
+            elif kind == "invalid":
                 body = b"proxies: [not valid yaml"
             elif kind == "bad-node":
                 body = b'{"proxies":[{"name":"bad","type":"not-a-proxy"}]}'
@@ -269,6 +276,17 @@ if [ -n "$package_archive" ]; then
 fi
 assets_elapsed_ms=$(($(now_ms) - assets_started_ms))
 
+ssh-keygen -q -t ed25519 -N '' -f "$ssh_key"
+image_elapsed_ms=0
+boot_elapsed_ms=0
+transfer_elapsed_ms=0
+boot_clean_vm() {
+if [ -n "$qemu_pid" ]; then
+	kill "$qemu_pid" >/dev/null 2>&1 || true
+	wait "$qemu_pid" >/dev/null 2>&1 || true
+	qemu_pid=
+fi
+rm -f "$serial_socket"
 stage=qemu_boot
 image_started_ms=$(now_ms)
 set +e
@@ -280,8 +298,7 @@ case "$gzip_status" in
 	*) echo "OpenWrt image decompression failed" >&2; exit 1 ;;
 esac
 qemu-img info --output=json "$work/openwrt.img" >/dev/null
-ssh-keygen -q -t ed25519 -N '' -f "$ssh_key"
-image_elapsed_ms=$(($(now_ms) - image_started_ms))
+image_elapsed_ms=$((image_elapsed_ms + $(now_ms) - image_started_ms))
 
 [ -f "$firmware" ] || { echo "AArch64 QEMU EFI firmware not found" >&2; exit 1; }
 boot_started_ms=$(now_ms)
@@ -369,124 +386,125 @@ done
 
 ssh $ssh_common root@127.0.0.1 \
 	'test "$(uname -m)" = aarch64 && test "$(readlink /var)" = tmp && ubus call system board >/dev/null && /etc/init.d/rpcd status >/dev/null'
-boot_elapsed_ms=$(($(now_ms) - boot_started_ms))
+boot_elapsed_ms=$((boot_elapsed_ms + $(now_ms) - boot_started_ms))
 runner_arch=$(uname -m)
 guest_arch=$(ssh $ssh_common root@127.0.0.1 uname -m)
 stage=transfer
 transfer_started_ms=$(now_ms)
 tar -cf - -C "$workspace/scripts" deploy-openwrt-remote.sh \
 	-C "$workspace/scripts/openwrt-vm" guest-qualify.sh guest-runtime-qualify.sh guest-package-qualify.sh \
+	guest-native-qualify.sh guest-setup-qualify.sh guest-migration-qualify.sh \
 	-C "$work" runtime-source.tar local-probe.crt "$mihomo_name" "$yq_name" |
 ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf -'
-expected_transfer=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+expected_transfer=$(printf '%s\n' \
 	"$(sha256_file "$workspace/scripts/deploy-openwrt-remote.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-runtime-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-package-qualify.sh")" \
+	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-native-qualify.sh")" \
+	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-setup-qualify.sh")" \
+	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-migration-qualify.sh")" \
 	"$(sha256_file "$work/runtime-source.tar")" \
 	"$(sha256_file "$work/local-probe.crt")" \
 	"$(sha256_file "$work/$mihomo_name")" \
 	"$(sha256_file "$work/$yq_name")")
 actual_transfer=$(ssh $ssh_common root@127.0.0.1 \
-	"sha256sum /tmp/deploy-openwrt-remote.sh /tmp/guest-qualify.sh /tmp/guest-runtime-qualify.sh /tmp/guest-package-qualify.sh /tmp/runtime-source.tar /tmp/local-probe.crt /tmp/$mihomo_name /tmp/$yq_name | awk '{print \$1}'")
+	"sha256sum /tmp/deploy-openwrt-remote.sh /tmp/guest-qualify.sh /tmp/guest-runtime-qualify.sh /tmp/guest-package-qualify.sh /tmp/guest-native-qualify.sh /tmp/guest-setup-qualify.sh /tmp/guest-migration-qualify.sh /tmp/runtime-source.tar /tmp/local-probe.crt /tmp/$mihomo_name /tmp/$yq_name | awk '{print \$1}'")
 [ "$actual_transfer" = "$expected_transfer" ] || {
 	echo "OpenWrt qualification source transfer mismatch" >&2
 	exit 1
 }
 ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf /tmp/runtime-source.tar && rm -f /tmp/runtime-source.tar'
-transfer_elapsed_ms=$(($(now_ms) - transfer_started_ms))
-if [ "${NETFLEET_NATIVE_EXPERIMENT:-0}" = 1 ]; then
-	stage=native_experiment
-	native_started_ms=$(now_ms)
-	tar -cf - -C "$workspace/scripts/openwrt-vm" guest-native-qualify.sh |
-		ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf -'
-	native_sha=$(sha256_file "$workspace/scripts/openwrt-vm/guest-native-qualify.sh")
+transfer_elapsed_ms=$((transfer_elapsed_ms + $(now_ms) - transfer_started_ms))
+}
+run_guest() {
+	result_name=$1
+	guest_kind=$2
+	stage=${result_name}_guest
+	guest_started_ms=$(now_ms)
+	guest_script=guest-${guest_kind}-qualify.sh
+	guest_arguments="'$probe_port'"
+	case "$guest_kind" in
+		management) guest_script=guest-qualify.sh; guest_arguments= ;;
+		package) guest_arguments="'$package_manifest_sha' '$probe_port' '$feed_url'" ;;
+		native|setup|migration)
+			ssh $ssh_common root@127.0.0.1 "touch /tmp/netfleet-${guest_kind}-vm-authorized" ;;
+	esac
+	if ! ssh $ssh_common root@127.0.0.1 \
+		"sh /tmp/$guest_script '$source_commit' '$source_tree' $guest_arguments" \
+		>"$work/$result_name-result.json" 2>"$work/$result_name-result.stderr"; then
+		cat "$work/$result_name-result.stderr" >&2
+		exit 1
+	fi
+	printf '%s\n' "$(($(now_ms) - guest_started_ms))" >"$work/$result_name-ms"
 	ssh $ssh_common root@127.0.0.1 \
-		"test \"\$(sha256sum /tmp/guest-native-qualify.sh | awk '{print \$1}')\" = '$native_sha' && touch /tmp/netfleet-native-vm-authorized"
-	if ! ssh $ssh_common root@127.0.0.1 \
-		"sh /tmp/guest-native-qualify.sh '$source_commit' '$source_tree' '$probe_port'" \
-		>"$work/native-result.json" 2>"$work/native-result.stderr"; then
-		cat "$work/native-result.stderr" >&2
-		exit 1
-	fi
-	python3 - "$work/native-result.json" "$receipt" "$source_commit" "$source_tree" \
-		"$image_sha" "$mihomo_sha" "$(($(now_ms) - native_started_ms))" "$(($(now_ms) - total_started_ms))" <<'PY'
-import json
-from pathlib import Path
-import sys
+		'test "$(readlink /var)" = tmp && ubus call system board >/dev/null && test -S /var/run/ubus/ubus.sock'
+	wait_for_probe
+}
 
-result = json.loads(Path(sys.argv[1]).read_text())
-if not (result.get("ok") is True and result.get("production_ready") is False
-        and result.get("source_commit") == sys.argv[3] and result.get("source_tree") == sys.argv[4]
-        and result.get("checks") and all(value is True for value in result["checks"].values())):
-    raise SystemExit("Invalid native experiment result")
-result.update(schema="opl-netfleet-native-experiment.v1", qualified=False, experiment_passed=True,
-              openwrt_image_sha256=sys.argv[5], mihomo_sha256=sys.argv[6],
-              platform={"runner_arch": "arm64", "guest_arch": "aarch64", "accelerator": "hvf"},
-              metrics={"native_guest_ms": int(sys.argv[7]), "total_ms": int(sys.argv[8])})
-Path(sys.argv[2]).write_text(json.dumps(result, separators=(",", ":")) + "\n")
-PY
-	exit 0
+if [ "$lane_mode" = all ] || [ "$lane_mode" = native ]; then
+	boot_clean_vm
+	run_guest native native
 fi
-stage=management_guest
-management_started_ms=$(now_ms)
-if ! ssh $ssh_common root@127.0.0.1 \
-	"sh /tmp/guest-qualify.sh '$source_commit' '$source_tree'" \
-	>"$work/guest-result.json" 2>"$work/guest-result.stderr"; then
-	cat "$work/guest-result.stderr" >&2
-	exit 1
+if [ "$lane_mode" = all ] || [ "$lane_mode" = setup ]; then
+	boot_clean_vm
+	run_guest setup setup
 fi
-ssh $ssh_common root@127.0.0.1 \
-	'test "$(readlink /var)" = tmp && ubus call system board >/dev/null && test -S /var/run/ubus/ubus.sock'
-wait_for_probe
-management_elapsed_ms=$(($(now_ms) - management_started_ms))
-stage=runtime_guest
-runtime_started_ms=$(now_ms)
-if ! ssh $ssh_common root@127.0.0.1 \
-	"sh /tmp/guest-runtime-qualify.sh '$source_commit' '$source_tree' '$probe_port'" \
-	>"$work/runtime-result.json" 2>"$work/runtime-result.stderr"; then
-	cat "$work/runtime-result.stderr" >&2
-	exit 1
+if [ "$lane_mode" = all ] || [ "$lane_mode" = runtime ] || [ "$lane_mode" = migration ]; then
+	boot_clean_vm
+	run_guest management management
+	run_guest runtime runtime
+	if [ "$lane_mode" != runtime ]; then run_guest migration migration; fi
 fi
-runtime_elapsed_ms=$(($(now_ms) - runtime_started_ms))
-
-package_result=-
-package_elapsed_ms=0
-if [ -n "$package_archive" ]; then
-	stage=package_guest
-	package_started_ms=$(now_ms)
-	package_result="$work/package-result.json"
-	if ! ssh $ssh_common root@127.0.0.1 \
-		"sh /tmp/guest-package-qualify.sh '$source_commit' '$source_tree' '$package_manifest_sha' '$probe_port' '$feed_url'" \
-		>"$package_result" 2>"$work/package-result.stderr"; then
-		cat "$work/package-result.stderr" >&2
-		exit 1
-	fi
-	package_elapsed_ms=$(($(now_ms) - package_started_ms))
+# Package installation needs the pre-migration Nikki fixture, including its
+# helper processes and caches; recreate it instead of undoing a native cutover.
+if [ -n "$package_archive" ] && { [ "$lane_mode" = all ] || [ "$lane_mode" = package ]; }; then
+	boot_clean_vm
+	run_guest package-management management
+	run_guest package-runtime runtime
+	run_guest package package
 fi
 
 stage=receipt
 total_elapsed_ms=$(($(now_ms) - total_started_ms))
 python3 - "$receipt" "$source_commit" "$source_tree" "$version" "$image_sha" \
-	"$work/runtime-result.json" "$mihomo_sha" "$yq_sha" "$runner_arch" "$guest_arch" \
-	"$qemu_version" \
+	"$work" "$mihomo_sha" "$yq_sha" "$runner_arch" "$guest_arch" "$qemu_version" \
 	"$assets_elapsed_ms" "$image_elapsed_ms" "$boot_elapsed_ms" "$transfer_elapsed_ms" \
-	"$management_elapsed_ms" "$runtime_elapsed_ms" "$total_elapsed_ms" \
-	"$package_result" "$package_manifest_sha" "$package_elapsed_ms" <<'PY'
+	"$total_elapsed_ms" "$lane_mode" "$package_manifest_sha" <<'PY'
 import json
 from pathlib import Path
 import sys
 
-runtime = json.loads(Path(sys.argv[6]).read_text())
-if not (
-    runtime.get("ok") is True
-    and runtime.get("source_commit") == sys.argv[2]
-    and runtime.get("source_tree") == sys.argv[3]
-):
-    raise SystemExit("OpenWrt runtime qualification returned an invalid receipt")
+work = Path(sys.argv[6])
+mode = sys.argv[17]
+package_sha = sys.argv[18]
+required = {
+    "all": {"native", "setup", "management", "runtime", "migration"},
+    "native": {"native"}, "setup": {"setup"},
+    "runtime": {"management", "runtime"},
+    "migration": {"management", "runtime", "migration"},
+    "package": {"package-management", "package-runtime", "package"},
+}[mode]
+if package_sha and mode == "all":
+    required |= {"package-management", "package-runtime", "package"}
+lanes = {}
+for name in sorted(required):
+    result = json.loads((work / f"{name}-result.json").read_text())
+    checks = result.get("checks")
+    if not (result.get("ok") is True
+            and result.get("source_commit") == sys.argv[2]
+            and result.get("source_tree") == sys.argv[3]
+            and isinstance(checks, dict) and checks
+            and all(item is True for item in checks.values())):
+        raise SystemExit(f"OpenWrt {name} qualification returned an invalid receipt")
+    if name == "package" and result.get("manifest_sha256") != package_sha:
+        raise SystemExit("OpenWrt package qualification manifest mismatch")
+    lanes[name] = result
+runtime = lanes.get("runtime", lanes.get("package-runtime", {}))
+management = lanes.get("management", lanes.get("package-management", {}))
 value = {
     "schema": "opl-netfleet-openwrt-vm-qualification.v1",
-    "qualified": True,
+    "qualified": mode == "all",
     "source_commit": sys.argv[2],
     "source_tree": sys.argv[3],
     "openwrt_version": sys.argv[4],
@@ -496,12 +514,14 @@ value = {
         "ssh": True,
         "var_symlink": True,
         "ubus": True,
-        "deploy_failure_rollback": True,
-        "post_failure_management": True,
-        **runtime["checks"],
+        **management.get("checks", {}),
+        **runtime.get("checks", {}),
+        **{f"{name}.{key}": passed for name, result in lanes.items()
+           for key, passed in result["checks"].items()},
     },
-    "metrics": runtime["metrics"],
-    "runtime": runtime["runtime"],
+    "metrics": runtime.get("metrics", {}),
+    "runtime": runtime.get("runtime", {}),
+    "lanes": lanes,
     "runtime_assets": {
         "mihomo_sha256": sys.argv[7],
         "yq_sha256": sys.argv[8],
@@ -518,24 +538,17 @@ value = {
         "image_ms": int(sys.argv[13]),
         "boot_ms": int(sys.argv[14]),
         "transfer_ms": int(sys.argv[15]),
-        "management_guest_ms": int(sys.argv[16]),
-        "runtime_guest_ms": int(sys.argv[17]),
-        "total_ms": int(sys.argv[18]),
-        "package_guest_ms": int(sys.argv[21]),
+        "total_ms": int(sys.argv[16]),
+        **{f"{name}_guest_ms": int((work / f"{name}-ms").read_text()) for name in lanes},
     },
 }
-if sys.argv[19] != "-":
-    package = json.loads(Path(sys.argv[19]).read_text())
-    if not (
-        package.get("ok") is True
-        and package.get("source_commit") == sys.argv[2]
-        and package.get("source_tree") == sys.argv[3]
-        and package.get("manifest_sha256") == sys.argv[20]
-    ):
-        raise SystemExit("OpenWrt package qualification returned an invalid receipt")
+if "package" in lanes:
     value["schema"] = "opl-netfleet-openwrt-vm-qualification.v2"
-    value["package_qualified"] = True
-    value["package"] = package
+    value["package_qualified"] = mode == "all"
+    value["package"] = lanes["package"]
+if mode != "all":
+    value.update(schema="opl-netfleet-openwrt-vm-diagnostic.v1", diagnostic_passed=True,
+                 diagnostic_lane=mode)
 target = Path(sys.argv[1])
 temporary = target.with_name(target.name + ".tmp")
 temporary.write_text(json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n")

@@ -26,6 +26,7 @@ const upstream = upstream_candidates([
 		"dns-server": ["2001:db8::1", "2001:db8::53", "fe80::53", "febf::53", "::", "::1", "0:0:0:0:0:0:0:1"] },
 	{ interface: "wan", up: false, "dns-server": ["203.0.113.53"] }
 ]);
-check(sprintf("%J", upstream) == '["198.51.100.53","2001:db8::53"]', "only_current_wan_ip_resolvers");
+check(length(upstream) == 2 && upstream[0] == "198.51.100.53" && upstream[1] == "2001:db8::53",
+	"only_current_wan_ip_resolvers");
 check(length(upstream_candidates([])) == 0, "no_invented_dns_default");
 print("native_setup_contract passed\n");

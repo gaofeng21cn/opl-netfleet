@@ -38,6 +38,7 @@ const subscriptionFor = (snapshot: StatusSnapshot, provider: Provider) => {
 };
 const subscriptionState = (entry?: SubscriptionStatus) => {
   if (!entry) return '未提供';
+  if (entry.pending_update || entry.last_result === 'pending') return entry.cache_present ? '待更新，沿用上次缓存' : '等待首次更新';
   if (!entry.cache_present) return '没有可用缓存';
   return entry.last_result ? subscriptionResult(entry.last_result) : '缓存可用';
 };

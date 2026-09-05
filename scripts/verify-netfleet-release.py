@@ -113,6 +113,38 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
     if seen != PACKAGE_NAMES or manifest.get("artifact_files") != artifact_files:
         fail("release artifact mapping is invalid")
 
+    dependencies = manifest.get("dependency_artifacts", [])
+    if not isinstance(dependencies, list) or len(dependencies) > 1:
+        fail("release dependency set is invalid")
+    dependency_names: set[str] = set()
+    for item in dependencies:
+        if not isinstance(item, dict) or item.get("package") != "mihomo-meta":
+            fail("release dependency package identity is invalid")
+        name = item.get("name")
+        if (not isinstance(name, str) or Path(name).name != name
+                or not name.endswith(f".{package_format}") or name in artifact_files.values()):
+            fail("release dependency filename is invalid")
+        path = files.get(name)
+        if path is None or item.get("size") != path.stat().st_size or require_digest(item.get("sha256"), name) != digest(path):
+            fail("release dependency bytes do not match manifest")
+        upstream = item.get("upstream")
+        if (item.get("package_arch") != build_target_arch or not isinstance(upstream, dict)
+                or upstream.get("architecture") != build_target_arch
+                or upstream.get("version") != item.get("version")):
+            fail("release dependency architecture or version is invalid")
+        version_tuple(item.get("version"))
+        require_digest(upstream.get("sha256"), "upstream core asset")
+        upstream_commit = upstream.get("source_commit", "")
+        if not isinstance(upstream_commit, str) or not HEX40.fullmatch(upstream_commit):
+            fail("release dependency source commit is invalid")
+        if upstream.get("source_url") != f"https://github.com/MetaCubeX/mihomo/tree/{upstream_commit}":
+            fail("release dependency corresponding source is missing")
+        if (upstream.get("license") != "GPL-3.0-or-later"
+                or not str(upstream.get("url", "")).startswith("https://github.com/MetaCubeX/mihomo/releases/download/")
+                or not str(upstream.get("packaging_reference", "")).startswith("https://github.com/nikkinikki-org/OpenWrt-nikki/blob/")):
+            fail("release dependency provenance is invalid")
+        dependency_names.add(name)
+
     files_manifest = manifest.get("files_manifest")
     if not isinstance(files_manifest, dict) or files_manifest.get("name") != "FILES.sha256":
         fail("release files manifest identity is invalid")
@@ -154,7 +186,7 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
     elif feed_bootstrap is not None:
         fail("legacy release must not declare a feed bootstrap")
 
-    expected_names = {"manifest.json", "FILES.sha256", *artifact_files.values()}
+    expected_names = {"manifest.json", "FILES.sha256", *artifact_files.values(), *dependency_names}
     if package_format == "apk":
         expected_names.add("opl-netfleet-apk.pem")
         if feed_index is not None:

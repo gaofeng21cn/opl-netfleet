@@ -710,6 +710,8 @@ function subscriptionFailed(entry) {
 function subscriptionState(entry) {
 	if (!entry)
 		return '未提供';
+	if (entry.pending_update || entry.last_result === 'pending')
+		return entry.cache_present ? '待更新，沿用上次缓存' : '等待首次更新';
 	if (entry.cache_present !== true)
 		return '没有可用缓存';
 	return entry.last_result === 'updated' ? '缓存已更新' :
@@ -1069,7 +1071,7 @@ return view.extend({
 				[ '设备控制', this.onboarding.ready ? '等待确认' : '只读预检' ]
 			], 'is-six') ], 'netfleet-source');
 			const buttons = [
-				this.nativeSetup && this.nativeSetup.ready ? E('button', { 'class': 'btn cbi-button', 'disabled': this.busy || null, 'click': function() { return managed.nativeSetup(self); } }, '首次接入 Mihomo') : E('span'),
+				this.nativeSetup && !this.nativeSetup.present && !(this.nativeSetup.missing || []).includes('existing_backend_owner') ? E('button', { 'class': 'btn cbi-button', 'disabled': this.busy || null, 'click': function() { return managed.nativeSetup(self); } }, '首次接入 Mihomo') : E('span'),
 				' ',
 				E('button', { 'class': 'btn cbi-button', 'disabled': this.busy || null, 'click': function() { return self.manageSubscriptions(); } }, '管理订阅'),
 				' ',

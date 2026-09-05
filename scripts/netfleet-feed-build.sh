@@ -22,13 +22,18 @@ done
 [[ -f "$sign_key" ]] || die 'signing key is unavailable'
 [[ -n "$output" ]] || die '--output is required'
 mkdir -p "$output"
+repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+manifest_identity=$(python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); print(m["source_commit"], m["source_tree"])' "$packages/manifest.json")
+python3 "$repo_dir/scripts/verify-netfleet-release.py" --directory "$packages" \
+  --source-commit "${manifest_identity%% *}" --source-tree "${manifest_identity#* }" >/dev/null
 artifacts=()
-while IFS= read -r artifact; do artifacts+=("$artifact"); done < <(find "$packages" -maxdepth 1 -type f -name '*.apk' -print | LC_ALL=C sort)
-[[ ${#artifacts[@]} -eq 2 ]] || die 'feed requires exactly two APK artifacts'
-for artifact in "${artifacts[@]}"; do cp "$artifact" "$output/"; done
+while IFS= read -r name; do artifacts+=("$output/$name"); cp "$packages/$name" "$output/"; done < <(
+  python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); assert m["package_format"] == "apk"; print("\n".join(i["name"] for i in m["artifacts"] + m.get("dependency_artifacts", [])))' "$packages/manifest.json"
+)
+[[ ${#artifacts[@]} -ge 2 ]] || die 'feed requires validated NetFleet APK artifacts'
 "$apk_tool" mkndx --root "$output" --keys-dir "$(dirname "$sign_key")" --allow-untrusted \
   --output "$output/packages.adb" --sign "$sign_key" \
-  "$output/$(basename "${artifacts[0]}")" "$output/$(basename "${artifacts[1]}")"
+  "${artifacts[@]}"
 [[ -s "$output/packages.adb" ]] || die 'generated feed index is empty'
 chmod 0644 "$output"/*.apk "$output/packages.adb"
 printf '%s\n' "$output/packages.adb"

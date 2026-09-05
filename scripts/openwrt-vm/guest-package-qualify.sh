@@ -88,22 +88,21 @@ export PATH
 : >"$fixture/package-manager.log"
 printf 'apk_command=%s\n' "$real_apk" >>"$fixture/package-manager.log"
 "$real_apk" list --manifest >"$fixture/package-manifest.before"
-# The runtime fixture supplies working Mihomo and yq binaries outside the package
-# database. Expose them at the same standard paths used by an already configured
-# target, then model their package ownership as APK virtual packages. The
-# NetFleet package itself still uses normal dependency and signature checks.
-cp "$fixture/bin/mihomo" /usr/bin/mihomo
+# Require the feed to satisfy the real core dependency on first installation.
+[ -z "$(pidof mihomo || true)" ]
+rm -f /usr/bin/mihomo
 cp "$fixture/bin/yq" /usr/bin/yq
-env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin mihomo -v | grep -Fq 'v1.19.30'
 env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin yq --version | grep -Fq 'v4.53.6'
-"$real_apk" --timeout 300 add --virtual mihomo=1.19.30-r1 \
-	>>"$fixture/package-manager.log" 2>&1
 # Keep a satisfied but older dependency to catch accidental recursive upgrades.
 # The executable above remains the real yq; only fixture package metadata is old.
 "$real_apk" --timeout 300 add --virtual yq=0.0.1-r1 \
 	>>"$fixture/package-manager.log" 2>&1
 NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 \
 	sh "$candidate/install-netfleet.sh" >>"$fixture/package-manager.log" 2>&1
+"$real_apk" info -e mihomo-meta
+[ "$(readlink /usr/bin/mihomo)" = /usr/libexec/mihomo ]
+env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin mihomo -v | grep -Fq 'v1.19.30'
+core_sha=$(sha256sum /usr/libexec/mihomo | awk '{print $1}')
 [ "$(cat /etc/apk/repositories.d/opl-netfleet.list)" = "$feed_url/packages.adb" ]
 [ -s /etc/apk/keys/opl-netfleet-apk.pem ]
 ! /etc/init.d/opl-netfleet enabled >/dev/null 2>&1
@@ -121,6 +120,7 @@ NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 \
 	sh "$candidate/install-netfleet.sh" >>"$fixture/package-manager.log" 2>&1
 after_upgrade=$("$real_apk" list --manifest)
 [ "$after_upgrade" = "$before_upgrade" ]
+[ "$(sha256sum /usr/libexec/mihomo | awk '{print $1}')" = "$core_sha" ]
 "$real_apk" list --manifest | grep -Fqx 'yq 0.0.1-r1'
 
 stage=package_database

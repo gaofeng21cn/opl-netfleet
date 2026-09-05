@@ -1,0 +1,12 @@
+{
+  "version": "1.19.30",
+  "architecture": "aarch64_generic",
+  "filename": "mihomo-linux-arm64-v1.19.30.gz",
+  "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-arm64-v1.19.30.gz",
+  "api_url": "https://api.github.com/repos/MetaCubeX/mihomo/releases/assets/516687149",
+  "sha256": "58896873736d28628f66de3677c8654fa0f180662523148e136cff4f6e890069",
+  "source_url": "https://github.com/MetaCubeX/mihomo/tree/ac017cdd246ce8bd547653d927e7bf77d7ee73d5",
+  "source_commit": "ac017cdd246ce8bd547653d927e7bf77d7ee73d5",
+  "license": "GPL-3.0-or-later",
+  "packaging_reference": "https://github.com/nikkinikki-org/OpenWrt-nikki/blob/3799926b147d7065ac98508f16951f8714e53659/mihomo-meta/Makefile"
+}

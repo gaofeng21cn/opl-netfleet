@@ -106,12 +106,12 @@ class ReleaseToolsTests(unittest.TestCase):
     def test_package_sources_are_versioned_and_do_not_embed_instance_inputs(self):
         runtime = (ROOT / 'openwrt/Makefile').read_text()
         luci = (ROOT / 'openwrt/luci-app-netfleet/Makefile').read_text()
-        self.assertIn('PKG_VERSION:=0.4.8', runtime)
+        self.assertIn('PKG_VERSION:=0.5.0', runtime)
         self.assertIn('PKG_RELEASE:=1', runtime)
         self.assertIn('PKG_LICENSE:=GPL-3.0-only', runtime)
         self.assertIn('PKG_MAINTAINER:=OPL NetFleet', runtime)
         self.assertIn('PKGARCH:=all', runtime)
-        self.assertIn('PKG_VERSION:=0.4.8', luci)
+        self.assertIn('PKG_VERSION:=0.5.0', luci)
         self.assertIn('PKGARCH:=all', luci)
         self.assertIn('include $(INCLUDE_DIR)/package.mk', luci)
         self.assertNotIn('feeds/luci/luci.mk', luci)
@@ -162,11 +162,67 @@ class ReleaseToolsTests(unittest.TestCase):
         self.assertIn('for name in .config private-key.pem public-key.pem', text)
         self.assertIn("APK builds require --apk-private-key", text)
 
-    def test_feed_builder_requires_exactly_two_apks(self):
+    def test_feed_builder_uses_verified_manifest_packages(self):
         source = FEED_BUILDER.read_text()
-        self.assertIn('feed requires exactly two APK artifacts', source)
+        self.assertIn('verify-netfleet-release.py', source)
+        self.assertIn('dependency_artifacts', source)
         self.assertIn('apk_tool" mkndx', source)
         self.assertIn('--sign ', source)
+
+    def test_prebuilt_core_has_no_go_build_and_single_source_lock(self):
+        source = json.loads((ROOT / 'openwrt/mihomo-meta/source.json').read_text())
+        makefile = (ROOT / 'openwrt/mihomo-meta/Makefile').read_text()
+        self.assertEqual(source['architecture'], 'aarch64_generic')
+        self.assertRegex(source['sha256'], r'^[0-9a-f]{64}$')
+        self.assertRegex(source['source_commit'], r'^[0-9a-f]{40}$')
+        self.assertIn('PROVIDES:=mihomo', makefile)
+        self.assertIn('ALTERNATIVES:=300:/usr/bin/mihomo:/usr/libexec/mihomo', makefile)
+        self.assertNotIn('golang/host', makefile)
+        self.assertIn('gzip -dc', makefile)
+
+    def test_release_verifier_validates_core_dependency_identity(self):
+        for failure in (None, 'bytes', 'arch', 'source'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temp:
+                release = Path(temp)
+                write_release(release, 'a' * 40, 'b' * 40)
+                manifest_path = release / 'manifest.json'
+                manifest = json.loads(manifest_path.read_text())
+                upstream = json.loads((ROOT / 'openwrt/mihomo-meta/source.json').read_text())
+                core = release / f'mihomo-meta-{upstream["version"]}-r1.apk'
+                core.write_bytes(b'fixture core package')
+                dependency = {'package': 'mihomo-meta', 'name': core.name,
+                              'size': core.stat().st_size, 'sha256': sha256(core),
+                              'package_arch': manifest['build_target_arch'],
+                              'version': upstream['version'], 'upstream': upstream}
+                if failure == 'bytes':
+                    core.write_bytes(b'changed package')
+                elif failure == 'arch':
+                    dependency['package_arch'] = 'x86_64'
+                elif failure == 'source':
+                    upstream.pop('source_url')
+                manifest['dependency_artifacts'] = [dependency]
+                manifest_path.write_text(json.dumps(manifest))
+                result = subprocess.run([sys.executable, str(VERIFIER), '--directory', str(release),
+                                         '--source-commit', 'a' * 40, '--source-tree', 'b' * 40],
+                                        text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0 if failure is None else 1, result.stderr)
+                if failure is None:
+                    self.assertEqual(json.loads(result.stdout)['source_commit'], 'a' * 40)
+                    with tempfile.TemporaryDirectory() as feed_temp:
+                        feed_root = Path(feed_temp)
+                        apk_tool = feed_root / 'apk'
+                        apk_tool.write_text('#!/bin/sh\nwhile [ "$#" -gt 0 ]; do\n'
+                                            '  if [ "$1" = --output ]; then shift; output=$1; fi\n'
+                                            '  case "$1" in *.apk) packages="$packages $1";; esac\n'
+                                            '  shift\ndone\nprintf "%s\\n" "$packages" >"$output"\n')
+                        apk_tool.chmod(0o755)
+                        feed = feed_root / 'feed'
+                        built = subprocess.run([str(FEED_BUILDER), '--packages', str(release),
+                                                '--apk', str(apk_tool), '--sign-key', str(release / 'opl-netfleet-apk.pem'),
+                                                '--output', str(feed)], text=True, capture_output=True)
+                        self.assertEqual(built.returncode, 0, built.stderr)
+                        self.assertEqual(len(list(feed.glob('*.apk'))), 3)
+                        self.assertIn(core.name, (feed / 'packages.adb').read_text())
 
     def test_release_verifier_accepts_exact_source_and_public_readback(self):
         commit = 'a' * 40
@@ -343,9 +399,6 @@ class ReleaseToolsTests(unittest.TestCase):
             uci = bin_dir / 'uci'
             uci.write_text('#!/bin/sh\nprintf "%s\\n" "subscription:fixture"\n')
             uci.chmod(0o755)
-            nikki = root / 'nikki'
-            nikki.write_text('#!/bin/sh\nexit 0\n')
-            nikki.chmod(0o755)
             log = root / 'apk.log'
             env = {
                     **os.environ,
@@ -356,7 +409,6 @@ class ReleaseToolsTests(unittest.TestCase):
                     'NETFLEET_APK_KEYS_DIR': str(keys),
                     'NETFLEET_APK_REPOSITORY_FILE': str(repository),
                     'NETFLEET_APK_LOG': str(log),
-                    'NETFLEET_NIKKI_INIT': str(nikki),
                 }
             for installed in ('', 'opl-netfleet', 'luci-app-netfleet', 'opl-netfleet luci-app-netfleet'):
                 with self.subTest(installed=installed):
@@ -395,9 +447,6 @@ class ReleaseToolsTests(unittest.TestCase):
             uci = bin_dir / 'uci'
             uci.write_text('#!/bin/sh\nprintf "%s\\n" "subscription:fixture"\n')
             uci.chmod(0o755)
-            nikki = root / 'nikki'
-            nikki.write_text('#!/bin/sh\nexit 0\n')
-            nikki.chmod(0o755)
             log = root / 'apk.log'
             result = subprocess.run(
                 [str(INSTALLER)],
@@ -410,7 +459,6 @@ class ReleaseToolsTests(unittest.TestCase):
                     'NETFLEET_APK_KEYS_DIR': str(root / 'keys'),
                     'NETFLEET_APK_REPOSITORY_FILE': str(root / 'repositories.d/opl-netfleet.list'),
                     'NETFLEET_APK_LOG': str(log),
-                    'NETFLEET_NIKKI_INIT': str(nikki),
                 },
                 text=True, capture_output=True, check=False,
             )
@@ -418,7 +466,7 @@ class ReleaseToolsTests(unittest.TestCase):
             self.assertIn('public key is invalid', result.stderr)
             self.assertFalse(log.exists())
 
-    def test_feed_bootstrap_rejects_missing_nikki_before_feed_mutation(self):
+    def test_feed_bootstrap_rejects_missing_uci_before_feed_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             bin_dir = root / 'bin'
@@ -432,16 +480,15 @@ class ReleaseToolsTests(unittest.TestCase):
                 [str(INSTALLER)],
                 env={
                     **os.environ,
-                    'PATH': f'{bin_dir}:{os.environ["PATH"]}',
+                    'PATH': str(bin_dir),
                     'NETFLEET_INSTALL_TESTING': '1',
-                    'NETFLEET_NIKKI_INIT': str(root / 'missing-nikki'),
                     'NETFLEET_APK_REPOSITORY_FILE': str(repository),
                     'NETFLEET_APK_LOG': str(log),
                 },
                 text=True, capture_output=True, check=False,
             )
             self.assertNotEqual(0, result.returncode)
-            self.assertIn('Nikki must be installed', result.stderr)
+            self.assertIn('OpenWrt UCI is required', result.stderr)
             self.assertFalse(repository.exists())
             self.assertFalse(log.exists())
 

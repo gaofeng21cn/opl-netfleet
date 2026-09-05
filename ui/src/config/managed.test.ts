@@ -71,7 +71,7 @@ describe('native LuCI managed operations', () => {
     h.button('确认迁移').attrs.click();
     await vi.waitFor(() => expect(h.ui.addNotification).toHaveBeenCalled());
     expect(h.controller.refreshData).not.toHaveBeenCalled();
-    expect(label(h.ui.addNotification.mock.calls[0][1])).toContain('已恢复旧后端');
+    expect(label(h.ui.addNotification.mock.calls[0][1])).toContain('已恢复更新前状态');
     expect(h.ui.addNotification.mock.calls[0][2]).toBe('error');
   });
 });

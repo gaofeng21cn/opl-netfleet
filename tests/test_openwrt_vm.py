@@ -14,6 +14,8 @@ GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-qualify.sh"
 RUNTIME_GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-runtime-qualify.sh"
 PACKAGE_GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-package-qualify.sh"
 NATIVE_GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-native-qualify.sh"
+SETUP_GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-setup-qualify.sh"
+MIGRATION_GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-migration-qualify.sh"
 INSTALLER = ROOT / "scripts" / "install-netfleet.sh"
 RECOVERY = ROOT / "scripts" / "recover-openwrt-local.sh"
 
@@ -28,7 +30,7 @@ class OpenWrtVmTests(unittest.TestCase):
         self.assertIn("Apple Silicon QEMU/HVF", result.stdout)
         self.assertNotIn("--rebuild", result.stdout)
 
-        scripts = (WRAPPER, RUNNER, GUEST, RUNTIME_GUEST, PACKAGE_GUEST, NATIVE_GUEST, INSTALLER, RECOVERY)
+        scripts = (WRAPPER, RUNNER, GUEST, RUNTIME_GUEST, PACKAGE_GUEST, NATIVE_GUEST, SETUP_GUEST, MIGRATION_GUEST, INSTALLER, RECOVERY)
         for script in scripts:
             parsed = subprocess.run(
                 ["bash", "-n", str(script)], text=True, capture_output=True, check=False
@@ -51,8 +53,11 @@ class OpenWrtVmTests(unittest.TestCase):
 
         self.assertIn("qemu-system-aarch64", runner)
         self.assertIn("armsr-armv8-generic-ext4-combined-efi.img.gz", runner)
-        for digest in ("image_sha", "mihomo_sha", "yq_sha"):
+        for digest in ("image_sha", "yq_sha"):
             self.assertRegex(runner, rf"(?m)^{digest}=[0-9a-f]{{64}}$")
+        core = json.loads((ROOT / "openwrt/mihomo-meta/source.json").read_text())
+        self.assertRegex(core["sha256"], r"^[0-9a-f]{64}$")
+        self.assertIn("openwrt/mihomo-meta/source.json", runner + wrapper)
         self.assertIn("version=25.12.5", runner)
         self.assertIn('"$(uname -s)" == Darwin', wrapper)
         self.assertIn('"$(uname -m)" == arm64', wrapper)
@@ -72,14 +77,71 @@ class OpenWrtVmTests(unittest.TestCase):
         )
         self.assertFalse((ROOT / "scripts" / "openwrt-vm" / "Dockerfile").exists())
 
-    def test_native_experiment_cannot_qualify_a_package(self):
+    def test_diagnostic_cannot_qualify_a_package(self):
         result = subprocess.run(
-            [str(WRAPPER), "--native-experiment", "--packages", "/not-a-candidate",
+            [str(WRAPPER), "--diagnostic", "native", "--packages", "/not-a-candidate",
              "--output", "/tmp/not-a-receipt.json"],
             text=True, capture_output=True, check=False,
         )
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("native experiment cannot qualify packages", result.stderr)
+        self.assertIn("only the package diagnostic accepts --packages", result.stderr)
+        retired = subprocess.run([str(WRAPPER), "--native-experiment"], text=True, capture_output=True)
+        self.assertNotEqual(0, retired.returncode)
+        self.assertIn("unknown argument", retired.stderr)
+
+    def test_default_schedule_uses_clean_native_setup_migration_and_package_vms(self):
+        source = RUNNER.read_text()
+        schedule = source.split('if [ "$lane_mode" = all ] || [ "$lane_mode" = native ]; then', 1)[1].split('\nstage=receipt', 1)[0]
+        schedule = 'if [ "$lane_mode" = all ] || [ "$lane_mode" = native ]; then' + schedule
+        for packages in ('', 'candidate'):
+            result = subprocess.run(['sh', '-c',
+                'boot_clean_vm() { echo boot; }; run_guest() { echo "$1"; };\n' + schedule],
+                env={**os.environ, 'lane_mode': 'all', 'package_archive': packages},
+                text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            expected = ['boot', 'native', 'boot', 'setup', 'boot', 'management', 'runtime', 'migration']
+            if packages:
+                expected += ['boot', 'package-management', 'package-runtime', 'package']
+            self.assertEqual(result.stdout.splitlines(), expected)
+
+    def test_aggregate_receipt_requires_all_lanes_exact_identity_and_true_checks(self):
+        program = RUNNER.read_text().rsplit("<<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
+        names = ('native', 'setup', 'management', 'runtime', 'migration',
+                 'package-management', 'package-runtime', 'package')
+        for failure in (None, 'missing', 'false', 'empty', 'identity', 'package'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                work = Path(directory)
+                for name in names:
+                    value = {'ok': True, 'source_commit': 'a' * 40, 'source_tree': 'b' * 40,
+                             'checks': {'real_path': True}, 'metrics': {}, 'runtime': {}}
+                    if name == 'package': value['manifest_sha256'] = 'c' * 64
+                    if name == 'setup':
+                        if failure == 'missing': continue
+                        if failure == 'false': value['checks']['real_path'] = False
+                        if failure == 'empty': value['checks'] = {}
+                        if failure == 'identity': value['source_tree'] = 'd' * 40
+                    if name == 'package' and failure == 'package': value['manifest_sha256'] = 'd' * 64
+                    (work / f'{name}-result.json').write_text(json.dumps(value))
+                    (work / f'{name}-ms').write_text('1')
+                receipt = work / 'receipt.json'
+                args = [str(receipt), 'a' * 40, 'b' * 40, '25.12.5', 'e' * 64,
+                        str(work), 'f' * 64, '1' * 64, 'arm64', 'aarch64', '10.0',
+                        '1', '1', '1', '1', '5', 'all', 'c' * 64]
+                result = subprocess.run(['python3', '-c', program, *args], text=True, capture_output=True)
+                self.assertEqual(result.returncode == 0, failure is None, result.stderr)
+                if failure is None:
+                    parsed = json.loads(receipt.read_text())
+                    self.assertTrue(parsed['qualified'])
+                    self.assertTrue(parsed['package_qualified'])
+                    self.assertEqual(set(parsed['lanes']), set(names))
+                    args[-2:] = ['native', '']
+                    diagnostic = subprocess.run(['python3', '-c', program, *args], text=True, capture_output=True)
+                    self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
+                    parsed = json.loads(receipt.read_text())
+                    self.assertFalse(parsed['qualified'])
+                    self.assertTrue(parsed['diagnostic_passed'])
+                else:
+                    self.assertFalse(receipt.exists())
 
     def test_vm_keeps_real_management_runtime_and_recovery_gates(self):
         runtime_source = RUNTIME_GUEST.read_text()
@@ -154,9 +216,7 @@ class OpenWrtVmTests(unittest.TestCase):
         ):
             self.assertIn(gate, package_source)
         self.assertIn('real_apk=$(command -v apk)', package_source)
-        self.assertIn('add --virtual mihomo=1.19.30-r1', package_source)
         self.assertIn('add --virtual yq=0.0.1-r1', package_source)
-        self.assertIn('cp "$fixture/bin/mihomo" /usr/bin/mihomo', package_source)
         self.assertIn('cp "$fixture/bin/yq" /usr/bin/yq', package_source)
         self.assertIn('env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin yq --version', package_source)
         self.assertIn('uclient-fetch -q -O "$candidate/install-netfleet.sh"', package_source)
@@ -210,6 +270,8 @@ class OpenWrtVmTests(unittest.TestCase):
             RUNTIME_GUEST,
             PACKAGE_GUEST,
             NATIVE_GUEST,
+            SETUP_GUEST,
+            MIGRATION_GUEST,
             INSTALLER,
             ROOT / "scripts" / "deploy-openwrt.sh",
             ROOT / "scripts" / "deploy-openwrt-remote.sh",

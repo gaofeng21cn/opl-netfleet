@@ -27,6 +27,17 @@ export function enabled_sections(policy) {
 	return result;
 };
 
+export function referenced_sections(policy, profile) {
+	const result = enabled_sections(policy);
+	const refs = [policy?.policy_source?.kind == "profile" ? policy.policy_source.ref : null,
+		policy?.recovery_profile?.ref, profile];
+	for (let i = 0; i < length(refs); i++) {
+		const matched = type(refs[i]) == "string" ? match(refs[i], /^subscription:([A-Za-z0-9_]+)$/) : null;
+		if (matched != null && index(result, matched[1]) < 0) push(result, matched[1]);
+	}
+	return result;
+};
+
 export function quota_config(policy, section) {
 	const names = sorted_names(policy?.providers ?? {});
 	for (let i = 0; i < length(names); i++) {

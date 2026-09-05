@@ -10,6 +10,12 @@ const CONFIG = "/etc/config/netfleet";
 const DIRECTORY = `${BASE}/subscriptions`;
 const QUOTA_FIELDS = ["upload", "download", "total", "used", "avaliable", "expire"];
 
+function timestamp(value) {
+	const parts = localtime(value);
+	return sprintf("%04d-%02d-%02d %02d:%02d:%02d", parts.year, parts.mon, parts.mday,
+		parts.hour, parts.min, parts.sec);
+};
+
 function native_selected() {
 	return KIND == "native-mihomo";
 };
@@ -216,12 +222,12 @@ function do_update(id, scratch) {
 		uci.set("netfleet", id, "cache_source_sha256", identity);
 		uci.set("netfleet", id, "cache_content_sha256", result.digest);
 		uci.set("netfleet", id, "last_success", `${now}`);
-		uci.set("netfleet", id, "update", strftime("%Y-%m-%d %H:%M:%S", now));
+		uci.set("netfleet", id, "update", timestamp(now));
 		uci.delete("netfleet", id, "last_error");
 		for (let key in QUOTA_FIELDS) {
 			const value = result.quota?.[key];
 			if (value == null || (key == "expire" && value == 0)) uci.delete("netfleet", id, key);
-			else uci.set("netfleet", id, key, key == "expire" ? strftime("%Y-%m-%d %H:%M:%S", value) : `${value} B`);
+			else uci.set("netfleet", id, key, key == "expire" ? timestamp(value) : `${value} B`);
 		}
 	} else uci.set("netfleet", id, "last_error", result.error);
 	if (!commit(uci)) {

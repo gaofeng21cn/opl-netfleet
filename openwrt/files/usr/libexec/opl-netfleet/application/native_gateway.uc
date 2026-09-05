@@ -67,7 +67,7 @@ function status() {
 	const core = process_state();
 	const state = ownership();
 	const table = shell("nft list table inet netfleet");
-	const attached = state != null && table && routes_present(state);
+	const attached = state != null && state.core_pid == core.pid && table && routes_present(state);
 	return { ok: true, result: { ready: core.running && controller_ready() && attached,
 		core_running: core.running, registered: core.registered, attached: attached,
 		clean: !table && state == null, config_sha256: private_file(CONFIG) ? sha256(CONFIG) : null } };
@@ -194,7 +194,7 @@ function attach() {
 	const nft = capture(`utpl -S ${shell_quote(`${VENDOR}/hijack.ut`)}`);
 	if (nft == null || fs.writefile(`${STATE}/rules.nft`, nft) != length(nft) ||
 		!shell(`nft -c -f ${shell_quote(`${STATE}/rules.nft`)}`)) return { ok: false, error: "invalid_interception_rules" };
-	const state = { service: SERVICE, table: table, pref: pref, mark: mark, mask: mask, families: families, bridge: {} };
+	const state = { service: SERVICE, core_pid: pid, table: table, pref: pref, mark: mark, mask: mask, families: families, bridge: {} };
 	for (let family in families) {
 		const name = family == 4 ? "net.bridge.bridge-nf-call-iptables" : "net.bridge.bridge-nf-call-ip6tables";
 		const value = trim(capture(`sysctl -e -n ${name}`) ?? "");
@@ -215,12 +215,47 @@ function attach() {
 	return status();
 };
 
+function reconcile() {
+	if (!process_state().running) return cleanup();
+	const result = attach();
+	if (result.ok) return result;
+	const cleaned = cleanup();
+	return { ok: false, error: result.error, cleanup: cleaned };
+};
+
+function watch() {
+	const loop = require("uloop");
+	const ubus = require("ubus");
+	if (!loop.init()) return { ok: false, error: "lifecycle_loop_unavailable" };
+	const connection = ubus.connect();
+	if (connection == null) return { ok: false, error: "lifecycle_bus_unavailable" };
+	function synchronize() {
+		if (!shell(`/etc/init.d/${SERVICE} reconcile`))
+			shell(`logger -t ${SERVICE} lifecycle_reconcile_failed`);
+	};
+	// procd emits object notifications, not service trigger events.
+	const subscriber = connection.subscriber((request) => {
+		const ours = request.data?.service == SERVICE && request.data?.instance == "core" &&
+			index(["instance.start", "instance.stop", "instance.fail", "instance.respawn"], request.type) >= 0;
+		request.reply({});
+		if (ours) synchronize();
+	}, () => loop.end());
+	if (subscriber == null || !subscriber.subscribe("service"))
+		return { ok: false, error: "lifecycle_subscription_failed" };
+	// A core can already be running when this observer starts or respawns.
+	synchronize();
+	loop.run();
+	return { ok: false, error: "lifecycle_subscription_ended" };
+};
+
 let result;
 try {
 	if (system("test \"$(id -u)\" = 0") != 0) result = { ok: false, error: "root_required" };
 	else if (ARGV[0] == "prepare") result = prepare();
 	else if (ARGV[0] == "attach") result = attach();
 	else if (ARGV[0] == "cleanup") result = cleanup();
+	else if (ARGV[0] == "reconcile") result = reconcile();
+	else if (ARGV[0] == "watch") result = watch();
 	else if (ARGV[0] == "status") result = status();
 	else result = { ok: false, error: "unknown_gateway_action" };
 } catch (error) { result = { ok: false, error: "gateway_operation_failed" }; }

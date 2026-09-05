@@ -78,6 +78,9 @@ export interface SubscriptionStatus {
   ref?: string | null;
   display_name?: string | null;
   cache_present?: boolean;
+  pending_update?: boolean;
+  cache_current?: boolean;
+  using_previous_cache?: boolean;
   cache_sha256?: string | null;
   node_count?: number | null;
   quota?: Quota;

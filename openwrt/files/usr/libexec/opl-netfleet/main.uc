@@ -13,15 +13,13 @@ import { validate as validate_evidence, selection_snapshot, measurement_identity
 import { append as append_events, validate as validate_events } from "./core/events.uc";
 import { enable_precondition, is_active, recovery_owner, recovery_profile, passthrough_outcome, preferred_runtime_ready, expected_runtime_groups, expected_runtime_residue_groups } from "./core/activation.uc";
 import { build as build_status, resolve_runtime } from "./core/status.uc";
-import { enabled_sections as enabled_subscription_sections, quota_config as subscription_quota_config, cache_accepted, evaluate_entry, summarize as summarize_refresh, public_results as public_subscription_results, unavailable_results, project as project_subscriptions } from "./core/subscription.uc";
+import { enabled_sections as enabled_subscription_sections, referenced_sections as referenced_subscription_sections, quota_config as subscription_quota_config, cache_accepted, evaluate_entry, summarize as summarize_refresh, public_results as public_subscription_results, unavailable_results, project as project_subscriptions } from "./core/subscription.uc";
 import { service_state } from "./adapters/service.uc";
 import { KIND as BACKEND_KIND, metadata as backend_metadata } from "./adapters/runtime.uc";
 import { load as load_provider_profile_result } from "./application/providers.uc";
 import { get as onboarding_get, apply as onboarding_apply } from "./application/onboarding.uc";
 import { get as config_get, validate as config_validate, save as config_save, apply as config_apply } from "./application/configuration.uc";
 import { ok, fail } from "./output.uc";
-import { run as native_sources } from "./application/native_sources.uc";
-import { run as native_core } from "./application/native_core.uc";
 import { get as subscriptions_get, set as subscriptions_set, update_result as subscription_update } from "./application/subscriptions.uc";
 import { get as migration_get, apply as migration_apply } from "./application/backend_migration.uc";
 import { get as dashboard_get } from "./application/dashboard.uc";
@@ -746,20 +744,30 @@ function provider_source_for_group(entry, group) {
 	return null;
 };
 
+function candidate_leaf_wait_seconds(policy) {
+	const timeout_ms = policy?.checks?.latency?.timeout_ms;
+	if (type(timeout_ms) != "int" || timeout_ms < 1) return 1;
+	const seconds = int((timeout_ms + 999) / 1000);
+	return seconds > 30 ? 30 : seconds;
+};
+
 function measured_group_leaf(secret, entry, group, policy) {
 	const round = measure_latency(secret, group, policy.checks);
-	const state = proxies(secret);
-	const provider_state = proxy_providers(secret, 1)?.providers ?? null;
 	const source_name = provider_source_for_group(entry, group);
-	const leaf = provider_group_leaf(state?.proxies, provider_state, source_name, group);
-	return {
-		ok: leaf != null && round?.results?.[leaf]?.status == "ok",
-		leaf: leaf,
-		source_name: source_name,
-		round: round,
-		state: state,
-		provider_state: provider_state
-	};
+	let result = null;
+	// A completed delay request can precede the URLTest/provider health projection.
+	// Wait for the same measured leaf; do not issue another measurement or pick one.
+	const attempts = candidate_leaf_wait_seconds(policy);
+	for (let attempt = 0; attempt < attempts; attempt++) {
+		const state = proxies(secret);
+		const provider_state = proxy_providers(secret, 1)?.providers ?? null;
+		const leaf = provider_group_leaf(state?.proxies, provider_state, source_name, group);
+		result = { ok: leaf != null && round?.results?.[leaf]?.status == "ok",
+			leaf: leaf, source_name: source_name, round: round, state: state, provider_state: provider_state };
+		if (result.ok || round.status != "ok") break;
+		if (attempt + 1 < attempts) system("sleep 1");
+	}
+	return result;
 };
 
 function refresh_data_fallback(secret, entry, policy, provider_state) {
@@ -1070,15 +1078,6 @@ function reset_candidate_groups(secret, entry) {
 		}
 	}
 	return reset;
-};
-
-function candidate_leaf_wait_seconds(policy) {
-	const timeout_ms = policy?.checks?.latency?.timeout_ms;
-	if (type(timeout_ms) != "int" || timeout_ms < 1) {
-		return 1;
-	}
-	const seconds = int((timeout_ms + 999) / 1000);
-	return seconds > 30 ? 30 : seconds;
 };
 
 function candidate_provider_leaves_ready(entry, proxy_state, provider_state) {
@@ -1605,7 +1604,7 @@ function capture_runtime_selections(manifest) {
 	return { ok: true, selections: selections };
 };
 
-function prepare_refresh_snapshot(policy, active) {
+function prepare_refresh_snapshot(policy, active, sections) {
 	if (system(`rm -rf ${shell_quote(REFRESH_DIR)}`) != 0 ||
 		system(`mkdir -p ${shell_quote(`${REFRESH_DIR}/subscriptions`)}`) != 0) {
 		return { ok: false, error: "snapshot_directory_failed" };
@@ -1620,7 +1619,6 @@ function prepare_refresh_snapshot(policy, active) {
 			return { ok: false, error: "backend_config_snapshot_failed" };
 		backend_config = { path: path, backup: backup, digest: digest };
 	}
-	const sections = enabled_subscription_sections(policy);
 	for (let i = 0; i < length(sections); i++) {
 		const path = resolve_profile(`subscription:${sections[i]}`);
 		const backup = `${REFRESH_DIR}/subscriptions/${sections[i]}.yaml`;
@@ -1640,7 +1638,10 @@ function prepare_refresh_snapshot(policy, active) {
 			return { ok: false, error: "runtime_snapshot_failed" };
 		}
 	}
-	return { ok: true, active: active == true, entries: entries, manifest: manifest, backend_config: backend_config };
+	const native_running = BACKEND_KIND == "native-mihomo" && !active && running();
+	return { ok: true, active: active == true, entries: entries, manifest: manifest, backend_config: backend_config,
+		profile: current_profile(), native_running: native_running,
+		protected_baseline: native_running && policy != null ? protected_probes(policy).ok : false };
 };
 
 function restore_refresh_entry(entry) {
@@ -1696,11 +1697,26 @@ function run_refresh_selection(requested) {
 	};
 };
 
+function reload_refresh_profile(snapshot, policy) {
+	if (!restore_profile(snapshot.profile, null)) return { ok: false, error: "runtime_restart_failed" };
+	const readback = runtime_readback(snapshot.profile, null);
+	const lan = lan_runtime_state(guard_probe_url(policy));
+	const probes = policy == null ? null : protected_probes(policy);
+	return { ok: readback.runtime_identity_ok && lan.transparent_proxy_ready && lan.dns_ready &&
+		(snapshot.protected_baseline != true || probes?.ok == true),
+		error: "owner_readback_failed", readback: readback, lan_runtime: lan, protected_probes: probes };
+};
+
 function rollback_refresh(snapshot, policy, selections) {
 	if (!restore_refresh_files(snapshot)) {
 		return { ok: false, error: "snapshot_restore_failed" };
 	}
 	if (snapshot.active != true) {
+		if (snapshot.native_running == true) {
+			const restored = reload_refresh_profile(snapshot, policy);
+			restored.state = restored.ok ? "runtime_restored" : "runtime_restore_failed";
+			return restored;
+		}
 		return { ok: true, state: "cache_restored" };
 	}
 	if ((backend_enabled() != true && !set_backend_enabled(true)) ||
@@ -1729,7 +1745,14 @@ function fail_refresh(snapshot, policy, selections, requested, error, detail) {
 	const events_recorded = record_events([refresh_event(event, requested)]);
 	cleanup_refresh_snapshot();
 	if (!rollback.ok) {
-		const recovery = restore_recovery_with_probes(policy, "subscription_refresh_rollback_failed");
+		let recovery;
+		if (policy != null) recovery = restore_recovery_with_probes(policy, "subscription_refresh_rollback_failed");
+		else {
+			const disabled = set_backend_enabled(false);
+			const stopped = stop_backend();
+			const cleanup = cleanup_state();
+			recovery = { ok: disabled && stopped && cleanup.ok, mode: "direct", cleanup: cleanup };
+		}
 		fail("refresh", "rollback_failed", {
 			error: error,
 			rollback: rollback,
@@ -1740,14 +1763,15 @@ function fail_refresh(snapshot, policy, selections, requested, error, detail) {
 	fail("refresh", error, { detail: detail, rollback: rollback, events_recorded: events_recorded });
 };
 
-function refresh_action(policy) {
-	const requested = ARGV[1] ?? "cli";
+function refresh_action(policy, section, initiator) {
+	const requested = initiator ?? ARGV[1] ?? "cli";
 	const config = automation_config(policy);
 	if (requested == "scheduled" && config.subscription_refresh_enabled != true) {
 		ok("refresh", { state: "disabled" });
 		return;
 	}
-	const sections = enabled_subscription_sections(policy);
+	const sections = section != null ? [section] : BACKEND_KIND == "native-mihomo" ?
+		referenced_subscription_sections(policy, current_profile()) : enabled_subscription_sections(policy);
 	if (length(sections) == 0) {
 		ok("refresh", { state: "no_enabled_providers", provider_count: 0 });
 		return;
@@ -1778,7 +1802,7 @@ function refresh_action(policy) {
 		}
 		selections = captured.selections;
 	}
-	const snapshot = prepare_refresh_snapshot(policy, active);
+	const snapshot = prepare_refresh_snapshot(policy, active, sections);
 	if (!snapshot.ok) {
 		cleanup_refresh_snapshot();
 		fail("refresh", snapshot.error, { section: snapshot.section ?? null });
@@ -1824,18 +1848,26 @@ function refresh_action(policy) {
 		return;
 	}
 	if (!active) {
+		const reloaded = snapshot.native_running == true ? reload_refresh_profile(snapshot, policy) : null;
+		if (reloaded != null && !reloaded.ok) {
+			fail_refresh(snapshot, policy, selections, requested, reloaded.error, {
+				changed_count: summary.changed_count, failed_count: summary.failed_count,
+				subscriptions: subscriptions, runtime: reloaded
+			});
+		}
 		const result = {
 			ok: summary.ok,
-			reason: summary.cache_reason,
+			reason: reloaded != null ? summary.active_reason : summary.cache_reason,
 			provider_count: summary.provider_count,
 			changed_count: summary.changed_count,
 			failed_count: summary.failed_count,
-			reloaded: false,
+			reloaded: reloaded != null,
 			subscriptions: subscriptions
 		};
 		cleanup_refresh_snapshot();
 		result.events_recorded = record_events([refresh_event(result, requested)]);
-		ok("refresh", { state: result.reason, result: result });
+		ok("refresh", { state: result.reason, result: result, readback: reloaded?.readback ?? null,
+			protected_probes: reloaded?.protected_probes ?? null });
 		return;
 	}
 	const compiled = compile_result(policy, true);
@@ -2234,8 +2266,8 @@ if (action == "subscriptions-refresh") {
 	if (BACKEND_KIND != "native-mihomo" || type(id) != "string" || !match(id, /^[A-Za-z0-9_]+$/))
 		fail(action, "invalid_native_subscription");
 	const policy = load_policy();
-	if (policy != null && index(enabled_subscription_sections(policy), id) >= 0) {
-		refresh_action(policy);
+	if (index(referenced_subscription_sections(policy, current_profile()), id) >= 0) {
+		refresh_action(policy, id, ARGV[2] ?? "cli");
 	} else {
 		const result = subscription_update(id);
 		if (!result.ok) fail(action, result.error);
@@ -2254,14 +2286,6 @@ if (index(["subscriptions-get", "subscriptions-set", "migration-get", "migration
 	else result = dashboard_get();
 	printf("%J\n", result);
 	exit(result.ok ? 0 : 1);
-}
-if (index(["native-core-stage", "native-core-start", "native-core-status", "native-core-stop"], action) >= 0) {
-	native_core(action, ARGV[1]);
-	exit(0);
-}
-if (index(["native-sources-get", "native-sources-set", "native-sources-refresh"], action) >= 0) {
-	native_sources(action, ARGV[1]);
-	exit(0);
 }
 if (action == "events") {
 	events_action();

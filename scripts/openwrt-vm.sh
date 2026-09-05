@@ -7,14 +7,14 @@ Usage: scripts/openwrt-vm.sh --output <receipt.json> [--ref <git-ref>] [--packag
 
 Boot a pinned official OpenWrt image with native Apple Silicon QEMU/HVF and
 qualify the exact Git commit/tree.
-The default suite uses a synthetic Nikki lifecycle around real UCode/Mihomo.
-The optional native experiment uses no Nikki and cannot authorize deployment.
-Neither mode contacts real devices.
+The default suite verifies native runtime, first setup without Nikki, and
+Nikki migration in independent clean VMs. Package candidates add a clean lane.
+Individual diagnostic lanes cannot authorize deployment. No real devices are contacted.
 
 Options:
   --ref <git-ref>   Source ref to qualify (default: origin/main)
   --packages <dir>  Also install and qualify the exact APK candidate directory
-  --native-experiment  Run the isolated native IPv4 data-plane experiment, not a release gate
+  --diagnostic <lane>  Run only native, setup, migration, runtime, or package diagnostics
   --output <path>   Qualification receipt path outside the repository
   -h, --help        Show this help
 EOF
@@ -28,7 +28,7 @@ die() {
 source_ref=origin/main
 output=""
 packages=""
-native_experiment=0
+diagnostic=all
 while (($#)); do
 	case "$1" in
 		--ref)
@@ -46,9 +46,11 @@ while (($#)); do
 			packages=$2
 			shift 2
 			;;
-		--native-experiment)
-			native_experiment=1
-			shift
+		--diagnostic)
+			(($# >= 2)) || die "--diagnostic requires a lane"
+			diagnostic=$2
+			case "$diagnostic" in native|setup|migration|runtime|package) ;; *) die "unknown diagnostic lane: $diagnostic" ;; esac
+			shift 2
 			;;
 		-h|--help)
 			usage
@@ -59,7 +61,8 @@ while (($#)); do
 done
 
 [[ -n "$output" ]] || die "--output is required"
-[[ "$native_experiment" == 0 || -z "$packages" ]] || die "native experiment cannot qualify packages"
+[[ "$diagnostic" != package || -n "$packages" ]] || die "package diagnostic requires --packages"
+[[ "$diagnostic" == all || "$diagnostic" == package || -z "$packages" ]] || die "only the package diagnostic accepts --packages"
 [[ "$source_ref" != -* ]] || die "source ref cannot begin with '-'"
 [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] ||
 	die "native QEMU qualification requires macOS on Apple Silicon"
@@ -102,6 +105,7 @@ source_dir=$work_dir/source
 mkdir -p "$source_dir"
 git -C "$repo_dir" archive "$source_commit" \
 	openwrt/Makefile \
+	openwrt/mihomo-meta/source.json \
 	openwrt/files/usr/libexec/opl-netfleet \
 	openwrt/files/etc/init.d/opl-netfleet \
 	openwrt/files/etc/init.d/opl-netfleet-core \
@@ -146,20 +150,20 @@ NETFLEET_WORKSPACE=$source_dir \
 NETFLEET_VM_CACHE="$cache_root/opl-netfleet/openwrt-vm" \
 NETFLEET_QEMU_FIRMWARE=$firmware \
 NETFLEET_QEMU_VERSION=$qemu_version \
-	NETFLEET_NATIVE_EXPERIMENT=$native_experiment \
+	NETFLEET_VM_LANE=$diagnostic \
 	NETFLEET_PACKAGE_ARCHIVE="$package_archive" \
 	NETFLEET_PACKAGE_MANIFEST_SHA256="$package_manifest_sha" \
 	sh "$source_dir/scripts/openwrt-vm/qualify.sh"
 
 [[ -f "$output_dir/$output_name" ]] || die "qualification receipt was not produced"
-python3 - "$output_dir/$output_name" "$source_commit" "$source_tree" "$native_experiment" <<'PY'
+python3 - "$output_dir/$output_name" "$source_commit" "$source_tree" "$diagnostic" <<'PY'
 import json
 from pathlib import Path
 import sys
 
 receipt = json.loads(Path(sys.argv[1]).read_text())
-passed = (receipt.get("experiment_passed") is True and receipt.get("qualified") is False
-          if sys.argv[4] == "1" else receipt.get("qualified") is True)
+passed = (receipt.get("diagnostic_passed") is True and receipt.get("qualified") is False
+          if sys.argv[4] != "all" else receipt.get("qualified") is True)
 if not (
     passed
     and receipt.get("source_commit") == sys.argv[2]

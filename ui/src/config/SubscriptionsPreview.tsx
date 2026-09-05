@@ -5,7 +5,7 @@ import type { StatusSnapshot } from '../types';
 export function SubscriptionsPreview({ status }: { status: StatusSnapshot }) {
   const [open, setOpen] = useState(false);
   const [sources, setSources] = useState(() => (status.subscriptions || []).map((source) => ({ id: source.section, name: source.display_name || source.section, nodeCount: source.node_count || 0, pending: false })));
-  const [editing, setEditing] = useState<{ id: string; name: string; nodeCount: number } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; name: string; nodeCount: number; pending: boolean } | null>(null);
   const [adding, setAdding] = useState(false);
   if (status.runtime.backend?.id !== 'native-mihomo') return <a className="nf-inline-link" href="/cgi-bin/luci/admin/services/nikki/profile" target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" />管理订阅</a>;
   return <>
@@ -16,7 +16,8 @@ export function SubscriptionsPreview({ status }: { status: StatusSnapshot }) {
       {adding || editing ? <form onSubmit={(event) => {
         event.preventDefault();
         const values = new FormData(event.currentTarget);
-        const source = { id: editing?.id || String(values.get('id')), name: String(values.get('name')), nodeCount: editing?.nodeCount || 0, pending: true };
+        const pending = !editing || editing.pending || ['url', 'user_agent', 'info_url'].some((key) => Boolean(String(values.get(key) || '').trim()));
+        const source = { id: editing?.id || String(values.get('id')), name: String(values.get('name')), nodeCount: editing?.nodeCount || 0, pending };
         setSources((items) => editing ? items.map((item) => item.id === editing.id ? source : item) : [...items, source]);
         event.currentTarget.reset(); setAdding(false); setEditing(null);
       }}>

@@ -6,10 +6,18 @@ STOP=05
 gateway=/usr/libexec/opl-netfleet/application/native_gateway.uc
 
 extra_command update_subscription 'Refresh one configured native subscription'
+extra_command reconcile 'Reconcile native core lifecycle events'
+
+gateway_action() {
+	local result
+	result=$(ucode "$gateway" "$1") && return 0
+	logger -t opl-netfleet-core "$1: $result"
+	return 1
+}
 
 start_service() {
 	[ ! -e /tmp/opl-netfleet-package-upgrade-state ] || [ "${NETFLEET_PACKAGE_RESTORE:-0}" = 1 ] || return 0
-	ucode "$gateway" prepare >/dev/null || return 1
+	gateway_action prepare || return 1
 	config_load netfleet
 	local max_procs mem_limit safe_paths
 	config_get max_procs procd env_go_max_procs
@@ -42,10 +50,35 @@ start_service() {
 		procd_append_param env "$variable=$value"
 	done
 	procd_close_instance
+	procd_open_instance lifecycle
+	procd_set_param command /usr/bin/ucode "$gateway" watch
+	procd_set_param respawn 3600 1 0
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+}
+
+restart() {
+	stop "$@" || return 1
+	local attempt
+	# procd deletion acknowledges before the old process has necessarily exited.
+	for attempt in 1 2 3 4 5 6 7 8 9 10; do
+		if ! pidof mihomo >/dev/null 2>&1; then
+			start "$@"
+			return $?
+		fi
+		sleep 1
+	done
+	logger -t opl-netfleet-core 'restart: previous core did not exit'
+	return 1
+}
+
+reload_service() {
+	restart
 }
 
 service_started() {
-	if ! ucode "$gateway" attach >/dev/null; then
+	if ! gateway_action attach; then
 		ucode "$gateway" cleanup >/dev/null
 		procd_kill opl-netfleet-core
 		return 1
@@ -62,6 +95,11 @@ service_stopped() {
 
 update_subscription() {
 	ucode -e 'import { update } from "/usr/libexec/opl-netfleet/application/subscriptions.uc"; exit(update(ARGV[0]) ? 0 : 1);' "$1"
+}
+
+reconcile() {
+	procd_lock
+	ucode "$gateway" reconcile
 }
 
 service_triggers() {

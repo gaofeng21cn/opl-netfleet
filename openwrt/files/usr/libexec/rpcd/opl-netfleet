@@ -74,7 +74,7 @@ case "$1" in
 				id=$(jsonfilter -s "$payload" -e '@.id' 2>/dev/null || true)
 				case "$id" in ""|*[!A-Za-z0-9_]*) printf '%s\n' '{"ok":false,"error":"invalid_subscription_id"}'; exit 0 ;; esac
 				lock_mutation
-				respond_owner ucode "$main" subscriptions-refresh "$id" 9>&-
+				respond_owner ucode "$main" subscriptions-refresh "$id" luci 9>&-
 				;;
 			native_setup_get) respond_owner ucode "$main" native-setup-get ;;
 			native_setup_apply) config_request native-setup-apply 1 ;;

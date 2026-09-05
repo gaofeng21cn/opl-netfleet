@@ -1,7 +1,7 @@
 #!/usr/bin/ucode
 
 import {
-	enabled_sections, quota_config, cache_accepted, evaluate_entry, summarize,
+	enabled_sections, referenced_sections, quota_config, cache_accepted, evaluate_entry, summarize,
 	public_results, unavailable_results, project
 } from "../openwrt/files/usr/libexec/opl-netfleet/core/subscription.uc";
 
@@ -19,6 +19,18 @@ if (join(",", enabled_sections(policy)) != "alpha,beta" ||
 	quota_config(policy, "beta")?.available_field != "available" ||
 	quota_config(policy, "zeta") != null) {
 	print("enabled_sections_failed\n");
+	exit(1);
+}
+
+policy.policy_source = { kind: "profile", ref: "subscription:zeta" };
+policy.recovery_profile = { ref: "subscription:recovery" };
+if (join(",", referenced_sections(policy, "subscription:current")) != "alpha,beta,zeta,recovery,current" ||
+	join(",", referenced_sections(policy, "subscription:alpha")) != "alpha,beta,zeta,recovery" ||
+	join(",", referenced_sections(null, "subscription:current")) != "current" ||
+	length(referenced_sections(null, "file:current")) != 0 ||
+	length(referenced_sections({ policy_source: { kind: "bundle", ref: "subscription:other" },
+		recovery_profile: { ref: "file:recovery" } }, null)) != 0) {
+	print("referenced_sections_failed\n");
 	exit(1);
 }
 
