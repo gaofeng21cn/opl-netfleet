@@ -30,8 +30,9 @@ scripts/openwrt-vm.sh --ref origin/main --native-experiment --output /tmp/netfle
 
 实验使用现有 compiler、临时文件订阅缓存、真实 Mihomo 和 procd，LAN 客户端位于独立网络
 命名空间。fw4 为实验接口提供明确的区域，临时 nft TProxy/DNS 规则和 policy route 负责
-IPv4 截获；正常停止与核心退出都先撤截获，再结束进程。实验还检查重复停止、无效配置、
-无截获时的反证请求以及不属于运行 owner 的规则保留。
+IPv4 截获；正常停止先撤截获再结束进程，核心意外退出时由其前台 owner 清理截获。
+实验还检查重复启动冲突、重复停止、无效配置、无截获时的反证请求、节点实际流量、
+停止与崩溃后的直通请求，以及不属于运行 owner 的规则原样保留。
 
 这不是安装包里的第二后端，也不修改现有产品的 Nikki 生命周期。实验回执使用独立 schema，
 始终包含 `qualified=false`、`production_ready=false`；不能配合 `--packages`，不能被用于

@@ -89,6 +89,7 @@ table ip netfleet_native_fixture {
 	}
 }
 EOF
+nft -s list table ip netfleet_native_fixture >"$work/foreign-rules.txt"
 dnsmasq --keep-in-foreground --port=1053 --listen-address=127.0.0.1 --bind-interfaces \
 	--no-resolv --no-hosts --address=/native-proof.test/203.0.113.42 \
 	--pid-file="$work/dns.pid" >"$work/dns.log" 2>&1 &
@@ -234,7 +235,7 @@ assert_clean() {
 	if ip -4 rule show | grep -q '11900:'; then return 1; fi
 	[ -z "$(ip -4 route show table 11900 2>/dev/null)" ] || return 1
 	[ -z "$(pidof mihomo 2>/dev/null || true)" ] || return 1
-	nft list table ip netfleet_native_fixture >/dev/null
+	nft -s list table ip netfleet_native_fixture | cmp - "$work/foreign-rules.txt"
 }
 wait_clean() {
 	for attempt in 1 2 3 4 5 6; do
@@ -262,6 +263,12 @@ ubus call service list '{"name":"netfleet-native-vm"}' >"$work/service.json"
 [ "$(jsonfilter -i "$work/service.json" -e '@["netfleet-native-vm"].instances.core.running')" = true ]
 core_pid=$(cat "$work/core.pid")
 tr '\0' ' ' <"/proc/$core_pid/cmdline" | grep -Fq "$work/run/config.json"
+stage=owner_conflict
+nft -s list table ip opl_netfleet_native_vm >"$work/owner-rules.txt"
+if sh "$work/owner.sh" >"$work/conflict.log" 2>&1; then exit 1; fi
+[ -f "$work/ready" ]
+kill -0 "$core_pid"
+nft -s list table ip opl_netfleet_native_vm | cmp - "$work/owner-rules.txt"
 curl -fsS --noproxy '*' -H 'Authorization: Bearer native-vm-fixture' \
 	http://127.0.0.1:19090/proxies >"$work/proxies.json"
 grep -q 'native-region-node' "$work/proxies.json"
@@ -289,8 +296,10 @@ stage=lan_tcp
 tcp_probe >"$work/tcp.log" 2>&1
 [ "$(helper_bytes)" -gt "$before_bytes" ]
 stage=lan_udp
+before_bytes=$(helper_bytes)
 answer=$(printf 'native-udp-proof\n' | ip netns exec nf-client socat -T 2 - UDP4:198.19.0.1:19999)
 [ "$answer" = native-udp-proof ]
+[ "$(helper_bytes)" -gt "$before_bytes" ]
 stage=lan_dns
 ip netns exec nf-client dig +short +tries=1 +time=2 @203.0.113.53 native-proof.test >"$work/dns-udp.log"
 grep -qx 203.0.113.42 "$work/dns-udp.log"
@@ -319,4 +328,4 @@ sleep 2
 assert_clean
 cp "$work/valid.json" "$work/run/config.json"
 stage=complete
-printf '{"ok":true,"scope":"native-ipv4-experiment","production_ready":false,"source_commit":"%s","source_tree":"%s","checks":{"no_nikki":true,"shared_compiler":true,"config_validation":true,"procd_owner":true,"controller":true,"bypass_negative_control":true,"lan_tcp_tproxy":true,"lan_udp_tproxy":true,"lan_dns_udp":true,"lan_dns_tcp":true,"normal_stop_cleanup":true,"repeated_stop":true,"core_crash_cleanup":true,"invalid_config_no_interception":true,"foreign_rules_preserved":true}}\n' "$commit" "$tree"
+printf '{"ok":true,"scope":"native-ipv4-experiment","production_ready":false,"source_commit":"%s","source_tree":"%s","checks":{"no_nikki":true,"shared_compiler":true,"config_validation":true,"procd_owner":true,"controller":true,"owner_conflict_zero_mutation":true,"bypass_negative_control":true,"provider_proxy_traffic":true,"lan_tcp_tproxy":true,"lan_udp_tproxy":true,"lan_dns_udp":true,"lan_dns_tcp":true,"normal_stop_cleanup":true,"repeated_stop":true,"core_crash_cleanup":true,"direct_after_stop":true,"direct_after_crash":true,"invalid_config_no_interception":true,"foreign_rules_preserved":true}}\n' "$commit" "$tree"
