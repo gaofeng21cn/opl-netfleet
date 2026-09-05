@@ -77,6 +77,7 @@ function download(source, scratch) {
 		return { error: "request_prepare_failed" };
 	// -q disables ~/.curlrc; HTTPS and explicit direct transport also apply to redirects.
 	const command = `curl -q --config ${shell_quote(request)} --noproxy '*' --proxy '' ` +
+		`--cacert /etc/ssl/certs/ca-certificates.crt ` +
 		`--proto '=https' --proto-redir '=https' --location --max-redirs 3 --fail --silent ` +
 		`--connect-timeout 10 --max-time 60 --max-filesize 8388608 --output ${shell_quote(body)} 2>/dev/null`;
 	if (system(command) != 0) return { error: "download_failed" };
@@ -94,7 +95,7 @@ function download(source, scratch) {
 			proxies: nodes.proxies, "proxy-groups": [], rules: ["MATCH,DIRECT"],
 			mode: "rule", ipv6: false, "log-level": "silent"
 		}))) return { error: "candidate_write_failed" };
-	if (system(`mihomo -t -d ${shell_quote(scratch)} -f ${shell_quote(`${scratch}/validation.json`)} >/dev/null 2>&1`) != 0)
+	if (system(`SAFE_PATHS='' mihomo -t -d ${shell_quote(scratch)} -f ${shell_quote(`${scratch}/validation.json`)} >/dev/null 2>&1`) != 0)
 		return { error: "invalid_mihomo_nodes" };
 	const digest = sha256(`${scratch}/nodes.json`);
 	return digest == null ? { error: "candidate_digest_failed" } : { nodes: nodes.proxies, digest: digest };
@@ -139,6 +140,7 @@ function refresh(config, requested, scratch) {
 function execute(action, argument, scratch) {
 	if (fs.lstat(BASE) != null && !private_directory(BASE)) return { ok: false, error: "unsafe_native_directory" };
 	if (fs.lstat(CONFIG) != null && !private_file(CONFIG)) return { ok: false, error: "unsafe_source_config" };
+	if (fs.lstat(CACHE) != null && !private_directory(CACHE)) return { ok: false, error: "unsafe_cache_directory" };
 	const config = fs.lstat(CONFIG) == null ? { schema_version: 1, sources: [] } : read_json(CONFIG);
 	if (!validate(config).ok) return { ok: false, error: "source_config_unreadable" };
 	if (action == "native-sources-get") return projection(config, scratch);

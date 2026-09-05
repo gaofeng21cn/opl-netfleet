@@ -109,6 +109,10 @@ cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
 mkdir -p /etc/opl-netfleet
 cat /tmp/local-probe.crt >>/etc/ssl/certs/ca-certificates.crt
 main=/usr/libexec/opl-netfleet/main.uc
+stage=source_contracts
+for contract in /tmp/tests/*_contract.uc; do
+	ucode "$contract" >>"$work/contracts.log" 2>&1
+done
 stage=native_source_owner
 ucode "$main" native-sources-get >"$work/source-empty.json"
 cat >"$work/sources.json" <<EOF
@@ -123,10 +127,10 @@ ucode "$main" native-sources-refresh >"$work/source-refresh.json"
 ucode "$main" native-sources-refresh fixture >"$work/source-unchanged.json"
 [ "$(jsonfilter -i "$work/source-unchanged.json" -e '@.result.sources[0].last_result')" = unchanged ]
 cache=/etc/opl-netfleet/native/cache/fixture.json
-[ "$(stat -c %a "$cache")" = 600 ]
-[ "$(stat -c %a /etc/opl-netfleet/native)" = 700 ]
+ucode -e 'import { stat } from "fs"; if ((stat(ARGV[0]).mode & 0777) != 0600 || (stat("/etc/opl-netfleet/native").mode & 0777) != 0700) die("private modes");' "$cache"
 if grep -q 'vm-only-credential' "$work/source-set.json" "$work/source-refresh.json" "$cache"; then exit 1; fi
 if jsonfilter -i "$cache" -e '@.dns' | grep -q .; then exit 1; fi
+ucode /tmp/tests/native_sources_integration.uc >"$work/source-integration.log" 2>&1
 stage=compile_without_nikki
 cat >"$work/compile.uc" <<'EOF'
 import { compile } from "/usr/libexec/opl-netfleet/core/compiler.uc";

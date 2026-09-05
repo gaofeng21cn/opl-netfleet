@@ -2,6 +2,14 @@ export function valid_id(id) {
 	return type(id) == "string" && match(id, /^[a-z][a-z0-9_-]{0,63}$/) != null;
 };
 
+function has_control(value) {
+	for (let i = 0; i < length(value); i++) {
+		const byte = ord(substr(value, i, 1));
+		if (byte < 32 || byte == 127) return true;
+	}
+	return false;
+};
+
 export function validate(config) {
 	if (type(config) != "object" || config.schema_version != 1 || type(config.sources) != "array")
 		return { ok: false, error: "invalid_source_config" };
@@ -17,12 +25,12 @@ export function validate(config) {
 		else if (seen[source.id]) error = "duplicate_source_id";
 		else if (type(source.enabled) != "bool") error = "invalid_enabled";
 		else if (type(source.display_name) != "string" || length(trim(source.display_name)) == 0 ||
-			match(source.display_name, /[[:cntrl:]]/)) error = "invalid_display_name";
+			has_control(source.display_name)) error = "invalid_display_name";
 		else if (type(source.url) != "string" ||
-			!match(source.url, /^https:\/\/[^\/[:space:]?#@]+(\/[^[:space:]#]*)?$/) ||
-			match(source.url, /[[:cntrl:]]/)) error = "https_url_required";
+			!match(source.url, /^https:\/\/[^\/[:space:]?#@]+([\/?][^[:space:]#]*)?$/) ||
+			has_control(source.url)) error = "https_url_required";
 		else if (source.user_agent != null && (type(source.user_agent) != "string" ||
-			match(source.user_agent, /[[:cntrl:]]/))) error = "invalid_user_agent";
+			has_control(source.user_agent))) error = "invalid_user_agent";
 		if (error == null) {
 			for (let key in source) {
 				if (index(["id", "display_name", "enabled", "url", "user_agent"], key) < 0)
