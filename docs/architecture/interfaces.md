@@ -72,6 +72,10 @@ NetFleet LuCI 在“地区”和“配置”之间提供“实时运行”入口
 状态页的 DNS 就绪取自监听和转发规则，不在页面读取中执行 DNS 网络探针；运行 owner、
 supervisor 与显式 probe 的保护探测保持不变。
 
+LuCI 发布入口及其全部 NetFleet JavaScript 依赖使用同一版本命名空间。软件包与源码部署
+共用资源生成器，重写模块间依赖，避免新版入口加载浏览器缓存的旧模块。不能只给入口
+加版本号，也不能依赖用户清理缓存恢复升级后的正常使用。
+
 NetFleet 沿用 Nikki/Zashboard 的带凭据新标签页连接方式，controller secret 只用于本次
 URL 构造，不得进入 NetFleet status、日志、展示缓存或文档。Zashboard 保留上游完整功能；
 其中 selector 切换、连接关闭属于 Mihomo 当前运行态，不替代 NetFleet 的持久配置、订阅

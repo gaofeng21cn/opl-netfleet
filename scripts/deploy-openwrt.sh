@@ -473,9 +473,8 @@ if [[ "$release_mode" == source ]]; then
 	cp -R "$source_dir/openwrt/luci-app-netfleet/htdocs/." "$payload_dir/www/"
 	cp -R "$source_dir/openwrt/luci-app-netfleet/root/." "$payload_dir/"
 	view_version="v${product_version//./_}"
-	view_source="$payload_dir/www/luci-static/resources/view/netfleet/overview.js"
-	view_target="$payload_dir/www/luci-static/resources/view/netfleet/overview-${view_version}.js"
-	mv "$view_source" "$view_target"
+	sh "$source_dir/openwrt/luci-app-netfleet/stage-assets.sh" \
+		"$payload_dir/www/luci-static/resources" "$view_version"
 	grep -Fq "\"path\": \"netfleet/overview-${view_version}\"" \
 		"$payload_dir/usr/share/luci/menu.d/luci-app-netfleet.json" ||
 		die "LuCI menu view does not match package version: $product_version"

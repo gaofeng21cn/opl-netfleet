@@ -110,8 +110,8 @@ cp "$build_identity" "$payload/usr/share/opl-netfleet/build.json"
 cp -R "$work/openwrt/luci-app-netfleet/htdocs/." "$payload/www/"
 cp -R "$work/openwrt/luci-app-netfleet/root/." "$payload/"
 view_version="v${version//./_}"
-mv "$payload/www/luci-static/resources/view/netfleet/overview.js" \
-  "$payload/www/luci-static/resources/view/netfleet/overview-${view_version}.js"
+sh "$work/openwrt/luci-app-netfleet/stage-assets.sh" \
+  "$payload/www/luci-static/resources" "$view_version"
 grep -Fq "\"path\": \"netfleet/overview-${view_version}\"" \
   "$payload/usr/share/luci/menu.d/luci-app-netfleet.json" ||
   die "LuCI menu view does not match package version: $version"

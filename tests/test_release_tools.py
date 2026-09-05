@@ -1,6 +1,8 @@
 import hashlib
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -65,6 +67,31 @@ def write_release(directory: Path, commit: str, tree: str, version: str = '0.4.5
     (directory / 'manifest.json').write_text(json.dumps(manifest, sort_keys=True) + '\n')
 
 class ReleaseToolsTests(unittest.TestCase):
+    def test_luci_release_dependencies_cannot_reuse_previous_module_urls(self):
+        package = ROOT / 'openwrt/luci-app-netfleet'
+        with tempfile.TemporaryDirectory() as directory:
+            namespaces = []
+            for version in ('v0_5_1', 'v0_5_2'):
+                resources = Path(directory) / version
+                shutil.copytree(package / 'htdocs/luci-static/resources', resources)
+                subprocess.run(['sh', str(package / 'stage-assets.sh'), str(resources), version], check=True)
+                view = resources / f'view/netfleet/overview-{version}.js'
+                visited = set()
+                pending = [view]
+                while pending:
+                    module = pending.pop()
+                    if module in visited:
+                        continue
+                    visited.add(module)
+                    self.assertTrue(module.is_file(), str(module))
+                    for dependency in re.findall(r"'require (netfleet\.[\w.]+)(?: as \w+)?';", module.read_text()):
+                        self.assertTrue(dependency.startswith(f'netfleet.{version}.'), dependency)
+                        pending.append(resources / (dependency.replace('.', '/') + '.js'))
+                self.assertEqual(4, len(visited))
+                self.assertFalse((resources / 'netfleet/managed.js').exists())
+                namespaces.append({str(path.relative_to(resources)) for path in visited})
+            self.assertFalse(namespaces[0] & namespaces[1])
+
     def test_sdk_preparer_generates_build_configuration_without_feeds(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -106,18 +133,18 @@ class ReleaseToolsTests(unittest.TestCase):
     def test_package_sources_are_versioned_and_do_not_embed_instance_inputs(self):
         runtime = (ROOT / 'openwrt/Makefile').read_text()
         luci = (ROOT / 'openwrt/luci-app-netfleet/Makefile').read_text()
-        self.assertIn('PKG_VERSION:=0.5.1', runtime)
+        self.assertIn('PKG_VERSION:=0.5.2', runtime)
         self.assertIn('PKG_RELEASE:=1', runtime)
         self.assertIn('PKG_LICENSE:=GPL-3.0-only', runtime)
         self.assertIn('PKG_MAINTAINER:=OPL NetFleet', runtime)
         self.assertIn('PKGARCH:=all', runtime)
-        self.assertIn('PKG_VERSION:=0.5.1', luci)
+        self.assertIn('PKG_VERSION:=0.5.2', luci)
         self.assertIn('PKGARCH:=all', luci)
         self.assertIn('include $(INCLUDE_DIR)/package.mk', luci)
         self.assertNotIn('feeds/luci/luci.mk', luci)
         self.assertIn('Package/luci-app-netfleet/install', luci)
         self.assertIn('Package/luci-app-netfleet/postinst', luci)
-        self.assertIn('overview-$(NETFLEET_VIEW_VERSION).js', luci)
+        self.assertIn('sh ./stage-assets.sh $(1)/www/luci-static/resources $(NETFLEET_VIEW_VERSION)', luci)
         self.assertIn("uci set 'rpcd.@rpcd[0].timeout=300'", luci)
         self.assertIn("uci set 'uhttpd.main.script_timeout=300'", luci)
         self.assertIn('[ "$$rpcd_timeout" -ge 300 ]', luci)
