@@ -32,7 +32,8 @@ check(get().result.managed_by == "netfleet", "native source ownership");
 const url = `https://192.168.1.2:${port}/native-subscriptions/valid?token=vm-only-credential`;
 const created = request({ id: "fixture", name: "VM subscription", url: url });
 check(created.ok, sprintf("%J", created));
-check(index(sprintf("%J", created), "vm-only-credential") < 0, "credentials redacted");
+check(created.result.sources[0].url == url && created.result.sources[0].user_agent == "clash.meta" &&
+	created.result.sources[0].info_url == "", "authenticated editor receives current source fields");
 check(!request({ id: "fixture", name: "Stale edit" }, "stale").ok, "stale revision rejected");
 const first = update_result("fixture");
 check(first.ok && first.changed, sprintf("%J", first));
