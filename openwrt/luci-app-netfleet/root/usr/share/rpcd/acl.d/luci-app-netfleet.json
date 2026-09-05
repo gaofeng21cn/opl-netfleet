@@ -8,7 +8,7 @@
     },
     "write": {
       "ubus": {
-        "opl-netfleet": [ "native_setup_apply", "subscriptions_set", "migration_apply", "onboarding_apply", "config_save", "config_apply", "enable", "select_auto", "refresh", "disable" ]
+        "opl-netfleet": [ "native_setup_apply", "subscriptions_set", "subscriptions_refresh", "migration_apply", "onboarding_apply", "config_save", "config_apply", "enable", "select_auto", "refresh", "disable" ]
       }
     }
   }

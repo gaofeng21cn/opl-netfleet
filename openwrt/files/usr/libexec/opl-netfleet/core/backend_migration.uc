@@ -19,15 +19,15 @@ export function profile_path(reference, root) {
 
 function mapped_string(value) {
 	if (index(value, OLD) < 0) return value;
-	if (index(value, `${OLD}/`) != 0) throw "unsupported_legacy_path";
+	if (index(value, `${OLD}/`) != 0) die("unsupported_legacy_path");
 	const relative = substr(value, length(OLD) + 1);
-	if (!relative_path(relative)) throw "unsupported_legacy_path";
+	if (!relative_path(relative)) die("unsupported_legacy_path");
 	const top = split(relative, "/")[0];
 	if (index(["run", "profiles", "subscriptions", "providers", "rulesets", "ui", "geodata", "certs"], top) < 0)
-		throw "unsupported_legacy_path";
+		die("unsupported_legacy_path");
 	if (relative == "run/config.yaml" || index(relative, "profiles/opl-netfleet/") == 0 || relative == "profiles/OPL-NetFleet.json" ||
 		index(relative, "run/providers/proxy/netfleet-") == 0)
-		throw "generated_artifact_is_not_input";
+		die("generated_artifact_is_not_input");
 	return `${NATIVE}/${relative}`;
 };
 
@@ -77,7 +77,7 @@ export function migrate_sections(sections, recovery) {
 			if (options.cgroup_name != null) options.cgroup_name = "opl-netfleet-core";
 			push(result, { name: name, type: kind, options: options });
 		}
-	} catch (error) { return { ok: false, error: `${error}` }; }
+	} catch (error) { return { ok: false, error: error.message ?? "migration_input_invalid" }; }
 	if (!config_found || !mixin_found) return { ok: false, error: "missing_backend_configuration" };
 	return { ok: true, sections: result };
 };

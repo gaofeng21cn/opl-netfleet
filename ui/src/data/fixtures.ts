@@ -132,10 +132,18 @@ inactive.capabilities = inactive.capabilities.map((capability) => ({
   reason: { kind: 'native_profile' },
 }));
 
+const native: StatusSnapshot = structuredClone(healthy);
+native.runtime.backend = { id: 'native-mihomo', display_name: 'NetFleet + Mihomo' };
+const nativeInactive: StatusSnapshot = structuredClone(inactive);
+nativeInactive.runtime.backend = { id: 'native-mihomo', display_name: 'NetFleet + Mihomo' };
+nativeInactive.capabilities = nativeInactive.capabilities.map((capability) => ({ ...capability, runtime_path: [capability.base_group || '出口', '原生自动选择', 'Native-Leaf'] }));
+
 export const fixtureScenarios = {
   healthy: { label: '健康运行', status: healthy, events },
   degraded: { label: '机场回退', status: degraded, events },
   inactive: { label: '原生配置', status: inactive, events },
+  native: { label: '独立后端运行', status: native, events },
+  nativeInactive: { label: '独立后端已关闭', status: nativeInactive, events },
 };
 
 export type FixtureScenario = keyof typeof fixtureScenarios;

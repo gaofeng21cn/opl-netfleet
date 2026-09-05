@@ -10,6 +10,7 @@ const calls = {
 	dashboardGet: rpc.declare({ object: 'opl-netfleet', method: 'dashboard_get' }),
 	subscriptionsGet: rpc.declare({ object: 'opl-netfleet', method: 'subscriptions_get' }),
 	subscriptionsSet: rpc.declare({ object: 'opl-netfleet', method: 'subscriptions_set', params: [ 'request' ] }),
+	subscriptionsRefresh: rpc.declare({ object: 'opl-netfleet', method: 'subscriptions_refresh', params: [ 'id' ] }),
 	migrationGet: rpc.declare({ object: 'opl-netfleet', method: 'migration_get' }),
 	migrationApply: rpc.declare({ object: 'opl-netfleet', method: 'migration_apply', params: [ 'request' ] }),
 	onboardingGet: rpc.declare({ object: 'opl-netfleet', method: 'onboarding_get' }),
@@ -77,6 +78,9 @@ return baseclass.extend({
 	subscriptionsGet: function() { return execute('subscriptionsGet'); },
 	subscriptionsSet: function(request) {
 		return withRpcTimeout(300, function() { return executeRequest('subscriptionsSet', request); });
+	},
+	subscriptionsRefresh: function(id) {
+		return withRpcTimeout(300, function() { return executeRequest('subscriptionsRefresh', id); });
 	},
 	migrationGet: function() { return execute('migrationGet'); },
 	migrationApply: function(request) {

@@ -12,7 +12,7 @@ define Package/opl-netfleet
   SECTION:=net
   CATEGORY:=Network
   TITLE:=OPL NetFleet network enhancement
-  DEPENDS:=+ucode +ucode-mod-fs +ucode-mod-uci +ucode-mod-ubus +ucode-mod-math +utpl +yq +mihomo +curl +ca-bundle +ip-full +kmod-nft-socket +kmod-nft-tproxy
+  DEPENDS:=+ucode +ucode-mod-fs +ucode-mod-uci +ucode-mod-ubus +yq +mihomo +curl +ca-bundle +flock +ip-full +nftables-json +kmod-nft-socket +kmod-nft-tproxy
   PKGARCH:=all
 endef
 
@@ -119,14 +119,18 @@ fi
 umask 077
 printf '%s %s %s %s %s\n' "$$backend" "$$enabled" "$$running" "$$core_enabled" "$$core_running" >"$$upgrade_state" || exit 1
 /etc/init.d/opl-netfleet stop >/dev/null 2>&1 || exit 1
-if [ "$$backend" = native-mihomo ] && [ "$$core_running" = 1 ]; then
+if [ "$$backend" = native-mihomo ]; then
 	/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || exit 1
 fi
 for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
 	if ! /etc/init.d/opl-netfleet running >/dev/null 2>&1; then
-		if [ "$$backend" != native-mihomo ] || ! /etc/init.d/opl-netfleet-core running >/dev/null 2>&1; then
+		if [ "$$backend" != native-mihomo ]; then
 			exit 0
 		fi
+		core_status=$$(ucode /usr/libexec/opl-netfleet/application/native_gateway.uc status) || exit 1
+		stopped=$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.core_running')
+		clean=$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.clean')
+		[ "$$stopped" != false ] || [ "$$clean" != true ] || exit 0
 	fi
 	sleep 1
 done
@@ -204,6 +208,9 @@ elif [ -s "$$upgrade_state" ]; then
 			[ "$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.ready')" = true ] || exit 1
 		else
 			/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || exit 1
+			core_status=$$(ucode /usr/libexec/opl-netfleet/application/native_gateway.uc status) || exit 1
+			[ "$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.core_running')" = false ] || exit 1
+			[ "$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.clean')" = true ] || exit 1
 		fi
 	else
 		/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || exit 1

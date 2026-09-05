@@ -3,9 +3,21 @@ import { describe, expect, it } from 'vitest';
 import { fixtureScenarios } from '../data/fixtures';
 import type { DeviceConfigSnapshot } from '../types';
 import { ConfigView } from './ConfigView';
+import { ProvidersSection, SafetySection } from './ConfigSections';
 import { configSummary, createConfigDraft, validateConfigDraft } from './model';
 
 describe('本地配置参考模型', () => {
+  it('原生后端投影保留真实后端身份，不再提供 Nikki 订阅入口', () => {
+    const status = structuredClone(fixtureScenarios.nativeInactive.status);
+    const draft = createConfigDraft(status);
+    expect(draft.backend).toBe('native-mihomo');
+    expect(draft.backendDisplayName).toBe('NetFleet + Mihomo');
+    const props = { status, draft, onChange: () => undefined };
+    const providers = renderToStaticMarkup(<ProvidersSection {...props} />);
+    expect(providers).toContain('管理订阅');
+    expect(providers).not.toContain('/services/nikki');
+    expect(renderToStaticMarkup(<SafetySection {...props} />)).toContain('NetFleet + Mihomo');
+  });
   it('只从当前 status 初始化机场、地区和出口资源', () => {
     const status = structuredClone(fixtureScenarios.healthy.status);
     status.regions.push({

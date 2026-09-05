@@ -82,7 +82,12 @@ export function referenced(policy, id) {
 		policy?.recovery_profile?.ref == `subscription:${id}`;
 };
 
+export function source_identity_input(source) {
+	return { url: source?.url ?? "", user_agent: source?.user_agent || "clash.meta" };
+};
+
 export function public_source(source, cache) {
+	const current = cache?.present == true && cache.current != false;
 	return {
 		id: source[".name"] ?? source.id,
 		name: source.name,
@@ -90,6 +95,9 @@ export function public_source(source, cache) {
 		has_info_url: length(source.info_url ?? "") > 0,
 		prefer: source.prefer ?? "remote",
 		cache_present: cache?.present == true,
+		cache_current: current,
+		pending_update: !current,
+		using_previous_cache: cache?.present == true && !current,
 		cache_sha256: cache?.digest ?? null,
 		node_count: cache?.node_count ?? null,
 		last_attempt: int(source.last_attempt ?? 0) || null,

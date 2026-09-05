@@ -281,28 +281,28 @@ export function apply(envelope_path) {
 	try {
 		const paused = set_service_state({ ...snapshot.supervisor, running: false });
 		changed = true;
-		if (!paused.ok) throw "supervisor_stop_failed";
-		if (!stop_previous().ok) throw "source_cleanup_failed";
+		if (!paused.ok) die("supervisor_stop_failed");
+		if (!stop_previous().ok) die("source_cleanup_failed");
 		if (!shell("/etc/init.d/nikki disable") || !shell("uci set nikki.config.enabled='0'") || !shell("uci commit nikki"))
-			throw "source_disable_failed";
-		if (snapshot.native_directory_existed && !fs.rmdir(BASE)) throw "native_directory_changed";
-		if (!fs.rename(`${work}/native`, BASE)) throw "native_install_failed";
+			die("source_disable_failed");
+		if (snapshot.native_directory_existed && !fs.rmdir(BASE)) die("native_directory_changed");
+		if (!fs.rename(`${work}/native`, BASE)) die("native_install_failed");
 		installed = true;
-		if (!fs.rename(`${work}/netfleet`, CONFIG) || !atomic_json(MARKER, { kind: "native-mihomo" })) throw "backend_selection_failed";
-		if (!shell("/etc/init.d/opl-netfleet-core restart") || gateway()?.result?.ready != true) throw "native_recovery_start_failed";
-		if (!owner("compile", work).ok) throw "native_compile_failed";
-		if (!owner("enable", work).ok) throw "native_enable_failed";
+		if (!fs.rename(`${work}/netfleet`, CONFIG) || !atomic_json(MARKER, { kind: "native-mihomo" })) die("backend_selection_failed");
+		if (!shell("/etc/init.d/opl-netfleet-core restart") || gateway()?.result?.ready != true) die("native_recovery_start_failed");
+		if (!owner("compile", work).ok) die("native_compile_failed");
+		if (!owner("enable", work).ok) die("native_enable_failed");
 		const status = owner("status", work);
 		if (!status.ok || status.response?.result?.active != true ||
 			status.response?.result?.runtime?.netfleet_present != true || gateway()?.result?.ready != true)
-			throw "native_owner_readback_failed";
-		if (!owner("probe", work).ok) throw "native_business_probe_failed";
+			die("native_owner_readback_failed");
+		if (!owner("probe", work).ok) die("native_business_probe_failed");
 		if (!shell("/etc/init.d/opl-netfleet-core enable") || !set_service_state({ enabled: true, running: true }).ok)
-			throw "native_service_enable_failed";
+			die("native_service_enable_failed");
 		remove_work(work);
 		return { ok: true, result: { state: "active", backend: "native-mihomo", previous_backend_stopped: true,
 			gateway_ready: true, business_ok: true, capabilities: public_plan(found).capabilities } };
-	} catch (error) { problem = `${error}`; }
+	} catch (error) { problem = error.message ?? "migration_failed"; }
 	const restored = changed ? rollback(snapshot, work, installed) : { ok: true };
 	if (restored.ok) remove_work(work);
 	return fail(restored.ok ? problem : "migration_rollback_failed", { cause: problem, rollback: restored });

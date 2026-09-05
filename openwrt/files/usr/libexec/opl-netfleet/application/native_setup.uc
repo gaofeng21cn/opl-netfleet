@@ -157,23 +157,23 @@ export function apply(envelope_path) {
 	if (!fresh.ready || fresh.revision != found.revision) { remove_work(work); return failure("setup_revision_conflict"); }
 	let problem = null;
 	try {
-		if (!set_service_state({ ...snapshot.supervisor, running: false }).ok) throw "supervisor_stop_failed";
-		if (!initialize(found, validated.source)) throw "setup_config_failed";
+		if (!set_service_state({ ...snapshot.supervisor, running: false }).ok) die("supervisor_stop_failed");
+		if (!initialize(found, validated.source)) die("setup_config_failed");
 		const request = `${work}/subscription.json`;
-		if (!atomic_json(request, { request: { revision: sha256(CONFIG), source: validated.source } })) throw "setup_request_failed";
+		if (!atomic_json(request, { request: { revision: sha256(CONFIG), source: validated.source } })) die("setup_request_failed");
 		const saved = subscription_call("set", request, `${work}/set.json`);
-		if (!saved.ok) throw saved.error;
+		if (!saved.ok) die(saved.error);
 		const updated = subscription_call("update_result", validated.source.id, `${work}/update.json`);
-		if (!updated.ok) throw updated.error;
-		if (!shell("/etc/init.d/opl-netfleet-core start") || gateway()?.result?.ready != true) throw "native_gateway_start_failed";
+		if (!updated.ok) die(updated.error);
+		if (!shell("/etc/init.d/opl-netfleet-core start") || gateway()?.result?.ready != true) die("native_gateway_start_failed");
 		const onboarding = command_json(`ucode ${shell_quote(MAIN)} onboarding-get`);
-		if (onboarding?.ok != true || onboarding.result?.ready != true) throw "native_onboarding_not_ready";
+		if (onboarding?.ok != true || onboarding.result?.ready != true) die("native_onboarding_not_ready");
 		if (!shell("/etc/init.d/opl-netfleet-core enable") || !set_service_state(snapshot.supervisor).ok)
-			throw "native_service_enable_failed";
+			die("native_service_enable_failed");
 		remove_work(work);
 		return { ok: true, result: { state: "native_ready", backend: "native-mihomo", gateway_ready: true,
 			onboarding_required: true } };
-	} catch (error) { problem = `${error}`; }
+	} catch (error) { problem = error.message ?? "native_setup_failed"; }
 	const restored = rollback(snapshot, work);
 	if (restored.ok) remove_work(work);
 	return failure(restored.ok ? problem : "setup_rollback_failed", { cause: problem, rollback: restored });

@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -107,7 +108,7 @@ class ReleaseToolsTests(unittest.TestCase):
         luci = (ROOT / 'openwrt/luci-app-netfleet/Makefile').read_text()
         self.assertIn('PKG_VERSION:=0.4.8', runtime)
         self.assertIn('PKG_RELEASE:=1', runtime)
-        self.assertIn('PKG_LICENSE:=Apache-2.0', runtime)
+        self.assertIn('PKG_LICENSE:=GPL-3.0-only', runtime)
         self.assertIn('PKG_MAINTAINER:=OPL NetFleet', runtime)
         self.assertIn('PKGARCH:=all', runtime)
         self.assertIn('PKG_VERSION:=0.4.8', luci)
@@ -473,5 +474,181 @@ class ReleaseToolsTests(unittest.TestCase):
         self.assertIn('release already exists and is immutable', source)
         self.assertIn('gh release download', source)
         self.assertEqual(2, source.count('verify-netfleet-release.py'))
+
+class PackageLifecycleTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        for path in ('bin', 'etc/init.d', 'etc/config', 'etc/opl-netfleet',
+                     'usr/libexec/opl-netfleet', 'tmp'):
+            (self.root / path).mkdir(parents=True, exist_ok=True)
+        self.state = self.root / 'state.json'
+        self.state.write_text(json.dumps({
+            'backend': 'native-mihomo', 'calls': [], 'nikki_profile': 'file:OPL-NetFleet.json',
+            'opl-netfleet': {'enabled': True, 'running': True, 'generation': 1},
+            'opl-netfleet-core': {'enabled': True, 'running': True, 'generation': 1},
+        }))
+        (self.root / 'etc/opl-netfleet/backend.json').write_text('{"kind":"native-mihomo"}')
+        (self.root / 'etc/config/nikki').write_text('fixture')
+        (self.root / 'usr/libexec/opl-netfleet/main.uc').touch(mode=0o755)
+        mock = f'#!{sys.executable}\n' + r'''
+import json, os, sys
+from pathlib import Path
+root = Path(os.environ['NETFLEET_TEST_ROOT'])
+path = root / 'state.json'
+state = json.loads(path.read_text())
+name = Path(sys.argv[0]).name
+args = sys.argv[1:]
+state['calls'].append([name, *args])
+code = 0
+if name in ('opl-netfleet', 'opl-netfleet-core'):
+    action = args[0]
+    service = state[name]
+    if action in ('running', 'enabled'):
+        code = 0 if service[action] else 1
+    elif action == 'stop':
+        service['running'] = False
+    elif action in ('enable', 'disable'):
+        service['enabled'] = action == 'enable'
+    elif action in ('start', 'restart'):
+        guarded = (root / 'tmp/opl-netfleet-package-upgrade-state').exists()
+        if not guarded or os.environ.get('NETFLEET_PACKAGE_RESTORE') == '1':
+            service['running'] = True
+            service['generation'] += 1
+elif name == 'ucode':
+    if args[0] == '-e':
+        print(state['backend'])
+    elif 'native_gateway.uc' in args[0]:
+        running = state['opl-netfleet-core']['running']
+        print(json.dumps({'ok': True, 'result': {
+            'core_running': running, 'ready': running and not state.get('not_ready'),
+            'clean': not running and not state.get('dirty'),
+        }}))
+    elif args[1] == 'disable':
+        state['nikki_profile'] = 'subscription:recovery'
+    elif args[1] == 'package-cleanup':
+        pass
+    else:
+        code = 1
+elif name == 'jsonfilter':
+    value = json.load(sys.stdin)
+    for key in args[args.index('-e') + 1].removeprefix('@.').split('.'):
+        value = value[key]
+    print(str(value).lower() if isinstance(value, bool) else value)
+elif name == 'uci' and 'get' in args:
+    print(state['nikki_profile'])
+path.write_text(json.dumps(state))
+sys.exit(code)
+'''
+        for name in ('ucode', 'jsonfilter', 'uci', 'sleep'):
+            target = self.root / 'bin' / name
+            target.write_text(mock)
+            target.chmod(0o755)
+        for name in ('opl-netfleet', 'opl-netfleet-core'):
+            target = self.root / 'etc/init.d' / name
+            target.write_text(mock)
+            target.chmod(0o755)
+        self.env = {**os.environ, 'PATH': f'{self.root}/bin:{os.environ["PATH"]}',
+                    'NETFLEET_TEST_ROOT': str(self.root), 'PKG_UPGRADE': '1'}
+
+    def read_state(self):
+        return json.loads(self.state.read_text())
+
+    def update_state(self, **changes):
+        self.state.write_text(json.dumps({**self.read_state(), **changes}))
+
+    def hook(self, name, **environment):
+        source = (ROOT / 'openwrt/Makefile').read_text()
+        body = source.split(f'define Package/opl-netfleet/{name}\n', 1)[1].split('\nendef', 1)[0]
+        body = body.replace('$$', '$')
+        for prefix in ('/etc/', '/usr/libexec/', '/tmp/opl-netfleet'):
+            body = body.replace(prefix, f'{self.root}{prefix}')
+        return subprocess.run(['sh', '-c', body], env={**self.env, **environment},
+                              capture_output=True, text=True, check=False)
+
+    def default_postinst(self):
+        for name in ('opl-netfleet', 'opl-netfleet-core'):
+            for action in ('enable', 'start'):
+                subprocess.run([str(self.root / 'etc/init.d' / name), action],
+                               env=self.env, check=True, capture_output=True)
+
+    def test_native_upgrade_reloads_both_running_owners(self):
+        before = self.read_state()
+        result = self.hook('preinst')
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse(self.read_state()['opl-netfleet-core']['running'])
+        self.default_postinst()
+        self.assertFalse(self.read_state()['opl-netfleet-core']['running'])
+        result = self.hook('postinst')
+        self.assertEqual(0, result.returncode, result.stderr)
+        after = self.read_state()
+        for name in ('opl-netfleet', 'opl-netfleet-core'):
+            self.assertTrue(after[name]['running'])
+            self.assertTrue(after[name]['enabled'])
+            self.assertGreater(after[name]['generation'], before[name]['generation'])
+        self.assertFalse((self.root / 'tmp/opl-netfleet-package-upgrade-state').exists())
+
+    def test_upgrade_preserves_enabled_but_stopped_services(self):
+        for enabled in (True, False):
+            with self.subTest(enabled=enabled):
+                self.update_state(**{name: {'enabled': enabled, 'running': False, 'generation': 1}
+                                     for name in ('opl-netfleet', 'opl-netfleet-core')})
+                self.assertEqual(0, self.hook('preinst').returncode)
+                self.default_postinst()
+                result = self.hook('postinst')
+                self.assertEqual(0, result.returncode, result.stderr)
+                for name in ('opl-netfleet', 'opl-netfleet-core'):
+                    self.assertEqual({'enabled': enabled, 'running': False, 'generation': 1},
+                                     self.read_state()[name])
+
+    def test_nikki_upgrade_restarts_only_supervisor(self):
+        self.update_state(backend='nikki-mihomo', **{
+            'opl-netfleet-core': {'enabled': False, 'running': False, 'generation': 1}})
+        self.assertEqual(0, self.hook('preinst').returncode)
+        self.default_postinst()
+        result = self.hook('postinst')
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(self.read_state()['opl-netfleet']['running'])
+        self.assertEqual({'enabled': False, 'running': False, 'generation': 1},
+                         self.read_state()['opl-netfleet-core'])
+
+    def test_fresh_install_does_not_activate_either_service(self):
+        result = self.hook('postinst', PKG_UPGRADE='0')
+        self.assertEqual(0, result.returncode, result.stderr)
+        for name in ('opl-netfleet', 'opl-netfleet-core'):
+            self.assertFalse(self.read_state()[name]['running'])
+            self.assertFalse(self.read_state()[name]['enabled'])
+
+    def test_failed_native_readback_preserves_recovery_state(self):
+        self.assertEqual(0, self.hook('preinst').returncode)
+        self.update_state(not_ready=True)
+        self.assertNotEqual(0, self.hook('postinst').returncode)
+        self.assertTrue((self.root / 'tmp/opl-netfleet-package-upgrade-state').exists())
+        self.assertFalse(self.read_state()['opl-netfleet']['running'])
+
+    def test_preupgrade_refuses_unclean_native_dataplane(self):
+        self.update_state(dirty=True)
+        self.assertNotEqual(0, self.hook('preinst').returncode)
+        self.assertTrue((self.root / 'tmp/opl-netfleet-package-upgrade-state').exists())
+
+    def test_native_removal_requires_clean_dataplane(self):
+        self.update_state(dirty=True)
+        self.assertNotEqual(0, self.hook('prerm').returncode)
+        self.update_state(dirty=False)
+        result = self.hook('prerm')
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse(self.read_state()['opl-netfleet-core']['running'])
+        self.assertFalse(self.read_state()['opl-netfleet-core']['enabled'])
+        self.assertNotIn('native-core-stop', json.dumps(self.read_state()['calls']))
+
+    def test_nikki_removal_retains_existing_owner_cleanup(self):
+        self.update_state(backend='nikki-mihomo')
+        result = self.hook('prerm')
+        self.assertEqual(0, result.returncode, result.stderr)
+        actions = [call[-1] for call in self.read_state()['calls'] if call[0] == 'ucode']
+        self.assertIn('disable', actions)
+        self.assertIn('package-cleanup', actions)
+
 
 if __name__ == '__main__': unittest.main()

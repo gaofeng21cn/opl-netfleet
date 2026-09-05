@@ -6,12 +6,12 @@ function configured_backend() {
 	const info = lstat(CONFIG);
 	if (info == null) return "nikki-mihomo";
 	if (info.type != "file" || info.uid != 0 || (info.mode & 077) != 0)
-		throw "unsafe_backend_configuration";
+		die("unsafe_backend_configuration");
 	let config = null;
-	try { config = json(readfile(CONFIG)); } catch (error) { throw "invalid_backend_configuration"; }
+	try { config = json(readfile(CONFIG)); } catch (error) { die("invalid_backend_configuration"); }
 	if (type(config) != "object" || length(keys(config)) != 1 ||
 		index(["nikki-mihomo", "native-mihomo"], config.kind) < 0)
-		throw "invalid_backend_configuration";
+		die("invalid_backend_configuration");
 	return config.kind;
 };
 

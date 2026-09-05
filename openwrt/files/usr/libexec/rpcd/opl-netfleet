@@ -65,10 +65,17 @@ config_request() {
 
 case "$1" in
 	list)
-		printf '%s\n' '{"native_setup_get":{},"native_setup_apply":{"request":"Table"},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":"Table"},"migration_get":{},"migration_apply":{"request":"Table"},"onboarding_get":{},"onboarding_apply":{"request":"Table"},"status":{},"events":{},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":"Table"},"config_save":{"request":"Table"},"config_apply":{"request":"Table"},"enable":{},"select_auto":{"capability":"String"},"refresh":{},"disable":{}}'
+		printf '%s\n' '{"native_setup_get":{},"native_setup_apply":{"request":"Table"},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":"Table"},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":"Table"},"onboarding_get":{},"onboarding_apply":{"request":"Table"},"status":{},"events":{},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":"Table"},"config_save":{"request":"Table"},"config_apply":{"request":"Table"},"enable":{},"select_auto":{"capability":"String"},"refresh":{},"disable":{}}'
 		;;
 	call)
 		case "$2" in
+			subscriptions_refresh)
+				payload=$(cat)
+				id=$(jsonfilter -s "$payload" -e '@.id' 2>/dev/null || true)
+				case "$id" in ""|*[!A-Za-z0-9_]*) printf '%s\n' '{"ok":false,"error":"invalid_subscription_id"}'; exit 0 ;; esac
+				lock_mutation
+				respond_owner ucode "$main" subscriptions-refresh "$id" 9>&-
+				;;
 			native_setup_get) respond_owner ucode "$main" native-setup-get ;;
 			native_setup_apply) config_request native-setup-apply 1 ;;
 			dashboard_get) respond_owner ucode "$main" dashboard-get ;;

@@ -17,7 +17,7 @@ const label = (element: Element): string => element.children.map((item) => typeo
 function harness(active = false) {
   let modal: Array<Element | string> = [];
   const state = { managed_by: 'netfleet', revision: 'revision-1', sources: [{ id: 'alpha', name: 'Alpha', node_count: 8, has_url: true, has_info_url: true }] };
-  const api = { subscriptionsGet: vi.fn(async () => state), subscriptionsSet: vi.fn(async (_request: unknown) => ({})), migrationGet: vi.fn(async () => ({ ready: true, revision: 'migration-1' })), migrationApply: vi.fn(async (_request: unknown) => ({})) };
+  const api = { subscriptionsGet: vi.fn(async () => state), subscriptionsSet: vi.fn(async (_request: unknown) => ({})), subscriptionsRefresh: vi.fn(async (_id: string) => ({})), migrationGet: vi.fn(async () => ({ ready: true, revision: 'migration-1' })), migrationApply: vi.fn(async (_request: unknown) => ({})) };
   const ui = { showModal: (_title: string, children: Array<Element | string>) => { modal = children; }, hideModal: vi.fn(), addNotification: vi.fn() };
   const source = readFileSync(new URL('../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/managed.js', import.meta.url), 'utf8');
   const managed = new Function('baseclass', 'ui', 'api', 'E', 'L', source)({ extend: (value: unknown) => value }, ui, api, E, { url: (path: string) => path });
@@ -37,10 +37,10 @@ describe('native LuCI managed operations', () => {
     await vi.waitFor(() => expect(h.api.subscriptionsSet).toHaveBeenCalledWith({ revision: 'revision-1', source: { id: 'alpha', name: 'New Name' } }));
   });
 
-  it('disables source mutations while the native runtime is active', async () => {
+  it('allows source edits while active without implicitly refreshing or stopping the runtime', async () => {
     const h = harness(true);
     await h.managed.subscriptions(h.controller);
-    for (const name of ['编辑', '删除', '新增订阅']) expect(h.button(name).attrs.disabled).toBe(true);
+    for (const name of ['编辑', '删除', '新增订阅']) expect(h.button(name).attrs.disabled).not.toBe(true);
     expect(h.api.subscriptionsSet).not.toHaveBeenCalled();
   });
 
@@ -51,6 +51,17 @@ describe('native LuCI managed operations', () => {
     h.button('确认迁移').attrs.click();
     await vi.waitFor(() => expect(h.controller.refreshData).toHaveBeenCalledWith(true, true));
     expect(h.api.migrationApply).toHaveBeenCalledWith({ revision: 'migration-1', confirmed: true, backend: 'native-mihomo' });
+  });
+
+  it('refreshes a single source only after confirmation then reloads real config resources', async () => {
+    const h = harness(true);
+    await h.managed.subscriptions(h.controller);
+    h.button('更新').attrs.click();
+    expect(h.api.subscriptionsRefresh).not.toHaveBeenCalled();
+    h.button('确认更新').attrs.click();
+    await vi.waitFor(() => expect(h.controller.refreshData).toHaveBeenCalledWith(true, true));
+    expect(h.api.subscriptionsRefresh).toHaveBeenCalledWith('alpha');
+    expect(h.api.subscriptionsGet.mock.calls.length).toBeGreaterThan(1);
   });
 
   it('reports failed owner outcome and does not announce successful migration', async () => {

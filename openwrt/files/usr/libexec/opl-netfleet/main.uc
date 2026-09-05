@@ -15,14 +15,14 @@ import { enable_precondition, is_active, recovery_owner, recovery_profile, passt
 import { build as build_status, resolve_runtime } from "./core/status.uc";
 import { enabled_sections as enabled_subscription_sections, quota_config as subscription_quota_config, cache_accepted, evaluate_entry, summarize as summarize_refresh, public_results as public_subscription_results, unavailable_results, project as project_subscriptions } from "./core/subscription.uc";
 import { service_state } from "./adapters/service.uc";
-import { metadata as backend_metadata } from "./adapters/runtime.uc";
+import { KIND as BACKEND_KIND, metadata as backend_metadata } from "./adapters/runtime.uc";
 import { load as load_provider_profile_result } from "./application/providers.uc";
 import { get as onboarding_get, apply as onboarding_apply } from "./application/onboarding.uc";
 import { get as config_get, validate as config_validate, save as config_save, apply as config_apply } from "./application/configuration.uc";
 import { ok, fail } from "./output.uc";
 import { run as native_sources } from "./application/native_sources.uc";
 import { run as native_core } from "./application/native_core.uc";
-import { get as subscriptions_get, set as subscriptions_set } from "./application/subscriptions.uc";
+import { get as subscriptions_get, set as subscriptions_set, update_result as subscription_update } from "./application/subscriptions.uc";
 import { get as migration_get, apply as migration_apply } from "./application/backend_migration.uc";
 import { get as dashboard_get } from "./application/dashboard.uc";
 import { get as native_setup_get, apply as native_setup_apply } from "./application/native_setup.uc";
@@ -1611,6 +1611,15 @@ function prepare_refresh_snapshot(policy, active) {
 		return { ok: false, error: "snapshot_directory_failed" };
 	}
 	const entries = [];
+	let backend_config = null;
+	if (BACKEND_KIND == "native-mihomo") {
+		const path = "/etc/config/netfleet";
+		const backup = `${REFRESH_DIR}/netfleet`;
+		const digest = sha256(path);
+		if (digest == null || system(`cp -p ${shell_quote(path)} ${shell_quote(backup)}`) != 0 || sha256(backup) != digest)
+			return { ok: false, error: "backend_config_snapshot_failed" };
+		backend_config = { path: path, backup: backup, digest: digest };
+	}
 	const sections = enabled_subscription_sections(policy);
 	for (let i = 0; i < length(sections); i++) {
 		const path = resolve_profile(`subscription:${sections[i]}`);
@@ -1631,7 +1640,7 @@ function prepare_refresh_snapshot(policy, active) {
 			return { ok: false, error: "runtime_snapshot_failed" };
 		}
 	}
-	return { ok: true, active: active == true, entries: entries, manifest: manifest };
+	return { ok: true, active: active == true, entries: entries, manifest: manifest, backend_config: backend_config };
 };
 
 function restore_refresh_entry(entry) {
@@ -1641,6 +1650,7 @@ function restore_refresh_entry(entry) {
 
 function restore_refresh_files(snapshot) {
 	let restored = true;
+	if (snapshot?.backend_config != null && !restore_refresh_entry(snapshot.backend_config)) restored = false;
 	for (let i = 0; i < length(snapshot?.entries ?? []); i++) {
 		if (!restore_refresh_entry(snapshot.entries[i])) restored = false;
 	}
@@ -2219,6 +2229,20 @@ function disable_without_policy(action_name) {
 };
 
 const action = ARGV[0] ?? "";
+if (action == "subscriptions-refresh") {
+	const id = ARGV[1];
+	if (BACKEND_KIND != "native-mihomo" || type(id) != "string" || !match(id, /^[A-Za-z0-9_]+$/))
+		fail(action, "invalid_native_subscription");
+	const policy = load_policy();
+	if (policy != null && index(enabled_subscription_sections(policy), id) >= 0) {
+		refresh_action(policy);
+	} else {
+		const result = subscription_update(id);
+		if (!result.ok) fail(action, result.error);
+		ok(action, { updated: true, changed: result.changed });
+	}
+	exit(0);
+}
 if (index(["subscriptions-get", "subscriptions-set", "migration-get", "migration-apply", "dashboard-get", "native-setup-get", "native-setup-apply"], action) >= 0) {
 	let result;
 	if (action == "subscriptions-get") result = subscriptions_get();

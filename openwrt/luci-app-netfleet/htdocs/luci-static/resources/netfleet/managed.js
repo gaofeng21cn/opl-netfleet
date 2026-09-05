@@ -32,6 +32,9 @@ function editSource(controller, state, existing) {
 		values[field[0]] = input;
 		return E('div', { 'class': 'netfleet-config-row' }, [ E('label', {}, field[1]), input ]);
 	});
+	const clearInfo = E('input', { 'type': 'checkbox' });
+	if (existing && existing.has_info_url)
+		controls.push(E('label', { 'class': 'netfleet-check' }, [ clearInfo, '清除已保存的用量查询地址' ]));
 	const errorBox = E('p', { 'class': 'is-warning', 'role': 'alert' });
 	const save = button('保存订阅', function() {
 		if (fields.some(function(field) { return field[4] && !values[field[0]].value.trim(); }) || !/^[A-Za-z0-9_]+$/.test(values.id.value.trim())) {
@@ -40,6 +43,7 @@ function editSource(controller, state, existing) {
 		}
 		const source = { id: values.id.value.trim(), name: values.name.value.trim() };
 		[ 'url', 'user_agent', 'info_url' ].forEach(function(key) { if (values[key].value.trim()) source[key] = values[key].value.trim(); });
+		if (clearInfo.checked) source.info_url = '';
 		save.disabled = true;
 		api.subscriptionsSet({ revision: state.revision, source: source }).then(function() {
 			values.url.value = ''; values.info_url.value = '';
@@ -57,25 +61,37 @@ function showSubscriptions(controller) {
 			ui.showModal('管理订阅', [ E('a', { 'href': L.url('admin/services/nikki/profile'), 'target': '_blank', 'rel': 'noopener' }, '打开 Nikki 订阅管理'), E('div', { 'class': 'right' }, button('关闭', ui.hideModal)) ]);
 			return;
 		}
-		const active = Boolean(controller.status && controller.status.active);
 		const rows = (state.sources || []).map(function(source) {
-			return E('tr', {}, [ E('td', {}, source.name || source.id), E('td', {}, String(source.node_count ?? 0)),
+			return E('tr', {}, [ E('td', {}, source.name || source.id), E('td', {}, source.node_count == null ? '未提供' : String(source.node_count)),
 				E('td', {}, source.has_url ? '已保存' : '未配置'),
-				E('td', {}, [ button('编辑', function() { editSource(controller, state, source); }, active), ' ',
+				E('td', {}, source.pending_update ? (source.using_previous_cache ? '待更新，继续使用上次可用缓存' : '待更新订阅后生效') : source.cache_current ? '已生效' : '尚未更新'),
+				E('td', {}, [ button('编辑', function() { editSource(controller, state, source); }), ' ',
+					button('更新', function() {
+						ui.showModal('更新订阅', [ E('p', {}, '确认更新“' + (source.name || source.id) + '”？使用中的订阅发生变化时，将重载运行配置并重新选优。'),
+							E('div', { 'class': 'right' }, [ button('取消', function() { showSubscriptions(controller); }), ' ', button('确认更新', function() {
+								controller.busy = true;
+								ui.showModal('更新订阅', [ E('p', { 'class': 'spinning' }, '正在更新并等待设备回读…') ]);
+								api.subscriptionsRefresh(source.id).then(function() {
+									return controller.onboarding ? controller.refreshOnboarding() : controller.refreshData(true, true);
+								}).then(function() { return showSubscriptions(controller); }).catch(function(error) {
+									ui.addNotification(null, E('p', {}, failure(error)), 'error'); return showSubscriptions(controller);
+								}).finally(function() { controller.busy = false; controller.redraw(); });
+							}) ]) ]);
+					}), ' ',
 					button('删除', function() {
-						ui.showModal('删除订阅', [ E('p', {}, '确认删除“' + (source.name || source.id) + '”？已引用此订阅的机场配置需要重新选择。'),
+						ui.showModal('删除订阅', [ E('p', {}, '确认删除“' + (source.name || source.id) + '”？仍被配置或运行状态引用的订阅不能删除。'),
 							E('div', { 'class': 'right' }, [ button('取消', function() { showSubscriptions(controller); }), ' ', button('确认删除', function(event) {
 								event.target.disabled = true;
 								api.subscriptionsSet({ revision: state.revision, source: { id: source.id }, delete: true }).then(function() { showSubscriptions(controller); }).catch(function(error) {
 									ui.addNotification(null, E('p', {}, failure(error)), 'error'); showSubscriptions(controller);
 								});
 							}, false, true) ]) ]);
-					}, active, true) ]) ]);
+					}, false, true) ]) ]);
 		});
 		ui.showModal('管理订阅', [
-			active ? E('p', { 'class': 'is-warning' }, '请先关闭 NetFleet，再新增、编辑或删除订阅。') : E('p', {}, '订阅地址已隐藏。'),
-			E('table', { 'class': 'table' }, [ E('thead', {}, E('tr', {}, [ '名称', '节点', '订阅地址', '操作' ].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, rows) ]),
-			E('div', { 'class': 'right' }, [ button('新增订阅', function() { editSource(controller, state, null); }, active), ' ', button('关闭', function() {
+			E('p', {}, '来源修改保存后，待更新订阅才生效；当前运行继续使用上次可用缓存。'),
+			E('table', { 'class': 'table' }, [ E('thead', {}, E('tr', {}, [ '名称', '节点', '订阅地址', '状态', '操作' ].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, rows) ]),
+			E('div', { 'class': 'right' }, [ button('新增订阅', function() { editSource(controller, state, null); }), ' ', button('关闭', function() {
 				ui.hideModal();
 				if (controller.onboarding) controller.refreshOnboarding(); else controller.refreshData(true, true);
 			}) ])

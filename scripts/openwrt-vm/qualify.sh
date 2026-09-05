@@ -184,7 +184,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
             body = json.dumps({"proxies": [{"name": "native-region-node", "type": "socks5",
                 "server": "127.0.0.1", "port": 1081, "udp": True}],
-                "dns": {"enable": True}, "mixed-port": 1111, "rules": ["MATCH,REJECT"]}).encode()
+                "dns": {"enable": True, "nameserver": ["udp://127.0.0.1:1054"]},
+                "mixed-port": 1111, "rules": ["MATCH,REJECT"]}).encode()
             if kind == "invalid":
                 body = b"proxies: [not valid yaml"
             elif kind == "bad-node":
@@ -194,6 +195,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("Subscription-Userinfo", "upload=1024; download=2048; total=104857600; expire=0")
             self.end_headers()
             self.wfile.write(body)
             return
