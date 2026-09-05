@@ -1,6 +1,6 @@
-import { read_yaml, read_json, write_json_atomic, sha256, sha256_text, device_name, current_profile, nikki_enabled, set_nikki_enabled, api_secret, set_profile, shell_quote, subscription_display_name, subscription_options, POLICY_PATH, EVIDENCE_PATH } from "../adapters/uci.uc";
+import { read_yaml, read_json, write_json_atomic, sha256, sha256_text, device_name, current_profile, backend_enabled, set_backend_enabled, api_secret, set_profile, shell_quote, subscription_display_name, subscription_options, POLICY_PATH, EVIDENCE_PATH } from "../adapters/uci.uc";
 import { popen } from "fs";
-import { resolve_profile, restart, remove_artifact, remove_provider_links, running, ARTIFACT_PATH, MANIFEST_PATH, PROFILE_ENTRY_PATH, COMPILED_PROFILE } from "../adapters/nikki.uc";
+import { resolve_profile, restart, remove_artifact, remove_provider_links, running, ARTIFACT_PATH, MANIFEST_PATH, PROFILE_ENTRY_PATH, COMPILED_PROFILE } from "../adapters/backend.uc";
 import { controller_ready, test_runtime } from "../adapters/mihomo.uc";
 import { service_state, set_service_state } from "../adapters/service.uc";
 import { validate as validate_policy } from "../core/policy.uc";
@@ -53,7 +53,7 @@ function discovery() {
 		target: device_name(), current_profile: profile_ref,
 		current_profile_display_name: profile_display_name(profile_ref),
 		current_profile_digest: profile_digest, current_profile_object: profile,
-		subscriptions: subscriptions, nikki_enabled: nikki_enabled(),
+		subscriptions: subscriptions, backend_enabled: backend_enabled(),
 		mihomo_running: running(), runtime_valid: test_runtime(),
 		controller_ready: type(secret) == "string" && length(secret) > 0 && controller_ready(secret, 2),
 		generated_artifacts_present: generated_artifacts_present
@@ -110,9 +110,9 @@ function cleanup(found, snapshot) {
 	if (system(`test -e ${shell_quote(MANIFEST_PATH)}`) == 0 || is_active(current_profile())) disabled = run_owner("disable");
 	const provider_result = load_provider_profiles(found?.policy);
 	if (provider_result.ok) remove_provider_links(provider_result.profiles);
-	let native_ok = current_profile() == snapshot.profile && nikki_enabled() == true && running() && test_runtime();
-	if (!native_ok && set_profile(snapshot.profile) && set_nikki_enabled(true) && restart())
-		native_ok = current_profile() == snapshot.profile && nikki_enabled() == true && running() && test_runtime();
+	let native_ok = current_profile() == snapshot.profile && backend_enabled() == true && running() && test_runtime();
+	if (!native_ok && set_profile(snapshot.profile) && set_backend_enabled(true) && restart())
+		native_ok = current_profile() == snapshot.profile && backend_enabled() == true && running() && test_runtime();
 	const artifact_removed = remove_artifact();
 	const policy_removed = system(`rm -f ${shell_quote(POLICY_PATH)}`) == 0;
 	let evidence_restored = true;

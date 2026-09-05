@@ -21,7 +21,7 @@ function base_input() {
 				{ name: "Alpha 香港 01" }, { name: "Alpha Taiwan 01" }, { name: "Alpha Vietnam 01" }
 			] } }
 		],
-		nikki_enabled: true,
+		backend_enabled: true,
 		mihomo_running: true,
 		runtime_valid: true,
 		controller_ready: true,
@@ -83,7 +83,7 @@ if (unknown_result.ready || unknown_result.blockers[0]?.code != "recognized_regi
 const unstable = base_input();
 unstable.mihomo_running = false;
 const unstable_result = discover(unstable);
-if (unstable_result.ready || unstable_result.blockers[0]?.code != "nikki_runtime_unhealthy") {
+if (unstable_result.ready || unstable_result.blockers[0]?.code != "backend_runtime_unhealthy") {
 	print("unhealthy_nikki_accepted\n");
 	exit(1);
 }

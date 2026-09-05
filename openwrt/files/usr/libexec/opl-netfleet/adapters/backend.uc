@@ -1,14 +1,15 @@
 import { popen } from "fs";
 import { cursor } from "uci";
 import { shell_quote, mkdir, write_text, sha256 } from "./uci.uc";
+import { KIND, UCI_PACKAGE, ROOT_DIR, RUN_DIR, SERVICE, NFT_TABLE, STATE_DIR } from "./runtime.uc";
 
-export const ARTIFACT_DIR = "/etc/nikki/profiles/opl-netfleet";
+export const ARTIFACT_DIR = `${ROOT_DIR}/profiles/opl-netfleet`;
 export const ARTIFACT_PATH = `${ARTIFACT_DIR}/mvp.json`;
 export const MANIFEST_PATH = `${ARTIFACT_DIR}/mvp.manifest.json`;
-export const PROFILE_ENTRY_PATH = "/etc/nikki/profiles/OPL-NetFleet.json";
+export const PROFILE_ENTRY_PATH = `${ROOT_DIR}/profiles/OPL-NetFleet.json`;
 export const PROFILE_ENTRY_TARGET = "opl-netfleet/mvp.json";
 export const COMPILED_PROFILE = "file:OPL-NetFleet.json";
-export const PROXY_PROVIDER_DIR = "/etc/nikki/run/providers/proxy";
+export const PROXY_PROVIDER_DIR = `${RUN_DIR}/providers/proxy`;
 
 export function resolve_profile(reference) {
 	const parts = split(reference ?? "", ":");
@@ -16,7 +17,7 @@ export function resolve_profile(reference) {
 		return null;
 	}
 	// Profile references are persisted in UCI and later passed to a shell
-	// command.  Keep the reference relative to Nikki's known directories and
+	// command. Keep the reference relative to the selected owner's directories and
 	// reject traversal instead of treating an arbitrary path as a rollback.
 	if (index(parts[1], "..") >= 0 || index(parts[1], "\\") >= 0 ||
 		index(parts[1], "\n") >= 0 || index(parts[1], "\r") >= 0 ||
@@ -27,9 +28,9 @@ export function resolve_profile(reference) {
 		if (!match(parts[1], /^[A-Za-z0-9_]+$/)) {
 			return null;
 		}
-		return `/etc/nikki/subscriptions/${parts[1]}.yaml`;
+		return `${ROOT_DIR}/subscriptions/${parts[1]}.yaml`;
 	}
-	return `/etc/nikki/profiles/${parts[1]}`;
+	return `${ROOT_DIR}/profiles/${parts[1]}`;
 };
 
 export function profile_exists(reference) {
@@ -38,14 +39,14 @@ export function profile_exists(reference) {
 };
 
 export function restart() {
-	return system("/etc/init.d/nikki restart >/dev/null 2>&1") == 0;
+	return system(`/etc/init.d/${SERVICE} restart >/dev/null 2>&1`) == 0;
 };
 
 export function update_subscription(section) {
 	if (type(section) != "string" || !match(section, /^[A-Za-z0-9_]+$/)) {
 		return false;
 	}
-	return system(`/etc/init.d/nikki update_subscription ${shell_quote(section)} >/dev/null 2>&1`) == 0;
+	return system(`/etc/init.d/${SERVICE} update_subscription ${shell_quote(section)} >/dev/null 2>&1`) == 0;
 };
 
 export function provider_runtime_path(provider_name) {
@@ -63,8 +64,9 @@ function link_target(path) {
 };
 
 function subscription_cache_path(path) {
-	return type(path) == "string" &&
-		match(path, /^\/etc\/nikki\/subscriptions\/[A-Za-z0-9_]+\.yaml$/);
+	const prefix = `${ROOT_DIR}/subscriptions/`;
+	return type(path) == "string" && index(path, prefix) == 0 &&
+		match(substr(path, length(prefix)), /^[A-Za-z0-9_]+\.yaml$/);
 };
 
 export function prepare_provider_links(provider_profiles) {
@@ -116,6 +118,8 @@ export function remove_provider_links(provider_profiles) {
 };
 
 export function running() {
+	if (KIND == "native-mihomo")
+		return system(`/etc/init.d/${SERVICE} running >/dev/null 2>&1`) == 0;
 	return system("pidof mihomo >/dev/null 2>&1") == 0;
 };
 
@@ -151,7 +155,7 @@ function dns_query_ready(url) {
 	return system(command) == 0;
 };
 
-// Nikki owns the transparent-proxy rules and listeners.  This adapter only
+// The selected backend owns transparent-proxy rules and listeners. This adapter only
 // reads their effective state so a live Mihomo process cannot be mistaken for
 // a working LAN data path.
 export function lan_runtime_state(dns_probe_url) {
@@ -161,10 +165,10 @@ export function lan_runtime_state(dns_probe_url) {
 	let dns_listen = null;
 	try {
 		const uci = cursor();
-		allow_lan = `${uci.get("nikki", "mixin", "allow_lan") ?? "0"}` == "1";
-		api_listen = uci.get("nikki", "mixin", "api_listen");
-		dns_enabled = `${uci.get("nikki", "mixin", "dns_enabled") ?? "0"}` == "1";
-		dns_listen = uci.get("nikki", "mixin", "dns_listen");
+		allow_lan = `${uci.get(UCI_PACKAGE, "mixin", "allow_lan") ?? "0"}` == "1";
+		api_listen = uci.get(UCI_PACKAGE, "mixin", "api_listen");
+		dns_enabled = `${uci.get(UCI_PACKAGE, "mixin", "dns_enabled") ?? "0"}` == "1";
+		dns_listen = uci.get(UCI_PACKAGE, "mixin", "dns_listen");
 	} catch (error) {
 		return {
 			transparent_proxy_ready: false,
@@ -177,13 +181,13 @@ export function lan_runtime_state(dns_probe_url) {
 	}
 	const tproxy_tcp_wildcard = wildcard_listener("tcp", 7892);
 	const tproxy_udp_wildcard = wildcard_listener("udp", 7892);
-	const tproxy_rule_present = system("nft list chain inet nikki lan_tproxy 2>/dev/null | grep -Fq 'tproxy to :7892'") == 0;
+	const tproxy_rule_present = system(`nft list chain inet ${NFT_TABLE} lan_tproxy 2>/dev/null | grep -Fq 'tproxy to :7892'`) == 0;
 	const controller_wildcard = wildcard_listener("tcp", 9090);
 	const dns_port = listener_port(dns_listen);
 	const dns_tcp_wildcard = dns_port != null && wildcard_listener("tcp", dns_port);
 	const dns_udp_wildcard = dns_port != null && wildcard_listener("udp", dns_port);
 	const dns_hijack_rule_present = dns_port != null &&
-		system(`nft list chain inet nikki lan_dns_hijack 2>/dev/null | grep -Fq ${shell_quote(`redirect to :${dns_port}`)}`) == 0;
+		system(`nft list chain inet ${NFT_TABLE} lan_dns_hijack 2>/dev/null | grep -Fq ${shell_quote(`redirect to :${dns_port}`)}`) == 0;
 	const dns_query_ok = dns_query_ready(dns_probe_url);
 	return {
 		transparent_proxy_ready: allow_lan && tproxy_tcp_wildcard &&
@@ -207,7 +211,7 @@ export function lan_runtime_state(dns_probe_url) {
 };
 
 function configured_value(uci, section, option, fallback) {
-	const value = uci.get("nikki", section, option);
+	const value = uci.get(UCI_PACKAGE, section, option);
 	return type(value) == "string" && length(value) > 0 ? value : fallback;
 };
 
@@ -231,9 +235,18 @@ function path_absent(path) {
 	return system(`test ! -e ${shell_quote(path)}`) == 0;
 };
 
-// This is a read-only observation of Nikki's cleanup contract.  The commands
-// that remove these objects remain exclusively in /etc/init.d/nikki.
+// Observe only the selected owner's cleanup contract; mutation stays in its init service.
 export function cleanup_state() {
+	if (KIND == "native-mihomo") {
+		const child = popen("ucode /usr/libexec/opl-netfleet/application/native_gateway.uc status 2>/dev/null");
+		let response = null;
+		try { response = child == null ? null : json(child.read("all")); } catch (error) {}
+		const completed = child != null && child.close() == 0;
+		const stopped = completed && response?.ok == true && response.result?.core_running == false;
+		return { ok: stopped && response.result?.clean == true,
+			mihomo_stopped: stopped, service_stopped: stopped,
+			nft_table_absent: response?.result?.clean == true, routing_absent: response?.result?.clean == true };
+	}
 	let uci = null;
 	try {
 		uci = cursor();
@@ -242,15 +255,15 @@ export function cleanup_state() {
 	}
 	const tproxy_table = configured_value(uci, "routing", "tproxy_route_table", "80");
 	const tun_table = configured_value(uci, "routing", "tun_route_table", "81");
-	const dummy = configured_value(uci, "routing", "dummy_device", "nikki-dummy");
+	const dummy = configured_value(uci, "routing", "dummy_device", `${UCI_PACKAGE}-dummy`);
 	const ip_available = system("command -v ip >/dev/null 2>&1") == 0;
 	const nft_available = system("command -v nft >/dev/null 2>&1") == 0;
 	const mihomo_stopped = !running();
-	const service_stopped = system("/etc/init.d/nikki running >/dev/null 2>&1") != 0;
+	const service_stopped = system(`/etc/init.d/${SERVICE} running >/dev/null 2>&1`) != 0;
 	const nft_table_absent = nft_available &&
-		system("nft list table inet nikki >/dev/null 2>&1") != 0;
+		system(`nft list table inet ${NFT_TABLE} >/dev/null 2>&1`) != 0;
 	const fw4_rules_absent = nft_available &&
-		system(`nft -a list table inet fw4 2>/dev/null | grep -Fq ${shell_quote('comment "nikki"')}`) != 0;
+		system(`nft -a list table inet fw4 2>/dev/null | grep -Fq ${shell_quote(`comment "${NFT_TABLE}"`)}`) != 0;
 	const routing_absent = ip_available && valid_table(tproxy_table) && valid_table(tun_table) &&
 		no_lookup_rule(4, tproxy_table) && no_lookup_rule(4, tun_table) &&
 		no_lookup_rule(6, tproxy_table) && no_lookup_rule(6, tun_table) &&
@@ -258,13 +271,13 @@ export function cleanup_state() {
 		no_route(6, tproxy_table) && no_route(6, tun_table);
 	const dummy_absent = ip_available && valid_device(dummy) &&
 		system(`ip link show dev ${shell_quote(dummy)} >/dev/null 2>&1`) != 0;
-	// These markers are part of Nikki's own stop contract.  A leftover cron
+	// These markers are part of the backend's stop contract. A leftover cron
 	// entry or started flag can bring the proxy back after a seemingly clean
 	// passthrough, so cleanup is not durable until they are gone as well.
-	const started_flag_absent = path_absent("/var/run/nikki/started.flag");
-	const bridge_flags_absent = path_absent("/var/run/nikki/bridge_nf_call_iptables.flag") &&
-		path_absent("/var/run/nikki/bridge_nf_call_ip6tables.flag");
-	const cron_clean = system("[ ! -f /etc/crontabs/root ] || ! grep -q '#nikki' /etc/crontabs/root") == 0;
+	const started_flag_absent = path_absent(`${STATE_DIR}/started.flag`);
+	const bridge_flags_absent = path_absent(`${STATE_DIR}/bridge_nf_call_iptables.flag`) &&
+		path_absent(`${STATE_DIR}/bridge_nf_call_ip6tables.flag`);
+	const cron_clean = system(`[ ! -f /etc/crontabs/root ] || ! grep -q '#${UCI_PACKAGE}' /etc/crontabs/root`) == 0;
 	return {
 		ok: mihomo_stopped && service_stopped && nft_table_absent && fw4_rules_absent &&
 			routing_absent && dummy_absent && started_flag_absent && bridge_flags_absent && cron_clean,
@@ -283,7 +296,7 @@ export function cleanup_state() {
 	};
 };
 
-// Nikki owns cleanup of Mihomo, transparent proxy rules, DNS and policy
+// The selected backend owns cleanup of Mihomo, transparent proxy rules, DNS and policy
 // routing.  NetFleet may use this only as an emergency recovery action; it
 // never assembles a parallel cleanup command of its own.
 export function stop() {
@@ -291,7 +304,7 @@ export function stop() {
 	if (before.ok) {
 		return { ok: true, requested: false, readback: before };
 	}
-	const requested = system("/etc/init.d/nikki stop >/dev/null 2>&1") == 0;
+	const requested = system(`/etc/init.d/${SERVICE} stop >/dev/null 2>&1`) == 0;
 	let readback = before;
 	// procd may report stop before the child and its cleanup hook have settled.
 	// Wait only for the official owner to reach a fully clean state; never issue
@@ -317,7 +330,7 @@ export function test_profile_object(profile) {
 	if (text == null || !write_text("/tmp/opl-netfleet-mvp-test.json", text)) {
 		return false;
 	}
-	const result = system(`mihomo -d ${shell_quote("/etc/nikki/run")} -f ${shell_quote("/tmp/opl-netfleet-mvp-test.json")} -t >/dev/null 2>&1`) == 0;
+	const result = system(`mihomo -d ${shell_quote(RUN_DIR)} -f ${shell_quote("/tmp/opl-netfleet-mvp-test.json")} -t >/dev/null 2>&1`) == 0;
 	system("rm -f /tmp/opl-netfleet-mvp-test.json");
 	return result;
 };
@@ -347,7 +360,7 @@ export function install_artifact(profile, manifest) {
 	}
 	manifest.artifact_sha256 = artifact_digest;
 	if (!write_text(manifest_tmp, sprintf("%J", manifest)) ||
-		system(`mihomo -d ${shell_quote("/etc/nikki/run")} -f ${shell_quote(profile_tmp)} -t >/dev/null 2>&1`) != 0) {
+		system(`mihomo -d ${shell_quote(RUN_DIR)} -f ${shell_quote(profile_tmp)} -t >/dev/null 2>&1`) != 0) {
 		system(`rm -f ${shell_quote(profile_tmp)} ${shell_quote(manifest_tmp)}`);
 		return false;
 	}
@@ -363,7 +376,7 @@ export function install_artifact(profile, manifest) {
 	return link_target(PROFILE_ENTRY_PATH) == PROFILE_ENTRY_TARGET &&
 		sha256(ARTIFACT_PATH) == artifact_digest &&
 		sha256(PROFILE_ENTRY_PATH) == artifact_digest &&
-		system(`mihomo -d ${shell_quote("/etc/nikki/run")} -f ${shell_quote(PROFILE_ENTRY_PATH)} -t >/dev/null 2>&1`) == 0;
+		system(`mihomo -d ${shell_quote(RUN_DIR)} -f ${shell_quote(PROFILE_ENTRY_PATH)} -t >/dev/null 2>&1`) == 0;
 };
 
 export function remove_artifact() {

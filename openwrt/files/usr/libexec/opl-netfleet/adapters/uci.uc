@@ -1,5 +1,6 @@
 import { popen, writefile } from "fs";
 import { cursor } from "uci";
+import { UCI_PACKAGE } from "./runtime.uc";
 
 export const POLICY_PATH = "/etc/opl-netfleet/policy.json";
 export const EVIDENCE_PATH = "/etc/opl-netfleet/evidence.json";
@@ -129,37 +130,37 @@ export function write_evidence(store) {
 export function current_profile() {
 	try {
 		const uci = cursor();
-		return uci.get("nikki", "config", "profile");
+		return uci.get(UCI_PACKAGE, "config", "profile");
 	} catch (error) {
 		return null;
 	}
 };
 
-export function nikki_enabled() {
+export function backend_enabled() {
 	try {
 		const uci = cursor();
-		return `${uci.get("nikki", "config", "enabled") ?? "0"}` == "1";
+		return `${uci.get(UCI_PACKAGE, "config", "enabled") ?? "0"}` == "1";
 	} catch (error) {
 		return null;
 	}
 };
 
-export function set_nikki_enabled(enabled) {
+export function set_backend_enabled(enabled) {
 	const value = enabled == true ? "1" : "0";
-	if (system(`uci set nikki.config.enabled=${shell_quote(value)}`) != 0) {
+	if (system(`uci set ${UCI_PACKAGE}.config.enabled=${shell_quote(value)}`) != 0) {
 		return false;
 	}
-	return system("uci commit nikki") == 0 && nikki_enabled() == (enabled == true);
+	return system(`uci commit ${UCI_PACKAGE}`) == 0 && backend_enabled() == (enabled == true);
 };
 
 export function subscription_exists(section) {
 	const uci = cursor();
-	return uci.get("nikki", section) == "subscription";
+	return uci.get(UCI_PACKAGE, section) == "subscription";
 };
 
 export function subscription_display_name(section) {
 	const uci = cursor();
-	const value = uci.get("nikki", section, "name");
+	const value = uci.get(UCI_PACKAGE, section, "name");
 	if (type(value) == "string" && length(trim(value)) > 0) {
 		return trim(value);
 	}
@@ -169,7 +170,7 @@ export function subscription_display_name(section) {
 export function subscription_options() {
 	const result = [];
 	const uci = cursor();
-	uci.foreach("nikki", "subscription", (section) => {
+	uci.foreach(UCI_PACKAGE, "subscription", (section) => {
 		const name = section?.[".name"];
 		if (type(name) != "string" || !match(name, /^[A-Za-z0-9_]+$/)) return;
 		const display = type(section?.name) == "string" && length(trim(section.name)) > 0 ? trim(section.name) : name;
@@ -187,17 +188,17 @@ export function subscription_options() {
 
 export function api_secret() {
 	const uci = cursor();
-	return uci.get("nikki", "mixin", "api_secret");
+	return uci.get(UCI_PACKAGE, "mixin", "api_secret");
 };
 
 export function proxy_authentication() {
 	const uci = cursor();
-	const enabled = uci.get("nikki", "mixin", "authentication");
+	const enabled = uci.get(UCI_PACKAGE, "mixin", "authentication");
 	if (`${enabled ?? ""}` != "1") {
 		return null;
 	}
-	const username = uci.get("nikki", "@authentication[0]", "username");
-	const password = uci.get("nikki", "@authentication[0]", "password");
+	const username = uci.get(UCI_PACKAGE, "@authentication[0]", "username");
+	const password = uci.get(UCI_PACKAGE, "@authentication[0]", "password");
 	if (type(username) != "string" || type(password) != "string" ||
 		length(username) == 0 || length(password) == 0) {
 		return null;
@@ -224,10 +225,10 @@ export function upstream_ready() {
 };
 
 export function set_profile(profile) {
-	if (system(`uci set nikki.config.profile=${shell_quote(profile)}`) != 0) {
+	if (system(`uci set ${UCI_PACKAGE}.config.profile=${shell_quote(profile)}`) != 0) {
 		return false;
 	}
-	return system("uci commit nikki") == 0;
+	return system(`uci commit ${UCI_PACKAGE}`) == 0;
 };
 
 function quantity(value) {
@@ -267,15 +268,15 @@ export function subscription_quota(section, config) {
 	const total_field = config?.total_field ?? "total";
 	const used_field = config?.used_field ?? "used";
 	const expiry_field = config?.expiry_field ?? "expire";
-	const expiry_raw = uci.get("nikki", section, expiry_field);
+	const expiry_raw = uci.get(UCI_PACKAGE, section, expiry_field);
 	const expires_at = type(expiry_raw) == "string" &&
 		match(trim(expiry_raw), /^[0-9]{4}-[0-9]{2}-[0-9]{2}([ T][0-9]{2}:[0-9]{2}:[0-9]{2})?$/) ?
 		trim(expiry_raw) : null;
 	const result = { state: "unknown" };
 	if (expires_at != null) result.expires_at = expires_at;
-	let available_raw = uci.get("nikki", section, available_field);
+	let available_raw = uci.get(UCI_PACKAGE, section, available_field);
 	if (available_raw == null && available_field != "available") {
-		available_raw = uci.get("nikki", section, "available");
+		available_raw = uci.get(UCI_PACKAGE, section, "available");
 	}
 	const available = quantity(available_raw);
 	if (available != null) {
@@ -283,8 +284,8 @@ export function subscription_quota(section, config) {
 		if (available > 0) result.remaining_bytes = available;
 		return result;
 	}
-	const total = quantity(uci.get("nikki", section, total_field));
-	const used = quantity(uci.get("nikki", section, used_field));
+	const total = quantity(uci.get(UCI_PACKAGE, section, total_field));
+	const used = quantity(uci.get(UCI_PACKAGE, section, used_field));
 	if (total != null && used != null) {
 		const remaining = total - used;
 		result.state = remaining <= 0 ? "exhausted" : "available";

@@ -3,6 +3,7 @@ import { CheckCircle2, CircleAlert, Gauge, Network, Plus, RefreshCw, Route, Shie
 import type { ConfigDraft } from './model';
 import type { StatusSnapshot } from '../types';
 import { regionalDisplayName } from '../lib/format';
+import { SubscriptionsPreview } from './SubscriptionsPreview';
 
 interface SectionProps {
   draft: ConfigDraft;
@@ -19,8 +20,9 @@ function SectionHeading({ title, description }: { title: string; description: st
 }
 
 export function FoundationSection({ draft, status, onChange }: SectionProps) {
+  const [migration, setMigration] = useState(false);
   const runtimeChecks = [
-    ['Nikki 服务', status.runtime.nikki_enabled === true],
+    ['运行后端', status.runtime.backend_enabled === true],
     ['Mihomo 核心', status.runtime.mihomo_running === true],
     ['控制接口', status.runtime.controller_available === true],
     ['网络接管', Boolean(status.runtime.lan_runtime?.transparent_proxy_ready && status.runtime.lan_runtime?.dns_ready)],
@@ -35,9 +37,10 @@ export function FoundationSection({ draft, status, onChange }: SectionProps) {
     </div>
     <div className="nf-form-rows">
       <div className="nf-form-row">
-        <div><label>当前运行后端</label><p>当前实现由 Nikki 管理 OpenWrt 数据面，Mihomo 负责代理核心。</p></div>
-        <div className="nf-readonly-field"><Network aria-hidden="true" />Nikki + Mihomo</div>
+        <div><label>当前运行后端</label></div>
+        <div className="nf-readonly-field"><Network aria-hidden="true" />{draft.backendDisplayName}{draft.backend === 'nikki-mihomo' && <button type="button" onClick={() => setMigration(true)}>迁移到 NetFleet 原生后端</button>}</div>
       </div>
+      {migration && <div className="nf-config-validation" role="status"><p>NetFleet 将接管机场订阅、Mihomo、DNS 和透明代理。设备会检查新后端；失败时恢复旧后端。迁移期间网络可能短暂中断。</p><button type="button" onClick={() => setMigration(false)}>取消</button><button type="button" onClick={() => { onChange({ ...draft, backend: 'native-mihomo', backendDisplayName: 'NetFleet + Mihomo' }); setMigration(false); }}>确认本地预览</button></div>}
       <fieldset className="nf-form-row">
         <div><legend>策略基础</legend><p>决定规则和稳定出口组从哪里开始生成。</p></div>
         <div className="nf-choice-list">
@@ -54,12 +57,13 @@ export function FoundationSection({ draft, status, onChange }: SectionProps) {
   </section>;
 }
 
-export function ProvidersSection({ draft, onChange }: SectionProps) {
+export function ProvidersSection({ draft, status, onChange }: SectionProps) {
   const available = draft.providerOptions.filter((option) => !draft.providers.some((item) => item.id === option.id));
   const [selected, setSelected] = useState('');
   const selectedId = available.some((item) => item.id === selected) ? selected : available[0]?.id || '';
   return <section className="nf-config-section">
-    <SectionHeading title="机场" description="只选择 Nikki 已有订阅；订阅地址、节点和下载仍不在浏览器中编辑。" />
+    <SectionHeading title="机场" description="选择参与 NetFleet 的订阅及其运行角色。" />
+    <SubscriptionsPreview status={status} />
     <div className="nf-table-wrap nf-config-table">
       <table><thead><tr><th>参与</th><th>机场</th><th>真实资源</th><th>故障层级</th><th>计费方式</th><th>操作</th></tr></thead>
         <tbody>{draft.providers.map((provider) => <tr key={provider.id}>
@@ -190,11 +194,11 @@ export function RoutingSection({ draft, onChange }: SectionProps) {
 
 export function AutomationSection({ draft, onChange }: SectionProps) {
   return <section className="nf-config-section">
-    <SectionHeading title="自动运行" description="设置 NetFleet 何时重新比较出口，以及何时请求 Nikki 刷新已有订阅。" />
+    <SectionHeading title="自动运行" description="设置重新比较出口和更新已有订阅的周期。" />
     <div className="nf-form-rows">
       <div className="nf-form-row"><div><label>周期选优</label><p>关闭后仍可手动执行单次选优。</p></div><label className="nf-switch"><input type="checkbox" checked={draft.automation.enabled} onChange={(event) => onChange({ ...draft, automation: { ...draft.automation, enabled: event.target.checked } })} /><span aria-hidden="true" /><b>{draft.automation.enabled ? '已开启' : '已关闭'}</b></label></div>
       <div className="nf-form-row"><div><label htmlFor="nf-selection-interval">选优周期</label><p>只在自动模式下执行同一套有界选择。</p></div><select id="nf-selection-interval" value={draft.automation.selectionIntervalSeconds} disabled={!draft.automation.enabled} onChange={(event) => onChange({ ...draft, automation: { ...draft.automation, selectionIntervalSeconds: Number(event.target.value) } })}><option value={900}>15 分钟</option><option value={1800}>30 分钟</option><option value={3600}>1 小时</option><option value={7200}>2 小时</option></select></div>
-      <div className="nf-form-row"><div><label>定期更新订阅</label><p>实际下载和缓存仍由 Nikki 官方更新器负责。</p></div><label className="nf-switch"><input type="checkbox" checked={draft.automation.subscriptionRefreshEnabled} onChange={(event) => onChange({ ...draft, automation: { ...draft.automation, subscriptionRefreshEnabled: event.target.checked } })} /><span aria-hidden="true" /><b>{draft.automation.subscriptionRefreshEnabled ? '已开启' : '已关闭'}</b></label></div>
+      <div className="nf-form-row"><div><label>定期更新订阅</label></div><label className="nf-switch"><input type="checkbox" checked={draft.automation.subscriptionRefreshEnabled} onChange={(event) => onChange({ ...draft, automation: { ...draft.automation, subscriptionRefreshEnabled: event.target.checked } })} /><span aria-hidden="true" /><b>{draft.automation.subscriptionRefreshEnabled ? '已开启' : '已关闭'}</b></label></div>
       <div className="nf-form-row"><div><label htmlFor="nf-refresh-interval">订阅更新周期</label><p>只有内容摘要变化时才重新生成和选优。</p></div><select id="nf-refresh-interval" value={draft.automation.subscriptionRefreshIntervalSeconds} disabled={!draft.automation.subscriptionRefreshEnabled} onChange={(event) => onChange({ ...draft, automation: { ...draft.automation, subscriptionRefreshIntervalSeconds: Number(event.target.value) } })}><option value={21600}>6 小时</option><option value={43200}>12 小时</option><option value={86400}>24 小时</option></select></div>
     </div>
   </section>;
@@ -204,7 +208,7 @@ export function SafetySection({ draft, onChange }: SectionProps) {
   return <section className="nf-config-section">
     <SectionHeading title="安全与恢复" description="默认值适合日常使用；只有明确需要时才调整高级门槛和检查地址。" />
     <div className="nf-safety-summary">
-      <ShieldCheck aria-hidden="true" /><div><strong>优先恢复：{draft.recoveryProfile.displayName} 原生配置</strong><p>只有原生配置恢复失败时，最终退路才是停止 Nikki 并恢复网络直通。</p></div>
+      <ShieldCheck aria-hidden="true" /><div><strong>优先恢复：{draft.recoveryProfile.displayName} 原生配置</strong><p>只有原生配置恢复失败时，最终退路才是停止 {draft.backendDisplayName} 并恢复网络直通。</p></div>
     </div>
     <details className="nf-advanced-settings">
       <summary>高级设置</summary>

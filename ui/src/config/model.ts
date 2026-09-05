@@ -42,7 +42,8 @@ export interface CapabilityDraft {
 export interface RoutingRuleDraft { kind: 'domain_suffix'; value: string; capability: string }
 
 export interface ConfigDraft {
-  backend: 'nikki-mihomo';
+  backend: string;
+  backendDisplayName: string;
   policySource: { kind: 'bundle' | 'profile'; ref: string; displayName: string };
   policySourceOptions: Array<{ kind: 'bundle' | 'profile'; ref: string; displayName: string }>;
   policyGroups: string[];
@@ -77,7 +78,8 @@ const capabilityMode = (value: string): CapabilityDraft['mode'] => value === 'ma
 export function createConfigDraft(status: StatusSnapshot, config?: DeviceConfigSnapshot): ConfigDraft {
   const automation = status.selection?.automation;
   if (config) return {
-    backend: 'nikki-mihomo',
+    backend: config.backend.id,
+    backendDisplayName: config.backend.display_name,
     policySource: { kind: config.policy_source.kind, ref: config.policy_source.ref, displayName: config.policy_source.display_name },
     policySourceOptions: config.policy_source_options.map((item) => ({ kind: item.kind, ref: item.ref, displayName: item.display_name })),
     policyGroups: config.policy_groups.slice(),
@@ -121,9 +123,10 @@ export function createConfigDraft(status: StatusSnapshot, config?: DeviceConfigS
     (region.available_node_count ?? 0) > 0 && (region.available_provider_count ?? 0) > 0
   ));
   return {
-    backend: 'nikki-mihomo',
-    policySource: { kind: status.policy_source?.kind === 'profile' ? 'profile' : 'bundle', ref: status.policy_source?.ref || 'bundle:base-v1', displayName: status.policy_source?.kind === 'profile' ? '沿用当前 Nikki 配置' : 'NetFleet 内置基础策略' },
-    policySourceOptions: [{ kind: status.policy_source?.kind === 'profile' ? 'profile' : 'bundle', ref: status.policy_source?.ref || 'bundle:base-v1', displayName: status.policy_source?.kind === 'profile' ? '沿用当前 Nikki 配置' : 'NetFleet 内置基础策略' }],
+    backend: status.runtime.backend?.id || 'nikki-mihomo',
+    backendDisplayName: status.runtime.backend?.display_name || 'Nikki + Mihomo',
+    policySource: { kind: status.policy_source?.kind === 'profile' ? 'profile' : 'bundle', ref: status.policy_source?.ref || 'bundle:base-v1', displayName: status.policy_source?.kind === 'profile' ? '沿用当前配置' : 'NetFleet 内置基础策略' },
+    policySourceOptions: [{ kind: status.policy_source?.kind === 'profile' ? 'profile' : 'bundle', ref: status.policy_source?.ref || 'bundle:base-v1', displayName: status.policy_source?.kind === 'profile' ? '沿用当前配置' : 'NetFleet 内置基础策略' }],
     policyGroups: Array.from(new Set(status.capabilities.flatMap((item) => item.base_groups || (item.base_group ? [item.base_group] : [])))),
     recoveryProfile: { ref: status.recovery_profile || '', displayName: status.recovery_profile_display_name || '当前原生配置' },
     recoveryProfileOptions: [{ ref: status.recovery_profile || '', displayName: status.recovery_profile_display_name || '当前原生配置' }],

@@ -95,7 +95,7 @@ function foundation(controller) {
 	const draft = controller.configDraft;
 	const runtime = controller.status.runtime || {};
 	const checks = [
-		[ 'Nikki 服务', runtime.nikki_enabled === true ],
+		[ '运行后端', runtime.backend_enabled === true ],
 		[ 'Mihomo 核心', runtime.mihomo_running === true ],
 		[ '控制接口', runtime.controller_available === true ],
 		[ '网络接管', Boolean(runtime.lan_runtime && runtime.lan_runtime.transparent_proxy_ready && runtime.lan_runtime.dns_ready) ]
@@ -112,8 +112,9 @@ function foundation(controller) {
 			return E('div', {}, [ E('span', { 'class': item[1] ? 'is-ok' : 'is-warning' }, item[1] ? '正常' : '检查'), E('strong', {}, item[0]) ]);
 		})),
 		E('div', { 'class': 'netfleet-config-rows' }, [
-			fieldRow('当前运行后端', '当前版本由 Nikki 管理 OpenWrt 数据面，Mihomo 负责代理核心。',
-				E('span', { 'class': 'netfleet-readonly' }, draft.backend.display_name)),
+			fieldRow('当前运行后端', null,
+				E('div', {}, [ E('span', { 'class': 'netfleet-readonly' }, draft.backend.display_name),
+					draft.backend.id === 'nikki-mihomo' ? compactButton('迁移到 NetFleet 原生后端', function() { controller.migrateBackend(); }) : E('span') ])),
 			fieldRow('策略基础', '决定规则和稳定出口组从哪里开始生成。',
 				select(draft.policy_source.kind + '|' + draft.policy_source.ref, sourceOptions, function(event) {
 					const parts = event.target.value.split('|');
@@ -174,9 +175,10 @@ function providers(controller) {
 				});
 			});
 		})
-	]) : E('p', { 'class': 'netfleet-empty-note' }, 'Nikki 中没有尚未接管的订阅。');
+	]) : E('p', { 'class': 'netfleet-empty-note' }, '没有尚未接管的订阅。');
 	return E('section', {}, [
-		sectionHeading('机场', '只选择 Nikki 已有订阅；订阅地址、节点和下载不在此页面编辑。'),
+		sectionHeading('机场', '选择参与 NetFleet 的订阅及其运行角色。'),
+		compactButton('管理订阅', function() { controller.manageSubscriptions(); }),
 		E('div', { 'class': 'table netfleet-config-table' }, [
 			E('table', {}, [ E('thead', {}, E('tr', {}, [ E('th', {}, '参与'), E('th', {}, '机场'), E('th', {}, '真实资源'), E('th', {}, '故障层级'), E('th', {}, '计费方式'), E('th', {}, '操作') ])), E('tbody', {}, rows) ])
 		]),
@@ -346,7 +348,7 @@ function capabilityAddControls(controller, groups, groupOwner) {
 function automation(controller) {
 	const value = controller.configDraft.automation;
 	return E('section', {}, [
-		sectionHeading('自动运行', '设置重新比较出口和请求 Nikki 更新已有订阅的周期。'),
+		sectionHeading('自动运行', '设置重新比较出口和更新已有订阅的周期。'),
 		E('div', { 'class': 'netfleet-config-rows' }, [
 			fieldRow('周期选优', '关闭后仍可手动执行单次选优。', checkbox(value.enabled, value.enabled ? '已开启' : '已关闭', function(event) {
 				update(controller, function(next) { next.automation.enabled = event.target.checked; });
@@ -355,7 +357,7 @@ function automation(controller) {
 				[ [ 900, '15 分钟' ], [ 1800, '30 分钟' ], [ 3600, '1 小时' ], [ 7200, '2 小时' ] ], function(event) {
 					update(controller, function(next) { next.automation.selection_interval_seconds = Number(event.target.value); });
 				}, !value.enabled)),
-			fieldRow('定期更新订阅', '实际下载和缓存仍由 Nikki 官方更新器负责。', checkbox(value.subscription_refresh_enabled,
+			fieldRow('定期更新订阅', null, checkbox(value.subscription_refresh_enabled,
 				value.subscription_refresh_enabled ? '已开启' : '已关闭', function(event) {
 					update(controller, function(next) { next.automation.subscription_refresh_enabled = event.target.checked; });
 				})),
@@ -419,7 +421,7 @@ function safety(controller) {
 		sectionHeading('安全与恢复', '默认值适合日常使用；只有明确需要时再调整高级参数。'),
 		E('div', { 'class': 'netfleet-recovery-summary' }, [
 			E('strong', {}, '优先恢复：' + controller.configDraft.recovery_profile.display_name + ' 原生配置'),
-			E('p', {}, '最终退路：原生配置恢复失败时，停止 Nikki 并恢复网络直通。')
+			E('p', {}, '最终退路：原生配置恢复失败时，停止 ' + controller.configDraft.backend.display_name + ' 并恢复网络直通。')
 		]),
 		E('details', { 'class': 'netfleet-advanced' }, [
 			E('summary', {}, '高级设置'),

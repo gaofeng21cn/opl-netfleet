@@ -127,7 +127,7 @@ export function capabilityRoute(snapshot: StatusSnapshot, capability: Capability
 }
 
 export function modeName(capability: Capability): string {
-  if (capability.data_path === 'native_profile') return 'Nikki 原生';
+  if (capability.data_path === 'native_profile') return '原生配置';
   const mode = capability.user_mode || capability.mode;
   return {
     automatic: '自动选优',
@@ -154,11 +154,11 @@ export function reasonText(snapshot: StatusSnapshot, capability: Capability): st
   if (reason.kind === 'direct_fallback') return '代理路径不可用，Mihomo 已切换到直连退路。';
   if (reason.kind === 'direct_manual') return '用户已选择直连，周期选优暂停。';
   if (reason.kind === 'manual_region') return `手动保持 ${regionName(snapshot, reason.region_id)}，地区内健康切换仍由 Mihomo 负责。`;
-  if (reason.kind === 'passthrough') return 'Nikki 已停止，网络已恢复直通。';
+  if (reason.kind === 'passthrough') return '代理后端已停止，网络已恢复直通。';
   if (reason.kind === 'disabled') return '该能力已关闭，基础组保持原始行为。';
   if (reason.kind === 'not_compiled') return '该能力尚未进入当前 artifact。';
   if (snapshot.active) return '当前链来自启用初始值或手动选择，页面不会触发测速。';
-  return 'NetFleet 未启用，当前使用 Nikki 原生配置。';
+  return 'NetFleet 未启用，当前使用 原生配置。';
 }
 
 export const displayEventName = (
@@ -202,8 +202,8 @@ export function eventReason(status: StatusSnapshot, event: DecisionEvent): strin
     fastest_eligible: '同轮最快合格候选',
     kept_current_region: '收益不足，保持当前地区',
     current_region_fastest: '当前地区仍为最快',
-    native_restored: '已恢复 Nikki 原生配置',
-    native_restore_failed_passthrough: '原生配置恢复失败，已停止 Nikki 并恢复网络直通',
+    native_restored: '已恢复原生配置',
+    native_restore_failed_passthrough: '原生配置恢复失败，已停止代理后端 并恢复网络直通',
     updated: '订阅更新完成并重载',
     cache_updated: '订阅缓存已更新',
     partially_updated: '部分机场更新成功',

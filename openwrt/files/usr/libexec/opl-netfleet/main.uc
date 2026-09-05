@@ -1,11 +1,11 @@
 #!/usr/bin/ucode
 
-import { read_yaml, read_json, sha256, file_mtime, current_profile, nikki_enabled, set_nikki_enabled, api_secret, set_profile, shell_quote, subscription_display_name, subscription_quota, upstream_ready, write_evidence, POLICY_PATH, EVIDENCE_PATH } from "./adapters/uci.uc";
-import { resolve_profile, profile_exists, restart, update_subscription, stop as stop_nikki, cleanup_state, running, lan_runtime_state, install_artifact, remove_artifact, test_profile_object, prepare_provider_links, remove_provider_links, ARTIFACT_PATH, MANIFEST_PATH, PROFILE_ENTRY_PATH, COMPILED_PROFILE } from "./adapters/nikki.uc";
+import { read_yaml, read_json, sha256, file_mtime, current_profile, backend_enabled, set_backend_enabled, api_secret, set_profile, shell_quote, subscription_display_name, subscription_quota, upstream_ready, write_evidence, POLICY_PATH, EVIDENCE_PATH } from "./adapters/uci.uc";
+import { resolve_profile, profile_exists, restart, update_subscription, stop as stop_backend, cleanup_state, running, lan_runtime_state, install_artifact, remove_artifact, test_profile_object, prepare_provider_links, remove_provider_links, ARTIFACT_PATH, MANIFEST_PATH, PROFILE_ENTRY_PATH, COMPILED_PROFILE } from "./adapters/backend.uc";
 import { resolve as resolve_policy_source, load as load_policy_source } from "./adapters/policy_source.uc";
 import { test_profile, test_runtime, controller_ready, proxies, proxy_providers, connections as current_connections, select as select_proxy, unfix as unfix_proxy, protected_probes, direct_probes } from "./adapters/mihomo.uc";
 import { measure as measure_latency, measure_providers, complete_from_fresh_history } from "./adapters/latency.uc";
-import { read_events, write_events, nikki_netfleet_lines } from "./adapters/events.uc";
+import { read_events, write_events, core_netfleet_lines } from "./adapters/events.uc";
 import { validate as validate_policy, automation as automation_config, guard_probe_url } from "./core/policy.uc";
 import { compile as compile_profile } from "./core/compiler.uc";
 import { manual_member, choose_automatic, provider_group_leaf, provider_round_summary } from "./core/selector.uc";
@@ -15,12 +15,17 @@ import { enable_precondition, is_active, recovery_owner, recovery_profile, passt
 import { build as build_status, resolve_runtime } from "./core/status.uc";
 import { enabled_sections as enabled_subscription_sections, quota_config as subscription_quota_config, cache_accepted, evaluate_entry, summarize as summarize_refresh, public_results as public_subscription_results, unavailable_results, project as project_subscriptions } from "./core/subscription.uc";
 import { service_state } from "./adapters/service.uc";
+import { metadata as backend_metadata } from "./adapters/runtime.uc";
 import { load as load_provider_profile_result } from "./application/providers.uc";
 import { get as onboarding_get, apply as onboarding_apply } from "./application/onboarding.uc";
 import { get as config_get, validate as config_validate, save as config_save, apply as config_apply } from "./application/configuration.uc";
 import { ok, fail } from "./output.uc";
 import { run as native_sources } from "./application/native_sources.uc";
 import { run as native_core } from "./application/native_core.uc";
+import { get as subscriptions_get, set as subscriptions_set } from "./application/subscriptions.uc";
+import { get as migration_get, apply as migration_apply } from "./application/backend_migration.uc";
+import { get as dashboard_get } from "./application/dashboard.uc";
+import { get as native_setup_get, apply as native_setup_apply } from "./application/native_setup.uc";
 
 const REFRESH_DIR = "/tmp/opl-netfleet-subscription-refresh";
 const MAIN_PATH = "/usr/libexec/opl-netfleet/main.uc";
@@ -492,13 +497,13 @@ function enter_passthrough(policy, reason, owner_claim) {
 	// Persist the emergency escape before stopping the service.  Nikki's own
 	// start_service gate reads this UCI flag on the next boot; without it, a
 	// reboot could immediately resurrect the failed NetFleet/native path.
-	const disabled = set_nikki_enabled(false);
+	const disabled = set_backend_enabled(false);
 	// Nikki remains the sole owner of Mihomo, DNS, nft and policy-routing teardown.
 	// NetFleet never assembles a parallel cleanup command.
-	const stop_result = stop_nikki();
+	const stop_result = stop_backend();
 	const cleanup = stop_result?.readback ?? cleanup_state();
 	const persistent = recovery_valid && profile_set && current_profile() == recovery_profile_ref &&
-		disabled == true && nikki_enabled() == false;
+		disabled == true && backend_enabled() == false;
 	const route_ready = upstream_ready();
 	const probes = cleanup?.ok == true && route_ready ? direct_probes(policy, 5) :
 		{ ok: null, error: route_ready ? "passthrough_not_clean" : "upstream_unavailable" };
@@ -515,7 +520,7 @@ function enter_passthrough(policy, reason, owner_claim) {
 		mode: "passthrough",
 		reason: reason,
 		profile_set: profile_set,
-		nikki_disabled: disabled,
+		backend_disabled: disabled,
 		stop_ok: stop_result?.ok == true,
 		cleanup: cleanup,
 		mihomo_stopped: cleanup?.mihomo_stopped == true,
@@ -584,9 +589,9 @@ function prepare_recovery_action(policy) {
 	if (!upstream_ready()) {
 		fail("prepare-recovery", "upstream_unavailable", { profile: current });
 	}
-	const was_enabled = nikki_enabled();
-	if (was_enabled != true && !set_nikki_enabled(true)) {
-		fail("prepare-recovery", "nikki_enable_failed", { profile: current });
+	const was_enabled = backend_enabled();
+	if (was_enabled != true && !set_backend_enabled(true)) {
+		fail("prepare-recovery", "backend_enable_failed", { profile: current });
 	}
 	let prepared = null;
 	if (current == target && !force_restart && was_enabled == true) {
@@ -1499,7 +1504,7 @@ function status_action(policy, evidence) {
 	if (state != null) {
 		state.providers = proxy_providers(secret, 1)?.providers ?? null;
 	}
-	const enabled = nikki_enabled();
+	const enabled = backend_enabled();
 	const mihomo_running = running();
 	let cleanup = null;
 	if (enabled == false || !mihomo_running) {
@@ -1511,12 +1516,13 @@ function status_action(policy, evidence) {
 	}
 	ok("status", build_status(policy, manifest, state, evidence, {
 		build: installed_build(),
+		backend: backend_metadata(),
 		active: is_active(profile),
 		profile: profile,
 		profile_display_name: profile_display_name(profile),
 		recovery_profile_display_name: profile_display_name(policy.recovery_profile.ref),
 		netfleet_present: state_has_netfleet(state, manifest, profile),
-		nikki_enabled: enabled,
+		backend_enabled: enabled,
 		mihomo_running: mihomo_running,
 		lan_runtime: mihomo_running ? lan_runtime_state(guard_probe_url(policy)) : null,
 		cleanup: cleanup,
@@ -1538,8 +1544,8 @@ function events_action() {
 		store_valid: validation.ok,
 		store_error: validation.ok ? null : validation.error,
 		display_names: event_display_names(policy),
-		nikki_lines: nikki_netfleet_lines(expected_runtime_groups(manifest)),
-		nikki_lines_persistent: false
+		core_lines: core_netfleet_lines(expected_runtime_groups(manifest)),
+		core_lines_persistent: false
 	});
 };
 
@@ -1687,7 +1693,7 @@ function rollback_refresh(snapshot, policy, selections) {
 	if (snapshot.active != true) {
 		return { ok: true, state: "cache_restored" };
 	}
-	if ((nikki_enabled() != true && !set_nikki_enabled(true)) ||
+	if ((backend_enabled() != true && !set_backend_enabled(true)) ||
 		!set_profile(COMPILED_PROFILE) || !restart()) {
 		return { ok: false, error: "runtime_restart_failed" };
 	}
@@ -2179,11 +2185,11 @@ function disable_without_policy(action_name) {
 	}
 	const profile_set = recovery_valid &&
 		(current_profile() == recovery || set_profile(recovery));
-	const disabled = set_nikki_enabled(false);
-	const stop_result = stop_nikki();
+	const disabled = set_backend_enabled(false);
+	const stop_result = stop_backend();
 	const cleanup = stop_result?.readback ?? cleanup_state();
 	const persistent = recovery_valid && profile_set && current_profile() == recovery &&
-		disabled == true && nikki_enabled() == false;
+		disabled == true && backend_enabled() == false;
 	const outcome = passthrough_outcome(cleanup, persistent, null);
 	const result = {
 		state: "passthrough",
@@ -2195,7 +2201,7 @@ function disable_without_policy(action_name) {
 		persistent: outcome.persistent,
 		durable: outcome.durable,
 		profile_set: profile_set,
-		nikki_disabled: disabled,
+		backend_disabled: disabled,
 		stop_ok: stop_result?.ok == true,
 		cleanup: cleanup,
 		mihomo_stopped: cleanup?.mihomo_stopped == true,
@@ -2213,6 +2219,18 @@ function disable_without_policy(action_name) {
 };
 
 const action = ARGV[0] ?? "";
+if (index(["subscriptions-get", "subscriptions-set", "migration-get", "migration-apply", "dashboard-get", "native-setup-get", "native-setup-apply"], action) >= 0) {
+	let result;
+	if (action == "subscriptions-get") result = subscriptions_get();
+	else if (action == "subscriptions-set") result = subscriptions_set(ARGV[1]);
+	else if (action == "migration-get") result = migration_get();
+	else if (action == "migration-apply") result = migration_apply(ARGV[1]);
+	else if (action == "native-setup-get") result = native_setup_get();
+	else if (action == "native-setup-apply") result = native_setup_apply(ARGV[1]);
+	else result = dashboard_get();
+	printf("%J\n", result);
+	exit(result.ok ? 0 : 1);
+}
 if (index(["native-core-stage", "native-core-start", "native-core-status", "native-core-stop"], action) >= 0) {
 	native_core(action, ARGV[1]);
 	exit(0);

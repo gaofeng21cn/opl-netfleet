@@ -79,6 +79,11 @@ const resources = {
 };
 
 const projection = project(policy, resources);
+const native_resources = { ...resources, backend: { id: "native-mihomo", display_name: "NetFleet + Mihomo" } };
+if (project(policy, native_resources).backend.id != "native-mihomo") {
+	print("native_backend_projection_failed\n");
+	exit(1);
+}
 if (projection.backend.id != "nikki-mihomo" || projection.providers?.[0]?.display_name != "Alpha 机场" ||
 	projection.policy_source.display_name != "NetFleet 内置基础策略" ||
 	projection.recovery_profile.display_name != "Alpha 机场" ||

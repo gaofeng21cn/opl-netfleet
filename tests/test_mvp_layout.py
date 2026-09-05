@@ -29,7 +29,8 @@ class MvpLayoutTests(unittest.TestCase):
             RUNTIME / "core" / "onboarding.uc",
             RUNTIME / "core" / "regions.uc",
             RUNTIME / "adapters" / "uci.uc",
-            RUNTIME / "adapters" / "nikki.uc",
+            RUNTIME / "adapters" / "backend.uc",
+            RUNTIME / "adapters" / "runtime.uc",
             RUNTIME / "adapters" / "mihomo.uc",
             RUNTIME / "adapters" / "latency.uc",
             RUNTIME / "adapters" / "events.uc",
@@ -149,7 +150,7 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertEqual(provider_ids, {entry["id"] for entry in lock["rulesets"]})
         self.assertTrue(
             all(
-                provider["path"] == f"/etc/nikki/run/rulesets/{name}.mrs"
+                provider["path"] == f"./rulesets/{name}.mrs"
                 for name, provider in baseline["rule-providers"].items()
             )
         )
@@ -222,7 +223,7 @@ class MvpLayoutTests(unittest.TestCase):
         policy = (RUNTIME / "core" / "policy.uc").read_text()
         main = (RUNTIME / "main.uc").read_text()
         supervisor = (RUNTIME / "supervisor.uc").read_text()
-        nikki = (RUNTIME / "adapters" / "nikki.uc").read_text()
+        nikki = (RUNTIME / "adapters" / "backend.uc").read_text()
         runtime_makefile = (ROOT / "openwrt" / "Makefile").read_text()
         rpcd = (
             ROOT / "openwrt" / "files" / "usr" / "libexec" / "rpcd" / "opl-netfleet"
@@ -284,7 +285,8 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertIn("load as load_provider_profile_result", main)
         self.assertNotIn("function load_provider_profiles", main)
         self.assertIn("return removed", nikki)
-        self.assertEqual(5, api.count("withRpcTimeout(300"))
+        for method in ("enable", "refresh", "selectAuto", "configApply", "onboardingApply"):
+            self.assertRegex(api, rf"{method}: function\([^)]*\)\s*\{{\s*return withRpcTimeout\(300")
         self.assertNotIn("withRpcTimeout(120", api)
         self.assertNotIn("withRpcTimeout(90", api)
         self.assertIn("annotateRpcError", api)
@@ -332,10 +334,8 @@ class MvpLayoutTests(unittest.TestCase):
         acl = json.loads(
             (LUCI / "root" / "usr" / "share" / "rpcd" / "acl.d" / "luci-app-netfleet.json").read_text()
         )
-        self.assertEqual(
-            ["profile"],
-            acl["luci-app-netfleet"]["read"]["ubus"]["luci.nikki"],
-        )
+        self.assertNotIn("luci.nikki", acl["luci-app-netfleet"]["read"]["ubus"])
+        self.assertIn("dashboard_get", acl["luci-app-netfleet"]["read"]["ubus"]["opl-netfleet"])
         self.assertIn(
             "probe",
             acl["luci-app-netfleet"]["read"]["ubus"]["opl-netfleet"],
@@ -506,12 +506,19 @@ function createPage(storage, api, notifications) {
         render: function() { return E('div', {}, 'config'); }
     };
     let dashboardOpens = 0;
-    const nikki = { openDashboard: function() { dashboardOpens++; return Promise.resolve(); } };
-    const factory = new Function('view', 'ui', 'nikki', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', source);
-    const page = factory(view, ui, nikki, api, netfleetConfig, E, {
+    const managed = {};
+    api.nativeSetupGet = function() { return Promise.resolve({ ready: false }); };
+    api.dashboardGet = function() { return Promise.resolve({ available: true, port: 9090, protocol: 'http', ui_name: 'zashboard', secret: 'private-secret' }); };
+    const factory = new Function('view', 'ui', 'managed', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', source);
+    const page = factory(view, ui, managed, api, netfleetConfig, E, {
         resource: function(value) { return value; },
         url: function(value) { return '/cgi-bin/luci/' + value; }
-    }, { localStorage: storage }, document);
+    }, { localStorage: storage, location: { hostname: 'router.example' }, open: function() { dashboardOpens++; return { location: { replace: function(url) {
+        const parsed = new URL(url);
+        assert.strictEqual(parsed.hostname, 'router.example');
+        assert.strictEqual(parsed.pathname, '/ui/zashboard/');
+        assert.strictEqual(parsed.searchParams.get('secret'), 'private-secret');
+    } }, close: function() {} }; } }, document);
     page.styleLink = styleLink;
     page.dashboardOpens = function() { return dashboardOpens; };
     return page;
@@ -524,7 +531,7 @@ function createPage(storage, api, notifications) {
         id: 'primary', display_name: '正式机场', available_count: 0,
         available_region_count: 0, candidate_count: 3, region_count: 2
     } ];
-    const cachedEvents = { events: [ event(0) ], nikki_lines: [] };
+    const cachedEvents = { events: [ event(0) ], core_lines: [] };
     const storage = createStorage({
         [cacheKey]: JSON.stringify({
             schema: 1,
@@ -562,8 +569,8 @@ function createPage(storage, api, notifications) {
     liveStatus.resolve(status(true, { can_disable: true }));
     liveEvents.resolve({
         events: Array.from({ length: 25 }, function(_, index) { return event(index); }),
-        nikki_lines: [ 'private log' ],
-        nikki_lines_persistent: false
+        core_lines: [ 'private log' ],
+        core_lines_persistent: false
     });
     liveConfig.resolve({ revision: 'a'.repeat(64), active: true, pending_apply: false });
     await page.initialRefresh;
@@ -571,12 +578,13 @@ function createPage(storage, api, notifications) {
     assert.strictEqual(page.liveDataReady, true);
     assert.strictEqual(page.readDurationMs >= 0, true);
     const persisted = JSON.parse(storage.value(cacheKey));
-    assert.deepStrictEqual(persisted.events.nikki_lines, [], 'raw logs must not be persisted');
+    assert.deepStrictEqual(persisted.events.core_lines, [], 'raw logs must not be persisted');
     assert.strictEqual(persisted.status.active, true);
     const runtimeEntry = findNode(root, function(node) { return node.tag === 'button' && nodeText(node) === '实时运行 ↗'; });
     assert(runtimeEntry && runtimeEntry.attrs.disabled !== true, 'healthy dashboard entry must be enabled');
     runtimeEntry.attrs.click();
-    assert.strictEqual(page.dashboardOpens(), 1, 'dashboard entry must reuse Nikki openDashboard');
+    assert.strictEqual(page.dashboardOpens(), 1, 'dashboard entry must open the independent dashboard');
+    await new Promise(function(resolve) { setImmediate(resolve); });
     page.status.runtime.lan_runtime.dashboard_lan_ready = false;
     page.redraw();
     const disabledRuntimeEntry = findNode(root, function(node) { return node.tag === 'button' && nodeText(node) === '实时运行 ↗'; });
@@ -641,9 +649,9 @@ function createPage(storage, api, notifications) {
 	assert(providerPageText.includes('47/50 节点 · 订阅 52 条'));
 	assert(!providerPageText.includes('3/4 节点'));
 	assert(providerPageText.includes('缓存已更新'));
-	assert(providerPageText.includes('管理订阅 ↗'));
+	assert(providerPageText.includes('管理订阅'));
 	const subscriptionLink = findNode(root.children[2], function(node) {
-		return node.tag === 'a' && nodeText(node) === '管理订阅 ↗';
+		return node.tag === 'button' && nodeText(node) === '管理订阅';
 	});
 	assert(subscriptionLink && subscriptionLink.attrs.class === 'netfleet-inline-link');
 	assert(providerPageText.includes('订阅更新时间'));

@@ -1,8 +1,7 @@
 import { popen } from "fs";
 import { shell_quote, proxy_authentication, api_secret } from "./uci.uc";
 
-const RUN_DIR = "/etc/nikki/run";
-const API = "http://127.0.0.1:9090";
+import { RUN_DIR, API } from "./runtime.uc";
 
 export function test_profile(path) {
 	return system(`mihomo -d ${shell_quote(RUN_DIR)} -f ${shell_quote(path)} -t >/dev/null 2>&1`) == 0;

@@ -62,7 +62,7 @@ describe('运行时网络退路', () => {
     status.capabilities[1].prefer_region_from = 'missing';
     expect(eventReason(status, event)).toBe('跟随依赖能力地区');
     expect(eventReason(status, events.events[0])).toBe('同轮最快合格候选');
-    expect(eventReason(status, { at: 2, action: 'disable', reason: 'native_restored' })).toBe('已恢复 Nikki 原生配置');
+    expect(eventReason(status, { at: 2, action: 'disable', reason: 'native_restored' })).toBe('已恢复原生配置');
   });
 
   it('新鲜度只反映本次本机读取成败，不用轮询或 TTL', () => {

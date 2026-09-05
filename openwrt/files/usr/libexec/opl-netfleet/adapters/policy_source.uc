@@ -1,5 +1,5 @@
 import { read_json, read_yaml } from "./uci.uc";
-import { resolve_profile } from "./nikki.uc";
+import { resolve_profile } from "./backend.uc";
 
 export const POLICY_SOURCE_DIR = "/etc/opl-netfleet/policy-sources";
 

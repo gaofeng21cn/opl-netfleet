@@ -2,7 +2,7 @@ import { popen } from "fs";
 import { shell_quote } from "./uci.uc";
 import { url_path_segment } from "./mihomo.uc";
 
-const API = "http://127.0.0.1:9090";
+import { API } from "./runtime.uc";
 
 export function controller_timeout_seconds(timeout_ms) {
 	let seconds = int((timeout_ms + 999) / 1000) + 3;

@@ -14,6 +14,21 @@ OpenWrt 数据面的独立运行产品；在两个真实后端完成后，再从
 
 ## 最小实现顺序
 
+本里程碑以完整原生 Mihomo 能力等价为验收终点，不以单条 CLI 或数据面实验成功收尾。
+范围覆盖订阅和额度、现有策略与私有规则、自动/手动选优、IPv4/IPv6 DNS 与透明代理、
+路由器及 LAN 流量、安全退出、LuCI、Zashboard、安装升级及 Nikki 显式迁移。
+sing-box 是后续独立里程碑，不提前增加通用后端框架。
+
+优先固定版本复用 Nikki 的 nft 模板、配置字段投影和公开区域数据，保留 GPL-3.0 许可证、
+上游版本和本地修改说明。原生配置和运行资源属于 NetFleet 独立命名空间；不能在原生模式
+继续读写 Nikki 的配置或服务。上游原地 YAML 改写不进入新路径，配置合成使用 JSON，
+经真实 Mihomo 校验后原子安装。NetFleet 现有编译、选择、evidence、刷新及恢复事务保持唯一。
+
+`/etc/opl-netfleet/backend.json` 显式选择 `nikki-mihomo` 或 `native-mihomo`；缺省保持已安装
+Nikki 路径，未知身份拒绝。原生运行参数和订阅使用 `netfleet` UCI 配置，策略仍只由现有
+`policy.json` 持有；原生目录固定 `/etc/opl-netfleet/native/`，核心服务是 `opl-netfleet-core`。
+迁移按订阅、恢复配置、运行参数和资源逐项导入，不复制系统网络配置，不同时启动两个核心。
+
 1. 先实现一条完整的 `native-mihomo` 纵向链，覆盖订阅发现与缓存、配置生成、核心生命周期、
    controller 回读、DNS/nft/TProxy/路由激活和失败清理。
 2. 复用当前 capability、provider、region、选择和恢复模型，不建立并行配置 owner 或双写。

@@ -523,7 +523,7 @@ done
 run_timed onboarding_disable run_locked /var/lock/opl-netfleet-deploy.lock ucode "$main" disable vm
 [ "$(uci -q get nikki.config.profile)" = subscription:base ]
 assert_controller onboarding_after_disable
-ucode -e 'import { remove_artifact } from "/usr/libexec/opl-netfleet/adapters/nikki.uc"; exit(remove_artifact() ? 0 : 1)'
+ucode -e 'import { remove_artifact } from "/usr/libexec/opl-netfleet/adapters/backend.uc"; exit(remove_artifact() ? 0 : 1)'
 rm -f /etc/opl-netfleet/policy.json /etc/opl-netfleet/evidence.json
 cp "$work/manual-policy.json" /etc/opl-netfleet/policy.json
 

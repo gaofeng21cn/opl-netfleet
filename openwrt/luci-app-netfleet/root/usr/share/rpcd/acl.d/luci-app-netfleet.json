@@ -1,15 +1,14 @@
 {
   "luci-app-netfleet": {
-    "description": "Discover, configure, operate, and restore NetFleet over Nikki",
+    "description": "Discover, configure, operate, and restore NetFleet",
     "read": {
       "ubus": {
-        "opl-netfleet": [ "onboarding_get", "status", "events", "connections", "probe", "config_get", "config_validate" ],
-        "luci.nikki": [ "profile" ]
+        "opl-netfleet": [ "native_setup_get", "dashboard_get", "subscriptions_get", "migration_get", "onboarding_get", "status", "events", "connections", "probe", "config_get", "config_validate" ]
       }
     },
     "write": {
       "ubus": {
-        "opl-netfleet": [ "onboarding_apply", "config_save", "config_apply", "enable", "select_auto", "refresh", "disable" ]
+        "opl-netfleet": [ "native_setup_apply", "subscriptions_set", "migration_apply", "onboarding_apply", "config_save", "config_apply", "enable", "select_auto", "refresh", "disable" ]
       }
     }
   }

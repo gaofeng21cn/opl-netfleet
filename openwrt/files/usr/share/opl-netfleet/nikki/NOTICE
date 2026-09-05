@@ -1,0 +1,18 @@
+Nikki components used by NetFleet
+
+Source: https://github.com/nikkinikki-org/OpenWrt-nikki
+Commit: 3799926b147d7065ac98508f16951f8714e53659
+License: GNU General Public License version 3 (see LICENSE)
+Upstream maintainer: Joseph Mory <morytyann@gmail.com>
+
+Imported components: nikki/files/ucode/{hijack.ut,mixin.uc,include.uc}
+and nikki/files/nftables/{geoip_cn.nft,geoip6_cn.nft}.
+
+NetFleet modifications: independent netfleet UCI/nft namespace and private
+runtime paths; shared code paths under /usr/share/opl-netfleet/nikki;
+load the generated runtime configuration as JSON without invoking yq.
+The upstream networking rules and UCI field projections are retained.
+
+These components and their modifications are distributed under GPL-3.0.
+NetFleet's original Apache-2.0 notices continue to apply to original files;
+distribution of the combined work must also satisfy GPL-3.0.

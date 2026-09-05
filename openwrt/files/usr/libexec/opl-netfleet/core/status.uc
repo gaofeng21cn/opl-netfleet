@@ -230,12 +230,12 @@ function native_runtime(policy, state, owner) {
 		result.mode = "netfleet_active";
 		return result;
 	}
-	if (owner.cleanup?.ok == true && owner.nikki_enabled == false) {
+	if (owner.cleanup?.ok == true && owner.backend_enabled == false) {
 		result.mode = "passthrough";
 		return result;
 	}
-	if (owner.nikki_enabled != true) {
-		result.mode = "nikki_stopped";
+	if (owner.backend_enabled != true) {
+		result.mode = "backend_stopped";
 		return result;
 	}
 	if (owner.mihomo_running != true) {
@@ -750,12 +750,13 @@ export function build(policy, manifest, state, evidence, owner) {
 		native_runtime: native,
 		runtime: {
 			mihomo_running: owner.mihomo_running,
-			nikki_enabled: owner.nikki_enabled,
+			backend: owner.backend,
+			backend_enabled: owner.backend_enabled,
 			netfleet_present: owner.netfleet_present == true,
 			controller_available: state?.proxies != null,
 			lan_runtime: owner.lan_runtime ?? null,
 			cleanup: owner.cleanup ?? null,
-			passthrough_ready: owner.cleanup?.ok == true && owner.nikki_enabled == false,
+			passthrough_ready: owner.cleanup?.ok == true && owner.backend_enabled == false,
 			supervisor: owner.supervisor ?? { installed: false, enabled: false, running: false }
 		},
 		selection: {
@@ -773,14 +774,14 @@ export function build(policy, manifest, state, evidence, owner) {
 		regions: map(keys(regions), name => regions[name]),
 		actions: {
 			can_enable: policy.main.enabled == true && owner.active != true &&
-				owner.netfleet_present != true && owner.nikki_enabled == true &&
+				owner.netfleet_present != true && owner.backend_enabled == true &&
 				owner.mihomo_running == true && owner.profile == policy.recovery_profile.ref,
 			can_select_auto: owner.active == true && owner.netfleet_present == true &&
-				owner.nikki_enabled == true && owner.mihomo_running == true &&
+				owner.backend_enabled == true && owner.mihomo_running == true &&
 				length(automatic_capability_ids) > 0 && automatic_capability_id != null &&
 				generated[automatic_capability_id]?.mode == "automatic" &&
 				length(generated[automatic_capability_id]?.candidate_groups ?? []) > 0,
-			can_refresh: owner.nikki_enabled == true &&
+			can_refresh: owner.backend_enabled == true &&
 				(owner.subscription_refresh?.provider_count ?? 0) > 0,
 			can_disable: owner.active || owner.netfleet_present == true
 		}

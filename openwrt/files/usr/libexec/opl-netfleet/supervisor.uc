@@ -1,7 +1,7 @@
 #!/usr/bin/ucode
 
-import { read_json, current_profile, nikki_enabled, api_secret, shell_quote, POLICY_PATH } from "./adapters/uci.uc";
-import { running, lan_runtime_state } from "./adapters/nikki.uc";
+import { read_json, current_profile, backend_enabled, api_secret, shell_quote, POLICY_PATH } from "./adapters/uci.uc";
+import { running, lan_runtime_state } from "./adapters/backend.uc";
 import { controller_ready } from "./adapters/mihomo.uc";
 import { validate, automation, guard_probe_url } from "./core/policy.uc";
 import { is_active } from "./core/activation.uc";
@@ -60,7 +60,7 @@ for (;;) {
 	}
 
 	const owned = is_active(current_profile());
-	const runtime_ready = owned && nikki_enabled() == true && running() && runtime_controller_ready();
+	const runtime_ready = owned && backend_enabled() == true && running() && runtime_controller_ready();
 	const lan_runtime = runtime_ready ? lan_runtime_state(settings_value.dns_probe_url) : null;
 	const healthy = runtime_ready && lan_runtime?.transparent_proxy_ready == true &&
 		lan_runtime?.dns_ready == true;

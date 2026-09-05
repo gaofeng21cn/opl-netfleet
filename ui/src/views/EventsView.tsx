@@ -28,7 +28,7 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
         <dl><dt>事件存储</dt><dd className={snapshot.store_valid === false ? 'is-warning' : 'is-ok'}>{snapshot.store_valid === false ? '异常' : '有效'}</dd></dl>
         <dl><dt>决策事件</dt><dd>{snapshot.events.length} 条</dd></dl>
         <dl><dt>当前连接</dt><dd className={connectionsError ? 'is-warning' : 'is-ok'}>{connectionsLoading ? '正在读取' : connectionsError ? '读取失败' : `${connections.connections.length} 条`}</dd></dl>
-        <dl><dt>原始日志</dt><dd>{snapshot.nikki_lines_persistent === false ? '临时窗口' : '设备保留'}</dd></dl>
+        <dl><dt>原始日志</dt><dd>{snapshot.core_lines_persistent === false ? '临时窗口' : '设备保留'}</dd></dl>
       </section>
       {error && <div className="nf-inline-warning">{error}；以下内容保留上一次成功读取结果。</div>}
       <section className="nf-table-section">
@@ -59,7 +59,7 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
           ))}</tbody>
         </table></div>
       </section>
-      <section className="nf-log-section"><h2>Mihomo 原始日志</h2><pre>{(snapshot.nikki_lines || []).join('\n') || '暂无相关原始日志。'}</pre></section>
+      <section className="nf-log-section"><h2>Mihomo 原始日志</h2><pre>{(snapshot.core_lines || []).join('\n') || '暂无相关原始日志。'}</pre></section>
     </div>
   );
 }

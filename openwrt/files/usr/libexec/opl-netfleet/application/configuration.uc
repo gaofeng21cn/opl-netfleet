@@ -1,6 +1,7 @@
 import { read_yaml, read_json, write_json_atomic, sha256, current_profile, shell_quote, subscription_display_name, subscription_options, POLICY_PATH } from "../adapters/uci.uc";
 import { popen } from "fs";
-import { resolve_profile, profile_exists, prepare_provider_links, remove_provider_links, ARTIFACT_PATH, MANIFEST_PATH } from "../adapters/nikki.uc";
+import { resolve_profile, profile_exists, prepare_provider_links, remove_provider_links, ARTIFACT_PATH, MANIFEST_PATH } from "../adapters/backend.uc";
+import { metadata as backend_metadata } from "../adapters/runtime.uc";
 import { resolve as resolve_policy_source, load as load_policy_source } from "../adapters/policy_source.uc";
 import { validate as validate_policy } from "../core/policy.uc";
 import { project, apply as apply_request, changes } from "../core/config.uc";
@@ -86,7 +87,7 @@ function resources(policy) {
 	if (!has_reference(source_options, policy.policy_source.kind, policy.policy_source.ref) && resolve_policy_source(policy.policy_source) != null) {
 		push(source_options, { kind: policy.policy_source.kind, ref: policy.policy_source.ref,
 			display_name: policy.policy_source.kind == "bundle" ? "当前内置基础策略" :
-				(profile_display_name(policy.policy_source.ref) ?? "当前 Nikki 配置") });
+				(profile_display_name(policy.policy_source.ref) ?? "当前基础配置") });
 		source_groups[`${policy.policy_source.kind}|${policy.policy_source.ref}`] = source_group_names(policy.policy_source);
 	}
 	if (!has_reference(recovery_options, null, policy.recovery_profile.ref) && profile_exists(policy.recovery_profile.ref))
@@ -97,7 +98,7 @@ function resources(policy) {
 	for (let i = 0; i < length(catalog); i++) {
 		if (region_options_by_id[catalog[i].id] != null) push(region_options, region_options_by_id[catalog[i].id]);
 	}
-	return { provider_names: provider_display_names(policy), policy_source_options: source_options,
+	return { backend: backend_metadata(), provider_names: provider_display_names(policy), policy_source_options: source_options,
 		recovery_profile_options: recovery_options, provider_options: provider_options,
 		region_options: region_options, policy_source_groups: source_groups };
 };

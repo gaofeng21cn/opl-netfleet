@@ -195,13 +195,13 @@ export function project(policy, resources) {
 	const recovery_profile_options = resources?.recovery_profile_options ?? [];
 	const healthcheck = policy?.fail_open?.healthcheck ?? {};
 	return {
-		backend: { id: "nikki-mihomo", display_name: "Nikki + Mihomo" },
+		backend: resources?.backend ?? { id: "nikki-mihomo", display_name: "Nikki + Mihomo" },
 		main_enabled: policy?.main?.enabled == true,
 		policy_source: {
 			kind: policy.policy_source.kind,
 			ref: policy.policy_source.ref,
 			display_name: display_for_ref(policy_source_options, policy.policy_source.kind,
-				policy.policy_source.ref, policy.policy_source.kind == "bundle" ? "NetFleet 内置基础策略" : "当前 Nikki 配置")
+				policy.policy_source.ref, policy.policy_source.kind == "bundle" ? "NetFleet 内置基础策略" : "当前基础配置")
 		},
 		policy_source_options: policy_source_options,
 		policy_groups: source_groups(resources, policy.policy_source),
@@ -274,7 +274,7 @@ export function validate_request(policy, request, resources) {
 			const available = option_by_id(resources?.provider_options, id);
 			if (!stable_id(id)) push(errors, `provider id is invalid: ${id}`);
 			if (existing == null && (available == null || available.section != id))
-				push(errors, `provider must reference an available Nikki subscription: ${id}`);
+				push(errors, `provider must reference an available subscription: ${id}`);
 			if (known_keys(value, ["section", "enabled", "role", "billing", "region_ids"], errors, `providers.${id}`)) {
 				if (!nonempty(value.section) || (existing != null && value.section != existing.section) ||
 					(existing == null && value.section != available?.section))

@@ -10,8 +10,9 @@ const healthy: StatusSnapshot = {
   recovery_profile: 'subscription:recovery',
   recovery_profile_display_name: '示例恢复配置',
   runtime: {
+    backend: { id: 'nikki-mihomo', display_name: 'Nikki + Mihomo' },
     mihomo_running: true,
-    nikki_enabled: true,
+    backend_enabled: true,
     netfleet_present: true,
     controller_available: true,
     lan_runtime: {
@@ -99,7 +100,7 @@ const events: EventsSnapshot = {
     { at: 1788146100, action: 'select', trigger: 'scheduled', initiator: 'supervisor', capability: 'standard', region_id: 'japan', provider_id: 'alpha', leaf: 'JP-Tokyo-02', delay_ms: 78, reason: 'current_region_fastest' },
     { at: 1788146101, action: 'select', trigger: 'scheduled', initiator: 'supervisor', capability: 'ai-compatible', region_id: 'singapore', provider_id: 'beta', leaf: 'SG-Singapore-01', delay_ms: 102, reason: 'fastest_eligible' },
   ],
-  nikki_lines: [
+  core_lines: [
     'NETFLEET-SELECT capability=standard outcome=kept_current_region delay_ms=78',
     'NETFLEET-SELECT capability=ai-compatible outcome=fastest_eligible delay_ms=102',
   ],

@@ -3,7 +3,7 @@
 'use strict';
 'require view';
 'require ui';
-'require tools.nikki as nikki';
+'require netfleet.managed as managed';
 'require netfleet.api as netfleet';
 'require netfleet.config as netfleetConfig';
 
@@ -48,7 +48,7 @@ function readDisplayCache() {
 function writeDisplayCache(status, events, fetchedAt, readDurationMs) {
 	try {
 		const cachedEvents = JSON.parse(JSON.stringify(events || {}));
-		cachedEvents.nikki_lines = [];
+		cachedEvents.core_lines = [];
 		window.localStorage.setItem(DISPLAY_CACHE_KEY, JSON.stringify({
 			schema: DISPLAY_CACHE_SCHEMA,
 			status: status,
@@ -216,7 +216,7 @@ function runtimeFallback(capability) {
 
 function modeName(capability) {
 	if (capability.data_path === 'native_profile')
-		return 'Nikki 原生';
+		return '原生配置';
 	const mode = capability.user_mode || capability.mode;
 	return ({
 		automatic: '自动选优',
@@ -230,7 +230,7 @@ function modeName(capability) {
 function reasonText(status, capability) {
 	const reason = capability.reason;
 	if (!reason)
-		return status.active ? '设备未提供本次选择原因。' : 'NetFleet 未启用，当前使用 Nikki 原生配置。';
+		return status.active ? '设备未提供本次选择原因。' : 'NetFleet 未启用，当前使用 原生配置。';
 	if (reason.kind === 'automatic_decision') {
 		const parent = byId(status.capabilities, capability.prefer_region_from);
 		let choice = '选择同轮最快合格地区';
@@ -244,7 +244,7 @@ function reasonText(status, capability) {
 		provider_fallback: '当前优选不可用，Mihomo 已进入机场退路层。',
 		direct_fallback: '代理路径不可用，Mihomo 已切换到直连退路。',
 		direct_manual: '用户已选择直连，周期选优暂停。',
-		passthrough: 'Nikki 已停止，网络已恢复直通。',
+		passthrough: '代理后端已停止，网络已恢复直通。',
 		disabled: '该出口已关闭，原始策略组保持原有行为。',
 		not_compiled: '该出口尚未进入当前运行配置。'
 	})[reason.kind] || '当前链来自设备状态，页面不会触发额外测速。';
@@ -325,15 +325,16 @@ function metricGrid(items, extraClass) {
 
 function onboardingMessage(code, detail) {
 	const messages = {
-		current_profile_missing: '请先在 Nikki 选择并验证一个原生配置。',
-		netfleet_profile_already_selected: 'Nikki 当前已选择 NetFleet 运行配置，不能重新执行首次接管。',
-		current_profile_unreadable: 'Nikki 当前配置无法读取，请先在 Nikki 中修复或重新选择。',
-		nikki_disabled: 'Nikki 当前未启用，请先在 Nikki 中启用并确认网络可用。',
-		nikki_runtime_unhealthy: 'Nikki 或 Mihomo 当前运行状态异常，请先恢复原生网络。',
-		mihomo_controller_unavailable: 'Mihomo 控制接口不可读取，请检查 Nikki 的控制接口和密钥配置。',
+		current_profile_missing: '尚未选择可用的原生配置，请先完成后端接入。',
+		netfleet_profile_already_selected: '当前已选择 NetFleet 运行配置，不能重新执行首次接管。',
+		current_profile_unreadable: '当前配置无法读取，请先修复或重新选择。',
+		backend_disabled: '运行后端当前未启用，请先启用并确认网络可用。',
+		backend_runtime_unhealthy: '运行后端或 Mihomo 当前状态异常，请先恢复网络。',
+		native_sources_missing: '请先添加机场订阅。',
+		mihomo_controller_unavailable: 'Mihomo 控制接口不可读取，请检查控制接口和密钥配置。',
 		existing_generated_artifacts: '设备存在未受 policy 管理的 NetFleet 生成文件，请先完成恢复或清理。',
 		existing_policy_unreadable: '设备已有无法读取的 NetFleet 配置，首次设置不会覆盖它。',
-		entry_group_unresolved: '无法唯一识别当前配置的主入口组，请在 Nikki 配置中保留明确的 MATCH 目标。',
+		entry_group_unresolved: '无法唯一识别当前配置的主入口组，请在原生配置中保留明确的默认出口。',
 		subscription_cache_missing: '没有发现可读取的稳定命名机场订阅缓存。',
 		recognized_region_missing: '订阅缓存中没有识别到可用于自动选优的地区节点。',
 		generated_policy_invalid: '设备生成的推荐配置未通过校验。',
@@ -347,6 +348,10 @@ function onboardingMessage(code, detail) {
 function nativeProfileLabel(value) {
 	const label = text(value, '当前原生配置');
 	return label.endsWith('原生配置') ? label : label + ' 原生配置';
+}
+
+function backendName(status) {
+	return text(status && status.runtime && status.runtime.backend && status.runtime.backend.display_name, '当前代理后端');
 }
 
 function onboardingPage(onboarding, showDetails) {
@@ -368,7 +373,7 @@ function onboardingPage(onboarding, showDetails) {
 		return E('li', {}, onboardingMessage(item.code, item.detail));
 	});
 	const content = [
-		section('接管预检', '只读取 Nikki 当前配置和本地订阅缓存，不下载订阅、不修改网络。', [
+		section('接管预检', '读取当前配置和本地订阅缓存，不修改网络。', [
 			metricGrid([
 				[ '预检状态', E('span', { 'class': stateClass }, onboarding.ready ? '可以接管' : '暂不能接管') ],
 				[ '优先恢复', text(preview.recovery_profile_display_name, '当前原生配置') ],
@@ -388,7 +393,7 @@ function onboardingPage(onboarding, showDetails) {
 	]));
 	content.push(section('退出与故障恢复', null, [ E('div', { 'class': 'netfleet-recovery' }, [
 		E('dl', {}, [ E('dt', {}, '优先恢复'), E('dd', {}, nativeProfileLabel(preview.recovery_profile_display_name)) ]),
-		E('dl', {}, [ E('dt', {}, '最终退路'), E('dd', {}, '原生配置恢复失败时，停止 Nikki 并恢复网络直通') ])
+		E('dl', {}, [ E('dt', {}, '最终退路'), E('dd', {}, '原生配置恢复失败时，停止代理后端并恢复网络直通') ])
 	]) ]));
 	return content;
 }
@@ -675,7 +680,7 @@ function exitsPage(status) {
 	content.push(section('退出与故障恢复', '优先恢复与失败条件下的最终退路，不是连续执行步骤。', [
 		E('div', { 'class': 'netfleet-recovery' }, [
 			E('dl', {}, [ E('dt', {}, '优先恢复'), E('dd', {}, preferred ? preferred + ' 原生配置' : '当前原生配置') ]),
-			E('dl', {}, [ E('dt', {}, '最终退路'), E('dd', {}, '原生配置恢复失败时，停止 Nikki 并恢复网络直通') ])
+			E('dl', {}, [ E('dt', {}, '最终退路'), E('dd', {}, '原生配置恢复失败时，停止 ' + backendName(status) + ' 并恢复网络直通') ])
 		])
 	]));
 	return content;
@@ -726,7 +731,7 @@ function providerNodes(provider, subscription) {
 		loaded + ' · 订阅 ' + String(Number(subscription.node_count)) + ' 条' : loaded;
 }
 
-function providersPage(status) {
+function providersPage(status, controller) {
 	const refresh = status.subscription_refresh || {};
 	const subscriptions = status.subscriptions || [];
 	const availabilityMeasured = Boolean(status.active && status.runtime.netfleet_present && status.runtime.controller_available);
@@ -783,15 +788,13 @@ function providersPage(status) {
 			E('div', { 'class': 'netfleet-section-heading' }, [
 				E('div', {}, [
 					E('h3', {}, '订阅更新'),
-					E('div', { 'class': 'cbi-section-descr' }, '订阅地址和凭据由设备端 Nikki 管理；NetFleet 负责安全更新、机场角色和自动选优。')
+					E('div', { 'class': 'cbi-section-descr' }, '机场订阅、更新时间和运行质量。')
 				]),
-				E('a', {
+				E('button', {
 					'class': 'netfleet-inline-link',
-					'href': L.url('admin/services/nikki/profile'),
-					'target': '_blank',
-					'rel': 'noopener',
-					'title': '在新标签页打开 Nikki 订阅管理'
-				}, '管理订阅 ↗')
+					'type': 'button',
+					'click': function() { controller.manageSubscriptions(); }
+				}, '管理订阅')
 			]),
 			metricGrid([
 			[ '自动更新', refresh.enabled ? '已启用' : '已关闭' ],
@@ -874,8 +877,8 @@ function eventReason(status, event) {
 		fastest_eligible: '同轮最快合格候选',
 		kept_current_region: '收益不足，保持当前地区',
 		current_region_fastest: '当前地区仍为最快',
-			native_restored: '已恢复 Nikki 原生配置',
-			native_restore_failed_passthrough: '原生配置恢复失败，已停止 Nikki 并恢复网络直通',
+			native_restored: '已恢复原生配置',
+			native_restore_failed_passthrough: '原生配置恢复失败，已停止代理后端 并恢复网络直通',
 			updated: '订阅更新完成并重载',
 			cache_updated: '订阅缓存已更新',
 			partially_updated: '部分机场更新成功',
@@ -909,7 +912,7 @@ function eventsPage(status, events, connections, connectionsLoading, connections
 		[ '决策事件', String((events.events || []).length) + ' 条' ],
 		[ '当前连接', connectionsLoading ? '正在读取' : connectionsError ? '读取失败' : String((connections.connections || []).length) + ' 条' ]
 	];
-	const logRetention = events.nikki_lines_persistent === false ? '临时窗口' : '设备保留';
+	const logRetention = events.core_lines_persistent === false ? '临时窗口' : '设备保留';
 	const connectionRows = (connections.connections || []).map(function(connection) {
 		const rule = [ connection.rule, connection.rule_payload ].filter(Boolean).join(' / ') || '未提供';
 		return E('tr', {}, [
@@ -956,11 +959,11 @@ function eventsPage(status, events, connections, connectionsLoading, connections
 			metricGrid(diagnostics),
 			E('div', { 'class': 'netfleet-diagnostic-note' }, [
 				E('strong', {}, '原始日志：' + logRetention),
-				E('span', {}, events.nikki_lines_persistent === false ? '仅展示 Nikki 当前保留的最近日志，不作为持久事件记录。' : '由设备日志策略负责保留。')
+				E('span', {}, events.core_lines_persistent === false ? '仅展示核心当前保留的最近日志，不作为持久事件记录。' : '由设备日志策略负责保留。')
 			])
 		]),
 		section('当前活动连接', '辅助诊断快照，不代表完整的 Mihomo 观察面。', [ connectionContent ]),
-		section('Mihomo 原始日志', null, [ E('pre', {}, (events.nikki_lines || []).join('\n') || '暂无相关原始日志。') ])
+		section('Mihomo 原始日志', null, [ E('pre', {}, (events.core_lines || []).join('\n') || '暂无相关原始日志。') ])
 	];
 }
 
@@ -970,7 +973,9 @@ return view.extend({
 		const onboardingStarted = Date.now();
 		return netfleet.onboardingGet().then(function(onboarding) {
 			if (onboarding.required)
-				return { onboarding: onboarding, fetchedAt: new Date(), readDurationMs: Date.now() - onboardingStarted, cached: false };
+				return netfleet.nativeSetupGet().catch(function() { return null; }).then(function(setup) {
+					return { onboarding: onboarding, nativeSetup: setup, fetchedAt: new Date(), readDurationMs: Date.now() - onboardingStarted, cached: false };
+				});
 			const cached = readDisplayCache();
 			const started = Date.now();
 			self.initialRefresh = Promise.all([ netfleet.status(), netfleet.events(), netfleet.configGet() ]).then(function(result) {
@@ -1000,6 +1005,7 @@ return view.extend({
 	render: function(initial) {
 		const self = this;
 		this.onboarding = initial.onboarding || null;
+		this.nativeSetup = initial.nativeSetup || null;
 		this.status = initial.status || null;
 		ensureStyles(this.status);
 		this.events = initial.events || { events: [] };
@@ -1063,6 +1069,10 @@ return view.extend({
 				[ '设备控制', this.onboarding.ready ? '等待确认' : '只读预检' ]
 			], 'is-six') ], 'netfleet-source');
 			const buttons = [
+				this.nativeSetup && this.nativeSetup.ready ? E('button', { 'class': 'btn cbi-button', 'disabled': this.busy || null, 'click': function() { return managed.nativeSetup(self); } }, '首次接入 Mihomo') : E('span'),
+				' ',
+				E('button', { 'class': 'btn cbi-button', 'disabled': this.busy || null, 'click': function() { return self.manageSubscriptions(); } }, '管理订阅'),
+				' ',
 				E('button', { 'class': 'btn cbi-button', 'disabled': this.busy || null, 'click': function() { return self.refreshOnboarding(); } }, this.busy ? '正在读取…' : '刷新'),
 				' ',
 				E('button', { 'class': 'btn cbi-button cbi-button-action', 'disabled': this.busy || !this.onboarding.ready || null, 'click': function() { self.confirmOnboarding(); } }, '按推荐配置开始接管')
@@ -1118,7 +1128,7 @@ return view.extend({
 
 		let content;
 		if (this.currentView === 'exits') content = exitsPage(this.status);
-		else if (this.currentView === 'providers') content = providersPage(this.status);
+		else if (this.currentView === 'providers') content = providersPage(this.status, this);
 		else if (this.currentView === 'regions') content = regionsPage(this.status);
 		else if (this.currentView === 'config') content = [ netfleetConfig.render(this) ];
 		else if (this.currentView === 'events') content = eventsPage(this.status, this.events, this.connections, this.connectionsLoading, this.connectionsError, this.eventPage, function(page) {
@@ -1153,17 +1163,33 @@ return view.extend({
 			ui.addNotification(null, E('p', {}, dashboardUnavailableReason(this.status)), 'warning');
 			return Promise.resolve();
 		}
-		return nikki.openDashboard().catch(function(error) {
-			ui.addNotification(null, E('p', {}, '无法打开 Zashboard：' + text(error && error.message, text(error, '设备未返回可用地址'))), 'error');
+		const tab = window.open('about:blank', '_blank');
+		if (tab) tab.opener = null;
+		return netfleet.dashboardGet().then(function(result) {
+			if (!result.available || !Number.isInteger(result.port) || result.port < 1 || result.port > 65535 || ![ 'http', 'https' ].includes(result.protocol))
+				throw new Error('dashboard_unavailable');
+			const host = window.location.hostname;
+			const url = new URL(result.protocol + '://' + host + ':' + result.port + '/ui/' + (result.ui_name ? encodeURIComponent(result.ui_name) + '/' : ''));
+			url.search = new URLSearchParams({ hostname: host, host: host, port: String(result.port), secret: result.secret || '' }).toString();
+			if (tab) tab.location.replace(url.toString());
+			else ui.addNotification(null, E('a', { 'href': url.toString(), 'target': '_blank', 'rel': 'noopener' }, '打开 Zashboard'), 'info');
+		}).catch(function() {
+			if (tab) tab.close();
+			ui.addNotification(null, E('p', {}, '无法打开 Zashboard，请检查核心及控制接口状态。'), 'error');
 		});
 	},
+
+	manageSubscriptions: function() { return managed.subscriptions(this); },
+	migrateBackend: function() { return managed.migration(this); },
 
 	refreshOnboarding: function() {
 		const self = this;
 		const started = Date.now();
 		this.busy = true;
 		this.redraw();
-		return netfleet.onboardingGet().then(function(result) {
+		return Promise.all([ netfleet.onboardingGet(), netfleet.nativeSetupGet().catch(function() { return null; }) ]).then(function(results) {
+			const result = results[0];
+			self.nativeSetup = results[1];
 			if (!result.required) {
 				window.location.reload();
 				return;
@@ -1184,7 +1210,7 @@ return view.extend({
 		ui.showModal('推荐接管配置', [
 			E('p', {}, '正常策略来源与优先恢复目标：' + text(preview.recovery_profile_display_name, '当前原生配置')),
 			E('p', {}, '准备接管的主入口组：' + text(preview.entry_group, '尚未识别')),
-			E('p', {}, '自动选优默认每 30 分钟执行；机场订阅默认每 12 小时由 Nikki 官方更新器刷新。'),
+			E('p', {}, '自动选优默认每 30 分钟执行；机场订阅默认每 12 小时刷新。'),
 			E('p', {}, '首次设置不会复制订阅 URL、节点正文、DNS、nft 或路由配置。'),
 			E('div', { 'class': 'right' }, E('button', { 'class': 'btn', 'click': ui.hideModal }, '关闭'))
 		]);
@@ -1194,8 +1220,8 @@ return view.extend({
 		const self = this;
 		const preview = this.onboarding.preview || {};
 		ui.showModal('开始接管网络出口', [
-			E('p', {}, 'NetFleet 将基于当前 Nikki 配置生成运行配置并切换 Profile。设备会先完成编译和网络检查；任一步失败都会恢复 ' + text(preview.recovery_profile_display_name, '当前原生配置') + '。'),
-			E('p', {}, '这不是连续执行的退路链：只有原生配置确实无法恢复时，才会停止 Nikki 并恢复网络直通。'),
+			E('p', {}, 'NetFleet 将基于当前配置生成运行配置并切换。设备会先完成编译和网络检查；任一步失败都会恢复 ' + text(preview.recovery_profile_display_name, '当前原生配置') + '。'),
+			E('p', {}, '只有原生配置确实无法恢复时，才会停止代理后端并恢复网络直通。'),
 			E('div', { 'class': 'right' }, [
 				E('button', { 'class': 'btn', 'click': ui.hideModal }, '取消'), ' ',
 				E('button', { 'class': 'btn cbi-button-action', 'click': function() { return self.runOnboarding(); } }, '确认接管')
@@ -1400,8 +1426,8 @@ return view.extend({
 		const copy = {
 			enable: [ '启用 NetFleet', '将按当前设备策略生成运行配置，并在网络检查和设备状态确认通过后接管网络出口。', '确认启用' ],
 			select: [ '重新自动选优', '将按依赖顺序执行一轮有界测速和原子选择，并恢复后台周期选优。', '开始选优' ],
-			refresh: [ '立即更新机场订阅', '将逐个调用 Nikki 官方更新器；失败的机场继续使用旧缓存，发生变化时才重载并重新选优。', '开始更新' ],
-			disable: [ '关闭 NetFleet', '将优先恢复原生配置；只有原生配置无法恢复时，才停止 Nikki 并恢复网络直通。', '确认关闭' ]
+			refresh: [ '立即更新机场订阅', '将逐个更新机场订阅；失败的机场继续使用旧缓存，发生变化时才重载并重新选优。', '开始更新' ],
+			disable: [ '关闭 NetFleet', '将优先恢复原生配置；只有原生配置无法恢复时，才停止 ' + backendName(this.status) + ' 并恢复网络直通。', '确认关闭' ]
 			}[action];
 		ui.showModal(copy[0], [
 			E('p', {}, copy[1]),

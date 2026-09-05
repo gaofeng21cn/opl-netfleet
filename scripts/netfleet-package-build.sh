@@ -91,6 +91,9 @@ mkdir -p "$payload/usr/libexec" "$payload/usr/libexec/rpcd" \
 cp -R "$work/openwrt/files/usr/libexec/opl-netfleet" "$payload/usr/libexec/"
 cp "$work/openwrt/files/usr/libexec/rpcd/opl-netfleet" "$payload/usr/libexec/rpcd/opl-netfleet"
 cp "$work/openwrt/files/etc/init.d/opl-netfleet" "$payload/etc/init.d/opl-netfleet"
+cp "$work/openwrt/files/etc/init.d/opl-netfleet-core" "$payload/etc/init.d/opl-netfleet-core"
+cp -R "$work/openwrt/files/usr/share/opl-netfleet/." "$payload/usr/share/opl-netfleet/"
+cp "$work/openwrt/files/etc/config/netfleet" "$payload/usr/share/opl-netfleet/netfleet.config"
 cp -R "$work/openwrt/files/etc/opl-netfleet/." "$payload/etc/opl-netfleet/"
 cp "$build_identity" "$payload/usr/share/opl-netfleet/build.json"
 cp -R "$work/openwrt/luci-app-netfleet/htdocs/." "$payload/www/"
@@ -104,7 +107,7 @@ grep -Fq "\"path\": \"netfleet/overview-${view_version}\"" \
 find "$payload" -type f -exec chmod 0644 {} +
 chmod 0755 "$payload/usr/libexec/opl-netfleet/main.uc" \
   "$payload/usr/libexec/opl-netfleet/supervisor.uc" \
-  "$payload/usr/libexec/rpcd/opl-netfleet" "$payload/etc/init.d/opl-netfleet"
+  "$payload/usr/libexec/rpcd/opl-netfleet" "$payload/etc/init.d/opl-netfleet" "$payload/etc/init.d/opl-netfleet-core"
 files_manifest=$output/FILES.sha256
 : >"$files_manifest"
 while IFS= read -r path; do

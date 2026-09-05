@@ -1,0 +1,69 @@
+#!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+START=95
+STOP=05
+gateway=/usr/libexec/opl-netfleet/application/native_gateway.uc
+
+extra_command update_subscription 'Refresh one configured native subscription'
+
+start_service() {
+	[ ! -e /tmp/opl-netfleet-package-upgrade-state ] || [ "${NETFLEET_PACKAGE_RESTORE:-0}" = 1 ] || return 0
+	ucode "$gateway" prepare >/dev/null || return 1
+	config_load netfleet
+	local max_procs mem_limit safe_paths
+	config_get max_procs procd env_go_max_procs
+	config_get mem_limit procd env_go_mem_limit
+	config_get safe_paths procd env_safe_paths
+	procd_open_instance core
+	procd_set_param command /usr/bin/mihomo -d /etc/opl-netfleet/native/run -f /etc/opl-netfleet/native/run/config.yaml
+	procd_set_param respawn 3600 5 5
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_set_param term_timeout 5
+	local resource soft hard
+	for resource in nproc address_space data stack nofile; do
+		config_get soft procd "rlimit_${resource}_soft"
+		config_get hard procd "rlimit_${resource}_hard"
+		[ "$resource" != nofile ] || { soft=${soft:-65536}; hard=${hard:-65536}; }
+		[ "$resource" != address_space ] || resource=as
+		procd_append_param limits "$resource=${soft:-unlimited} ${hard:-unlimited}"
+	done
+	procd_append_param env GOMAXPROCS="$max_procs" GOMEMLIMIT="$mem_limit" SAFE_PATHS="$safe_paths"
+	local option value variable
+	for option in disable_loopback_detector disable_quic_go_gso disable_quic_go_ecn skip_system_ipv6_check; do
+		config_get_bool value procd "env_$option" 0
+		case "$option" in
+			disable_loopback_detector) variable=DISABLE_LOOPBACK_DETECTOR ;;
+			disable_quic_go_gso) variable=QUIC_GO_DISABLE_GSO ;;
+			disable_quic_go_ecn) variable=QUIC_GO_DISABLE_ECN ;;
+			skip_system_ipv6_check) variable=SKIP_SYSTEM_IPV6_CHECK ;;
+		esac
+		procd_append_param env "$variable=$value"
+	done
+	procd_close_instance
+}
+
+service_started() {
+	if ! ucode "$gateway" attach >/dev/null; then
+		ucode "$gateway" cleanup >/dev/null
+		procd_kill opl-netfleet-core
+		return 1
+	fi
+}
+
+stop_service() {
+	ucode "$gateway" cleanup >/dev/null
+}
+
+service_stopped() {
+	ucode "$gateway" cleanup >/dev/null
+}
+
+update_subscription() {
+	ucode -e 'import { update } from "/usr/libexec/opl-netfleet/application/subscriptions.uc"; exit(update(ARGV[0]) ? 0 : 1);' "$1"
+}
+
+service_triggers() {
+	procd_add_reload_trigger netfleet
+}

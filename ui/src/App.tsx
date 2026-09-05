@@ -185,7 +185,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
   }
 
   const visibleEvents = events || { events: [] };
-  const healthy = Boolean(status.runtime.mihomo_running && status.runtime.nikki_enabled && status.runtime.controller_available &&
+  const healthy = Boolean(status.runtime.mihomo_running && status.runtime.backend_enabled && status.runtime.controller_available &&
     (!status.active || (status.runtime.netfleet_present && status.runtime.lan_runtime?.transparent_proxy_ready)));
   const dashboardReady = Boolean(status.runtime.mihomo_running && status.runtime.controller_available && status.runtime.lan_runtime?.dashboard_lan_ready);
   const title = { overview: '网络概览', exits: '出口', providers: '机场', regions: '地区', config: '配置', events: '事件与诊断' }[view];

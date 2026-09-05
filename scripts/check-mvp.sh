@@ -19,6 +19,10 @@ if command -v ucode >/dev/null 2>&1; then
 	ucode "$root_dir/tests/native_core_contract.uc"
 	ucode "$root_dir/tests/config_contract.uc"
 	ucode "$root_dir/tests/onboarding_contract.uc"
+	ucode "$root_dir/tests/backend_contract.uc"
+	ucode "$root_dir/tests/backend_migration_contract.uc"
+	ucode "$root_dir/tests/subscriptions_contract.uc"
+	ucode "$root_dir/tests/native_setup_contract.uc"
 else
 	printf '%s\n' 'ucode unavailable; run this gate on OpenWrt or provide UCODE in CI.' >&2
 	exit 2

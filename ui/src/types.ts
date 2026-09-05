@@ -153,8 +153,9 @@ export interface StatusSnapshot {
   recovery_profile_display_name?: string | null;
   native_runtime?: Record<string, unknown> | null;
   runtime: {
+    backend?: { id: string; display_name: string };
     mihomo_running?: boolean;
-    nikki_enabled?: boolean;
+    backend_enabled?: boolean;
     netfleet_present?: boolean;
     controller_available?: boolean;
     lan_runtime?: {
@@ -241,10 +242,10 @@ export interface DecisionEvent {
 
 export interface EventsSnapshot {
   events: DecisionEvent[];
-  nikki_lines?: string[];
+  core_lines?: string[];
   store_valid?: boolean;
   store_error?: string | null;
-  nikki_lines_persistent?: boolean;
+  core_lines_persistent?: boolean;
   display_names?: {
     capabilities?: Record<string, string>;
     providers?: Record<string, string>;

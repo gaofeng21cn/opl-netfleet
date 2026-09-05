@@ -187,10 +187,11 @@ const evidence = {
 };
 const result = build(policy, manifest, state, evidence, {
 	build: { version: "0.3.0", source_commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", source_tree: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+	backend: { id: "native-mihomo", display_name: "NetFleet + Mihomo" },
 	active: true,
 	profile: "file:OPL-NetFleet.json",
 	netfleet_present: true,
-	nikki_enabled: true,
+	backend_enabled: true,
 	mihomo_running: true,
 	quotas: {
 		alpha: { state: "available", remaining_bytes: 10 },
@@ -228,13 +229,19 @@ const result = build(policy, manifest, state, evidence, {
 		}
 });
 
+if (result.runtime.backend?.id != "native-mihomo" || result.runtime.backend_enabled != true ||
+	result.runtime.nikki_enabled != null) {
+	print("backend_runtime_projection_failed\n");
+	exit(1);
+}
+
 const stale_evidence = json(sprintf("%J", evidence));
 stale_evidence.identity.artifact_sha256 = "stale";
 const stale_evidence_result = build(policy, manifest, state, stale_evidence, {
 	active: true,
 	profile: "file:OPL-NetFleet.json",
 	netfleet_present: true,
-	nikki_enabled: true,
+	backend_enabled: true,
 	mihomo_running: true,
 	quotas: {}
 });
@@ -245,7 +252,7 @@ const missing_inventory_result = build(policy, manifest, missing_inventory_state
 	active: true,
 	profile: "file:OPL-NetFleet.json",
 	netfleet_present: true,
-	nikki_enabled: true,
+	backend_enabled: true,
 	mihomo_running: true,
 	quotas: {}
 });
@@ -259,7 +266,7 @@ const legacy_result = build(policy, legacy_manifest, legacy_state, evidence, {
 	active: true,
 	profile: "file:OPL-NetFleet.json",
 	netfleet_present: true,
-	nikki_enabled: true,
+	backend_enabled: true,
 	mihomo_running: true,
 	quotas: {}
 });
@@ -349,7 +356,7 @@ const lagging_ancestor_result = build(policy, manifest, lagging_ancestor_state, 
 	active: true,
 	profile: "file:OPL-NetFleet.json",
 	netfleet_present: true,
-	nikki_enabled: true,
+	backend_enabled: true,
 	mihomo_running: true,
 	quotas: {}
 });
@@ -366,7 +373,7 @@ const lagging_provider_result = build(policy, manifest, lagging_provider_state, 
 	active: true,
 	profile: "file:OPL-NetFleet.json",
 	netfleet_present: true,
-	nikki_enabled: true,
+	backend_enabled: true,
 	mihomo_running: true,
 	quotas: {}
 });
@@ -383,7 +390,7 @@ const unavailable_terminal_result = build(policy, manifest, unavailable_terminal
 	active: true,
 	profile: "file:OPL-NetFleet.json",
 	netfleet_present: true,
-	nikki_enabled: true,
+	backend_enabled: true,
 	mihomo_running: true,
 	quotas: {}
 });
@@ -399,7 +406,7 @@ const fallback_result = build(policy, manifest, fallback_state, evidence, {
 	active: true,
 	profile: "file:OPL-NetFleet.json",
 	netfleet_present: true,
-	nikki_enabled: true,
+	backend_enabled: true,
 	mihomo_running: true,
 	quotas: {}
 });
@@ -418,7 +425,7 @@ const direct_result = build(policy, manifest, direct_state, evidence, {
 	active: true,
 	profile: "file:OPL-NetFleet.json",
 	netfleet_present: true,
-	nikki_enabled: true,
+	backend_enabled: true,
 	mihomo_running: true,
 	quotas: {}
 });
@@ -436,7 +443,7 @@ const manual_result = build(policy, manifest, manual_state, evidence, {
 	active: true,
 	profile: "file:OPL-NetFleet.json",
 	netfleet_present: true,
-	nikki_enabled: true,
+	backend_enabled: true,
 	mihomo_running: true,
 	quotas: {}
 });
@@ -451,7 +458,7 @@ if (manual_result.capabilities[0].data_path != "manual_region" ||
 const passthrough_result = build(policy, manifest, { proxies: {} }, evidence, {
 	active: false,
 	profile: "subscription:base",
-	nikki_enabled: false,
+	backend_enabled: false,
 	mihomo_running: false,
 	cleanup: { ok: true },
 	quotas: {}
@@ -469,7 +476,7 @@ const stale_owner_result = build(policy, manifest, state, evidence, {
 	active: false,
 	profile: "subscription:base",
 	netfleet_present: true,
-	nikki_enabled: true,
+	backend_enabled: true,
 	mihomo_running: true,
 	quotas: {}
 });
@@ -490,7 +497,7 @@ const native_owner_result = build(policy, manifest, native_state, evidence, {
 	profile_display_name: "Base 正式机场",
 	recovery_profile_display_name: "Base 正式机场",
 	netfleet_present: false,
-	nikki_enabled: true,
+	backend_enabled: true,
 	mihomo_running: true,
 	quotas: {}
 });
@@ -500,7 +507,7 @@ const uncompiled_owner_result = build(policy, uncompiled_manifest, state, eviden
 	active: true,
 	profile: "file:OPL-NetFleet.json",
 	netfleet_present: true,
-	nikki_enabled: true,
+	backend_enabled: true,
 	mihomo_running: true,
 	quotas: {}
 });

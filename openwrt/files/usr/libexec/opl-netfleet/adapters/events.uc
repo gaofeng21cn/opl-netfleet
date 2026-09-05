@@ -1,5 +1,6 @@
 import { popen } from "fs";
 import { mkdir, read_json, shell_quote, write_text } from "./uci.uc";
+import { KIND, LOG_PATH, SERVICE } from "./runtime.uc";
 
 export const EVENTS_PATH = "/var/lib/opl-netfleet/events.json";
 
@@ -16,8 +17,9 @@ export function write_events(store) {
 	return system(`mv -f ${shell_quote(temporary)} ${shell_quote(EVENTS_PATH)}`) == 0;
 };
 
-export function nikki_netfleet_lines(group_names) {
-	const process = popen("tail -n 512 /var/log/nikki/core.log 2>/dev/null");
+export function core_netfleet_lines(group_names) {
+	const command = KIND == "native-mihomo" ? `logread -e ${shell_quote(SERVICE)} | tail -n 512` : `tail -n 512 ${shell_quote(LOG_PATH)}`;
+	const process = popen(`${command} 2>/dev/null`);
 	if (!process) return [];
 	let result = [];
 	for (;;) {

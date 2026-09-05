@@ -1,5 +1,5 @@
 import { read_yaml, subscription_exists, subscription_display_name, subscription_quota, shell_quote } from "../adapters/uci.uc";
-import { resolve_profile, provider_runtime_path } from "../adapters/nikki.uc";
+import { resolve_profile, provider_runtime_path } from "../adapters/backend.uc";
 
 export function load(policy) {
 	const result = {};

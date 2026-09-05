@@ -5,6 +5,13 @@
 'require rpc';
 
 const calls = {
+	nativeSetupGet: rpc.declare({ object: 'opl-netfleet', method: 'native_setup_get' }),
+	nativeSetupApply: rpc.declare({ object: 'opl-netfleet', method: 'native_setup_apply', params: [ 'request' ] }),
+	dashboardGet: rpc.declare({ object: 'opl-netfleet', method: 'dashboard_get' }),
+	subscriptionsGet: rpc.declare({ object: 'opl-netfleet', method: 'subscriptions_get' }),
+	subscriptionsSet: rpc.declare({ object: 'opl-netfleet', method: 'subscriptions_set', params: [ 'request' ] }),
+	migrationGet: rpc.declare({ object: 'opl-netfleet', method: 'migration_get' }),
+	migrationApply: rpc.declare({ object: 'opl-netfleet', method: 'migration_apply', params: [ 'request' ] }),
 	onboardingGet: rpc.declare({ object: 'opl-netfleet', method: 'onboarding_get' }),
 	onboardingApply: rpc.declare({ object: 'opl-netfleet', method: 'onboarding_apply', params: [ 'request' ] }),
 	status: rpc.declare({ object: 'opl-netfleet', method: 'status' }),
@@ -34,7 +41,7 @@ function executeRequest(method, request) {
 	return calls[method](request).then(function(response) {
 		if (!response || response.ok !== true) {
 			const error = new Error(response?.error || 'operation_failed');
-			error.detail = response?.detail || null;
+			error.detail = response?.detail || response?.result || null;
 			throw error;
 		}
 		return response.result;
@@ -62,6 +69,19 @@ function withRpcTimeout(seconds, callback) {
 }
 
 return baseclass.extend({
+	nativeSetupGet: function() { return execute('nativeSetupGet'); },
+	nativeSetupApply: function(request) {
+		return withRpcTimeout(300, function() { return executeRequest('nativeSetupApply', request); });
+	},
+	dashboardGet: function() { return execute('dashboardGet'); },
+	subscriptionsGet: function() { return execute('subscriptionsGet'); },
+	subscriptionsSet: function(request) {
+		return withRpcTimeout(300, function() { return executeRequest('subscriptionsSet', request); });
+	},
+	migrationGet: function() { return execute('migrationGet'); },
+	migrationApply: function(request) {
+		return withRpcTimeout(300, function() { return executeRequest('migrationApply', request); });
+	},
 	onboardingGet: function() { return execute('onboardingGet'); },
 	onboardingApply: function(request) {
 		return withRpcTimeout(300, function() { return executeRequest('onboardingApply', request); });

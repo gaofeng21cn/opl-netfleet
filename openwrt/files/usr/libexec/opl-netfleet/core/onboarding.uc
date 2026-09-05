@@ -62,9 +62,9 @@ export function discover(input) {
 	else if (profile_ref == "file:OPL-NetFleet.json")
 		add_blocker(blockers, "netfleet_profile_already_selected", null);
 	if (type(profile) != "object") add_blocker(blockers, "current_profile_unreadable", null);
-	if (input?.nikki_enabled != true) add_blocker(blockers, "nikki_disabled", null);
+	if (input?.backend_enabled != true) add_blocker(blockers, "backend_disabled", null);
 	if (input?.mihomo_running != true || input?.runtime_valid != true)
-		add_blocker(blockers, "nikki_runtime_unhealthy", null);
+		add_blocker(blockers, "backend_runtime_unhealthy", null);
 	if (input?.controller_ready != true) add_blocker(blockers, "mihomo_controller_unavailable", null);
 	if (input?.generated_artifacts_present == true)
 		add_blocker(blockers, "existing_generated_artifacts", null);
