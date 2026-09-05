@@ -156,12 +156,43 @@ openssl x509 -req -sha256 -days 1 \
 	-out "$work/local-probe-server.crt" >/dev/null 2>&1
 python3 - "$work/local-probe-server.crt" "$work/local-probe-server.key" "$probe_port" >"$work/local-probe.log" 2>&1 <<'PY' &
 import http.server
+import json
 import ssl
 import sys
+from urllib.parse import urlsplit, parse_qs
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        url = urlsplit(self.path)
+        if url.path.startswith("/native-subscriptions/"):
+            if parse_qs(url.query).get("token") != ["vm-only-credential"]:
+                self.send_error(403)
+                return
+            kind = url.path.rsplit("/", 1)[-1]
+            if kind == "redirect":
+                self.send_response(302)
+                self.send_header("Location", "http://127.0.0.1/blocked-downgrade")
+                self.end_headers()
+                return
+            if kind == "missing":
+                self.send_error(404)
+                return
+            body = json.dumps({"proxies": [{"name": "native-region-node", "type": "socks5",
+                "server": "127.0.0.1", "port": 1081, "udp": True}],
+                "dns": {"enable": True}, "mixed-port": 1111, "rules": ["MATCH,REJECT"]}).encode()
+            if kind == "invalid":
+                body = b"proxies: [not valid yaml"
+            elif kind == "bad-node":
+                body = b'{"proxies":[{"name":"bad","type":"not-a-proxy"}]}'
+            elif kind == "empty":
+                body = b'{"proxies":[]}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         self.send_response(204)
         self.end_headers()
 

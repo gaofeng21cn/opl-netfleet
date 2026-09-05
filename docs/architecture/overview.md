@@ -13,12 +13,13 @@ NetFleet 当前是 OpenWrt + Nikki + Mihomo 的可选增强层。第一阶段 Su
 `update_subscription` 的显式/定期刷新编排；Nikki 继续拥有订阅 URL/token、下载、格式校验、
 单机场 cache 原子替换、Mihomo 生命周期、DNS、nft 和路由。Mihomo 继续拥有节点连接、组内
 健康检查和 URLTest。NetFleet 另外只增加显式出口绑定、跨机场和地区的资源组织、可验证的
-选择，以及安全的生成、启用、恢复事务。这不是原生独立订阅 owner，也不接管数据面。
+选择，以及安全的生成、启用、恢复事务。这条运行链不接管数据面。另有只经显式 root CLI
+调用的[原生订阅准备 owner](domain-model.md#原生订阅准备)，不改变当前 Nikki 运行链。
 
 当前仓库包含 UCode runtime、OpenWrt package source、薄 rpcd 适配器、原生 LuCI 页面，
 以及一个由 `procd` 直接监督的前台 supervisor。设备配置可以在已有 Nikki subscription、
 共享地区目录和当前 Policy Source 组边界内维护完整 NetFleet policy 结构，但不接触订阅凭据、
-自定义地区正则、Nikki mixin 或 OpenWrt platform。当前没有第二订阅下载器、远程 Host、
+自定义地区正则、Nikki mixin 或 OpenWrt platform。当前没有并行订阅刷新循环、远程 Host、
 第二选择器、后台投影、原生 sing-box 后端或内置 Zashboard。
 
 当前运行后端身份是 `nikki-mihomo`，不是永久产品身份。NetFleet 只有在 successor 已完整
@@ -58,7 +59,8 @@ RecoveryProfileRef
 3. NetFleet 未安装、未启用、崩溃或被卸载时，OpenWrt 基础联网必须仍可独立恢复。
 4. disable、事务回滚和进程级恢复优先恢复独立的 Recovery Profile；原生 runtime 仍失败时，
    才允许 Nikki 官方 stop/cleanup 恢复网络直通。
-5. NetFleet 不自行清理 DNS、nft 或路由，也不建立第二套订阅、选择历史或恢复循环。
+5. NetFleet 当前运行链不自行清理 DNS、nft 或路由，不对 Nikki cache 建立第二 writer，
+   原生准备缓存不参与当前选路或恢复。
 6. 每项状态和 mutation 只有一个 owner；投影不得反向成为事实源。
 7. 设备软件操作不授权重启、关机、系统升级、固件写入或依赖现场才能撤销的动作。
 8. source 测试、package 构建和设备运行分别是不同证据层，不能互相替代。
@@ -98,7 +100,7 @@ successor 已接管真实 caller；caller-zero 后在同一批次删除实现、
 ## 禁止重新引入
 
 - 完整 NetFleet 流量分类目录，或按机场、地区、节点和基础组名称猜测行为；
-- 第二订阅下载器、节点副本、LKG、generation、排名库或第二事实投影；
+- 为同一运行来源建立第二下载器、节点副本、排名库或第二事实投影；
 - 多个后台循环、worker 身份链或与 activation owner 竞争的 mutation owner；
 - 综合评分、固定 Top-N、入口 ICMP 代替出口 RTT，或把历史平均值用于当前选择；
 - 自动激活、后台 compile、健康期无触发的全地区扫描；

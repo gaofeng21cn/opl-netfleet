@@ -3,6 +3,33 @@
 本文是 NetFleet 当前产品边界、核心对象、唯一 owner 和依赖方向的权威合同。测量与选择、
 运行事务和公开接口分别由同目录其他文档负责。
 
+除“原生订阅准备”一节外，本文的订阅和生命周期边界均指当前 `nikki-mihomo` 运行链。
+
+## 原生订阅准备
+
+`main.uc` 的显式 root CLI 是原生来源准备的唯一入口，`application/native_sources.uc`
+承载同一进程内的保存、下载与缓存事务；不经 LuCI/RPC，不由 supervisor 自动调度。
+它只写 `/etc/opl-netfleet/native/`，不读取、复制或修改 Nikki 的 URL、UCI、cache、Profile，
+不消费现有 policy，也不启动、重载或切换数据面。准备成功不代表已完成原生接管。
+
+私有 `sources.json` 保存 `schema_version: 1` 与 `sources` 数组，每项明确提供稳定 `id`、
+`display_name`、HTTPS `url`、`enabled` 和可选 `user_agent`；只接受 Mihomo YAML/JSON
+订阅中的非空 `proxies`，不接受远端规则、DNS、监听器或 provider 下载声明作为本地配置。
+该文件与 Fleet deployment bundle 的 `subscriptions.json` 不是同一合同。凭据只能由
+root 私有文件输入，目录 `0700`、文件 `0600`，不进入参数、返回值、日志或 Git。
+
+来源保存和刷新与现有部署、选优共用同一个设备 mutation lock。下载仅允许 HTTPS，
+重定向不得降级；使用系统 CA、显式直连、有界时间与大小，不继承代理环境。
+下载结果经只读 YAML 转换和真实 `mihomo -t` 校验后，才原子替换单来源缓存。
+每个 `cache/<id>.json` 同时保存节点、内容摘要、来源身份、最近尝试、最近成功和变化时间；
+它可以直接作为 Mihomo file provider 输入，不维护第二份可变节点文件。
+未变化内容保留内容摘要和变化时间，只更新成功读取时间；失败保留上一份有效节点，
+记录脱敏错误并继续其他来源。来源 URL 或 user-agent 改变后，旧缓存不得被标为当前来源
+就绪或继承其成功时间；删除来源同时删除该来源缓存。显示名与启用开关不改变内容身份。
+
+该准备 owner 不替代当前 Nikki refresh，两个入口不能同时写一份来源缓存。后续正式原生
+activation 必须接管这些输入并负责运行时应用，不能让准备命令绕过 active 更新事务。
+
 ## 产品定位
 
 OpenWrt + Nikki + Mihomo 必须在没有 NetFleet 时独立提供可用网络。NetFleet 只是可选增强层：独立安装模式从设备上已经验证可用的 Nikki 当前 Profile 和稳定命名 subscription 自动生成初始 policy；声明式 Fleet 模式仍可使用机场无关的 `PolicySource(kind=bundle)`。独立的 `RecoveryProfileRef` 提供退出和故障恢复目标。NetFleet 只对用户确认接管的流量组增加多 provider、多地区出口能力。

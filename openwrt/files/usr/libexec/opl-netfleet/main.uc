@@ -19,6 +19,7 @@ import { load as load_provider_profile_result } from "./application/providers.uc
 import { get as onboarding_get, apply as onboarding_apply } from "./application/onboarding.uc";
 import { get as config_get, validate as config_validate, save as config_save, apply as config_apply } from "./application/configuration.uc";
 import { ok, fail } from "./output.uc";
+import { run as native_sources } from "./application/native_sources.uc";
 
 const REFRESH_DIR = "/tmp/opl-netfleet-subscription-refresh";
 const MAIN_PATH = "/usr/libexec/opl-netfleet/main.uc";
@@ -2211,6 +2212,10 @@ function disable_without_policy(action_name) {
 };
 
 const action = ARGV[0] ?? "";
+if (index(["native-sources-get", "native-sources-set", "native-sources-refresh"], action) >= 0) {
+	native_sources(action, ARGV[1]);
+	exit(0);
+}
 if (action == "events") {
 	events_action();
 	exit(0);

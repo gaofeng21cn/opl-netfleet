@@ -3,6 +3,19 @@
 本文是 NetFleet 当前 RPC、状态投影、React 本地参考面、原生 LuCI 页面和浏览器缓存边界的
 权威合同。视觉语言由 [UI 设计合同](../design/ui.md)负责。
 
+## 原生准备 CLI
+
+原生来源只提供 root CLI：`main.uc native-sources-get` 返回脱敏来源和缓存状态；
+`main.uc native-sources-set <private-json-file>` 完整保存来源清单；
+`main.uc native-sources-refresh [source-id]` 刷新指定来源或全部启用来源。
+set/refresh 内部取得现有全局 mutation lock，锁忙时零写入拒绝，调用者不得重复包裹同一锁。
+返回值只包含来源 ID、显示名、启用状态、就绪状态、节点数、内容摘要、更新时间和错误代码；
+不返回 URL、user-agent、节点或上游错误正文。非法输入只报告字段错误和条目位置。
+这些入口无需已存在 policy 或运行中的 Nikki，但只完成[原生订阅准备](domain-model.md#原生订阅准备)，
+不允许由现有 RPC、React 桥接或 supervisor 隐式调用。
+
+## 当前运行接口
+
 原生 LuCI 是当前第一个真实公开 caller，接口只提供：
 
 - `status`：一次读取 policy、manifest、最近一次 evidence、服务状态、package 自有 build identity（source 部署时回退部署器原子持久化身份），以及 Mihomo `/proxies` 和 `/providers/proxies` 各一次；安装身份只投影经过格式校验的 NetFleet 版本、source commit 和 source tree，供用户确认当前设备字节并用于静态资源缓存失效，不参与运行决策；`apk upgrade` 后 package identity 必须优先于可能仍属于上一次声明式部署的 `installed.json`，避免状态页继续报告旧代码；当前已承载流量的 capability 以健康的生成 URLTest 组、组内当前成员和 manifest 绑定 source 中唯一的真实代理身份投影当前叶子，`/providers/proxies` 的节点 `alive` 只补充下一轮候选与机场/地区库存健康，不能用可能滞后的单节点健康位推翻当前组和独立 protected probes 已证明的实际路径；机场节点库存按 manifest 绑定的 source 从 `/providers/proxies` 读取、按节点名去重并独立投影 `available_node_count/node_count/node_count_known`，不能把跨 capability 的地区候选组 `available_count/candidate_count` 标成节点；同一读取还经第一阶段 SubscriptionOwner 投影顶层 `subscriptions`：每个已启用订阅只返回 `section`/`ref`、`display_name`、`cache_present`、`cache_sha256`、原始 `node_count`、`quota`、`last_attempt`、`last_success` 和 `last_result`，用于解释订阅条目与 Mihomo 已加载节点的差异；`last_success` 优先取最近一次 NetFleet 成功刷新事件，尚无事件时回退到设备上 Nikki 订阅缓存的实际修改时间，不使用测量时间或摘要推断；机场投影通过 `subscription_section` 明确引用对应条目，UI 不按显示名猜测绑定；不得返回 URL、token、节点名称或订阅正文；该读取不测速、不探测、不修改 selector；

@@ -12,7 +12,7 @@ define Package/opl-netfleet
   SECTION:=net
   CATEGORY:=Network
   TITLE:=OPL NetFleet minimal enhancement layer
-  DEPENDS:=+ucode +yq +mihomo
+  DEPENDS:=+ucode +yq +mihomo +curl +ca-bundle
   PKGARCH:=all
 endef
 

@@ -4,6 +4,9 @@
 权威合同。对象身份见[产品对象与 Owner](domain-model.md)，选择规则见
 [测量、资格与选择](selection.md)。
 
+本文描述当前 `nikki-mihomo` 运行链。独立的[原生订阅准备](domain-model.md#原生订阅准备)
+只写候选缓存，不调用本文的 compile、enable、refresh 或恢复事务。
+
 ## 唯一纵向链
 
 ```text

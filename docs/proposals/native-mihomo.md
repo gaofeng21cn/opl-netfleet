@@ -8,8 +8,8 @@ OpenWrt 数据面的独立运行产品；在两个真实后端完成后，再从
 ## 当前差距
 
 当前 `nikki-mihomo` 路径仍把 SubscriptionOwner、RuntimeBackend 和 OpenWrtDataPlaneOwner
-委托给 Nikki/Mihomo。source 没有原生订阅 owner、`native-mihomo` 激活链、sing-box adapter
-或运行后端切换，因此这些能力不得出现在当前 UI 或发布说明中。
+委托给 Nikki/Mihomo。source 已有[原生订阅准备](../architecture/domain-model.md#原生订阅准备)，
+但没有正式 `native-mihomo` 激活链、sing-box adapter 或运行后端切换，不能把准备成功显示为已接管。
 
 ## 最小实现顺序
 

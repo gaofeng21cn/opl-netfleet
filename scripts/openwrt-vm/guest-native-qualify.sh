@@ -46,6 +46,8 @@ apk --timeout 120 add curl ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket soc
 gzip -dc /tmp/mihomo-linux-arm64-v1.19.30.gz >"$work/bin/mihomo"
 chmod 0755 "$work/bin/mihomo"
 ln "$work/bin/mihomo" "$work/bin/nf-proxy-fixture"
+cp /tmp/yq_linux_arm64-v4.53.6 "$work/bin/yq"
+chmod 0755 "$work/bin/yq"
 export PATH="$work/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 
@@ -104,13 +106,34 @@ helper_pid=$!
 
 stage=compile_without_nikki
 cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
+mkdir -p /etc/opl-netfleet
+cat /tmp/local-probe.crt >>/etc/ssl/certs/ca-certificates.crt
+main=/usr/libexec/opl-netfleet/main.uc
+stage=native_source_owner
+ucode "$main" native-sources-get >"$work/source-empty.json"
+cat >"$work/sources.json" <<EOF
+{"schema_version":1,"sources":[{"id":"fixture","display_name":"VM source","enabled":true,"url":"https://192.168.1.2:$probe_port/native-subscriptions/valid?token=vm-only-credential"}]}
+EOF
+chmod 0600 "$work/sources.json"
+ucode "$main" native-sources-set "$work/sources.json" >"$work/source-set.json"
+ucode "$main" native-sources-refresh >"$work/source-refresh.json"
+[ "$(jsonfilter -i "$work/source-refresh.json" -e '@.result.sources[0].ready')" = true ]
+[ "$(jsonfilter -i "$work/source-refresh.json" -e '@.result.sources[0].last_result')" = updated ]
+ucode "$main" native-sources-refresh fixture >"$work/source-unchanged.json"
+[ "$(jsonfilter -i "$work/source-unchanged.json" -e '@.result.sources[0].last_result')" = unchanged ]
+cache=/etc/opl-netfleet/native/cache/fixture.json
+[ "$(stat -c %a "$cache")" = 600 ]
+[ "$(stat -c %a /etc/opl-netfleet/native)" = 700 ]
+if grep -q 'vm-only-credential' "$work/source-set.json" "$work/source-refresh.json" "$cache"; then exit 1; fi
+if jsonfilter -i "$cache" -e '@.dns' | grep -q .; then exit 1; fi
+stage=compile_without_nikki
 cat >"$work/compile.uc" <<'EOF'
 import { compile } from "/usr/libexec/opl-netfleet/core/compiler.uc";
 import * as fs from "fs";
 const dir = "/tmp/netfleet-native-fixture";
 const probe_url = ARGV[0];
-const nodes = { proxies: [{ name: "native-region-node", type: "socks5", server: "127.0.0.1", port: 1081, udp: true }] };
-fs.writefile(`${dir}/run/provider.json`, sprintf("%J", nodes));
+const cache = "/etc/opl-netfleet/native/cache/fixture.json";
+const nodes = json(fs.readfile(cache));
 const source = {
  "proxy-groups": [{ name: "Outbound", type: "select", proxies: ["DIRECT"] }],
  rules: ["MATCH,Outbound"]
@@ -130,7 +153,7 @@ const policy = {
   probes: [{ id: "test", url: probe_url, expected_status: 204 }] }
 };
 const result = compile(source, policy, "fixture", "fixture", "fixture", {
- fixture: { path: `${dir}/run/provider.json`, runtime_path: `${dir}/run/provider.json`, profile: nodes }
+ fixture: { path: cache, runtime_path: cache, profile: nodes }
 });
 if (!result.ok) die(sprintf("%J", result.errors));
 const config = result.profile;
