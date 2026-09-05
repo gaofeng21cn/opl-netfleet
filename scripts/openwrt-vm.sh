@@ -12,6 +12,7 @@ The VM uses a synthetic Nikki lifecycle around real UCode/Mihomo and never conta
 Options:
   --ref <git-ref>   Source ref to qualify (default: origin/main)
   --packages <dir>  Also install and qualify the exact APK candidate directory
+  --native-experiment  Run the isolated native IPv4 data-plane experiment, not a release gate
   --output <path>   Qualification receipt path outside the repository
   -h, --help        Show this help
 EOF
@@ -25,6 +26,7 @@ die() {
 source_ref=origin/main
 output=""
 packages=""
+native_experiment=0
 while (($#)); do
 	case "$1" in
 		--ref)
@@ -42,6 +44,10 @@ while (($#)); do
 			packages=$2
 			shift 2
 			;;
+		--native-experiment)
+			native_experiment=1
+			shift
+			;;
 		-h|--help)
 			usage
 			exit 0
@@ -51,6 +57,7 @@ while (($#)); do
 done
 
 [[ -n "$output" ]] || die "--output is required"
+[[ "$native_experiment" == 0 || -z "$packages" ]] || die "native experiment cannot qualify packages"
 [[ "$source_ref" != -* ]] || die "source ref cannot begin with '-'"
 [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] ||
 	die "native QEMU qualification requires macOS on Apple Silicon"
@@ -101,6 +108,7 @@ git -C "$repo_dir" archive "$source_commit" \
 	scripts/openwrt-vm/guest-qualify.sh \
 	scripts/openwrt-vm/guest-runtime-qualify.sh \
 	scripts/openwrt-vm/guest-package-qualify.sh \
+	scripts/openwrt-vm/guest-native-qualify.sh \
 	scripts/install-netfleet.sh \
 	scripts/verify-netfleet-release.py |
 	tar -C "$source_dir" -xf -
@@ -136,19 +144,22 @@ NETFLEET_WORKSPACE=$source_dir \
 NETFLEET_VM_CACHE="$cache_root/opl-netfleet/openwrt-vm" \
 NETFLEET_QEMU_FIRMWARE=$firmware \
 NETFLEET_QEMU_VERSION=$qemu_version \
+	NETFLEET_NATIVE_EXPERIMENT=$native_experiment \
 	NETFLEET_PACKAGE_ARCHIVE="$package_archive" \
 	NETFLEET_PACKAGE_MANIFEST_SHA256="$package_manifest_sha" \
 	sh "$source_dir/scripts/openwrt-vm/qualify.sh"
 
 [[ -f "$output_dir/$output_name" ]] || die "qualification receipt was not produced"
-python3 - "$output_dir/$output_name" "$source_commit" "$source_tree" <<'PY'
+python3 - "$output_dir/$output_name" "$source_commit" "$source_tree" "$native_experiment" <<'PY'
 import json
 from pathlib import Path
 import sys
 
 receipt = json.loads(Path(sys.argv[1]).read_text())
+passed = (receipt.get("experiment_passed") is True and receipt.get("qualified") is False
+          if sys.argv[4] == "1" else receipt.get("qualified") is True)
 if not (
-    receipt.get("qualified") is True
+    passed
     and receipt.get("source_commit") == sys.argv[2]
     and receipt.get("source_tree") == sys.argv[3]
 ):

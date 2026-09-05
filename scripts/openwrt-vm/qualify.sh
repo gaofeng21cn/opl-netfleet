@@ -84,6 +84,7 @@ finish() {
 	if [ "$rc" -ne 0 ]; then
 		echo "OpenWrt qualification failed at stage: $stage" >&2
 		for dump in "$work"/guest-result.stderr "$work"/runtime-result.json "$work"/runtime-result.stderr \
+			"$work"/native-result.stderr \
 			"$work"/package-result.json "$work"/package-result.stderr "$qemu_log"; do
 			[ ! -s "$dump" ] || { echo "--- $dump" >&2; cat "$dump" >&2; }
 		done
@@ -351,6 +352,39 @@ actual_transfer=$(ssh $ssh_common root@127.0.0.1 \
 }
 ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf /tmp/runtime-source.tar && rm -f /tmp/runtime-source.tar'
 transfer_elapsed_ms=$(($(now_ms) - transfer_started_ms))
+if [ "${NETFLEET_NATIVE_EXPERIMENT:-0}" = 1 ]; then
+	stage=native_experiment
+	native_started_ms=$(now_ms)
+	tar -cf - -C "$workspace/scripts/openwrt-vm" guest-native-qualify.sh |
+		ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf -'
+	native_sha=$(sha256_file "$workspace/scripts/openwrt-vm/guest-native-qualify.sh")
+	ssh $ssh_common root@127.0.0.1 \
+		"test \"\$(sha256sum /tmp/guest-native-qualify.sh | awk '{print \$1}')\" = '$native_sha' && touch /tmp/netfleet-native-vm-authorized"
+	if ! ssh $ssh_common root@127.0.0.1 \
+		"sh /tmp/guest-native-qualify.sh '$source_commit' '$source_tree' '$probe_port'" \
+		>"$work/native-result.json" 2>"$work/native-result.stderr"; then
+		cat "$work/native-result.stderr" >&2
+		exit 1
+	fi
+	python3 - "$work/native-result.json" "$receipt" "$source_commit" "$source_tree" \
+		"$image_sha" "$mihomo_sha" "$(($(now_ms) - native_started_ms))" "$(($(now_ms) - total_started_ms))" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+result = json.loads(Path(sys.argv[1]).read_text())
+if not (result.get("ok") is True and result.get("production_ready") is False
+        and result.get("source_commit") == sys.argv[3] and result.get("source_tree") == sys.argv[4]
+        and result.get("checks") and all(value is True for value in result["checks"].values())):
+    raise SystemExit("Invalid native experiment result")
+result.update(schema="opl-netfleet-native-experiment.v1", qualified=False, experiment_passed=True,
+              openwrt_image_sha256=sys.argv[5], mihomo_sha256=sys.argv[6],
+              platform={"runner_arch": "arm64", "guest_arch": "aarch64", "accelerator": "hvf"},
+              metrics={"native_guest_ms": int(sys.argv[7]), "total_ms": int(sys.argv[8])})
+Path(sys.argv[2]).write_text(json.dumps(result, separators=(",", ":")) + "\n")
+PY
+	exit 0
+fi
 stage=management_guest
 management_started_ms=$(now_ms)
 if ! ssh $ssh_common root@127.0.0.1 \

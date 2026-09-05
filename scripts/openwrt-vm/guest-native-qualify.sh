@@ -1,0 +1,268 @@
+#!/bin/sh
+# Disposable native data-plane experiment. Never installed by either package.
+set -eu
+umask 077
+
+commit=${1:?}
+tree=${2:?}
+probe_port=${3:?}
+work=/tmp/netfleet-native-fixture
+stage=precondition
+helper_pid=
+dns_pid=
+udp_pid=
+test -f /tmp/netfleet-native-vm-authorized
+test ! -e /etc/init.d/nikki
+test -z "$(pidof mihomo 2>/dev/null || true)"
+mkdir -p "$work/bin" "$work/run"
+
+finish() {
+	rc=$?
+	trap - EXIT INT TERM
+	set +e
+	/etc/init.d/netfleet-native-vm stop >/dev/null 2>&1
+	for pid in "$helper_pid" "$dns_pid" "$udp_pid"; do
+		[ -z "$pid" ] || kill "$pid" 2>/dev/null
+	done
+	ip netns del nf-client 2>/dev/null
+	ip link del nf-lan 2>/dev/null
+	nft delete table ip netfleet_native_fixture 2>/dev/null
+	if [ "$rc" -ne 0 ]; then
+		echo "Native experiment failed at: $stage" >&2
+		for file in "$work"/*.log; do
+			[ ! -f "$file" ] || { echo "--- $file" >&2; tail -60 "$file" >&2; }
+		done
+	fi
+	exit "$rc"
+}
+trap finish EXIT INT TERM
+
+stage=dependencies
+ip route replace default via 192.168.1.2 dev br-lan
+printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
+apk --timeout 120 update >"$work/packages.log" 2>&1 || true
+apk --timeout 120 add curl ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket socat bind-dig \
+	>>"$work/packages.log" 2>&1
+gzip -dc /tmp/mihomo-linux-arm64-v1.19.30.gz >"$work/bin/mihomo"
+chmod 0755 "$work/bin/mihomo"
+ln "$work/bin/mihomo" "$work/bin/nf-proxy-fixture"
+export PATH="$work/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
+
+stage=isolated_lan
+ip netns add nf-client
+ip link add nf-lan type veth peer name nf-peer
+ip link set nf-peer netns nf-client
+ip addr add 198.18.0.1/30 dev nf-lan
+ip link set nf-lan up
+ip netns exec nf-client ip link set lo up
+ip netns exec nf-client ip addr add 198.18.0.2/30 dev nf-peer
+ip netns exec nf-client ip link set nf-peer up
+ip netns exec nf-client ip route add default via 198.18.0.1
+# The fixture redirects only router-originated traffic to local test servers.
+# A forwarded client request to the test address must fail without TProxy.
+nft -f - <<EOF
+table ip netfleet_native_fixture {
+	chain output {
+		type nat hook output priority -101; policy accept;
+		ip daddr 198.19.0.1 tcp dport $probe_port dnat to 192.168.1.2:$probe_port
+		ip daddr 198.19.0.1 udp dport 19999 dnat to 127.0.0.1:19999
+	}
+	chain forward {
+		type filter hook forward priority -1; policy accept;
+		iifname "nf-lan" ip daddr 198.19.0.1 counter reject
+	}
+}
+EOF
+dnsmasq --keep-in-foreground --port=1053 --listen-address=127.0.0.1 --bind-interfaces \
+	--no-resolv --no-hosts --address=/native-proof.test/203.0.113.42 \
+	--pid-file="$work/dns.pid" >"$work/dns.log" 2>&1 &
+dns_pid=$!
+socat UDP4-RECVFROM:19999,bind=127.0.0.1,fork EXEC:/bin/cat >"$work/udp.log" 2>&1 &
+udp_pid=$!
+cat >"$work/helper.json" <<'EOF'
+{"mixed-port":1081,"mode":"direct","log-level":"warning","ipv6":false}
+EOF
+"$work/bin/nf-proxy-fixture" -d "$work" -f "$work/helper.json" >"$work/helper.log" 2>&1 &
+helper_pid=$!
+
+stage=compile_without_nikki
+cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
+cat >"$work/compile.uc" <<'EOF'
+import { compile } from "/usr/libexec/opl-netfleet/core/compiler.uc";
+import * as fs from "fs";
+const dir = "/tmp/netfleet-native-fixture";
+const nodes = { proxies: [{ name: "native-region-node", type: "socks5", server: "127.0.0.1", port: 1081, udp: true }] };
+fs.writefile(`${dir}/run/provider.json`, sprintf("%J", nodes));
+const source = {
+ "proxy-groups": [{ name: "Outbound", type: "select", proxies: ["DIRECT"] }],
+ rules: ["MATCH,Outbound"]
+};
+const policy = {
+ schema_version: 2, main: { target: "vm-fixture", enabled: true },
+ policy_source: { kind: "profile", ref: "file:fixture.json" },
+ recovery_profile: { ref: "file:fixture.json" },
+ bindings: { Outbound: { capability: "standard", kind: "entry" } },
+ providers: { fixture: { section: "fixture", enabled: true, role: "primary" } },
+ regions: { test: { mode: "automatic", display_name: "Test", flag: "ZZ" } },
+ provider_regions: { fixture: [{ region: "test", filter: "native-region" }] },
+ capabilities: { standard: { enabled: true, mode: "manual" } },
+ selection: { region_switch_margin_ms: 150, leaf_switch_margin_ms: 150 },
+ checks: { provider_healthcheck_timeout_ms: 2000, latency: { method: "mihomo_delay", url: "http://127.0.0.1", timeout_ms: 1000, expected_status: 200 } },
+ fail_open: { healthcheck: { path_probe_id: "test", guard_probe_id: "test", timeout_ms: 1000, interval_seconds: 300, max_failed_times: 2 },
+  probes: [{ id: "test", url: "http://127.0.0.1", expected_status: 200 }] }
+};
+const result = compile(source, policy, "fixture", "fixture", "fixture", {
+ fixture: { path: `${dir}/run/provider.json`, runtime_path: `${dir}/run/provider.json`, profile: nodes }
+});
+if (!result.ok) die(sprintf("%J", result.errors));
+const config = result.profile;
+config["mixed-port"] = 17890;
+config["tproxy-port"] = 17893;
+config["external-controller"] = "127.0.0.1:19090";
+config.secret = "native-vm-fixture";
+config["allow-lan"] = true;
+config["bind-address"] = "*";
+config.ipv6 = false;
+config.mode = "rule";
+config["log-level"] = "info";
+config.dns = { enable: true, listen: "0.0.0.0:1054", "enhanced-mode": "redir-host", ipv6: false, nameserver: ["udp://127.0.0.1:1053"] };
+fs.writefile(`${dir}/run/config.json`, sprintf("%J", config));
+fs.writefile(`${dir}/manifest.json`, sprintf("%J", result.manifest));
+EOF
+ucode "$work/compile.uc" >"$work/compile.log" 2>&1
+mihomo -t -d "$work/run" -f "$work/run/config.json" >"$work/validate.log" 2>&1
+
+stage=service_owner
+# This disposable owner intentionally has no boot enable, migration or refresh.
+cat >"$work/owner.sh" <<'EOF'
+#!/bin/sh
+set -eu
+work=/tmp/netfleet-native-fixture
+child=
+cleanup() {
+	trap - EXIT INT TERM
+	rm -f "$work/ready"
+	nft delete table ip opl_netfleet_native_vm 2>/dev/null || true
+	ip -4 rule del pref 11900 fwmark 0x40000000/0x40000000 lookup 11900 2>/dev/null || true
+	ip -4 route del local default dev lo table 11900 2>/dev/null || true
+	if [ -n "$child" ]; then kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; fi
+}
+trap cleanup EXIT
+trap 'exit 0' INT TERM
+# A conflicting owner is rejected before any network mutation.
+test -z "$(pidof mihomo 2>/dev/null || true)"
+test ! -e /etc/init.d/nikki
+! nft list table ip opl_netfleet_native_vm >/dev/null 2>&1
+"$work/bin/mihomo" -t -d "$work/run" -f "$work/run/config.json" >"$work/validate.log" 2>&1
+"$work/bin/mihomo" -d "$work/run" -f "$work/run/config.json" >"$work/core.log" 2>&1 &
+child=$!
+echo "$child" >"$work/core.pid"
+ready=false
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+	if curl -fsS --noproxy '*' -H 'Authorization: Bearer native-vm-fixture' \
+		--max-time 1 http://127.0.0.1:19090/version >"$work/version.json"; then ready=true; break; fi
+	kill -0 "$child"
+	sleep 1
+done
+[ "$ready" = true ]
+ip -4 route add local default dev lo table 11900
+ip -4 rule add pref 11900 fwmark 0x40000000/0x40000000 lookup 11900
+nft -f - <<'NFT'
+table ip opl_netfleet_native_vm {
+	chain dns {
+		type nat hook prerouting priority -101; policy accept;
+		iifname "nf-lan" meta l4proto { tcp, udp } th dport 53 counter redirect to :1054
+	}
+	chain proxy {
+		type filter hook prerouting priority -149; policy accept;
+		iifname "nf-lan" meta l4proto { tcp, udp } th dport 53 return
+		iifname "nf-lan" ip daddr 198.19.0.1 meta l4proto { tcp, udp } counter tproxy to :17893 meta mark set 0x40000000 accept
+	}
+}
+NFT
+touch "$work/ready"
+wait "$child"
+EOF
+chmod 0755 "$work/owner.sh"
+cat >/etc/init.d/netfleet-native-vm <<'EOF'
+#!/bin/sh /etc/rc.common
+USE_PROCD=1
+start_service() {
+	procd_open_instance core
+	procd_set_param command /tmp/netfleet-native-fixture/owner.sh
+	procd_set_param stdout 0
+	procd_set_param stderr 1
+	procd_set_param term_timeout 5
+	procd_close_instance
+}
+stop_service() {
+	nft delete table ip opl_netfleet_native_vm 2>/dev/null || true
+	ip -4 rule del pref 11900 fwmark 0x40000000/0x40000000 lookup 11900 2>/dev/null || true
+	ip -4 route del local default dev lo table 11900 2>/dev/null || true
+}
+EOF
+chmod 0755 /etc/init.d/netfleet-native-vm
+start_native() {
+	/etc/init.d/netfleet-native-vm start
+	for attempt in 1 2 3 4 5 6 7 8 9 10; do
+		[ ! -f "$work/ready" ] || return 0
+		sleep 1
+	done
+	return 1
+}
+assert_clean() {
+	! nft list table ip opl_netfleet_native_vm >/dev/null 2>&1
+	! ip -4 rule show | grep -q '11900:'
+	[ -z "$(ip -4 route show table 11900 2>/dev/null)" ]
+	[ -z "$(pidof mihomo 2>/dev/null || true)" ]
+	nft list table ip netfleet_native_fixture >/dev/null
+}
+tcp_probe() {
+	ip netns exec nf-client curl -fsS --noproxy '*' --connect-timeout 2 --max-time 5 \
+		--cacert /tmp/local-probe.crt --resolve "netfleet-probe.test:$probe_port:198.19.0.1" \
+		"https://netfleet-probe.test:$probe_port/generate_204"
+}
+stage=negative_control
+if tcp_probe >"$work/bypass.log" 2>&1; then exit 1; fi
+start_native
+stage=owner_readback
+ubus call service list '{"name":"netfleet-native-vm"}' >"$work/service.json"
+[ "$(jsonfilter -i "$work/service.json" -e '@["netfleet-native-vm"].instances.core.running')" = true ]
+core_pid=$(cat "$work/core.pid")
+tr '\0' ' ' <"/proc/$core_pid/cmdline" | grep -Fq "$work/run/config.json"
+curl -fsS --noproxy '*' -H 'Authorization: Bearer native-vm-fixture' \
+	http://127.0.0.1:19090/proxies >"$work/proxies.json"
+grep -q 'native-region-node' "$work/proxies.json"
+stage=lan_tcp
+tcp_probe >"$work/tcp.log" 2>&1
+stage=lan_udp
+answer=$(printf 'native-udp-proof\n' | ip netns exec nf-client socat -T 2 - UDP4:198.19.0.1:19999)
+[ "$answer" = native-udp-proof ]
+stage=lan_dns
+ip netns exec nf-client dig +short +tries=1 +time=2 @203.0.113.53 native-proof.test >"$work/dns-udp.log"
+grep -qx 203.0.113.42 "$work/dns-udp.log"
+ip netns exec nf-client dig +tcp +short +tries=1 +time=2 @203.0.113.53 native-proof.test >"$work/dns-tcp.log"
+grep -qx 203.0.113.42 "$work/dns-tcp.log"
+stage=normal_stop
+/etc/init.d/netfleet-native-vm stop
+assert_clean
+/etc/init.d/netfleet-native-vm stop
+assert_clean
+stage=core_failure
+start_native
+kill -KILL "$(cat "$work/core.pid")"
+for attempt in 1 2 3 4 5; do
+	[ -f "$work/ready" ] || break
+	sleep 1
+done
+assert_clean
+stage=invalid_config
+cp "$work/run/config.json" "$work/valid.json"
+printf '{broken' >"$work/run/config.json"
+/etc/init.d/netfleet-native-vm restart
+sleep 2
+assert_clean
+cp "$work/valid.json" "$work/run/config.json"
+stage=complete
+printf '{"ok":true,"scope":"native-ipv4-experiment","production_ready":false,"source_commit":"%s","source_tree":"%s","checks":{"no_nikki":true,"shared_compiler":true,"config_validation":true,"procd_owner":true,"controller":true,"bypass_negative_control":true,"lan_tcp_tproxy":true,"lan_udp_tproxy":true,"lan_dns_udp":true,"lan_dns_tcp":true,"normal_stop_cleanup":true,"repeated_stop":true,"core_crash_cleanup":true,"invalid_config_no_interception":true,"foreign_rules_preserved":true}}\n' "$commit" "$tree"
