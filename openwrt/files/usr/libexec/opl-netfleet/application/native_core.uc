@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import { read_json, sha256, shell_quote } from "../adapters/uci.uc";
 import { BASE, CACHE, CORE, SERVICE, COMMAND, LOCK, private_file, private_directory,
-	write_private, atomic_json, core_service, owned_service } from "../adapters/native.uc";
+	write_private, atomic_json, core_service, owned_service, owns_mixed_listener } from "../adapters/native.uc";
 import { prepare } from "../core/native_core.uc";
 import { get_state as sources_state } from "./native_sources.uc";
 import { ok, fail } from "../output.uc";
@@ -56,12 +56,13 @@ function status() {
 	const ready = running && type(version?.version) == "string" && stage != null &&
 		private_file(CONFIG) && fs.readfile(CONFIG) == sprintf("%J", stage.profile) &&
 		effective?.["mixed-port"] == stage.profile["mixed-port"] && effective?.["allow-lan"] == false;
+	const listener_ready = running && stage != null && owns_mixed_listener(instance.pid, stage.profile["mixed-port"]);
 	return { ok: true, result: {
 		prepared: stage != null, registered: owner.service != null, running: running,
-		controller_ready: ready, transparent_proxy: false,
+		controller_ready: ready, listener_ready: listener_ready, transparent_proxy: false,
 		mixed_port: stage?.profile?.["mixed-port"] ?? null,
 		config_sha256: private_file(CONFIG) ? sha256(CONFIG) : null,
-		state: ready ? "running" : owner.service != null ? "not_ready" : "stopped"
+		state: ready && listener_ready ? "running" : owner.service != null ? "not_ready" : "stopped"
 	} };
 };
 
@@ -99,7 +100,7 @@ function execute(action, argument) {
 	if (!owner.ok) return { ok: false, error: "procd_unavailable" };
 	if (owner.service != null) {
 		const current = status();
-		return action == "native-core-start" && current.ok && current.result.controller_ready ? current :
+		return action == "native-core-start" && current.ok && current.result.state == "running" ? current :
 			{ ok: false, error: "native_core_registered" };
 	}
 	if (fs.lstat("/etc/init.d/nikki") != null || fs.lstat("/etc/config/nikki") != null ||
@@ -126,7 +127,7 @@ function execute(action, argument) {
 	} } })) return { ok: false, error: "core_start_failed" };
 	for (let i = 0; i < 10; i++) {
 		const current = status();
-		if (current.ok && current.result.controller_ready) return current;
+		if (current.ok && current.result.state == "running") return current;
 		system("sleep 1");
 	}
 	const cleanup = stop();

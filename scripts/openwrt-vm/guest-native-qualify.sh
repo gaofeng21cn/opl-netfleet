@@ -183,19 +183,11 @@ ucode "$work/compile.uc" "https://192.168.1.2:$probe_port/generate_204" >"$work/
 SAFE_PATHS=/etc/opl-netfleet/native/cache mihomo -t -d "$work/run" -f "$work/run/config.json" >"$work/validate.log" 2>&1
 
 stage=native_core_lifecycle
-ucode "$main" native-core-stage "$work/run/config.json" >"$work/core-stage.log"
-ucode "$main" native-core-start >"$work/core-start.log"
-[ "$(jsonfilter -i "$work/core-start.log" -e '@.result.controller_ready')" = true ]
-[ "$(jsonfilter -i "$work/core-start.log" -e '@.result.transparent_proxy')" = false ]
-curl -fsS --cacert /tmp/local-probe.crt --noproxy '' --proxy http://127.0.0.1:17890 \
-	"https://192.168.1.2:$probe_port/generate_204" >/dev/null
-ucode "$main" native-core-start >"$work/core-repeat.log"
-if ucode "$main" native-sources-refresh fixture >"$work/core-source-busy.log"; then exit 1; fi
-[ "$(jsonfilter -i "$work/core-source-busy.log" -e '@.error')" = native_core_registered ]
-if ucode "$main" native-core-stage "$work/run/config.json" >"$work/core-stage-busy.log"; then exit 1; fi
-ucode "$main" native-core-stop >"$work/core-stop.log"
-ucode "$main" native-core-stop >"$work/core-stop-repeat.log"
-[ "$(jsonfilter -i "$work/core-stop.log" -e '@.result.running')" = false ]
+nft -s list ruleset >"$work/core-before.nft"
+ip -4 rule show >"$work/core-before.rules"
+ucode /tmp/tests/native_core_integration.uc "$probe_port" >"$work/core-integration.log" 2>&1
+nft -s list ruleset | cmp - "$work/core-before.nft"
+ip -4 rule show | cmp - "$work/core-before.rules"
 test -z "$(pidof mihomo 2>/dev/null || true)"
 test ! -e /etc/opl-netfleet/native/core/controller.sock
 
@@ -322,11 +314,13 @@ curl -fsS --noproxy '*' -H 'Authorization: Bearer native-vm-fixture' \
 grep -q 'native-region-node' "$work/proxies.json"
 stage=provider_readiness
 ucode -e '
- import { unfix } from "/usr/libexec/opl-netfleet/adapters/mihomo.uc";
+ import { url_path_segment } from "/usr/libexec/opl-netfleet/adapters/mihomo.uc";
+ import { shell_quote } from "/usr/libexec/opl-netfleet/adapters/uci.uc";
  import { readfile } from "fs";
  const manifest = json(readfile("/tmp/netfleet-native-fixture/manifest.json"));
  for (let group in manifest.generated_groups.standard.candidate_groups)
-   if (!unfix("native-vm-fixture", group.name)) die("candidate reset failed");
+   if (system("curl -fsS --noproxy \x27*\x27 -X DELETE -H \x27Authorization: Bearer native-vm-fixture\x27 " +
+     shell_quote("http://127.0.0.1:19090/proxies/" + url_path_segment(group.name))) != 0) die("candidate reset failed");
 ' >"$work/reset.log" 2>&1
 curl -fsS --noproxy '*' --max-time 8 -H 'Authorization: Bearer native-vm-fixture' \
 	http://127.0.0.1:19090/providers/proxies/NETFLEET-SOURCE-fixture/healthcheck >"$work/health.log"

@@ -56,3 +56,18 @@ export function owned_service(service) {
 	return type(instances) == "object" && length(keys(instances)) == 1 &&
 		sprintf("%J", instances?.core?.command) == sprintf("%J", COMMAND);
 };
+
+export function owns_mixed_listener(pid, port) {
+	const inodes = {};
+	for (let fd in fs.lsdir(`/proc/${pid}/fd`) ?? []) {
+		const target = fs.readlink(`/proc/${pid}/fd/${fd}`);
+		const socket = type(target) == "string" ? match(target, /^socket:\[([0-9]+)\]$/) : null;
+		if (socket != null) inodes[socket[1]] = true;
+	}
+	const endpoint = sprintf("0100007F:%04X", port);
+	for (let line in split(fs.readfile("/proc/net/tcp") ?? "", "\n")) {
+		const fields = split(trim(line), /[[:space:]]+/);
+		if (fields[1] == endpoint && fields[3] == "0A" && inodes[fields[9]]) return true;
+	}
+	return false;
+};
