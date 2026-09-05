@@ -19,6 +19,13 @@ finish() {
 	rc=$?
 	trap - EXIT INT TERM
 	set +e
+	if [ "$rc" -ne 0 ]; then
+		secret=$(uci -q get netfleet.mixin.api_secret)
+		for endpoint in proxies providers/proxies; do
+			curl -fsS --noproxy '*' --max-time 3 -H "Authorization: Bearer $secret" \
+				"http://127.0.0.1:9090/$endpoint" >"$work/controller-${endpoint##*/}.log"
+		done
+	fi
 	/etc/init.d/opl-netfleet stop >/dev/null 2>&1
 	/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1
 	for pid in $fixture_pids; do kill "$pid" 2>/dev/null; done
