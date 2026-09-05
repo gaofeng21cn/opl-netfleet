@@ -71,6 +71,13 @@ invoke("native-core-stop", null, true);
 check(pid() == null && fs.stat(`${base}/core/controller.sock`) == null, "stop cleanup");
 
 const saved_stage = fs.readfile(`${base}/core.json`);
+const cache_path = `${base}/cache/fixture.json`;
+const cache_bytes = fs.readfile(cache_path);
+const corrupt = json(cache_bytes);
+corrupt.proxies[0].server = "203.0.113.9";
+fs.writefile(cache_path, sprintf("%J", corrupt));
+check(invoke("native-core-start", null, false).error == "core_stage_stale", "modified cache trusted stored digest");
+fs.writefile(cache_path, cache_bytes);
 fs.writefile(input, sprintf("%J", { ...original, "proxy-groups": [{ name: "bad", type: "not-a-group" }] }));
 invoke("native-core-stage", input, false);
 check(fs.readfile(`${base}/core.json`) == saved_stage, "invalid stage destroyed previous stage");

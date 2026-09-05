@@ -111,6 +111,7 @@ cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
 mkdir -p /etc/opl-netfleet
 cat /tmp/local-probe.crt >>/etc/ssl/certs/ca-certificates.crt
 main=/usr/libexec/opl-netfleet/main.uc
+chmod 0755 "$main"
 stage=source_contracts
 for contract in /tmp/tests/*_contract.uc; do
 	ucode "$contract" >>"$work/contracts.log" 2>&1

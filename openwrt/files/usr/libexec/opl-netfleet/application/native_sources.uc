@@ -25,7 +25,13 @@ function projection(config, scratch) {
 	for (let source in config.sources) {
 		const identity = source_identity(source, scratch);
 		if (identity == null) return { ok: false, error: "source_identity_failed" };
-		push(sources, project(source, identity, load_cache(source.id)));
+		const cache = load_cache(source.id);
+		if (cache?.proxies != null) {
+			const nodes = `${scratch}/cached-nodes.json`;
+			if (!write_private(nodes, sprintf("%J", { proxies: cache.proxies })) ||
+				sha256(nodes) != cache.content_sha256) return { ok: false, error: "source_cache_corrupt" };
+		}
+		push(sources, project(source, identity, cache));
 	}
 	return { ok: true, result: { stage: "prepared_sources", data_plane_changed: false, sources: sources } };
 };
