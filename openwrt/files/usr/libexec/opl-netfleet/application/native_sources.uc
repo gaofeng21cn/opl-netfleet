@@ -1,5 +1,5 @@
 import * as fs from "fs";
-import { read_json, sha256, shell_quote } from "../adapters/uci.uc";
+import { read_json, read_yaml, sha256, shell_quote } from "../adapters/uci.uc";
 import { cache_accepted } from "../core/subscription.uc";
 import { validate, valid_id, project } from "../core/native_sources.uc";
 import { ok, fail } from "../output.uc";
@@ -83,12 +83,8 @@ function download(source, scratch) {
 	if (system(command) != 0) return { error: "download_failed" };
 	const info = fs.stat(body);
 	if (info == null || info.size == 0 || info.size > 8388608) return { error: "invalid_download_size" };
-	const process = fs.popen(`yq -M -p yaml -o json ${shell_quote(body)} 2>/dev/null`);
-	if (process == null) return { error: "yaml_converter_unavailable" };
-	let parsed = null;
-	try { parsed = json(process); } catch (error) {}
-	const converted = process.close();
-	if (converted != 0 || !cache_accepted(parsed)) return { error: "invalid_subscription" };
+	const parsed = read_yaml(body, true);
+	if (!cache_accepted(parsed)) return { error: "invalid_subscription" };
 	const nodes = { proxies: parsed.proxies };
 	if (!write_private(`${scratch}/nodes.json`, sprintf("%J", nodes)) ||
 		!write_private(`${scratch}/validation.json`, sprintf("%J", {

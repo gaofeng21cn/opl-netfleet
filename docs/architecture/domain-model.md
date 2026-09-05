@@ -36,7 +36,7 @@ OpenWrt + Nikki + Mihomo 必须在没有 NetFleet 时独立提供可用网络。
 
 NetFleet 不能成为基础联网、订阅更新、DNS、nft、默认路由或 Mihomo 生命周期的前置条件。未安装、未启用、自身崩溃或被卸载时，用户必须仍能在 Nikki 中选择原始 Profile。
 
-这是当前 `nikki-mihomo` 运行合同，不是永久产品身份。长期产品方向见[设计白皮书](../product/whitepaper.md)：NetFleet 可以在 successor 已完整接管订阅、运行后端、OpenWrt 数据面生命周期和安全清理后不再依赖 Nikki，并允许同一时刻选择一个满足统一合同的 Mihomo、sing-box 或其他后端。当前 source 已有第一阶段 SubscriptionOwner（只读发现、脱敏投影、显式 refresh 编排），但没有独立订阅 cache、`RuntimeBackend` 切换、原生 Mihomo 生命周期、sing-box adapter 或内置 Zashboard 实时观察面；UI 不得把这些未实现目标显示为当前可用选项，运行代码也不得为未来后端预建双写或 fallback。
+这是当前 `nikki-mihomo` 运行合同，不是永久产品身份。长期产品方向见[设计白皮书](../product/whitepaper.md)：NetFleet 可以在 successor 已完整接管订阅、运行后端、OpenWrt 数据面生命周期和安全清理后不再依赖 Nikki，并允许同一时刻选择一个满足统一合同的 Mihomo、sing-box 或其他后端。当前 Nikki 运行链已有 SubscriptionOwner（只读发现、脱敏投影、显式 refresh 编排）；独立来源与缓存只用于上述原生订阅准备。正式 `RuntimeBackend` 切换、原生 Mihomo 生命周期、sing-box adapter 和自有 Zashboard 资源管理仍未实现，UI 不得把这些目标显示为当前可用选项，运行代码也不得为未来后端预建双写或 fallback。
 
 ## 能力分层与使用逻辑
 

@@ -28,7 +28,8 @@ OpenWrt 数据面的独立运行产品；在两个真实后端完成后，再从
 scripts/openwrt-vm.sh --ref origin/main --native-experiment --output /tmp/netfleet-native-experiment.json
 ```
 
-实验使用现有 compiler、临时文件订阅缓存、真实 Mihomo 和 procd，LAN 客户端位于独立网络
+实验通过正式原生来源 CLI 从隔离 HTTPS 服务下载订阅、校验并生成私有缓存，再交给现有
+compiler、真实 Mihomo 和 procd，LAN 客户端位于独立网络
 命名空间。fw4 为实验接口提供明确的区域，临时 nft TProxy/DNS 规则和 policy route 负责
 IPv4 截获；正常停止先撤截获再结束进程，核心意外退出时由其前台 owner 清理截获。
 实验还检查重复启动冲突、重复停止、无效配置、无截获时的反证请求、节点实际流量、
@@ -38,7 +39,7 @@ IPv4 截获；正常停止先撤截获再结束进程，核心意外退出时由
 始终包含 `qualified=false`、`production_ready=false`；不能配合 `--packages`，不能被用于
 生产激活。默认 VM/package qualification 不增加本实验的耗时。
 
-此入口只回答原生 IPv4 数据面和核心生命周期是否可行；它不证明直接订阅下载、正式启停与
+此入口验证来源准备以及原生 IPv4 数据面和核心生命周期的可行性；它不证明正式启停与
 周期选优接线、IPv6、路由器自身流量、fw4 reload、owner 进程强杀、开机恢复、包卸载、
 Nikki 迁移或 Zashboard 资源管理已经实现。正式路径还必须将这些责任收敛到现有 mutation
 owner，不能复制实验脚本作为常驻第二控制器。

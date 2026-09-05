@@ -8,12 +8,12 @@ export function shell_quote(value) {
 	return `'${replace(`${value}`, "'", "'\\''")}'`;
 };
 
-export function read_yaml(path) {
+export function read_yaml(path, quiet) {
 	if (system("command -v yq >/dev/null 2>&1") != 0 ||
 		system("yq --version >/dev/null 2>&1") != 0) {
 		return null;
 	}
-	const process = popen(`yq -M -p yaml -o json ${shell_quote(path)}`);
+	const process = popen(`yq -M -p yaml -o json ${shell_quote(path)}${quiet ? " 2>/dev/null" : ""}`);
 	if (!process) {
 		return null;
 	}
@@ -23,7 +23,7 @@ export function read_yaml(path) {
 	} catch (error) {
 		result = null;
 	}
-	process.close();
+	if (process.close() != 0) return null;
 	return result;
 };
 

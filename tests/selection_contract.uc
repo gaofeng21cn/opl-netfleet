@@ -33,6 +33,7 @@ function candidate(id, provider, region, rtt, remaining, role, leaf_verified, ca
 };
 
 const proxy_state = {
+	"control-node": { type: "Direct", alive: true },
 	"alpha-korea": { alive: true, now: "shared-node", all: ["shared-node"] },
 	"alpha-dead": { alive: true, now: "dead-node", all: ["dead-node"] },
 	"alpha-control": { alive: true, now: "control-node", all: ["control-node"] },
