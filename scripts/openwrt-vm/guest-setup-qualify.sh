@@ -157,8 +157,13 @@ else
 	cp /tmp/openwrt/files/etc/init.d/opl-netfleet /etc/init.d/opl-netfleet
 	chmod 0755 "$main" /usr/libexec/opl-netfleet/supervisor.uc "$gateway" /etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet
 fi
-# The helper is a private fixture copy, never the production core or a virtual package.
-cp "$(readlink -f /usr/bin/mihomo)" "$work/bin/nf-setup-proxy"
+# Source diagnostics already hold the core in tmpfs; share those bytes while
+# retaining a distinct helper process name. APK installs live on another mount.
+if [ -n "$feed_url" ]; then
+	cp "$(readlink -f /usr/bin/mihomo)" "$work/bin/nf-setup-proxy"
+else
+	ln "$work/bin/mihomo" "$work/bin/nf-setup-proxy"
+fi
 chmod 0755 "$work/bin/nf-setup-proxy"
 if [ -n "$feed_url" ]; then
 	! /etc/init.d/opl-netfleet-core enabled
