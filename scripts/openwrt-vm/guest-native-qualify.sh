@@ -115,6 +115,7 @@ cat >"$work/sources.json" <<EOF
 {"schema_version":1,"sources":[{"id":"fixture","display_name":"VM source","enabled":true,"url":"https://192.168.1.2:$probe_port/native-subscriptions/valid?token=vm-only-credential"}]}
 EOF
 chmod 0600 "$work/sources.json"
+ucode -e 'import { validate } from "/usr/libexec/opl-netfleet/core/native_sources.uc"; import { readfile } from "fs"; const result = validate(json(readfile(ARGV[0]))); if (!result.ok) die(sprintf("%J", result));' "$work/sources.json"
 ucode "$main" native-sources-set "$work/sources.json" >"$work/source-set.json"
 ucode "$main" native-sources-refresh >"$work/source-refresh.json"
 [ "$(jsonfilter -i "$work/source-refresh.json" -e '@.result.sources[0].ready')" = true ]

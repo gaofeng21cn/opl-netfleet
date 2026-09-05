@@ -17,12 +17,12 @@ export function validate(config) {
 		else if (seen[source.id]) error = "duplicate_source_id";
 		else if (type(source.enabled) != "bool") error = "invalid_enabled";
 		else if (type(source.display_name) != "string" || length(trim(source.display_name)) == 0 ||
-			match(source.display_name, /[\x00-\x1f\x7f]/)) error = "invalid_display_name";
+			match(source.display_name, /[[:cntrl:]]/)) error = "invalid_display_name";
 		else if (type(source.url) != "string" ||
-			!match(source.url, /^https:\/\/[^\/\s?#@]+(?:\/[^\s#]*)?$/) ||
-			match(source.url, /[\x00-\x20\x7f]/)) error = "https_url_required";
+			!match(source.url, /^https:\/\/[^\/[:space:]?#@]+(\/[^[:space:]#]*)?$/) ||
+			match(source.url, /[[:cntrl:]]/)) error = "https_url_required";
 		else if (source.user_agent != null && (type(source.user_agent) != "string" ||
-			match(source.user_agent, /[\x00-\x1f\x7f]/))) error = "invalid_user_agent";
+			match(source.user_agent, /[[:cntrl:]]/))) error = "invalid_user_agent";
 		if (error == null) {
 			for (let key in source) {
 				if (index(["id", "display_name", "enabled", "url", "user_agent"], key) < 0)
