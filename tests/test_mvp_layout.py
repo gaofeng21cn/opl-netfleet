@@ -217,7 +217,7 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertNotIn("yq -i", source)
         self.assertNotIn("eval-all", source)
         self.assertNotIn("yq -M -P -o yaml", source)
-        self.assertEqual(1, source.count("yq -M -p yaml -o json"))
+        self.assertIn("yq -M -p yaml -o json", source)
 
     def test_runtime_fail_open_health_and_lock_contract(self):
         policy = (RUNTIME / "core" / "policy.uc").read_text()
@@ -506,7 +506,7 @@ function createPage(storage, api, notifications) {
         render: function() { return E('div', {}, 'config'); }
     };
     let dashboardOpens = 0;
-    const managed = {};
+    const managed = { preloadSubscriptions: function() { return Promise.resolve(); } };
     api.nativeSetupGet = function() { return Promise.resolve({ ready: false }); };
     api.dashboardGet = function() { return Promise.resolve({ available: true, port: 9090, protocol: 'http', ui_name: 'zashboard', secret: 'private-secret' }); };
     const factory = new Function('view', 'ui', 'managed', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', source);
@@ -580,15 +580,22 @@ function createPage(storage, api, notifications) {
     const persisted = JSON.parse(storage.value(cacheKey));
     assert.deepStrictEqual(persisted.events.core_lines, [], 'raw logs must not be persisted');
     assert.strictEqual(persisted.status.active, true);
-    const runtimeEntry = findNode(root, function(node) { return node.tag === 'button' && nodeText(node) === '实时运行 ↗'; });
-    assert(runtimeEntry && runtimeEntry.attrs.disabled !== true, 'healthy dashboard entry must be enabled');
-    runtimeEntry.attrs.click();
-    assert.strictEqual(page.dashboardOpens(), 1, 'dashboard entry must open the independent dashboard');
+    const runtimeEntry = findNode(root, function(node) { return node.tag === 'a' && nodeText(node) === '实时运行 ↗'; });
+    assert(runtimeEntry && runtimeEntry.attrs['aria-disabled'] !== 'true', 'healthy dashboard entry must be enabled');
+    const dashboardUrl = new URL(runtimeEntry.attrs.href);
+    assert.strictEqual(dashboardUrl.hostname, 'router.example');
+    assert.strictEqual(dashboardUrl.pathname, '/ui/zashboard/');
+    assert.strictEqual(dashboardUrl.searchParams.get('secret'), 'private-secret');
+    assert.strictEqual(runtimeEntry.attrs.target, '_blank');
+    assert.strictEqual(runtimeEntry.attrs.rel, 'noopener');
+    assert.strictEqual(page.dashboardOpens(), 0, 'normal navigation must not create an intermediate blank window');
+    assert(!storage.value(cacheKey).includes('private-secret'), 'dashboard credentials must remain memory-only');
     await new Promise(function(resolve) { setImmediate(resolve); });
     page.status.runtime.lan_runtime.dashboard_lan_ready = false;
     page.redraw();
-    const disabledRuntimeEntry = findNode(root, function(node) { return node.tag === 'button' && nodeText(node) === '实时运行 ↗'; });
-    assert(disabledRuntimeEntry && disabledRuntimeEntry.attrs.disabled === true, 'unready dashboard entry must use native disabled state');
+    const disabledRuntimeEntry = findNode(root, function(node) { return node.tag === 'a' && nodeText(node) === '实时运行 ↗'; });
+    assert(disabledRuntimeEntry && disabledRuntimeEntry.attrs['aria-disabled'] === 'true', 'unready dashboard entry must be disabled');
+    assert.strictEqual(disabledRuntimeEntry.attrs.href, '#');
     assert.strictEqual(disabledRuntimeEntry.attrs.title, 'Zashboard 的局域网访问条件尚未就绪');
     page.status.runtime.lan_runtime.dashboard_lan_ready = true;
     page.redraw();

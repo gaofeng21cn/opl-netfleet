@@ -71,7 +71,9 @@ function editSource(controller, state, existing) {
 		[ 'url', 'user_agent', 'info_url' ].forEach(function(key) { if (values[key].value.trim()) source[key] = values[key].value.trim(); });
 		if (clearInfo.checked) source.info_url = '';
 		save.disabled = true;
-		api.subscriptionsSet({ revision: state.revision, source: source }).then(function() {
+		api.subscriptionsSet({ revision: state.revision, source: source }).then(function(saved) {
+			controller.subscriptionState = saved && Array.isArray(saved.sources) ? saved : null;
+			controller.subscriptionsChanged = true;
 			values.url.value = ''; values.info_url.value = '';
 			return showSubscriptions(controller);
 		}).catch(function(error) { errorBox.textContent = failure(error); save.disabled = false; });
@@ -80,9 +82,17 @@ function editSource(controller, state, existing) {
 		E('div', { 'class': 'right' }, [ button('返回', function() { showSubscriptions(controller); }), ' ', save ]) ]));
 }
 
-function showSubscriptions(controller) {
-	ui.showModal('管理订阅', [ E('p', { 'class': 'spinning' }, '正在读取订阅…') ]);
-	return api.subscriptionsGet().then(function(state) {
+function loadSubscriptions(controller) {
+	if (controller.subscriptionRead) return controller.subscriptionRead;
+	controller.subscriptionRead = api.subscriptionsGet().then(function(state) {
+		controller.subscriptionState = state;
+		return state;
+	}).finally(function() { controller.subscriptionRead = null; });
+	return controller.subscriptionRead;
+}
+
+function showSubscriptions(controller, refresh) {
+	const display = function(state) {
 		if (state.managed_by !== 'netfleet') {
 			ui.showModal('管理订阅', [ E('a', { 'href': L.url('admin/services/nikki/profile'), 'target': '_blank', 'rel': 'noopener' }, '打开 Nikki 订阅管理'), E('div', { 'class': 'right' }, button('关闭', ui.hideModal)) ]);
 			return;
@@ -98,8 +108,10 @@ function showSubscriptions(controller) {
 								controller.busy = true;
 								ui.showModal('更新订阅', [ E('p', { 'class': 'spinning' }, '正在更新并等待设备回读…') ]);
 								api.subscriptionsRefresh(source.id).then(function() {
+									controller.subscriptionState = null;
 									return controller.onboarding ? controller.refreshOnboarding() : controller.refreshData(true, true);
 								}).then(function() { return showSubscriptions(controller); }).catch(function(error) {
+									controller.subscriptionState = null;
 									ui.addNotification(null, E('p', {}, failure(error)), 'error'); return showSubscriptions(controller);
 								}).finally(function() { controller.busy = false; controller.redraw(); });
 							}) ]) ]);
@@ -108,7 +120,11 @@ function showSubscriptions(controller) {
 						ui.showModal('删除订阅', [ E('p', {}, '确认删除“' + (source.name || source.id) + '”？仍被配置或运行状态引用的订阅不能删除。'),
 							E('div', { 'class': 'right' }, [ button('取消', function() { showSubscriptions(controller); }), ' ', button('确认删除', function(event) {
 								event.target.disabled = true;
-								api.subscriptionsSet({ revision: state.revision, source: { id: source.id }, delete: true }).then(function() { showSubscriptions(controller); }).catch(function(error) {
+								api.subscriptionsSet({ revision: state.revision, source: { id: source.id }, delete: true }).then(function(saved) {
+									controller.subscriptionState = saved && Array.isArray(saved.sources) ? saved : null;
+									controller.subscriptionsChanged = true;
+									showSubscriptions(controller);
+								}).catch(function(error) {
 									ui.addNotification(null, E('p', {}, failure(error)), 'error'); showSubscriptions(controller);
 								});
 							}, false, true) ]) ]);
@@ -117,12 +133,24 @@ function showSubscriptions(controller) {
 		ui.showModal('管理订阅', [
 			E('p', {}, '来源修改保存后，待更新订阅才生效；当前运行继续使用上次可用缓存。'),
 			E('table', { 'class': 'table' }, [ E('thead', {}, E('tr', {}, [ '名称', '节点', '订阅地址', '状态', '操作' ].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, rows) ]),
-			E('div', { 'class': 'right' }, [ button('新增订阅', function() { editSource(controller, state, null); }), ' ', button('关闭', function() {
+			E('div', { 'class': 'right' }, [ button('刷新列表', function() { return showSubscriptions(controller, true); }), ' ', button('新增订阅', function() { editSource(controller, state, null); }), ' ', button('关闭', function() {
 				ui.hideModal();
-				if (controller.onboarding) controller.refreshOnboarding(); else controller.refreshData(true, true);
+				if (controller.subscriptionsChanged) {
+					controller.subscriptionsChanged = false;
+					if (controller.onboarding) controller.refreshOnboarding(); else controller.refreshData(true, true);
+				}
 			}) ])
 		]);
-	}).catch(function(error) { ui.showModal('管理订阅', [ E('p', { 'role': 'alert' }, failure(error)), button('关闭', ui.hideModal) ]); });
+	};
+	if (controller.subscriptionState && !refresh) {
+		display(controller.subscriptionState);
+		return Promise.resolve();
+	}
+	let closed = false;
+	ui.showModal('管理订阅', [ E('p', { 'class': 'spinning' }, '正在读取订阅…'), button('关闭', function() { closed = true; ui.hideModal(); }) ]);
+	return loadSubscriptions(controller).then(function(state) { if (!closed) display(state); }).catch(function(error) {
+		if (!closed) ui.showModal('管理订阅', [ E('p', { 'role': 'alert' }, failure(error)), button('重试', function() { return showSubscriptions(controller, true); }), button('关闭', ui.hideModal) ]);
+	});
 }
 
 function migration(controller) {
@@ -169,4 +197,4 @@ function nativeSetup(controller) {
 	}).catch(function(error) { ui.showModal('首次接入失败', [ E('p', {}, failure(error)), button('关闭', ui.hideModal) ]); });
 }
 
-return baseclass.extend({ subscriptions: showSubscriptions, migration: migration, nativeSetup: nativeSetup });
+return baseclass.extend({ preloadSubscriptions: loadSubscriptions, subscriptions: showSubscriptions, migration: migration, nativeSetup: nativeSetup });

@@ -371,6 +371,8 @@ function initial_user_choice(entry, candidate_group) {
 };
 
 function compile_result(policy, allow_active) {
+	if (system("printf '{}' | yq -M -p yaml -o json >/dev/null 2>&1") != 0)
+		return { ok: false, error: "yaml_reader_unavailable" };
 	const current = current_profile();
 	if (is_active(current) && allow_active != true) {
 		return { ok: false, error: "active_profile_requires_disable", detail: current };
@@ -1524,7 +1526,7 @@ function status_action(policy, evidence) {
 		netfleet_present: state_has_netfleet(state, manifest, profile),
 		backend_enabled: enabled,
 		mihomo_running: mihomo_running,
-		lan_runtime: mihomo_running ? lan_runtime_state(guard_probe_url(policy)) : null,
+		lan_runtime: mihomo_running ? lan_runtime_state() : null,
 		cleanup: cleanup,
 		quotas: provider_quotas(policy),
 		provider_names: provider_display_names(policy),

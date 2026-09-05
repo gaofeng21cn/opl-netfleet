@@ -1,4 +1,4 @@
-import { popen, writefile } from "fs";
+import { popen, writefile, readfile, stat } from "fs";
 import { cursor } from "uci";
 import { UCI_PACKAGE } from "./runtime.uc";
 
@@ -10,10 +10,10 @@ export function shell_quote(value) {
 };
 
 export function read_yaml(path, quiet) {
-	if (system("command -v yq >/dev/null 2>&1") != 0 ||
-		system("yq --version >/dev/null 2>&1") != 0) {
-		return null;
-	}
+	// Native artifacts retain .yaml paths for Mihomo but contain validated JSON.
+	const source = readfile(path);
+	if (source == null) return null;
+	try { return json(source); } catch (error) {}
 	const process = popen(`yq -M -p yaml -o json ${shell_quote(path)}${quiet ? " 2>/dev/null" : ""}`);
 	if (!process) {
 		return null;
@@ -29,21 +29,8 @@ export function read_yaml(path, quiet) {
 };
 
 export function read_json(path) {
-	if (system(`test -f ${shell_quote(path)}`) != 0) {
-		return null;
-	}
-	const process = popen(`cat ${shell_quote(path)}`);
-	if (!process) {
-		return null;
-	}
-	let result = null;
-	try {
-		result = json(process);
-	} catch (error) {
-		result = null;
-	}
-	process.close();
-	return result;
+	if (stat(path)?.type != "file") return null;
+	try { return json(readfile(path)); } catch (error) { return null; }
 };
 
 export function sha256(path) {

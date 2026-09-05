@@ -26,6 +26,42 @@ function harness(active = false) {
 }
 
 describe('native LuCI managed operations', () => {
+  it('opens a prefetched subscription list synchronously and reuses it on return', async () => {
+    const h = harness();
+    await h.managed.preloadSubscriptions(h.controller);
+    const opening = h.managed.subscriptions(h.controller);
+    expect(h.button('编辑')).toBeDefined();
+    await opening;
+    h.button('编辑').attrs.click();
+    h.button('返回').attrs.click();
+    expect(h.button('编辑')).toBeDefined();
+    expect(h.api.subscriptionsGet).toHaveBeenCalledTimes(1);
+    h.button('关闭').attrs.click();
+    expect(h.controller.refreshData).not.toHaveBeenCalled();
+  });
+
+  it('does not resurrect a loading dialog after the user closes it', async () => {
+    const h = harness();
+    let finish!: (value: any) => void;
+    h.api.subscriptionsGet.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const opening = h.managed.subscriptions(h.controller);
+    h.button('关闭').attrs.click();
+    finish({ managed_by: 'netfleet', sources: [], revision: 'new' });
+    await opening;
+    expect(h.button('新增订阅')).toBeUndefined();
+    expect(h.ui.hideModal).toHaveBeenCalledOnce();
+  });
+
+  it('shares the in-flight prefetch with the first click and supports explicit reload', async () => {
+    const h = harness();
+    const prefetch = h.managed.preloadSubscriptions(h.controller);
+    await h.managed.subscriptions(h.controller);
+    await prefetch;
+    expect(h.api.subscriptionsGet).toHaveBeenCalledTimes(1);
+    await h.button('刷新列表').attrs.click();
+    expect(h.api.subscriptionsGet).toHaveBeenCalledTimes(2);
+  });
+
   it('edits a source without exposing or resubmitting stored secrets', async () => {
     const h = harness();
     await h.managed.subscriptions(h.controller);

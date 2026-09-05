@@ -23,6 +23,9 @@ apply 接受绑定 revision 的明确确认和一份私有订阅输入，完成�
 原有订阅管理，不能同时写两份来源配置。
 
 LuCI 在机场页和配置的机场区提供同一个订阅管理入口，新增、编辑、删除均调用上述 owner。
+订阅来源持久保存在设备 UCI，接受后的正文保存在设备私有缓存；打开管理器不下载或测速。
+页面预读取脱敏来源列表，在当前页面内复用，返回和再次打开直接显示；保存、删除、更新后
+失效并读取 owner 新状态。浏览器不持久保存凭据，也不复制一份可写来源配置。
 配置的基础接入区提供后端迁移：`migration_get` 返回 ready、revision 和缺失条件；
 `migration_apply` 接受 `{revision,confirmed:true,backend:"native-mihomo"}`，执行当前后端
 迁移事务。成功后重读真实 status/config；失败必须显示 owner 返回的 rollback 结果，不把
@@ -61,6 +64,13 @@ NetFleet LuCI 在“地区”和“配置”之间提供“实时运行”入口
 也不需要 `luci.nikki.profile` 权限。Nikki 模式的资源与 controller 仍来自当前后端 owner；
 原生模式使用 NetFleet 的资源与 controller，不创建第二控制器。Mihomo 未运行、controller
 不可读或局域网条件未就绪时禁用入口。
+
+页面预读取 Dashboard 连接信息，仅在内存中构造真实链接，点击直接打开目标，不先打开
+空白页再等待 RPC。交互 RPC 使用 LuCI `nobatch` 立即发送，不能依赖后台标签页的动画帧
+刷新队列。状态读取不等待配置资源发现；配置独立加载，原生 JSON 使用直接结构化读取，
+只有 YAML 输入才调用转换器。只读性能优化不改变写入校验与故障恢复前置条件。
+状态页的 DNS 就绪取自监听和转发规则，不在页面读取中执行 DNS 网络探针；运行 owner、
+supervisor 与显式 probe 的保护探测保持不变。
 
 NetFleet 沿用 Nikki/Zashboard 的带凭据新标签页连接方式，controller secret 只用于本次
 URL 构造，不得进入 NetFleet status、日志、展示缓存或文档。Zashboard 保留上游完整功能；

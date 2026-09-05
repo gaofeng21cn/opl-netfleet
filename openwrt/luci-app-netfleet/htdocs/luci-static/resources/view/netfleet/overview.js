@@ -980,7 +980,7 @@ return view.extend({
 				});
 			const cached = readDisplayCache();
 			const started = Date.now();
-			self.initialRefresh = Promise.all([ netfleet.status(), netfleet.events(), netfleet.configGet() ]).then(function(result) {
+			self.initialRefresh = Promise.all([ netfleet.status(), netfleet.events() ]).then(function(result) {
 				return { result: result, readDurationMs: Date.now() - started };
 			}, function(error) {
 				return { error: error };
@@ -1029,6 +1029,7 @@ return view.extend({
 		if (!initial.cached && !this.onboarding)
 			writeDisplayCache(this.status, this.events, this.fetchedAt, this.readDurationMs);
 		this.redraw();
+		this.loadManagement();
 		if (initial.cached)
 			this.initialRefresh.then(function(refresh) {
 				self.refreshing = false;
@@ -1043,6 +1044,39 @@ return view.extend({
 				self.redraw();
 			});
 		return this.root;
+	},
+
+	loadManagement: function() {
+		managed.preloadSubscriptions(this).catch(function() {});
+		this.loadConfig();
+		return this.prepareDashboard();
+	},
+
+	loadConfig: function() {
+		const self = this;
+		self.configError = null;
+		return netfleet.configGet().then(function(config) {
+			self.config = config;
+			if (!self.configDraft) self.configDraft = netfleetConfig.clone(config);
+			if (self.currentView === 'config') self.redraw();
+		}).catch(function(error) {
+			self.configError = error;
+			if (self.currentView === 'config') self.redraw();
+		});
+	},
+
+	prepareDashboard: function() {
+		const self = this;
+		return netfleet.dashboardGet().then(function(result) {
+			if (!result.available || !Number.isInteger(result.port) || result.port < 1 || result.port > 65535 || ![ 'http', 'https' ].includes(result.protocol)) {
+				self.dashboardUrl = null;
+				return;
+			}
+			const host = window.location.hostname;
+			const url = new URL(result.protocol + '://' + host + ':' + result.port + '/ui/' + (result.ui_name ? encodeURIComponent(result.ui_name) + '/' : ''));
+			url.search = new URLSearchParams({ hostname: host, host: host, port: String(result.port), secret: result.secret || '' }).toString();
+			self.dashboardUrl = url.toString();
+		}).catch(function() { self.dashboardUrl = null; }).finally(function() { self.redraw(); });
 	},
 
 	acceptLiveData: function(result, readDurationMs) {
@@ -1087,12 +1121,14 @@ return view.extend({
 		const title = ({ overview: '网络概览', exits: '出口', providers: '机场', regions: '地区', config: '配置', events: '事件与诊断' })[this.currentView];
 		const tabs = E('ul', { 'class': 'cbi-tabmenu' }, NAVIGATION.map(function(item) {
 			const external = item[2] === true;
-			const ready = !external || dashboardReady(self.status);
-			const control = external ? E('button', {
-				'type': 'button',
-				'disabled': ready ? null : true,
+			const ready = !external || (dashboardReady(self.status) && self.dashboardUrl);
+			const control = external ? E('a', {
+				'href': ready ? self.dashboardUrl : '#',
+				'target': ready ? '_blank' : null,
+				'rel': 'noopener',
+				'aria-disabled': ready ? null : 'true',
 				'title': ready ? '在新标签页打开完整 Zashboard' : dashboardUnavailableReason(self.status),
-				'click': function() { self.openDashboard(); }
+				'click': function(event) { if (!ready) { event.preventDefault(); self.openDashboard(); } }
 			}, item[1] + ' ↗') : E('a', {
 				'href': '#',
 				'click': function(event) {
@@ -1165,19 +1201,13 @@ return view.extend({
 			ui.addNotification(null, E('p', {}, dashboardUnavailableReason(this.status)), 'warning');
 			return Promise.resolve();
 		}
-		const tab = window.open('about:blank', '_blank');
-		if (tab) tab.opener = null;
-		return netfleet.dashboardGet().then(function(result) {
-			if (!result.available || !Number.isInteger(result.port) || result.port < 1 || result.port > 65535 || ![ 'http', 'https' ].includes(result.protocol))
-				throw new Error('dashboard_unavailable');
-			const host = window.location.hostname;
-			const url = new URL(result.protocol + '://' + host + ':' + result.port + '/ui/' + (result.ui_name ? encodeURIComponent(result.ui_name) + '/' : ''));
-			url.search = new URLSearchParams({ hostname: host, host: host, port: String(result.port), secret: result.secret || '' }).toString();
-			if (tab) tab.location.replace(url.toString());
-			else ui.addNotification(null, E('a', { 'href': url.toString(), 'target': '_blank', 'rel': 'noopener' }, '打开 Zashboard'), 'info');
-		}).catch(function() {
-			if (tab) tab.close();
-			ui.addNotification(null, E('p', {}, '无法打开 Zashboard，请检查核心及控制接口状态。'), 'error');
+		if (this.dashboardUrl) {
+			window.open(this.dashboardUrl, '_blank', 'noopener');
+			return Promise.resolve();
+		}
+		const self = this;
+		return this.prepareDashboard().then(function() {
+			ui.addNotification(null, self.dashboardUrl ? E('a', { 'href': self.dashboardUrl, 'target': '_blank', 'rel': 'noopener' }, '打开 Zashboard') : E('p', {}, '无法打开 Zashboard，请检查核心及控制接口状态。'), self.dashboardUrl ? 'info' : 'error');
 		});
 	},
 
@@ -1278,10 +1308,11 @@ return view.extend({
 		this.refreshing = true;
 		this.redraw();
 		const requests = [ netfleet.status(), netfleet.events() ];
-		if (forceConfig || !this.configDraft || !netfleetConfig.dirty(this))
+		if (forceConfig)
 			requests.push(netfleet.configGet());
 		return Promise.all(requests).then(function(result) {
 			self.acceptLiveData(result, Date.now() - started);
+			self.prepareDashboard();
 			if (self.currentView === 'events')
 				return self.refreshConnections();
 		}).then(function() {

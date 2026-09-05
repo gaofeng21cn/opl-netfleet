@@ -4,28 +4,33 @@
 'require baseclass';
 'require rpc';
 
+function declare(options) {
+	// LuCI's batch queue waits for requestAnimationFrame, which pauses in background tabs.
+	return rpc.declare(Object.assign({ nobatch: true }, options));
+}
+
 const calls = {
-	nativeSetupGet: rpc.declare({ object: 'opl-netfleet', method: 'native_setup_get' }),
-	nativeSetupApply: rpc.declare({ object: 'opl-netfleet', method: 'native_setup_apply', params: [ 'request' ] }),
-	dashboardGet: rpc.declare({ object: 'opl-netfleet', method: 'dashboard_get' }),
-	subscriptionsGet: rpc.declare({ object: 'opl-netfleet', method: 'subscriptions_get' }),
-	subscriptionsSet: rpc.declare({ object: 'opl-netfleet', method: 'subscriptions_set', params: [ 'request' ] }),
-	subscriptionsRefresh: rpc.declare({ object: 'opl-netfleet', method: 'subscriptions_refresh', params: [ 'id' ] }),
-	migrationGet: rpc.declare({ object: 'opl-netfleet', method: 'migration_get' }),
-	migrationApply: rpc.declare({ object: 'opl-netfleet', method: 'migration_apply', params: [ 'request' ] }),
-	onboardingGet: rpc.declare({ object: 'opl-netfleet', method: 'onboarding_get' }),
-	onboardingApply: rpc.declare({ object: 'opl-netfleet', method: 'onboarding_apply', params: [ 'request' ] }),
-	status: rpc.declare({ object: 'opl-netfleet', method: 'status' }),
-	events: rpc.declare({ object: 'opl-netfleet', method: 'events' }),
-	connections: rpc.declare({ object: 'opl-netfleet', method: 'connections' }),
-	configGet: rpc.declare({ object: 'opl-netfleet', method: 'config_get' }),
-	configValidate: rpc.declare({ object: 'opl-netfleet', method: 'config_validate', params: [ 'request' ] }),
-	configSave: rpc.declare({ object: 'opl-netfleet', method: 'config_save', params: [ 'request' ] }),
-	configApply: rpc.declare({ object: 'opl-netfleet', method: 'config_apply', params: [ 'request' ] }),
-	enable: rpc.declare({ object: 'opl-netfleet', method: 'enable' }),
-	selectAuto: rpc.declare({ object: 'opl-netfleet', method: 'select_auto', params: [ 'capability' ] }),
-	refresh: rpc.declare({ object: 'opl-netfleet', method: 'refresh' }),
-	disable: rpc.declare({ object: 'opl-netfleet', method: 'disable' })
+	nativeSetupGet: declare({ object: 'opl-netfleet', method: 'native_setup_get' }),
+	nativeSetupApply: declare({ object: 'opl-netfleet', method: 'native_setup_apply', params: [ 'request' ] }),
+	dashboardGet: declare({ object: 'opl-netfleet', method: 'dashboard_get' }),
+	subscriptionsGet: declare({ object: 'opl-netfleet', method: 'subscriptions_get' }),
+	subscriptionsSet: declare({ object: 'opl-netfleet', method: 'subscriptions_set', params: [ 'request' ] }),
+	subscriptionsRefresh: declare({ object: 'opl-netfleet', method: 'subscriptions_refresh', params: [ 'id' ] }),
+	migrationGet: declare({ object: 'opl-netfleet', method: 'migration_get' }),
+	migrationApply: declare({ object: 'opl-netfleet', method: 'migration_apply', params: [ 'request' ] }),
+	onboardingGet: declare({ object: 'opl-netfleet', method: 'onboarding_get' }),
+	onboardingApply: declare({ object: 'opl-netfleet', method: 'onboarding_apply', params: [ 'request' ] }),
+	status: declare({ object: 'opl-netfleet', method: 'status' }),
+	events: declare({ object: 'opl-netfleet', method: 'events' }),
+	connections: declare({ object: 'opl-netfleet', method: 'connections' }),
+	configGet: declare({ object: 'opl-netfleet', method: 'config_get' }),
+	configValidate: declare({ object: 'opl-netfleet', method: 'config_validate', params: [ 'request' ] }),
+	configSave: declare({ object: 'opl-netfleet', method: 'config_save', params: [ 'request' ] }),
+	configApply: declare({ object: 'opl-netfleet', method: 'config_apply', params: [ 'request' ] }),
+	enable: declare({ object: 'opl-netfleet', method: 'enable' }),
+	selectAuto: declare({ object: 'opl-netfleet', method: 'select_auto', params: [ 'capability' ] }),
+	refresh: declare({ object: 'opl-netfleet', method: 'refresh' }),
+	disable: declare({ object: 'opl-netfleet', method: 'disable' })
 };
 
 function execute(method) {

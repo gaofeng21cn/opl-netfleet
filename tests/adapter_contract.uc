@@ -2,7 +2,8 @@
 
 import { measure, controller_timeout_seconds, complete_from_fresh_history } from "../openwrt/files/usr/libexec/opl-netfleet/adapters/latency.uc";
 import { url_path_segment, project_connections } from "../openwrt/files/usr/libexec/opl-netfleet/adapters/mihomo.uc";
-import { read_json, write_json_atomic } from "../openwrt/files/usr/libexec/opl-netfleet/adapters/uci.uc";
+import { read_json, read_yaml, write_json_atomic } from "../openwrt/files/usr/libexec/opl-netfleet/adapters/uci.uc";
+import { writefile, unlink } from "fs";
 
 if (url_path_segment("常规 出口") != "%E5%B8%B8%E8%A7%84%20%E5%87%BA%E5%8F%A3" ||
 	url_path_segment("a-z_1.2") != "a-z_1.2") {
@@ -95,5 +96,19 @@ if (!write_json_atomic(atomic_path, { schema: 1, value: "current" }) ||
 	exit(1);
 }
 system(`rm -f ${atomic_path}`);
+
+const read_path = "/tmp/opl-netfleet-read-contract.yaml";
+writefile(read_path, '{"proxies":[],"mode":"rule","enabled":false}');
+if (read_json(read_path)?.mode != "rule" || read_yaml(read_path, true)?.enabled !== false ||
+	read_json("/tmp") != null || read_yaml("/tmp/opl-netfleet-missing-read-contract", true) != null) {
+	print("native_json_read_failed\n"); exit(1);
+}
+writefile(read_path, "mode: rule\nproxies: []\nenabled: false\n");
+if (read_json(read_path) != null || read_yaml(read_path, true)?.mode != "rule") {
+	print("yaml_read_fallback_failed\n"); exit(1);
+}
+writefile(read_path, "broken: [");
+if (read_yaml(read_path, true) != null) { print("malformed_yaml_accepted\n"); exit(1); }
+unlink(read_path);
 
 print("adapter_contract_ok\n");

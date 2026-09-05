@@ -475,7 +475,10 @@ function dirty(controller) {
 
 function render(controller) {
 	if (!controller.configDraft)
-		return E('div', { 'class': 'alert-message warning' }, '正在读取设备配置；读取完成前不会开放配置操作。');
+		return E('div', { 'class': 'alert-message warning' }, controller.configError ? [
+			E('p', {}, '设备配置读取失败：' + String(controller.configError.message || controller.configError)),
+			compactButton('重试', function() { return controller.loadConfig(); })
+		] : '正在读取设备配置；读取完成前不会开放配置操作。');
 	const changed = dirty(controller);
 	const active = controller.configDraft.active === true;
 	const canApply = changed || controller.config.pending_apply === true || !active;
