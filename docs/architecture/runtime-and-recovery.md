@@ -15,7 +15,8 @@
 冒充核心运行。Nikki 已安装或其他 Mihomo 存在时拒绝启动，不自动停止或迁移其他 owner。
 
 stage 接收 root 私有 JSON 编译结果，只投影代理组、规则和指向原生已就绪缓存的 file
-provider；不接收内联节点、远程 provider 或规则下载器。强制关闭 DNS、TUN、透明代理与
+provider；不接收内联节点、远程 provider 或规则下载器。规则限于不加载外部资源的基本
+域名、IP、端口、NETWORK 和 MATCH 规则，不接受 GeoData 或复合规则。强制关闭 DNS、TUN、透明代理与
 额外监听器，只提供绑定 `127.0.0.1` 的 mixed 端口和私有目录内的 Unix controller。
 配置与来源内容摘要经 `mihomo -t` 后原子保存为单个 stage 对象；start 再验证来源身份、
 摘要和配置，避免把已经变化的缓存用于旧编译结果。stage 不等于网络接管。

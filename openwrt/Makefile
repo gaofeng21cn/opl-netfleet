@@ -27,6 +27,17 @@ endef
 define Package/opl-netfleet/prerm
 #!/bin/sh
 main=/usr/libexec/opl-netfleet/main.uc
+if [ -x "$$main" ]; then
+	ucode "$$main" native-core-stop >/dev/null || {
+		printf '%s\n' 'opl-netfleet: native core stop unconfirmed; refusing removal' >&2
+		exit 1
+	}
+	if [ ! -e /etc/config/nikki ] && [ ! -e /etc/init.d/nikki ]; then
+		/etc/init.d/opl-netfleet stop >/dev/null 2>&1 || true
+		/etc/init.d/opl-netfleet disable >/dev/null 2>&1 || true
+		exit 0
+	fi
+fi
 active_profile=$$(uci -q get nikki.config.profile 2>/dev/null) || {
 	printf '%s\n' 'opl-netfleet: cannot inspect Nikki profile; refusing removal' >&2
 	exit 1

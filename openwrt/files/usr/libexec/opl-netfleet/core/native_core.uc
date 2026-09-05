@@ -7,6 +7,11 @@ export function prepare(input, sources) {
 		return { ok: false, error: "compiled_profile_required" };
 	if (length(input.proxies ?? []) > 0 || length(keys(input["rule-providers"] ?? {})) > 0)
 		return { ok: false, error: "unsupported_native_source" };
+	for (let rule in input.rules) {
+		if (type(rule) != "string" || index(["MATCH", "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD",
+			"IP-CIDR", "IP-CIDR6", "SRC-IP-CIDR", "SRC-PORT", "DST-PORT", "NETWORK"], split(rule, ",")[0]) < 0)
+			return { ok: false, error: "unsupported_native_rule" };
+	}
 	const port = input["mixed-port"] ?? 17890;
 	if (type(port) != "int" || port < 1024 || port > 65535)
 		return { ok: false, error: "invalid_mixed_port" };

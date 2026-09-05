@@ -9,7 +9,8 @@ OpenWrt 数据面的独立运行产品；在两个真实后端完成后，再从
 
 当前 `nikki-mihomo` 路径仍把 SubscriptionOwner、RuntimeBackend 和 OpenWrtDataPlaneOwner
 委托给 Nikki/Mihomo。source 已有[原生订阅准备](../architecture/domain-model.md#原生订阅准备)，
-但没有正式 `native-mihomo` 激活链、sing-box adapter 或运行后端切换，不能把准备成功显示为已接管。
+及[原生核心显式代理生命周期](../architecture/runtime-and-recovery.md#原生核心生命周期)，
+但没有完整原生网关激活链、sing-box adapter 或运行后端切换，不能把核心启动显示为整网接管。
 
 ## 最小实现顺序
 
@@ -39,7 +40,7 @@ IPv4 截获；正常停止先撤截获再结束进程，核心意外退出时由
 始终包含 `qualified=false`、`production_ready=false`；不能配合 `--packages`，不能被用于
 生产激活。默认 VM/package qualification 不增加本实验的耗时。
 
-此入口验证来源准备以及原生 IPv4 数据面和核心生命周期的可行性；它不证明正式启停与
+此入口验证正式来源准备、核心显式代理启停以及原生 IPv4 数据面原语；它不证明完整网关启停与
 周期选优接线、IPv6、路由器自身流量、fw4 reload、owner 进程强杀、开机恢复、包卸载、
 Nikki 迁移或 Zashboard 资源管理已经实现。正式路径还必须将这些责任收敛到现有 mutation
 owner，不能复制实验脚本作为常驻第二控制器。

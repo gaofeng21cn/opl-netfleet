@@ -27,8 +27,9 @@ root 私有文件输入，目录 `0700`、文件 `0600`，不进入参数、返�
 记录脱敏错误并继续其他来源。来源 URL 或 user-agent 改变后，旧缓存不得被标为当前来源
 就绪或继承其成功时间；删除来源同时删除该来源缓存。显示名与启用开关不改变内容身份。
 
-该准备 owner 不替代当前 Nikki refresh，两个入口不能同时写一份来源缓存。后续正式原生
-activation 必须接管这些输入并负责运行时应用，不能让准备命令绕过 active 更新事务。
+该准备 owner 不替代当前 Nikki refresh，两个入口不能同时写一份来源缓存。
+[原生核心生命周期](runtime-and-recovery.md#原生核心生命周期)注册期间拒绝修改来源或缓存，
+必须先显式停止。后续网关 activation 必须负责运行时应用，不能绕过 active 更新事务。
 
 ## 产品定位
 
@@ -36,7 +37,7 @@ OpenWrt + Nikki + Mihomo 必须在没有 NetFleet 时独立提供可用网络。
 
 NetFleet 不能成为基础联网、订阅更新、DNS、nft、默认路由或 Mihomo 生命周期的前置条件。未安装、未启用、自身崩溃或被卸载时，用户必须仍能在 Nikki 中选择原始 Profile。
 
-这是当前 `nikki-mihomo` 运行合同，不是永久产品身份。长期产品方向见[设计白皮书](../product/whitepaper.md)：NetFleet 可以在 successor 已完整接管订阅、运行后端、OpenWrt 数据面生命周期和安全清理后不再依赖 Nikki，并允许同一时刻选择一个满足统一合同的 Mihomo、sing-box 或其他后端。当前 Nikki 运行链已有 SubscriptionOwner（只读发现、脱敏投影、显式 refresh 编排）；独立来源与缓存只用于上述原生订阅准备。正式 `RuntimeBackend` 切换、原生 Mihomo 生命周期、sing-box adapter 和自有 Zashboard 资源管理仍未实现，UI 不得把这些目标显示为当前可用选项，运行代码也不得为未来后端预建双写或 fallback。
+这是当前 `nikki-mihomo` 运行合同，不是永久产品身份。长期产品方向见[设计白皮书](../product/whitepaper.md)：NetFleet 可以在 successor 已完整接管订阅、运行后端、OpenWrt 数据面生命周期和安全清理后不再依赖 Nikki，并允许同一时刻选择一个满足统一合同的 Mihomo、sing-box 或其他后端。当前 Nikki 运行链已有 SubscriptionOwner（只读发现、脱敏投影、显式 refresh 编排）；独立来源与缓存供原生核心的显式代理阶段使用。完整网关 `RuntimeBackend` 切换、原生 DNS/透明代理接管、sing-box adapter 和自有 Zashboard 资源管理仍未实现，UI 不得把这些目标显示为当前可用选项，运行代码也不得为未来后端预建双写或 fallback。
 
 ## 能力分层与使用逻辑
 

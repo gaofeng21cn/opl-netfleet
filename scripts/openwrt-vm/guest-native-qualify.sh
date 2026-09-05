@@ -321,6 +321,13 @@ curl -fsS --noproxy '*' -H 'Authorization: Bearer native-vm-fixture' \
 	http://127.0.0.1:19090/proxies >"$work/proxies.json"
 grep -q 'native-region-node' "$work/proxies.json"
 stage=provider_readiness
+ucode -e '
+ import { unfix } from "/usr/libexec/opl-netfleet/adapters/mihomo.uc";
+ import { readfile } from "fs";
+ const manifest = json(readfile("/tmp/netfleet-native-fixture/manifest.json"));
+ for (let group in manifest.generated_groups.standard.candidate_groups)
+   if (!unfix("native-vm-fixture", group.name)) die("candidate reset failed");
+' >"$work/reset.log" 2>&1
 curl -fsS --noproxy '*' --max-time 8 -H 'Authorization: Bearer native-vm-fixture' \
 	http://127.0.0.1:19090/providers/proxies/NETFLEET-SOURCE-fixture/healthcheck >"$work/health.log"
 curl -fsS --noproxy '*' --max-time 8 -H 'Authorization: Bearer native-vm-fixture' --get \

@@ -14,7 +14,8 @@ NetFleet 当前是 OpenWrt + Nikki + Mihomo 的可选增强层。第一阶段 Su
 单机场 cache 原子替换、Mihomo 生命周期、DNS、nft 和路由。Mihomo 继续拥有节点连接、组内
 健康检查和 URLTest。NetFleet 另外只增加显式出口绑定、跨机场和地区的资源组织、可验证的
 选择，以及安全的生成、启用、恢复事务。这条运行链不接管数据面。另有只经显式 root CLI
-调用的[原生订阅准备 owner](domain-model.md#原生订阅准备)，不改变当前 Nikki 运行链。
+调用的[原生订阅准备 owner](domain-model.md#原生订阅准备)和
+[显式代理核心生命周期](runtime-and-recovery.md#原生核心生命周期)，不改变当前 Nikki 运行链。
 
 当前仓库包含 UCode runtime、OpenWrt package source、薄 rpcd 适配器、原生 LuCI 页面，
 以及一个由 `procd` 直接监督的前台 supervisor。设备配置可以在已有 Nikki subscription、
@@ -60,7 +61,7 @@ RecoveryProfileRef
 4. disable、事务回滚和进程级恢复优先恢复独立的 Recovery Profile；原生 runtime 仍失败时，
    才允许 Nikki 官方 stop/cleanup 恢复网络直通。
 5. NetFleet 当前运行链不自行清理 DNS、nft 或路由，不对 Nikki cache 建立第二 writer，
-   原生准备缓存不参与当前选路或恢复。
+   原生缓存不参与 Nikki 运行链的选路或恢复；原生显式代理没有 LAN 截获。
 6. 每项状态和 mutation 只有一个 owner；投影不得反向成为事实源。
 7. 设备软件操作不授权重启、关机、系统升级、固件写入或依赖现场才能撤销的动作。
 8. source 测试、package 构建和设备运行分别是不同证据层，不能互相替代。
