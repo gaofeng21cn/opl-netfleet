@@ -14,7 +14,8 @@ Individual diagnostic lanes cannot authorize deployment. No real devices are con
 Options:
   --ref <git-ref>   Source ref to qualify (default: origin/main)
   --packages <dir>  Also install and qualify the exact APK candidate directory
-  --diagnostic <lane>  Run only native, setup, migration, runtime, or package diagnostics
+  --diagnostic <lane>  Run native, setup, migration, runtime, package, or compatibility diagnostics
+  --compat-runtime <dir>  Isolated musl dependency payload for compatibility diagnostics
   --output <path>   Qualification receipt path outside the repository
   -h, --help        Show this help
 EOF
@@ -29,6 +30,7 @@ source_ref=origin/main
 output=""
 packages=""
 diagnostic=all
+compat_runtime=""
 while (($#)); do
 	case "$1" in
 		--ref)
@@ -49,7 +51,12 @@ while (($#)); do
 		--diagnostic)
 			(($# >= 2)) || die "--diagnostic requires a lane"
 			diagnostic=$2
-			case "$diagnostic" in native|setup|migration|runtime|package) ;; *) die "unknown diagnostic lane: $diagnostic" ;; esac
+			case "$diagnostic" in native|setup|migration|runtime|package|compatibility) ;; *) die "unknown diagnostic lane: $diagnostic" ;; esac
+			shift 2
+			;;
+		--compat-runtime)
+			(($# >= 2)) || die "--compat-runtime requires a directory"
+			compat_runtime=$(cd "$2" && pwd)
 			shift 2
 			;;
 		-h|--help)
@@ -61,6 +68,8 @@ while (($#)); do
 done
 
 [[ -n "$output" ]] || die "--output is required"
+[[ "$diagnostic" != compatibility || -d "$compat_runtime/vendor/mitmproxy" ]] || die "compatibility diagnostic requires --compat-runtime"
+[[ "$diagnostic" == compatibility || -z "$compat_runtime" ]] || die "compatibility payload is diagnostic-only"
 [[ "$diagnostic" != package || -n "$packages" ]] || die "package diagnostic requires --packages"
 [[ "$diagnostic" == all || "$diagnostic" == package || "$diagnostic" == setup || -z "$packages" ]] || die "only setup and package diagnostics accept --packages"
 [[ "$source_ref" != -* ]] || die "source ref cannot begin with '-'"
@@ -106,6 +115,7 @@ mkdir -p "$source_dir"
 git -C "$repo_dir" archive "$source_commit" \
 	openwrt/Makefile \
 	openwrt/mihomo-meta/source.json \
+	openwrt/https-compat \
 	openwrt/files/usr/libexec/opl-netfleet \
 	openwrt/files/etc/init.d/opl-netfleet \
 	openwrt/files/etc/init.d/opl-netfleet-core \
@@ -151,6 +161,7 @@ NETFLEET_VM_CACHE="$cache_root/opl-netfleet/openwrt-vm" \
 NETFLEET_QEMU_FIRMWARE=$firmware \
 NETFLEET_QEMU_VERSION=$qemu_version \
 	NETFLEET_VM_LANE=$diagnostic \
+	NETFLEET_COMPAT_RUNTIME="$compat_runtime" \
 	NETFLEET_PACKAGE_ARCHIVE="$package_archive" \
 	NETFLEET_PACKAGE_MANIFEST_SHA256="$package_manifest_sha" \
 	sh "$source_dir/scripts/openwrt-vm/qualify.sh"

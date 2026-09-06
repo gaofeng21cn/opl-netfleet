@@ -23,7 +23,7 @@ qemu_version=${NETFLEET_QEMU_VERSION:?}
 package_archive=${NETFLEET_PACKAGE_ARCHIVE:-}
 package_manifest_sha=${NETFLEET_PACKAGE_MANIFEST_SHA256:-}
 lane_mode=${NETFLEET_VM_LANE:-all}
-case "$lane_mode" in all|native|setup|migration|runtime|package) ;; *) echo 'Unknown VM lane' >&2; exit 1 ;; esac
+case "$lane_mode" in all|native|setup|migration|runtime|package|compatibility) ;; *) echo 'Unknown VM lane' >&2; exit 1 ;; esac
 [ "$lane_mode" != package ] || [ -n "$package_archive" ] || { echo 'Package lane requires candidate' >&2; exit 1; }
 if { [ -z "$package_archive" ] && [ -n "$package_manifest_sha" ]; } ||
 	{ [ -n "$package_archive" ] && [ -z "$package_manifest_sha" ]; }; then
@@ -140,6 +140,7 @@ fetch_asset "$mihomo_name" "$mihomo_sha" "$mihomo_url"
 fetch_asset "$yq_name" "$yq_sha" "$yq_url"
 tar -cf "$work/runtime-source.tar" -C "$workspace" \
 	openwrt/Makefile \
+	openwrt/https-compat \
 	openwrt/files/usr/libexec/opl-netfleet \
 	openwrt/files/etc/init.d/opl-netfleet \
 	openwrt/files/etc/init.d/opl-netfleet-core \
@@ -310,11 +311,13 @@ image_elapsed_ms=$((image_elapsed_ms + $(now_ms) - image_started_ms))
 [ -f "$firmware" ] || { echo "AArch64 QEMU EFI firmware not found" >&2; exit 1; }
 boot_started_ms=$(now_ms)
 
+vm_memory=256
+[ "$lane_mode" != compatibility ] || vm_memory=768
 qemu-system-aarch64 \
 	-accel hvf \
 	-machine virt \
 	-cpu host \
-	-m 256 \
+	-m "$vm_memory" \
 	-smp 2 \
 	-bios "$firmware" \
 	-drive "file=$work/openwrt.img,format=raw,if=none,id=drive0" \
@@ -400,6 +403,7 @@ transfer_started_ms=$(now_ms)
 tar -cf - -C "$workspace/scripts" deploy-openwrt-remote.sh \
 	-C "$workspace/scripts/openwrt-vm" guest-qualify.sh guest-runtime-qualify.sh guest-package-qualify.sh \
 	guest-native-qualify.sh guest-setup-qualify.sh guest-migration-qualify.sh \
+	guest-compatibility-qualify.sh \
 	-C "$work" runtime-source.tar local-probe.crt "$mihomo_name" "$yq_name" |
 ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf -'
 expected_transfer=$(printf '%s\n' \
@@ -455,6 +459,17 @@ if [ "$lane_mode" = all ] || [ "$lane_mode" = native ]; then
 	boot_clean_vm
 	run_guest native native
 fi
+if [ "$lane_mode" = compatibility ]; then
+	boot_clean_vm
+	stage=compatibility_transfer
+	tar -cf "$work/compat-runtime.tar" -C "${NETFLEET_COMPAT_RUNTIME:?}" vendor
+	compat_runtime_sha=$(sha256_file "$work/compat-runtime.tar")
+	ssh $ssh_common root@127.0.0.1 'cat >/tmp/compat-runtime.tar' <"$work/compat-runtime.tar"
+	actual_sha=$(ssh $ssh_common root@127.0.0.1 'sha256sum /tmp/compat-runtime.tar' | awk '{print $1}')
+	[ "$actual_sha" = "$compat_runtime_sha" ] || exit 1
+	ssh $ssh_common root@127.0.0.1 'mkdir -p /tmp/compat-runtime && tar -xf /tmp/compat-runtime.tar -C /tmp/compat-runtime && rm /tmp/compat-runtime.tar'
+	run_guest compatibility compatibility
+fi
 if [ "$lane_mode" = all ] || [ "$lane_mode" = setup ]; then
 	boot_clean_vm
 	run_guest setup setup
@@ -493,6 +508,7 @@ required = {
     "runtime": {"management", "runtime"},
     "migration": {"management", "runtime", "migration"},
     "package": {"package-management", "package-runtime", "package"},
+    "compatibility": {"compatibility"},
 }[mode]
 if package_sha and mode == "all":
     required |= {"package-management", "package-runtime", "package"}
