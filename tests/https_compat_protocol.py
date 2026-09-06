@@ -53,6 +53,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
     DEVICE = "127.0.0.1"
     MODE = "regular"
     PROXY_PORT = None
+    PRESERVE_SOURCE_PORT = False
 
     async def asyncSetUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="netfleet-compat-test-")
@@ -69,6 +70,8 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         config.certfile = str(self.directory / "upstream.pem")
         config.keyfile = str(self.directory / "upstream.key")
         config.alpn_protocols = ["h2", "http/1.1"]
+        if self._testMethodName == "test_h2_required_upstream_h1_is_not_replayed":
+            config.alpn_protocols = ["http/1.1"]
         config.accesslog = None
         config.errorlog = None
         config.graceful_timeout = 0.2
@@ -81,13 +84,27 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         (self.directory / "config.json").write_text(json.dumps(policy))
         self.log = (self.directory / "proxy.log").open("wb")
         self.addCleanup(self.log.close)
+        extra = []
+        trusted_ca = self.directory / "upstream.pem"
+        if self._testMethodName == "test_local_processing_probe":
+            from mitmproxy.certs import CertStore
+            store = CertStore.from_store(self.directory / "ca", "mitmproxy", 2048)
+            entry = store.get_cert("localhost", [x509.DNSName("localhost")])
+            (self.directory / "ca/probe-cert.pem").write_bytes(entry.cert.to_pem())
+            (self.directory / "ca/probe-key.pem").write_bytes(entry.privatekey.private_bytes(serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+            trusted_ca = self.directory / "trusted.pem"
+            trusted_ca.write_bytes((self.directory / "upstream.pem").read_bytes() + (self.directory / "ca/mitmproxy-ca-cert.pem").read_bytes())
+            extra = ["--mode", "regular@127.0.0.1:18444", "--set", "netfleet_local_probe=true"]
         self.proxy = await asyncio.create_subprocess_exec(shutil.which("mitmdump"),
             "--listen-host", self.BIND, "--listen-port", str(self.proxy_port), "--mode", self.MODE,
             "-s", str(ADDON), "--set", "upstream_cert=false", "--set", "connection_strategy=lazy",
+            "--set", f"netfleet_preserve_source_port={str(self.PRESERVE_SOURCE_PORT).lower()}",
             "--set", f"confdir={self.directory / 'ca'}", "--set", "flow_detail=0",
-            "--set", f"ssl_verify_upstream_trusted_ca={self.directory / 'upstream.pem'}",
+            "--set", f"ssl_verify_upstream_trusted_ca={trusted_ca}",
             "--set", f"netfleet_config={self.directory / 'config.json'}",
             "--set", f"netfleet_socket={self.directory / 'engine.sock'}",
+            *extra,
             stdout=self.log, stderr=self.log)
         self.addAsyncCleanup(self.stop_proxy)
         for _ in range(100):
@@ -122,9 +139,9 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         self.shutdown.set()
         await asyncio.wait_for(self.upstream, 3)
 
-    async def health(self):
+    async def health(self, probe=False):
         reader, writer = await asyncio.open_unix_connection(str(self.directory / "engine.sock"))
-        writer.write(b"status\n")
+        writer.write(b"probe\n" if probe else b"status\n")
         await writer.drain()
         data = json.loads(await reader.readline())
         writer.close()
@@ -257,6 +274,18 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["x-upstream-protocol"], "1.1")
         self.assertEqual((await self.health())["rules"], {})
+
+    async def test_local_processing_probe(self):
+        result = await asyncio.wait_for(self.health(probe=True), 2)
+        self.assertTrue(result["processing_chain"])
+        self.assertEqual(result["active_connections"], 0)
+        self.assertEqual(result["rules"], {})
+
+    async def test_h2_required_upstream_h1_is_not_replayed(self):
+        response = await self.client.post(self.url + "/no-replay", content=b"must-not-be-replayed")
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(self.received, [])
+        self.assertEqual(len((await self.health())["failure_events"]), 1)
 
 
 if __name__ == "__main__":

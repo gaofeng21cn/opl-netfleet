@@ -6,6 +6,8 @@
 'require netfleet.managed as managed';
 'require netfleet.api as netfleet';
 'require netfleet.config as netfleetConfig';
+'require netfleet.compatibility as compatibility';
+'require poll';
 
 const NAVIGATION = [
 	[ 'overview', '概览' ],
@@ -1048,6 +1050,11 @@ return view.extend({
 	loadManagement: function() {
 		managed.preloadSubscriptions(this).catch(function() {});
 		this.loadConfig();
+		compatibility.refresh(this);
+		if (!this.compatibilityPoll) {
+			this.compatibilityPoll = () => compatibility.refresh(this);
+			poll.add(this.compatibilityPoll, 5);
+		}
 		return this.prepareDashboard();
 	},
 
@@ -1168,6 +1175,12 @@ return view.extend({
 			self.currentView = target;
 			self.redraw();
 		});
+		if (this.currentView === 'overview' || this.currentView === 'events')
+			content.push(E('div', { 'class': 'netfleet-config-row' }, [
+				E('span', {}, 'HTTPS 兼容：' + compatibility.label(this.compatibility) +
+					(this.compatibility ? ' · ' + this.compatibility.config.rules.filter(rule => rule.enabled).length + ' 条启用规则' : '')),
+				E('button', { 'class': 'btn cbi-button', 'click': function() { self.currentView = 'config'; self.configSection = 'compatibility'; self.redraw(); } }, '管理')
+			]));
 
 		let sourceName = '设备实时 RPC';
 		let freshness = '刚刚更新';

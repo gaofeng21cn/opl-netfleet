@@ -10,6 +10,12 @@ function declare(options) {
 }
 
 const calls = {
+	compatibilityGet: declare({ object: 'opl-netfleet', method: 'compatibility_get' }),
+	compatibilityCa: declare({ object: 'opl-netfleet', method: 'compatibility_ca' }),
+	compatibilityApply: declare({ object: 'opl-netfleet', method: 'compatibility_apply', params: [ 'request' ] }),
+	compatibilityEnable: declare({ object: 'opl-netfleet', method: 'compatibility_enable', params: [ 'request' ] }),
+	compatibilityDisable: declare({ object: 'opl-netfleet', method: 'compatibility_disable', params: [ 'request' ] }),
+	compatibilityProbe: declare({ object: 'opl-netfleet', method: 'compatibility_probe', params: [ 'request' ] }),
 	nativeSetupGet: declare({ object: 'opl-netfleet', method: 'native_setup_get' }),
 	nativeSetupApply: declare({ object: 'opl-netfleet', method: 'native_setup_apply', params: [ 'request' ] }),
 	dashboardGet: declare({ object: 'opl-netfleet', method: 'dashboard_get' }),
@@ -75,6 +81,12 @@ function withRpcTimeout(seconds, callback) {
 }
 
 return baseclass.extend({
+	compatibilityGet: function() { return execute('compatibilityGet'); },
+	compatibilityCa: function() { return execute('compatibilityCa'); },
+	compatibilityApply: function(request) { return executeRequest('compatibilityApply', request); },
+	compatibilityEnable: function(request) { return executeRequest('compatibilityEnable', request); },
+	compatibilityDisable: function(request) { return executeRequest('compatibilityDisable', request); },
+	compatibilityProbe: function(request) { return executeRequest('compatibilityProbe', request); },
 	nativeSetupGet: function() { return execute('nativeSetupGet'); },
 	nativeSetupApply: function(request) {
 		return withRpcTimeout(300, function() { return executeRequest('nativeSetupApply', request); });

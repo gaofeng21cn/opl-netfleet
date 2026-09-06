@@ -24,6 +24,7 @@ import { get as subscriptions_get, set as subscriptions_set, update_result as su
 import { get as migration_get, apply as migration_apply } from "./application/backend_migration.uc";
 import { get as dashboard_get } from "./application/dashboard.uc";
 import { get as native_setup_get, apply as native_setup_apply } from "./application/native_setup.uc";
+import { dispatch as compatibility_dispatch } from "./application/compatibility.uc";
 
 const REFRESH_DIR = "/tmp/opl-netfleet-subscription-refresh";
 const MAIN_PATH = "/usr/libexec/opl-netfleet/main.uc";
@@ -2264,6 +2265,11 @@ function disable_without_policy(action_name) {
 };
 
 const action = ARGV[0] ?? "";
+if (index(["compatibility-get", "compatibility-apply", "compatibility-enable", "compatibility-disable", "compatibility-probe", "compatibility-ca"], action) >= 0) {
+	const result = compatibility_dispatch(substr(action, length("compatibility-")), ARGV[1]);
+	printf("%J\n", result);
+	exit(result.ok ? 0 : 1);
+}
 if (action == "subscriptions-refresh") {
 	const id = ARGV[1];
 	if (BACKEND_KIND != "native-mihomo" || type(id) != "string" || !match(id, /^[A-Za-z0-9_]+$/))

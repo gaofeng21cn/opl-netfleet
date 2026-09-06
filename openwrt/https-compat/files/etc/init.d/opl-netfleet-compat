@@ -1,0 +1,23 @@
+#!/bin/sh /etc/rc.common
+USE_PROCD=1
+START=96
+STOP=04
+
+start_service() {
+	[ -f /etc/opl-netfleet/compatibility/config.json ] || return 0
+	[ "$(jsonfilter -i /etc/opl-netfleet/compatibility/config.json -e '@.enabled')" = true ] || return 0
+	[ -f /var/run/opl-netfleet-compat/effective.json ] || /usr/bin/python3 /usr/libexec/opl-netfleet-compat/control.py prepare >/dev/null || return 1
+	procd_open_instance engine
+	procd_set_param command /usr/bin/python3 /usr/libexec/opl-netfleet-compat/control.py run
+	procd_set_param respawn 3600 2 3
+	procd_set_param stdout 0
+	procd_set_param stderr 0
+	procd_set_param term_timeout 5
+	procd_close_instance
+}
+
+stop_service() {
+	# The kernel lease still expires when a caller already holds the mutation lock.
+	/usr/bin/python3 /usr/libexec/opl-netfleet-compat/control.py bypass >/dev/null
+	return 0
+}

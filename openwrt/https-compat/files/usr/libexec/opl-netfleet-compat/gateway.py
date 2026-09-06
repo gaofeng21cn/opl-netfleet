@@ -1,4 +1,5 @@
 import ipaddress
+import hashlib
 import json
 import subprocess
 
@@ -24,17 +25,27 @@ def exists():
         return False
 
 
-def prepare(interfaces):
-    if exists():
-        return
+def prepare(interfaces, dscp_bypass=()):
     if not interfaces or not all(isinstance(name, str) and name and len(name) <= 15 for name in interfaces):
         raise ValueError("lan_interfaces_required")
     names = ", ".join(json.dumps(name) for name in interfaces)
-    run(["nft", "-f", "-"], input=f"""table inet {TABLE} {{
+    if not all(type(value) is int and 0 <= value <= 63 for value in dscp_bypass):
+        raise ValueError("invalid_dscp_bypass")
+    dscp = ", ".join(str(value) for value in dscp_bypass)
+    exclusions = f"ip dscp {{ {dscp} }} return\n  ip6 dscp {{ {dscp} }} return" if dscp else ""
+    signature = hashlib.sha256(json.dumps([1, interfaces, list(dscp_bypass)]).encode()).hexdigest()
+    present = exists()
+    if present:
+        current = json.loads(run(["nft", "-j", "list", "table", "inet", TABLE]))
+        if any(item.get("table", {}).get("comment") == signature for item in current.get("nftables", [])):
+            return
+    run(["nft", "-f", "-"], input=(f"delete table inet {TABLE}\n" if present else "") + f"""table inet {TABLE} {{
+ comment "{signature}"
  set targets4 {{ type ipv4_addr . ipv4_addr . inet_service; flags interval,timeout; timeout {LEASE_SECONDS}s; }}
  set targets6 {{ type ipv6_addr . ipv6_addr . inet_service; flags interval,timeout; timeout {LEASE_SECONDS}s; }}
  chain intercept {{
   type nat hook prerouting priority -152; policy accept;
+  {exclusions}
   iifname {{ {names} }} meta l4proto tcp ip saddr . ip daddr . tcp dport @targets4 redirect to :{PORT}
   iifname {{ {names} }} meta l4proto tcp ip6 saddr . ip6 daddr . tcp dport @targets6 redirect to :{PORT}
  }}

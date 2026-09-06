@@ -65,10 +65,16 @@ config_request() {
 
 case "$1" in
 	list)
-		printf '%s\n' '{"native_setup_get":{},"native_setup_apply":{"request":"Table"},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":"Table"},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":"Table"},"onboarding_get":{},"onboarding_apply":{"request":"Table"},"status":{},"events":{},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":"Table"},"config_save":{"request":"Table"},"config_apply":{"request":"Table"},"enable":{},"select_auto":{"capability":"String"},"refresh":{},"disable":{}}'
+		printf '%s\n' '{"compatibility_get":{},"compatibility_ca":{},"compatibility_apply":{"request":"Table"},"compatibility_enable":{"request":"Table"},"compatibility_disable":{"request":"Table"},"compatibility_probe":{"request":"Table"},"native_setup_get":{},"native_setup_apply":{"request":"Table"},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":"Table"},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":"Table"},"onboarding_get":{},"onboarding_apply":{"request":"Table"},"status":{},"events":{},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":"Table"},"config_save":{"request":"Table"},"config_apply":{"request":"Table"},"enable":{},"select_auto":{"capability":"String"},"refresh":{},"disable":{}}'
 		;;
 	call)
 		case "$2" in
+			compatibility_get) respond_owner ucode "$main" compatibility-get ;;
+			compatibility_ca) respond_owner ucode "$main" compatibility-ca ;;
+			compatibility_apply) config_request compatibility-apply 0 ;;
+			compatibility_enable) config_request compatibility-enable 0 ;;
+			compatibility_disable) config_request compatibility-disable 0 ;;
+			compatibility_probe) config_request compatibility-probe 0 ;;
 			subscriptions_refresh)
 				payload=$(cat)
 				id=$(jsonfilter -s "$payload" -e '@.id' 2>/dev/null || true)

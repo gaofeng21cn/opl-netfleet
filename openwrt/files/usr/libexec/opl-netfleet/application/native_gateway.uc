@@ -13,6 +13,7 @@ const CONFIG = `${RUN}/config.yaml`;
 const VENDOR = "/usr/share/opl-netfleet/nikki";
 const SERVICE = "opl-netfleet-core";
 const COMMAND = ["/usr/bin/mihomo", "-d", RUN, "-f", CONFIG];
+const COMPAT = "/usr/libexec/opl-netfleet-compat/control.py";
 
 function shell(command) { return system(command + " >/dev/null 2>&1") == 0; };
 function capture(command) {
@@ -128,6 +129,9 @@ function prepare() {
 	return { ok: true, result: { prepared: true, config_sha256: sha256(CONFIG) } };
 };
 function cleanup() {
+	// The optional TLS layer cannot remain attached while the original gateway is changing.
+	if (shell("nft list table inet netfleet_compat") && !shell("nft delete table inet netfleet_compat"))
+		return { ok: false, error: "compatibility_cleanup_failed" };
 	const state = ownership();
 	if (state == null) return shell("nft list table inet netfleet") ?
 		{ ok: false, error: "network_owner_unknown" } : { ok: true, result: { clean: true } };
@@ -234,6 +238,11 @@ function watch() {
 			shell(`logger -t ${SERVICE} lifecycle_reconcile_failed`);
 	};
 	const pending = loop.timer(-1, synchronize);
+	const compatibility = loop.timer(-1, () => {
+		compatibility.set(2000);
+		if (fs.stat(COMPAT) != null) shell(`timeout 4 /usr/bin/python3 ${COMPAT} tick >/dev/null 2>&1 &`);
+	});
+	if (compatibility != null) compatibility.set(2000);
 	if (pending == null) return { ok: false, error: "lifecycle_timer_unavailable" };
 	// procd emits object notifications, not service trigger events.
 	const subscriber = connection.subscriber((request) => {
@@ -252,6 +261,32 @@ function watch() {
 	return { ok: false, error: "lifecycle_subscription_ended" };
 };
 
+function compatibility_snapshot() {
+	const uci = cursor();
+	let custom = false;
+	for (let kind in ["router_access_control", "lan_access_control"]) {
+		let defaults = 0;
+		uci.foreach("netfleet", kind, (section) => {
+			if (`${section.enabled}` != "1") return;
+			for (let key in ["ip", "ip6", "mac", "user", "group", "cgroup"])
+				if (length(section[key] ?? []) > 0) custom = true;
+			if (`${section.proxy}` != "1") custom = true;
+			defaults++;
+		});
+		if (defaults != 1) custom = true;
+	}
+	const nft = parse(capture("nft -j list set inet netfleet lan_inbound_device"));
+	let interfaces = [];
+	for (let item in nft?.nftables ?? []) if (item.set?.name == "lan_inbound_device") interfaces = item.set.elem ?? [];
+	const result = status();
+	return { ok: true, result: { backend: "native-mihomo", ready: result.result?.ready == true,
+		router_proxy: enabled("proxy", "router_proxy"), lan_proxy: enabled("proxy", "lan_proxy"),
+		ipv4_proxy: enabled("proxy", "ipv4_proxy"), ipv6_proxy: enabled("proxy", "ipv6_proxy"),
+		interfaces: interfaces, custom_lan_access: custom, preserve_source_port: true,
+		source_bypass: length(uci_value("proxy", "bypass_fwmark", [])) > 0,
+		dscp_bypass: map(uci_value("proxy", "bypass_dscp", []), value => int(value)) } };
+};
+
 let result;
 try {
 	if (system("test \"$(id -u)\" = 0") != 0) result = { ok: false, error: "root_required" };
@@ -261,6 +296,7 @@ try {
 	else if (ARGV[0] == "reconcile") result = reconcile();
 	else if (ARGV[0] == "watch") result = watch();
 	else if (ARGV[0] == "status") result = status();
+	else if (ARGV[0] == "compatibility-snapshot") result = compatibility_snapshot();
 	else result = { ok: false, error: "unknown_gateway_action" };
 } catch (error) { result = { ok: false, error: "gateway_operation_failed" }; }
 printf("%J\n", result);

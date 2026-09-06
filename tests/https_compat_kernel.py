@@ -19,6 +19,7 @@ class Kernel(Protocol):
     DEVICE = "10.77.0.2"
     MODE = "transparent"
     PROXY_PORT = gateway.PORT
+    PRESERVE_SOURCE_PORT = True
 
     async def asyncSetUp(self):
         if not Path("/tmp/netfleet-compat-vm-authorized").exists():
@@ -54,7 +55,7 @@ with socket.create_connection(('198.51.100.10',int(sys.argv[1])),timeout=3) as r
   connection.sendall(('GET /wire HTTP/1.1\\r\\nHost: localhost:'+sys.argv[1]+'\\r\\nConnection: close\\r\\n\\r\\n').encode())
   result=b''
   while data:=connection.recv(65536): result+=data
-  print(json.dumps({'h2':b'x-upstream-protocol: 2' in result.lower(),'status':result.split(b'\\r\\n')[0].decode()}))
+  print(json.dumps({'h2':b'x-upstream-protocol: 2' in result.lower(),'source_port':connection.getsockname()[1],'status':result.split(b'\\r\\n')[0].decode()}))
 """
         child = await asyncio.create_subprocess_exec("ip", "netns", "exec", "netfleet-compat-test",
             sys.executable, "-c", code, str(self.upstream_port), str(self.ca_bundle),
@@ -68,7 +69,9 @@ with socket.create_connection(('198.51.100.10',int(sys.argv[1])),timeout=3) as r
         candidates = [(self.DEVICE, "198.51.100.10/32", self.upstream_port)]
         gateway.renew(candidates)
         self.assertTrue(gateway.status()["intercepting"])
-        self.assertTrue((await self.request())["h2"])
+        response = await self.request()
+        self.assertTrue(response["h2"])
+        self.assertEqual(self.received[-1]["source_port"], response["source_port"])
         gateway.bypass()
         self.assertFalse(gateway.status()["intercepting"])
         self.assertFalse((await self.request())["h2"])

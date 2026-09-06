@@ -1,4 +1,5 @@
 import asyncio
+from collections import deque
 import hashlib
 import json
 import os
@@ -7,9 +8,13 @@ import sys
 import time
 
 from mitmproxy import ctx
+from mitmproxy.proxy import layers
+from mitmproxy.proxy.layers.tls import starts_like_tls_record
+from mitmproxy.proxy.mode_specs import TransparentMode
 
 sys.path.insert(0, str(Path(__file__).parent))
 from policy import select, validate
+from local_probe import LocalProbe, TLS_PORT
 
 
 class Compatibility:
@@ -22,11 +27,17 @@ class Compatibility:
         self.results = {}
         self.server = None
         self.socket_path = None
+        self.probe = None
+        self.clients = set()
+        self.failures = deque(maxlen=100)
+        self.failed_tls_clients = set()
+        self.observed = {}
 
     def load(self, loader):
         loader.add_option("netfleet_config", str, "/etc/opl-netfleet/compatibility.json", "NetFleet compatibility configuration")
         loader.add_option("netfleet_socket", str, "/var/run/opl-netfleet-compat/engine.sock", "Private health socket")
         loader.add_option("netfleet_preserve_source_port", bool, False, "Preserve TCP source port for transparent routing")
+        loader.add_option("netfleet_local_probe", bool, False, "Enable the private TLS and HTTP processing probe")
 
     def configure(self, updated):
         if ctx.options.ssl_insecure or ctx.options.upstream_cert or ctx.options.connection_strategy != "lazy":
@@ -51,14 +62,22 @@ class Compatibility:
         self.socket_path.unlink(missing_ok=True)
         self.server = await asyncio.start_unix_server(self.health, path=str(self.socket_path), limit=1024)
         os.chmod(self.socket_path, 0o600)
+        if ctx.options.netfleet_local_probe:
+            self.probe = LocalProbe(ctx.options.confdir)
+            await self.probe.start()
 
     async def health(self, reader, writer):
         try:
-            await asyncio.wait_for(reader.readline(), 1)
+            command = await asyncio.wait_for(reader.readline(), 1)
             valid = self.refresh()
+            processing = await self.probe.check() if self.probe and command == b"probe\n" else None
+            clients = {identity for identity, rule in self.selected.items() if rule["id"] != "_health"}
             writer.write(json.dumps({"service": "netfleet-https-compat", "pid": os.getpid(), "ready": valid,
-                                     "revision": self.revision, "active_requests": len(self.active),
-                                     "rules": self.results}).encode() + b"\n")
+                                     "revision": self.revision, "active_requests": sum(client in clients for client in self.active.values()),
+                                     "active_connections": len(self.clients), "processing_chain": processing,
+                                     "failure_events": list(self.failures),
+                                     "observed": self.observed,
+                                     "rules": {key: value for key, value in self.results.items() if key != "_health"}}).encode() + b"\n")
             await writer.drain()
         finally:
             writer.close()
@@ -69,12 +88,22 @@ class Compatibility:
         host = data.client_hello.sni
         address = context.client.peername[0]
         port = context.server.address[1]
-        rule = select(self.config, address, host, port) if self.refresh() else None
+        internal = self.probe and address in ("127.0.0.1", "::1") and host == "localhost" and port == TLS_PORT
+        rule = {"id": "_health", "strategy": "h2"} if internal else (select(self.config, address, host, port) if self.refresh() else None)
         if rule is None or rule["strategy"] == "bypass":
             data.ignore_connection = True
             return
         self.selected[context.client.id] = rule
+        if not internal:
+            self.observed[rule["id"]] = {"domain": host, "address": context.server.address[0], "port": port}
         data.establish_server_tls_first = False
+
+    def next_layer(self, data):
+        # Candidate ports may also carry plaintext or unknown protocols.
+        if (isinstance(data.context.client.proxy_mode, TransparentMode)
+                and data.context.client.id not in self.selected and len(data.data_client()) >= 3
+                and not starts_like_tls_record(data.data_client())):
+            data.layer = layers.TCPLayer(data.context, ignore=True)
 
     def requestheaders(self, flow):
         rule = self.selected.get(flow.client_conn.id)
@@ -97,9 +126,15 @@ class Compatibility:
                 data.ssl_conn.set_alpn_protos(list(protocols))
 
     def server_connect(self, data):
-        if ctx.options.netfleet_preserve_source_port:
+        internal = self.probe and data.client.peername[0] in ("127.0.0.1", "::1") and data.server.address[1] == TLS_PORT
+        if ctx.options.netfleet_preserve_source_port and not internal:
             # An unavailable source port must fail the connection, never silently change its route.
             data.server.sockname = (ctx.options.connect_addr or None, data.client.peername[1])
+
+    def tls_established_server(self, data):
+        if self.protocols.get(data.context.client.id) == (b"h2",) and data.conn.alpn != b"h2":
+            self.tls_failure(data, "upstream_h2_not_negotiated")
+            data.ssl_conn.shutdown()
 
     def responseheaders(self, flow):
         flow.response.stream = True
@@ -118,7 +153,13 @@ class Compatibility:
     def tls_failure(self, data, reason):
         rule = self.selected.get(data.context.client.id)
         if rule:
-            self.results[rule["id"]] = {"at": int(time.time()), "transport_error": True, "reason": reason}
+            self.results[rule["id"]] = {"at": int(time.time()), "event": time.monotonic_ns(), "transport_error": True, "reason": reason}
+            self.record_failure(rule["id"])
+            self.failed_tls_clients.add(data.context.client.id)
+
+    def record_failure(self, identity):
+        if identity != "_health":
+            self.failures.append({"id": time.monotonic_ns(), "rule": identity, "at": time.monotonic()})
 
     def response(self, flow):
         if flow.response.status_code != 101:
@@ -132,16 +173,28 @@ class Compatibility:
         identity = flow.metadata.get("netfleet_rule") or self.selected.get(flow.client_conn.id, {}).get("id")
         if identity:
             cancelled = not flow.client_conn.connected
+            if not cancelled and flow.client_conn.id not in self.failed_tls_clients:
+                self.record_failure(identity)
             self.results[identity] = {**self.results.get(identity, {}), "at": int(time.time()),
+                                      "event": time.monotonic_ns(),
                                       "transport_error": not cancelled, "client_cancelled": cancelled}
 
+    def client_connected(self, client):
+        internal = client.peername[0] in ("127.0.0.1", "::1") and client.sockname[1] == 18444
+        if not internal:
+            self.clients.add(client.id)
+
     def client_disconnected(self, client):
+        self.clients.discard(client.id)
+        self.failed_tls_clients.discard(client.id)
         self.selected.pop(client.id, None)
         self.protocols.pop(client.id, None)
         for identity in [key for key, value in self.active.items() if value == client.id]:
             self.active.pop(identity, None)
 
     def done(self):
+        if self.probe:
+            self.probe.close()
         if self.server:
             self.server.close()
         if self.socket_path:
