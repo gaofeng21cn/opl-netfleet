@@ -1,6 +1,7 @@
 #!/bin/sh
 
 main=/usr/libexec/opl-netfleet/main.uc
+components=/usr/libexec/opl-netfleet/application/components.uc
 lock=/var/lock/opl-netfleet-deploy.lock
 
 lock_mutation() {
@@ -63,12 +64,33 @@ config_request() {
 	respond_owner ucode "$main" "$action" "$temporary" 9>&-
 }
 
+component_update() {
+	payload=$(cat)
+	[ "${#payload}" -le 1024 ] || {
+		printf '%s\n' '{"ok":false,"error":"invalid_component_request"}'
+		exit 0
+	}
+	component=$(jsonfilter -s "$payload" -e '@.component' 2>/dev/null || true)
+	version=$(jsonfilter -s "$payload" -e '@.version' 2>/dev/null || true)
+	case "$component" in netfleet|mihomo) ;; *) printf '%s\n' '{"ok":false,"error":"invalid_component_request"}'; exit 0 ;; esac
+	case "$version" in ""|-*|*[!A-Za-z0-9._+~:-]*) printf '%s\n' '{"ok":false,"error":"invalid_component_request"}'; exit 0 ;; esac
+	lock_mutation
+	respond_owner ucode "$components" update "$component" "$version" 9>&-
+}
+
 case "$1" in
 	list)
-		printf '%s\n' '{"native_setup_get":{},"native_setup_apply":{"request":"Table"},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":"Table"},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":"Table"},"onboarding_get":{},"onboarding_apply":{"request":"Table"},"status":{},"events":{},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":"Table"},"config_save":{"request":"Table"},"config_apply":{"request":"Table"},"enable":{},"select_auto":{"capability":"String"},"refresh":{},"disable":{}}'
+		printf '%s\n' '{"components_get":{},"components_check":{},"components_update":{"component":"String","version":"String"},"operation_get":{},"native_setup_get":{},"native_setup_apply":{"request":"Table"},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":"Table"},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":"Table"},"onboarding_get":{},"onboarding_apply":{"request":"Table"},"status":{},"events":{},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":"Table"},"config_save":{"request":"Table"},"config_apply":{"request":"Table"},"enable":{},"select_auto":{"capability":"String"},"refresh":{},"disable":{}}'
 		;;
 	call)
 		case "$2" in
+			components_get) respond_owner ucode "$components" get ;;
+			operation_get) respond_owner ucode "$components" operation ;;
+			components_check)
+				lock_mutation
+				respond_owner ucode "$components" check 9>&-
+				;;
+			components_update) component_update ;;
 			subscriptions_refresh)
 				payload=$(cat)
 				id=$(jsonfilter -s "$payload" -e '@.id' 2>/dev/null || true)

@@ -1,4 +1,4 @@
-import type { ClientReadResult, ConnectionsSnapshot, DeviceConfigSnapshot, EventsSnapshot, NetFleetClient, StatusSnapshot } from '../types';
+import type { ClientReadResult, ComponentsSnapshot, ConnectionsSnapshot, DeviceConfigSnapshot, EventsSnapshot, NetFleetClient, OperationsSnapshot, StatusSnapshot } from '../types';
 
 interface BridgeResponse extends ClientReadResult {
   status?: StatusSnapshot;
@@ -60,6 +60,18 @@ export class LiveNetFleetClient implements NetFleetClient {
     const response = await this.fetcher('/__netfleet_live/connections', { cache: 'no-store' });
     if (!response.ok) throw new Error('设备当前连接读取失败');
     return await response.json() as ConnectionsSnapshot;
+  }
+
+  async components() {
+    const response = await this.fetcher('/__netfleet_live/components', { cache: 'no-store' });
+    if (!response.ok) throw new Error('设备尚未提供组件管理信息，或当前连接不可用');
+    return await response.json() as ComponentsSnapshot;
+  }
+
+  async operations() {
+    const response = await this.fetcher('/__netfleet_live/operation', { cache: 'no-store' });
+    if (!response.ok) throw new Error('设备操作进度暂不可读取');
+    return await response.json() as OperationsSnapshot;
   }
 
   async enable() {

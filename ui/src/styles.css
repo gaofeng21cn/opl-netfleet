@@ -375,6 +375,24 @@
 .nf-app :is(button, a, input, select, summary):focus-visible { outline: 2px solid var(--nf-accent); outline-offset: 2px; }
 .nf-dialog-actions .nf-button-danger { background: var(--nf-red); border-color: #b71b26; }
 .nf-mobile-nav { display: none; }
+.nf-components { margin-top: 22px; }
+.nf-components .nf-table-wrap { margin: 16px 0 26px; }
+.nf-components .nf-table-wrap th, .nf-components .nf-table-wrap td { padding: 14px 16px; font-size: 14px; }
+.nf-components-actions, .nf-operation-detail { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 22px; }
+.nf-components button { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 6px 11px; border: 1px solid var(--nf-border); border-radius: 4px; color: var(--nf-text); background: #fff; font: inherit; font-size: 13px; cursor: pointer; }
+.nf-components button:disabled { opacity: .5; cursor: not-allowed; }
+.nf-components button svg { width: 15px; height: 15px; }
+.nf-components-feed h2 { font-size: 17px; }
+.nf-components-feed dl { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 13px 18px; padding: 12px 0; font-size: 14px; }
+.nf-components-feed dd { margin: 0; overflow-wrap: anywhere; }
+.nf-components-dependencies { border-top: 1px solid var(--nf-border); padding: 20px 0; font-size: 14px; }
+.nf-components-dependencies summary { cursor: pointer; }
+.nf-components-dependencies ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px 28px; padding: 16px 0; list-style: none; }
+.nf-components-dependencies li { display: flex; justify-content: space-between; gap: 16px; }
+.nf-operation { margin: 16px 0; padding: 16px; border-left: 3px solid var(--nf-accent); background: var(--nf-accent-soft); }
+.nf-operation-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.nf-operation-heading svg { width: 18px; height: 18px; }
+.nf-operation-detail { font-size: 14px; }
 .nf-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 @media (max-width: 1120px) {

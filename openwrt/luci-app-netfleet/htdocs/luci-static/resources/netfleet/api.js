@@ -10,6 +10,10 @@ function declare(options) {
 }
 
 const calls = {
+	componentsGet: declare({ object: 'opl-netfleet', method: 'components_get' }),
+	componentsCheck: declare({ object: 'opl-netfleet', method: 'components_check' }),
+	componentsUpdate: declare({ object: 'opl-netfleet', method: 'components_update', params: [ 'component', 'version' ] }),
+	operationGet: declare({ object: 'opl-netfleet', method: 'operation_get' }),
 	nativeSetupGet: declare({ object: 'opl-netfleet', method: 'native_setup_get' }),
 	nativeSetupApply: declare({ object: 'opl-netfleet', method: 'native_setup_apply', params: [ 'request' ] }),
 	dashboardGet: declare({ object: 'opl-netfleet', method: 'dashboard_get' }),
@@ -75,6 +79,15 @@ function withRpcTimeout(seconds, callback) {
 }
 
 return baseclass.extend({
+	componentsGet: function() { return execute('componentsGet'); },
+	componentsCheck: function() { return execute('componentsCheck'); },
+	componentsUpdate: function(component, version) {
+		return calls.componentsUpdate(component, version).then(function(response) {
+			if (!response || response.ok !== true) throw new Error(response?.error || 'operation_failed');
+			return response.result;
+		});
+	},
+	operationGet: function() { return execute('operationGet'); },
 	nativeSetupGet: function() { return execute('nativeSetupGet'); },
 	nativeSetupApply: function(request) {
 		return withRpcTimeout(300, function() { return executeRequest('nativeSetupApply', request); });

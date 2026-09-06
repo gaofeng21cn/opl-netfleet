@@ -277,13 +277,43 @@ export interface NetFleetClient {
   status(): Promise<StatusSnapshot>;
   events(): Promise<EventsSnapshot>;
   connections(): Promise<ConnectionsSnapshot>;
+  components(): Promise<ComponentsSnapshot>;
+  operations(): Promise<OperationsSnapshot>;
   enable(): Promise<unknown>;
   selectAuto(capability: string): Promise<unknown>;
   refresh(): Promise<unknown>;
   disable(): Promise<unknown>;
 }
 
-export type ViewId = 'overview' | 'exits' | 'providers' | 'regions' | 'config' | 'events';
+export interface OperationSnapshot {
+  id: string;
+  kind: 'subscription' | 'packages';
+  state: 'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted';
+  phase: string;
+  started_at: number;
+  updated_at: number;
+  finished_at?: number | null;
+  completed: number;
+  total: number | null;
+  subject?: string | null;
+  error?: string | null;
+}
+
+export interface OperationsSnapshot {
+  subscription: OperationSnapshot | null;
+  packages: OperationSnapshot | null;
+}
+
+export interface ComponentsSnapshot {
+  supported: boolean;
+  backend: string;
+  architecture: string;
+  feed: { configured: boolean; url: string | null; checked_at: number | null; error: string | null };
+  components: Array<{ id: 'netfleet' | 'luci' | 'mihomo'; label: string; installed_version: string | null; running_version: string | null; available_version: string | null; update_available: boolean; managed: boolean; reason: string | null }>;
+  dependencies: Array<{ id: string; label: string; installed_version: string | null; available: boolean }>;
+}
+
+export type ViewId = 'overview' | 'exits' | 'providers' | 'regions' | 'config' | 'components' | 'events';
 
 export interface PreviewControls {
   label: string;

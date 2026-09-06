@@ -17,7 +17,7 @@ const label = (element: Element): string => element.children.map((item) => typeo
 function harness(active = false) {
   let modal: Array<Element | string> = [];
   const state = { managed_by: 'netfleet', revision: 'revision-1', sources: [{ id: 'alpha', name: 'Alpha', node_count: 8, has_url: true, has_info_url: true, url: 'https://example.test/subscription', user_agent: 'custom-client/1.0', info_url: 'https://example.test/quota' }] };
-  const api = { subscriptionsGet: vi.fn(async () => state), subscriptionsSet: vi.fn(async (_request: unknown) => ({})), subscriptionsRefresh: vi.fn(async (_id: string) => ({})), migrationGet: vi.fn(async () => ({ ready: true, revision: 'migration-1' })), migrationApply: vi.fn(async (_request: unknown) => ({})) };
+  const api = { operationGet: vi.fn(async (): Promise<any> => ({ subscription: null, packages: null })), componentsGet: vi.fn(async (): Promise<any> => ({ supported: true, components: [], dependencies: [], feed: {} })), componentsCheck: vi.fn(async (): Promise<any> => ({})), componentsUpdate: vi.fn(async (): Promise<any> => ({})), subscriptionsGet: vi.fn(async () => state), subscriptionsSet: vi.fn(async (_request: unknown) => ({})), subscriptionsRefresh: vi.fn(async (_id: string) => ({})), migrationGet: vi.fn(async () => ({ ready: true, revision: 'migration-1' })), migrationApply: vi.fn(async (_request: unknown) => ({})) };
   const ui = { showModal: (_title: string, children: Array<Element | string>) => { modal = children; }, hideModal: vi.fn(), addNotification: vi.fn(), Combobox: class {
     input: Element;
     constructor(value: string, choices: Record<string, string>, options: Record<string, unknown>) { this.input = E('input', { ...options, value, choices, role: 'combobox' }); }
@@ -26,7 +26,7 @@ function harness(active = false) {
   } };
   const source = readFileSync(new URL('../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/managed.js', import.meta.url), 'utf8');
   const managed = new Function('baseclass', 'ui', 'api', 'E', 'L', source)({ extend: (value: unknown) => value }, ui, api, E, { url: (path: string) => path });
-  const controller = { status: { active }, refreshData: vi.fn(async () => ({})), redraw: vi.fn() };
+  const controller: Record<string, any> = { status: { active }, refreshData: vi.fn(async () => ({})), redraw: vi.fn() };
   return { managed, api, ui, controller, nodes: () => all(modal), button: (name: string) => all(modal).find((node) => node.tag === 'button' && label(node) === name)! };
 }
 
@@ -114,7 +114,35 @@ describe('native LuCI managed operations', () => {
     h.button('确认更新').attrs.click();
     await vi.waitFor(() => expect(h.controller.refreshData).toHaveBeenCalledWith(true, true));
     expect(h.api.subscriptionsRefresh).toHaveBeenCalledWith('alpha');
-    expect(h.api.subscriptionsGet.mock.calls.length).toBeGreaterThan(1);
+    expect(h.controller.subscriptionState).toBeNull();
+    expect(h.api.operationGet).toHaveBeenCalled();
+    expect(h.button('收起进度')).toBeDefined();
+  });
+
+  it('keeps subscription progress available after its dialog is collapsed and reports actual stages', async () => {
+    const h = harness();
+    h.controller.operations = { subscription: { id: 'subscription-2', kind: 'subscription', state: 'running', phase: 'compiling', subject: 'Alpha', completed: 1, total: 3, started_at: Date.now() / 1000 - 12 }, packages: null };
+    const progress = h.managed.operationNode(h.controller, 'subscription');
+    expect(label(progress)).toContain('生成运行配置');
+    expect(label(progress)).toContain('Alpha');
+    expect(label(progress)).toContain('已处理 1 / 3 个机场');
+    expect(label(progress)).not.toContain('%');
+    h.controller.operationError = new Error('network');
+    expect(label(h.managed.operationNode(h.controller, 'subscription'))).toContain('执行结果尚未确认');
+    expect(label(h.managed.operationNode(h.controller, 'subscription'))).not.toContain('执行失败');
+  });
+
+  it('does not confuse a queued package update with the previous successful operation', async () => {
+    const h = harness();
+    const queued = { id: 'new', kind: 'packages', state: 'queued', phase: 'checking', started_at: 1 };
+    h.controller.operations = { packages: queued, subscription: null };
+    h.controller.packageOperationId = 'new';
+    h.api.operationGet.mockResolvedValueOnce({ packages: { id: 'old', state: 'succeeded' }, subscription: null });
+    await h.managed.readOperations(h.controller);
+    clearTimeout(h.controller.operationTimer);
+    expect(h.controller.operations.packages).toBe(queued);
+    expect(h.api.componentsGet).not.toHaveBeenCalled();
+    expect(label(h.managed.operationNode(h.controller, 'packages'))).toContain('等待设备执行');
   });
 
   it('reports failed owner outcome and does not announce successful migration', async () => {

@@ -3,12 +3,12 @@
     "description": "Discover, configure, operate, and restore NetFleet",
     "read": {
       "ubus": {
-        "opl-netfleet": [ "native_setup_get", "dashboard_get", "subscriptions_get", "migration_get", "onboarding_get", "status", "events", "connections", "probe", "config_get", "config_validate" ]
+        "opl-netfleet": [ "components_get", "operation_get", "native_setup_get", "dashboard_get", "subscriptions_get", "migration_get", "onboarding_get", "status", "events", "connections", "probe", "config_get", "config_validate" ]
       }
     },
     "write": {
       "ubus": {
-        "opl-netfleet": [ "native_setup_apply", "subscriptions_set", "subscriptions_refresh", "migration_apply", "onboarding_apply", "config_save", "config_apply", "enable", "select_auto", "refresh", "disable" ]
+        "opl-netfleet": [ "components_check", "components_update", "native_setup_apply", "subscriptions_set", "subscriptions_refresh", "migration_apply", "onboarding_apply", "config_save", "config_apply", "enable", "select_auto", "refresh", "disable" ]
       }
     }
   }

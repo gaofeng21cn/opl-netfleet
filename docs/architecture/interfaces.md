@@ -54,9 +54,9 @@ gateway 的准备、附加或清理动作，不建立第二条核心生命周期
 - `refresh`：不接受 URL、section 或订阅内容，只调用同一个 policy-driven refresh owner；来源凭据修改由独立 subscriptions_set 完成，浏览器不解析订阅内容；
 - `disable`：调用与 CLI 相同的 native Profile owner/runtime 恢复并独立返回 `business_ok`；只有 runtime 无法恢复时才转入官方 cleanup passthrough，并返回 `safe`、`persistent`、`business_ok`。
 
-UI 有两个明确宿主。`ui/` 的 React/Vite 应用只用于本机快速参考开发，可注入 target-private 实时只读 client 或使用脱敏 fixture client；生产设备只部署原生 LuCI `view.extend`/`E()` 页面，不动态加载、挂载或打包 React。运行观察面共享“概览 / 出口 / 机场 / 地区 / 配置 / 事件与诊断”六页信息架构，Zashboard 在工具区提供独立外链；原生 LuCI 另按 React 已确认的“基础接入 / 机场 / 地区映射 / 出口策略 / 自动运行 / 安全与恢复”提供配置页和首次设置向导。两端共享显示语义和交互合同，不共享组件实现或 bundle，也不要求像素一致。React 定稿只决定信息与交互参考，LuCI 原生 source 才是设备页面的部署 owner。当前视觉语言、主题映射、排版和组件规则由 [UI 设计合同](../design/ui.md)统一约束；它只负责 UI 设计，不拥有产品对象、状态或动作合同。
+UI 有两个明确宿主。`ui/` 的 React/Vite 应用只用于本机快速参考开发，可注入 target-private 实时只读 client 或使用脱敏 fixture client；生产设备只部署原生 LuCI `view.extend`/`E()` 页面，不动态加载、挂载或打包 React。两端共享[UI 设计合同](../design/ui.md)定义的七页信息架构，Zashboard 在工具区提供独立外链；配置页和首次设置向导共享“基础接入 / 机场 / 地区映射 / 出口策略 / 自动运行 / 安全与恢复”的分类。两端共享显示语义和交互合同，不共享组件实现或 bundle，也不要求像素一致。React 定稿只决定信息与交互参考，LuCI 原生 source 才是设备页面的部署 owner。UI 设计合同负责视觉语言、主题映射、排版和组件规则，不拥有产品对象、状态或动作合同。
 
-实时只读桥接的目标只从本机环境变量取得，只允许固定读取 `status`、`events` 和 `connections`，浏览器不持有 SSH 凭据，也不能通过该桥接调用任何 mutation；桥接结果必须显示目标、连接状态、最后读取时间和读取耗时。`connections` 只在用户打开或刷新“事件与诊断”时从 Mihomo 当前 `/connections` 读取最多 50 条活动连接，投影目标 host/IP、目标端口、网络、命中规则、规则载荷和实际代理链；不得返回 source IP、进程、连接 ID、流量计数或其他不必要字段，也不得写入事件 owner、fixture 或浏览器展示缓存。该诊断使用 Mihomo 已执行的真实首条命中结果，不在 NetFleet 或浏览器中重做规则匹配。事件页以 NetFleet 持久化选路事件为主，活动连接只在默认折叠的辅助区显示；瞬时连接快照不能累计或外推为规则组触发频数，除非未来真实 owner 提供可去重、可定义生命周期的持久计数。fixture 仅用于离线、异常和边界场景，可在内存中模拟命令后的投影变化；它必须遵守当前 `status`/`events` 形状且不得包含订阅、完整节点清单、设备地址或其他私有 target 数据，不是运行事实，也不能被生产 LuCI 页面读取。
+实时只读桥接的目标只从本机环境变量取得，只允许固定读取 `status`、`events`、`config_get`、`connections`、`components_get` 和 `operation_get`，浏览器不持有 SSH 凭据，也不能通过该桥接调用任何 mutation；桥接结果必须显示目标、连接状态、最后读取时间和读取耗时。组件信息按需独立读取，不并入常规网络快照。`connections` 只在用户打开或刷新“事件与诊断”时从 Mihomo 当前 `/connections` 读取最多 50 条活动连接，投影目标 host/IP、目标端口、网络、命中规则、规则载荷和实际代理链；不得返回 source IP、进程、连接 ID、流量计数或其他不必要字段，也不得写入事件 owner、fixture 或浏览器展示缓存。该诊断使用 Mihomo 已执行的真实首条命中结果，不在 NetFleet 或浏览器中重做规则匹配。事件页以 NetFleet 持久化选路事件为主，活动连接只在默认折叠的辅助区显示；瞬时连接快照不能累计或外推为规则组触发频数，除非未来真实 owner 提供可去重、可定义生命周期的持久计数。fixture 仅用于离线、异常和边界场景，可在内存中模拟命令后的投影变化；它必须遵守当前 `status`/`events` 形状且不得包含订阅、完整节点清单、设备地址或其他私有 target 数据，不是运行事实，也不能被生产 LuCI 页面读取。
 
 NetFleet LuCI 在页面标题的工具区提供独立的“Zashboard”外链，不作为内部标签页，以 `dashboard_get` 返回的
 可用性、controller 端口、协议、可选 UI 名称和 secret 打开独立完整的 Zashboard。
@@ -85,11 +85,19 @@ URL 构造，不得进入 NetFleet status、日志、展示缓存或文档。Zas
 
 两个宿主首次加载都各读取一次 `status` 和 `events`，空闲零轮询，用户刷新时才重新读取；`connections` 不随页面首次加载或后台缓存刷新读取。supervisor 的后台周期不改变浏览器请求数。LuCI 可以把最近一次成功读取的 `status`、去除核心原始日志后的 `events`、读取时间和耗时保存为带 schema 版本的浏览器只读展示缓存；再次打开页面时先显示缓存并立即在后台各读取一次 `status` 和 `events`，成功后原地替换并更新缓存，失败时保留缓存且明确显示旧数据年龄和刷新失败。展示缓存不得包含 `connections`，不是运行事实 owner，不参与编译、排序、候选资格、回滚、探测、mutation precondition 或按钮授权；缓存启动和实时刷新失败状态下，除重新读取外的 mutation 控件必须禁用。没有有效缓存的首次加载仍等待实时 RPC，缓存损坏或 schema 不匹配时直接忽略且不阻断实时读取。
 
-LuCI 的启用、单次选优、立即更新订阅、关闭和配置应用都必须二次确认，mutation 完成后重新读取 owner 投影。生产 mutation 仍只由 rpcd 调用 one-shot UCode owner。React 的实时设备桥接始终只读；React 配置页、向导、保存、校验和应用按钮只能改变浏览器内的本地预览草稿，必须持续标明“不会写入设备”，不得转发任何配置或 mutation 到 SSH bridge。浏览器不解析订阅、不实现编译、排序、候选资格、回滚或探测逻辑；生产按钮是否可用来自实时 owner 投影，浏览器缓存只能延续显示，不能延续操作授权。事件 owner 仍返回有界事件窗口，LuCI 的“选路事件”在这个窗口内按最新优先每 20 条一页展示，刷新后回到最新一页；分页不触发额外设备读取。所有 LuCI mutation、supervisor 和设备部署使用同一个短生命周期 lock，不能形成并行 writer。
+LuCI 的启用、单次选优、立即更新订阅、关闭和配置应用都必须二次确认，mutation 完成后重新读取 owner 投影。这些网络操作由 rpcd 调用 one-shot UCode owner；软件包更新由下述一次性后台事务执行。React 的实时设备桥接始终只读；React 配置页、向导、保存、校验和应用按钮只能改变浏览器内的本地预览草稿，必须持续标明“不会写入设备”，不得转发任何配置或 mutation 到 SSH bridge。浏览器不解析订阅、不实现编译、排序、候选资格、回滚或探测逻辑；生产按钮是否可用来自实时 owner 投影，浏览器缓存只能延续显示，不能延续操作授权。事件 owner 仍返回有界事件窗口，LuCI 的“选路事件”在这个窗口内按最新优先每 20 条一页展示，刷新后回到最新一页；分页不触发额外设备读取。所有 LuCI mutation、supervisor 和设备部署使用同一个短生命周期 lock，不能形成并行 writer。
 
 概览的“最近决策”只从 `enable|select|disable` 事件中选取最新记录，同秒按 owner 写入顺序取最后一条；`refresh` 是订阅操作摘要，不覆盖选路决策。事件列表对订阅更新显示实际变化数、失败数和更新结果，延迟标为“不适用”。只有明确的 `native_restored` 恢复事件才能显示“已恢复原生配置”；缺少路由字段只代表未记录，不能推断回退。退出直通按实际恢复原因显示“已恢复网络直通”，不显示测量缺失；订阅触发的选优标为“订阅更新后选优”。
 
-RPC 是调用 one-shot UCode owner 的薄适配器，不创建 daemon、worker、plan、operation history 或第二状态 owner。
+RPC 是调用设备 owner 的薄适配器，不维护第二份网络状态。`components_get` 只读已安装组件、
+实际运行核心版本、关键依赖和最近一次 Feed 检查；`components_check` 与 `components_update`
+分别启动显式版本检查及固定组件、固定版本的后台更新。更新流程见[软件包合同](packaging.md)。
+`operation_get` 返回订阅和组件操作的最新进度：标识、状态、阶段、开始/更新时间、已处理数、
+总数、当前对象显示名和脱敏错误码；不返回 URL、凭据、命令输出或无限增长的操作历史。
+订阅下载、校验、编译、重载、选优、探测和回滚阶段由实际执行者写入；没有内容变化时直接
+返回真实结果，不伪造后续阶段或百分比。执行进程消失但没有终态时显示中断未确认，不冒充成功。
+初次加载与进入机场、组件页时读取一次当前操作；只在存在运行中操作时每秒读取独立进度，
+结束后停止轮询并刷新受影响的数据。操作标识绑定执行结果，旧操作终态不能确认新请求完成。
 
 未配置设备额外暴露 `onboarding_get / onboarding_apply`。`onboarding_get` 只读当前后端
 Profile、稳定 subscription cache 和节点地区，返回脱敏预览、阻断原因及绑定发现 revision；

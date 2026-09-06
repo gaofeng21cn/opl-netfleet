@@ -55,6 +55,12 @@ export function controller_ready(secret, timeout_seconds) {
 		length(version.version) > 0;
 };
 
+export function controller_version(secret, timeout_seconds) {
+	if (!secret) return null;
+	const value = api_json(secret, "/version", timeout_seconds)?.version;
+	return type(value) == "string" && length(value) <= 128 ? value : null;
+};
+
 export function proxy_providers(secret, timeout_seconds) {
 	return api_json(secret, "/providers/proxies", timeout_seconds);
 };
