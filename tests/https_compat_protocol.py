@@ -276,6 +276,16 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["x-upstream-protocol"], "1.1")
         self.assertEqual((await self.health())["rules"], {})
 
+    async def test_h2_capable_client_keeps_origin_certificate(self):
+        context = ssl.create_default_context(cafile=str(self.directory / "upstream.pem"))
+        async with httpx.AsyncClient(proxy=f"http://127.0.0.1:{self.proxy_port}", verify=context,
+                                     http2=True, timeout=10, trust_env=False) as client:
+            response = await client.post(self.url + "/already-h2", content=b"native-h2")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.http_version, "HTTP/2")
+        self.assertEqual(response.headers["x-upstream-protocol"], "2")
+        self.assertEqual((await self.health())["rules"], {})
+
     async def test_local_processing_probe(self):
         result = await asyncio.wait_for(self.health(probe=True), 2)
         self.assertTrue(result["processing_chain"])
