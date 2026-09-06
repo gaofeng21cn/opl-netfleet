@@ -31,10 +31,25 @@ function refresh(controller) {
 }
 
 function mutate(controller, method, request, revision) {
+	const expected = revision === undefined ? controller.compatibility.revision : revision;
+	if (method === 'compatibilityProbe' && !request.operation)
+		return executeMutation(controller, method, request, expected);
+	return new Promise(function(resolve) {
+		ui.showModal('确认 HTTPS 兼容变更', [
+			E('p', {}, method === 'compatibilityDisable' ? '停止接管新连接，已有连接继续排空。' :
+				request.operation === 'trust_revoke' ? '撤销该设备的新连接接管。本机 CA 信任由接入工具移除。' :
+				request.config ? '保存 ' + request.config.rules.length + ' 条目标规则和 ' + request.config.devices.length + ' 台接入设备。' : '将更新兼容模块的接管状态。'),
+			E('div', { 'class': 'right' }, [ button('取消', function() { ui.hideModal(); resolve(); }),
+				button('确认', function() { ui.hideModal(); resolve(executeMutation(controller, method, request, expected)); }) ])
+		]);
+	});
+}
+
+function executeMutation(controller, method, request, revision) {
 	if (controller.compatibilityBusy) return Promise.resolve();
 	controller.compatibilityBusy = true;
 	controller.redraw();
-	return api[method](Object.assign({ revision: revision === undefined ? controller.compatibility.revision : revision }, request)).catch(function(error) {
+	return api[method](Object.assign({ revision: revision }, request)).catch(function(error) {
 		ui.addNotification(null, E('p', {}, 'HTTPS 兼容操作失败：' + error.message), 'error');
 	}).then(function() { return refresh(controller); }).finally(function() { controller.compatibilityBusy = false; controller.redraw(); });
 }

@@ -5,6 +5,13 @@
 
 ## 原生接入与管理
 
+原生后端的可选 [HTTPS 兼容模块](https-compatibility.md) 使用独立的
+`compatibility_get/apply/enable/disable/probe/ca` 动作。rpcd 和 UCode 入口将请求交给
+组件 controller；该 controller 复用现有 mutation lock，不运行全局配置应用。
+返回值区分用户意图、实际接管、旁路原因、配置 revision 和验证结果。组件缺失时读取
+返回未安装，基础管理页仍然可用。公开 CA 下载需要 LuCI 读取权限，信任记录与接管
+变更需要写权限；浏览器不能下载 CA 私钥。
+
 `native_setup_get / native_setup_apply` 为没有已配置后端的设备提供首次接入：预检只读，
 apply 接受绑定 revision 的明确确认和一份私有订阅输入，完成来源下载、原生核心与数据面
 就绪后进入现有 onboarding。已有 Nikki 或原生 owner 时拒绝覆盖；已有 Nikki 的迁移使用

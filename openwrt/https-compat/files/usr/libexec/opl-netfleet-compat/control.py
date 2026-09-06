@@ -274,6 +274,7 @@ def apply(action, request):
     if request.get("revision") != revision():
         raise ValueError("compatibility_revision_conflict")
     config = validate(read(CONFIG, DEFAULT))
+    original_enabled = config["enabled"]
     if action == "apply":
         config = validate(request.get("config"))
     elif action in ("enable", "disable"):
@@ -284,7 +285,8 @@ def apply(action, request):
     atomic(CONFIG, config)
     atomic(EFFECTIVE, effective(config, read(TRUST, {}), ca_fingerprint()))
     previous = read(STATE, {})
-    save_state({"intercepting": False, "reason": "recovering" if config["enabled"] else "disabled"}, previous)
+    kept = previous if original_enabled and config["enabled"] and action == "apply" else {}
+    save_state({**kept, "intercepting": False, "reason": "recovering" if config["enabled"] else "disabled"}, previous)
     if config["enabled"]:
         subprocess.run([SERVICE, "enable"], check=True, capture_output=True, timeout=2)
         subprocess.run([SERVICE, "start"], check=True, capture_output=True, timeout=3)
