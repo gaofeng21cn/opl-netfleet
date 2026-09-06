@@ -54,20 +54,26 @@ class Kernel(Protocol):
     def command(*args):
         subprocess.run(args, check=True, capture_output=True, timeout=5)
 
-    async def request(self, host="localhost", ca=None, source=None):
+    async def request(self, host="localhost", ca=None, source=None, hold=False):
         code = """import json,socket,ssl,sys
 context=ssl.create_default_context(cafile=sys.argv[2]); context.set_alpn_protocols(['http/1.1'])
 source=(sys.argv[5],0) if sys.argv[5] else None
 with socket.create_connection((sys.argv[3],int(sys.argv[1])),timeout=3,source_address=source) as raw:
  with context.wrap_socket(raw,server_hostname=sys.argv[4]) as connection:
+  if sys.argv[6]=='hold':
+   print('connected',flush=True)
+   sys.stdin.readline()
   connection.sendall(('GET /wire HTTP/1.1\\r\\nHost: localhost:'+sys.argv[1]+'\\r\\nConnection: close\\r\\n\\r\\n').encode())
   result=b''
   while data:=connection.recv(65536): result+=data
   print(json.dumps({'h2':b'x-upstream-protocol: 2' in result.lower(),'source_port':connection.getsockname()[1],'status':result.split(b'\\r\\n')[0].decode(),'error':result[-512:].decode(errors='replace') if b'502 Bad Gateway' in result else None}))
 """
         child = await asyncio.create_subprocess_exec("ip", "netns", "exec", "netfleet-compat-test",
-            sys.executable, "-c", code, str(self.upstream_port), str(ca or self.ca_bundle), self.DESTINATION, host, source or "",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            sys.executable, "-c", code, str(self.upstream_port), str(ca or self.ca_bundle), self.DESTINATION, host, source or "", "hold" if hold else "",
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        if hold:
+            self.assertEqual(await asyncio.wait_for(child.stdout.readline(), 6), b"connected\n")
+            return child
         out, error = await asyncio.wait_for(child.communicate(), 6)
         self.assertEqual(child.returncode, 0, error.decode())
         return json.loads(out)

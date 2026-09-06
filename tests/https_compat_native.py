@@ -90,6 +90,32 @@ class Native(Kernel):
         wire = await self.request()
         self.assertTrue(wire["h2"], {"wire": wire, "engine": self.owner.health()})
         self.assertFalse((await self.request(host="other.example", ca=self.directory / "upstream.pem"))["h2"])
+        packages = list(Path("/tmp/compat-runtime").glob("*.apk"))
+        if packages:
+            held = await self.request(hold=True)
+            upgrade = await asyncio.create_subprocess_exec("apk", "add", "--force-reinstall", str(packages[0]),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            try:
+                await asyncio.sleep(2)
+                self.assertIsNone(upgrade.returncode, "package replacement must wait for the live TLS connection")
+                self.assertFalse(self.owner.call("get")["intercepting"])
+                self.assertFalse((await self.request(ca=self.directory / "upstream.pem"))["h2"])
+                output, error = await asyncio.wait_for(held.communicate(b"\n"), 6)
+                self.assertEqual(held.returncode, 0, error.decode())
+                self.assertTrue(json.loads(output)["h2"], "the existing connection must finish before engine replacement")
+                output, error = await asyncio.wait_for(upgrade.communicate(), 30)
+                self.assertEqual(upgrade.returncode, 0, error.decode())
+            finally:
+                for process in (held, upgrade):
+                    if process.returncode is None:
+                        process.kill()
+                        await process.wait()
+            self.owner.call("probe", {"revision": self.owner.call("get")["revision"], "operation": "recover"})
+            deadline = time.monotonic() + 85
+            while not self.owner.call("get")["intercepting"]:
+                self.assertLess(time.monotonic(), deadline, self.owner.call("get"))
+                await asyncio.sleep(1)
+            self.assertTrue((await self.request())["h2"])
         rules = json.loads(subprocess.check_output(["nft", "-j", "list", "chain", "inet", "netfleet", "mangle_prerouting_lan"]))
         first = next(item["rule"] for item in rules["nftables"] if "rule" in item)
         self.command("nft", "delete", "rule", "inet", "netfleet", "mangle_prerouting_lan", "handle", str(first["handle"]))

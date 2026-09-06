@@ -367,12 +367,12 @@ def trust_action(request):
 
 def drain(timeout=30):
     gateway.bypass()
-    deadline = time.monotonic() + timeout
+    deadline = time.monotonic() + timeout if timeout is not None else None
     while True:
         health = engine_health()
         if health.get("active_connections") == 0 or not health.get("ready"):
             return {"drained": True}
-        if time.monotonic() >= deadline:
+        if deadline is not None and time.monotonic() >= deadline:
             raise ValueError("healthy_connections_still_draining")
         time.sleep(0.2)
 
@@ -425,7 +425,7 @@ def main():
         if action in ("drain", "remove"):
             previous = read(STATE, {})
             save_state({**previous, "maintenance": True, "intercepting": False, "reason": "maintenance"}, previous)
-            result = drain()
+            result = drain(None if sys.argv[2:] == ["--wait"] else 30)
             if action == "remove":
                 gateway.remove()
             return result

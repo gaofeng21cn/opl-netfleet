@@ -41,7 +41,8 @@ endef
 define Package/opl-netfleet-https-compat/preinst
 #!/bin/sh
 if [ -z "$$IPKG_INSTROOT" ] && [ -x /etc/init.d/opl-netfleet-compat ]; then
- /usr/bin/python3 /usr/libexec/opl-netfleet-compat/control.py drain >/dev/null || exit 1
+ # APK continues after hook errors; do not return while healthy streams exist.
+ while ! /usr/bin/python3 /usr/libexec/opl-netfleet-compat/control.py drain --wait >/dev/null; do sleep 1; done
  /etc/init.d/opl-netfleet-compat stop || exit 1
 fi
 exit 0
@@ -50,7 +51,7 @@ endef
 define Package/opl-netfleet-https-compat/prerm
 #!/bin/sh
 [ -n "$$IPKG_INSTROOT" ] || {
- /usr/bin/python3 /usr/libexec/opl-netfleet-compat/control.py remove >/dev/null || exit 1
+ while ! /usr/bin/python3 /usr/libexec/opl-netfleet-compat/control.py remove --wait >/dev/null; do sleep 1; done
  /etc/init.d/opl-netfleet-compat stop
  /etc/init.d/opl-netfleet-compat disable
 }

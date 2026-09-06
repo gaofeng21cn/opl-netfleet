@@ -320,9 +320,12 @@ dd if="$work/openwrt.img" of="$work/root.ext4" bs=512 skip="$root_start" count="
 fsck_result=0
 e2fsck -pf "$work/root.ext4" || fsck_result=$?
 [ "$fsck_result" -le 1 ] || exit 1
-resize2fs "$work/root.ext4" 256M
-qemu-img resize -f raw "$work/openwrt.img" 512M >/dev/null
-sgdisk -e -a 1 -d 2 -n "2:$root_start:+256M" -u "2:$root_uuid" -t 2:8300 "$work/openwrt.img" >/dev/null
+root_size=256M
+disk_size=512M
+if [ "$lane_mode" = compatibility ]; then root_size=512M; disk_size=768M; fi
+resize2fs "$work/root.ext4" "$root_size"
+qemu-img resize -f raw "$work/openwrt.img" "$disk_size" >/dev/null
+sgdisk -e -a 1 -d 2 -n "2:$root_start:+$root_size" -u "2:$root_uuid" -t 2:8300 "$work/openwrt.img" >/dev/null
 dd if="$work/root.ext4" of="$work/openwrt.img" bs=512 seek="$root_start" conv=notrunc 2>/dev/null
 rm "$work/root.ext4"
 image_elapsed_ms=$((image_elapsed_ms + $(now_ms) - image_started_ms))
