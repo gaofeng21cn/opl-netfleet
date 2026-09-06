@@ -11,6 +11,7 @@ export interface ProviderDraft {
   billing: 'subscription' | 'buyout';
   availableRegions?: number | null;
   availableNodes?: number | null;
+  availablePaths?: number | null;
   regionIds: string[];
 }
 
@@ -22,6 +23,7 @@ export interface RegionDraft {
   mode: 'automatic' | 'manual_only';
   availableProviders?: number | null;
   availableNodes?: number | null;
+  availablePaths?: number | null;
   flag?: string | null;
   displayOrder?: number | null;
 }
@@ -90,6 +92,7 @@ export function createConfigDraft(status: StatusSnapshot, config?: DeviceConfigS
       role: provider.role, billing: provider.billing, regionIds: provider.region_ids.slice(),
       availableRegions: status.providers.find((item) => item.id === provider.id)?.available_region_count,
       availableNodes: status.providers.find((item) => item.id === provider.id)?.available_node_count,
+      availablePaths: status.providers.find((item) => item.id === provider.id)?.available_count,
     })),
     providerOptions: config.provider_options.map((item) => ({ id: item.id, section: item.section, displayName: item.display_name, regionIds: item.region_ids.slice() })),
     regions: config.regions.map((region) => ({
@@ -97,6 +100,7 @@ export function createConfigDraft(status: StatusSnapshot, config?: DeviceConfigS
       mode: region.mode,
       availableProviders: status.regions.find((item) => item.id === region.id)?.available_provider_count,
       availableNodes: status.regions.find((item) => item.id === region.id)?.available_node_count,
+      availablePaths: status.regions.find((item) => item.id === region.id)?.available_count,
     })),
     regionOptions: config.region_options.map((item) => ({ id: item.id, code: item.code, displayName: item.display_name, displayOrder: item.display_order })),
     capabilities: config.capabilities.map((capability) => ({
@@ -120,7 +124,7 @@ export function createConfigDraft(status: StatusSnapshot, config?: DeviceConfigS
     },
   };
   const visibleRegions = status.regions.filter((region) => (
-    (region.available_node_count ?? 0) > 0 && (region.available_provider_count ?? 0) > 0
+    (region.available_count ?? 0) > 0 && (region.available_provider_count ?? 0) > 0
   ));
   return {
     backend: status.runtime.backend?.id || 'nikki-mihomo',
@@ -139,6 +143,7 @@ export function createConfigDraft(status: StatusSnapshot, config?: DeviceConfigS
       billing: providerBilling(provider.billing),
       availableRegions: provider.available_region_count,
       availableNodes: provider.available_node_count,
+      availablePaths: provider.available_count,
       regionIds: visibleRegions.map((region) => region.id),
     })),
     providerOptions: status.subscriptions?.map((item) => ({ id: item.section, section: item.section, displayName: item.display_name || item.section, regionIds: visibleRegions.map((region) => region.id) })) || [],
@@ -149,6 +154,7 @@ export function createConfigDraft(status: StatusSnapshot, config?: DeviceConfigS
         mode: regionMode(region.mode),
         availableProviders: region.available_provider_count,
         availableNodes: region.available_node_count,
+        availablePaths: region.available_count,
         flag: null,
       })),
     regionOptions: visibleRegions.map((region, index) => ({ id: region.id, code: region.display_name?.slice(0, 2) || '', displayName: region.display_name || region.id, displayOrder: (index + 1) * 10 })),

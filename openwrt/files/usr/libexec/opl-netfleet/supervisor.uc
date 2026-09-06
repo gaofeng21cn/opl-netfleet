@@ -34,6 +34,7 @@ function run_owner(action, detail) {
 let unhealthy_since = null;
 let next_selection_at = null;
 let next_refresh_at = null;
+let was_runtime_ready = false;
 
 for (;;) {
 	const settings_value = settings();
@@ -42,6 +43,7 @@ for (;;) {
 		unhealthy_since = null;
 		next_selection_at = null;
 		next_refresh_at = null;
+		was_runtime_ready = false;
 		sleep(30000);
 		continue;
 	}
@@ -64,6 +66,11 @@ for (;;) {
 	const lan_runtime = runtime_ready ? lan_runtime_state(settings_value.dns_probe_url) : null;
 	const healthy = runtime_ready && lan_runtime?.transparent_proxy_ready == true &&
 		lan_runtime?.dns_ready == true;
+	// A restart can leave the generated guard on DIRECT until the first selector
+	// round completes. Re-run selection as soon as the data plane becomes ready,
+	// instead of waiting for the normal 30-minute interval.
+	if (healthy && !was_runtime_ready) next_selection_at = now;
+	was_runtime_ready = healthy;
 	if (!owned) {
 		unhealthy_since = null;
 	} else if (healthy) {

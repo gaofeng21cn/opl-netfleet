@@ -134,10 +134,10 @@ describe('地区显示与统计口径', () => {
   it('地区与机场只按显示合同排序，不改变运行选择', () => {
     const snapshot = structuredClone(fixtureScenarios.healthy.status);
     snapshot.regions = [
-      { id: 'z', display_name: '🇿🇦 南非', mode: 'automatic', available_node_count: 4, available_provider_count: 2, last_best_delay_ms: 80, average_best_delay_ms: 90 },
-      { id: 'b', display_name: '🇧🇷 巴西', mode: 'automatic', available_node_count: 5, available_provider_count: 2, last_best_delay_ms: 80, average_best_delay_ms: 90 },
-      { id: 'a', display_name: '🇦🇷 阿根廷', mode: 'automatic', available_node_count: 5, available_provider_count: 3, last_best_delay_ms: 80, average_best_delay_ms: 90 },
-      { id: 'selected', display_name: '🇯🇵 日本', mode: 'automatic', selected: true, available_node_count: 1, available_provider_count: 1, last_best_delay_ms: 999, average_best_delay_ms: 999 },
+      { id: 'z', display_name: '🇿🇦 南非', mode: 'automatic', available_count: 1, available_node_count: 4, available_provider_count: 2, last_best_delay_ms: 80, average_best_delay_ms: 90 },
+      { id: 'b', display_name: '🇧🇷 巴西', mode: 'automatic', available_count: 1, available_node_count: 5, available_provider_count: 2, last_best_delay_ms: 80, average_best_delay_ms: 90 },
+      { id: 'a', display_name: '🇦🇷 阿根廷', mode: 'automatic', available_count: 1, available_node_count: 5, available_provider_count: 3, last_best_delay_ms: 80, average_best_delay_ms: 90 },
+      { id: 'selected', display_name: '🇯🇵 日本', mode: 'automatic', selected: true, available_count: 1, available_node_count: 1, available_provider_count: 1, last_best_delay_ms: 999, average_best_delay_ms: 999 },
     ];
     snapshot.providers = [
       { id: 'z', display_name: 'Zulu', role: 'primary', billing: 'subscription', available_region_count: 2, best_delay_ms: 20 },
@@ -147,5 +147,15 @@ describe('地区显示与统计口径', () => {
 
     expect(sortRegionsForDisplay(snapshot).map((region) => region.id)).toEqual(['selected', 'a', 'b', 'z']);
     expect(sortProvidersForDisplay(snapshot).map((provider) => provider.id)).toEqual(['selected', 'a', 'z']);
+  });
+
+  it('节点库存未知时仍按候选路径统计地区可用性', () => {
+    const snapshot = structuredClone(fixtureScenarios.healthy.status);
+    snapshot.regions = [{
+      id: 'unknown-inventory', display_name: '🇭🇰 香港', mode: 'automatic',
+      available_count: 2, candidate_count: 3, available_provider_count: 1, provider_count: 2,
+      available_node_count: null, node_count: null, node_count_known: false,
+    }];
+    expect(sortRegionsForDisplay(snapshot).map((region) => region.id)).toEqual(['unknown-inventory']);
   });
 });

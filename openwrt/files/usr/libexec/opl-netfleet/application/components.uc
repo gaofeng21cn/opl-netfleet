@@ -319,7 +319,7 @@ function upgrade(request, work, candidates) {
 let response;
 try {
 	if (ARGV[0] == "get") response = { ok: true, result: get() };
-	else if (ARGV[0] == "operation") response = { ok: true, result: { subscription: operation.get("subscription"), packages: progress() } };
+	else if (ARGV[0] == "operation") response = { ok: true, result: { subscription: operation.get("subscription"), selection: operation.get("selection"), packages: progress() } };
 	else if (ARGV[0] == "check" || ARGV[0] == "update") response = { ok: true, result: start(ARGV[0], ARGV[1], ARGV[2]) };
 	else if (ARGV[0] == "run") {
 		const request = private_file(ARGV[1]) ? read_json(ARGV[1]) : null;

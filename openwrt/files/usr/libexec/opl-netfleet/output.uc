@@ -1,7 +1,7 @@
 import { finish } from "./application/operation.uc";
 
 export function ok(action, data) {
-	if (action == "refresh" || action == "subscriptions-refresh") {
+	if (action == "refresh" || action == "subscriptions-refresh" || action == "select") {
 		const result = data?.result ?? data;
 		finish(result?.ok != false, null, result);
 	}

@@ -54,6 +54,29 @@ describe('概览信息层级', () => {
     expect(html).toContain('不可用机场：Alpha 正式机场');
   });
 
+  it('流量耗尽机场只显示耗尽，不重复显示为不可用机场', () => {
+    const status = structuredClone(fixtureScenarios.degraded.status);
+    status.providers[0].quota = { state: 'exhausted' };
+    status.providers[0].available_count = 0;
+    status.providers[0].available_node_count = 0;
+    const html = renderToStaticMarkup(<OverviewDigest status={status} events={fixtureScenarios.degraded.events} onOpen={() => undefined} />);
+    expect(html).toContain('流量已耗尽：Alpha 正式机场');
+    expect(html).not.toContain('不可用机场：Alpha 正式机场');
+  });
+
+  it('节点库存未知但候选路径可用时仍显示真实地区数量', () => {
+    const status = structuredClone(fixtureScenarios.healthy.status);
+    status.regions = status.regions.map((region) => ({
+      ...region,
+      available_count: 1,
+      available_node_count: null,
+      node_count: null,
+      node_count_known: false,
+    }));
+    const html = renderToStaticMarkup(<OverviewDigest status={status} events={fixtureScenarios.healthy.events} onOpen={() => undefined} />);
+    expect(html).toContain('5<small> 个当前可用</small>');
+  });
+
   it('未接管时把实时状态显示为未测量而不是机场下线', () => {
     const status = structuredClone(fixtureScenarios.degraded.status);
     status.active = false;

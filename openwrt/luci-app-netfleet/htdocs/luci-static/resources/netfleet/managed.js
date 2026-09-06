@@ -112,7 +112,7 @@ function isRunning(operation) { return operation && ['queued', 'running'].includ
 
 function operationNode(controller, kind) {
 	const operation = controller.operations && controller.operations[kind];
-	const pending = kind === 'subscription' && controller.subscriptionRequest;
+	const pending = kind === 'subscription' && controller.subscriptionRequest || kind === 'selection' && controller.selectionRequest;
 	const disconnected = controller.operationError && (pending || isRunning(operation));
 	const attrs = { 'class': 'netfleet-operation', 'data-netfleet-operation': kind, 'role': 'status', 'aria-live': 'polite' };
 	if (!operation && !pending) return E('div', Object.assign(attrs, { 'hidden': true }));
@@ -125,16 +125,20 @@ function operationNode(controller, kind) {
 	const active = pending || isRunning(operation);
 	const state = disconnected ? '连接中断，执行结果尚未确认' : !operation ? '等待设备接收' :
 		({ queued: '已提交，等待设备执行', running: PHASE_LABELS[operation.phase] || '处理中', succeeded: '已完成', failed: '执行失败', interrupted: '执行已中断，结果尚未确认' })[operation.state] || '等待设备确认';
-	const started = operation && operation.started_at || controller.subscriptionStartedAt;
+	const started = operation && operation.started_at || (kind === 'selection' ? controller.selectionStartedAt : controller.subscriptionStartedAt);
 	const elapsed = started ? Math.max(0, Math.floor((operation && operation.finished_at || Date.now() / 1000) - started)) : 0;
 	const details = [ E('strong', { 'class': active && !disconnected ? 'spinning' : '' }, state) ];
 	if (operation && operation.subject) details.push(E('span', {}, kind === 'packages' ? ({ feed: '更新源', netfleet: 'NetFleet', mihomo: 'Mihomo' })[operation.subject] || String(operation.subject) : String(operation.subject)));
-	if (operation && Number(operation.total) > 0) details.push(E('span', {}, (kind === 'subscription' ? '已处理 ' : '已完成 ') + Number(operation.completed || 0) + ' / ' + Number(operation.total) + (kind === 'subscription' ? ' 个机场' : ' 个文件')));
+	if (operation && Number(operation.total) > 0) {
+		const label = kind === 'subscription' ? '已处理 ' : kind === 'selection' ? '已完成 ' : '已完成 ';
+		const unit = kind === 'subscription' ? ' 个机场' : kind === 'selection' ? ' 个出口' : ' 个文件';
+		details.push(E('span', {}, label + Number(operation.completed || 0) + ' / ' + Number(operation.total) + unit));
+	}
 	details.push(E('span', {}, '已耗时 ' + (elapsed < 60 ? elapsed + ' 秒' : Math.floor(elapsed / 60) + ' 分 ' + elapsed % 60 + ' 秒')));
 	if (operation && operation.error) details.push(E('span', { 'class': 'is-warning' }, errorLabel(operation.error)));
 	if (operation && operation.recovery) details.push(E('span', {}, ({ restored: '已恢复更新前状态', failed: '恢复失败', direct: '已恢复网络直通' })[operation.recovery] || '恢复结果尚未确认'));
 	return E('div', Object.assign(attrs, { 'class': attrs.class + (disconnected || operation && ['failed', 'interrupted'].includes(operation.state) ? ' is-warning' : '') }), [
-		E('div', { 'class': 'netfleet-operation-title' }, kind === 'subscription' ? '机场订阅更新' : '组件与更新'),
+		E('div', { 'class': 'netfleet-operation-title' }, kind === 'subscription' ? '机场订阅更新' : kind === 'selection' ? '测速与自动选优' : '组件与更新'),
 		E('div', { 'class': 'netfleet-operation-detail' }, details)
 	]);
 }
@@ -152,6 +156,7 @@ function readOperations(controller) {
 	controller.operationRead = api.operationGet().then(function(snapshot) {
 		const previous = controller.operations && controller.operations.packages;
 		if (controller.subscriptionRequest && snapshot.subscription && snapshot.subscription.id === controller.previousSubscriptionId) snapshot.subscription = null;
+		if (controller.selectionRequest && snapshot.selection && snapshot.selection.id === controller.previousSelectionId) snapshot.selection = null;
 		if (controller.packageOperationId && (!snapshot.packages || snapshot.packages.id !== controller.packageOperationId) && isRunning(previous)) snapshot.packages = previous;
 		controller.operations = snapshot;
 		controller.operationError = null;
@@ -174,11 +179,33 @@ function readOperations(controller) {
 		controller.operationRead = null;
 		updateOperationNodes(controller);
 		const snapshot = controller.operations || {};
-		const running = controller.subscriptionRequest || isRunning(snapshot.subscription) || isRunning(snapshot.packages);
+		const running = controller.subscriptionRequest || controller.selectionRequest || isRunning(snapshot.subscription) || isRunning(snapshot.selection) || isRunning(snapshot.packages);
 		if (running)
 			controller.operationTimer = setTimeout(function() { if (!controller.root || controller.root.isConnected !== false) readOperations(controller); }, 1000);
 	});
 	return controller.operationRead;
+}
+
+function runSelection(controller, request) {
+	controller.busy = true;
+	controller.selectionRequest = true;
+	controller.selectionStartedAt = Math.floor(Date.now() / 1000);
+	controller.previousSelectionId = controller.operations && controller.operations.selection && controller.operations.selection.id;
+	controller.operations = Object.assign({}, controller.operations, { selection: null });
+	ui.showModal('测速与自动选优', [ E('div', { 'class': 'netfleet-native' }, [ operationNode(controller, 'selection'),
+		E('div', { 'class': 'right' }, button('收起进度', ui.hideModal)) ]) ]);
+	controller.redraw();
+	readOperations(controller);
+	return Promise.resolve().then(request).then(function(result) {
+		return controller.refreshData(true).then(function() { return result; });
+	}).catch(function(error) {
+		const uncertain = error && (error.netfleetKind === 'request_aborted' || /timeout|XHR|network/i.test(error.message || ''));
+		ui.addNotification(null, E('p', {}, uncertain ? '连接中断，设备可能仍在测速；结果尚未确认。' : failure(error)), uncertain ? 'warning' : 'error');
+	}).finally(function() {
+		controller.selectionRequest = false;
+		controller.busy = false;
+		readOperations(controller).then(function() { controller.redraw(); });
+	});
 }
 
 function runSubscription(controller, request) {
@@ -502,4 +529,4 @@ function nativeSetup(controller) {
 }
 
 return baseclass.extend({ preloadSubscriptions: loadSubscriptions, subscriptions: showSubscriptions, migration: migration, nativeSetup: nativeSetup,
-	operationNode: operationNode, readOperations: readOperations, runSubscription: runSubscription, components: componentsPage, loadComponents: loadComponents });
+	operationNode: operationNode, readOperations: readOperations, runSubscription: runSubscription, runSelection: runSelection, components: componentsPage, loadComponents: loadComponents });
