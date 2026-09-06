@@ -33,7 +33,7 @@ def prepare(interfaces, dscp_bypass=()):
         raise ValueError("invalid_dscp_bypass")
     dscp = ", ".join(str(value) for value in dscp_bypass)
     exclusions = f"ip dscp {{ {dscp} }} return\n  ip6 dscp {{ {dscp} }} return" if dscp else ""
-    signature = hashlib.sha256(json.dumps([1, interfaces, list(dscp_bypass)]).encode()).hexdigest()
+    signature = hashlib.sha256(json.dumps([2, interfaces, list(dscp_bypass)]).encode()).hexdigest()
     present = exists()
     if present:
         current = json.loads(run(["nft", "-j", "list", "table", "inet", TABLE]))
@@ -43,11 +43,16 @@ def prepare(interfaces, dscp_bypass=()):
  comment "{signature}"
  set targets4 {{ type ipv4_addr . ipv4_addr . inet_service; flags interval,timeout; timeout {LEASE_SECONDS}s; }}
  set targets6 {{ type ipv6_addr . ipv6_addr . inet_service; flags interval,timeout; timeout {LEASE_SECONDS}s; }}
- chain intercept {{
-  type nat hook prerouting priority -152; policy accept;
+ chain assign {{
+  type filter hook prerouting priority -153; policy accept;
   {exclusions}
-  iifname {{ {names} }} meta l4proto tcp ip saddr . ip daddr . tcp dport @targets4 redirect to :{PORT}
-  iifname {{ {names} }} meta l4proto tcp ip6 saddr . ip6 daddr . tcp dport @targets6 redirect to :{PORT}
+  ct status confirmed return
+  iifname {{ {names} }} ct state new tcp flags & (syn | ack) == syn ip saddr . ip daddr . tcp dport @targets4 ct mark set ct mark | 0x01000000
+  iifname {{ {names} }} ct state new tcp flags & (syn | ack) == syn ip6 saddr . ip6 daddr . tcp dport @targets6 ct mark set ct mark | 0x01000000
+ }}
+ chain intercept {{
+  type nat hook prerouting priority -101; policy accept;
+  ct direction original ct mark & 0x01000000 != 0 meta l4proto tcp redirect to :{PORT}
  }}
  chain private_listener {{
   type filter hook input priority -1; policy accept;

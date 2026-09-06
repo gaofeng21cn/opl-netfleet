@@ -42,6 +42,10 @@ OpenWrt SDK、依赖目录、APK 签名私钥、输出目录和源码 ref。依�
 私有配置和稳定 CA 位于 `/etc/opl-netfleet/compatibility`，运行状态与有效规则位于
 `/var/run/opl-netfleet-compat`。原生 gateway 的现有观察进程每两秒调用 tick；引擎由
 procd 托管。nftables 租约只存在于 `inet netfleet_compat`，不修改基础 NetFleet 表。
+原生 gateway 合同保留 conntrack mark 的 `0x01000000` 位标识兼容连接归属；它与
+Mihomo 的 packet mark 分开。兼容模块在 conntrack 后、TPROXY 前，仅为未确认的
+首个 TCP SYN 按有效租约设置该位。原生 LAN TPROXY 跳过这类连接，兼容 NAT 完成
+重定向；连接归属不会随租约失效而改变。没有有效租约的新连接不带该位，走原路径。
 卸载先进入维护旁路，最多等待三十秒排空；健康连接未排空则拒绝卸载。维护旁路保留
 用户开启意图，验证组件后通过人工恢复重新接管。
 

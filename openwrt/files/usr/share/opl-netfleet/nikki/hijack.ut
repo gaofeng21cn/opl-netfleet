@@ -603,6 +603,7 @@ table inet netfleet {
 
 	chain mangle_prerouting_lan {
 		type filter hook prerouting priority mangle; policy accept;
+		ct mark & 0x01000000 != 0 counter return
 		fib daddr type { local, broadcast, anycast, multicast } counter return
 		ct direction reply counter return
 		ip daddr @reserved_ip {% if (fake_ip_range): %} ip daddr != {{ fake_ip_range }} {% endif %} counter return

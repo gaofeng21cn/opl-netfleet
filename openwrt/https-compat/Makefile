@@ -38,6 +38,15 @@ define Package/opl-netfleet-https-compat/install
 	chmod 0755 $(1)/etc/init.d/opl-netfleet-compat $(1)/usr/libexec/opl-netfleet-compat/mitmdump
 endef
 
+define Package/opl-netfleet-https-compat/preinst
+#!/bin/sh
+if [ -z "$$IPKG_INSTROOT" ] && [ -x /etc/init.d/opl-netfleet-compat ]; then
+ /usr/bin/python3 /usr/libexec/opl-netfleet-compat/control.py drain >/dev/null || exit 1
+ /etc/init.d/opl-netfleet-compat stop || exit 1
+fi
+exit 0
+endef
+
 define Package/opl-netfleet-https-compat/prerm
 #!/bin/sh
 [ -n "$$IPKG_INSTROOT" ] || {

@@ -54,8 +54,10 @@ class Native(Kernel):
         (root / "backend.json").write_text('{"kind":"native-mihomo"}')
         (root / "native/profiles").mkdir(parents=True, exist_ok=True, mode=0o700)
         (root / "native/profiles/compat.json").write_text(json.dumps({"rules": ["MATCH,DIRECT"], "hosts": {"localhost": "198.51.100.10"}}))
-        with Path("/etc/ssl/certs/ca-certificates.crt").open("ab") as bundle:
-            bundle.write((self.directory / "upstream.pem").read_bytes())
+        bundle = Path("/etc/ssl/certs/ca-certificates.crt")
+        previous_bundle = bundle.read_bytes()
+        self.addCleanup(bundle.write_bytes, previous_bundle)
+        bundle.write_bytes(previous_bundle + (self.directory / "upstream.pem").read_bytes())
         self.command("/etc/init.d/opl-netfleet-core", "start")
         self.addCleanup(self.command, "/etc/init.d/opl-netfleet-core", "stop")
         self.owner = Controller()
@@ -83,7 +85,8 @@ class Native(Kernel):
                 break
             self.assertLess(time.monotonic(), deadline, state)
             await asyncio.sleep(1)
-        self.assertTrue((await self.request())["h2"])
+        wire = await self.request()
+        self.assertTrue(wire["h2"], {"wire": wire, "engine": self.owner.health()})
         self.assertFalse((await self.request(host="other.example", ca=self.directory / "upstream.pem"))["h2"])
         service = json.loads(subprocess.check_output(["ubus", "call", "service", "list", '{"name":"opl-netfleet-core"}']))
         lifecycle = service["opl-netfleet-core"]["instances"]["lifecycle"]["pid"]

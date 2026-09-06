@@ -89,6 +89,9 @@ class Compatibility:
         host = data.client_hello.sni
         address = context.client.peername[0]
         port = context.server.address[1]
+        if any(kind == 0xFE0D for kind, _ in data.client_hello.extensions):
+            data.ignore_connection = True
+            return
         internal = self.probe and address in ("127.0.0.1", "::1") and host == "localhost" and port == TLS_PORT
         rule = {"id": "_health", "strategy": "h2"} if internal else (select(self.config, address, host, port) if self.refresh() else None)
         if rule is None or rule["strategy"] == "bypass":
@@ -130,7 +133,9 @@ class Compatibility:
         internal = self.probe and data.client.peername[0] in ("127.0.0.1", "::1") and data.server.address[1] == TLS_PORT
         if ctx.options.netfleet_preserve_source_port and not internal:
             # An unavailable source port must fail the connection, never silently change its route.
-            data.server.sockname = (ctx.options.connect_addr or None, data.client.peername[1])
+            # asyncio resolves a None local host as loopback, not a wildcard bind.
+            bind = ctx.options.connect_addr or ("::" if ":" in data.server.address[0] else "0.0.0.0")
+            data.server.sockname = (bind, data.client.peername[1])
 
     def tls_established_server(self, data):
         if self.protocols.get(data.context.client.id) == (b"h2",) and data.conn.alpn != b"h2":

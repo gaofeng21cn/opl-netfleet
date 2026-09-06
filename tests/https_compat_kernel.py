@@ -63,7 +63,7 @@ with socket.create_connection((sys.argv[3],int(sys.argv[1])),timeout=3,source_ad
   connection.sendall(('GET /wire HTTP/1.1\\r\\nHost: localhost:'+sys.argv[1]+'\\r\\nConnection: close\\r\\n\\r\\n').encode())
   result=b''
   while data:=connection.recv(65536): result+=data
-  print(json.dumps({'h2':b'x-upstream-protocol: 2' in result.lower(),'source_port':connection.getsockname()[1],'status':result.split(b'\\r\\n')[0].decode()}))
+  print(json.dumps({'h2':b'x-upstream-protocol: 2' in result.lower(),'source_port':connection.getsockname()[1],'status':result.split(b'\\r\\n')[0].decode(),'error':result[-512:].decode(errors='replace') if b'502 Bad Gateway' in result else None}))
 """
         child = await asyncio.create_subprocess_exec("ip", "netns", "exec", "netfleet-compat-test",
             sys.executable, "-c", code, str(self.upstream_port), str(ca or self.ca_bundle), self.DESTINATION, host, source or "",

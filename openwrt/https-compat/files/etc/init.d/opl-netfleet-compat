@@ -17,7 +17,6 @@ start_service() {
 }
 
 stop_service() {
-	# The kernel lease still expires when a caller already holds the mutation lock.
-	/usr/bin/python3 /usr/libexec/opl-netfleet-compat/control.py bypass >/dev/null
-	return 0
+	# rc.common would otherwise kill procd's instance even when this hook fails.
+	/usr/bin/python3 /usr/libexec/opl-netfleet-compat/control.py drain >/dev/null || exit 1
 }

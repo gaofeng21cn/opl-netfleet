@@ -187,7 +187,9 @@ def tick():
         gateway.bypass()
         health = engine_health()
         if health.get("active_connections") == 0:
-            subprocess.run([SERVICE, "stop"], capture_output=True, timeout=2)
+            # The owner has already bypassed and drained while holding the mutation lock.
+            subprocess.run(["ubus", "call", "service", "delete", '{"name":"opl-netfleet-compat"}'],
+                           capture_output=True, timeout=2)
         save_state({**previous, "intercepting": False, "reason": "disabled"}, previous)
         return
     if previous.get("maintenance"):
@@ -224,15 +226,16 @@ def tick():
             since = previous.get("unhealthy_since", now)
             state["unhealthy_since"] = since
             if now - since >= 10 and not recovery["latched"]:
-                subprocess.run(["ubus", "call", "service", "signal", json.dumps({"name": "opl-netfleet-compat", "instance": "engine", "signal": 9})],
-                               capture_output=True, timeout=1)
-                subprocess.run([SERVICE, "start"], capture_output=True, timeout=2)
                 # Failed start attempts count even when no ready engine was ever observed.
                 recovery["faults"] = [stamp for stamp in recovery.get("faults", []) if now - 600 <= stamp <= now] + [now]
                 recovery["latched"] = len(recovery["faults"]) >= 3
                 if recovery["latched"]:
                     state["reason"] = recovery["reason"] = "manual_recovery_required"
                 state["unhealthy_since"] = now
+                save_state(state, previous)
+                subprocess.run(["ubus", "call", "service", "signal", json.dumps({"name": "opl-netfleet-compat", "instance": "engine", "signal": 9})],
+                               capture_output=True, timeout=1)
+                subprocess.run([SERVICE, "start"], capture_output=True, timeout=2)
         else:
             state.pop("unhealthy_since", None)
         save_state(state, previous)
