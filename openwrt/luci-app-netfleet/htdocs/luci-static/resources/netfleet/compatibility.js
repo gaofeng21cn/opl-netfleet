@@ -10,6 +10,7 @@ function reason(value) {
 		manual_recovery_required: '故障频繁，等待人工恢复', processing_chain_failed: '本地处理链异常',
 		engine_unavailable: '兼容引擎未就绪', engine_config_pending: '等待引擎载入配置',
 		native_gateway_unavailable: '原生网关暂不可用', native_gateway_not_ready: '原生网关尚未就绪',
+		native_ownership_guard_missing: '原生网关缺少连接归属保护',
 		upstream_protocol_failed: '目标 TLS 或协议验证失败' })[value] || value || '正常';
 }
 
@@ -21,7 +22,7 @@ function label(state) {
 }
 
 function button(text, action, disabled) {
-	return E('button', { 'class': 'btn cbi-button', 'type': 'button', 'disabled': !!disabled, 'click': action }, text);
+	return E('button', { 'class': 'btn cbi-button', 'type': 'button', 'disabled': disabled ? '' : null, 'click': action }, text);
 }
 
 function refresh(controller) {
@@ -64,20 +65,20 @@ function edit(controller, collection, item) {
 	function field(key, title, type) {
 		return E('label', { 'class': 'netfleet-config-row' }, [ E('span', {}, title), E('input', {
 			'class': 'cbi-input-text', 'value': Array.isArray(draft[key]) ? draft[key].join(', ') : draft[key],
-			'type': type || 'text', 'disabled': key === 'id' && !!item,
+			'type': type || 'text', 'disabled': key === 'id' && item ? '' : null,
 			'input': function(event) { draft[key] = key === 'addresses' ? event.target.value.split(/[,\s]+/).filter(Boolean) : type === 'number' ? Number(event.target.value) : event.target.value.trim(); }
 		}) ]);
 	}
 	function select(key, title, choices) {
 		return E('label', { 'class': 'netfleet-config-row' }, [ E('span', {}, title), E('select', {
 			'class': 'cbi-input-select', 'change': function(event) { draft[key] = event.target.value; }
-		}, choices.map(function(choice) { return E('option', { 'value': choice[0], 'selected': draft[key] === choice[0] }, choice[1]); })) ]);
+		}, choices.map(function(choice) { return E('option', { 'value': choice[0], 'selected': draft[key] === choice[0] ? '' : null }, choice[1]); })) ]);
 	}
 	const rows = [ field('id', 'ID'), field('name', '名称') ];
 	if (collection === 'rules') rows.push(field('domain', '域名'), select('match', '匹配', [ [ 'exact', '精确域名' ], [ 'suffix', '域名后缀' ] ]),
 		field('port', '端口', 'number'), select('strategy', '策略', [ [ 'h2', '上游 HTTP/2' ], [ 'bypass', '旁路' ] ]),
 		E('div', { 'class': 'netfleet-config-row' }, [ E('span', {}, '接入设备'), E('div', {}, config.devices.map(function(device) {
-			return E('label', { 'class': 'netfleet-check' }, [ E('input', { 'type': 'checkbox', 'checked': draft.devices.includes(device.id), 'change': function(event) {
+			return E('label', { 'class': 'netfleet-check' }, [ E('input', { 'type': 'checkbox', 'checked': draft.devices.includes(device.id) ? '' : null, 'change': function(event) {
 				draft.devices = draft.devices.filter(function(id) { return id !== device.id; });
 				if (event.target.checked) draft.devices.push(device.id);
 			} }), device.name ]);
@@ -112,7 +113,7 @@ function render(controller) {
 		const result = state.rules[rule.id] || {};
 		const recovery = (state.rule_recovery || {})[rule.id] || {};
 		return E('tr', {}, [
-			E('td', {}, E('input', { 'type': 'checkbox', 'aria-label': rule.name, 'checked': rule.enabled, 'disabled': busy, 'change': function(event) {
+			E('td', {}, E('input', { 'type': 'checkbox', 'aria-label': rule.name, 'checked': rule.enabled ? '' : null, 'disabled': busy ? '' : null, 'change': function(event) {
 				return applyConfig(function(config) { config.rules.find(function(value) { return value.id === rule.id; }).enabled = event.target.checked; });
 			} })), E('td', {}, [ E('strong', {}, rule.name), E('small', {}, rule.domain + ':' + rule.port) ]),
 			E('td', {}, rule.devices.map(function(id) { return (state.config.devices.find(function(device) { return device.id === id; }) || {}).name || id; }).join('、')),
@@ -139,7 +140,7 @@ function render(controller) {
 	});
 	function table(headers, rows) { return E('div', { 'class': 'table netfleet-config-table' }, E('table', {}, [ E('thead', {}, E('tr', {}, headers.map(function(title) { return E('th', {}, title); }))), E('tbody', {}, rows) ])); }
 	return E('section', {}, [ E('h3', {}, 'HTTPS 兼容'),
-		E('div', { 'class': 'netfleet-config-row' }, [ E('label', { 'class': 'netfleet-check' }, [ E('input', { 'type': 'checkbox', 'checked': state.requested, 'disabled': busy,
+		E('div', { 'class': 'netfleet-config-row' }, [ E('label', { 'class': 'netfleet-check' }, [ E('input', { 'type': 'checkbox', 'checked': state.requested ? '' : null, 'disabled': busy ? '' : null,
 			'change': function(event) { return mutate(controller, event.target.checked ? 'compatibilityEnable' : 'compatibilityDisable', {}); } }), '开启' ]),
 			E('div', { 'role': 'status' }, [ E('strong', {}, label(state)), E('small', {}, reason(state.reason)) ]) ]),
 		controller.compatibilityError ? E('p', { 'class': 'alert-message warning' }, '状态读取失败，操作已停用') : '',
