@@ -192,30 +192,31 @@ function selections() {
 };
 function resume(snapshot) {
 	if (snapshot.running) {
-		if (!shell(`${SERVICE} start`)) return false;
+		if (!shell(`${SERVICE} start`)) return failure("network_core_start_failed");
 		let ready = false;
 		for (let attempt = 0; attempt < 15; attempt++) {
 			if (gateway()?.ready == true) { ready = true; break; }
 			system("sleep 1");
 		}
-		if (!ready) return false;
+		if (!ready) return failure("network_gateway_not_ready");
 		const secret = api_secret();
 		const current = proxies(secret, 2)?.proxies ?? {};
 		for (let name, choice in snapshot.selections)
-			if (index(current[name]?.all ?? [], choice) < 0 || !select(secret, name, choice)) return false;
+			if (index(current[name]?.all ?? [], choice) < 0 || !select(secret, name, choice)) return failure("network_selection_restore_failed");
 		const readback = selections();
-		for (let name, choice in snapshot.selections) if (readback?.[name] != choice) return false;
+		for (let name, choice in snapshot.selections) if (readback?.[name] != choice) return failure("network_selection_readback_failed");
 		if (fs.lstat(POLICY_PATH) != null) {
 			const probe = command_json(`ucode ${shell_quote(MAIN)} probe`);
-			if (probe?.ok != true || probe.result?.ok != true) return false;
+			if (probe?.ok != true || probe.result?.ok != true) return failure("network_business_probe_failed");
 		}
-	} else if (gateway()?.clean != true) return false;
-	return set_service_state(snapshot.supervisor).ok;
+	} else if (gateway()?.clean != true) return failure("network_cleanup_not_confirmed");
+	return set_service_state(snapshot.supervisor).ok ? { ok: true } : failure("network_supervisor_restore_failed");
 };
 function rollback(snapshot) {
 	if (!stop().ok) return { ok: false, error: "network_cleanup_failed" };
 	if (!restore_files(snapshot)) return { ok: false, error: "network_restore_failed" };
-	return resume(snapshot) ? { ok: true, state: "restored" } : { ok: false, error: "network_runtime_restore_failed" };
+	const resumed = resume(snapshot);
+	return resumed.ok ? { ok: true, state: "restored" } : resumed;
 };
 
 // The outer RPC mutation lock also excludes the periodic selector and subscription writer.
@@ -248,7 +249,8 @@ export function apply(path) {
 		if (!set_service_state({ ...snapshot.supervisor, running: false }).ok) die("network_supervisor_pause_failed");
 		if (!stop().ok) die("network_stop_failed");
 		if (!install_file(`${work}/netfleet`, CONFIG) || !install_file(`${work}/mixin.json`, MIXIN)) die("network_install_failed");
-		if (!resume(snapshot)) die("network_runtime_verification_failed");
+		const resumed = resume(snapshot);
+		if (!resumed.ok) die(resumed.error);
 		const current = discover();
 		if (!current.available) die("network_readback_failed");
 		remove_work(work);

@@ -274,7 +274,10 @@ export function cleanup_state() {
 		let response = null;
 		try { response = child == null ? null : json(child.read("all")); } catch (error) {}
 		const completed = child != null && child.close() == 0;
-		const stopped = completed && response?.ok == true && response.result?.core_running == false;
+		// procd can remove the instance before the old process has exited.
+		// Match the native owner's start precondition before reusing its listeners.
+		const stopped = completed && response?.ok == true && response.result?.core_running == false &&
+			system("pidof mihomo >/dev/null 2>&1") != 0;
 		return { ok: stopped && response.result?.clean == true,
 			mihomo_stopped: stopped, service_stopped: stopped,
 			nft_table_absent: response?.result?.clean == true, routing_absent: response?.result?.clean == true };

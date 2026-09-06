@@ -72,7 +72,7 @@ if (phase == "apply") {
 	const mixin_before = sha256("/etc/opl-netfleet/native/mixin.json");
 	const result = apply(request(changed, current.revision));
 	check(!result.ok && result.result?.rollback?.ok == true, `failure_rollback:${sprintf("%J", result)}`);
-	check(result.error == "network_runtime_verification_failed", "runtime_failure_reason_preserved");
+	check(result.error == "network_core_start_failed", "runtime_failure_reason_preserved");
 	check(sha256("/etc/config/netfleet") == before && sha256("/etc/opl-netfleet/native/mixin.json") == mixin_before, "exact_private_files_restored");
 	check(sprintf("%J", choices()) == sprintf("%J", read_json(`${work}/initial-choices.json`)), "rollback_selectors_retained");
 } else if (phase == "restore") {
@@ -81,6 +81,13 @@ if (phase == "apply") {
 	const current = get().result;
 	// Fixture starts with no authentication; production passwords are never stored in this VM proof.
 	check(length(initial.listeners.credentials) == 0, "fixture_authentication_assumption");
-	check(apply(request(initial, current.revision)).ok, "restore_original_network_settings");
+	// Anonymous UCI section IDs change with section order; restore against the current revision.
+	check(length(initial.lan.rules) == length(current.settings.lan.rules), "unchanged_rule_count");
+	for (let i = 0; i < length(initial.lan.rules); i++) {
+		initial.lan.rules[i].id = current.settings.lan.rules[i].id;
+		check(sprintf("%J", initial.lan.rules[i]) == sprintf("%J", current.settings.lan.rules[i]), "unchanged_rule_content");
+	}
+	const result = apply(request(initial, current.revision));
+	check(result.ok, `restore_original_network_settings:${sprintf("%J", result)}`);
 } else die("unknown_phase");
 print(`network_device ${phase} passed\n`);
