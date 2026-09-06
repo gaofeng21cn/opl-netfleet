@@ -31,8 +31,16 @@ class Native(Kernel):
         self.command("ip", "link", "set", "nfcompat-wan", "netns", "nfcompat-origin")
         self.command("ip", "addr", "add", "10.78.0.1/24", "dev", "nfcompat-up")
         self.command("ip", "link", "set", "nfcompat-up", "up")
+        self.command("ip", "-6", "addr", "add", "2001:db8:78::1/64", "dev", "nfcompat-up", "nodad")
         self.command("ip", "-n", "nfcompat-origin", "addr", "add", "10.78.0.2/24", "dev", "nfcompat-wan")
         self.command("ip", "-n", "nfcompat-origin", "link", "set", "nfcompat-wan", "up")
+        self.command("ip", "-n", "nfcompat-origin", "-6", "addr", "add", "2001:db8:78::2/64", "dev", "nfcompat-wan", "nodad")
+        self.command("ip", "-6", "addr", "del", "2001:db8:88::10/128", "dev", "lo")
+        self.addCleanup(self.command, "ip", "-6", "addr", "add", "2001:db8:88::10/128", "dev", "lo", "nodad")
+        self.command("ip", "-n", "nfcompat-origin", "-6", "addr", "add", "2001:db8:88::10/128", "dev", "nfcompat-wan", "nodad")
+        self.command("ip", "-6", "route", "add", "2001:db8:88::10/128", "via", "2001:db8:78::2")
+        self.addCleanup(self.command, "ip", "-6", "route", "del", "2001:db8:88::10/128")
+        self.command("ip", "-n", "nfcompat-origin", "-6", "route", "add", "default", "via", "2001:db8:78::1")
         self.command("ip", "-n", "nfcompat-origin", "link", "set", "lo", "up")
         self.command("ip", "-n", "nfcompat-origin", "addr", "add", "198.51.100.10/32", "dev", "lo")
         self.command("ip", "route", "add", "198.51.100.10/32", "via", "10.78.0.2")
@@ -43,7 +51,7 @@ class Native(Kernel):
         self.origin = await asyncio.create_subprocess_exec("ip", "netns", "exec", "nfcompat-origin", sys.executable,
             str(Path(__file__).with_name("https_compat_origin.py")), str(self.directory), str(self.upstream_port))
         self.addAsyncCleanup(self.stop_origin)
-        self.command("ubus", "call", "network", "add_dynamic", json.dumps({"name": "nfcompat", "proto": "static", "device": "nfcompat0", "ipaddr": ["10.77.0.1/24"]}))
+        self.command("ubus", "call", "network", "add_dynamic", json.dumps({"name": "nfcompat", "proto": "static", "device": "nfcompat0", "ipaddr": ["10.77.0.1/24"], "ip6addr": ["2001:db8:77::1/64"]}))
         self.addCleanup(self.command, "ubus", "call", "network.interface.nfcompat", "remove")
         if not Path("/etc/config/netfleet").exists():
             self.command("cp", "/usr/share/opl-netfleet/netfleet.config", "/etc/config/netfleet")
@@ -91,6 +99,20 @@ class Native(Kernel):
             await asyncio.sleep(1)
         wire = await self.request()
         self.assertTrue(wire["h2"], {"wire": wire, "engine": self.owner.health()})
+        # Production uses one wildcard transparent listener for both families.
+        config["devices"][0]["addresses"].append("2001:db8:77::2")
+        saved = self.owner.call("apply", {"revision": self.owner.call("get")["revision"], "config": config})
+        self.owner.call("probe", {"revision": saved["revision"], "operation": "trust_record", "device": "mac",
+                                  "report": {"system": True, "ca_sha256": saved["ca_sha256"]}})
+        deadline = time.monotonic() + 85
+        while not self.owner.call("get")["intercepting"]:
+            self.assertLess(time.monotonic(), deadline, self.owner.call("get"))
+            await asyncio.sleep(1)
+        self.DESTINATION = "2001:db8:88::10"
+        self.assertTrue((await self.request())["h2"], self.owner.health())
+        self.assertEqual((await self.request(ca=self.directory / "upstream.pem", h2=True))["alpn"], "h2")
+        self.assertFalse((await self.request(host="other.example", ca=self.directory / "upstream.pem"))["h2"])
+        self.DESTINATION = "198.51.100.10"
         self.assertFalse((await self.request(host="other.example", ca=self.directory / "upstream.pem"))["h2"])
         packages = list(Path("/tmp/compat-runtime").glob("*.apk"))
         if packages:
