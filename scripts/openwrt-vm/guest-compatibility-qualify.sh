@@ -6,8 +6,10 @@ tree=${2:?}
 
 test "$(uname -m)" = aarch64
 test "$(readlink /var)" = tmp
+ip route replace default via 192.168.1.2
+printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
 apk update >&2
-apk add python3 python3-pip libstdcpp libopenssl ca-bundle >&2
+apk add python3 python3-pip libstdcpp ca-bundle >&2
 export PYTHONPATH=/tmp/compat-runtime/vendor
 launcher=/tmp/openwrt/https-compat/files/usr/libexec/opl-netfleet-compat/mitmdump
 chmod 0755 "$launcher"
