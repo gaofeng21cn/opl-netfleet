@@ -49,6 +49,11 @@ def atomic(path, value):
         stream.flush()
         os.fsync(stream.fileno())
     temporary.replace(path)
+    descriptor = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def revision():
@@ -85,7 +90,7 @@ def prepare_ca():
             os.chmod(path, 0o600)
             with path.open("rb") as stream:
                 os.fsync(stream.fileno())
-    for directory in (CA, BASE):
+    for directory in (CA, BASE, BASE.parent):
         descriptor = os.open(directory, os.O_RDONLY)
         try:
             os.fsync(descriptor)
