@@ -26,6 +26,7 @@ class Compatibility:
     def load(self, loader):
         loader.add_option("netfleet_config", str, "/etc/opl-netfleet/compatibility.json", "NetFleet compatibility configuration")
         loader.add_option("netfleet_socket", str, "/var/run/opl-netfleet-compat/engine.sock", "Private health socket")
+        loader.add_option("netfleet_preserve_source_port", bool, False, "Preserve TCP source port for transparent routing")
 
     def configure(self, updated):
         if ctx.options.ssl_insecure or ctx.options.upstream_cert or ctx.options.connection_strategy != "lazy":
@@ -93,6 +94,11 @@ class Compatibility:
             data.conn.alpn_offers = protocols
             if data.ssl_conn is not None:
                 data.ssl_conn.set_alpn_protos(list(protocols))
+
+    def server_connect(self, data):
+        if ctx.options.netfleet_preserve_source_port:
+            # An unavailable source port must fail the connection, never silently change its route.
+            data.server.sockname = (ctx.options.connect_addr or None, data.client.peername[1])
 
     def responseheaders(self, flow):
         flow.response.stream = True

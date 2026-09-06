@@ -462,7 +462,7 @@ fi
 if [ "$lane_mode" = compatibility ]; then
 	boot_clean_vm
 	stage=compatibility_transfer
-	tar -cf "$work/compat-runtime.tar" -C "${NETFLEET_COMPAT_RUNTIME:?}" vendor
+	COPYFILE_DISABLE=1 tar -cf "$work/compat-runtime.tar" -C "${NETFLEET_COMPAT_RUNTIME:?}" vendor
 	compat_runtime_sha=$(sha256_file "$work/compat-runtime.tar")
 	ssh $ssh_common root@127.0.0.1 'cat >/tmp/compat-runtime.tar' <"$work/compat-runtime.tar"
 	actual_sha=$(ssh $ssh_common root@127.0.0.1 'sha256sum /tmp/compat-runtime.tar' | awk '{print $1}')

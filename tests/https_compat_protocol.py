@@ -148,6 +148,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
             if not message.get("more_body"):
                 break
         self.received.append({"version": scope["http_version"], "path": scope["path"],
+                              "source_port": scope["client"][1],
                               "query": scope["query_string"].decode(), "method": scope["method"],
                               "headers": dict(scope["headers"]), "body": bytes(body)})
         status = int(scope["path"].split("/")[-1]) if scope["path"].startswith("/status/") else 200
