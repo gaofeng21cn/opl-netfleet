@@ -6,7 +6,7 @@
 function reason(value) {
 	return ({ disabled: '已关闭', draining: '停止接管，正在排空', recovering: '健康观察中',
 		rules_recovering: '规则恢复中', component_not_installed: '未安装可选组件',
-		lease_expired: '接管许可已到期', no_verified_targets: '没有已验证的接入目标',
+		lease_expired: '接管许可已到期', maintenance: '组件维护中，当前旁路', no_verified_targets: '没有已验证的接入目标',
 		manual_recovery_required: '故障频繁，等待人工恢复', processing_chain_failed: '本地处理链异常',
 		native_gateway_unavailable: '原生网关暂不可用', native_gateway_not_ready: '原生网关尚未就绪',
 		upstream_protocol_failed: '目标 TLS 或协议验证失败' })[value] || value || '正常';

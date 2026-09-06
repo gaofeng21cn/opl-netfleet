@@ -509,7 +509,7 @@ function createPage(storage, api, notifications) {
     const managed = { preloadSubscriptions: function() { return Promise.resolve(); } };
     api.nativeSetupGet = function() { return Promise.resolve({ ready: false }); };
     api.dashboardGet = function() { return Promise.resolve({ available: true, port: 9090, protocol: 'http', ui_name: 'zashboard', secret: 'private-secret' }); };
-    const factory = new Function('view', 'ui', 'managed', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', source);
+    const factory = new Function('view', 'ui', 'managed', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', 'compatibility', 'poll', source);
     const page = factory(view, ui, managed, api, netfleetConfig, E, {
         resource: function(value) { return value; },
         url: function(value) { return '/cgi-bin/luci/' + value; }
@@ -518,7 +518,7 @@ function createPage(storage, api, notifications) {
         assert.strictEqual(parsed.hostname, 'router.example');
         assert.strictEqual(parsed.pathname, '/ui/zashboard/');
         assert.strictEqual(parsed.searchParams.get('secret'), 'private-secret');
-    } }, close: function() {} }; } }, document);
+    } }, close: function() {} }; } }, document, { refresh: () => Promise.resolve(), label: () => '未安装' }, { add: () => {} });
     page.styleLink = styleLink;
     page.dashboardOpens = function() { return dashboardOpens; };
     return page;
@@ -781,8 +781,8 @@ function find(root, predicate) {
 
 const baseclass = { extend: function(value) { return value; } };
 const ui = { hideModal: function() {} };
-const factory = new Function('baseclass', 'ui', 'E', source);
-const config = factory(baseclass, ui, E);
+const factory = new Function('baseclass', 'ui', 'E', 'compatibility', source);
+const config = factory(baseclass, ui, E, { render: () => E('section', {}, 'HTTPS 兼容') });
 const deviceConfig = {
     revision: 'a'.repeat(64), active: true, pending_apply: false,
     backend: { id: 'nikki-mihomo', display_name: 'Nikki + Mihomo' },

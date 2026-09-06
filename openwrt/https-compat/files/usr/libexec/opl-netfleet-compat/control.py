@@ -169,6 +169,10 @@ def tick():
             subprocess.run([SERVICE, "stop"], capture_output=True, timeout=2)
         save_state({**previous, "intercepting": False, "reason": "disabled"}, previous)
         return
+    if previous.get("maintenance"):
+        gateway.bypass()
+        save_state({**previous, "intercepting": False, "reason": "maintenance"}, previous)
+        return
     try:
         network = snapshot()
         profile = read(Path("/etc/opl-netfleet/native/run/config.yaml"), {})
@@ -182,7 +186,8 @@ def tick():
                        reason=reason or "processing_chain_failed", now=now)
     last_pid = previous.get("engine_pid")
     if health.get("pid") and last_pid and health["pid"] != last_pid:
-        recovery["faults"] = [stamp for stamp in recovery.get("faults", []) if now - 600 <= stamp <= now] + [now]
+        if previous.get("recovery", {}).get("healthy") is True:
+            recovery["faults"] = [stamp for stamp in recovery.get("faults", []) if now - 600 <= stamp <= now] + [now]
         recovery["latched"] = recovery.get("latched", False) or len(recovery["faults"]) >= 3
         recovery["intercepting"] = False
         recovery["healthy_since"] = now if healthy else None
@@ -356,9 +361,8 @@ def main():
             gateway.bypass()
             return {"intercepting": False}
         if action == "drain":
-            config = validate(read(CONFIG, DEFAULT))
-            config["enabled"] = False
-            atomic(CONFIG, config)
+            previous = read(STATE, {})
+            save_state({**previous, "maintenance": True, "intercepting": False, "reason": "maintenance"}, previous)
             return drain()
         request = read(Path(sys.argv[2]), {}).get("request", {})
         if action in ("apply", "enable", "disable"):
@@ -375,6 +379,7 @@ def main():
                 else:
                     state.pop("recovery", None)
                     state.pop("unhealthy_since", None)
+                    state.pop("maintenance", None)
                 atomic(STATE, state)
                 tick()
             return {"processing_chain": engine_health(probe=True).get("processing_chain") is True, **status()}

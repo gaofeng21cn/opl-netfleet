@@ -152,7 +152,7 @@ class Compatibility:
 
     def tls_failure(self, data, reason):
         rule = self.selected.get(data.context.client.id)
-        if rule:
+        if rule and data.context.client.id not in self.failed_tls_clients:
             self.results[rule["id"]] = {"at": int(time.time()), "event": time.monotonic_ns(), "transport_error": True, "reason": reason}
             self.record_failure(rule["id"])
             self.failed_tls_clients.add(data.context.client.id)

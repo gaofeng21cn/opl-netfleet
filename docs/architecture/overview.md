@@ -76,6 +76,7 @@ RecoveryProfileRef
 | 测量和选择 | [selection.md](selection.md) | 测量事实、资格、comparator、切换门槛和同轮自动选择 |
 | 编译、激活和恢复 | [runtime-and-recovery.md](runtime-and-recovery.md) | staged/active 事务、Fail-Open、supervisor 和恢复顺序 |
 | RPC 与 UI | [interfaces.md](interfaces.md) | 公开动作、状态投影、React/LuCI 双宿主和浏览器边界 |
+| HTTPS 兼容 | [https-compatibility.md](https-compatibility.md) | 可选协议转换、设备信任、接管租约和旁路 |
 | 软件包与配置输入 | [packaging.md](packaging.md) | versioned package、private Instance 和 deployment bundle |
 | UI 视觉设计 | [../design/ui.md](../design/ui.md) | 主题、布局、组件、性能和可访问性 |
 | 推广与复原 | [../operations/canary-promotion.md](../operations/canary-promotion.md) | canary 到 replica 的通用部署顺序和最短恢复路径 |

@@ -13,6 +13,7 @@ import {
   sectionMeta,
 } from './ConfigSections';
 import { SetupWizard } from './SetupWizard';
+import { CompatibilityPreview } from './CompatibilityPreview';
 import type { StatusSnapshot } from '../types';
 
 interface ConfigViewProps {
@@ -60,6 +61,7 @@ export function ConfigView({ draft, savedDraft, status, onChange, onSave }: Conf
     routing: <RoutingSection {...sectionProps} />,
     automation: <AutomationSection {...sectionProps} />,
     safety: <SafetySection {...sectionProps} />,
+    compatibility: <CompatibilityPreview />,
   }[section];
 
   if (wizard) return <SetupWizard
@@ -101,7 +103,7 @@ export function ConfigView({ draft, savedDraft, status, onChange, onSave }: Conf
     </div>}
     {message && <div className="nf-config-message" role="status"><CheckCircle2 aria-hidden="true" />{message}</div>}
 
-    <div className="nf-config-actions">
+    {section !== 'compatibility' && <div className="nf-config-actions">
       <span>{dirty ? '有尚未保存的本地更改' : '本地预览与已保存状态一致'}</span>
       <div>
         <button type="button" disabled={!dirty} onClick={() => { onChange(savedDraft); setValidation(null); setMessage(null); }}><RotateCcw aria-hidden="true" />放弃更改</button>
@@ -109,6 +111,6 @@ export function ConfigView({ draft, savedDraft, status, onChange, onSave }: Conf
         <button type="button" onClick={() => setReview(!review)}><Eye aria-hidden="true" />{review ? '收起摘要' : '查看变更'}</button>
         <button className="nf-button-primary" type="button" disabled={!dirty} onClick={save}><Save aria-hidden="true" />{status.active ? '应用本地预览' : '保存本地预览'}</button>
       </div>
-    </div>
+    </div>}
   </div>;
 }

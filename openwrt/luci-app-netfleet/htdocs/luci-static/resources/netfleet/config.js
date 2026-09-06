@@ -447,8 +447,8 @@ function content(controller) {
 		capabilities: capabilities,
 		routing: routing,
 		automation: automation,
-		safety: safety
-		, compatibility: compatibility.render
+		safety: safety,
+		compatibility: compatibility.render
 	})[controller.configSection](controller);
 }
 

@@ -1,8 +1,8 @@
 # HTTPS 兼容模块
 
 HTTPS 兼容是原生后端的可选增强，不改变应用 URL、业务鉴权或原有出口策略。
-设备一次性信任私有 CA，代理按需签发目标证书；CA 和私钥属于设备私有状态，
-不能随普通更新重新生成，也不进入 Git、UI 或普通诊断导出。
+设备一次性信任私有 CA，代理按需签发目标证书；CA 属于设备私有状态，不能随普通
+更新重新生成。私钥不进入 Git、UI 或普通诊断导出，公开证书可通过认证 RPC 下载。
 
 独立配置拥有总开关、已接入设备和目标规则。设备使用稳定 ID、显示名和明确 IP
 地址；规则拥有 ID、显示名、设备引用、精确域名或域名后缀、目标端口、开关和
@@ -26,3 +26,35 @@ HTTPS 兼容是原生后端的可选增强，不改变应用 URL、业务鉴权�
 
 生产启用要求协议实测、OpenWrt 软件包和 QEMU 故障演练通过；源码或本机协议测试
 不能替代目标设备的接管、旁路和应用验收。
+
+## 运行入口与接入
+
+`opl-netfleet-https-compat` 是独立可选包，使用固定的 mitmproxy 12.2.3、Python 3.13
+和 ARM64/musl 依赖。构建入口是 `scripts/https-compat/build-package.sh`，参数依次为
+OpenWrt SDK、依赖目录、APK 签名私钥、输出目录和源码 ref。依赖由同目录 Dockerfile
+构建。组件包安装验证与基础 NetFleet qualification 分开，二者都不能替代网络验收。
+
+`compatibility_get/apply/enable/disable/probe/ca` 经 rpcd、`main.uc` 和专属 controller
+到达唯一实现。所有 mutation 使用当前 revision；revision 同时绑定配置和信任记录。
+`probe` 的 `trust_record`、`trust_revoke`、`recover` 操作分别记录接入工具证明、撤销
+设备接管和人工解除故障锁定。`ca` 只返回公开 PEM 及 SHA-256，不接受任意文件路径。
+
+私有配置和稳定 CA 位于 `/etc/opl-netfleet/compatibility`，运行状态与有效规则位于
+`/var/run/opl-netfleet-compat`。原生 gateway 的现有观察进程每两秒调用 tick；引擎由
+procd 托管。nftables 租约只存在于 `inet netfleet_compat`，不修改基础 NetFleet 表。
+卸载先进入维护旁路，最多等待三十秒排空；健康连接未排空则拒绝卸载。维护旁路保留
+用户开启意图，验证组件后通过人工恢复重新接管。
+
+LuCI 的“配置 → HTTPS 兼容”独立保存规则，不调用全局配置应用。概览与诊断只投影
+摘要，React 是参考界面。macOS 工具通过已验证主机身份的 SSH 获取公开 CA，使用
+系统 `security` 安装、验证或撤销信任。工具不会改应用 URL。下载后可执行：
+
+```sh
+python3 netfleet-macos-trust.py install --target router-admin --device mac
+python3 netfleet-macos-trust.py verify --target router-admin --device mac
+python3 netfleet-macos-trust.py revoke --target router-admin --device mac
+```
+
+系统信任证明只证明系统证书库，Codex App、CLI 和图片运行时分别显示实际验证状态。
+未实际验证的运行时保持“待实际验证”，不能由系统证书安装成功推导为应用已经可用。
+设备地址变更使旧信任接入记录失效。撤销接管后，工具确认连接排空才移除系统信任。
