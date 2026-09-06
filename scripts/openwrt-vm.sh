@@ -133,6 +133,7 @@ git -C "$repo_dir" archive "$source_commit" \
 	openwrt/files/etc/init.d/opl-netfleet-core \
 	openwrt/files/etc/config/netfleet \
 	openwrt/files/usr/share/opl-netfleet/nikki \
+	openwrt/files/etc/opl-netfleet/policy.example.json \
 	openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json \
 	openwrt/files/etc/opl-netfleet/rulesets.lock.json \
 	scripts/deploy-openwrt-remote.sh \
