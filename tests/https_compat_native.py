@@ -45,6 +45,8 @@ class Native(Kernel):
         self.addAsyncCleanup(self.stop_origin)
         self.command("ubus", "call", "network", "add_dynamic", json.dumps({"name": "nfcompat", "proto": "static", "device": "nfcompat0", "ipaddr": ["10.77.0.1/24"]}))
         self.addCleanup(self.command, "ubus", "call", "network.interface.nfcompat", "remove")
+        if not Path("/etc/config/netfleet").exists():
+            self.command("cp", "/usr/share/opl-netfleet/netfleet.config", "/etc/config/netfleet")
         for assignment in ("netfleet.config.enabled=1", "netfleet.config.profile=file:compat.json", "netfleet.mixin.api_secret=compat-fixture"):
             self.command("uci", "set", assignment)
         self.command("uci", "delete", "netfleet.proxy.lan_inbound_interface")
