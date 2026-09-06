@@ -94,7 +94,7 @@ class Compatibility:
             return
         internal = self.probe and address in ("127.0.0.1", "::1") and host == "localhost" and port == TLS_PORT
         rule = {"id": "_health", "strategy": "h2"} if internal else (select(self.config, address, host, port) if self.refresh() else None)
-        if rule is None or rule["strategy"] == "bypass":
+        if rule is None or rule["strategy"] == "bypass" or (not internal and b"h2" in data.client_hello.alpn_protocols):
             data.ignore_connection = True
             return
         self.selected[context.client.id] = rule
