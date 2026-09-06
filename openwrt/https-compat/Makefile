@@ -50,7 +50,7 @@ endef
 define Package/opl-netfleet-https-compat/prerm
 #!/bin/sh
 [ -n "$$IPKG_INSTROOT" ] || {
- /usr/bin/python3 /usr/libexec/opl-netfleet-compat/control.py drain >/dev/null || exit 1
+ /usr/bin/python3 /usr/libexec/opl-netfleet-compat/control.py remove >/dev/null || exit 1
  /etc/init.d/opl-netfleet-compat stop
  /etc/init.d/opl-netfleet-compat disable
 }

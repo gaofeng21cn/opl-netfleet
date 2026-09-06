@@ -404,10 +404,13 @@ def main():
         if action == "bypass":
             gateway.bypass()
             return {"intercepting": False}
-        if action == "drain":
+        if action in ("drain", "remove"):
             previous = read(STATE, {})
             save_state({**previous, "maintenance": True, "intercepting": False, "reason": "maintenance"}, previous)
-            return drain()
+            result = drain()
+            if action == "remove":
+                gateway.remove()
+            return result
         request = read(Path(sys.argv[2]), {}).get("request", {})
         if action in ("apply", "enable", "disable"):
             return apply(action, request)
