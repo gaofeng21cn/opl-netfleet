@@ -26,6 +26,10 @@ function capture(command) {
 function parsed(command) { try { return json(capture(command)); } catch (error) { return null; } };
 function directory(path) { return fs.lstat(path) == null ? fs.mkdir(path, 0700) : private_directory(path); };
 function fail(code) { die(code); };
+function error_code(error) {
+	const code = trim(split(`${error}`, "\n")[0]);
+	return match(code, /^[a-z][a-z0-9_]+$/) ? code : "component_operation_failed";
+};
 function version_valid(value) { return type(value) == "string" && length(value) < 80 && match(value, /^[A-Za-z0-9][A-Za-z0-9._+~:-]*$/); };
 function installed() {
 	const rows = parsed("apk --no-network query --from installed --format json --fields name,version '*'");
@@ -271,7 +275,7 @@ function upgrade(request, work, candidates) {
 		for (let name in names) if (after?.[name] != candidates[name]) fail("package_identity_mismatch");
 		if (!same_inputs(before)) fail("private_configuration_changed");
 		if (!restore_services(before, work)) fail("runtime_verification_failed");
-	} catch (failure) { error = type(failure) == "string" ? failure : "component_operation_failed"; }
+	} catch (failure) { error = error_code(failure); }
 	if (error == null) return;
 	operation.update("rolling_back");
 	if (!stop_services(work)) fail("rollback_stop_failed");
@@ -302,8 +306,7 @@ try {
 		response = { ok: true };
 	} else response = { ok: false, error: "unknown_component_action" };
 } catch (error) {
-	const code = trim(split(`${error}`, "\n")[0]);
-	const reason = match(code, /^[a-z][a-z0-9_]+$/) ? code : "component_operation_failed";
+	const reason = error_code(error);
 	if (ARGV[0] == "run") operation.finish(false, reason, null);
 	response = { ok: false, error: reason };
 }

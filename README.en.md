@@ -138,6 +138,13 @@ normal package upgrade and never establishes permanent dual writes.
 
 ## Upgrading
 
+The LuCI **Components and Updates** page shows installed versions, the running
+Mihomo version, and key dependencies, with an explicit feed check. NetFleet and
+its LuCI interface update together. Updating Mihomo under the native backend
+requires separate confirmation and validates the current configuration first;
+failures restore the previous packages and runtime. Unattended and system-wide
+upgrades are not enabled by default.
+
 After the first installation, OpenWrt can upgrade directly from the configured
 feed:
 
