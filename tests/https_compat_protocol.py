@@ -49,6 +49,11 @@ def certificate(directory):
 
 
 class Protocol(unittest.IsolatedAsyncioTestCase):
+    BIND = "127.0.0.1"
+    DEVICE = "127.0.0.1"
+    MODE = "regular"
+    PROXY_PORT = None
+
     async def asyncSetUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="netfleet-compat-test-")
         self.addCleanup(self.temporary.cleanup)
@@ -58,9 +63,9 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         self.first_upload = asyncio.Event()
         self.finish_sse = asyncio.Event()
         self.shutdown = asyncio.Event()
-        self.upstream_port, self.proxy_port = free_port(), free_port()
+        self.upstream_port, self.proxy_port = free_port(), self.PROXY_PORT or free_port()
         config = Config()
-        config.bind = [f"127.0.0.1:{self.upstream_port}"]
+        config.bind = [f"{self.BIND}:{self.upstream_port}"]
         config.certfile = str(self.directory / "upstream.pem")
         config.keyfile = str(self.directory / "upstream.key")
         config.alpn_protocols = ["h2", "http/1.1"]
@@ -70,14 +75,14 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         self.upstream = asyncio.create_task(serve(self.application, config, shutdown_trigger=self.shutdown.wait))
         self.addAsyncCleanup(self.stop_upstream)
         policy = {"schema": 1, "enabled": True,
-                  "devices": [{"id": "mac", "name": "Test Mac", "addresses": ["127.0.0.1"]}],
+                  "devices": [{"id": "mac", "name": "Test Mac", "addresses": [self.DEVICE]}],
                   "rules": [{"id": "test", "name": "Wire test", "enabled": True, "devices": ["mac"],
                              "domain": "localhost", "match": "exact", "port": self.upstream_port, "strategy": "h2"}]}
         (self.directory / "config.json").write_text(json.dumps(policy))
         self.log = (self.directory / "proxy.log").open("wb")
         self.addCleanup(self.log.close)
         self.proxy = await asyncio.create_subprocess_exec(shutil.which("mitmdump"),
-            "--listen-host", "127.0.0.1", "--listen-port", str(self.proxy_port),
+            "--listen-host", self.BIND, "--listen-port", str(self.proxy_port), "--mode", self.MODE,
             "-s", str(ADDON), "--set", "upstream_cert=false", "--set", "connection_strategy=lazy",
             "--set", f"confdir={self.directory / 'ca'}", "--set", "flow_detail=0",
             "--set", f"ssl_verify_upstream_trusted_ca={self.directory / 'upstream.pem'}",

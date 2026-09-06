@@ -86,6 +86,7 @@ class Compatibility:
         flow.request.stream = True
         flow.metadata["netfleet_rule"] = rule["id"]
         self.active[flow.id] = flow.client_conn.id
+        flow.metadata["netfleet_websocket"] = websocket
 
     def tls_start_server(self, data):
         protocols = self.protocols.get(data.context.client.id)
@@ -120,6 +121,10 @@ class Compatibility:
             self.results[rule["id"]] = {"at": int(time.time()), "transport_error": True, "reason": reason}
 
     def response(self, flow):
+        if flow.response.status_code != 101:
+            self.active.pop(flow.id, None)
+
+    def websocket_end(self, flow):
         self.active.pop(flow.id, None)
 
     def error(self, flow):
