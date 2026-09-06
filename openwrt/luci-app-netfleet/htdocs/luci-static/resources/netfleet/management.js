@@ -28,12 +28,21 @@ function errorText(error) {
 	const code = String(error && error.message || error || 'operation_failed');
 	const known = {
 		mutation_busy: '设备正在执行其他操作，请稍后重试', network_revision_conflict: '网络配置已变化，请重新读取后修改',
+		network_invalid: '网络配置未通过校验',
 		network_validation_timeout: '核心配置校验超时，当前网络配置未修改',
+		network_runtime_profile_invalid: '配置未通过 Mihomo 校验，当前网络配置未修改',
 		maintenance_revision_changed: '设备配置已变化，请重新读取后操作', profile_referenced: '此文件仍被使用，请先切换配置',
 		profile_is_referenced: '此文件仍被使用，不能编辑或删除', invalid_profile_id: '文件名无效', profile_validation_failed: '配置未通过 Mihomo 校验',
 		backup_invalid: '备份格式无效', backup_confirmation_required: '请先确认恢复备份', native_backend_required: '此操作需要 NetFleet 原生后端'
 	};
 	let message = known[code] || '设备未完成操作（' + code + '）';
+	const problem = error && error.detail && error.detail.errors && error.detail.errors[0];
+	const reasons = { invalid_or_reserved_port: '端口无效、重复或被其他功能占用', http_probe_listener_required: '至少保留一个混合或 HTTP 代理端口',
+		invalid_resolver: 'DNS 服务器地址无效', resolver_required: '请填写常规 DNS 服务器', proxy_resolver_required: '设置代理节点域名规则时，也需要填写代理节点 DNS', exact_domain_required: '域名规则需要精确域名',
+		duplicate_domain: '域名规则重复', invalid_address: '设备地址格式无效', catch_all_must_be_last: '匹配其余设备的规则必须放在最后',
+		catch_all_required: '请保留一条匹配其余设备的规则', interface_required: '请选择局域网接入接口', unknown_interface: '接入接口不存在',
+		password_required: '请为新账户设置密码', credential_required: '启用认证时至少需要一个账户', invalid_username: '用户名无效或重复' };
+	if (problem && reasons[problem.reason]) message += '：' + reasons[problem.reason];
 	if (error && error.detail && error.detail.rollback) message += error.detail.rollback.ok ? '；已恢复操作前状态' : '；恢复尚未确认，请检查设备状态';
 	return message;
 }

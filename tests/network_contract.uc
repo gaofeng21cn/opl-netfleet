@@ -39,6 +39,7 @@ rejects((settings) => { settings.listeners.tproxy_port = 9999; }, "unowned_port_
 rejects((settings) => { settings.listeners.mixed_port = 9090; }, "controller_port_collision_rejected");
 rejects((settings) => { settings.listeners.mixed_port = 0; }, "proxy_probe_listener_retained");
 rejects((settings) => { settings.dns.nameservers = ["file:///etc/passwd"]; }, "local_resolver_uri_rejected");
+rejects((settings) => { settings.dns.proxy_nameservers = []; }, "proxy_policy_needs_default_resolver");
 rejects((settings) => { settings.dns.nameservers = ["udp://example.test\nsecret"]; }, "resolver_control_character_rejected");
 rejects((settings) => { settings.dns.policies = [{ domain: "+.example.test", nameservers: ["198.51.100.53"] }]; }, "wildcard_domain_rejected");
 rejects((settings) => { settings.lan.interfaces = ["../../wan"]; }, "unowned_interface_rejected");

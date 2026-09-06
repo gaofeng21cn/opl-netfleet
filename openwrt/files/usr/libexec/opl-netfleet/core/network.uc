@@ -132,6 +132,8 @@ export function validate_request(request, revision, current, resources) {
 			resolvers(settings.dns[name], errors, `dns.${name}`, name == "nameservers");
 		validate_policies(settings.dns.policies, errors, "dns.policies");
 		validate_policies(settings.dns.proxy_policies, errors, "dns.proxy_policies");
+		if (length(settings.dns.proxy_policies ?? []) && !length(settings.dns.proxy_nameservers ?? []))
+			push(errors, { path: "dns.proxy_nameservers", reason: "proxy_resolver_required" });
 	}
 	if (fields(settings.router, ["enabled"], errors, "router")) boolean(settings.router.enabled, errors, "router.enabled");
 	if (fields(settings.lan, ["enabled", "interfaces", "rules"], errors, "lan")) {

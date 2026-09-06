@@ -68,6 +68,7 @@ function executeRequest(method, request) {
 			const error = new Error(response?.error || 'operation_failed');
 			error.detail = response?.detail || response?.result || null;
 			if (response?.rollback) error.detail = Object.assign({}, error.detail, { rollback: response.rollback });
+			if (response?.errors) error.detail = Object.assign({}, error.detail, { errors: response.errors });
 			throw error;
 		}
 		return response.result;

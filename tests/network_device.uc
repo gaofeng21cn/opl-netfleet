@@ -40,9 +40,11 @@ if (phase == "apply") {
 	changed.listeners.authentication_enabled = true;
 	changed.listeners.credentials = [{ id: "new_network_vm", username: "network-vm", password: "network-vm-private" }];
 	changed.dns.policies = [...changed.dns.policies, { domain: "management-proof.test", nameservers: ["udp://127.0.0.1:1054"] }];
+	changed.dns.proxy_nameservers = ["udp://127.0.0.1:1054"];
 	changed.dns.proxy_policies = [...changed.dns.proxy_policies, { domain: "management-proxy.test", nameservers: ["udp://127.0.0.1:1054"] }];
 	const path = request(changed, current.result.revision);
-	check(validate(path).ok && sha256("/etc/config/netfleet") == config_before, "candidate_validation_zero_mutation");
+	const validated = validate(path);
+	check(validated.ok && sha256("/etc/config/netfleet") == config_before, `candidate_validation_zero_mutation:${sprintf("%J", validated)}`);
 	const result = apply(path);
 	check(result.ok && result.result.state == "applied", `network_apply_failed:${sprintf("%J", result)}`);
 	const saved = get();
