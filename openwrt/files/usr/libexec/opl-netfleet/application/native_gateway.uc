@@ -281,7 +281,7 @@ function compatibility_snapshot() {
 				for (let key in ["ip", "ip6", "mac", "user", "group"])
 					if (length(section[key] ?? []) > 0) excluded = false;
 				for (let group in section.cgroup)
-					if (!match(group, /^[A-Za-z0-9_\/-]+$/) || group == engine_group || index(engine_group, `${group}/`) == 0)
+					if (!match(group, /^[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*$/) || group == engine_group || index(engine_group, `${group}/`) == 0)
 						excluded = false;
 				if (excluded) return;
 			}
