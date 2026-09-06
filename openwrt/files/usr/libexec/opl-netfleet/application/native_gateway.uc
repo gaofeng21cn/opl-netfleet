@@ -277,16 +277,33 @@ function compatibility_snapshot() {
 	let engine_group = null;
 	for (let line in split(membership ?? "", "\n"))
 		if (index(line, "0::/") == 0) engine_group = substr(line, 4);
+	const credentials = { user: [], group: [] };
+	const process_status = engine?.running == true && type(engine.pid) == "int" ? fs.readfile(`/proc/${engine.pid}/status`) : null;
+	for (let line in split(process_status ?? "", "\n")) {
+		const kind = index(line, "Uid:") == 0 ? "user" : index(line, "Gid:") == 0 ? "group" : null;
+		if (kind != null) credentials[kind] = map(split(trim(substr(line, 4)), /[[:space:]]+/), value => int(value));
+	}
+	const accounts = { user: {}, group: {} };
+	for (let kind, path in { user: "/etc/passwd", group: "/etc/group" })
+		for (let line in split(fs.readfile(path) ?? "", "\n")) {
+			const fields = split(line, ":");
+			if (length(fields) >= 3 && match(fields[2], /^[0-9]+$/)) accounts[kind][fields[0]] = int(fields[2]);
+		}
 	let custom = false;
 	for (let kind in ["router_access_control", "lan_access_control"]) {
 		let defaults = 0;
 		uci.foreach("netfleet", kind, (section) => {
 			if (`${section.enabled}` != "1") return;
 			// Router service exclusions are equivalent only when the actual engine cannot match them.
-			if (kind == "router_access_control" && engine_group != null && length(section.cgroup ?? []) > 0) {
+			if (kind == "router_access_control" && engine_group != null &&
+				length(section.cgroup ?? []) + length(section.user ?? []) + length(section.group ?? []) > 0) {
 				let excluded = true;
-				for (let key in ["ip", "ip6", "mac", "user", "group"])
+				for (let key in ["ip", "ip6", "mac"])
 					if (length(section[key] ?? []) > 0) excluded = false;
+				for (let key in ["user", "group"])
+					for (let name in section[key] ?? [])
+						if (accounts[key][name] == null || length(credentials[key]) != 4 || index(credentials[key], accounts[key][name]) >= 0)
+							excluded = false;
 				for (let group in section.cgroup)
 					if (!match(group, /^[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*$/) || group == engine_group || index(engine_group, `${group}/`) == 0)
 						excluded = false;

@@ -51,6 +51,8 @@ class Native(Kernel):
             self.command("uci", "set", assignment)
         self.command("uci", "delete", "netfleet.proxy.lan_inbound_interface")
         self.command("uci", "add_list", "netfleet.proxy.lan_inbound_interface=nfcompat")
+        self.command("uci", "add_list", "netfleet.@router_access_control[0].user=nobody")
+        self.command("uci", "add_list", "netfleet.@router_access_control[0].group=nogroup")
         self.command("uci", "commit", "netfleet")
         root = Path("/etc/opl-netfleet")
         (root / "backend.json").write_text('{"kind":"native-mihomo"}')
@@ -171,6 +173,14 @@ class Native(Kernel):
             self.assertLess(time.monotonic(), deadline, self.owner.call("get"))
             await asyncio.sleep(1)
         self.assertTrue((await self.request())["h2"])
+        owner = "/usr/libexec/opl-netfleet/application/native_gateway.uc"
+        for selector in ("user", "group"):
+            self.command("uci", "add_list", f"netfleet.@router_access_control[0].{selector}=root")
+            try:
+                snapshot = json.loads(subprocess.check_output(["ucode", owner, "compatibility-snapshot"]))
+                self.assertTrue(snapshot["result"]["custom_lan_access"], "matching engine identity must reject admission")
+            finally:
+                self.command("uci", "del_list", f"netfleet.@router_access_control[0].{selector}=root")
 
 
 if __name__ == "__main__":
