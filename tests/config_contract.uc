@@ -159,6 +159,23 @@ if (validate_request(policy, raw, resources).ok) {
 	exit(1);
 }
 
+const routing = json(sprintf("%J", request));
+routing.routing_rules = [
+	{ kind: "ip_cidr", value: "2001:db8::/32", capability: "ai" },
+	{ kind: "ip_cidr", value: "192.0.2.0/24", target: "direct" },
+	{ kind: "domain_suffix", value: "local.example", target: "direct" }
+];
+const routing_result = apply(policy, routing, resources);
+if (!routing_result.ok || routing_result.policy.routing_rules[1].target != "direct" ||
+	routing_result.policy.routing_rules[0].capability != "ai") {
+	print("routing_request_merge_failed\n"); exit(1);
+}
+routing.routing_rules[0].value = "2001:db8::1/32";
+if (validate_request(policy, routing, resources).ok) { print("invalid_network_request_accepted\n"); exit(1); }
+routing.routing_rules[0].value = "2001:db8::/32";
+routing.capabilities.ai.enabled = false;
+if (validate_request(policy, routing, resources).ok) { print("disabled_routing_target_accepted\n"); exit(1); }
+
 const missing_sections = json(sprintf("%J", request));
 delete missing_sections.policy_source;
 delete missing_sections.automation;

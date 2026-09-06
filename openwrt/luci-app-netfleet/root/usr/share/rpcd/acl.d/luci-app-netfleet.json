@@ -3,12 +3,16 @@
     "description": "Discover, configure, operate, and restore NetFleet",
     "read": {
       "ubus": {
-        "opl-netfleet": [ "components_get", "operation_get", "native_setup_get", "dashboard_get", "subscriptions_get", "migration_get", "onboarding_get", "status", "events", "connections", "probe", "config_get", "config_validate" ]
+        "opl-netfleet": [ "network_get", "network_validate", "maintenance_get", "profile_get", "diagnostics_get", "components_get", "operation_get", "native_setup_get", "dashboard_get", "subscriptions_get", "migration_get", "onboarding_get", "status", "events", "connections", "probe", "config_get", "config_validate" ]
       }
     },
     "write": {
+      "file": {
+        "/usr/libexec/opl-netfleet-transfer": [ "exec" ],
+        "/tmp/opl-netfleet-upload.*.json": [ "write" ]
+      },
       "ubus": {
-        "opl-netfleet": [ "components_check", "components_update", "native_setup_apply", "subscriptions_set", "subscriptions_refresh", "migration_apply", "onboarding_apply", "config_save", "config_apply", "enable", "select_auto", "refresh", "disable" ]
+        "opl-netfleet": [ "network_apply", "profile_save", "profile_delete", "backup_export", "backup_restore", "core_action", "dashboard_check", "dashboard_update", "components_check", "components_update", "native_setup_apply", "subscriptions_set", "subscriptions_refresh", "migration_apply", "onboarding_apply", "config_save", "config_apply", "enable", "select_auto", "refresh", "disable" ]
       }
     }
   }

@@ -87,7 +87,7 @@ class ReleaseToolsTests(unittest.TestCase):
                     for dependency in re.findall(r"'require (netfleet\.[\w.]+)(?: as \w+)?';", module.read_text()):
                         self.assertTrue(dependency.startswith(f'netfleet.{version}.'), dependency)
                         pending.append(resources / (dependency.replace('.', '/') + '.js'))
-                self.assertEqual(4, len(visited))
+                self.assertEqual(5, len(visited))
                 self.assertFalse((resources / 'netfleet/managed.js').exists())
                 namespaces.append({str(path.relative_to(resources)) for path in visited})
             self.assertFalse(namespaces[0] & namespaces[1])
@@ -133,12 +133,12 @@ class ReleaseToolsTests(unittest.TestCase):
     def test_package_sources_are_versioned_and_do_not_embed_instance_inputs(self):
         runtime = (ROOT / 'openwrt/Makefile').read_text()
         luci = (ROOT / 'openwrt/luci-app-netfleet/Makefile').read_text()
-        self.assertIn('PKG_VERSION:=0.5.3', runtime)
+        version = re.search(r'^PKG_VERSION:=(\d+\.\d+\.\d+)$', runtime, re.M).group(1)
         self.assertIn('PKG_RELEASE:=1', runtime)
         self.assertIn('PKG_LICENSE:=GPL-3.0-only', runtime)
         self.assertIn('PKG_MAINTAINER:=OPL NetFleet', runtime)
         self.assertIn('PKGARCH:=all', runtime)
-        self.assertIn('PKG_VERSION:=0.5.3', luci)
+        self.assertIn(f'PKG_VERSION:={version}', luci)
         self.assertIn('PKGARCH:=all', luci)
         self.assertIn('include $(INCLUDE_DIR)/package.mk', luci)
         self.assertNotIn('feeds/luci/luci.mk', luci)

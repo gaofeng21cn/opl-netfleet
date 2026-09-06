@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-netfleet
-PKG_VERSION:=0.5.3
+PKG_VERSION:=0.5.4
 PKG_RELEASE:=1
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=OPL NetFleet
@@ -33,6 +33,7 @@ define Package/luci-app-netfleet/install
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/api.js $(1)/www/luci-static/resources/netfleet/api.js
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/config.js $(1)/www/luci-static/resources/netfleet/config.js
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/managed.js $(1)/www/luci-static/resources/netfleet/managed.js
+	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/management.js $(1)/www/luci-static/resources/netfleet/management.js
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/native.css $(1)/www/luci-static/resources/netfleet/native.css
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/view/netfleet/overview.js $(1)/www/luci-static/resources/view/netfleet/overview.js
 	sh ./stage-assets.sh $(1)/www/luci-static/resources $(NETFLEET_VIEW_VERSION)

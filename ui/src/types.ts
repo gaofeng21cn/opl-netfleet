@@ -142,7 +142,7 @@ export interface DeviceConfigSnapshot {
   regions: Array<{ id: string; flag?: string | null; display_name: string; display_order?: number | null; mode: 'automatic' | 'manual_only' }>;
   region_options: Array<{ id: string; code: string; display_name: string; display_order: number }>;
   capabilities: Array<{ id: string; display_name: string; enabled: boolean; mode: 'automatic' | 'manual'; region_ids: string[]; prefer_region_from?: string | null; entry_group?: string | null; policy_groups: string[]; base_groups?: string[] }>;
-  routing_rules: Array<{ kind: 'domain_suffix'; value: string; capability: string }>;
+  routing_rules: Array<{ kind: 'domain_suffix' | 'ip_cidr'; value: string; capability?: string; target?: 'direct' }>;
   automation: { enabled: boolean; selection_interval_seconds: number; subscription_refresh_enabled: boolean; subscription_refresh_interval_seconds: number };
   safety: { region_switch_margin_ms: number; leaf_switch_margin_ms: number; runtime_grace_seconds: number; latency_url: string; path_probe_url: string; guard_probe_url: string };
 }
@@ -279,6 +279,9 @@ export interface NetFleetClient {
   connections(): Promise<ConnectionsSnapshot>;
   components(): Promise<ComponentsSnapshot>;
   operations(): Promise<OperationsSnapshot>;
+  network(): Promise<NetworkSnapshot>;
+  maintenance(): Promise<MaintenanceSnapshot>;
+  diagnostics(): Promise<DiagnosticsSnapshot>;
   enable(): Promise<unknown>;
   selectAuto(capability: string): Promise<unknown>;
   refresh(): Promise<unknown>;
@@ -312,6 +315,59 @@ export interface ComponentsSnapshot {
   feed: { configured: boolean; url: string | null; checked_at: number | null; error: string | null };
   components: Array<{ id: 'netfleet' | 'luci' | 'mihomo'; label: string; installed_version: string | null; running_version: string | null; available_version: string | null; update_available: boolean; managed: boolean; reason: string | null }>;
   dependencies: Array<{ id: string; label: string; installed_version: string | null; available: boolean }>;
+  dashboard?: DashboardComponent;
+}
+
+export interface DashboardComponent {
+  id: 'zashboard';
+  label: string;
+  installed_version: string | null;
+  available_version: string | null;
+  available: boolean;
+  managed: boolean;
+  update_available: boolean;
+  checked_at: number | null;
+  error: string | null;
+  reason: string | null;
+  release_url: string | null;
+}
+
+export interface DnsPolicy { domain: string; nameservers: string[] }
+
+export interface NetworkSettings {
+  dns: { nameservers: string[]; default_nameservers: string[]; proxy_nameservers: string[]; direct_nameservers: string[]; policies: DnsPolicy[]; proxy_policies: DnsPolicy[] };
+  lan: { enabled: boolean; interfaces: string[]; rules: Array<{ id: string; enabled: boolean; ipv4: string[]; ipv6: string[]; mac: string[]; proxy: boolean; dns: boolean }> };
+  router: { enabled: boolean };
+  listeners: { mixed_port: number; http_port: number; socks_port: number; authentication_enabled: boolean; credentials: Array<{ id: string; username: string; password_configured: boolean }> };
+}
+
+export interface NetworkSnapshot {
+  available: boolean;
+  reason?: string | null;
+  backend?: string;
+  revision: string | null;
+  running?: boolean;
+  settings: NetworkSettings | null;
+  preview_redacted?: boolean;
+  resources?: { interfaces: Array<{ name: string; up: boolean; device: string | null }>; preserved_dns_policy_count: number; preserved_proxy_policy_count: number };
+}
+
+export interface MaintenanceSnapshot {
+  supported: boolean;
+  reason?: string | null;
+  revision: string | null;
+  profiles: Array<{ id: string; ref: string; format: string; size_bytes: number; modified_at: number; referenced: boolean; editable: boolean }>;
+  core: { running: boolean; controller_available?: boolean; running_version?: string | null; actions: Array<'restart' | 'reload'> };
+  backup?: { format: string; contains_credentials: boolean };
+}
+
+export interface DiagnosticsSnapshot {
+  supported: boolean;
+  core_running: boolean;
+  controller_available: boolean;
+  captured_at: number;
+  lines: string[];
+  truncated: boolean;
 }
 
 export type ViewId = 'overview' | 'exits' | 'providers' | 'regions' | 'config' | 'components' | 'events';

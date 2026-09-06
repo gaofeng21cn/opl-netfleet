@@ -514,8 +514,9 @@ function createPage(storage, api, notifications) {
     };
     api.nativeSetupGet = function() { return Promise.resolve({ ready: false }); };
     api.dashboardGet = function() { return Promise.resolve({ available: true, port: 9090, protocol: 'http', ui_name: 'zashboard', secret: 'private-secret' }); };
-    const factory = new Function('view', 'ui', 'managed', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', source);
-    const page = factory(view, ui, managed, api, netfleetConfig, E, {
+    const management = { load: function() { return Promise.resolve(); }, maintenance: function() { return null; }, dashboard: function() { return null; } };
+    const factory = new Function('view', 'ui', 'managed', 'management', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', source);
+    const page = factory(view, ui, managed, management, api, netfleetConfig, E, {
         resource: function(value) { return value; },
         url: function(value) { return '/cgi-bin/luci/' + value; }
     }, { localStorage: storage, location: { hostname: 'router.example' }, open: function() { dashboardOpens++; return { location: { replace: function(url) {
@@ -787,8 +788,8 @@ function find(root, predicate) {
 
 const baseclass = { extend: function(value) { return value; } };
 const ui = { hideModal: function() {} };
-const factory = new Function('baseclass', 'ui', 'E', source);
-const config = factory(baseclass, ui, E);
+const factory = new Function('baseclass', 'ui', 'management', 'E', source);
+const config = factory(baseclass, ui, {}, E);
 const deviceConfig = {
     revision: 'a'.repeat(64), active: true, pending_apply: false,
     backend: { id: 'nikki-mihomo', display_name: 'Nikki + Mihomo' },

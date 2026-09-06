@@ -123,7 +123,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
 
   useEffect(() => {
     if (view === 'events') void refreshConnections();
-  }, [refreshConnections, view]);
+  }, [refreshConnections, view, preview?.scenario]);
 
   const refreshComponents = useCallback(async () => {
     setComponentsLoading(true);
@@ -135,7 +135,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
 
   useEffect(() => {
     if (view === 'components') void refreshComponents();
-  }, [refreshComponents, view]);
+  }, [refreshComponents, view, preview?.scenario]);
 
   useEffect(() => {
     if (view !== 'providers' && view !== 'components') return;
@@ -167,6 +167,8 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
     ? [
       source.mode,
       source.target_label || '',
+      preview?.scenario || '',
+      status.runtime.backend?.id || '',
       status.providers.map((item) => item.id).join(','),
       status.regions.map((item) => item.id).join(','),
       status.capabilities.map((item) => item.id).join(','),
@@ -284,13 +286,15 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
       {view === 'providers' && <><OperationProgress operation={operations.subscription} error={operationError} /><ProviderTable snapshot={status} full /></>}
       {view === 'regions' && <RegionTable snapshot={status} full />}
       {view === 'config' && configState && <ConfigView
+        key={configKey}
         draft={configState.draft}
         savedDraft={configState.saved}
         status={status}
+        client={client}
         onChange={(next) => setConfigState({ ...configState, draft: next })}
         onSave={(next) => setConfigState({ ...configState, draft: next, saved: next })}
       />}
-      {view === 'events' && <EventsView snapshot={visibleEvents} status={status} connections={connections} connectionsLoading={connectionsLoading} connectionsError={connectionsError} error={eventsError} />}
+      {view === 'events' && <EventsView key={`${source.mode}|${source.target_label}|${preview?.scenario}`} snapshot={visibleEvents} status={status} connections={connections} connectionsLoading={connectionsLoading} connectionsError={connectionsError} error={eventsError} client={client} />}
       {view === 'components' && <ComponentsView snapshot={components} operation={operations.packages} error={componentsError} operationError={operationError} loading={componentsLoading} onRead={() => void refreshComponents()} />}
 
       {dialog && <ConfirmDialog

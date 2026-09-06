@@ -6,6 +6,7 @@ import { private_file, private_directory, atomic_json } from "../adapters/native
 import { KIND, RUN_DIR, ROOT_DIR, SERVICE } from "../adapters/runtime.uc";
 import { proxies, select, controller_version } from "../adapters/mihomo.uc";
 import * as operation from "./operation.uc";
+import { resource as dashboard_resource } from "./dashboard.uc";
 
 const ROOT = "/tmp/opl-netfleet-components";
 const CACHE = `${ROOT}/checked.json`;
@@ -15,7 +16,7 @@ const UPDATE_SERVICE = "opl-netfleet-update";
 const MAIN = "/usr/libexec/opl-netfleet/main.uc";
 const UPGRADE_STATE = "/tmp/opl-netfleet-package-upgrade-state";
 const PACKAGES = ["opl-netfleet", "luci-app-netfleet", "mihomo-meta"];
-const DEPENDENCIES = ["ucode", "ucode-mod-fs", "ucode-mod-uci", "ucode-mod-ubus", "ucode-mod-uloop", "yq", "curl", "ca-bundle", "flock", "ip-full", "nftables-json", "kmod-nft-socket", "kmod-nft-tproxy"];
+const DEPENDENCIES = ["ucode", "ucode-mod-fs", "ucode-mod-uci", "ucode-mod-ubus", "ucode-mod-uloop", "yq", "curl", "ca-bundle", "flock", "unzip", "ip-full", "nftables-json", "kmod-nft-socket", "kmod-nft-tproxy"];
 
 function capture(command) {
 	const pipe = fs.popen(command + " 2>/dev/null");
@@ -93,6 +94,7 @@ function get() {
 	}
 	return { supported: versions != null, backend: KIND, architecture: capture("apk --print-arch"),
 		feed: { configured: url != null, url: url, checked_at: cache?.checked_at, error: cache?.error }, components: rows,
+		dashboard: dashboard_resource(),
 		dependencies: map(DEPENDENCIES, name => ({ id: name, label: name, installed_version: versions?.[name], available: versions?.[name] != null })) };
 };
 function start(action, component, version) {

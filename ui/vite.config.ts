@@ -3,6 +3,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { projectDiagnostics, projectMaintenance, projectNetwork } from './src/api/managementProjection';
+import type { DiagnosticsSnapshot, MaintenanceSnapshot, NetworkSnapshot } from './src/types';
 
 const execFileAsync = promisify(execFile);
 const SAFE_SSH_TARGET = /^[A-Za-z0-9._-]+$/;
@@ -14,7 +16,7 @@ function sendJson(response: import('node:http').ServerResponse, status: number, 
   response.end(JSON.stringify(payload));
 }
 
-async function readRemote(target: string, method: 'status' | 'events' | 'connections' | 'config_get' | 'components_get' | 'operation_get') {
+async function readRemote(target: string, method: 'status' | 'events' | 'connections' | 'config_get' | 'components_get' | 'operation_get' | 'network_get' | 'maintenance_get' | 'diagnostics_get') {
   const { stdout } = await execFileAsync('ssh', [
     '-o', 'BatchMode=yes',
     '-o', 'PasswordAuthentication=no',
@@ -98,6 +100,19 @@ function liveBridgePlugin(target?: string, targetLabel = '设备'): Plugin {
           } catch {
             sendJson(response, 502, { error: `${path}_read_unavailable` });
           }
+        });
+      }
+      const managementReads = {
+        network: async () => projectNetwork(await readRemote(validTarget!, 'network_get') as NetworkSnapshot),
+        maintenance: async () => projectMaintenance(await readRemote(validTarget!, 'maintenance_get') as MaintenanceSnapshot),
+        diagnostics: async () => projectDiagnostics(await readRemote(validTarget!, 'diagnostics_get') as DiagnosticsSnapshot),
+      };
+      for (const [path, read] of Object.entries(managementReads)) {
+        server.middlewares.use(`/__netfleet_live/${path}`, async (request, response) => {
+          if (request.method !== 'GET') return sendJson(response, 405, { error: 'method_not_allowed' });
+          if (!validTarget) return sendJson(response, 404, { error: 'live_target_not_configured' });
+          try { sendJson(response, 200, await read()); }
+          catch { sendJson(response, 502, { error: `${path}_read_unavailable` }); }
         });
       }
     },

@@ -1,4 +1,4 @@
-import type { ClientReadResult, ComponentsSnapshot, ConnectionsSnapshot, DeviceConfigSnapshot, EventsSnapshot, NetFleetClient, OperationsSnapshot, StatusSnapshot } from '../types';
+import type { ClientReadResult, ComponentsSnapshot, ConnectionsSnapshot, DeviceConfigSnapshot, DiagnosticsSnapshot, EventsSnapshot, MaintenanceSnapshot, NetFleetClient, NetworkSnapshot, OperationsSnapshot, StatusSnapshot } from '../types';
 
 interface BridgeResponse extends ClientReadResult {
   status?: StatusSnapshot;
@@ -73,6 +73,16 @@ export class LiveNetFleetClient implements NetFleetClient {
     if (!response.ok) throw new Error('设备操作进度暂不可读取');
     return await response.json() as OperationsSnapshot;
   }
+
+  private async managementRead<T>(path: string, label: string): Promise<T> {
+    const response = await this.fetcher(`/__netfleet_live/${path}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`设备尚未提供${label}，或当前连接不可用`);
+    return await response.json() as T;
+  }
+
+  network() { return this.managementRead<NetworkSnapshot>('network', '网络接入信息'); }
+  maintenance() { return this.managementRead<MaintenanceSnapshot>('maintenance', '配置维护信息'); }
+  diagnostics() { return this.managementRead<DiagnosticsSnapshot>('diagnostics', '核心诊断信息'); }
 
   async enable() {
     throw new Error('本机实时预览为只读模式');

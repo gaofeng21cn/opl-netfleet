@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { CheckCircle2, CircleAlert, Gauge, Network, Plus, RefreshCw, Route, ShieldCheck, Trash2 } from 'lucide-react';
-import type { ConfigDraft } from './model';
+import { CheckCircle2, CircleAlert, Files, Gauge, Network, Plus, RefreshCw, Route, ShieldCheck, Trash2, Waypoints } from 'lucide-react';
+import type { ConfigDraft, RoutingRuleDraft } from './model';
 import type { StatusSnapshot } from '../types';
 import { regionalDisplayName } from '../lib/format';
 import { SubscriptionsPreview } from './SubscriptionsPreview';
@@ -182,13 +182,23 @@ export function ExitsSection({ draft, onChange }: SectionProps) {
 }
 
 export function RoutingSection({ draft, onChange }: SectionProps) {
-  const [suffix, setSuffix] = useState('');
+  const [value, setValue] = useState('');
+  const [kind, setKind] = useState<RoutingRuleDraft['kind']>('domain_suffix');
   const [capability, setCapability] = useState('');
-  const selectedCapability = draft.capabilities.some((item) => item.id === capability) ? capability : draft.capabilities[0]?.id || '';
+  const selectedCapability = capability === '__direct' || draft.capabilities.some((item) => item.id === capability) ? capability : draft.capabilities[0]?.id || '__direct';
+  const route = (rule: RoutingRuleDraft, target: string): RoutingRuleDraft => target === '__direct'
+    ? { kind: rule.kind, value: rule.value, target: 'direct' }
+    : { kind: rule.kind, value: rule.value, capability: target };
+  const options = <><option value="__direct">直连</option>{draft.capabilities.map(item => <option key={item.id} value={item.id}>{item.displayName}</option>)}</>;
+  const kinds = <><option value="domain_suffix">域名后缀</option><option value="ip_cidr">IP 网段</option></>;
   return <section className="nf-config-section">
-    <SectionHeading title="业务规则" description="为少量私有域名指定出口；只接受域名后缀，不包含协议、路径或端口。" />
-    <div className="nf-table-wrap nf-config-table"><table><thead><tr><th>域名后缀</th><th>使用出口</th><th>操作</th></tr></thead><tbody>{draft.routingRules.map((rule, index) => <tr key={`${rule.value}-${index}`}><td><input value={rule.value} onChange={(event) => onChange({ ...draft, routingRules: draft.routingRules.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value.trim() } : item) })} /></td><td><select value={rule.capability} onChange={(event) => onChange({ ...draft, routingRules: draft.routingRules.map((item, itemIndex) => itemIndex === index ? { ...item, capability: event.target.value } : item) })}>{draft.capabilities.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}</select></td><td><button className="nf-icon-button" type="button" title="移除规则" aria-label={`移除 ${rule.value}`} onClick={() => onChange({ ...draft, routingRules: draft.routingRules.filter((_, itemIndex) => itemIndex !== index) })}><Trash2 aria-hidden="true" /></button></td></tr>)}</tbody></table></div>
-    <div className="nf-inline-add"><input value={suffix} placeholder="example.com" onChange={(event) => setSuffix(event.target.value)} /><select value={selectedCapability} onChange={(event) => setCapability(event.target.value)}>{draft.capabilities.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}</select><button type="button" disabled={!suffix.trim() || !selectedCapability} onClick={() => { onChange({ ...draft, routingRules: [...draft.routingRules, { kind: 'domain_suffix', value: suffix.trim(), capability: selectedCapability }] }); setSuffix(''); }}><Plus aria-hidden="true" />添加规则</button></div>
+    <SectionHeading title="业务规则" description="为域名后缀或 IPv4 / IPv6 网段指定出口或直连，按列表顺序匹配。" />
+    <div className="nf-table-wrap nf-config-table"><table><thead><tr><th>类型</th><th>匹配内容</th><th>使用出口</th><th>操作</th></tr></thead><tbody>{draft.routingRules.map((rule, index) => <tr key={index}>
+      <td><select aria-label={`规则 ${index + 1} 类型`} value={rule.kind} onChange={event => onChange({ ...draft, routingRules: draft.routingRules.map((item, at) => at === index ? { ...item, kind: event.target.value as RoutingRuleDraft['kind'] } : item) })}>{kinds}</select></td>
+      <td><input aria-label={`规则 ${index + 1} 匹配内容`} value={rule.value} onChange={event => onChange({ ...draft, routingRules: draft.routingRules.map((item, at) => at === index ? { ...item, value: event.target.value.trim() } : item) })} /></td>
+      <td><select aria-label={`规则 ${index + 1} 出口`} value={rule.target === 'direct' ? '__direct' : rule.capability || ''} onChange={event => onChange({ ...draft, routingRules: draft.routingRules.map((item, at) => at === index ? route(item, event.target.value) : item) })}>{options}</select></td>
+      <td><button className="nf-icon-button" type="button" title="移除规则" aria-label={`移除 ${rule.value}`} onClick={() => onChange({ ...draft, routingRules: draft.routingRules.filter((_, at) => at !== index) })}><Trash2 aria-hidden="true" /></button></td></tr>)}</tbody></table></div>
+    <div className="nf-inline-add nf-rule-add"><select aria-label="新规则类型" value={kind} onChange={event => setKind(event.target.value as RoutingRuleDraft['kind'])}>{kinds}</select><input aria-label="新规则匹配内容" value={value} placeholder={kind === 'domain_suffix' ? 'example.com' : '203.0.113.0/24 或 2001:db8::/32'} onChange={event => setValue(event.target.value)} /><select aria-label="新规则出口" value={selectedCapability} onChange={event => setCapability(event.target.value)}>{options}</select><button type="button" disabled={!value.trim()} onClick={() => { onChange({ ...draft, routingRules: [...draft.routingRules, route({ kind, value: value.trim() }, selectedCapability)] }); setValue(''); }}><Plus aria-hidden="true" />添加规则</button></div>
   </section>;
 }
 
@@ -225,10 +235,12 @@ export function SafetySection({ draft, onChange }: SectionProps) {
 
 export const sectionMeta = [
   { id: 'foundation' as const, label: '基础接入', icon: Network },
+  { id: 'network' as const, label: '网络接入', icon: Waypoints },
   { id: 'providers' as const, label: '机场', icon: RefreshCw },
   { id: 'regions' as const, label: '地区映射', icon: CheckCircle2 },
   { id: 'exits' as const, label: '出口策略', icon: Gauge },
   { id: 'routing' as const, label: '业务规则', icon: Route },
   { id: 'automation' as const, label: '自动运行', icon: RefreshCw },
   { id: 'safety' as const, label: '安全与恢复', icon: ShieldCheck },
+  { id: 'files' as const, label: '配置文件与备份', icon: Files },
 ];

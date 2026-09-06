@@ -1,6 +1,6 @@
 import type { DeviceConfigSnapshot, StatusSnapshot } from '../types';
 
-export type ConfigSectionId = 'foundation' | 'providers' | 'regions' | 'exits' | 'routing' | 'automation' | 'safety';
+export type ConfigSectionId = 'foundation' | 'network' | 'providers' | 'regions' | 'exits' | 'routing' | 'automation' | 'safety' | 'files';
 
 export interface ProviderDraft {
   id: string;
@@ -39,7 +39,7 @@ export interface CapabilityDraft {
   preferRegionFrom?: string | null;
 }
 
-export interface RoutingRuleDraft { kind: 'domain_suffix'; value: string; capability: string }
+export interface RoutingRuleDraft { kind: 'domain_suffix' | 'ip_cidr'; value: string; capability?: string; target?: 'direct' }
 
 export interface ConfigDraft {
   backend: string;
@@ -189,13 +189,27 @@ export function validateConfigDraft(draft: ConfigDraft): string[] {
   if (draft.capabilities.some((capability) => capability.enabled && !capability.entryGroup)) errors.push('每个已启用出口都要选择默认出口组。');
   const groups = draft.capabilities.flatMap((item) => [item.entryGroup, ...item.policyGroups].filter(Boolean));
   if (new Set(groups).size !== groups.length) errors.push('同一个策略组不能绑定到多个出口。');
-  if (draft.routingRules.some((rule) => !/^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])$/.test(rule.value) || !rule.value.includes('.'))) errors.push('域名规则必须是纯域名后缀。');
+  if (draft.routingRules.some((rule) => rule.kind === 'domain_suffix' && (!/^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])$/.test(rule.value) || !rule.value.includes('.')))) errors.push('域名规则必须是纯域名后缀。');
+  if (draft.routingRules.some((rule) => rule.kind === 'ip_cidr' && !validCidr(rule.value))) errors.push('IP 规则必须是有效的 IPv4 或 IPv6 CIDR。');
+  if (draft.routingRules.some((rule) => rule.target === 'direct' ? Boolean(rule.capability) : !draft.capabilities.some((item) => item.id === rule.capability))) errors.push('每条规则需要选择一个有效出口或直连。');
   if (draft.regions.some((region) => !region.displayName.trim())) errors.push('地区显示名称不能为空。');
   if (draft.automation.enabled && draft.automation.selectionIntervalSeconds < 300) errors.push('周期选优不能短于 5 分钟。');
   if (draft.safety.regionSwitchMarginMs < 0 || draft.safety.leafSwitchMarginMs < 0) errors.push('切换门槛不能为负数。');
   if (!draft.safety.latencyUrl.startsWith('https://')) errors.push('测速地址必须使用 HTTPS。');
   if (!draft.safety.protectedUrl.startsWith('https://')) errors.push('业务保护地址必须使用 HTTPS。');
   return errors;
+}
+
+export function validCidr(value: string): boolean {
+  const [address, prefix, extra] = value.split('/');
+  if (extra !== undefined || prefix === undefined || !/^\d+$/.test(prefix)) return false;
+  const length = Number(prefix);
+  if (address.includes(':')) {
+    if (length > 128 || address.includes('%')) return false;
+    try { return new URL(`http://[${address}]/`).hostname.startsWith('['); }
+    catch { return false; }
+  }
+  return length <= 32 && address.split('.').length === 4 && address.split('.').every((part) => /^(0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255);
 }
 
 export function configSummary(draft: ConfigDraft) {

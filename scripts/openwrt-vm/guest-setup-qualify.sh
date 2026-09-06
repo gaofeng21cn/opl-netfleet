@@ -325,6 +325,16 @@ if [ -n "$feed_url" ]; then
 	package_identity
 fi
 
+stage=configuration_maintenance
+sh /tmp/guest-maintenance-qualify.sh
+assert_json /tmp/netfleet-maintenance-fixture/qualification.json '@.ok' true
+
+if [ -n "$feed_url" ]; then
+	stage=luci_file_transfers
+	sh /tmp/guest-transfer-qualify.sh
+	assert_json /tmp/netfleet-transfer-fixture/qualification.json '@.ok' true
+fi
+
 stage=disable_and_cleanup
 run_main disable >"$work/disable-result.json"
 assert_json "$work/disable-result.json" '@.ok' true
@@ -373,4 +383,16 @@ fi
 stage=complete
 printf '{"schema_version":1,"ok":true,"source_commit":"%s","source_tree":"%s","scope":"native-mihomo-first-install","production_ready":false,"checks":{"nikki_absent":true,"real_netifd_upstream":true,"get_read_only":true,"failed_download_rollback":true,"failed_setup_direct_usable":true,"native_setup":true,"gateway_ready":true,"shared_onboarding":true,"shared_probe":true,"proxy_traffic":true,"disable_restores_subscription":true,"stop_cleans_dataplane":true,"direct_after_stop":true,"foreign_nft_unchanged":true%s}}\n' \
 	"$source_commit" "$source_tree" "$package_checks" >"$work/qualification.json"
+ucode -e 'import { readfile, writefile } from "fs";
+	const result = json(readfile(ARGV[0]));
+	for (let path in slice(ARGV, 1)) {
+		const detail = json(readfile(path));
+		if (detail.ok != true || !length(keys(detail.checks ?? {}))) exit(1);
+		for (let key, passed in detail.checks) {
+			if (passed != true) exit(1);
+			result.checks[key] = true;
+		}
+	}
+	writefile(ARGV[0], sprintf("%J", result));' "$work/qualification.json" \
+	/tmp/netfleet-maintenance-fixture/qualification.json ${feed_url:+/tmp/netfleet-transfer-fixture/qualification.json}
 cat "$work/qualification.json"

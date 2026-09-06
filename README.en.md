@@ -83,13 +83,23 @@ identity and supported backend before installation.
 - a separate full Zashboard for live Mihomo connections, traffic, rule matches, and proxy groups;
 - scheduled subscription refresh, configuration compilation, and automatic selection;
 - native IPv4/IPv6 TCP and UDP transparent proxying, plus LAN and router-local DNS handling;
+- native network settings for DNS upstreams and domain overrides, LAN/router proxy scope, device rules, listeners, and authentication;
+- domain-suffix and IPv4/IPv6 CIDR rules targeting an exit capability or direct connectivity;
+- local profile import, download, controlled editing, and backup/restore of NetFleet's private configuration;
+- core restart, reload, sanitized startup logs, and separate Zashboard resource version checks and updates;
 - OpenWrt APK/IPK packages, signed APK feeds, and Fleet declarative deployment.
 
 NetFleet keeps stable operational summaries on its Events and Diagnostics page.
-The **Live Runtime** entry opens the full Zashboard in a new tab using the
+The **Zashboard** entry opens the full dashboard in a new tab using the
 selected backend's controller and resources. Both backends use the same entry
 and Zashboard's secret-bearing connection URL. These temporary credentials must
 not enter NetFleet logs or display caches.
+
+Native network integration currently supports TProxy. Mihomo also supports TUN
+and Redirect, but NetFleet has not adapted and qualified their OpenWrt takeover,
+cleanup, and failure recovery, so the UI does not expose a mode switch. Native
+network, profile, and resource management belong to the native backend; Nikki
+mode retains Nikki's ownership of the corresponding resources.
 
 ## Installation
 
@@ -125,7 +135,7 @@ shared first-run setup then:
 
 Subscriptions remain in the selected backend's private configuration, outside
 policy and public status. After setup, LuCI can maintain provider roles, region
-scope, capabilities, business bindings, private domain rules, automation, and
+scope, capabilities, business bindings, domain/CIDR rules, automation, and
 protected probes. Native credentials use the separate subscription management
 entry. Saving a changed source does not stop the network; the last accepted
 cache remains in use until an explicit refresh succeeds.
@@ -145,6 +155,12 @@ requires separate confirmation and validates the current configuration first;
 failures restore the previous packages and runtime. Unattended and system-wide
 upgrades are not enabled by default.
 
+The separate Zashboard section checks and updates official static resources
+without restarting Mihomo or changing its connection credentials. An unknown
+installed version is shown as unrecorded rather than inferred from file times;
+available versions appear after an explicit check. Package, core, and dashboard
+updates require separate confirmation and are not silently bundled together.
+
 After the first installation, OpenWrt can upgrade directly from the configured
 feed:
 
@@ -161,6 +177,24 @@ instance configuration. Review the status page after the upgrade and apply a
 new configuration when ready.
 
 ## Everyday Use
+
+### Configuration And Maintenance
+
+**Configuration -> Network Access** manages the native backend's DNS, proxy
+scope, device rules, listeners, and authentication. Changes are validated before
+application and restore the previous configuration on failure; this surface does
+not edit OpenWrt WAN/LAN addresses or its default route. Configure domain and
+network traffic rules under **Business Rules**.
+
+**Configuration -> Profiles and Backup** imports, downloads, and edits local
+profiles and exports or restores NetFleet backups. A profile currently in use
+cannot be overwritten or deleted directly. Backups contain private subscription
+addresses and credentials, not system firmware, and should be stored securely.
+
+**Events and Diagnostics** provides core restart, reload, and on-demand startup
+logs. Startup failures remain inspectable when the Mihomo controller is
+unavailable. See [Independent device management](docs/architecture/management.md)
+for management and recovery boundaries.
 
 ### Automatic Selection
 
@@ -237,6 +271,7 @@ NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
 
 - [Documentation index](docs/README.md)
 - [Architecture overview](docs/architecture/overview.md)
+- [Independent device management](docs/architecture/management.md)
 - [UI design](docs/design/ui.md)
 - [Product whitepaper](docs/product/whitepaper.md)
 - [Development and device-operation rules](AGENTS.md)

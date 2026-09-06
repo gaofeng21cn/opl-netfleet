@@ -72,15 +72,9 @@ function status() {
 		core_running: core.running, registered: core.registered, attached: attached,
 		clean: !table && state == null, config_sha256: private_file(CONFIG) ? sha256(CONFIG) : null } };
 };
-function prepare() {
+function render_profile() {
 	if (read_json("/etc/opl-netfleet/backend.json")?.kind != "native-mihomo")
 		return { ok: false, error: "native_backend_not_selected" };
-	if (!enabled("config", "enabled")) return { ok: false, error: "backend_disabled" };
-	const nikki = parse(capture("ubus call service list '{\"name\":\"nikki\"}'"));
-	for (let name, instance in nikki?.nikki?.instances ?? {})
-		if (instance.running == true) return { ok: false, error: "existing_backend_owner" };
-	if (shell("pidof mihomo")) return { ok: false, error: "existing_backend_owner" };
-	if (!directory(BASE) || !directory(RUN) || !directory(STATE)) return { ok: false, error: "private_directory_required" };
 	const path = source_path(uci_value("config", "profile", null));
 	if (path == null) return { ok: false, error: "invalid_profile_reference" };
 	const source = read_yaml(path, true);
@@ -94,6 +88,7 @@ function prepare() {
 		dns_nameserver: [["dns", "default-nameserver"], ["dns", "proxy-server-nameserver"],
 			["dns", "direct-nameserver"], ["dns", "nameserver"], ["dns", "fallback"]],
 		dns_nameserver_policy: [["dns", "nameserver-policy"]],
+		dns_proxy_server_nameserver_policy: [["dns", "proxy-server-nameserver-policy"]],
 		sniffer_force_domain_name: [["sniffer", "force-domain"]],
 		sniffer_ignore_domain_name: [["sniffer", "skip-domain"]], sniffer_sniff: [["sniffer", "sniff"]]
 	};
@@ -119,6 +114,18 @@ function prepare() {
 	if (profile.dns?.enable != true || !profile.dns?.listen || !profile["tproxy-port"] || profile["allow-lan"] != true)
 		return { ok: false, error: "gateway_listeners_required" };
 	profile["external-controller-unix"] = `${RUN}/controller.sock`;
+	return { ok: true, result: { profile: profile } };
+};
+function prepare() {
+	if (!enabled("config", "enabled")) return { ok: false, error: "backend_disabled" };
+	const nikki = parse(capture("ubus call service list '{\"name\":\"nikki\"}'"));
+	for (let name, instance in nikki?.nikki?.instances ?? {})
+		if (instance.running == true) return { ok: false, error: "existing_backend_owner" };
+	if (shell("pidof mihomo")) return { ok: false, error: "existing_backend_owner" };
+	if (!directory(BASE) || !directory(RUN) || !directory(STATE)) return { ok: false, error: "private_directory_required" };
+	const rendered = render_profile();
+	if (!rendered.ok) return rendered;
+	const profile = rendered.result.profile;
 	if (!atomic_json(`${RUN}/candidate.json`, profile)) return { ok: false, error: "profile_write_failed" };
 	if (!shell(`/usr/bin/mihomo -t -d ${shell_quote(RUN)} -f ${shell_quote(`${RUN}/candidate.json`)}`)) {
 		fs.unlink(`${RUN}/candidate.json`);
@@ -256,6 +263,7 @@ let result;
 try {
 	if (system("test \"$(id -u)\" = 0") != 0) result = { ok: false, error: "root_required" };
 	else if (ARGV[0] == "prepare") result = prepare();
+	else if (ARGV[0] == "preview") result = render_profile();
 	else if (ARGV[0] == "attach") result = attach();
 	else if (ARGV[0] == "cleanup") result = cleanup();
 	else if (ARGV[0] == "reconcile") result = reconcile();

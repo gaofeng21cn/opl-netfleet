@@ -1,5 +1,6 @@
 import { displayEventName, eventDelay, eventReason, eventResult } from '../lib/format';
-import type { ConnectionsSnapshot, EventsSnapshot, StatusSnapshot } from '../types';
+import type { ConnectionsSnapshot, EventsSnapshot, NetFleetClient, StatusSnapshot } from '../types';
+import { CoreMaintenance } from './CoreMaintenance';
 
 const actionName = (action: string, trigger?: string) => action === 'select' && trigger === 'scheduled'
   ? '定期选优'
@@ -12,13 +13,14 @@ const initiatorName = (initiator?: string) => ({
   supervisor: '后台选优',
 }[initiator || ''] || initiator || '未提供');
 
-export function EventsView({ snapshot, status, connections, connectionsLoading, connectionsError, error }: {
+export function EventsView({ snapshot, status, connections, connectionsLoading, connectionsError, error, client }: {
   snapshot: EventsSnapshot;
   status: StatusSnapshot;
   connections: ConnectionsSnapshot;
   connectionsLoading: boolean;
   connectionsError?: string | null;
   error?: string | null;
+  client?: NetFleetClient;
 }) {
   const rows = snapshot.events.slice().reverse();
   return (
@@ -31,6 +33,7 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
         <dl><dt>原始日志</dt><dd>{snapshot.core_lines_persistent === false ? '临时窗口' : '设备保留'}</dd></dl>
       </section>
       {error && <div className="nf-inline-warning">{error}；以下内容保留上一次成功读取结果。</div>}
+      <CoreMaintenance client={client} />
       <section className="nf-table-section">
         <div className="nf-section-heading"><div><h2>当前规则命中链</h2><p>{connectionsError ? connectionsError : connections.truncated ? '仅显示前 50 条活动连接。' : '由 Mihomo 返回当前实际命中结果；不会写入展示缓存。'}</p></div></div>
         <div className="nf-table-wrap"><table>
@@ -40,7 +43,7 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
               <td>{connection.destination}</td><td>{connection.destination_port ?? '未提供'}</td>
               <td>{connection.network?.toUpperCase() || '未提供'}</td>
               <td>{[connection.rule, connection.rule_payload].filter(Boolean).join(' / ') || '未提供'}</td>
-              <td>{connection.chains.join(' → ') || 'DIRECT'}</td>
+              <td>{connection.chains.map(item => item === 'DIRECT' ? '直连' : item).join(' → ') || '直连'}</td>
             </tr>
           ))}{!connections.connections.length && <tr><td colSpan={5}>{connectionsLoading ? '正在读取当前活动连接…' : '当前没有活动连接'}</td></tr>}</tbody>
         </table></div>

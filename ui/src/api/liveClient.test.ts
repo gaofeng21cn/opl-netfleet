@@ -115,4 +115,17 @@ describe('LiveNetFleetClient', () => {
     await expect(client.operations()).resolves.toEqual({ subscription: null, packages: null });
     expect(calls).toEqual(['/__netfleet_live/components', '/__netfleet_live/operation']);
   });
+
+  it('reads management metadata only through the three uncached read-only endpoints', async () => {
+    const calls: string[] = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      calls.push(String(input));
+      expect(init).toEqual({ cache: 'no-store' });
+      return new Response(JSON.stringify({ revision: 'current' }), { status: 200 });
+    };
+    const client = new LiveNetFleetClient(fetcher);
+    await client.network(); await client.maintenance(); await client.diagnostics();
+    expect(calls).toEqual(['/__netfleet_live/network', '/__netfleet_live/maintenance', '/__netfleet_live/diagnostics']);
+    expect(calls.some(path => /export|profile|apply|restart/.test(path))).toBe(false);
+  });
 });

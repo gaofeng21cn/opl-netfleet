@@ -100,6 +100,7 @@ mkdir -p "$payload/usr/libexec" "$payload/usr/libexec/rpcd" \
   "$payload/etc/opl-netfleet" "$payload/etc/init.d" "$payload/www" \
   "$payload/usr/share/luci" "$payload/usr/share/rpcd" "$payload/usr/share/opl-netfleet"
 cp -R "$work/openwrt/files/usr/libexec/opl-netfleet" "$payload/usr/libexec/"
+cp "$work/openwrt/files/usr/libexec/opl-netfleet-transfer" "$payload/usr/libexec/"
 cp "$work/openwrt/files/usr/libexec/rpcd/opl-netfleet" "$payload/usr/libexec/rpcd/opl-netfleet"
 cp "$work/openwrt/files/etc/init.d/opl-netfleet" "$payload/etc/init.d/opl-netfleet"
 cp "$work/openwrt/files/etc/init.d/opl-netfleet-core" "$payload/etc/init.d/opl-netfleet-core"
@@ -117,6 +118,7 @@ grep -Fq "\"path\": \"netfleet/overview-${view_version}\"" \
   die "LuCI menu view does not match package version: $version"
 find "$payload" -type f -exec chmod 0644 {} +
 chmod 0755 "$payload/usr/libexec/opl-netfleet/main.uc" \
+	"$payload/usr/libexec/opl-netfleet-transfer" \
   "$payload/usr/libexec/opl-netfleet/supervisor.uc" \
   "$payload/usr/libexec/rpcd/opl-netfleet" "$payload/etc/init.d/opl-netfleet" "$payload/etc/init.d/opl-netfleet-core"
 files_manifest=$output/FILES.sha256

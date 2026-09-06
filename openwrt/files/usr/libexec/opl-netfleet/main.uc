@@ -22,7 +22,9 @@ import { get as config_get, validate as config_validate, save as config_save, ap
 import { ok, fail } from "./output.uc";
 import { get as subscriptions_get, set as subscriptions_set, update_result as subscription_update } from "./application/subscriptions.uc";
 import { get as migration_get, apply as migration_apply } from "./application/backend_migration.uc";
-import { get as dashboard_get } from "./application/dashboard.uc";
+import { get as dashboard_get, check as dashboard_check, update as dashboard_update } from "./application/dashboard.uc";
+import { get as network_get, validate as network_validate, apply as network_apply } from "./application/network.uc";
+import { get as maintenance_get, profile_get, profile_save, profile_delete, backup_export, backup_restore, core_action, diagnostics as diagnostics_get } from "./application/maintenance.uc";
 import { get as native_setup_get, apply as native_setup_apply } from "./application/native_setup.uc";
 import { begin as operation_begin, update as operation_update } from "./application/operation.uc";
 
@@ -2285,6 +2287,17 @@ function disable_without_policy(action_name) {
 };
 
 const action = ARGV[0] ?? "";
+const management_actions = {
+	"network-get": network_get, "network-validate": network_validate, "network-apply": network_apply,
+	"maintenance-get": maintenance_get, "profile-get": profile_get, "profile-save": profile_save, "profile-delete": profile_delete,
+	"backup-export": backup_export, "backup-restore": backup_restore, "core-action": core_action, "diagnostics-get": diagnostics_get,
+	"dashboard-check": dashboard_check, "dashboard-update": dashboard_update
+};
+if (management_actions[action] != null) {
+	const result = management_actions[action](ARGV[1]);
+	printf("%J\n", result);
+	exit(result.ok ? 0 : 1);
+}
 if (action == "subscriptions-refresh") {
 	const id = ARGV[1];
 	if (BACKEND_KIND != "native-mihomo" || type(id) != "string" || !match(id, /^[A-Za-z0-9_]+$/))

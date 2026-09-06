@@ -3,15 +3,18 @@
 'use strict';
 'require baseclass';
 'require ui';
+'require netfleet.management as management';
 
 const SECTIONS = [
 	[ 'foundation', '基础接入' ],
+	[ 'network', '网络接入' ],
 	[ 'providers', '机场' ],
 	[ 'regions', '地区映射' ],
 	[ 'capabilities', '出口策略' ],
 	[ 'routing', '业务规则' ],
 	[ 'automation', '自动运行' ],
-	[ 'safety', '安全与恢复' ]
+	[ 'safety', '安全与恢复' ],
+	[ 'files', '配置文件与备份' ]
 ];
 
 function clone(value) {
@@ -372,14 +375,22 @@ function automation(controller) {
 function routing(controller) {
 	const draft = controller.configDraft;
 	let suffix = '';
+	let kind = 'domain_suffix';
 	let capability = draft.capabilities[0] ? draft.capabilities[0].id : '';
+	const targets = [[ 'direct', '直连' ]].concat(draft.capabilities.map(function(item) { return [ item.id, item.display_name ]; }));
+	const kinds = [[ 'domain_suffix', '域名后缀' ], [ 'ip_cidr', 'IP 网段' ]];
+	function assignTarget(rule, value) {
+		if (value === 'direct') { rule.target = 'direct'; delete rule.capability; }
+		else { rule.capability = value; delete rule.target; }
+	}
 	const rows = (draft.routing_rules || []).map(function(rule, index) {
 		return E('tr', {}, [
-			E('td', {}, E('input', { 'class': 'cbi-input-text', 'type': 'text', 'value': rule.value, 'aria-label': '域名后缀', 'change': function(event) {
+			E('td', {}, select(rule.kind, kinds, function(event) { update(controller, function(next) { next.routing_rules[index].kind = event.target.value; }); })),
+			E('td', {}, E('input', { 'class': 'cbi-input-text', 'type': 'text', 'value': rule.value, 'aria-label': '匹配内容', 'change': function(event) {
 				update(controller, function(next) { next.routing_rules[index].value = event.target.value.trim(); });
 			} })),
-			E('td', {}, select(rule.capability, draft.capabilities.map(function(item) { return [ item.id, item.display_name ]; }), function(event) {
-				update(controller, function(next) { next.routing_rules[index].capability = event.target.value; });
+			E('td', {}, select(rule.target === 'direct' ? 'direct' : rule.capability, targets, function(event) {
+				update(controller, function(next) { assignTarget(next.routing_rules[index], event.target.value); });
 			})),
 			E('td', {}, compactButton('移除', function() {
 				update(controller, function(next) { next.routing_rules.splice(index, 1); });
@@ -387,19 +398,20 @@ function routing(controller) {
 		]);
 	});
 	return E('section', {}, [
-		sectionHeading('业务规则', '为少量私有域名指定出口；只接受域名后缀，不包含协议、路径或端口。'),
+		sectionHeading('业务规则', '按域名后缀或 IP 网段指定出口，也可设为直连。'),
 		E('div', { 'class': 'table netfleet-config-table' }, [
-			E('table', {}, [ E('thead', {}, E('tr', {}, [ E('th', {}, '域名后缀'), E('th', {}, '使用出口'), E('th', {}, '操作') ])), E('tbody', {}, rows) ])
+			E('table', {}, [ E('thead', {}, E('tr', {}, [ E('th', {}, '匹配类型'), E('th', {}, '匹配内容'), E('th', {}, '使用出口'), E('th', {}, '操作') ])), E('tbody', {}, rows) ])
 		]),
 		E('div', { 'class': 'netfleet-inline-add' }, [
+			select(kind, kinds, function(event) { kind = event.target.value; }),
 			E('input', { 'class': 'cbi-input-text', 'type': 'text', 'placeholder': 'example.com', 'input': function(event) { suffix = event.target.value.trim(); } }),
-			select(capability, draft.capabilities.map(function(item) { return [ item.id, item.display_name ]; }), function(event) { capability = event.target.value; }),
+			select(capability, targets, function(event) { capability = event.target.value; }),
 			compactButton('添加规则', function() {
 				if (!suffix || !capability) {
-					ui.addNotification(null, E('p', {}, '请填写域名后缀并选择出口。'), 'warning');
+					ui.addNotification(null, E('p', {}, '请填写匹配内容并选择出口。'), 'warning');
 					return;
 				}
-				update(controller, function(next) { next.routing_rules.push({ kind: 'domain_suffix', value: suffix, capability: capability }); });
+				update(controller, function(next) { const rule = { kind: kind, value: suffix }; assignTarget(rule, capability); next.routing_rules.push(rule); });
 			})
 		])
 	]);
@@ -440,6 +452,8 @@ function safety(controller) {
 function content(controller) {
 	return ({
 		foundation: foundation,
+		network: management.network,
+		files: management.files,
 		providers: providers,
 		regions: regions,
 		capabilities: capabilities,
@@ -482,6 +496,7 @@ function render(controller) {
 	const changed = dirty(controller);
 	const active = controller.configDraft.active === true;
 	const canApply = changed || controller.config.pending_apply === true || !active;
+	const independent = controller.configSection === 'network' || controller.configSection === 'files';
 	return E('div', { 'class': 'netfleet-config-page' }, [
 		E('div', { 'class': 'netfleet-config-intro' }, [
 			E('div', {}, [ E('strong', {}, '设备配置'), E('span', {}, active ? '当前已接管，应用会执行受保护切换。' : '当前未接管，可先保存配置或直接应用。') ]),
@@ -489,11 +504,16 @@ function render(controller) {
 		]),
 		E('div', { 'class': 'netfleet-config-layout' }, [
 			E('nav', { 'class': 'netfleet-config-nav', 'aria-label': '配置分类' }, SECTIONS.map(function(item) {
-				return E('button', { 'class': controller.configSection === item[0] ? 'is-active' : '', 'click': function() { controller.configSection = item[0]; controller.redraw(); } }, item[1]);
+				return E('button', { 'class': controller.configSection === item[0] ? 'is-active' : '', 'click': function() {
+					controller.configSection = item[0];
+					if (item[0] === 'network') management.load(controller, 'network');
+					if (item[0] === 'files') management.load(controller, 'maintenance');
+					controller.redraw();
+				} }, item[1]);
 			})),
 			E('div', { 'class': 'netfleet-config-content' }, content(controller))
 		]),
-		E('div', { 'class': 'netfleet-config-actions' }, [
+		independent ? '' : E('div', { 'class': 'netfleet-config-actions' }, [
 			E('span', {}, changed ? '有尚未保存的更改' : (controller.config.pending_apply ? '配置已保存，等待应用' : '设备配置与当前草稿一致')),
 			E('div', {}, [
 				E('button', { 'class': 'btn cbi-button', 'disabled': !changed || controller.busy, 'click': function() { controller.discardConfig(); } }, '放弃更改'),

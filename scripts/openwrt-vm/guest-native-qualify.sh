@@ -54,7 +54,7 @@ stage=dependencies
 ip route replace default via 192.168.1.2 dev br-lan
 printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
 apk --timeout 120 update >"$work/packages.log" 2>&1 || true
-apk --timeout 120 add curl ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket socat bind-dig \
+apk --timeout 120 add curl unzip ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket socat bind-dig \
 	ucode-mod-fs ucode-mod-uci ucode-mod-ubus ucode-mod-uloop >>"$work/packages.log" 2>&1
 gzip -dc /tmp/mihomo-linux-arm64-v1.19.30.gz >"$work/bin/mihomo"
 chmod 0755 "$work/bin/mihomo"
@@ -270,6 +270,12 @@ run_main select standard auto vm >"$work/select-result.json"
 ucode "$main" status >"$work/status-result.json"
 assert_json "$work/status-result.json" '@.result.active' true
 test ! -e /etc/init.d/nikki
+stage=network_management
+sh /tmp/guest-network-management-qualify.sh "$work/network-management" >"$work/network-management.json" 2>"$work/network-management.stderr"
+assert_json "$work/network-management.json" '@.ok' true
+stage=dashboard_management
+sh /tmp/guest-rules-dashboard-qualify.sh >"$work/dashboard-management.json" 2>"$work/dashboard-management.stderr"
+assert_json "$work/dashboard-management.json" '@.ok' true
 ubus call service list '{"name":"opl-netfleet-core"}' >"$work/service-result.json"
 core_pid=$(jsonfilter -i "$work/service-result.json" -e '@["opl-netfleet-core"].instances.core.pid')
 tr '\0' ' ' <"/proc/$core_pid/cmdline" | grep -Fq '/etc/opl-netfleet/native/run/config.yaml'
@@ -376,5 +382,12 @@ printf '{broken' >/etc/opl-netfleet/native/profiles/fixture.json
 if /etc/init.d/opl-netfleet-core start >"$work/invalid-result.json" 2>&1; then sleep 1; fi
 assert_clean
 cp "$work/valid.json" /etc/opl-netfleet/native/profiles/fixture.json
+stage=management_receipts
+ucode -e 'import { readfile } from "fs";
+	for (let path in ARGV) {
+		const detail = json(readfile(path));
+		if (detail.ok != true || !length(keys(detail.checks ?? {}))) exit(1);
+		for (let passed in values(detail.checks)) if (passed != true) exit(1);
+	}' "$work/network-management.json" "$work/dashboard-management.json"
 stage=complete
 printf '{"ok":true,"scope":"native-mihomo-runtime","production_ready":false,"source_commit":"%s","source_tree":"%s","checks":{"source_contracts":true,"native_subscription_crud":true,"subscription_download":true,"subscription_failed_cache_retained":true,"subscription_identity_isolation":true,"subscription_private_storage":true,"subscription_active_edit_guard":true,"subscription_same_content_mtime":true,"no_nikki":true,"shared_compile":true,"shared_enable":true,"shared_select":true,"shared_refresh":true,"shared_disable":true,"procd_owner":true,"controller":true,"owner_conflict_zero_mutation":true,"ipv4_negative_control":true,"ipv6_negative_control":true,"lan_ipv4_tcp":true,"lan_ipv4_udp":true,"lan_ipv6_tcp":true,"lan_ipv6_udp":true,"router_ipv4_tcp":true,"router_ipv4_udp":true,"router_ipv6_tcp":true,"router_ipv6_udp":true,"lan_ipv4_dns_tcp_udp":true,"lan_ipv6_dns_tcp_udp":true,"router_ipv4_dns_tcp_udp":true,"router_ipv6_dns_tcp_udp":true,"normal_stop_cleanup":true,"repeated_stop":true,"crash_recovery_or_cleanup":true,"direct_after_stop":true,"direct_after_crash":true,"invalid_config_no_interception":true,"foreign_rules_preserved":true}}\n' "$commit" "$tree"

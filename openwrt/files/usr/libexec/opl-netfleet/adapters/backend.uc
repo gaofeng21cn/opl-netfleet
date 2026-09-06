@@ -163,12 +163,19 @@ export function lan_runtime_state(dns_probe_url) {
 	let api_listen = null;
 	let dns_enabled = false;
 	let dns_listen = null;
+	let native_expected = null;
 	try {
 		const uci = cursor();
 		allow_lan = `${uci.get(UCI_PACKAGE, "mixin", "allow_lan") ?? "0"}` == "1";
 		api_listen = uci.get(UCI_PACKAGE, "mixin", "api_listen");
 		dns_enabled = `${uci.get(UCI_PACKAGE, "mixin", "dns_enabled") ?? "0"}` == "1";
 		dns_listen = uci.get(UCI_PACKAGE, "mixin", "dns_listen");
+		if (KIND == "native-mihomo") {
+			const dns = `${uci.get(UCI_PACKAGE, "proxy", "ipv4_dns_hijack") ?? "0"}` == "1" ||
+				`${uci.get(UCI_PACKAGE, "proxy", "ipv6_dns_hijack") ?? "0"}` == "1";
+			native_expected = { lan: `${uci.get(UCI_PACKAGE, "proxy", "lan_proxy") ?? "0"}` == "1",
+				router: `${uci.get(UCI_PACKAGE, "proxy", "router_proxy") ?? "0"}` == "1", dns: dns };
+		}
 	} catch (error) {
 		return {
 			transparent_proxy_ready: false,
@@ -188,7 +195,32 @@ export function lan_runtime_state(dns_probe_url) {
 	const dns_udp_wildcard = dns_port != null && wildcard_listener("udp", dns_port);
 	const dns_hijack_rule_present = dns_port != null &&
 		system(`nft list chain inet ${NFT_TABLE} lan_dns_hijack 2>/dev/null | grep -Fq ${shell_quote(`redirect to :${dns_port}`)}`) == 0;
-	const dns_query_ok = dns_query_ready(dns_probe_url);
+	const dns_query_ok = KIND == "native-mihomo" ? null : dns_query_ready(dns_probe_url);
+	if (native_expected != null) {
+		const process = popen("ucode /usr/libexec/opl-netfleet/application/native_gateway.uc status 2>/dev/null");
+		let owner = null;
+		try { owner = process == null ? null : json(process.read("all")); } catch (error) {}
+		const owner_ready = process != null && process.close() == 0 && owner?.result?.ready == true;
+		let proxy_chains = true;
+		let dns_chains = true;
+		for (let scope in ["lan", "router"]) {
+			const proxy_present = system(`nft list chain inet netfleet ${scope}_tproxy >/dev/null 2>&1`) == 0;
+			const dns_present = system(`nft list chain inet netfleet ${scope}_dns_hijack >/dev/null 2>&1`) == 0;
+			proxy_chains = proxy_chains && proxy_present == native_expected[scope];
+			dns_chains = dns_chains && dns_present == (native_expected[scope] && native_expected.dns);
+		}
+		// An intentionally disabled interception scope is not a failed data plane.
+		return { transparent_proxy_ready: owner_ready && allow_lan && tproxy_tcp_wildcard && tproxy_udp_wildcard && proxy_chains,
+			dashboard_lan_ready: api_listen == "0.0.0.0:9090" && controller_wildcard,
+			dns_ready: owner_ready && dns_enabled && dns_tcp_wildcard && dns_udp_wildcard && dns_chains,
+			allow_lan: allow_lan, api_listen: api_listen, dns_enabled: dns_enabled, dns_listen: dns_listen,
+			dns_tcp_wildcard: dns_tcp_wildcard, dns_udp_wildcard: dns_udp_wildcard,
+			dns_hijack_rule_present: dns_hijack_rule_present, dns_query_ok: dns_query_ok,
+			tproxy_tcp_wildcard: tproxy_tcp_wildcard, tproxy_udp_wildcard: tproxy_udp_wildcard,
+			tproxy_rule_present: tproxy_rule_present, controller_wildcard: controller_wildcard,
+			lan_proxy_enabled: native_expected.lan, router_proxy_enabled: native_expected.router,
+			requested_proxy_chains_ready: proxy_chains, requested_dns_chains_ready: dns_chains };
+	}
 	return {
 		transparent_proxy_ready: allow_lan && tproxy_tcp_wildcard &&
 			tproxy_udp_wildcard && tproxy_rule_present,

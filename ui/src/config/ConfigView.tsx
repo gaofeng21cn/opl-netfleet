@@ -13,22 +13,27 @@ import {
   sectionMeta,
 } from './ConfigSections';
 import { SetupWizard } from './SetupWizard';
-import type { StatusSnapshot } from '../types';
+import type { NetFleetClient, StatusSnapshot } from '../types';
+import { NetworkSection } from './NetworkSection';
+import { FilesSection } from './FilesSection';
 
 interface ConfigViewProps {
   draft: ConfigDraft;
   savedDraft: ConfigDraft;
   status: StatusSnapshot;
+  client?: NetFleetClient;
   onChange(next: ConfigDraft): void;
   onSave(next: ConfigDraft): void;
 }
 
-export function ConfigView({ draft, savedDraft, status, onChange, onSave }: ConfigViewProps) {
+export function ConfigView({ draft, savedDraft, status, client, onChange, onSave }: ConfigViewProps) {
   const [section, setSection] = useState<ConfigSectionId>('foundation');
   const [wizard, setWizard] = useState(false);
   const [review, setReview] = useState(false);
   const [validation, setValidation] = useState<string[] | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [visited, setVisited] = useState({ network: false, files: false });
+  const separateManagement = section === 'network' || section === 'files';
   const dirty = JSON.stringify(draft) !== JSON.stringify(savedDraft);
   const summary = configSummary(draft);
 
@@ -60,6 +65,8 @@ export function ConfigView({ draft, savedDraft, status, onChange, onSave }: Conf
     routing: <RoutingSection {...sectionProps} />,
     automation: <AutomationSection {...sectionProps} />,
     safety: <SafetySection {...sectionProps} />,
+    network: null,
+    files: null,
   }[section];
 
   if (wizard) return <SetupWizard
@@ -85,23 +92,26 @@ export function ConfigView({ draft, savedDraft, status, onChange, onSave }: Conf
       <nav className="nf-config-tabs" aria-label="配置分类">
         {sectionMeta.map((item) => {
           const Icon = item.icon;
-          return <button className={section === item.id ? 'is-active' : ''} type="button" key={item.id} onClick={() => setSection(item.id)}><Icon aria-hidden="true" /><span>{item.label}</span></button>;
+          return <button className={section === item.id ? 'is-active' : ''} type="button" key={item.id} onClick={() => { setSection(item.id); if (item.id === 'network' || item.id === 'files') setVisited({ ...visited, [item.id]: true }); }}><Icon aria-hidden="true" /><span>{item.label}</span></button>;
         })}
       </nav>
-      <div className="nf-config-content">{content}</div>
+      <div className="nf-config-content">{content}
+        {visited.network && <div hidden={section !== 'network'}><NetworkSection client={client} /></div>}
+        {visited.files && <div hidden={section !== 'files'}><FilesSection client={client} /></div>}
+      </div>
     </div>
 
-    {review && <section className="nf-config-review">
+    {review && !separateManagement && <section className="nf-config-review">
       <div className="nf-config-section-heading"><h2>配置摘要</h2><p>这里只展示产品语义，不展示底层配置字段。</p></div>
       <dl><div><dt>策略基础</dt><dd>{draft.policySource.displayName}</dd></div><div><dt>参与机场</dt><dd>{summary.providerCount} 个，其中主用 {summary.primaryCount}、备用 {summary.reserveCount}</dd></div><div><dt>地区</dt><dd>{summary.automaticRegionCount} 个参与自动选优</dd></div><div><dt>出口</dt><dd>{summary.capabilityCount} 个已启用</dd></div><div><dt>业务规则</dt><dd>{draft.routingRules.length} 条</dd></div><div><dt>周期选优</dt><dd>{draft.automation.enabled ? `${draft.automation.selectionIntervalSeconds / 60} 分钟` : '已关闭'}</dd></div><div><dt>恢复配置</dt><dd>{draft.recoveryProfile.displayName}</dd></div></dl>
     </section>}
 
-    {validation && <div className={`nf-config-validation ${validation.length ? 'is-error' : 'is-success'}`} role="status">
+    {validation && !separateManagement && <div className={`nf-config-validation ${validation.length ? 'is-error' : 'is-success'}`} role="status">
       {validation.length ? <><strong>发现 {validation.length} 个问题</strong><ul>{validation.map((error) => <li key={error}>{error}</li>)}</ul></> : <><CheckCircle2 aria-hidden="true" /><strong>配置校验通过</strong></>}
     </div>}
-    {message && <div className="nf-config-message" role="status"><CheckCircle2 aria-hidden="true" />{message}</div>}
+    {message && !separateManagement && <div className="nf-config-message" role="status"><CheckCircle2 aria-hidden="true" />{message}</div>}
 
-    <div className="nf-config-actions">
+    {!separateManagement && <div className="nf-config-actions">
       <span>{dirty ? '有尚未保存的本地更改' : '本地预览与已保存状态一致'}</span>
       <div>
         <button type="button" disabled={!dirty} onClick={() => { onChange(savedDraft); setValidation(null); setMessage(null); }}><RotateCcw aria-hidden="true" />放弃更改</button>
@@ -109,6 +119,6 @@ export function ConfigView({ draft, savedDraft, status, onChange, onSave }: Conf
         <button type="button" onClick={() => setReview(!review)}><Eye aria-hidden="true" />{review ? '收起摘要' : '查看变更'}</button>
         <button className="nf-button-primary" type="button" disabled={!dirty} onClick={save}><Save aria-hidden="true" />{status.active ? '应用本地预览' : '保存本地预览'}</button>
       </div>
-    </div>
+    </div>}
   </div>;
 }

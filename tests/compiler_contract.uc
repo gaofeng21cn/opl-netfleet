@@ -314,6 +314,32 @@ if (validate(unknown_routing_capability).ok) {
 	exit(1);
 }
 
+const network_rules = json(sprintf("%J", policy));
+network_rules.routing_rules = [
+	{ kind: "ip_cidr", value: "198.51.100.0/24", capability: "standard" },
+	{ kind: "ip_cidr", value: "2001:0DB8:0000::/32", target: "direct" },
+	{ kind: "domain_suffix", value: "local.example", target: "direct" }
+];
+const network_compiled = compile(profile, network_rules, "base", "recovery", "policy", providers);
+if (!validate(network_rules).ok || !network_compiled.ok ||
+	network_compiled.profile.rules?.[0] != "IP-CIDR,198.51.100.0/24,常规出口,no-resolve" ||
+	network_compiled.profile.rules?.[1] != "IP-CIDR6,2001:db8::/32,DIRECT,no-resolve" ||
+	network_compiled.profile.rules?.[2] != "DOMAIN-SUFFIX,local.example,DIRECT") {
+	print("network_routing_rules_failed\n");
+	exit(1);
+}
+for (let cidr in ["198.51.100.1/24", "198.51.100.0/33", "256.0.0.0/8", "2001:db8::1/32", "2001:db8::/129", "2001:db8:::0/32", "::/00", "::/0,no-resolve", "192.0.2.0/24\n"]) {
+	const invalid = json(sprintf("%J", network_rules));
+	invalid.routing_rules[0].value = cidr;
+	if (validate(invalid).ok) { print(`invalid_cidr_accepted:${cidr}\n`); exit(1); }
+}
+const duplicate_network = json(sprintf("%J", network_rules));
+push(duplicate_network.routing_rules, { kind: "ip_cidr", value: "2001:db8::/32", target: "direct" });
+if (validate(duplicate_network).ok) { print("equivalent_ipv6_duplicate_accepted\n"); exit(1); }
+const conflicting_target = json(sprintf("%J", network_rules));
+conflicting_target.routing_rules[1].capability = "standard";
+if (validate(conflicting_target).ok) { print("direct_and_capability_accepted\n"); exit(1); }
+
 const missing_parent = json(sprintf("%J", policy));
 missing_parent.capabilities["ai-compatible"].prefer_region_from = "missing";
 if (validate(missing_parent).ok) {

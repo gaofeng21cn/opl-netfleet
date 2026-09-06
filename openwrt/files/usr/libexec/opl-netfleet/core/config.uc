@@ -1,4 +1,4 @@
-import { validate as validate_policy, ordered_regions } from "./policy.uc";
+import { validate as validate_policy, ordered_regions, validate_routing_rules } from "./policy.uc";
 
 function object(value) {
 	return type(value) == "object";
@@ -361,15 +361,7 @@ export function validate_request(policy, request, resources) {
 		}
 	} else push(errors, "capabilities must be an object");
 	if (type(request.routing_rules) != "array") push(errors, "routing_rules must be an array");
-	else {
-		for (let i = 0; i < length(request.routing_rules); i++) {
-			const rule = request.routing_rules[i];
-			if (!known_keys(rule, ["kind", "value", "capability"], errors, `routing_rules.${i}`)) continue;
-			if (rule.kind != "domain_suffix" || !nonempty(rule.value) || !stable_id(rule.capability) ||
-				request.capabilities?.[rule.capability] == null)
-				push(errors, `routing_rules.${i} is invalid`);
-		}
-	}
+	else validate_routing_rules(request.routing_rules, request.capabilities, errors);
 	if (known_keys(request.automation, ["enabled", "selection_interval_seconds", "subscription_refresh_enabled",
 		"subscription_refresh_interval_seconds"], errors, "automation")) {
 		if (type(requested_automation.enabled) != "bool" ||

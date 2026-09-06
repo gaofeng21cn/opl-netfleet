@@ -68,7 +68,22 @@ function validate_margin(value, path, errors) {
 	}
 };
 
-function validate_routing_rules(rules, capabilities, errors) {
+export function canonical_cidr(value) {
+	if (type(value) != "string" || value != trim(value) || !match(value, /^[0-9A-Fa-f:.]+\/(0|[1-9][0-9]{0,2})$/)) return null;
+	const parts = split(value, "/");
+	const bytes = iptoarr(parts[0]);
+	const prefix = int(parts[1]);
+	if (bytes == null || prefix > length(bytes) * 8) return null;
+	// Require a network prefix so a mistyped host does not silently broaden a rule.
+	for (let i = 0; i < length(bytes); i++) {
+		const remaining = prefix - i * 8;
+		if (remaining <= 0 && bytes[i] != 0 || remaining > 0 && remaining < 8 &&
+			(bytes[i] & ((1 << (8 - remaining)) - 1)) != 0) return null;
+	}
+	return `${arrtoip(bytes)}/${prefix}`;
+};
+
+export function validate_routing_rules(rules, capabilities, errors) {
 	if (rules == null) return;
 	if (type(rules) != "array") {
 		add_error(errors, "routing_rules must be an array when present");
@@ -83,18 +98,23 @@ function validate_routing_rules(rules, capabilities, errors) {
 		}
 		const fields = keys(rule);
 		for (let j = 0; j < length(fields); j++) {
-			if (index(["kind", "value", "capability"], fields[j]) < 0)
+			if (index(["kind", "value", "capability", "target"], fields[j]) < 0)
 				add_error(errors, `routing_rules.${i} contains unsupported field: ${fields[j]}`);
 		}
-		if (rule.kind != "domain_suffix")
-			add_error(errors, `routing_rules.${i}.kind must be domain_suffix`);
-		if (!is_nonempty_string(rule.value) || length(rule.value) > 253 ||
+		if (index(["domain_suffix", "ip_cidr"], rule.kind) < 0)
+			add_error(errors, `routing_rules.${i}.kind must be domain_suffix or ip_cidr`);
+		if (rule.kind == "domain_suffix" && (!is_nonempty_string(rule.value) || length(rule.value) > 253 ||
 			index(rule.value, ".") < 1 || index(rule.value, "..") >= 0 ||
-			!match(rule.value, /^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$/))
+			!match(rule.value, /^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$/)))
 			add_error(errors, `routing_rules.${i}.value must be a plain domain suffix`);
-		if (!is_stable_id(rule.capability) || capabilities?.[rule.capability]?.enabled != true)
+		if (rule.kind == "ip_cidr" && canonical_cidr(rule.value) == null)
+			add_error(errors, `routing_rules.${i}.value must be an IPv4 or IPv6 network CIDR`);
+		if (rule.target == "direct") {
+			if (has(rule, "capability")) add_error(errors, `routing_rules.${i} must not combine direct and capability targets`);
+		} else if (has(rule, "target") || !is_stable_id(rule.capability) || capabilities?.[rule.capability]?.enabled != true)
 			add_error(errors, `routing_rules.${i}.capability must reference an enabled capability`);
-		const identity = `${rule.kind}/${lc(rule.value ?? "")}/${rule.capability}`;
+		const value = rule.kind == "ip_cidr" ? canonical_cidr(rule.value) : lc(rule.value ?? "");
+		const identity = `${rule.kind}/${value}/${rule.target == "direct" ? "direct" : `capability:${rule.capability}`}`;
 		if (seen[identity] == true)
 			add_error(errors, `routing_rules contains duplicate entry: ${identity}`);
 		seen[identity] = true;

@@ -441,6 +441,7 @@ required=(
 	"openwrt/files/usr/libexec/opl-netfleet/main.uc"
 	"openwrt/files/usr/libexec/opl-netfleet/supervisor.uc"
 	"openwrt/files/usr/libexec/opl-netfleet/output.uc"
+	"openwrt/files/usr/libexec/opl-netfleet-transfer"
 	"openwrt/files/usr/libexec/rpcd/opl-netfleet"
 	"openwrt/files/etc/init.d/opl-netfleet"
 	"openwrt/files/etc/opl-netfleet/policy.example.json"
@@ -465,6 +466,7 @@ if [[ "$release_mode" == source ]]; then
 		"$payload_dir/etc/opl-netfleet" "$payload_dir/etc/init.d" "$payload_dir/www" \
 		"$payload_dir/usr/share/luci" "$payload_dir/usr/share/rpcd"
 	cp -R "$source_dir/openwrt/files/usr/libexec/opl-netfleet" "$payload_dir/usr/libexec/"
+	cp "$source_dir/openwrt/files/usr/libexec/opl-netfleet-transfer" "$payload_dir/usr/libexec/"
 	cp "$source_dir/openwrt/files/usr/libexec/rpcd/opl-netfleet" \
 		"$payload_dir/usr/libexec/rpcd/opl-netfleet"
 	cp "$source_dir/openwrt/files/etc/init.d/opl-netfleet" \
@@ -484,6 +486,7 @@ policy_schema=""
 if [[ "$release_mode" == source ]]; then
 	find "$payload_dir" -type f -exec chmod 0644 {} +
 	chmod 0755 "$payload_dir/usr/libexec/opl-netfleet/main.uc" \
+		"$payload_dir/usr/libexec/opl-netfleet-transfer" \
 		"$payload_dir/usr/libexec/opl-netfleet/supervisor.uc" \
 		"$payload_dir/usr/libexec/rpcd/opl-netfleet" \
 		"$payload_dir/etc/init.d/opl-netfleet"
