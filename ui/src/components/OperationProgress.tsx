@@ -17,6 +17,10 @@ export function OperationProgress({ operation, error, now = Date.now() / 1000 }:
   const warning = uncertain || operation.state === 'failed';
   const Icon = warning ? TriangleAlert : active ? LoaderCircle : CheckCircle2;
   const elapsed = Math.max(0, Math.floor((operation.finished_at || now) - operation.started_at));
+  if (operation.kind === 'packages' && operation.state === 'succeeded' && !operation.error && !operation.recovery) {
+    const subject = ({ netfleet: 'NetFleet', mihomo: 'Mihomo', feed: '软件包源' } as Record<string, string>)[operation.subject || ''] || '组件';
+    return <div className="nf-operation-summary" role="status">{operation.subject === 'feed' ? '最近检查' : '最近更新'}：{subject} · 已完成{operation.finished_at ? ` · ${new Date(operation.finished_at * 1000).toLocaleString()}` : ''}</div>;
+  }
   const state = uncertain ? '连接或执行已中断，结果尚未确认' : operation.state === 'queued' ? '已提交，等待设备执行' : operation.state === 'running'
     ? operationPhases[operation.phase] || '处理中' : operation.state === 'failed' ? '执行失败' : '已完成';
   return <section className={`nf-operation${warning ? ' is-warning' : ''}`} role="status" aria-live="polite">

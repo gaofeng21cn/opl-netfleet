@@ -7,6 +7,17 @@ import type { OperationSnapshot } from '../types';
 const operation: OperationSnapshot = { id: 'operation-1', kind: 'subscription', state: 'running', phase: 'downloading', started_at: 100, updated_at: 111, completed: 1, total: 3, subject: 'Alpha' };
 
 describe('operation progress', () => {
+  it('collapses successful package operations but retains failure and recovery detail', () => {
+    const completed = { ...operation, kind: 'packages' as const, subject: 'netfleet', state: 'succeeded' as const, finished_at: 120 };
+    const html = renderToStaticMarkup(<OperationProgress operation={completed} />);
+    expect(html).toContain('最近更新：NetFleet');
+    expect(html).not.toContain('已耗时');
+    expect(html).not.toContain('个文件');
+    expect(renderToStaticMarkup(<OperationProgress operation={{ ...completed, subject: 'feed' }} />)).toContain('最近检查：软件包源');
+    const failed = renderToStaticMarkup(<OperationProgress operation={{ ...completed, state: 'failed', recovery: 'failed' }} />);
+    expect(failed).toContain('执行失败');
+    expect(failed).toContain('恢复失败');
+  });
   it('shows measured phase, subject, counts and elapsed time without inventing a percent', () => {
     const html = renderToStaticMarkup(<OperationProgress operation={operation} now={113} />);
     expect(html).toContain('下载中');

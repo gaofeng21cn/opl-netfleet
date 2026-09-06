@@ -110,10 +110,10 @@ export function Shell({
               <SquareArrowOutUpRight aria-hidden="true" /><span>Zashboard</span>
             </button>
             {readOnly && <span className="nf-readonly-badge"><LockKeyhole aria-hidden="true" />实时只读</span>}
-            <button type="button" onClick={onRefresh} disabled={busy} title="刷新状态">
+            {view !== 'components' && <button type="button" onClick={onRefresh} disabled={busy} title="刷新状态">
               <RefreshCw aria-hidden="true" className={busy ? 'is-spinning' : ''} />
               <span>刷新</span>
-            </button>
+            </button>}
             {!readOnly && <button type="button" onClick={onSelect} disabled={busy || !canSelect} title="重新自动选优">
               <Target aria-hidden="true" />
               <span>重新选优</span>

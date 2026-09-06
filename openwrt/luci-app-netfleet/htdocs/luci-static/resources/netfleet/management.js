@@ -7,7 +7,7 @@
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function disabled(controller) { return controller.busy || !controller.liveDataReady; }
 function button(label, click, inactive, danger) {
-	return E('button', { 'class': 'btn cbi-button' + (danger ? ' cbi-button-negative' : ''), 'type': 'button', 'disabled': !!inactive, 'click': click }, label);
+	return E('button', { 'class': 'btn cbi-button' + (danger ? ' cbi-button-negative' : ''), 'type': 'button', 'disabled': inactive || null, 'click': click }, label);
 }
 function row(label, control, help) {
 	return E('div', { 'class': 'netfleet-config-row' }, [ E('div', {}, [ E('strong', {}, label), help ? E('p', {}, help) : '' ]), E('div', { 'class': 'netfleet-config-control' }, control) ]);
@@ -21,7 +21,7 @@ function lines(value, onchange, label) {
 	} }, (value || []).join('\n'));
 }
 function toggle(value, onchange, label) {
-	return E('label', { 'class': 'netfleet-check' }, [ E('input', { 'type': 'checkbox', 'checked': !!value, 'change': function(event) { onchange(event.target.checked); } }), E('span', {}, label || (value ? '已开启' : '已关闭')) ]);
+	return E('label', { 'class': 'netfleet-check' }, [ E('input', { 'type': 'checkbox', 'checked': value || null, 'change': function(event) { onchange(event.target.checked); } }), E('span', {}, label || (value ? '已开启' : '已关闭')) ]);
 }
 function time(value) { return value ? new Date(value * 1000).toLocaleString() : '未提供'; }
 function errorText(error) {
@@ -106,7 +106,7 @@ function network(controller) {
 		row('直连 DNS', lines(draft.dns.direct_nameservers, function(value) { draft.dns.direct_nameservers = value; }, '直连 DNS'))
 	];
 	return E('section', {}, [ E('div', { 'class': 'netfleet-config-heading' }, [ E('h3', {}, '网络接入'), E('p', {}, 'TProxy') ]),
-		E('fieldset', { 'disabled': locked, 'class': 'netfleet-management-fields' }, [ E('h4', {}, 'DNS'), E('div', { 'class': 'netfleet-config-rows' }, rows),
+		E('fieldset', { 'disabled': locked || null, 'class': 'netfleet-management-fields' }, [ E('h4', {}, 'DNS'), E('div', { 'class': 'netfleet-config-rows' }, rows),
 			policies('policies', '按域名指定 DNS'), policies('proxy_policies', '按代理节点域名指定 DNS'),
 			E('h4', {}, '代理范围'),
 			row('路由器本机', toggle(draft.router.enabled, function(value) { draft.router.enabled = value; controller.redraw(); })),
@@ -155,7 +155,7 @@ function download(name, content, type) {
 function editProfile(controller, profile) {
 	const state = controller.maintenanceState;
 	function display(value) {
-		const id = input(value.id || '', function() {}, 'text', { 'aria-label': '文件名', disabled: !!profile, placeholder: 'profile.yaml' });
+		const id = input(value.id || '', function() {}, 'text', { 'aria-label': '文件名', disabled: profile ? true : null, placeholder: 'profile.yaml' });
 		const content = E('textarea', { 'class': 'cbi-input-textarea netfleet-profile-editor', 'rows': 18, 'spellcheck': 'false', 'aria-label': '配置内容' }, value.content || '');
 		const errorBox = E('p', { 'class': 'is-warning', 'role': 'alert' });
 		const save = button('校验并保存', function() {
@@ -182,7 +182,7 @@ function files(controller) {
 	if (!state) return pending(controller, 'maintenance', '配置文件与备份');
 	if (!state.supported) return E('p', { 'class': 'alert-message warning' }, '当前后端由外部插件管理，请在对应插件中维护配置文件。');
 	const locked = disabled(controller);
-	const backupFile = E('input', { 'type': 'file', accept: '.json', 'disabled': locked, 'aria-label': '选择配置备份', 'change': function(event) {
+	const backupFile = E('input', { 'type': 'file', accept: '.json', 'disabled': locked || null, 'aria-label': '选择配置备份', 'change': function(event) {
 		const file = event.target.files[0]; if (!file) return;
 		if (file.size > 32 * 1024 * 1024) { notice(new Error('backup_too_large')); return; }
 		file.text().then(function(text) {
@@ -228,25 +228,4 @@ function maintenance(controller) {
 		diagnostics ? E('pre', { 'class': 'netfleet-core-log', 'aria-label': '核心启动与运行日志' }, (diagnostics.lines || []).map(function(line) { return typeof line === 'string' ? line : line.message || ''; }).join('\n') || '暂无日志') : E('p', {}, '尚未读取核心日志')
 	]);
 }
-function dashboard(controller) {
-	const state = controller.components && controller.components.dashboard;
-	if (!state) return E('div');
-	const active = controller.dashboardBusy || disabled(controller);
-	function execute(action) {
-		if (disabled(controller) || controller.dashboardBusy) return Promise.resolve();
-		controller.dashboardBusy = true; controller.redraw();
-		return (action === 'check' ? api.dashboardCheck() : api.dashboardUpdate(state.available_version)).then(function(result) {
-			controller.components.dashboard = result; controller.dashboardError = null;
-		}).catch(function(error) { controller.dashboardError = error; }).finally(function() { controller.dashboardBusy = false; controller.redraw(); });
-	}
-	return E('section', { 'class': 'netfleet-management-section' }, [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h3', {}, 'Zashboard'), E('div', { 'class': 'netfleet-inline-actions' }, [
-		button('检查更新', function() { return execute('check'); }, active || !state.managed),
-		button('更新资源', function() { confirm('更新 Zashboard', '只更新面板资源，不重启核心；失败时保留当前面板。', function() { return execute('update'); }); }, active || !state.update_available)
-	]) ]),
-		table(['已安装版本', '可用版本', '最后检查'], [ E('tr', {}, [ E('td', {}, state.installed_version || (state.available ? '版本未记录' : '未安装')), E('td', {}, state.available_version || '尚未检查'), E('td', {}, time(state.checked_at)) ]) ]),
-		controller.dashboardBusy ? E('p', { 'class': 'spinning', 'role': 'status' }, '正在检查或更新面板资源…') : '',
-		controller.dashboardError ? E('p', { 'class': 'is-warning', 'role': 'alert' }, errorText(controller.dashboardError)) : ''
-	]);
-}
-
-return baseclass.extend({ load: load, network: network, files: files, maintenance: maintenance, dashboard: dashboard });
+return baseclass.extend({ load: load, network: network, files: files, maintenance: maintenance });

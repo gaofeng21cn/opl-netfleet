@@ -20,7 +20,12 @@ function text(value) {
 function E(tag, attrs, children) {
     const node = { tag, attrs: attrs || {}, children: Array.isArray(children) ? children : children == null ? [] : [children] };
     node.value = node.attrs.value == null ? tag === 'textarea' ? text(node.children) : '' : String(node.attrs.value);
-    Object.defineProperty(node, 'disabled', { get: () => !!node.attrs.disabled, set: value => { node.attrs.disabled = value; } });
+    // HTML boolean attributes are true by presence, including disabled="false".
+    for (const name of ['disabled', 'checked', 'open']) {
+        if (node.attrs[name] != null) node.attrs[name] = String(node.attrs[name]);
+        Object.defineProperty(node, name, { get: () => node.attrs[name] != null, set: value => { if (value) node.attrs[name] = ''; else delete node.attrs[name]; } });
+    }
+    node.setAttribute = (name, value) => { node.attrs[name] = String(value); };
     Object.defineProperty(node, 'textContent', { get: () => text(node), set: value => { node.children = [value]; } });
     function parent(items) { items.forEach(item => { if (Array.isArray(item)) parent(item); else if (item && typeof item === 'object') item.parent = node; }); }
     parent(node.children);
@@ -56,7 +61,7 @@ const ui = {
 const storage = new Proxy({}, { get() { throw new Error('secret storage access is forbidden'); } });
 global.localStorage = storage;
 global.sessionStorage = storage;
-global.document = { body: { appendChild() {} } };
+global.document = { body: { appendChild() {} }, querySelectorAll() { return []; } };
 const baseclass = { extend: value => value };
 function module(name, api) {
     return new Function('baseclass', 'ui', 'api', 'E', fs.readFileSync(path.join(resources, name), 'utf8'))(baseclass, ui, api, E);
@@ -112,6 +117,10 @@ const owner = controller();
 await Promise.all([management.load(owner, 'network'), management.load(owner, 'network')]);
 assert.equal(reads, 1, 'concurrent reads must share the request');
 let root = management.network(owner);
+const ruleRow = find(root, node => node.tag === 'tr' && all(node, item => item.attrs['aria-label'] === 'IPv4 地址或网段').length);
+const ruleChecks = all(ruleRow, node => node.attrs.type === 'checkbox');
+assert.equal(ruleChecks[1].checked, false, 'a disabled proxy rule must remain unchecked in real HTML');
+assert.equal(ruleChecks[2].checked, true);
 const dns = find(root, node => node.attrs['aria-label'] === '常规 DNS');
 fire(dns, 'input', { value: '8.8.8.8\n8.8.4.4\n' });
 const username = find(root, node => node.attrs['aria-label'] === '代理用户名');
@@ -286,25 +295,93 @@ let checks = 0, updates = [];
 const initial = { id: 'zashboard', available: true, managed: true, installed_version: null, available_version: null, update_available: false, checked_at: null };
 const candidate = { ...initial, available_version: 'v3.0.0', update_available: true, checked_at: 100 };
 const api = { dashboardCheck: async () => { checks++; return clone(candidate); }, dashboardUpdate: async version => { updates.push(version); return { ...candidate, installed_version: version, update_available: false }; }, coreAction: async () => { throw new Error('dashboard must not restart core'); } };
-const management = module('management.js', api);
-const owner = controller(); owner.components = { dashboard: clone(initial) };
-let root = management.dashboard(owner);
+const managed = module('managed.js', api);
+const owner = controller(); owner.components = { dashboard: clone(initial), components: [], dependencies: [], feed: { configured: false } };
+let root = managed.components(owner);
 assert.equal(checks, 0, 'render must not query upstream');
 assert(text(root).includes('版本未记录'));
-assert(button(root, '更新资源').disabled);
+assert.equal(button(root, '更新面板'), undefined);
 await fire(button(root, '检查更新'));
 assert.equal(checks, 1);
-root = management.dashboard(owner);
-fire(button(root, '更新资源'));
+root = managed.components(owner);
+fire(button(root, '更新面板'));
 owner.liveDataReady = false;
-await fire(button(modal.content, '确认'));
+await fire(button(modal.content, '确认更新'));
 assert.deepEqual(updates, [], 'a confirmation opened before disconnect must not authorize an update');
 owner.liveDataReady = true;
-fire(button(management.dashboard(owner), '更新资源'));
-await fire(button(modal.content, '确认'));
+fire(button(managed.components(owner), '更新面板'));
+await fire(button(modal.content, '确认更新'));
 assert.deepEqual(updates, ['v3.0.0']);
 assert.equal(owner.components.dashboard.installed_version, 'v3.0.0');
 assert.equal(owner.dashboardBusy, false);
+""")
+
+    def test_component_checks_serialize_sources_and_preserve_partial_failure(self):
+        self.run_js(r"""
+const calls = [];
+const owner = controller();
+const snapshot = { supported: true, components: [], dependencies: [], feed: { configured: true, checked_at: 100 }, dashboard: { managed: true, available: true } };
+owner.components = clone(snapshot);
+const operation = { id: 'check-1', kind: 'packages', subject: 'feed', state: 'running', phase: 'checking', started_at: 100 };
+let releaseDashboard;
+const api = {
+  dashboardCheck: () => { calls.push('dashboard'); return new Promise((resolve, reject) => { releaseDashboard = () => reject(new Error('dashboard_release_check_failed')); }); },
+  componentsCheck: async () => { calls.push('packages'); return { operation }; },
+  operationGet: async () => ({ packages: { ...operation, state: 'succeeded', finished_at: 101 } }),
+  componentsGet: async () => clone(snapshot),
+};
+const managed = module('managed.js', api);
+let root = managed.components(owner);
+assert.equal(all(root, node => node.tag === 'button' && text(node) === '检查更新').length, 1);
+const pending = fire(button(root, '检查更新'));
+assert.deepEqual(calls, ['dashboard']);
+assert(button(managed.components(owner), '正在检查更新…').disabled);
+releaseDashboard();
+await pending; await tick();
+assert.deepEqual(calls, ['dashboard', 'packages']);
+assert(owner.dashboardError);
+root = managed.components(owner);
+assert(text(root).includes('面板检查失败'));
+assert(text(root).includes('最近检查：软件包源'));
+assert(!text(root).includes('已耗时'));
+assert(!button(root, '检查更新').disabled);
+owner.operations = {};
+api.dashboardCheck = async () => ({ managed: true, available: true, checked_at: 100 });
+api.componentsCheck = async () => { throw new Error('feed_check_failed'); };
+await fire(button(managed.components(owner), '检查更新'));
+assert.equal(owner.dashboardError, null);
+assert.equal(owner.components.dashboard.checked_at, 100);
+assert(owner.componentsError);
+""")
+
+    def test_components_group_versions_and_keep_failures_actionable(self):
+        self.run_js(r"""
+const owner = controller();
+const base = { managed: true, update_available: false, reason: null, installed_version: '1.0.0-r1', available_version: '1.0.0-r1' };
+owner.components = { supported: true, feed: { configured: true, checked_at: 100 }, components: [
+  { ...base, id: 'netfleet', label: 'NetFleet' }, { ...base, id: 'luci', label: 'LuCI 界面' },
+  { ...base, id: 'mihomo', label: 'Mihomo', installed_version: '1.19.29', running_version: 'v1.19.30', available_version: '1.19.30-r1', update_available: true }
+], dependencies: [{ label: 'curl', available: false }], dashboard: { managed: true, available: true } };
+const managed = module('managed.js', {});
+let root = managed.components(owner);
+assert.equal(all(root, node => node.tag === 'tbody')[0].children.length, 3);
+assert(text(root).includes('运行版本与安装记录不一致'));
+assert(text(root).includes('已安装，可使用'));
+assert(!text(root).includes('不适用'));
+assert(!text(root).includes('未提供'));
+assert(find(root, node => node.tag === 'details' && text(node).includes('缺少 1 项')).open);
+fire(button(root, '更新软件包'));
+assert(text(modal.content).includes('当前运行 v1.19.30，安装记录 1.19.29'));
+owner.components.components[2].installed_version = '1.19.30-r1';
+assert(!text(managed.components(owner)).includes('运行版本与安装记录不一致'));
+owner.components.components[2].update_available = false;
+owner.components.components[1].installed_version = '0.9.0-r1';
+owner.components.components[1].update_available = true;
+assert(button(managed.components(owner), '更新'), 'an older LuCI package must still be updatable with the paired NetFleet package');
+owner.operations = { packages: { kind: 'packages', state: 'failed', error: 'rollback_runtime_failed', recovery: 'failed', started_at: 100, finished_at: 102 } };
+assert(text(managed.components(owner)).includes('恢复失败'));
+owner.liveDataReady = false;
+assert(button(managed.components(owner), '检查更新').disabled);
 """)
 
 
