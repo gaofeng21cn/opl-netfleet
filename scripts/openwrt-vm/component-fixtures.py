@@ -69,6 +69,7 @@ def build(candidate, output):
             (output / kind).mkdir()
             for archive in candidate.glob("*.apk"):
                 shutil.copy2(archive, output / kind / archive.name)
+        (output / "old").mkdir()
         core_versions = {}
         for name in ("opl-netfleet", "luci-app-netfleet", "mihomo-meta"):
             archive = next(candidate.glob(f"{name}-*.apk"))
@@ -103,6 +104,7 @@ def build(candidate, output):
                 run(*arguments)
 
             package(prior, "good")
+            shutil.copy2(output / "good" / f"{name}-{prior}.apk", output / "old")
             if name == "opl-netfleet":
                 init = root / "etc/init.d/opl-netfleet-core"
                 source = init.read_text()
@@ -115,7 +117,7 @@ def build(candidate, output):
                 core.write_text("#!/bin/sh\nexit 1\n")
                 core.chmod(0o755)
             package(following, "bad-core" if name == "mihomo-meta" else "bad")
-        for kind in ("good", "bad", "bad-core"):
+        for kind in ("old", "good", "bad", "bad-core"):
             run("--allow-untrusted", "mkndx", "--output", output / kind / "packages.adb",
                 "--sign", private_key, *sorted((output / kind).glob("*.apk")))
     (output / "fixture.json").write_text(json.dumps({

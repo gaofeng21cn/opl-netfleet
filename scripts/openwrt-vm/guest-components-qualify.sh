@@ -14,6 +14,7 @@ finish() {
 	rc=$?
 	trap - EXIT INT TERM
 	cp "$work/original-feed" /etc/apk/repositories.d/opl-netfleet.list
+	rm -f /etc/apk/repositories.d/netfleet-component-fixture.list
 	if [ "$rc" -ne 0 ]; then
 		echo "Component qualification failed at: $stage" >&2
 		for file in "$work"/*-result.json /tmp/opl-netfleet-components/*/log; do
@@ -116,6 +117,8 @@ unchanged
 stage=fixture_feed
 uclient-fetch -q -O "$work/fixture.json" "$feed_url/components-fixtures/fixture.json"
 uclient-fetch -q -O /etc/apk/keys/netfleet-component-fixture.pem "$feed_url/components-fixtures/component-fixture.pem"
+printf '%s\n' "$feed_url/components-fixtures/old/packages.adb" "$feed_url/components-fixtures/good/packages.adb" > /etc/apk/repositories.d/netfleet-component-fixture.list
+apk --timeout 30 --repositories-file /etc/apk/repositories.d/netfleet-component-fixture.list update >"$work/rollback-feed.log" 2>&1
 current=$(jsonfilter -i "$work/fixture.json" -e '@.version')
 old=$(jsonfilter -i "$work/fixture.json" -e '@.old_version')
 bad=$(jsonfilter -i "$work/fixture.json" -e '@.bad_version')

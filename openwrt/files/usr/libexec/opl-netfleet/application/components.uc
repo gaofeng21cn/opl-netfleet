@@ -140,8 +140,18 @@ function refresh_index(request, work) {
 function archive(name, version, path, work, fallback_version, source) {
 	const target = `${path}/${name}-${version}.apk`;
 	if (fs.stat(target) == null) {
-		const from = source ? `--from none -X ${q(source)}` : "";
-		if (!run_command(`apk --timeout 30 fetch ${from} --output ${q(path)} ${q(`${name}=${version}`)}`, work)) {
+		const from = source ? `--from none -X ${q(source)}` : "--from repositories";
+		const rows = parsed(`apk --no-network query ${from} --all-matches --format json --fields name,version,repositories ${q(name)}`);
+		const exact = filter(rows ?? [], row => row.name == name && row.version == version)[0];
+		let fetched = false;
+		// APK 3 fetch without --recursive matches names, not dependency constraints.
+		for (let repository in exact?.repositories ?? []) {
+			if (run_command(`apk --timeout 30 fetch --from none -X ${q(repository)} --all-matches --output ${q(path)} ${q(name)}`, work) && fs.stat(target) != null) {
+				fetched = true;
+				break;
+			}
+		}
+		if (!fetched) {
 			const release = match(fallback_version ?? "", /^([0-9]+\.[0-9]+\.[0-9]+)(-r[0-9]+)?$/)?.[1];
 			if (source || name == "mihomo-meta" || release == null || !run_command(`curl -q -fsSL --connect-timeout 10 --max-time 90 -o ${q(target)} ${q(`https://github.com/gaofeng21cn/opl-netfleet/releases/download/v${release}/${name}-${version}.apk`)}`, work)) return null;
 		}
@@ -243,11 +253,8 @@ function upgrade(request, work, candidates) {
 		operation.update("downloading", { completed: length(old) + length(next) });
 	}
 	operation.update("validating");
-	const constraints = join(" ", map(names, name => q(`${name}=${candidates[name]}`)));
-	const plan = parsed(`apk --no-network query --recursive --world --format json --fields name,version ${constraints}`);
-	if (type(plan) != "array") fail("dependency_resolution_failed");
-	for (let row in plan) if (index(names, row.name) < 0 && versions[row.name] != row.version) fail("dependency_change_requires_system_manager");
-	if (!run_command(`apk --no-network --simulate add ${join(" ", map(next, q))}`, work)) fail("package_validation_failed");
+	// Only installed dependencies and the explicitly downloaded packages may participate.
+	if (!run_command(`apk --no-network --repositories-file /dev/null --simulate add ${join(" ", map(next, q))}`, work)) fail("package_validation_failed");
 	const before_status = parsed(`ucode ${q(MAIN)} status`)?.result;
 	const unconfigured = fs.lstat("/etc/opl-netfleet/policy.json") == null && !service_running(SERVICE);
 	if (before_status == null && !unconfigured) fail("runtime_readback_failed");
@@ -270,7 +277,7 @@ function upgrade(request, work, candidates) {
 		operation.update("installing");
 		if (!stop_services(work)) fail("runtime_stop_failed");
 		install_started = true;
-		if (!run_command(`apk --no-network add ${join(" ", map(next, q))}`, work)) fail("package_install_failed");
+		if (!run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(next, q))}`, work)) fail("package_install_failed");
 		operation.update("verifying");
 		const after = installed();
 		for (let name in names) if (after?.[name] != candidates[name]) fail("package_identity_mismatch");
@@ -283,7 +290,7 @@ function upgrade(request, work, candidates) {
 	// A pre-existing marker was rejected before mutation; only our install could create it.
 	if (install_started) fs.unlink(UPGRADE_STATE);
 	if (!run_command(`tar -xf ${q(`${work}/private.tar`)} -C /`, work)) fail("rollback_configuration_failed");
-	if (install_started && !run_command(`apk --no-network add ${join(" ", map(old, q))}`, work)) fail("rollback_install_failed");
+	if (install_started && !run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(old, q))}`, work)) fail("rollback_install_failed");
 	const restored = installed();
 	for (let name in names) if (restored?.[name] != versions[name]) fail("rollback_identity_mismatch");
 	if (!restore_services(before, work)) fail("rollback_runtime_failed");
