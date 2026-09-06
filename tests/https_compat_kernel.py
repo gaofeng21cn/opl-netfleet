@@ -67,7 +67,7 @@ with socket.create_connection((sys.argv[3],int(sys.argv[1])),timeout=3,source_ad
   if sys.argv[6]=='hold':
    print('connected',flush=True)
    sys.stdin.readline()
-  connection.sendall(('GET /wire HTTP/1.1\\r\\nHost: localhost:'+sys.argv[1]+'\\r\\nConnection: close\\r\\n\\r\\n').encode())
+  connection.sendall(('GET /wire HTTP/1.1\\r\\nHost: '+sys.argv[4]+':'+sys.argv[1]+'\\r\\nConnection: close\\r\\n\\r\\n').encode())
   result=b''
   while data:=connection.recv(65536): result+=data
   print(json.dumps({'h2':b'x-upstream-protocol: 2' in result.lower(),'source_port':connection.getsockname()[1],'status':result.split(b'\\r\\n')[0].decode(),'error':result[-512:].decode(errors='replace') if b'502 Bad Gateway' in result else None}))

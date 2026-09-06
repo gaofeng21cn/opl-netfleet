@@ -1192,7 +1192,7 @@ return view.extend({
 			if (target === 'events') management.load(self, 'maintenance');
 			self.redraw();
 		});
-		if (this.currentView === 'overview' || this.currentView === 'events')
+		if (this.currentView === 'events')
 			content.push(E('div', { 'class': 'netfleet-config-row' }, [
 				E('span', {}, 'HTTPS 兼容：' + compatibility.label(this.compatibility) +
 					(this.compatibility ? ' · ' + this.compatibility.config.rules.filter(rule => rule.enabled).length + ' 条启用规则' : '')),

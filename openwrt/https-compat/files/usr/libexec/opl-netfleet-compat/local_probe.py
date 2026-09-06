@@ -22,7 +22,7 @@ class LocalProbe:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(self.ca_dir / "probe-cert.pem", self.ca_dir / "probe-key.pem")
         context.set_alpn_protocols(["h2"])
-        self.server = await asyncio.start_server(self.serve, "", TLS_PORT, ssl=context)
+        self.server = await asyncio.start_server(self.serve, ["127.0.0.1", "::1"], TLS_PORT, ssl=context)
 
     async def serve(self, reader, writer):
         try:

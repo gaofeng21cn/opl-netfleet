@@ -141,7 +141,8 @@ class Native(Kernel):
             self.assertLess(time.monotonic(), deadline, self.owner.call("get"))
             await asyncio.sleep(1)
         self.DESTINATION = "2001:db8:88::10"
-        self.assertTrue((await self.request())["h2"], self.owner.health())
+        wire6 = await self.request()
+        self.assertTrue(wire6["h2"], {"wire": wire6, "health": self.owner.health()})
         self.assertEqual((await self.request(ca=self.directory / "upstream.pem", h2=True))["alpn"], "h2")
         self.assertFalse((await self.request(host="other.example", ca=self.directory / "upstream.pem"))["h2"])
         self.DESTINATION = "198.51.100.10"
