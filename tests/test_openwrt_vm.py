@@ -114,7 +114,7 @@ class OpenWrtVmTests(unittest.TestCase):
             text=True, capture_output=True, check=False,
         )
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("only setup and package diagnostics accept --packages", result.stderr)
+        self.assertIn("this diagnostic does not accept --packages", result.stderr)
         retired = subprocess.run([str(WRAPPER), "--native-experiment"], text=True, capture_output=True)
         self.assertNotEqual(0, retired.returncode)
         self.assertIn("unknown argument", retired.stderr)
