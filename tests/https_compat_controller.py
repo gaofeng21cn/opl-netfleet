@@ -64,7 +64,11 @@ class Controller(unittest.TestCase):
                                        "report": {"ca_sha256": ca["sha256"], "system": True}})
         self.assertNotEqual(verified["revision"], enabled["revision"])
         self.assertIsNone(verified["trust"]["test"]["runtimes"]["codex_app"])
-        revoked = self.call("probe", {"revision": verified["revision"], "operation": "trust_revoke", "device": "test"})
+        changed = verified["config"]
+        changed["devices"][0]["addresses"] = ["192.0.2.3"]
+        changed = self.call("apply", {"revision": verified["revision"], "config": changed})
+        self.assertNotIn("test", changed["trust"])
+        revoked = self.call("probe", {"revision": changed["revision"], "operation": "trust_revoke", "device": "test"})
         self.assertNotIn("test", revoked["trust"])
         disabled = self.call("disable", {"revision": revoked["revision"]})
         self.assertFalse(disabled["requested"])

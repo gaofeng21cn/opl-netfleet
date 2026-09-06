@@ -114,11 +114,15 @@ def snapshot():
     return json.loads(result.stdout)["result"]
 
 
+def verified_trust(config, trust, fingerprint):
+    return {device["id"]: trust[device["id"]] for device in config["devices"]
+            if fingerprint and trust.get(device["id"], {}).get("ca_sha256") == fingerprint
+            and trust[device["id"]].get("addresses") == device["addresses"]
+            and trust[device["id"]].get("verified") is True}
+
+
 def effective(config, trust, fingerprint):
-    devices = {device["id"] for device in config["devices"]
-               if trust.get(device["id"], {}).get("ca_sha256") == fingerprint and fingerprint
-               and trust[device["id"]].get("addresses") == device["addresses"]
-               and trust[device["id"]].get("verified") is True}
+    devices = verified_trust(config, trust, fingerprint)
     return {**config, "rules": [{**rule, "devices": [device for device in rule["devices"] if device in devices]}
                                  for rule in config["rules"] if any(device in devices for device in rule["devices"])]}
 
@@ -158,7 +162,7 @@ def status():
             "active_requests": health.get("active_requests"), "rules": health.get("rules", {}),
             "recovery": state.get("recovery", {}), "ca_sha256": fingerprint,
             "rule_recovery": state.get("rule_recovery", {}),
-            "trust": read(TRUST, {}), "events": state.get("events", [])[-100:]}
+            "trust": verified_trust(config, read(TRUST, {}), fingerprint), "events": state.get("events", [])[-100:]}
 
 
 def save_state(state, previous):
@@ -199,8 +203,11 @@ def tick():
     health = engine_health(probe=True)
     expected = hashlib.sha256(EFFECTIVE.read_bytes()).hexdigest() if EFFECTIVE.exists() else None
     healthy = not reason and health.get("ready") and health.get("processing_chain") is True and health.get("revision") == expected
-    recovery = advance(previous.get("recovery"), requested=True, healthy=bool(healthy),
-                       reason=reason or "processing_chain_failed", now=now)
+    if not reason:
+        reason = ("engine_unavailable" if not health.get("ready") else
+                  "processing_chain_failed" if health.get("processing_chain") is not True else
+                  "engine_config_pending" if health.get("revision") != expected else None)
+    recovery = advance(previous.get("recovery"), requested=True, healthy=bool(healthy), reason=reason, now=now)
     last_pid = previous.get("engine_pid")
     if health.get("pid") and last_pid and health["pid"] != last_pid:
         if previous.get("recovery", {}).get("healthy") is True:
