@@ -48,8 +48,9 @@ select_automatic() {
 config_request() {
 	action=$1
 	mutating=$2
+	limit=${3:-65536}
 	payload=$(cat)
-	[ "${#payload}" -le 65536 ] || {
+	[ "${#payload}" -le "$limit" ] || {
 		printf '%s\n' '{"ok":false,"error":"config_request_too_large"}'
 		exit 0
 	}
@@ -62,6 +63,18 @@ config_request() {
 	}
 	[ "$mutating" = "1" ] && lock_mutation
 	respond_owner ucode "$main" "$action" "$temporary" 9>&-
+}
+
+management_argument() {
+	action=$1
+	field=$2
+	mutating=$3
+	payload=$(cat)
+	[ "${#payload}" -le 4096 ] || { printf '%s\n' '{"ok":false,"error":"invalid_management_request"}'; exit 0; }
+	value=$(jsonfilter -s "$payload" -e "@.$field" 2>/dev/null || true)
+	case "$value" in ""|*[!A-Za-z0-9._+-]*) printf '%s\n' '{"ok":false,"error":"invalid_management_request"}'; exit 0 ;; esac
+	[ "$mutating" = "1" ] && lock_mutation
+	respond_owner ucode "$main" "$action" "$value" 9>&-
 }
 
 component_update() {
@@ -80,7 +93,7 @@ component_update() {
 
 case "$1" in
 	list)
-		printf '%s\n' '{"compatibility_get":{},"compatibility_ca":{},"compatibility_apply":{"request":"Table"},"compatibility_enable":{"request":"Table"},"compatibility_disable":{"request":"Table"},"compatibility_probe":{"request":"Table"},"components_get":{},"components_check":{},"components_update":{"component":"String","version":"String"},"operation_get":{},"native_setup_get":{},"native_setup_apply":{"request":"Table"},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":"Table"},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":"Table"},"onboarding_get":{},"onboarding_apply":{"request":"Table"},"status":{},"events":{},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":"Table"},"config_save":{"request":"Table"},"config_apply":{"request":"Table"},"enable":{},"select_auto":{"capability":"String"},"refresh":{},"disable":{}}'
+		printf '%s\n' '{"compatibility_get":{},"compatibility_ca":{},"compatibility_apply":{"request":"Table"},"compatibility_enable":{"request":"Table"},"compatibility_disable":{"request":"Table"},"compatibility_probe":{"request":"Table"},"components_get":{},"components_check":{},"components_update":{"component":"String","version":"String"},"operation_get":{},"native_setup_get":{},"native_setup_apply":{"request":"Table"},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":"Table"},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":"Table"},"onboarding_get":{},"onboarding_apply":{"request":"Table"},"status":{},"events":{},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":"Table"},"config_save":{"request":"Table"},"config_apply":{"request":"Table"},"enable":{},"select_auto":{"capability":"String"},"refresh":{},"disable":{},"network_get":{},"network_validate":{"request":"Table"},"network_apply":{"request":"Table"},"maintenance_get":{},"profile_get":{"id":"String"},"profile_save":{"request":"Table"},"profile_delete":{"request":"Table"},"backup_export":{},"backup_restore":{"request":"Table"},"core_action":{"request":"Table"},"diagnostics_get":{},"dashboard_check":{},"dashboard_update":{"version":"String"}}'
 		;;
 	call)
 		case "$2" in
@@ -90,6 +103,25 @@ case "$1" in
 			compatibility_enable) config_request compatibility-enable 0 ;;
 			compatibility_disable) config_request compatibility-disable 0 ;;
 			compatibility_probe) config_request compatibility-probe 0 ;;
+			network_get) respond_owner ucode "$main" network-get ;;
+			network_validate) config_request network-validate 0 ;;
+			network_apply) config_request network-apply 1 ;;
+			maintenance_get) respond_owner ucode "$main" maintenance-get ;;
+			profile_get) management_argument profile-get id 0 ;;
+			profile_save) config_request profile-save 1 16777216 ;;
+			profile_delete) config_request profile-delete 1 ;;
+			backup_export)
+				lock_mutation
+				respond_owner ucode "$main" backup-export 9>&-
+				;;
+			backup_restore) config_request backup-restore 1 33554432 ;;
+			core_action) config_request core-action 1 ;;
+			diagnostics_get) respond_owner ucode "$main" diagnostics-get ;;
+			dashboard_check)
+				lock_mutation
+				respond_owner ucode "$main" dashboard-check 9>&-
+				;;
+			dashboard_update) management_argument dashboard-update version 1 ;;
 			components_get) respond_owner ucode "$components" get ;;
 			operation_get) respond_owner ucode "$components" operation ;;
 			components_check)

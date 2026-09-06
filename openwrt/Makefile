@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet
-PKG_VERSION:=0.5.4
+PKG_VERSION:=0.5.5
 PKG_RELEASE:=1
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=OPL NetFleet
@@ -12,7 +12,7 @@ define Package/opl-netfleet
   SECTION:=net
   CATEGORY:=Network
   TITLE:=OPL NetFleet network enhancement
-  DEPENDS:=+ucode +ucode-mod-fs +ucode-mod-uci +ucode-mod-ubus +ucode-mod-uloop +yq +mihomo +curl +ca-bundle +flock +ip-full +nftables-json +kmod-nft-socket +kmod-nft-tproxy
+  DEPENDS:=+ucode +ucode-mod-fs +ucode-mod-uci +ucode-mod-ubus +ucode-mod-uloop +yq +mihomo +curl +ca-bundle +unzip +coreutils-timeout +flock +ip-full +nftables-json +kmod-nft-socket +kmod-nft-tproxy
   PKGARCH:=all
 endef
 
@@ -152,6 +152,7 @@ define Package/opl-netfleet/install
 	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet/supervisor.uc $(1)/usr/libexec/opl-netfleet/supervisor.uc
 	$(INSTALL_DATA) ./files/usr/libexec/opl-netfleet/output.uc $(1)/usr/libexec/opl-netfleet/output.uc
 	$(INSTALL_DATA) ./files/usr/libexec/opl-netfleet/application/*.uc $(1)/usr/libexec/opl-netfleet/application/
+	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet-transfer $(1)/usr/libexec/opl-netfleet-transfer
 	$(INSTALL_DATA) ./files/usr/libexec/opl-netfleet/core/*.uc $(1)/usr/libexec/opl-netfleet/core/
 	$(INSTALL_DATA) ./files/usr/libexec/opl-netfleet/adapters/*.uc $(1)/usr/libexec/opl-netfleet/adapters/
 	$(INSTALL_BIN) ./files/usr/libexec/rpcd/opl-netfleet $(1)/usr/libexec/rpcd/opl-netfleet

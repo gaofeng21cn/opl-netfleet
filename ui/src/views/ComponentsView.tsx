@@ -1,7 +1,23 @@
-import { Download, RefreshCw } from 'lucide-react';
-import type { ComponentsSnapshot, OperationSnapshot } from '../types';
+import { Download, ExternalLink, RefreshCw } from 'lucide-react';
+import type { ComponentsSnapshot, DashboardComponent, OperationSnapshot } from '../types';
 import { OperationProgress } from '../components/OperationProgress';
 import { componentError } from '../lib/componentError';
+
+export function DashboardComponentSection({ dashboard }: { dashboard?: DashboardComponent }) {
+  const releaseUrl = dashboard?.release_url?.startsWith('https://github.com/') ? dashboard.release_url : null;
+  const reason = dashboard?.reason === 'native_backend_required' ? '由 Nikki 管理' : dashboard?.reason ? componentError(dashboard.reason) : null;
+  return <section className="nf-components-dashboard">
+    <div className="nf-section-heading"><h2>实时运行面板</h2><button type="button" disabled title="本机预览只读，请在设备 LuCI 中检查面板更新"><RefreshCw aria-hidden="true" />检查面板更新</button></div>
+    <div className="nf-table-wrap"><table><thead><tr><th>组件</th><th>已安装版本</th><th>可用版本</th><th>状态</th><th>操作</th></tr></thead><tbody><tr>
+      <td><strong>Zashboard</strong></td>
+      <td>{dashboard ? dashboard.installed_version || (dashboard.available ? '版本未记录' : '未安装') : '设备未提供'}</td>
+      <td>{dashboard?.available_version || '尚未检查'}</td>
+      <td>{!dashboard ? '当前设备未提供面板版本信息' : dashboard.error ? componentError(dashboard.error) : reason || (dashboard.update_available ? '可更新' : dashboard.available_version ? '已是当前最新版本' : dashboard.available ? '可使用' : '未安装')}</td>
+      <td><button type="button" disabled title="本机预览只读，请在设备 LuCI 中更新面板"><Download aria-hidden="true" />{dashboard?.available ? '更新面板' : '安装面板'}</button></td>
+    </tr></tbody></table></div>
+    <div className="nf-dashboard-meta"><span>最后检查：{dashboard?.checked_at ? new Date(dashboard.checked_at * 1000).toLocaleString() : '尚未检查'}</span>{releaseUrl && <a href={releaseUrl} target="_blank" rel="noopener noreferrer">发行说明<ExternalLink aria-hidden="true" /></a>}<span>独立更新，不重启代理核心</span></div>
+  </section>;
+}
 
 export function ComponentsView({ snapshot, operation, error, operationError, loading, onRead }: {
   snapshot: ComponentsSnapshot | null;
@@ -36,6 +52,7 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
       <details className="nf-components-dependencies"><summary>运行依赖（{snapshot.dependencies.filter(item => item.available).length} / {snapshot.dependencies.length} 可用）</summary>
         <ul>{snapshot.dependencies.map(item => <li key={item.id}><strong>{item.label}</strong><span>{item.available ? item.installed_version || '已安装' : '缺少'}</span></li>)}</ul>
       </details>
+      <DashboardComponentSection dashboard={snapshot.dashboard} />
     </>}
   </div>;
 }

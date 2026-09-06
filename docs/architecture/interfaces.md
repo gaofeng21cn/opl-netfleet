@@ -36,8 +36,36 @@ LuCI 在机场页和配置的机场区提供同一个订阅管理入口，新增
 配置的基础接入区提供后端迁移：`migration_get` 返回 ready、revision 和缺失条件；
 `migration_apply` 接受 `{revision,confirmed:true,backend:"native-mihomo"}`，执行当前后端
 迁移事务。成功后重读真实 status/config；失败必须显示 owner 返回的 rollback 结果，不把
-请求结束、浏览器超时或旧数据显示为迁移成功。所有私有写请求仍通过 rpcd 的
-`request: Table` 参数进入同一全局 mutation lock。
+请求结束、浏览器超时或旧数据显示为迁移成功。这些结构化管理请求通过 rpcd 的
+`request: Table` 参数进入同一全局 mutation lock；配置文件正文和备份的大体积传输使用
+下文独立的认证 CGI 通道，最终仍交给相同设备 owner。
+
+## 独立设备管理接口
+
+管理对象与恢复边界由[设备独立管理](management.md)负责。`network_get` 按需返回当前
+原生网络配置、revision 和已有接口资源；`network_validate / network_apply` 接受
+`{revision,settings}`，其中 `settings` 分为 `dns / lan / router / listeners`。DNS 包括
+普通、引导、代理节点与直连解析上游，以及精确域名的解析覆盖；LAN 包括入口接口与
+按 IPv4/IPv6、MAC 匹配的代理和 DNS 接入规则；监听包括 HTTP/SOCKS/mixed 端口与认证。
+读取不返回密码，只显示是否已配置；编辑未提交密码时保留原值。该接口不接受代理模式、
+WAN/LAN 地址、默认路由或任意 UCI 字段，也不修改 policy。校验与应用拒绝旧 revision，
+应用结果区分已保存、已重启回读及失败恢复，不能以 HTTP 请求完成代替网络就绪。
+
+`maintenance_get` 按需返回本地 Profile 清单、引用与可编辑状态、revision、核心可执行
+维护动作和备份格式，不返回文件正文或凭据。`profile_get/save/delete` 与
+`backup_export/restore` 共用维护 owner；保存、删除、恢复携带 revision，备份恢复另须
+明确确认。当前被策略来源、恢复配置或运行选择引用的 Profile 拒绝覆盖与删除。
+
+LuCI 通过 `fs.exec_direct` 调用白名单 `opl-netfleet-transfer`，经 `cgi-exec` 下载 Profile
+或备份；上传的完整私有 envelope 经 `cgi-upload` 保存到专用随机文件，再由 RPC 仅提交
+`upload_id`，最终 owner 校验私有文件、读取并删除。浏览器不把大体积正文放入普通 ubus
+请求或响应，也不将下载内容保存到展示缓存。root CLI 和小体积结构化 RPC 输入仍调用
+同一实现，不能绕过 revision、路径、大小和引用校验。
+
+`core_action` 接受 `{revision,action:"restart"|"reload",confirm:true}`，只执行所选原生
+运行 owner 的维护事务；`diagnostics_get` 返回最多 120 条有界、脱敏的核心启动与运行
+日志，以及核心和 controller 可用性。诊断不依赖 controller 成功响应，按用户进入或刷新
+诊断区读取，不成为另一个日志持久化 owner。
 
 ## 当前运行接口
 
@@ -46,7 +74,9 @@ LuCI 在机场页和配置的机场区提供同一个订阅管理入口，新增
 恢复文案使用实际后端名称，不能把“NetFleet 原生后端运行”描述成 Nikki 运行。
 
 root CLI 的管理动作与 RPC 共用同一实现：`subscriptions-get/set/refresh`、
-`native-setup-get/apply`、`migration-get/apply` 和 `dashboard-get`。涉及私有结构化输入
+`native-setup-get/apply`、`migration-get/apply`、`network-get/validate/apply`、
+`maintenance-get`、`profile-get/save/delete`、`backup-export/restore`、`core-action`、
+`diagnostics-get` 和 `dashboard-get/check/update`。涉及私有结构化输入
 的 CLI 读取设备私有文件，不通过命令行参数传递订阅地址。核心启停和网关配置由
 [正式运行 owner](runtime-and-recovery.md#运行后端与原生网关)负责，浏览器不直接调用
 gateway 的准备、附加或清理动作，不建立第二条核心生命周期。
@@ -61,9 +91,9 @@ gateway 的准备、附加或清理动作，不建立第二条核心生命周期
 - `refresh`：不接受 URL、section 或订阅内容，只调用同一个 policy-driven refresh owner；来源凭据修改由独立 subscriptions_set 完成，浏览器不解析订阅内容；
 - `disable`：调用与 CLI 相同的 native Profile owner/runtime 恢复并独立返回 `business_ok`；只有 runtime 无法恢复时才转入官方 cleanup passthrough，并返回 `safe`、`persistent`、`business_ok`。
 
-UI 有两个明确宿主。`ui/` 的 React/Vite 应用只用于本机快速参考开发，可注入 target-private 实时只读 client 或使用脱敏 fixture client；生产设备只部署原生 LuCI `view.extend`/`E()` 页面，不动态加载、挂载或打包 React。两端共享[UI 设计合同](../design/ui.md)定义的七页信息架构，Zashboard 在工具区提供独立外链；配置页和首次设置向导共享“基础接入 / 机场 / 地区映射 / 出口策略 / 自动运行 / 安全与恢复”的分类。两端共享显示语义和交互合同，不共享组件实现或 bundle，也不要求像素一致。React 定稿只决定信息与交互参考，LuCI 原生 source 才是设备页面的部署 owner。UI 设计合同负责视觉语言、主题映射、排版和组件规则，不拥有产品对象、状态或动作合同。
+UI 有两个明确宿主。`ui/` 的 React/Vite 应用只用于本机快速参考开发，可注入 target-private 实时只读 client 或使用脱敏 fixture client；生产设备只部署原生 LuCI `view.extend`/`E()` 页面，不动态加载、挂载或打包 React。两端共享[UI 设计合同](../design/ui.md)定义的七页信息架构，Zashboard 在工具区提供独立外链；配置页把网络接入和配置文件与备份作为独立管理分区，不混入 policy 草稿的应用按钮。首次设置向导复用适用的字段组件，不重复提供完整维护工具。两端共享显示语义和交互合同，不共享组件实现或 bundle，也不要求像素一致。React 定稿只决定信息与交互参考，LuCI 原生 source 才是设备页面的部署 owner。UI 设计合同负责视觉语言、主题映射、排版和组件规则，不拥有产品对象、状态或动作合同。
 
-实时只读桥接的目标只从本机环境变量取得，只允许固定读取 `status`、`events`、`config_get`、`connections`、`components_get` 和 `operation_get`，浏览器不持有 SSH 凭据，也不能通过该桥接调用任何 mutation；桥接结果必须显示目标、连接状态、最后读取时间和读取耗时。组件信息按需独立读取，不并入常规网络快照。`connections` 只在用户打开或刷新“事件与诊断”时从 Mihomo 当前 `/connections` 读取最多 50 条活动连接，投影目标 host/IP、目标端口、网络、命中规则、规则载荷和实际代理链；不得返回 source IP、进程、连接 ID、流量计数或其他不必要字段，也不得写入事件 owner、fixture 或浏览器展示缓存。该诊断使用 Mihomo 已执行的真实首条命中结果，不在 NetFleet 或浏览器中重做规则匹配。事件页以 NetFleet 持久化选路事件为主，活动连接只在默认折叠的辅助区显示；瞬时连接快照不能累计或外推为规则组触发频数，除非未来真实 owner 提供可去重、可定义生命周期的持久计数。fixture 仅用于离线、异常和边界场景，可在内存中模拟命令后的投影变化；它必须遵守当前 `status`/`events` 形状且不得包含订阅、完整节点清单、设备地址或其他私有 target 数据，不是运行事实，也不能被生产 LuCI 页面读取。
+实时只读桥接的目标只从本机环境变量取得，只允许固定读取 `status`、`events`、`config_get`、`connections`、`components_get`、`operation_get`、`network_get`、`maintenance_get` 和 `diagnostics_get`，浏览器不持有 SSH 凭据，也不能通过该桥接调用任何 mutation；桥接结果必须显示目标、连接状态、最后读取时间和读取耗时。组件、网络配置、文件清单和核心日志按需独立读取，不并入常规网络快照。网络投影隐藏解析 URL 的凭据和私有路径，不返回认证密码；文件清单不包含正文或备份。`connections` 只在用户打开或刷新“事件与诊断”时从 Mihomo 当前 `/connections` 读取最多 50 条活动连接，投影目标 host/IP、目标端口、网络、命中规则、规则载荷和实际代理链；不得返回 source IP、进程、连接 ID、流量计数或其他不必要字段，也不得写入事件 owner、fixture 或浏览器展示缓存。该诊断使用 Mihomo 已执行的真实首条命中结果，不在 NetFleet 或浏览器中重做规则匹配。事件页以 NetFleet 持久化选路事件为主，活动连接只在默认折叠的辅助区显示；瞬时连接快照不能累计或外推为规则组触发频数，除非未来真实 owner 提供可去重、可定义生命周期的持久计数。fixture 仅用于离线、异常和边界场景，可在内存中模拟命令后的投影变化；它必须遵守当前接口形状且不得包含订阅、完整节点清单、设备地址或其他私有 target 数据，不是运行事实，也不能被生产 LuCI 页面读取。
 
 NetFleet LuCI 在页面标题的工具区提供独立的“Zashboard”外链，不作为内部标签页，以 `dashboard_get` 返回的
 可用性、controller 端口、协议、可选 UI 名称和 secret 打开独立完整的 Zashboard。
@@ -97,8 +127,12 @@ LuCI 的启用、单次选优、立即更新订阅、关闭和配置应用都必
 概览的“最近决策”只从 `enable|select|disable` 事件中选取最新记录，同秒按 owner 写入顺序取最后一条；`refresh` 是订阅操作摘要，不覆盖选路决策。事件列表对订阅更新显示实际变化数、失败数和更新结果，延迟标为“不适用”。只有明确的 `native_restored` 恢复事件才能显示“已恢复原生配置”；缺少路由字段只代表未记录，不能推断回退。退出直通按实际恢复原因显示“已恢复网络直通”，不显示测量缺失；订阅触发的选优标为“订阅更新后选优”。
 
 RPC 是调用设备 owner 的薄适配器，不维护第二份网络状态。`components_get` 只读已安装组件、
-实际运行核心版本、关键依赖和最近一次 Feed 检查；`components_check` 与 `components_update`
+实际运行核心版本、关键依赖、最近一次 Feed 检查及独立的 `dashboard` 资源状态；`components_check` 与 `components_update`
 分别启动显式版本检查及固定组件、固定版本的后台更新。更新流程见[软件包合同](packaging.md)。
+`dashboard` 不作为 APK 包：安装版本未记录时返回 `null`；`dashboard_check` 显式查询官方
+Release 并缓存候选，`dashboard_update` 接受用户确认的版本，绑定该候选的官方 HTTPS
+资产与摘要执行有界资源事务。两者都不随组件页读取自动执行，也不重启核心；资源事务
+和恢复合同见[设备独立管理](management.md#规则与运行面)。
 `operation_get` 返回订阅和组件操作的最新进度：标识、状态、阶段、开始/更新时间、已处理数、
 总数、当前对象显示名、脱敏错误码及恢复结果 `recovery`；恢复结果区分已恢复、恢复失败和
 网络直通，未发生恢复时为 `null`，不能把恢复成功当作原操作成功。不返回 URL、凭据、命令
@@ -117,9 +151,9 @@ policy、compile、enable、启动 supervisor 并回读。已有有效 policy �
 
 设备端配置由 `config_get / config_validate / config_save / config_apply` 四个结构化 RPC 暴露。浏览器每次配置操作先读取 fresh `config_get`，并携带 policy SHA-256 revision；陈旧 revision 必须拒绝，展示缓存不得授权配置 mutation。唯一 target-local 配置 owner 发现当前后端已有稳定命名订阅、订阅 cache 中可识别的地区、当前 Policy Source 策略组和内置 Policy Source，把白名单结构化选择 merge 到现有 canonical policy、校验全部引用，并用同目录临时文件原子替换。`config_save` 只允许在 NetFleet 未接管时更新 policy，不改变数据面；active 配置必须使用 `config_apply`，后者先返回可解释变更供 LuCI 二次确认，再在全局 mutation lock 内快照旧 policy/artifact/manifest，复用 `disable -> compile -> enable` activation owner 切换，失败恢复旧字节和旧 active owner。
 
-高级配置允许用户在设备已经存在的资源边界内维护结构：从当前后端已有稳定命名 subscription 新增或移除 provider；使用同一共享地区目录维护 provider-region mapping；新增、移除和命名 capability，设置其自动依赖和地区许可；把当前 Policy Source 已存在的策略组声明为 `entry|policy` binding；新增或移除只支持 `domain_suffix` 的 target-local routing rule。新增 provider 的稳定 ID 固定使用当前后端 subscription section，地区 filter 固定来自设备 owner 返回的共享目录，浏览器不能提交自定义正则。所有结构变化仍先经过完整 policy validator，并且必须保留至少一个启用的主用 provider、每个启用 capability 恰好一个 entry、automatic 依赖无环且恰好一个根。
+高级配置允许用户在设备已经存在的资源边界内维护结构：从当前后端已有稳定命名 subscription 新增或移除 provider；使用同一共享地区目录维护 provider-region mapping；新增、移除和命名 capability，设置其自动依赖和地区许可；把当前 Policy Source 已存在的策略组声明为 `entry|policy` binding；新增或移除 `domain_suffix` 或 `ip_cidr` 的 target-local routing rule，目标为启用的 capability 或直连。规则字段与校验由[产品对象](domain-model.md#配置解耦合同)负责。新增 provider 的稳定 ID 固定使用当前后端 subscription section，地区 filter 固定来自设备 owner 返回的共享目录，浏览器不能提交自定义正则。所有结构变化仍先经过完整 policy validator，并且必须保留至少一个启用的主用 provider、每个启用 capability 恰好一个 entry、automatic 依赖无环且恰好一个根。
 
-配置 owner 不接受 raw policy、订阅 URL/token、节点正文、DNS/nft 命令、浏览器生成的 Profile、自定义 provider cache 路径、自定义地区正则或 quota metadata 映射。订阅凭据单独提交给 subscriptions owner，不混入 policy；后端 mixin、透明代理参数、DNS 和 OpenWrt flow-offload 属于设备 platform owner，不因结构化 policy UI 而转移给浏览器。
+policy 配置 owner 不接受 raw policy、订阅 URL/token、节点正文、DNS/nft 命令、浏览器生成的 Profile、自定义 provider cache 路径、自定义地区正则或 quota metadata 映射。订阅凭据单独提交给 subscriptions owner，不混入 policy；原生 DNS、代理范围和监听设置通过独立 network owner 的受限结构编辑。配置文件通过 maintenance owner 校验，不能借文件导入建立另一条配置应用链。OpenWrt flow-offload、WAN/LAN 地址和任意防火墙参数不属于这些管理表单。
 
 ## LuCI 显示层合同
 
@@ -129,6 +163,6 @@ policy、compile、enable、启动 supervisor 并回读。已有有效 policy �
 
 机场表的“可用地区”是去重后的 provider-region 数量，地区表的“可用机场”是去重后的 region-provider 数量；机场的“节点”是 manifest 绑定 source 在 `/providers/proxies` 中的 Mihomo 已加载库存，按节点名去重并使用 `alive` 统计可用数，不因地区识别或 capability 许可排除小众节点；当 SubscriptionOwner 读取的原始订阅条目数与已加载数不同，机场同一单元格补充“订阅 N 条”，不能把未被 Mihomo 接受的条目计作可用节点。地区的“节点”以 `/proxies` 当前 group 的成员关系为边界，并用同一 source 补充 file-provider 叶子身份和健康状态，嵌套组和 `DIRECT`/`COMPATIBLE` 等控制面占位值不计入。任一 owner 缺少可靠成员列表时显示“未提供”，不能缓存或伪造零值。没有真实可用叶子的地区不能凭历史 evidence 占位。机场表和地区表都显示 evidence 中的“最近最优”“平均最优”、有效样本数与最后测量时间；机场详情把 SubscriptionOwner 的 `last_success` 标为“订阅更新时间”，把 `last_attempt` 标为“最近尝试”；没有 NetFleet 刷新事件时，“最近尝试”显示“尚未执行”，“订阅更新时间”显示当前后端订阅缓存的实际修改时间，缓存也不存在才显示“尚未执行”，不得拿最后测量或 cache digest 猜更新时间。机场值是一轮内该机场全部合格地区候选的最小有效 delay，地区值是一轮内该地区全部合格机场候选的最小有效 delay。`delay_sample_count < 2` 时平均列显示“样本不足”，达到 2 个样本后才显示真实平均值，即使它与最近值恰好相同也不得改写。只有延迟测量口径变化才重置累计；其他更新与当前拓扑变化按上一段的稳定 ID 合同保留或裁剪。订阅制机场另从同一次 target-local 后端 metadata 读取 `expire` 并投影为 quota `expires_at`；缺失显示“未提供”，买断制显示“不适用”，UI 不得从节点名称或订阅 URL 猜测。地区展示顺序固定为当前选中项、最近最优 delay 升序、平均最优 delay 升序、可用节点数降序、可用机场数降序、显示名；机场表继续按当前选中项、可用地区数、最近最优 delay 和显示名排序。两者都只是展示顺序，不改变运行时 comparator 或 selector。
 
-配置模式来自 policy：`automatic` 能力允许“自动选优 / 地区 / DIRECT”，`manual` 能力只允许地区和 DIRECT，地区级 `manual_only` 不进入自动池。运行模式来自 Mihomo 可见 selector 的当前成员：选择“自动选优”时 supervisor 定期重排；选择地区或 DIRECT 时显示“手动保持”并暂停后台选择。LuCI 配置页按“基础接入 / 机场 / 地区映射 / 出口策略 / 自动运行 / 安全与恢复”组织结构化草稿；首次设置按“环境与恢复 / 机场 / 地区 / 出口 / 运行与安全”推进，不把 raw policy 字段逐项暴露。顶部“NetFleet 已启用”只表示生成 Profile 是当前 owner；能力卡标题不重复显示状态，摘要中的“策略”是唯一模式投影，说明块使用“选优规则”。compiler 根据 Policy Source 中每个 `policy` 业务组的首选成员，把默认行为投影为 `capability` 或 `direct`；status 优先读取该 manifest 投影，兼容旧 manifest 时只允许从 Mihomo 当前组的有序成员回读，不按组名猜测。出口页分别显示“默认走此出口”和“默认直连、可临时切换”，不再把 entry 与 policy binding 混成“接管的原始策略组”。用户可见的“运行时网络退路”只按 status 从 manifest 返回的 role stages 投影为“当前优选 → 主用机场 → 备用机场 → 直连”，没有 reserve stage 时明确显示“备用机场（未配置）”。机场的 `primary|reserve` role 与 `subscription|buyout` 计费是独立事实，UI 不得用买断属性推断备用角色。
+配置模式来自 policy：`automatic` 能力允许“自动选优 / 地区 / DIRECT”，`manual` 能力只允许地区和 DIRECT，地区级 `manual_only` 不进入自动池。运行模式来自 Mihomo 可见 selector 的当前成员：选择“自动选优”时 supervisor 定期重排；选择地区或 DIRECT 时显示“手动保持”并暂停后台选择。LuCI 配置页按 [UI 设计合同](../design/ui.md#页面骨架)组织结构化草稿与独立管理分区；首次设置按“环境与恢复 / 机场 / 地区 / 出口 / 运行与安全”推进，不把 raw policy 字段逐项暴露。顶部“NetFleet 已启用”只表示生成 Profile 是当前 owner；能力卡标题不重复显示状态，摘要中的“策略”是唯一模式投影，说明块使用“选优规则”。compiler 根据 Policy Source 中每个 `policy` 业务组的首选成员，把默认行为投影为 `capability` 或 `direct`；status 优先读取该 manifest 投影，兼容旧 manifest 时只允许从 Mihomo 当前组的有序成员回读，不按组名猜测。出口页分别显示“默认走此出口”和“默认直连、可临时切换”，不再把 entry 与 policy binding 混成“接管的原始策略组”。用户可见的“运行时网络退路”只按 status 从 manifest 返回的 role stages 投影为“当前优选 → 主用机场 → 备用机场 → 直连”，没有 reserve stage 时明确显示“备用机场（未配置）”。机场的 `primary|reserve` role 与 `subscription|buyout` 计费是独立事实，UI 不得用买断属性推断备用角色。
 
 “退出与故障恢复”是独立区块：优先恢复 `recovery_profile_display_name` 对应的原生配置；只有该恢复失败时，最终退路才是停止当前代理后端并恢复网络直通。这是条件关系，不能与运行时网络退路合并，也不能用一条连续箭头暗示每次都会执行两步。用户可见文案使用“直连 / 网络直通 / 原生配置”，不暴露 `DIRECT`、`passthrough`、`RecoveryProfileRef` 等内部标识。界面中的门槛、周期和说明必须直接读取 status 返回的 policy 值，不能在前端写死 capability、地区、机场或阈值。机场表和地区表的延迟着色使用 `status.selection.region_switch_margin_ms` 作为展示分界，缺失或非数字时不加警告色；该分界只服务展示，不冒充 comparator。UI 不得按 capability id 是否包含 `ai` 或其他子串选择图标或文案，跟随能力的说明必须读取该能力的 `prefer_region_from` 显示名。

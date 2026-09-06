@@ -1,4 +1,4 @@
-import { ordered_capabilities, ordered_regions, region_switch_margin, leaf_switch_margin } from "./policy.uc";
+import { ordered_capabilities, ordered_regions, region_switch_margin, leaf_switch_margin, canonical_cidr } from "./policy.uc";
 
 function clone(value) {
 	const value_type = type(value);
@@ -91,7 +91,12 @@ function inject_routing_rules(compiled, policy) {
 	const rendered = [];
 	for (let i = 0; i < length(configured); i++) {
 		const route = configured[i];
-		push(rendered, `DOMAIN-SUFFIX,${route.value},${capability_group_name(policy, route.capability)}`);
+		const target = route.target == "direct" ? "DIRECT" : capability_group_name(policy, route.capability);
+		if (route.kind == "ip_cidr") {
+			const cidr = canonical_cidr(route.value);
+			const kind = index(cidr, ":") >= 0 ? "IP-CIDR6" : "IP-CIDR";
+			push(rendered, `${kind},${cidr},${target},no-resolve`);
+		} else push(rendered, `DOMAIN-SUFFIX,${lc(route.value)},${target}`);
 	}
 	const source = type(compiled.rules) == "array" ? compiled.rules : [];
 	let direct_prefix = 0;

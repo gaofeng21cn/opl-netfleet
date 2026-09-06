@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+umask 077
+
+case "${1:-}" in
+	backup-export)
+		[ "$#" -eq 1 ] || exit 1
+		exec 9>/var/lock/opl-netfleet-deploy.lock
+		if ! flock -n 9; then
+			printf '%s\n' '{"ok":false,"error":"mutation_busy"}'
+			exit 0
+		fi
+		ucode /usr/libexec/opl-netfleet/main.uc backup-export 9>&-
+		;;
+	profile-get)
+		[ "$#" -eq 2 ] || exit 1
+		case "$2" in ''|*[!A-Za-z0-9._-]*) exit 1 ;; esac
+		exec ucode /usr/libexec/opl-netfleet/main.uc profile-get "$2"
+		;;
+	*) exit 1 ;;
+esac

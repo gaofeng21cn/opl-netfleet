@@ -18,6 +18,8 @@
 
 当前支持 IPv4/IPv6 的 TCP 与 UDP TProxy，以及路由器本机和 LAN 的 DNS 接管。
 默认使用 redir-host；TUN、auto-route、auto-redirect 和 redirect 模式不在当前支持面。
+这是 NetFleet 的 OpenWrt 接管、排他与清理边界，不是 Mihomo 缺少这些功能；当前
+配置界面也不提供未经该生命周期适配的模式切换。
 不满足监听器、后端排他或路由身份前提时拒绝接管，不借机修改 WAN/LAN 地址或默认路由。
 
 `prepare` 只读取已选 Profile 并生成候选 JSON，经真实 `mihomo -t` 后原子安装到
@@ -37,6 +39,13 @@ procd 直接持有 Mihomo 子进程，并提供有限 respawn。gateway 通过�
 发现不明来源 table、身份不匹配或无法回读清理结果时报告失败，不清除其他 owner 的状态。
 服务正常退出、崩溃后的恢复与停止都必须取得实际运行或清理证据；不能用 procd 注册、
 配置文件或源码存在代替就绪。VM 只证明其隔离环境内的路径，真实设备与发布包另行验收。
+
+网络表单、配置备份恢复和显式核心维护同样进入上述运行 owner，不直接写生成的
+nft/路由对象。network owner 先校验候选配置，再保存旧声明和运行选择，调用原生服务
+应用并回读；maintenance owner 的重启、重载及备份恢复也保留用户选择并验证网络，
+失败恢复原文件和运行状态，无法证明恢复时停止核心并执行正式清理。Zashboard 资源
+更新只交换经校验的静态目录，不重启核心或修改连接凭据。各事务的输入与持久化范围见
+[设备独立管理](management.md)，不得由 UI 另建恢复路径。
 
 ## 首次设置与迁移
 
@@ -86,7 +95,7 @@ RecoveryProfileRef
 compiler 是无后台状态的一次性转换：
 
 1. 读取 policy、Policy Source、Recovery Profile 身份和所选后端已落盘缓存；
-2. 保留 Policy Source 的规则顺序和未绑定组；迁移 Profile 中已有的 DNS 逐字保留，内置 bundle 不声明 DNS，设备 DNS 继续由所选后端的 Profile/mixin owner 提供。target-local `routing_rules` 在开头连续的管理链路直连规则之后、其他分类规则之前投影为 Mihomo 规则，目标由 capability ID 解析为可见 selector；它们只存在于生成 Profile，不进入后端全局 mixin 或 Recovery Profile。随后把每个 `entry` 的规则目标及组引用改写到 capability 可见 selector，删除旧入口及仅由该入口可达、现已 caller-zero 的旧 Auto/地区闭包；不依赖 `hidden` 维持用户界面正确性；
+2. 保留 Policy Source 的规则顺序和未绑定组；迁移 Profile 中已有的 DNS 逐字保留，内置 bundle 不声明 DNS，设备 DNS 继续由所选后端的 Profile/mixin owner 提供。target-local `routing_rules` 在开头连续的管理链路直连规则之后、其他分类规则之前投影为 Mihomo 规则：域名后缀生成 `DOMAIN-SUFFIX`，IPv4/IPv6 CIDR 分别生成 `IP-CIDR`/`IP-CIDR6` 并带 `no-resolve`；目标由 capability ID 解析为可见 selector，或明确指定 `DIRECT`。它们只存在于生成 Profile，不进入后端全局 mixin 或 Recovery Profile。随后把每个 `entry` 的规则目标及组引用改写到 capability 可见 selector，删除旧入口及仅由该入口可达、现已 caller-zero 的旧 Auto/地区闭包；不依赖 `hidden` 维持用户界面正确性；
 3. 每个 capability 生成一个由 `display_name` 命名的可见 selector，成员固定为“本能力自动选优 / 共享地区出口 / DIRECT”。根能力拥有唯一一套可见地区出口；声明 `prefer_region_from` 的跟随能力复用上游能力的地区出口，并按自身允许/排除地区过滤，不再生成只差能力前缀的重复可见地区组。跟随能力仍保留自身 automatic 候选链，以维持独立资格和自动决策。每个 `policy` 业务组保留原名并使用其绑定能力的相同成员，Policy Source 以 `DIRECT` 为首项时只调整默认顺序，不直接暴露机场叶子。这些中文模板以及“主用机场 / 备用机场 / 当前优选 / 代理路径”是当前生成 Profile 的合同，由 compiler 拥有，不是 UI i18n，也不是 policy 字段。地区名称由 policy 的 `flag + display_name` 生成，机场名称来自所选后端 subscription metadata；稳定 ID 只保留在 manifest；
 4. Mihomo provider `exclude-filter` 只做通用输入卫生，正则是 compiler 常量 `PSEUDO_PROXY_FILTER`，不是 policy 字段，也不决定 automatic 资格；automatic 模式的 Provider 级 fallback 还必须使用该 Provider 全部已授权 `provider_regions` filter 的并集，未映射节点、未知地区和订阅元数据不得进入 automatic 或机场回退；
 5. 校验引用完整性、循环、重复稳定身份和 `mihomo -t`；
@@ -113,7 +122,7 @@ Provider/地区候选组使用 `checks.latency` 的 Mihomo 原生 `url-test` 负
 
 ## Activation
 
-配置、订阅、首次设置、迁移及 `onboarding_apply|compile|enable|disable|select|refresh` 均由 `main.uc` 的前台命令入口执行；`core/activation.uc` 只提供纯函数判定。supervisor 只通过同一个锁调用内部 `maintain|refresh|recover`，不得直接写 UCI、subscription cache、selector、DNS、nft 或路由。
+配置、订阅、首次设置、迁移、设备维护及 `onboarding_apply|compile|enable|disable|select|refresh` 均由 `main.uc` 的前台命令入口执行；`core/activation.uc` 只提供纯函数判定。网络配置、备份恢复、核心维护和 Zashboard 更新与这些动作共用设备 mutation lock，不能并行替换运行输入。supervisor 只通过同一个锁调用内部 `maintain|refresh|recover`，不得直接写 UCI、subscription cache、selector、DNS、nft 或路由。
 
 - onboarding preview 完全只读；apply 在同一锁内重新绑定所选后端当前 Profile、subscription cache
   和生成 policy revision。package 安装不触发 apply；只有用户在 LuCI 明确确认才进入事务；

@@ -4,7 +4,7 @@ import { fixtureScenarios } from '../data/fixtures';
 import type { DeviceConfigSnapshot } from '../types';
 import { ConfigView } from './ConfigView';
 import { ProvidersSection, SafetySection } from './ConfigSections';
-import { configSummary, createConfigDraft, validateConfigDraft } from './model';
+import { configSummary, createConfigDraft, validateConfigDraft, validCidr } from './model';
 
 describe('本地配置参考模型', () => {
   it('原生后端投影保留真实后端身份，不再提供 Nikki 订阅入口', () => {
@@ -103,8 +103,21 @@ describe('本地配置参考模型', () => {
     expect(html).toContain('本地配置交互预览');
     expect(html).toContain('不会写入设备');
     expect(html).toContain('基础接入');
+    expect(html).toContain('网络接入');
+    expect(html).toContain('配置文件与备份');
     expect(html).toContain('机场');
     expect(html).toContain('Nikki + Mihomo');
     expect(html).not.toContain('sing-box');
+  });
+
+  it('支持 IPv4/IPv6 网段及直连目标，并拒绝非法网段和双重目标', () => {
+    expect(validCidr('203.0.113.0/24')).toBe(true);
+    expect(validCidr('2001:db8::/32')).toBe(true);
+    for (const value of ['999.0.0.0/24', '203.0.113.0/33', '2001:db8::/129', 'bad:address::/64', '203.0.113.1', '127.1/8']) expect(validCidr(value)).toBe(false);
+    const draft = createConfigDraft(fixtureScenarios.healthy.status);
+    draft.routingRules = [{ kind: 'ip_cidr', value: '2001:db8::/32', target: 'direct' }];
+    expect(validateConfigDraft(draft).some(error => error.includes('规则'))).toBe(false);
+    draft.routingRules[0].capability = draft.capabilities[0].id;
+    expect(validateConfigDraft(draft)).toContain('每条规则需要选择一个有效出口或直连。');
   });
 });

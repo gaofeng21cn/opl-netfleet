@@ -4,6 +4,7 @@
 'require view';
 'require ui';
 'require netfleet.managed as managed';
+'require netfleet.management as management';
 'require netfleet.api as netfleet';
 'require netfleet.config as netfleetConfig';
 'require netfleet.compatibility as compatibility';
@@ -1135,8 +1136,10 @@ return view.extend({
 				'click': function(event) {
 					event.preventDefault();
 					self.currentView = item[0];
-					if (item[0] === 'events')
+					if (item[0] === 'events') {
+						management.load(self, 'maintenance');
 						self.refreshConnections();
+					}
 					else if (item[0] === 'components') {
 						managed.loadComponents(self);
 						managed.readOperations(self);
@@ -1179,13 +1182,14 @@ return view.extend({
 		else if (this.currentView === 'providers') content = [ managed.operationNode(this, 'subscription') ].concat(providersPage(this.status, this));
 		else if (this.currentView === 'regions') content = regionsPage(this.status);
 		else if (this.currentView === 'config') content = [ netfleetConfig.render(this) ];
-		else if (this.currentView === 'components') content = [ managed.components(this) ];
+		else if (this.currentView === 'components') content = [ managed.components(this), management.dashboard(this) ];
 		else if (this.currentView === 'events') content = eventsPage(this.status, this.events, this.connections, this.connectionsLoading, this.connectionsError, this.eventPage, function(page) {
 			self.eventPage = page;
 			self.redraw();
-		});
+		}).concat([ management.maintenance(this) ]);
 		else content = overviewPage(this.status, this.events, function(target) {
 			self.currentView = target;
+			if (target === 'events') management.load(self, 'maintenance');
 			self.redraw();
 		});
 		if (this.currentView === 'overview' || this.currentView === 'events')

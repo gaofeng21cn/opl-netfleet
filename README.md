@@ -61,9 +61,15 @@ Mihomo 负责连接与节点健康检查，NetFleet 负责统一策略、跨机�
 - 独立打开完整 Zashboard，观察 Mihomo 实时连接、流量、规则命中和代理组；
 - 周期性订阅刷新、配置重编译和自动选优；
 - 原生后端的 IPv4/IPv6 TCP、UDP 透明代理，以及 LAN 和路由器本机 DNS 接管；
+- 原生网络接入设置：DNS 上游与域名覆盖、LAN/本机代理范围、设备规则、监听端口和认证；
+- 域名后缀与 IPv4/IPv6 CIDR 业务规则，可指定出口或直连；
+- 本地配置文件导入、下载、受控编辑，以及 NetFleet 私有配置备份与恢复；
+- 核心重启、重载和脱敏启动日志，以及独立的 Zashboard 资源版本检查与更新；
 - OpenWrt APK/IPK 软件包、签名 APK feed 和 Fleet 声明式部署。
 
-NetFleet 的事件与诊断页保留日常排查摘要；“实时运行”在新标签页打开完整 Zashboard。两种后端共用独立入口，读取当前 controller 和资源状态。连接参数沿用 Zashboard 的带密钥 URL 方式，不写入 NetFleet 日志或展示缓存。
+NetFleet 的事件与诊断页保留日常排查摘要；“Zashboard”在新标签页打开完整页面。两种后端共用独立入口，读取当前 controller 和资源状态。连接参数沿用 Zashboard 的带密钥 URL 方式，不写入 NetFleet 日志或展示缓存。
+
+原生网络接入当前支持 TProxy。Mihomo 本身也支持 TUN 和 Redirect，但 NetFleet 尚未适配和验证这些模式在 OpenWrt 上的接管、清理与失败恢复，因此界面不开放模式切换。网络接入、配置文件和资源更新由原生后端管理；Nikki 模式仍由 Nikki 负责对应资源。
 
 ## 安装
 
@@ -91,7 +97,7 @@ uclient-fetch -q -O /tmp/install-netfleet.sh https://github.com/gaofeng21cn/opl-
 3. 在用户确认后生成策略、编译配置并启动 NetFleet；
 4. 回读运行状态和保护探针结果。
 
-整个过程由设备本地完成。订阅 URL 和令牌保存在所选后端的私有配置中，不进入 policy 或公开状态。接管后可维护机场角色、地区映射、出口能力、业务绑定、私有域名规则、自动周期和保护探针。原生订阅地址由独立“管理订阅”入口保存；修改来源不会自动停网，更新成功前继续使用上次可用缓存。
+整个过程由设备本地完成。订阅 URL 和令牌保存在所选后端的私有配置中，不进入 policy 或公开状态。接管后可维护机场角色、地区映射、出口能力、业务绑定、域名与网段规则、自动周期和保护探针。原生订阅地址由独立“管理订阅”入口保存；修改来源不会自动停网，更新成功前继续使用上次可用缓存。
 
 已有 Nikki 设备需要切换后端时，在“配置 -> 基础接入”选择“迁移到 NetFleet 原生后端”。迁移前检查真实资源和业务；成功后只运行原生后端，失败恢复旧后端，不长期双写。后端迁移与普通软件升级不是同一操作。
 
@@ -99,6 +105,8 @@ uclient-fetch -q -O /tmp/install-netfleet.sh https://github.com/gaofeng21cn/opl-
 
 LuCI 的“组件与更新”页显示组件安装版本、Mihomo 运行版本及关键依赖，可手动检查软件源。
 NetFleet 与 LuCI 界面一起更新；原生后端的 Mihomo 单独确认更新，先验证当前配置，失败时恢复旧包和运行状态。不默认无人值守升级，也不升级整个系统。
+
+同页的 Zashboard 区域独立检查和更新官方静态资源，不重启 Mihomo 或修改连接凭据。没有安装版本记录时显示“版本未记录”，不从文件时间猜测版本；检查更新后才展示可用版本。软件包、代理核心和面板资源分别确认，不隐式捆绑更新。
 
 完成首次安装后，OpenWrt 可以直接从已配置的软件源升级：
 
@@ -109,6 +117,14 @@ apk update && apk upgrade opl-netfleet luci-app-netfleet
 软件包升级只更新程序文件，现有策略、订阅缓存和当前运行配置会继续保留；升级完成后可在 NetFleet 页面检查状态并决定何时应用新配置。也可以重新执行一次性安装入口，它会补齐缺失的 NetFleet 包，再定向升级这两个包，不会重复创建实例配置或主动升级已满足约束的基础依赖。不要省略升级命令中的包名，以免变成全系统升级。
 
 ## 日常使用
+
+### 配置与维护
+
+“配置 -> 网络接入”管理原生后端的 DNS、代理范围、设备规则、监听和认证，应用前校验，失败恢复原配置；不修改 OpenWrt 的 WAN/LAN 地址或默认路由。业务流量的域名与网段分流在“业务规则”中配置。
+
+“配置 -> 配置文件与备份”用于导入、下载和编辑本地配置，以及导出或恢复 NetFleet 备份。使用中的文件不能直接覆盖或删除。备份包含订阅地址等私有数据，不是系统固件备份，应妥善保管。
+
+“事件与诊断”提供核心重启、重载及按需读取的启动日志；即使 Mihomo 控制接口不可用，仍可排查启动错误。管理范围与恢复规则见[设备独立管理](docs/architecture/management.md)。
 
 ### 自动选优
 
@@ -166,6 +182,7 @@ NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
 
 - [文档索引](docs/README.md)
 - [架构总览](docs/architecture/overview.md)
+- [设备独立管理](docs/architecture/management.md)
 - [UI 设计](docs/design/ui.md)
 - [产品白皮书](docs/product/whitepaper.md)
 - [开发与设备操作规则](AGENTS.md)

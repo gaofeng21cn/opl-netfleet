@@ -21,7 +21,8 @@
 和额度、到期、更新元数据语义；policy 只引用 section ID，不保存凭据。缓存路径为
 `/etc/opl-netfleet/native/subscriptions/<section>.yaml`，正文保存完整订阅的 JSON 对象，可供同一份编译输入、
 恢复 Profile 和 Mihomo file provider 使用。目录 `0700`、私有文件与 UCI 配置 `0600`；
-URL、凭据和响应头只经过私有输入文件，不进入命令行、UI 返回值、日志或 Git。
+URL、凭据和响应头只经过私有输入文件，不进入命令行、公共状态、日志或 Git；经过认证的
+订阅编辑界面可以读取当前来源地址，具体传输与缓存边界见[公开接口](interfaces.md)。
 
 编辑与运行应用分开：保存 URL/UA 不下载、不停服务、不替换当前有效缓存。来源身份改变后
 投影为 `pending_update`；仍在使用旧有效缓存时标明 `using_previous_cache`，不能把它
@@ -43,8 +44,9 @@ policy、compiler、manifest、activation、selection、evidence、supervisor �
 
 `nikki-mihomo` 保留 Nikki 已可独立工作的 Profile、订阅和数据面；NetFleet 是可选增强层。
 `native-mihomo` 由 NetFleet 管理订阅与 Mihomo，并复用 Nikki 开源网络接管模块，不要求
-安装 Nikki。它当前只支持 TCP 与 UDP TProxy，不支持 redirect 或 TUN；原生默认 DNS
-为 redir-host。业务流量 fallback、关闭时恢复原始配置与最终网络直通是不同语义，
+安装 Nikki。原生网络接入当前选择 TCP 与 UDP TProxy，默认 DNS 为 redir-host；
+Mihomo 自身具备 TUN/Redirect，但 NetFleet 未提供这两种模式的系统接管与恢复适配，
+不能把核心已有能力当作插件可切换模式。业务流量 fallback、关闭时恢复原始配置与最终网络直通是不同语义，
 任何 backend 都必须遵守相同安全下限。
 
 已有 Nikki 用户通过显式迁移保留订阅、私有 mixin、规则资源与能力配置；空白设备通过
@@ -109,6 +111,9 @@ automatic capability 必须形成无环依赖图，并且只有一个不声明 `
 | NetFleet I/O adapter | `adapters/uci.uc` 提供 JSON/YAML、UCI、quota、摘要和 evidence 的共享 I/O；私有文件与服务助手只在各 owner 的限定写集内使用，不形成第二配置源 |
 | Native setup owner | 在空白设备上绑定发现 revision，创建私有订阅与 DNS/controller 配置，验证基础 gateway，再交给共享 onboarding；失败恢复设置前状态 |
 | Backend migration owner | 将已工作的 Nikki 私有输入投影到原生 namespace，串行交接后执行共享 compile/enable/readback；失败恢复旧后端，不双写、不常驻 |
+| Network management owner | `application/network.uc` 通过受限结构管理原生 UCI/mixin 的 DNS、代理范围与监听；只保存声明并调用既有 runtime owner，保留未公开字段，不持有第二套 nft 或路由实现 |
+| Maintenance owner | `application/maintenance.uc` 管理本地 Profile、限定范围的配置备份恢复、核心维护与有界诊断；所有运行变化继续复用既有 activation/runtime owner |
+| Dashboard resource owner | `application/dashboard.uc` 管理原生 Zashboard 的已安装资源身份、显式版本检查和可恢复更新；不拥有核心包、controller 或后台更新循环 |
 | NetFleet activation owner | 唯一 one-shot 进程是 `main.uc`，执行 compile、enable、disable 和有限 select 事务；`core/activation.uc` 只提供前置条件、active 判定和 passthrough 纯函数，不持有 I/O 或恢复循环 |
 | NetFleet supervisor | 只在 policy 允许时调度既有 automatic 轮次，并在 active runtime 连续失联超过 grace 后调用既有 recovery owner；不判断候选、不保存排名、不清理 DNS/nft/路由 |
 | canonical deploy owner | 为 Fleet/可重复运维从精确 Git commit/tree 和私有 deployment bundle 完成兼容性预检、依赖补齐、Nikki 原生基线准备、NetFleet 安装/恢复和 installed parity；它不是独立插件首次设置的前置条件 |
@@ -197,7 +202,7 @@ target-local 配置只保留下列 owner 分区：
 - `main`：`target`、`enabled`；
 - `policy_source`：优先使用 `kind=bundle` 与稳定 bundle ID；也可使用 `kind=profile` 及所选后端 Profile `ref`；
 - `recovery_profile`：独立的所选后端 Profile `ref`；
-- `routing_rules`：可选的 target-local 结构化规则，只保存 `domain_suffix`、域名后缀和 capability ID；compiler 将其投影到生成 Profile 的 capability selector，不写入后端全局 mixin，也不改变 Recovery Profile；
+- `routing_rules`：可选的有序 target-local 规则，`kind` 为 `domain_suffix` 或 `ip_cidr`，`value` 为域名后缀或 IPv4/IPv6 网络前缀；目标二选一：`capability` 引用启用能力，或 `target:"direct"` 表示直连且不得同时携带 capability。地址由平台 IP 解析器校验，CIDR 必须没有主机位，IPv6 规范化后判重。compiler 只将规则投影到生成 Profile，不写入后端全局 mixin，也不改变 Recovery Profile；
 - `provider`：稳定 ID、所选后端 subscription section、`subscription|buyout` 计费类型、enabled，以及必需的 `primary|reserve` 故障层级；
 - `binding`：基础策略组的精确名称到 `{capability, kind: entry|policy}`；
 - `capability`：显示名、纯展示 `display_order`、enabled、`manual|automatic`、允许/排除地区、可选的 `prefer_region_from` 和两个门槛覆盖；
@@ -212,6 +217,11 @@ target-local 配置只保留下列 owner 分区：
 不创建 `ProviderBinding` 与 `ProviderPolicy` 两套存储，不提交订阅 URL、token、节点、resolver 或完整配置。跨设备安装所需的订阅凭据、target-local `routing_rules`、provider bootstrap DNS mixin 和 `platform.json` 属于用户私有 OPL Instance 所生成的 deployment bundle；只有稳定 section ID 被 policy 引用。mixin 只保留确有设备证据的 provider 入口 DNS 例外，不能重新拥有规则、策略组或全局平台值；platform 不是 engine 配置，也不能成为算法分支。未知组、未知能力、歧义引用、未知地区和 AI 香港候选必须在 compile 阶段拒绝或排除。provider source、生成文件和运行快照留在设备私有 state，Git 只保存脱敏合同、机场无关规则与真正被 caller 消费的实现。
 
 设备配置 owner 可以通过结构化 LuCI 请求增删上述 policy 中的 provider、region、capability、binding 和 `routing_rules`，但只能引用设备已经存在的稳定 subscription、共享地区目录及当前 Policy Source 已存在的策略组。provider ID 使用 subscription section；自动发现与高级编辑共用同一个地区目录和 filter owner，浏览器不能创建正则或节点副本。该能力只把单设备的 policy 结构从 private renderer 迁入 target-local owner，不改变订阅 owner、mixin、platform 或 Mihomo 的责任。
+
+原生网络声明与本地配置文件属于独立管理对象，不增加 policy 分区。network owner 的受限
+表单修改当前 gateway 已消费的 UCI/mixin；maintenance owner 管理私有 Profile 和备份。
+二者都不能把运行快照变成另一份配置源，也不能通过通用 JSON/UCI 编辑绕过已选后端的
+安全边界。详细对象、文件范围和恢复合同统一见[设备独立管理](management.md)。
 
 ### CompiledProfile
 

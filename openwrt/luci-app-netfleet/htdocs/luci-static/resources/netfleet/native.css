@@ -1550,3 +1550,12 @@
 .netfleet-native .netfleet-component-meta dd { margin: 0; overflow-wrap: anywhere; }
 .netfleet-native .netfleet-dependencies { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 28px; padding: 18px 0; list-style: none; }
 .netfleet-native .netfleet-dependencies li { display: flex; justify-content: space-between; gap: 16px; }
+.netfleet-native .netfleet-management-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.netfleet-native .netfleet-management-fields h4 { margin: 28px 0 14px; font-size: 16px; }
+.netfleet-native .netfleet-management-section { margin: 26px 0; padding-top: 18px; border-top: 1px solid var(--nf-border, #ddd); }
+.netfleet-native .netfleet-management-table { overflow-x: auto; margin: 16px 0; }
+.netfleet-native .netfleet-management-table table { width: 100%; min-width: 620px; }
+.netfleet-native .netfleet-management-table td { vertical-align: top; }
+.netfleet-native .netfleet-list-input { width: 100%; min-width: 180px; resize: vertical; font: inherit; line-height: 1.5; }
+.netfleet-native .netfleet-profile-editor { width: 100%; min-height: 320px; max-height: 60vh; box-sizing: border-box; resize: vertical; font-family: monospace; line-height: 1.6; }
+.netfleet-native .netfleet-core-log { max-height: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; padding: 16px; }
