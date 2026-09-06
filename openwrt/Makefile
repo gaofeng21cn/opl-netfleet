@@ -12,7 +12,7 @@ define Package/opl-netfleet
   SECTION:=net
   CATEGORY:=Network
   TITLE:=OPL NetFleet network enhancement
-  DEPENDS:=+ucode +ucode-mod-fs +ucode-mod-uci +ucode-mod-ubus +ucode-mod-uloop +yq +mihomo +curl +ca-bundle +unzip +flock +ip-full +nftables-json +kmod-nft-socket +kmod-nft-tproxy
+  DEPENDS:=+ucode +ucode-mod-fs +ucode-mod-uci +ucode-mod-ubus +ucode-mod-uloop +yq +mihomo +curl +ca-bundle +unzip +coreutils-timeout +flock +ip-full +nftables-json +kmod-nft-socket +kmod-nft-tproxy
   PKGARCH:=all
 endef
 

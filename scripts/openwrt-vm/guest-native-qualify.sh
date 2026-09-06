@@ -54,7 +54,7 @@ stage=dependencies
 ip route replace default via 192.168.1.2 dev br-lan
 printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
 apk --timeout 120 update >"$work/packages.log" 2>&1 || true
-apk --timeout 120 add curl unzip ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket socat bind-dig \
+apk --timeout 120 add curl unzip coreutils-timeout ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket socat bind-dig \
 	ucode-mod-fs ucode-mod-uci ucode-mod-ubus ucode-mod-uloop >>"$work/packages.log" 2>&1
 gzip -dc /tmp/mihomo-linux-arm64-v1.19.30.gz >"$work/bin/mihomo"
 chmod 0755 "$work/bin/mihomo"

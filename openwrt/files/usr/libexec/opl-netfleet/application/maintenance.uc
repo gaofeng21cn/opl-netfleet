@@ -121,7 +121,7 @@ function test_candidate(path, work) {
 	if (type(value) != "object") return false;
 	const validation = `${work}/validation.json`;
 	return write_private(validation, sprintf("%J", value)) &&
-		shell(`SAFE_PATHS=${q(`${work}/inputs`)} mihomo -t -d ${q(`${work}/inputs/native/run`)} -f ${q(validation)}`);
+		shell(`SAFE_PATHS=${q(`${work}/inputs`)} timeout -s KILL 45 mihomo -t -d ${q(`${work}/inputs/native/run`)} -f ${q(validation)}`);
 };
 function stage_input(work, relative, content) {
 	const path = `${work}/inputs/${relative}`;
