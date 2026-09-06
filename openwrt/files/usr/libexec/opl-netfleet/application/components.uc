@@ -206,29 +206,38 @@ function stop_services(work) {
 	return false;
 };
 function restore_services(before, work) {
+	const deadline = time() + 45;
 	if (before.core && !run_command(`/etc/init.d/${SERVICE} start`, work)) return false;
 	if (before.core) {
 		let ready = false;
-		for (let attempt = 0; attempt < 20; attempt++) {
-			if (controller_version(api_secret(), 2) != null) { ready = true; break; }
+		while (time() < deadline) {
+			if (!same_inputs(before)) return false;
+			const secret = api_secret();
+			const current = controller_version(secret, 2) != null ? proxies(secret, 2)?.proxies : null;
+			ready = current != null;
+			for (let name, choice in before.selections) {
+				if (index(current?.[name]?.all ?? [], choice) < 0) { ready = false; continue; }
+				if (current[name].now != choice && !select(secret, name, choice)) ready = false;
+			}
+			const restored = ready ? proxies(secret, 2)?.proxies : null;
+			for (let name, choice in before.selections) if (restored?.[name]?.now != choice) ready = false;
+			if (ready) break;
 			system("sleep 1");
 		}
 		if (!ready) return false;
-		const secret = api_secret();
-		const current = proxies(secret, 2)?.proxies ?? {};
-		for (let name, choice in before.selections) {
-			if (index(current[name]?.all ?? [], choice) < 0 || !select(secret, name, choice)) return false;
-		}
-		const restored = proxies(secret, 2)?.proxies ?? {};
-		for (let name, choice in before.selections) if (restored[name]?.now != choice) return false;
 	}
 	if (before.supervisor && !run_command("/etc/init.d/opl-netfleet start", work)) return false;
-	const status = parsed(`ucode ${q(MAIN)} status`)?.result;
 	if (before.unconfigured) return !before.core && same_inputs(before);
-	if (status == null || status.active != before.active) return false;
-	if (before.core && (status.runtime?.controller_available != true ||
-		(KIND == "native-mihomo" && (status.runtime?.lan_runtime?.dns_ready != true || status.runtime?.lan_runtime?.transparent_proxy_ready != true)))) return false;
-	return same_inputs(before) && (!before.core || probe_ok());
+	// Controller readiness precedes provider loading, gateway attachment and working DNS.
+	while (time() < deadline) {
+		if (!same_inputs(before)) return false;
+		const status = parsed(`ucode ${q(MAIN)} status`)?.result;
+		if (status != null && status.active == before.active && (!before.core ||
+			(status.runtime?.controller_available == true && (KIND != "native-mihomo" ||
+			(status.runtime?.lan_runtime?.dns_ready == true && status.runtime?.lan_runtime?.transparent_proxy_ready == true)) && probe_ok()))) return true;
+		system("sleep 1");
+	}
+	return false;
 };
 function upgrade(request, work, candidates) {
 	const names = request.component == "netfleet" ? [PACKAGES[0], PACKAGES[1]] : [PACKAGES[2]];
