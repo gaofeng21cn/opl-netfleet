@@ -150,7 +150,7 @@ else
 	chmod 0755 "$work/bin/yq"
 	ln -s "$work/bin/yq" /usr/bin/yq
 	cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
-	mkdir -p /usr/share/opl-netfleet /etc/opl-netfleet
+	mkdir -p /usr/share/opl-netfleet /etc/opl-netfleet/policy-sources
 	cp -R /tmp/openwrt/files/usr/share/opl-netfleet/nikki /usr/share/opl-netfleet/
 	cp /tmp/openwrt/files/etc/config/netfleet /usr/share/opl-netfleet/netfleet.config
 	cp /tmp/openwrt/files/etc/opl-netfleet/policy.example.json /etc/opl-netfleet/policy.example.json
