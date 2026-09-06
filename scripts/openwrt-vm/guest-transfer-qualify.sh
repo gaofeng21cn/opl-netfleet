@@ -51,7 +51,7 @@ finish() {
 	# No session token, private backup, or uploaded request remains in the receipt directory.
 	rm -f "$success_upload" "$stale_upload" "$invalid_upload" "$denied_upload" \
 		"$work/session.json" "$work/session-id" "$work/session-destroy.json" "$work/grant-file.json" \
-		"$work/grant-ubus.json" "$work/rpc-request.json" "$work/upload-request.json" \
+		"$work/grant-ubus.json" "$work/grant-upload.json" "$work/rpc-request.json" "$work/upload-request.json" \
 		"$work/stale-request.json" "$work/invalid-request.json" "$work/profile-response.json" \
 		"$work/backup-response.json" "$work/expected-profile.yaml" "$work/cleanup-request.json"
 	if [ "$rc" -ne 0 ]; then
@@ -102,7 +102,9 @@ ucode -e 'import { readfile } from "fs";
 		if (index(acl?.read?.ubus?.["opl-netfleet"] ?? [], method) < 0) exit(1);
 	for (let method in ["profile_save","profile_delete"])
 		if (index(acl?.write?.ubus?.["opl-netfleet"] ?? [], method) < 0) exit(1);
-	if (index(acl?.write?.file?.["/usr/libexec/opl-netfleet-transfer"] ?? [], "exec") < 0 ||
+	if (index(acl?.write?.["cgi-io"] ?? [], "upload") < 0 || index(acl?.read?.["cgi-io"] ?? [], "exec") < 0 ||
+		index(acl?.write?.file?.["/usr/libexec/opl-netfleet-transfer profile-get *"] ?? [], "exec") < 0 ||
+		index(acl?.write?.file?.["/usr/libexec/opl-netfleet-transfer backup-export"] ?? [], "exec") < 0 ||
 		index(acl?.write?.file?.["/tmp/opl-netfleet-upload.*.json"] ?? [], "write") < 0) exit(1);' \
 	/usr/share/rpcd/acl.d/luci-app-netfleet.json
 ubus call service list '{"name":"opl-netfleet-core"}' >"$work/service-before.json"
@@ -115,13 +117,16 @@ ucode -e 'import { readfile, writefile } from "fs";
 	if (!match(session ?? "", /^[a-f0-9]{32}$/)) exit(1);
 	writefile(ARGV[1]+"/session-id", session);
 	writefile(ARGV[1]+"/session-destroy.json", sprintf("%J", {ubus_rpc_session:session}));
+	writefile(ARGV[1]+"/grant-upload.json", sprintf("%J", {ubus_rpc_session:session,scope:"cgi-io",objects:[["upload","write"],["exec","read"]]}));
 	writefile(ARGV[1]+"/grant-file.json", sprintf("%J", {ubus_rpc_session:session,scope:"file",objects:[
-		["/usr/libexec/opl-netfleet-transfer","exec"],
+		["/usr/libexec/opl-netfleet-transfer profile-get *","exec"],
+		["/usr/libexec/opl-netfleet-transfer backup-export","exec"],
 		[ARGV[2],"write"],[ARGV[3],"write"],[ARGV[4],"write"]]}));
 	writefile(ARGV[1]+"/grant-ubus.json", sprintf("%J", {ubus_rpc_session:session,scope:"ubus",objects:[
 		["opl-netfleet","maintenance_get"],["opl-netfleet","profile_save"],["opl-netfleet","profile_delete"]]}));' \
 	"$work/session.json" "$work" "$success_upload" "$stale_upload" "$invalid_upload"
 ubus call session grant "$(cat "$work/grant-file.json")" >/dev/null
+ubus call session grant "$(cat "$work/grant-upload.json")" >/dev/null
 ubus call session grant "$(cat "$work/grant-ubus.json")" >/dev/null
 rpc_request maintenance_get
 assert_json "$work/rpc-response.json" '@.result[1].ok' true
@@ -182,7 +187,9 @@ upload_status=$(curl -q -sS --noproxy '*' --proxy '' --connect-timeout 3 --max-t
 	-F 'sessionid=00000000000000000000000000000000' -F "filename=$denied_upload" \
 	-F "filedata=@$work/invalid-request.json;type=application/json" -o "$work/denied-upload.json" -w '%{http_code}' \
 	http://127.0.0.1/cgi-bin/cgi-upload)
-test "$upload_status" = 403
+# cgi-upload reports denied uploads in its JSON failure envelope with HTTP 200.
+test "$upload_status" = 200
+assert_json "$work/denied-upload.json" '@.failure[0]' 1
 test ! -e "$denied_upload"
 execute_status=$(curl -q -sS --noproxy '*' --proxy '' --connect-timeout 3 --max-time 30 \
 	--data-urlencode 'sessionid=00000000000000000000000000000000' --data-urlencode "command=$helper profile-get $profile" \
@@ -190,7 +197,7 @@ execute_status=$(curl -q -sS --noproxy '*' --proxy '' --connect-timeout 3 --max-
 test "$execute_status" = 403
 stage=command_whitelist
 command_status=$(curl -q -sS --noproxy '*' --proxy '' --connect-timeout 3 --max-time 30 \
-	--data-urlencode "sessionid@$work/session-id" --data-urlencode 'command=/usr/bin/uci show netfleet' \
+	--data-urlencode "sessionid@$work/session-id" --data-urlencode 'command=/sbin/uci show netfleet' \
 	-o "$work/denied-command.json" -w '%{http_code}' http://127.0.0.1/cgi-bin/cgi-exec)
 test "$command_status" = 403
 

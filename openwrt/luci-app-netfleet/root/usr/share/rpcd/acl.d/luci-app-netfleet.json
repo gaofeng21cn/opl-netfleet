@@ -2,13 +2,16 @@
   "luci-app-netfleet": {
     "description": "Discover, configure, operate, and restore NetFleet",
     "read": {
+      "cgi-io": [ "exec" ],
       "ubus": {
         "opl-netfleet": [ "network_get", "network_validate", "maintenance_get", "profile_get", "diagnostics_get", "components_get", "operation_get", "native_setup_get", "dashboard_get", "subscriptions_get", "migration_get", "onboarding_get", "status", "events", "connections", "probe", "config_get", "config_validate" ]
       }
     },
     "write": {
+      "cgi-io": [ "upload" ],
       "file": {
-        "/usr/libexec/opl-netfleet-transfer": [ "exec" ],
+        "/usr/libexec/opl-netfleet-transfer profile-get *": [ "exec" ],
+        "/usr/libexec/opl-netfleet-transfer backup-export": [ "exec" ],
         "/tmp/opl-netfleet-upload.*.json": [ "write" ]
       },
       "ubus": {

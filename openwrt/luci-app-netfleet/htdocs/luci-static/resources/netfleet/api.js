@@ -112,7 +112,7 @@ function transferWrite(method, value) {
 	form.append('filedata', new Blob([JSON.stringify({ request: value })], { type: 'application/json' }), 'request.json');
 	return request.post(L.env.cgi_base + '/cgi-upload', form).then(function(response) {
 		const result = response.json();
-		if (!response.ok || result.error) throw new Error('transfer_upload_failed');
+		if (!response.ok || result.error || result.failure) throw new Error('transfer_upload_failed');
 		return executeRequest(method, { upload_id: id });
 	});
 }

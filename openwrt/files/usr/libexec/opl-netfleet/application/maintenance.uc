@@ -128,6 +128,25 @@ function stage_input(work, relative, content) {
 	return shell(`mkdir -p ${q(parent(path))}`) && write_private(path, content);
 };
 
+function collect_files() {
+	const paths = [];
+	function visit(relative) {
+		const path = `${ROOT}/${relative}`, info = fs.lstat(path);
+		if (info == null) return;
+		if (info.type == "directory") {
+			for (let name in sort(fs.lsdir(path) ?? [])) visit(`${relative}/${name}`);
+		} else if (file_path(relative)) {
+			// Credentials stay private; packaged baselines and public rule data may be 0644.
+			if (!readable_input(path)) die("unsafe_backup_input");
+			push(paths, relative);
+		}
+	};
+	for (let name in ["policy-sources", "native/profiles", "native/subscriptions", "native/mixin.json", "native/providers", "native/rulesets", "native/geodata", "native/certs",
+		"native/run/providers", "native/run/rulesets", "native/run/geodata", "native/run/certs"]) visit(name);
+	for (let name in ["geoip.dat", "geosite.dat", "country.mmdb", "GeoIP.dat", "GeoSite.dat", "Country.mmdb", "ASN.mmdb"]) visit(`native/run/${name}`);
+	return paths;
+};
+
 export function profile_save(path) {
 	const checked = input(path, MAX_PROFILE_BYTES + 32768);
 	if (!checked.ok) return checked;
@@ -164,24 +183,6 @@ export function profile_delete(path) {
 	return fs.unlink(`${PROFILES}/${id}`) ? get() : failure("profile_delete_failed");
 };
 
-function collect_files() {
-	const paths = [];
-	function visit(relative) {
-		const path = `${ROOT}/${relative}`, info = fs.lstat(path);
-		if (info == null) return;
-		if (info.type == "directory") {
-			for (let name in sort(fs.lsdir(path) ?? [])) visit(`${relative}/${name}`);
-		} else if (file_path(relative)) {
-			// Credentials stay private; packaged baselines and public rule data may be 0644.
-			if (!readable_input(path)) die("unsafe_backup_input");
-			push(paths, relative);
-		}
-	};
-	for (let name in ["policy-sources", "native/profiles", "native/subscriptions", "native/mixin.json", "native/providers", "native/rulesets", "native/geodata", "native/certs",
-		"native/run/providers", "native/run/rulesets", "native/run/geodata", "native/run/certs"]) visit(name);
-	for (let name in ["geoip.dat", "geosite.dat", "country.mmdb", "GeoIP.dat", "GeoSite.dat", "Country.mmdb", "ASN.mmdb"]) visit(`native/run/${name}`);
-	return paths;
-};
 function sections() {
 	const result = [], uci = cursor();
 	uci.foreach("netfleet", null, (section) => {

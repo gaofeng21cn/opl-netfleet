@@ -250,9 +250,9 @@ assert.deepEqual(wire[0].args[0].routing_rules, [{ kind: 'ip_cidr', value: '2001
     def test_luci_file_transport_uses_authenticated_upload_and_small_rpc_reference(self):
         self.run_js(r"""
 const calls = [], posts = [], reads = [];
-let uploadFails = false;
+let uploadFails = false, envelopeFails = false;
 const rpc = { getSessionID: () => 'fixture-session', declare: options => (...args) => { calls.push({ method: options.method, args, nobatch: options.nobatch }); return Promise.resolve({ ok: true, result: { saved: true } }); } };
-const request = { post: async (url, form) => { posts.push({ url, form }); return { ok: !uploadFails, json: () => uploadFails ? { error: 'denied' } : {} }; } };
+const request = { post: async (url, form) => { posts.push({ url, form }); return { ok: !uploadFails, json: () => envelopeFails ? { failure: [1, 'Operation not permitted'] } : uploadFails ? { error: 'denied' } : {} }; } };
 const localFs = { exec_direct: async (...args) => { reads.push(args); return { ok: true, result: { filename: 'netfleet-backup.json', backup: {} } }; } };
 const L = { env: { rpctimeout: 20, cgi_base: '/cgi-bin' } };
 const window = { crypto: { getRandomValues: value => { value.fill(7); return value; } } };
@@ -273,6 +273,8 @@ assert.deepEqual(JSON.parse(await posts[1].form.get('filedata').text()), { reque
 await api.profileGet('local.json'); await api.backupExport();
 assert.deepEqual(reads, [['/usr/libexec/opl-netfleet-transfer', ['profile-get', 'local.json'], 'json'], ['/usr/libexec/opl-netfleet-transfer', ['backup-export'], 'json']]);
 uploadFails = true;
+await assert.rejects(api.profileSave(profile), /transfer_upload_failed/);
+uploadFails = false; envelopeFails = true;
 await assert.rejects(api.profileSave(profile), /transfer_upload_failed/);
 assert.equal(calls.length, 2, 'failed upload must not invoke mutation RPC');
 assert.equal(L.env.rpctimeout, 20);
