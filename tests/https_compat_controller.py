@@ -78,6 +78,15 @@ class Controller(unittest.TestCase):
         subprocess.run(["python3", CONTROL, "tick"], check=True, capture_output=True, timeout=10)
         self.assertFalse(self.call("get")["requested"])
         subprocess.run(["python3", CONTROL, "drain"], check=True, capture_output=True, timeout=10)
+        public_ca = Path("/etc/opl-netfleet/compatibility/ca/mitmproxy-ca-cert.pem")
+        original = public_ca.read_bytes()
+        try:
+            public_ca.write_bytes(b"")
+            state = self.call("get")
+            self.assertIsNone(state["ca_sha256"])
+            self.assertFalse(self.call("disable", {"revision": state["revision"]})["requested"])
+        finally:
+            public_ca.write_bytes(original)
 
 
 if __name__ == "__main__":

@@ -59,7 +59,10 @@ def ca_fingerprint():
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes
     path = CA / "mitmproxy-ca-cert.pem"
-    return x509.load_pem_x509_certificate(path.read_bytes()).fingerprint(hashes.SHA256()).hex() if path.exists() else None
+    try:
+        return x509.load_pem_x509_certificate(path.read_bytes()).fingerprint(hashes.SHA256()).hex()
+    except (OSError, ValueError):
+        return None
 
 
 def prepare_ca():
@@ -80,6 +83,14 @@ def prepare_ca():
     for path in CA.iterdir():
         if path.is_file():
             os.chmod(path, 0o600)
+            with path.open("rb") as stream:
+                os.fsync(stream.fileno())
+    for directory in (CA, BASE):
+        descriptor = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
 
 def engine_health(probe=False):
@@ -155,6 +166,8 @@ def status():
         reason = "lease_expired"
     if not config["enabled"]:
         reason = "draining" if health.get("active_connections") else "disabled"
+    elif not fingerprint:
+        reason = "ca_not_ready"
     return {"installed": True, "revision": revision(), "config": config, "requested": config["enabled"],
             **kernel, "reason": reason, "active_connections": health.get("active_connections"),
             "device_connections": {device["id"]: sum(health.get("clients_by_address", {}).get(address, 0) for address in device["addresses"])
@@ -307,7 +320,7 @@ def apply(action, request):
     elif action in ("enable", "disable"):
         config["enabled"] = action == "enable"
     gateway.bypass()
-    if config["enabled"] or config["devices"]:
+    if action != "disable" and (config["enabled"] or config["devices"]):
         prepare_ca()
     atomic(CONFIG, config)
     atomic(EFFECTIVE, effective(config, read(TRUST, {}), ca_fingerprint()))

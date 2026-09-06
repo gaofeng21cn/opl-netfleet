@@ -6,6 +6,7 @@
 function reason(value) {
 	return ({ disabled: '已关闭', draining: '停止接管，正在排空', recovering: '健康观察中',
 		rules_recovering: '规则恢复中', component_not_installed: '未安装可选组件',
+		ca_not_ready: 'CA 未就绪，当前旁路',
 		lease_expired: '接管许可已到期', maintenance: '组件维护中，当前旁路', no_verified_targets: '没有已验证的接入目标',
 		manual_recovery_required: '故障频繁，等待人工恢复', processing_chain_failed: '本地处理链异常',
 		engine_unavailable: '兼容引擎未就绪', engine_config_pending: '等待引擎载入配置',
