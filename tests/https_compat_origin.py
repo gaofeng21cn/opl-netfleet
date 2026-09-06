@@ -19,7 +19,8 @@ async def application(scope, receive, send):
 if __name__ == "__main__":
     directory = Path(sys.argv[1])
     config = Config()
-    config.bind = ["0.0.0.0:" + sys.argv[2], "[::]:" + sys.argv[2]]
+    # Hypercorn's IPv6 socket is dual-stack on Linux (IPV6_V6ONLY=0).
+    config.bind = ["[::]:" + sys.argv[2]]
     config.certfile = str(directory / "upstream.pem")
     config.keyfile = str(directory / "upstream.key")
     config.alpn_protocols = ["h2", "http/1.1"]

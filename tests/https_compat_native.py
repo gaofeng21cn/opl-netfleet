@@ -80,7 +80,8 @@ class Native(Kernel):
         self.owner.call("disable", {"revision": status["revision"]})
 
     async def stop_origin(self):
-        self.origin.terminate()
+        if self.origin.returncode is None:
+            self.origin.terminate()
         await asyncio.wait_for(self.origin.wait(), 5)
 
     async def test_native_egress_and_management_expiry(self):
