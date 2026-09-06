@@ -17,22 +17,25 @@ package=opl-netfleet-https-compat
 test ! -e "$sdk/package/$package"
 restore() {
   rm -rf "$sdk/package/$package"
-  for name in private-key.pem public-key.pem; do
+  for name in private-key.pem public-key.pem .config; do
     rm -f "$sdk/$name"
     test ! -f "$work/$name" || cp -p "$work/$name" "$sdk/$name"
   done
   rm -rf "$work"
 }
 trap restore EXIT
-for name in private-key.pem public-key.pem; do
+for name in private-key.pem public-key.pem .config; do
   test ! -f "$sdk/$name" || cp -p "$sdk/$name" "$work/$name"
 done
 git -C "$repo" archive "$commit" openwrt/https-compat | tar -xf - -C "$work"
 cp -R "$work/openwrt/https-compat" "$sdk/package/$package"
+(cd "$sdk" && ./scripts/feeds install -p base openssl ca-bundle)
+(cd "$sdk" && ./scripts/feeds update -i packages && ./scripts/feeds install -p packages python3)
 cp "$key" "$sdk/private-key.pem"
 chmod 0600 "$sdk/private-key.pem"
 "$sdk/staging_dir/host/bin/openssl" ec -in "$sdk/private-key.pem" -pubout >"$sdk/public-key.pem"
 make -C "$sdk" "package/$package/clean"
+make -C "$sdk" package/toolchain/compile package/feeds/base/openssl/compile NO_DEPS=1 V=s
 make -C "$sdk" "package/$package/compile" NETFLEET_COMPAT_RUNTIME="$runtime" NO_DEPS=1 V=s
 mapfile -t packages < <(find "$sdk/bin/packages" -type f -name "$package-*.apk")
 test "${#packages[@]}" = 1

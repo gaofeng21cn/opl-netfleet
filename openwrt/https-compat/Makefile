@@ -12,7 +12,7 @@ define Package/opl-netfleet-https-compat
   SECTION:=net
   CATEGORY:=Network
   TITLE:=NetFleet optional HTTPS compatibility engine
-  DEPENDS:=+opl-netfleet +python3 +libstdcpp +libopenssl +ca-bundle
+  DEPENDS:=+opl-netfleet +python3 +libstdcpp +libgcc +libopenssl +ca-bundle
 endef
 
 define Package/opl-netfleet-https-compat/description

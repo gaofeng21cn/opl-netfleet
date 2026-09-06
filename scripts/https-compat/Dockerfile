@@ -15,4 +15,5 @@ RUN --mount=type=cache,target=/root/.cache/pip python -m pip wheel --wheel-dir /
 RUN python -m pip install --no-index --find-links /wheels mitmproxy==12.2.3 \
     && mitmdump --version \
     && python -m pip check
-CMD ["python", "-m", "pip", "install", "--no-compile", "--no-index", "--find-links", "/wheels", "--target", "/output/vendor", "-r", "/build/requirements.txt"]
+COPY export-runtime.sh /build/export-runtime.sh
+CMD ["sh", "/build/export-runtime.sh"]
