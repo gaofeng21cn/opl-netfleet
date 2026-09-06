@@ -87,7 +87,7 @@ class ReleaseToolsTests(unittest.TestCase):
                     for dependency in re.findall(r"'require (netfleet\.[\w.]+)(?: as \w+)?';", module.read_text()):
                         self.assertTrue(dependency.startswith(f'netfleet.{version}.'), dependency)
                         pending.append(resources / (dependency.replace('.', '/') + '.js'))
-                self.assertEqual(4, len(visited))
+                self.assertEqual(set((resources / f'netfleet/{version}').glob('*.js')) | {view}, visited)
                 self.assertFalse((resources / 'netfleet/managed.js').exists())
                 namespaces.append({str(path.relative_to(resources)) for path in visited})
             self.assertFalse(namespaces[0] & namespaces[1])

@@ -31,9 +31,10 @@ cp /tmp/openwrt/files/etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet-core
 chmod 0755 /etc/init.d/opl-netfleet-core
 mkdir -p /usr/share/opl-netfleet
 cp -R /tmp/openwrt/files/usr/share/opl-netfleet/nikki /usr/share/opl-netfleet/
-gzip -dc /tmp/mihomo-linux-arm64-v1.19.30.gz >/usr/bin/mihomo
-cp /tmp/yq_linux_arm64-v4.53.6 /usr/bin/yq
-chmod 0755 /usr/bin/mihomo /usr/bin/yq
+gzip -dc /tmp/mihomo-linux-arm64-v1.19.30.gz >/tmp/compat-mihomo
+ln -s /tmp/compat-mihomo /usr/bin/mihomo
+ln -s /tmp/yq_linux_arm64-v4.53.6 /usr/bin/yq
+chmod 0755 /tmp/compat-mihomo /tmp/yq_linux_arm64-v4.53.6
 python3 /tmp/tests/https_compat_native.py >&2
 du -sk /tmp/compat-runtime/vendor >&2
 python3 - "$commit" "$tree" <<'PY'

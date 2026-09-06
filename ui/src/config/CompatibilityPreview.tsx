@@ -11,9 +11,9 @@ export function CompatibilityPreview() {
     </div>
     <div className="nf-config-actions"><button type="button" disabled><RefreshCw aria-hidden="true" />连接验证</button><button type="button" disabled><ShieldCheck aria-hidden="true" />人工恢复</button></div>
     <h3>目标规则</h3>
-    <table><thead><tr><th>启用</th><th>域名</th><th>设备</th><th>策略</th><th>实际协议</th><th>最近结果</th></tr></thead><tbody><tr><td colSpan={6}>暂无规则</td></tr></tbody></table>
+    <div className="nf-table-wrap"><table><thead><tr><th>启用</th><th>域名</th><th>设备</th><th>策略</th><th>实际协议</th><th>最近结果</th></tr></thead><tbody><tr><td colSpan={6}>暂无规则</td></tr></tbody></table></div>
     <h3>设备与信任</h3>
-    <table><thead><tr><th>设备</th><th>系统信任</th><th>Codex App</th><th>CLI</th><th>图片</th></tr></thead><tbody><tr><td colSpan={5}>暂无接入设备</td></tr></tbody></table>
+    <div className="nf-table-wrap"><table><thead><tr><th>设备</th><th>系统信任</th><th>Codex App</th><th>CLI</th><th>图片</th></tr></thead><tbody><tr><td colSpan={5}>暂无接入设备</td></tr></tbody></table></div>
     <h3>兼容事件</h3><p>暂无事件</p>
   </section>;
 }
