@@ -32,6 +32,7 @@ define Package/luci-app-netfleet/install
 	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/api.js $(1)/www/luci-static/resources/netfleet/api.js
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/config.js $(1)/www/luci-static/resources/netfleet/config.js
+	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/compatibility.js $(1)/www/luci-static/resources/netfleet/compatibility.js
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/managed.js $(1)/www/luci-static/resources/netfleet/managed.js
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/native.css $(1)/www/luci-static/resources/netfleet/native.css
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/view/netfleet/overview.js $(1)/www/luci-static/resources/view/netfleet/overview.js

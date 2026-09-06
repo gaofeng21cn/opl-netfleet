@@ -16,6 +16,7 @@ Options:
   --packages <dir>  Also install and qualify the exact APK candidate directory
   --diagnostic <lane>  Run native, setup, migration, runtime, package, or compatibility diagnostics
   --compat-runtime <dir>  Isolated musl dependency payload for compatibility diagnostics
+  --compat-package <dir>  Signed optional APK candidate; requires --packages
   --output <path>   Qualification receipt path outside the repository
   -h, --help        Show this help
 EOF
@@ -31,6 +32,7 @@ output=""
 packages=""
 diagnostic=all
 compat_runtime=""
+compat_package=""
 while (($#)); do
 	case "$1" in
 		--ref)
@@ -59,6 +61,11 @@ while (($#)); do
 			compat_runtime=$(cd "$2" && pwd)
 			shift 2
 			;;
+		--compat-package)
+			(($# >= 2)) || die "--compat-package requires a directory"
+			compat_package=$(cd "$2" && pwd)
+			shift 2
+			;;
 		-h|--help)
 			usage
 			exit 0
@@ -68,10 +75,11 @@ while (($#)); do
 done
 
 [[ -n "$output" ]] || die "--output is required"
-[[ "$diagnostic" != compatibility || -d "$compat_runtime/vendor/mitmproxy" ]] || die "compatibility diagnostic requires --compat-runtime"
+[[ "$diagnostic" != compatibility || -d "$compat_runtime/vendor/mitmproxy" || -f "$compat_package/compat-manifest.json" ]] || die "compatibility diagnostic requires --compat-runtime or --compat-package"
+[[ -z "$compat_package" || "$diagnostic" == compatibility && -n "$packages" ]] || die "--compat-package requires compatibility diagnostic and --packages"
 [[ "$diagnostic" == compatibility || -z "$compat_runtime" ]] || die "compatibility payload is diagnostic-only"
 [[ "$diagnostic" != package || -n "$packages" ]] || die "package diagnostic requires --packages"
-[[ "$diagnostic" == all || "$diagnostic" == package || "$diagnostic" == setup || -z "$packages" ]] || die "only setup and package diagnostics accept --packages"
+[[ "$diagnostic" == all || "$diagnostic" == package || "$diagnostic" == setup || "$diagnostic" == compatibility || -z "$packages" ]] || die "this diagnostic does not accept --packages"
 [[ "$source_ref" != -* ]] || die "source ref cannot begin with '-'"
 [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] ||
 	die "native QEMU qualification requires macOS on Apple Silicon"
@@ -166,6 +174,7 @@ NETFLEET_QEMU_FIRMWARE=$firmware \
 NETFLEET_QEMU_VERSION=$qemu_version \
 	NETFLEET_VM_LANE=$diagnostic \
 	NETFLEET_COMPAT_RUNTIME="$compat_runtime" \
+	NETFLEET_COMPAT_PACKAGE="$compat_package" \
 	NETFLEET_PACKAGE_ARCHIVE="$package_archive" \
 	NETFLEET_PACKAGE_MANIFEST_SHA256="$package_manifest_sha" \
 	sh "$source_dir/scripts/openwrt-vm/qualify.sh"

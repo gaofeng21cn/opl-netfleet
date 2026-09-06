@@ -88,6 +88,25 @@ class Native(Kernel):
         wire = await self.request()
         self.assertTrue(wire["h2"], {"wire": wire, "engine": self.owner.health()})
         self.assertFalse((await self.request(host="other.example", ca=self.directory / "upstream.pem"))["h2"])
+        rules = json.loads(subprocess.check_output(["nft", "-j", "list", "chain", "inet", "netfleet", "mangle_prerouting_lan"]))
+        first = next(item["rule"] for item in rules["nftables"] if "rule" in item)
+        self.command("nft", "delete", "rule", "inet", "netfleet", "mangle_prerouting_lan", "handle", str(first["handle"]))
+        try:
+            await asyncio.sleep(5)
+            state = self.owner.call("get")
+            self.assertFalse(state["intercepting"], state)
+            self.assertEqual(state["reason"], "native_ownership_guard_missing")
+            self.assertFalse((await self.request(ca=self.directory / "upstream.pem"))["h2"])
+        finally:
+            self.command("nft", "insert", "rule", "inet", "netfleet", "mangle_prerouting_lan",
+                         "ct", "mark", "&", "0x01000000", "!=", "0", "counter", "return")
+        await asyncio.sleep(5)
+        self.assertFalse(self.owner.call("get")["intercepting"])
+        deadline = time.monotonic() + 45
+        while not self.owner.call("get")["intercepting"]:
+            self.assertLess(time.monotonic(), deadline, self.owner.call("get"))
+            await asyncio.sleep(1)
+        self.assertTrue((await self.request())["h2"])
         service = json.loads(subprocess.check_output(["ubus", "call", "service", "list", '{"name":"opl-netfleet-core"}']))
         lifecycle = service["opl-netfleet-core"]["instances"]["lifecycle"]["pid"]
         engine = self.owner.health()["pid"]

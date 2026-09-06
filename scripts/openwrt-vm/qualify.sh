@@ -457,6 +457,7 @@ run_guest() {
 	case "$guest_kind" in
 		management) guest_script=guest-qualify.sh; guest_arguments= ;;
 		package) guest_arguments="'$package_manifest_sha' '$probe_port' '$feed_url'" ;;
+		compatibility) guest_arguments="'$feed_url'" ;;
 		native|setup|migration)
 			ssh $ssh_common root@127.0.0.1 "touch /tmp/netfleet-${guest_kind}-vm-authorized" ;;
 	esac
@@ -482,7 +483,11 @@ fi
 if [ "$lane_mode" = compatibility ]; then
 	boot_clean_vm
 	stage=compatibility_transfer
-	COPYFILE_DISABLE=1 tar -cf "$work/compat-runtime.tar" -C "${NETFLEET_COMPAT_RUNTIME:?}" vendor
+	if [ -n "${NETFLEET_COMPAT_PACKAGE:-}" ]; then
+		COPYFILE_DISABLE=1 tar -cf "$work/compat-runtime.tar" -C "$NETFLEET_COMPAT_PACKAGE" .
+	else
+		COPYFILE_DISABLE=1 tar -cf "$work/compat-runtime.tar" -C "${NETFLEET_COMPAT_RUNTIME:?}" vendor
+	fi
 	compat_runtime_sha=$(sha256_file "$work/compat-runtime.tar")
 	ssh $ssh_common root@127.0.0.1 'cat >/tmp/compat-runtime.tar' <"$work/compat-runtime.tar"
 	actual_sha=$(ssh $ssh_common root@127.0.0.1 'sha256sum /tmp/compat-runtime.tar' | awk '{print $1}')

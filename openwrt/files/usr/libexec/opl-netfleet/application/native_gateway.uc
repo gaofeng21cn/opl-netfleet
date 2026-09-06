@@ -296,7 +296,15 @@ function compatibility_snapshot() {
 	let interfaces = [];
 	for (let item in nft?.nftables ?? []) if (item.set?.name == "lan_inbound_device") interfaces = item.set.elem ?? [];
 	const result = status();
+	const guard_chain = parse(capture("nft -j list chain inet netfleet mangle_prerouting_lan"));
+	const guard_rules = filter(guard_chain?.nftables ?? [], item => item.rule != null);
+	const guard = filter(guard_rules[0]?.rule?.expr ?? [], expr => expr.counter == null);
+	const condition = guard[0]?.match;
+	const ownership_guard = length(guard) == 2 && condition?.op == "!=" && condition?.right == 0 &&
+		condition?.left?.["&"]?.[0]?.ct?.key == "mark" && condition?.left?.["&"]?.[1] == 16777216 &&
+		guard[1] != null && "return" in guard[1];
 	return { ok: true, result: { backend: "native-mihomo", ready: result.result?.ready == true,
+		compatibility_ownership_guard: ownership_guard,
 		router_proxy: enabled("proxy", "router_proxy"), lan_proxy: enabled("proxy", "lan_proxy"),
 		ipv4_proxy: enabled("proxy", "ipv4_proxy"), ipv6_proxy: enabled("proxy", "ipv6_proxy"),
 		interfaces: interfaces, custom_lan_access: custom, preserve_source_port: true,

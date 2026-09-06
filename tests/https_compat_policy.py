@@ -46,7 +46,9 @@ class Decisions(unittest.TestCase):
             validate(config)
 
     def test_unproven_routing_is_rejected(self):
-        network = {"backend": "native-mihomo", "ready": True, "router_proxy": True, "lan_proxy": True}
+        network = {"backend": "native-mihomo", "ready": True, "router_proxy": True, "lan_proxy": True,
+                   "compatibility_ownership_guard": True}
+        self.assertEqual(admission({}, {**network, "compatibility_ownership_guard": False}), "native_ownership_guard_missing")
         self.assertIsNone(admission({"rules": ["DOMAIN,example.com,DIRECT", "MATCH,DIRECT"]}, network))
         self.assertIsNotNone(admission({"rules": ["SRC-IP-CIDR,192.0.2.0/24,DIRECT"]}, network))
         self.assertIsNotNone(admission({"rules": ["SRC-PORT,41641,DIRECT"]}, network))

@@ -4,6 +4,8 @@
 def admission(profile, gateway):
     if gateway.get("backend") != "native-mihomo" or not gateway.get("ready"):
         return "native_gateway_not_ready"
+    if gateway.get("compatibility_ownership_guard") is not True:
+        return "native_ownership_guard_missing"
     if not gateway.get("router_proxy") or not gateway.get("lan_proxy"):
         return "router_lan_paths_differ"
     if gateway.get("source_bypass"):
