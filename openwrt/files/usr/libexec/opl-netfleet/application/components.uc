@@ -255,6 +255,14 @@ function upgrade(request, work, candidates) {
 	operation.update("validating");
 	// Only installed dependencies and the explicitly downloaded packages may participate.
 	if (!run_command(`apk --no-network --repositories-file /dev/null --simulate add ${join(" ", map(next, q))}`, work)) fail("package_validation_failed");
+	if (request.component == "mihomo") {
+		const bytes = parsed(`apk adbdump --format json ${q(next[0])}`)?.info?.["installed-size"];
+		for (let location in ["/usr/libexec", work]) {
+			const available_kb = capture(`df -Pk ${q(location)} | awk 'NR == 2 { print $4 }'`);
+			if (type(bytes) != "int" || bytes <= 0 || !match(available_kb ?? "", /^[0-9]+$/) || int(available_kb) * 1024 < bytes)
+				fail("insufficient_update_space");
+		}
+	}
 	const before_status = parsed(`ucode ${q(MAIN)} status`)?.result;
 	const unconfigured = fs.lstat("/etc/opl-netfleet/policy.json") == null && !service_running(SERVICE);
 	if (before_status == null && !unconfigured) fail("runtime_readback_failed");
@@ -315,7 +323,9 @@ try {
 	} else response = { ok: false, error: "unknown_component_action" };
 } catch (error) {
 	const reason = error_code(error);
-	if (ARGV[0] == "run") operation.finish(false, reason, null);
+	if (ARGV[0] == "run") operation.finish(false, reason,
+		match(reason, /_rolled_back$/) ? { rollback: { ok: true } } :
+		match(reason, /^rollback_(stop|configuration|install|identity|runtime)_/) ? { rollback: { ok: false } } : null);
 	response = { ok: false, error: reason };
 }
 printf("%J\n", response);

@@ -35,6 +35,7 @@ function errorLabel(code) {
 		dependency_resolution_failed: '无法确认依赖关系，未开始安装',
 		dependency_change_requires_system_manager: '此次更新需要调整系统依赖，请使用 OpenWrt 软件包管理器',
 		package_validation_failed: '安装预检失败，当前版本不变',
+		insufficient_update_space: '存储或临时空间不足，未开始更新，仍保持原版',
 		core_config_incompatible: '新核心无法通过当前配置校验，未开始更新',
 		runtime_precondition_failed: '当前运行状态未通过检查，未开始更新',
 		runtime_readback_failed: '无法读取当前运行状态，未开始更新',

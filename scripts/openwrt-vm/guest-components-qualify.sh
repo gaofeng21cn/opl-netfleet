@@ -15,9 +15,10 @@ finish() {
 	trap - EXIT INT TERM
 	cp "$work/original-feed" /etc/apk/repositories.d/opl-netfleet.list
 	rm -f /etc/apk/repositories.d/netfleet-component-fixture.list
+	rm -f /root/netfleet-component-space-fixture
 	if [ "$rc" -ne 0 ]; then
 		echo "Component qualification failed at: $stage" >&2
-		for file in "$work"/*-result.json /tmp/opl-netfleet-components/*/log; do
+		for file in "$work"/*-result.json "$work"/*.log /tmp/opl-netfleet-components/*/log; do
 			[ ! -f "$file" ] || { echo "--- $file" >&2; tail -50 "$file" >&2; }
 		done
 	fi
@@ -147,6 +148,7 @@ printf '%s\n' "$feed_url/components-fixtures/bad/packages.adb" >/etc/apk/reposit
 request components_update "$bad"
 assert_json "$work/operation-result.json" '@.result.packages.state' failed
 assert_json "$work/operation-result.json" '@.result.packages.error' runtime_verification_failed_rolled_back
+assert_json "$work/operation-result.json" '@.result.packages.recovery' restored
 apk list --manifest | grep -Fqx "opl-netfleet $current"
 apk list --manifest | grep -Fqx "luci-app-netfleet $current"
 rpc_ready
@@ -156,6 +158,19 @@ printf '%s\n' "$feed_url/components-fixtures/good/packages.adb" >/etc/apk/reposi
 uclient-fetch -q -O "$work/mihomo-meta-$core_old.apk" "$feed_url/components-fixtures/good/mihomo-meta-$core_old.apk"
 install_fixture "$work/mihomo-meta-$core_old.apk" >"$work/core-downgrade.log" 2>&1
 unchanged
+stage=insufficient_core_space_rejected_before_stop
+core_pid_before=$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.core.pid')
+free_kb=$(df -Pk /usr/libexec | awk 'NR == 2 { print $4 }')
+fill_mb=$((free_kb / 1024 - 16))
+[ "$fill_mb" -gt 0 ]
+dd if=/dev/zero of=/root/netfleet-component-space-fixture bs=1M count="$fill_mb" >"$work/space-fixture.log" 2>&1
+request components_update "$core_current" mihomo
+assert_json "$work/operation-result.json" '@.result.packages.state' failed
+assert_json "$work/operation-result.json" '@.result.packages.error' insufficient_update_space
+[ "$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.core.pid')" = "$core_pid_before" ]
+rm /root/netfleet-component-space-fixture
+unchanged
+stage=core_update
 request components_update "$core_current" mihomo
 assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
 apk list --manifest | grep -Fqx "mihomo-meta $core_current"
@@ -170,4 +185,4 @@ apk list --manifest | grep -Fqx "mihomo-meta $core_current"
 [ "$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.core.pid')" = "$core_pid_before" ]
 unchanged
 stage=complete
-printf '%s\n' '{"ok":true,"checks":{"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"
+printf '%s\n' '{"ok":true,"checks":{"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"
