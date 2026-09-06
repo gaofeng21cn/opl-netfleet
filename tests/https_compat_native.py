@@ -96,7 +96,7 @@ class Native(Kernel):
             upgrade = await asyncio.create_subprocess_exec("apk", "add", "--force-reinstall", str(packages[0]),
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             try:
-                await asyncio.sleep(2)
+                await asyncio.sleep(32)
                 self.assertIsNone(upgrade.returncode, "package replacement must wait for the live TLS connection")
                 self.assertFalse(self.owner.call("get")["intercepting"])
                 self.assertFalse((await self.request(ca=self.directory / "upstream.pem"))["h2"])
@@ -148,6 +148,29 @@ class Native(Kernel):
         finally:
             os.kill(engine, signal.SIGCONT)
             os.kill(lifecycle, signal.SIGCONT)
+        for _ in range(3):
+            deadline = time.monotonic() + 12
+            while not self.owner.call("get").get("recovery", {}).get("healthy"):
+                self.assertLess(time.monotonic(), deadline, self.owner.call("get"))
+                await asyncio.sleep(1)
+            if self.owner.call("get")["recovery"].get("latched"):
+                break
+            os.kill(engine, signal.SIGSTOP)
+            try:
+                await asyncio.sleep(6)
+            finally:
+                os.kill(engine, signal.SIGCONT)
+        await asyncio.sleep(32)
+        state = self.owner.call("get")
+        self.assertTrue(state["recovery"]["latched"], state)
+        self.assertFalse(state["intercepting"])
+        self.assertFalse((await self.request(ca=self.directory / "upstream.pem"))["h2"])
+        self.owner.call("probe", {"revision": state["revision"], "operation": "recover"})
+        deadline = time.monotonic() + 45
+        while not self.owner.call("get")["intercepting"]:
+            self.assertLess(time.monotonic(), deadline, self.owner.call("get"))
+            await asyncio.sleep(1)
+        self.assertTrue((await self.request())["h2"])
 
 
 if __name__ == "__main__":
