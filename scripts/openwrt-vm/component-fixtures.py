@@ -49,7 +49,7 @@ def build(candidate, output):
                 for index, value in enumerate(command):
                     if index < command.index("/sdk/staging_dir/host/bin/apk") + 1:
                         continue
-                    for local, mounted in ((candidate, "/candidate"), (output, "/fixtures"), (scratch, "/scratch")):
+                    for local, mounted in ((output, "/fixtures"), (candidate, "/candidate"), (scratch, "/scratch")):
                         if value.startswith(str(local) + "/"):
                             command[index] = mounted + value[len(str(local)):]
                             break

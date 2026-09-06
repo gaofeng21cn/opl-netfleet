@@ -3,7 +3,7 @@
 import { read_yaml, read_json, sha256, file_mtime, current_profile, backend_enabled, set_backend_enabled, api_secret, set_profile, shell_quote, subscription_display_name, subscription_quota, upstream_ready, write_evidence, POLICY_PATH, EVIDENCE_PATH } from "./adapters/uci.uc";
 import { resolve_profile, profile_exists, restart, update_subscription, stop as stop_backend, cleanup_state, running, lan_runtime_state, install_artifact, remove_artifact, test_profile_object, prepare_provider_links, remove_provider_links, ARTIFACT_PATH, MANIFEST_PATH, PROFILE_ENTRY_PATH, COMPILED_PROFILE } from "./adapters/backend.uc";
 import { resolve as resolve_policy_source, load as load_policy_source } from "./adapters/policy_source.uc";
-import { test_profile, test_runtime, controller_ready, proxies, proxy_providers, connections as current_connections, select as select_proxy, unfix as unfix_proxy, protected_probes, direct_probes } from "./adapters/mihomo.uc";
+import { test_profile, test_runtime, test_group_path, controller_ready, proxies, proxy_providers, connections as current_connections, select as select_proxy, unfix as unfix_proxy, protected_probes, direct_probes } from "./adapters/mihomo.uc";
 import { measure as measure_latency, measure_providers, complete_from_fresh_history } from "./adapters/latency.uc";
 import { read_events, write_events, core_netfleet_lines } from "./adapters/events.uc";
 import { validate as validate_policy, automation as automation_config, guard_probe_url } from "./core/policy.uc";
@@ -773,8 +773,13 @@ function measured_group_leaf(secret, entry, group, policy) {
 	return result;
 };
 
-function refresh_data_fallback(secret, entry, policy, provider_state) {
-	const round = measure_latency(secret, entry.name, policy.checks);
+function refresh_data_fallback(secret, entry, policy, provider_state, selected_group) {
+	// Confirm only the chosen path. Traversing all visible branches can overwrite
+	// its healthy wrapper with a failed lazy fallback during initial convergence.
+	const round = selected_group == null ? measure_latency(secret, entry.name, policy.checks) : null;
+	if (selected_group != null && (!unfix_proxy(secret, selected_group) ||
+		!test_group_path(secret, selected_group, policy.checks)))
+		return { ok: false, error: "selected_path_probe_failed", round: null, runtime: null };
 	const state = proxies(secret);
 	if (state == null || state.proxies == null) {
 		return { ok: false, error: "mihomo_state_unavailable", round: round };
@@ -794,7 +799,8 @@ function refresh_data_fallback(secret, entry, policy, provider_state) {
 };
 
 function wait_for_preferred_runtime(secret, entry, choice, policy, provider_state, after_restart) {
-	let fallback = refresh_data_fallback(secret, entry, policy, provider_state);
+	let fallback = refresh_data_fallback(secret, entry, policy, provider_state, choice);
+	if (fallback.error == "selected_path_probe_failed") return fallback;
 	if (fallback.ok && preferred_runtime_ready(fallback.runtime, choice)) {
 		return fallback;
 	}

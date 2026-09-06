@@ -42,7 +42,7 @@ function feed() {
 	const lines = split(fs.readfile(REPOSITORY) ?? "", "\n");
 	for (let line in lines) {
 		line = trim(line);
-		if (match(line, /^https?:\/\/[^\s@]+\/packages\.adb$/)) return line;
+		if (match(line, /^https?:\/\/[^[:space:]@]+\/packages\.adb$/)) return line;
 	}
 	return null;
 };
@@ -53,7 +53,8 @@ function available(url) {
 	const rows = parsed(`apk --no-network query --from none -X ${q(url)} --format json --fields name,version ${join(" ", PACKAGES)}`);
 	if (type(rows) != "array") return null;
 	const result = {};
-	for (let row in rows) if (index(PACKAGES, row.name) >= 0 && version_valid(row.version)) result[row.name] = row.version;
+	for (let row in rows) if (index(PACKAGES, row.name) >= 0 && version_valid(row.version) &&
+		(result[row.name] == null || newer(row.version, result[row.name]))) result[row.name] = row.version;
 	return result;
 };
 function update_process() {
@@ -79,7 +80,7 @@ function get() {
 	const candidates = cache?.versions ?? {};
 	const running = controller_version(api_secret(), 2);
 	const binary = capture("mihomo -v");
-	const binary_version = match(binary ?? "", /^Mihomo\s+(\S+)/)?.[1] ?? null;
+	const binary_version = match(binary ?? "", /^Mihomo[[:space:]]+([^[:space:]]+)/)?.[1] ?? null;
 	const rows = [];
 	for (let item in [["netfleet", "NetFleet", PACKAGES[0]], ["luci", "LuCI 界面", PACKAGES[1]], ["mihomo", "Mihomo", PACKAGES[2]]]) {
 		const current = versions?.[item[2]] ?? null;
@@ -147,7 +148,7 @@ function archive(name, version, path, work, fallback_version, source) {
 	}
 	if (!run_command(`apk --no-network verify ${q(target)}`, work)) return null;
 	const metadata = parsed(`apk adbdump --format json ${q(target)}`);
-	const architecture = capture("apk --print-arch");
+	const architecture = trim(fs.readfile("/etc/apk/arch") ?? "") || capture("apk --print-arch");
 	if (metadata?.info?.name != name || metadata.info.version != version ||
 		index(["noarch", architecture], metadata.info.arch) < 0) return null;
 	return target;
