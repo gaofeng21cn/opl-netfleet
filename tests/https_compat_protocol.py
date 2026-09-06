@@ -41,7 +41,7 @@ def certificate(directory):
             .public_key(key.public_key()).serial_number(x509.random_serial_number())
             .not_valid_before(now - timedelta(minutes=1)).not_valid_after(now + timedelta(days=1))
             .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
-            .add_extension(x509.SubjectAlternativeName([x509.DNSName("localhost")]), critical=False)
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName("localhost"), x509.DNSName("other.example")]), critical=False)
             .sign(key, hashes.SHA256()))
     (directory / "upstream.pem").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
     (directory / "upstream.key").write_bytes(key.private_bytes(serialization.Encoding.PEM,
@@ -66,7 +66,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         self.shutdown = asyncio.Event()
         self.upstream_port, self.proxy_port = free_port(), self.PROXY_PORT or free_port()
         config = Config()
-        config.bind = [f"{self.BIND}:{self.upstream_port}"]
+        config.bind = [f"{'[' + self.BIND + ']' if ':' in self.BIND else self.BIND}:{self.upstream_port}"]
         config.certfile = str(self.directory / "upstream.pem")
         config.keyfile = str(self.directory / "upstream.key")
         config.alpn_protocols = ["h2", "http/1.1"]
