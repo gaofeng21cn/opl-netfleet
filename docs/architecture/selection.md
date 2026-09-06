@@ -137,7 +137,7 @@ policy 的 owner 分区固定；全局许可、能力开关和策略模式不能
 | 故障注入 | 逐项断节点、断 provider、断地区 primary、quota exhausted、全代理失败、Mihomo/NF 进程退出 | preferred -> 指定兜底 provider -> 其余 primary/reserve -> DIRECT，以及必要时 Recovery Profile/Nikki 官方 passthrough 的恢复顺序成立 | 不遗留 DNS/nft/半启用状态 |
 | 性能基准 | 独立记录一轮 delay、编译/激活耗时、status/UI p95；不写入 selection 输入 | 找到设备预算，不改变算法语义 | 回到更小批次或减少功能，不加缓存/后台循环 |
 
-源测试只验证纯函数、schema 和 adapter 错误映射；QEMU qualification 在 Apple Silicon macOS 上由原生 `qemu-system-aarch64` 通过 Hypervisor.framework/HVF 启动与目标同指令集的官方 OpenWrt `armsr/armv8` 系统镜像和 ARM64 runtime 资产，验证通用平台、管理恢复与回滚边界，并把 runner/guest 架构、QEMU 版本、accelerator 和阶段耗时写入 exact commit/tree receipt。它不提供 Docker/TCG 回退，仍只是 synthetic platform proof；真实设备测试才验证 proxy-path delay、业务 status、Nikki/Mihomo effective state 和 Fail-Open。性能基准不是功能通过证据，设备通过也不能反向证明历史排序或隐藏评分正确。
+源测试只验证纯函数、schema 和 adapter 错误映射；QEMU qualification 在 Apple Silicon macOS 上由原生 `qemu-system-aarch64` 通过 Hypervisor.framework/HVF 启动与目标同指令集的官方 OpenWrt `armsr/armv8` 系统镜像和 ARM64 runtime 资产，验证通用平台、管理恢复与回滚边界，并把 runner/guest 架构、QEMU 版本、accelerator 和阶段耗时写入 exact commit/tree receipt。本机 `gptfdisk`、`e2fsprogs` 在开机前只扩容一次性镜像的根分区并保留 PARTUUID；VM 使用 512 MB 内存和 256 MB 根文件系统，为真实核心包原子替换和解包提供空间，不修改原始缓存镜像或设备磁盘。它不提供 Docker/TCG 回退，仍只是 synthetic platform proof；真实设备测试才验证 proxy-path delay、业务 status、Nikki/Mihomo effective state 和 Fail-Open。性能基准不是功能通过证据，设备通过也不能反向证明历史排序或隐藏评分正确。
 
 ## 选择与故障语义
 

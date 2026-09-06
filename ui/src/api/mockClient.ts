@@ -1,5 +1,5 @@
 import { fixtureScenarios, type FixtureScenario } from '../data/fixtures';
-import type { DataSourceInfo, EventsSnapshot, NetFleetClient, StatusSnapshot } from '../types';
+import type { ComponentsSnapshot, DataSourceInfo, EventsSnapshot, NetFleetClient, OperationsSnapshot, StatusSnapshot } from '../types';
 
 const clone = <T,>(value: T): T => structuredClone(value);
 
@@ -50,6 +50,24 @@ export class MockNetFleetClient implements NetFleetClient {
 
   async connections() {
     return { connections: [], count: 0, truncated: false };
+  }
+
+  async components(): Promise<ComponentsSnapshot> {
+    if (this.source.mode !== 'mock') throw new Error('此私有快照未包含组件信息');
+    return {
+      supported: true, backend: 'native-mihomo', architecture: 'aarch64',
+      feed: { configured: true, url: 'https://example.test/netfleet/packages.adb', checked_at: null, error: null },
+      components: [
+        { id: 'netfleet', label: 'NetFleet', installed_version: '0.5.2-r1', running_version: null, available_version: null, update_available: false, managed: true, reason: null },
+        { id: 'luci', label: 'LuCI 界面', installed_version: '0.5.2-r1', running_version: null, available_version: null, update_available: false, managed: true, reason: null },
+        { id: 'mihomo', label: 'Mihomo', installed_version: '1.19.30-r1', running_version: 'v1.19.30', available_version: null, update_available: false, managed: true, reason: null },
+      ],
+      dependencies: [{ id: 'ucode', label: 'ucode', installed_version: null, available: true }, { id: 'yq', label: 'yq', installed_version: null, available: true }],
+    };
+  }
+
+  async operations(): Promise<OperationsSnapshot> {
+    return { subscription: null, packages: null };
   }
 
   async enable() {

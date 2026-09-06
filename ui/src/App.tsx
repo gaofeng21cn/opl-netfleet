@@ -9,11 +9,13 @@ import { PolicySummary } from './components/PolicySummary';
 import { RecoverySection } from './components/RecoverySection';
 import { Shell } from './components/Shell';
 import { StatusStrip } from './components/StatusStrip';
+import { OperationProgress, operationRunning } from './components/OperationProgress';
 import { ConfigView } from './config/ConfigView';
 import { createConfigDraft, type ConfigDraft } from './config/model';
 import { EventsView } from './views/EventsView';
+import { ComponentsView } from './views/ComponentsView';
 import { ProviderTable, RegionTable } from './views/Tables';
-import type { ConnectionsSnapshot, DataSourceInfo, DeviceConfigSnapshot, EventsSnapshot, NetFleetClient, PreviewControls, StatusSnapshot, ViewId } from './types';
+import type { ComponentsSnapshot, ConnectionsSnapshot, DataSourceInfo, DeviceConfigSnapshot, EventsSnapshot, NetFleetClient, OperationsSnapshot, PreviewControls, StatusSnapshot, ViewId } from './types';
 import './styles.css';
 
 type DialogAction = 'enable' | 'select' | 'disable' | null;
@@ -35,6 +37,11 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
   const [error, setError] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [eventsError, setEventsError] = useState<string | null>(null);
+  const [components, setComponents] = useState<ComponentsSnapshot | null>(null);
+  const [componentsLoading, setComponentsLoading] = useState(false);
+  const [componentsError, setComponentsError] = useState<string | null>(null);
+  const [operations, setOperations] = useState<OperationsSnapshot>({ subscription: null, packages: null });
+  const [operationError, setOperationError] = useState<string | null>(null);
   const [connections, setConnections] = useState<ConnectionsSnapshot>({ connections: [], count: 0, truncated: false });
   const [connectionsLoading, setConnectionsLoading] = useState(false);
   const [connectionsError, setConnectionsError] = useState<string | null>(null);
@@ -118,6 +125,39 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
     if (view === 'events') void refreshConnections();
   }, [refreshConnections, view]);
 
+  const refreshComponents = useCallback(async () => {
+    setComponentsLoading(true);
+    setComponentsError(null);
+    try { setComponents(await client.components()); }
+    catch (reason) { setComponentsError(reason instanceof Error ? reason.message : '组件信息读取失败'); }
+    finally { setComponentsLoading(false); }
+  }, [client]);
+
+  useEffect(() => {
+    if (view === 'components') void refreshComponents();
+  }, [refreshComponents, view]);
+
+  useEffect(() => {
+    if (view !== 'providers' && view !== 'components') return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let active = false;
+    const readOperations = async () => {
+      try {
+        const next = await client.operations();
+        if (cancelled) return;
+        setOperations(next);
+        setOperationError(null);
+        active = operationRunning(next.subscription) || operationRunning(next.packages);
+      } catch (reason) {
+        if (!cancelled) setOperationError(reason instanceof Error ? reason.message : '操作进度读取失败');
+      }
+      if (!cancelled && active) timer = setTimeout(readOperations, 1000);
+    };
+    void readOperations();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [client, view]);
+
   const automaticCapability = useMemo(() => {
     const id = status?.selection?.automatic_capability_id;
     return status?.capabilities.find((capability) => capability.id === id) || null;
@@ -188,7 +228,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
   const healthy = Boolean(status.runtime.mihomo_running && status.runtime.backend_enabled && status.runtime.controller_available &&
     (!status.active || (status.runtime.netfleet_present && status.runtime.lan_runtime?.transparent_proxy_ready)));
   const dashboardReady = Boolean(status.runtime.mihomo_running && status.runtime.controller_available && status.runtime.lan_runtime?.dashboard_lan_ready);
-  const title = { overview: '网络概览', exits: '出口', providers: '机场', regions: '地区', config: '配置', events: '事件与诊断' }[view];
+  const title = { overview: '网络概览', exits: '出口', providers: '机场', regions: '地区', config: '配置', components: '组件与更新', events: '事件与诊断' }[view];
 
   return (
     <Shell
@@ -207,7 +247,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
       onOpenDashboard={() => setError('本机参考界面只展示入口；设备版会在新标签页打开完整 Zashboard。')}
     >
       <div className="nf-page-heading">
-        <div><h1>{title}</h1>{view !== 'overview' && <p>{view === 'config' ? '使用当前设备状态设计配置流程；所有更改仅用于本地预览。' : '所有状态来自同一次设备状态读取。'}</p>}</div>
+        <div><h1>{title}</h1>{view !== 'overview' && view !== 'components' && <p>{view === 'config' ? '使用当前设备状态设计配置流程；所有更改仅用于本地预览。' : '所有状态来自同一次设备状态读取。'}</p>}</div>
         {!source.read_only && status.actions?.can_enable && (
           <button className="nf-button-primary" type="button" onClick={() => setDialog('enable')} disabled={busy}>
             <Power aria-hidden="true" />启用 NetFleet
@@ -241,7 +281,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
         <PolicySummary snapshot={status} />
         <RecoverySection snapshot={status} />
       </>}
-      {view === 'providers' && <ProviderTable snapshot={status} full />}
+      {view === 'providers' && <><OperationProgress operation={operations.subscription} error={operationError} /><ProviderTable snapshot={status} full /></>}
       {view === 'regions' && <RegionTable snapshot={status} full />}
       {view === 'config' && configState && <ConfigView
         draft={configState.draft}
@@ -251,6 +291,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
         onSave={(next) => setConfigState({ ...configState, draft: next, saved: next })}
       />}
       {view === 'events' && <EventsView snapshot={visibleEvents} status={status} connections={connections} connectionsLoading={connectionsLoading} connectionsError={connectionsError} error={eventsError} />}
+      {view === 'components' && <ComponentsView snapshot={components} operation={operations.packages} error={componentsError} operationError={operationError} loading={componentsLoading} onRead={() => void refreshComponents()} />}
 
       {dialog && <ConfirmDialog
         title={{ enable: '启用 NetFleet', select: '重新自动选优', disable: '关闭 NetFleet' }[dialog]}

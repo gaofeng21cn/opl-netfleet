@@ -319,6 +319,10 @@ if [ -n "$feed_url" ]; then
 	run_main probe >"$work/upgraded-probe-result.json"
 	assert_json "$work/upgraded-probe-result.json" '@.ok' true
 	curl -fsS --socks5-hostname 127.0.0.1:7890 --max-time 10 https://www.gstatic.com/generate_204
+	stage=component_update_transactions
+	sh /tmp/guest-components-qualify.sh "$feed_url"
+	assert_json /tmp/netfleet-components-fixture/qualification.json '@.ok' true
+	package_identity
 fi
 
 stage=disable_and_cleanup
@@ -363,7 +367,7 @@ if [ -n "$feed_url" ]; then
 	[ -z "$(ip -4 route show table 11900 2>/dev/null || true)" ]
 	[ -z "$(ip -6 route show table 11900 2>/dev/null || true)" ]
 	direct_probe
-	package_checks=',"signed_package_install":true,"installed_build_identity":true,"native_package_upgrade":true,"upgrade_preserves_private_state":true,"upgrade_gateway_ready":true,"package_remove_clean":true,"remove_preserves_private_sources":true'
+	package_checks=',"signed_package_install":true,"installed_build_identity":true,"native_package_upgrade":true,"upgrade_preserves_private_state":true,"upgrade_gateway_ready":true,"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true,"package_remove_clean":true,"remove_preserves_private_sources":true'
 fi
 
 stage=complete

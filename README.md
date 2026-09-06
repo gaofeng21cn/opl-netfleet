@@ -97,6 +97,9 @@ uclient-fetch -q -O /tmp/install-netfleet.sh https://github.com/gaofeng21cn/opl-
 
 ## 升级
 
+LuCI 的“组件与更新”页显示组件安装版本、Mihomo 运行版本及关键依赖，可手动检查软件源。
+NetFleet 与 LuCI 界面一起更新；原生后端的 Mihomo 单独确认更新，先验证当前配置，失败时恢复旧包和运行状态。不默认无人值守升级，也不升级整个系统。
+
 完成首次安装后，OpenWrt 可以直接从已配置的软件源升级：
 
 ```sh

@@ -506,7 +506,12 @@ function createPage(storage, api, notifications) {
         render: function() { return E('div', {}, 'config'); }
     };
     let dashboardOpens = 0;
-    const managed = { preloadSubscriptions: function() { return Promise.resolve(); } };
+    const managed = {
+        preloadSubscriptions: function() { return Promise.resolve(); },
+        readOperations: function() { return Promise.resolve(); },
+        loadComponents: function() { return Promise.resolve(); },
+        operationNode: function() { return null; }
+    };
     api.nativeSetupGet = function() { return Promise.resolve({ ready: false }); };
     api.dashboardGet = function() { return Promise.resolve({ available: true, port: 9090, protocol: 'http', ui_name: 'zashboard', secret: 'private-secret' }); };
     const factory = new Function('view', 'ui', 'managed', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', 'compatibility', 'poll', source);
@@ -587,7 +592,8 @@ function createPage(storage, api, notifications) {
     assert.strictEqual(dashboardUrl.pathname, '/ui/zashboard/');
     assert.strictEqual(dashboardUrl.hash, '#/setup', 'saved backend credentials must not bypass the new connection');
     const tabs = findNode(root, function(node) { return node.tag === 'ul' && node.attrs.class === 'cbi-tabmenu'; });
-    assert.strictEqual(tabs.children.length, 6);
+    assert.strictEqual(tabs.children.length, 7);
+    assert(nodeText(tabs.children[5]).includes('组件与更新'));
     assert(!nodeText(tabs).includes('Zashboard'), 'external tool must not be an internal tab');
     assert.strictEqual(dashboardUrl.searchParams.get('secret'), 'private-secret');
     assert.strictEqual(runtimeEntry.attrs.target, '_blank');

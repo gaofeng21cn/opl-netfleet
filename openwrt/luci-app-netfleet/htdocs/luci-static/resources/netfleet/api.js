@@ -16,6 +16,10 @@ const calls = {
 	compatibilityEnable: declare({ object: 'opl-netfleet', method: 'compatibility_enable', params: [ 'request' ] }),
 	compatibilityDisable: declare({ object: 'opl-netfleet', method: 'compatibility_disable', params: [ 'request' ] }),
 	compatibilityProbe: declare({ object: 'opl-netfleet', method: 'compatibility_probe', params: [ 'request' ] }),
+	componentsGet: declare({ object: 'opl-netfleet', method: 'components_get' }),
+	componentsCheck: declare({ object: 'opl-netfleet', method: 'components_check' }),
+	componentsUpdate: declare({ object: 'opl-netfleet', method: 'components_update', params: [ 'component', 'version' ] }),
+	operationGet: declare({ object: 'opl-netfleet', method: 'operation_get' }),
 	nativeSetupGet: declare({ object: 'opl-netfleet', method: 'native_setup_get' }),
 	nativeSetupApply: declare({ object: 'opl-netfleet', method: 'native_setup_apply', params: [ 'request' ] }),
 	dashboardGet: declare({ object: 'opl-netfleet', method: 'dashboard_get' }),
@@ -87,6 +91,15 @@ return baseclass.extend({
 	compatibilityEnable: function(request) { return executeRequest('compatibilityEnable', request); },
 	compatibilityDisable: function(request) { return executeRequest('compatibilityDisable', request); },
 	compatibilityProbe: function(request) { return executeRequest('compatibilityProbe', request); },
+	componentsGet: function() { return execute('componentsGet'); },
+	componentsCheck: function() { return execute('componentsCheck'); },
+	componentsUpdate: function(component, version) {
+		return calls.componentsUpdate(component, version).then(function(response) {
+			if (!response || response.ok !== true) throw new Error(response?.error || 'operation_failed');
+			return response.result;
+		});
+	},
+	operationGet: function() { return execute('operationGet'); },
 	nativeSetupGet: function() { return execute('nativeSetupGet'); },
 	nativeSetupApply: function(request) {
 		return withRpcTimeout(300, function() { return executeRequest('nativeSetupApply', request); });

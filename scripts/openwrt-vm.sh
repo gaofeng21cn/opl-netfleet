@@ -75,7 +75,11 @@ done
 [[ "$source_ref" != -* ]] || die "source ref cannot begin with '-'"
 [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] ||
 	die "native QEMU qualification requires macOS on Apple Silicon"
-for tool in curl git gzip openssl python3 qemu-img qemu-system-aarch64 ssh ssh-keygen tar; do
+if ! command -v resize2fs >/dev/null 2>&1 && command -v brew >/dev/null 2>&1; then
+	ext_prefix=$(brew --prefix e2fsprogs 2>/dev/null || true)
+	[[ ! -d "$ext_prefix/sbin" ]] || export PATH="$ext_prefix/sbin:$PATH"
+fi
+for tool in curl dd e2fsck git gzip openssl python3 qemu-img qemu-system-aarch64 resize2fs sgdisk ssh ssh-keygen tar; do
 	command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 qemu-system-aarch64 -accel help 2>/dev/null | grep -Eq '(^|[[:space:]])hvf([[:space:]]|$)' ||

@@ -270,6 +270,9 @@ if [ -n "$package_archive" ]; then
 		echo "OpenWrt qualification package manifest mismatch" >&2
 		exit 1
 	}
+	if [ "$lane_mode" = all ] || [ "$lane_mode" = setup ]; then
+		python3 "$workspace/scripts/openwrt-vm/component-fixtures.py" "$feed_dir" "$feed_dir/components-fixtures"
+	fi
 	python3 -m http.server "$feed_port" --bind 0.0.0.0 --directory "$feed_dir" \
 		>"$work/package-feed.log" 2>&1 &
 	feed_pid=$!
@@ -306,12 +309,28 @@ case "$gzip_status" in
 	*) echo "OpenWrt image decompression failed" >&2; exit 1 ;;
 esac
 qemu-img info --output=json "$work/openwrt.img" >/dev/null
+# The official root is too small for atomic core replacement. Resize offline;
+# preserve its PARTUUID, which the boot command line uses to locate root.
+partition=$(sgdisk -i 2 "$work/openwrt.img")
+root_start=$(printf '%s\n' "$partition" | awk '/^First sector:/ { print $3 }')
+root_sectors=$(printf '%s\n' "$partition" | awk '/^Partition size:/ { print $3 }')
+root_uuid=$(printf '%s\n' "$partition" | awk '/^Partition unique GUID:/ { print $4 }')
+[ -n "$root_start" ] && [ -n "$root_sectors" ] && [ -n "$root_uuid" ] || exit 1
+dd if="$work/openwrt.img" of="$work/root.ext4" bs=512 skip="$root_start" count="$root_sectors" 2>/dev/null
+fsck_result=0
+e2fsck -pf "$work/root.ext4" || fsck_result=$?
+[ "$fsck_result" -le 1 ] || exit 1
+resize2fs "$work/root.ext4" 256M
+qemu-img resize -f raw "$work/openwrt.img" 512M >/dev/null
+sgdisk -e -a 1 -d 2 -n "2:$root_start:+256M" -u "2:$root_uuid" -t 2:8300 "$work/openwrt.img" >/dev/null
+dd if="$work/root.ext4" of="$work/openwrt.img" bs=512 seek="$root_start" conv=notrunc 2>/dev/null
+rm "$work/root.ext4"
 image_elapsed_ms=$((image_elapsed_ms + $(now_ms) - image_started_ms))
 
 [ -f "$firmware" ] || { echo "AArch64 QEMU EFI firmware not found" >&2; exit 1; }
 boot_started_ms=$(now_ms)
 
-vm_memory=256
+vm_memory=512
 [ "$lane_mode" != compatibility ] || vm_memory=768
 qemu-system-aarch64 \
 	-accel hvf \
@@ -402,7 +421,7 @@ stage=transfer
 transfer_started_ms=$(now_ms)
 tar -cf - -C "$workspace/scripts" deploy-openwrt-remote.sh \
 	-C "$workspace/scripts/openwrt-vm" guest-qualify.sh guest-runtime-qualify.sh guest-package-qualify.sh \
-	guest-native-qualify.sh guest-setup-qualify.sh guest-migration-qualify.sh \
+	guest-native-qualify.sh guest-setup-qualify.sh guest-migration-qualify.sh guest-components-qualify.sh \
 	guest-compatibility-qualify.sh \
 	-C "$work" runtime-source.tar local-probe.crt "$mihomo_name" "$yq_name" |
 ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf -'
@@ -414,12 +433,13 @@ expected_transfer=$(printf '%s\n' \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-native-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-setup-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-migration-qualify.sh")" \
+	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-components-qualify.sh")" \
 	"$(sha256_file "$work/runtime-source.tar")" \
 	"$(sha256_file "$work/local-probe.crt")" \
 	"$(sha256_file "$work/$mihomo_name")" \
 	"$(sha256_file "$work/$yq_name")")
 actual_transfer=$(ssh $ssh_common root@127.0.0.1 \
-	"sha256sum /tmp/deploy-openwrt-remote.sh /tmp/guest-qualify.sh /tmp/guest-runtime-qualify.sh /tmp/guest-package-qualify.sh /tmp/guest-native-qualify.sh /tmp/guest-setup-qualify.sh /tmp/guest-migration-qualify.sh /tmp/runtime-source.tar /tmp/local-probe.crt /tmp/$mihomo_name /tmp/$yq_name | awk '{print \$1}'")
+	"sha256sum /tmp/deploy-openwrt-remote.sh /tmp/guest-qualify.sh /tmp/guest-runtime-qualify.sh /tmp/guest-package-qualify.sh /tmp/guest-native-qualify.sh /tmp/guest-setup-qualify.sh /tmp/guest-migration-qualify.sh /tmp/guest-components-qualify.sh /tmp/runtime-source.tar /tmp/local-probe.crt /tmp/$mihomo_name /tmp/$yq_name | awk '{print \$1}'")
 [ "$actual_transfer" = "$expected_transfer" ] || {
 	echo "OpenWrt qualification source transfer mismatch" >&2
 	exit 1

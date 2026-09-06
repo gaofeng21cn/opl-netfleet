@@ -3,7 +3,7 @@
 import { read_yaml, read_json, sha256, file_mtime, current_profile, backend_enabled, set_backend_enabled, api_secret, set_profile, shell_quote, subscription_display_name, subscription_quota, upstream_ready, write_evidence, POLICY_PATH, EVIDENCE_PATH } from "./adapters/uci.uc";
 import { resolve_profile, profile_exists, restart, update_subscription, stop as stop_backend, cleanup_state, running, lan_runtime_state, install_artifact, remove_artifact, test_profile_object, prepare_provider_links, remove_provider_links, ARTIFACT_PATH, MANIFEST_PATH, PROFILE_ENTRY_PATH, COMPILED_PROFILE } from "./adapters/backend.uc";
 import { resolve as resolve_policy_source, load as load_policy_source } from "./adapters/policy_source.uc";
-import { test_profile, test_runtime, controller_ready, proxies, proxy_providers, connections as current_connections, select as select_proxy, unfix as unfix_proxy, protected_probes, direct_probes } from "./adapters/mihomo.uc";
+import { test_profile, test_runtime, test_group_path, controller_ready, proxies, proxy_providers, connections as current_connections, select as select_proxy, unfix as unfix_proxy, protected_probes, direct_probes } from "./adapters/mihomo.uc";
 import { measure as measure_latency, measure_providers, complete_from_fresh_history } from "./adapters/latency.uc";
 import { read_events, write_events, core_netfleet_lines } from "./adapters/events.uc";
 import { validate as validate_policy, automation as automation_config, guard_probe_url } from "./core/policy.uc";
@@ -25,6 +25,7 @@ import { get as migration_get, apply as migration_apply } from "./application/ba
 import { get as dashboard_get } from "./application/dashboard.uc";
 import { get as native_setup_get, apply as native_setup_apply } from "./application/native_setup.uc";
 import { dispatch as compatibility_dispatch } from "./application/compatibility.uc";
+import { begin as operation_begin, update as operation_update } from "./application/operation.uc";
 
 const REFRESH_DIR = "/tmp/opl-netfleet-subscription-refresh";
 const MAIN_PATH = "/usr/libexec/opl-netfleet/main.uc";
@@ -773,8 +774,13 @@ function measured_group_leaf(secret, entry, group, policy) {
 	return result;
 };
 
-function refresh_data_fallback(secret, entry, policy, provider_state) {
-	const round = measure_latency(secret, entry.name, policy.checks);
+function refresh_data_fallback(secret, entry, policy, provider_state, selected_group) {
+	// Confirm only the chosen path. Traversing all visible branches can overwrite
+	// its healthy wrapper with a failed lazy fallback during initial convergence.
+	const round = selected_group == null ? measure_latency(secret, entry.name, policy.checks) : null;
+	if (selected_group != null && (!unfix_proxy(secret, selected_group) ||
+		!test_group_path(secret, selected_group, policy.checks)))
+		return { ok: false, error: "selected_path_probe_failed", round: null, runtime: null };
 	const state = proxies(secret);
 	if (state == null || state.proxies == null) {
 		return { ok: false, error: "mihomo_state_unavailable", round: round };
@@ -794,7 +800,8 @@ function refresh_data_fallback(secret, entry, policy, provider_state) {
 };
 
 function wait_for_preferred_runtime(secret, entry, choice, policy, provider_state, after_restart) {
-	let fallback = refresh_data_fallback(secret, entry, policy, provider_state);
+	let fallback = refresh_data_fallback(secret, entry, policy, provider_state, choice);
+	if (fallback.error == "selected_path_probe_failed") return fallback;
 	if (fallback.ok && preferred_runtime_ready(fallback.runtime, choice)) {
 		return fallback;
 	}
@@ -1701,8 +1708,10 @@ function run_refresh_selection(requested) {
 	};
 };
 
-function reload_refresh_profile(snapshot, policy) {
+function reload_refresh_profile(snapshot, policy, rolling_back) {
+	if (!rolling_back) operation_update("reloading", { subject: null });
 	if (!restore_profile(snapshot.profile, null)) return { ok: false, error: "runtime_restart_failed" };
+	if (!rolling_back) operation_update("verifying");
 	const readback = runtime_readback(snapshot.profile, null);
 	const lan = lan_runtime_state(guard_probe_url(policy));
 	const probes = policy == null ? null : protected_probes(policy);
@@ -1717,7 +1726,7 @@ function rollback_refresh(snapshot, policy, selections) {
 	}
 	if (snapshot.active != true) {
 		if (snapshot.native_running == true) {
-			const restored = reload_refresh_profile(snapshot, policy);
+			const restored = reload_refresh_profile(snapshot, policy, true);
 			restored.state = restored.ok ? "runtime_restored" : "runtime_restore_failed";
 			return restored;
 		}
@@ -1736,6 +1745,7 @@ function rollback_refresh(snapshot, policy, selections) {
 };
 
 function fail_refresh(snapshot, policy, selections, requested, error, detail) {
+	operation_update("rolling_back", { subject: null });
 	const rollback = rollback_refresh(snapshot, policy, selections);
 	const event = {
 		ok: false,
@@ -1768,6 +1778,7 @@ function fail_refresh(snapshot, policy, selections, requested, error, detail) {
 };
 
 function refresh_action(policy, section, initiator) {
+	operation_begin("subscription", "preparing");
 	const requested = initiator ?? ARGV[1] ?? "cli";
 	const config = automation_config(policy);
 	if (requested == "scheduled" && config.subscription_refresh_enabled != true) {
@@ -1776,6 +1787,7 @@ function refresh_action(policy, section, initiator) {
 	}
 	const sections = section != null ? [section] : BACKEND_KIND == "native-mihomo" ?
 		referenced_subscription_sections(policy, current_profile()) : enabled_subscription_sections(policy);
+	operation_update("preparing", { total: length(sections) });
 	if (length(sections) == 0) {
 		ok("refresh", { state: "no_enabled_providers", provider_count: 0 });
 		return;
@@ -1814,7 +1826,10 @@ function refresh_action(policy, section, initiator) {
 	const outcomes = [];
 	for (let i = 0; i < length(snapshot.entries); i++) {
 		const entry = snapshot.entries[i];
+		const subject = subscription_display_name(entry.section);
+		operation_update("downloading", { completed: i, subject: subject });
 		const updated = update_subscription(entry.section);
+		operation_update("validating", { completed: i, subject: subject });
 		const digest = updated ? sha256(entry.path) : null;
 		const outcome = evaluate_entry({
 			section: entry.section,
@@ -1833,7 +1848,9 @@ function refresh_action(policy, section, initiator) {
 			});
 		}
 		push(outcomes, outcome);
+		operation_update("validating", { completed: i + 1, subject: subject });
 	}
+	operation_update("validating", { subject: null });
 	const summary = summarize_refresh(outcomes);
 	const subscriptions = public_subscription_results(outcomes);
 	if (summary.changed_count == 0) {
@@ -1874,6 +1891,7 @@ function refresh_action(policy, section, initiator) {
 			protected_probes: reloaded?.protected_probes ?? null });
 		return;
 	}
+	operation_update("compiling");
 	const compiled = compile_result(policy, true);
 	if (!compiled.ok) {
 		fail_refresh(snapshot, policy, selections, requested, compiled.error, {
@@ -1882,6 +1900,7 @@ function refresh_action(policy, section, initiator) {
 		});
 	}
 	const manifest = read_json(MANIFEST_PATH);
+	operation_update("reloading");
 	if (manifest == null || !restart()) {
 		fail_refresh(snapshot, policy, selections, requested, "runtime_restart_failed", {
 			changed_count: summary.changed_count, failed_count: summary.failed_count,
@@ -1896,7 +1915,9 @@ function refresh_action(policy, section, initiator) {
 			subscriptions: subscriptions
 		});
 	}
+	operation_update("selecting");
 	const selection = run_refresh_selection(requested);
+	operation_update("verifying");
 	const final_readback = runtime_readback(COMPILED_PROFILE, manifest);
 	const final_probes = protected_probes(policy);
 	if (!selection.ok || !final_readback.runtime_identity_ok || !final_probes.ok) {
@@ -2278,8 +2299,10 @@ if (action == "subscriptions-refresh") {
 	if (index(referenced_subscription_sections(policy, current_profile()), id) >= 0) {
 		refresh_action(policy, id, ARGV[2] ?? "cli");
 	} else {
+		operation_begin("subscription", "downloading", { total: 1, subject: subscription_display_name(id) });
 		const result = subscription_update(id);
 		if (!result.ok) fail(action, result.error);
+		operation_update("validating", { completed: 1 });
 		ok(action, { updated: true, changed: result.changed });
 	}
 	exit(0);

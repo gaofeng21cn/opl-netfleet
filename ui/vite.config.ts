@@ -14,7 +14,7 @@ function sendJson(response: import('node:http').ServerResponse, status: number, 
   response.end(JSON.stringify(payload));
 }
 
-async function readRemote(target: string, method: 'status' | 'events' | 'connections' | 'config_get') {
+async function readRemote(target: string, method: 'status' | 'events' | 'connections' | 'config_get' | 'components_get' | 'operation_get') {
   const { stdout } = await execFileAsync('ssh', [
     '-o', 'BatchMode=yes',
     '-o', 'PasswordAuthentication=no',
@@ -89,6 +89,17 @@ function liveBridgePlugin(target?: string, targetLabel = '设备'): Plugin {
           sendJson(response, 502, { error: 'connections_read_failed' });
         }
       });
+      for (const [path, method] of [['components', 'components_get'], ['operation', 'operation_get']] as const) {
+        server.middlewares.use(`/__netfleet_live/${path}`, async (request, response) => {
+          if (request.method !== 'GET') return sendJson(response, 405, { error: 'method_not_allowed' });
+          if (!validTarget) return sendJson(response, 404, { error: 'live_target_not_configured' });
+          try {
+            sendJson(response, 200, await readRemote(validTarget, method));
+          } catch {
+            sendJson(response, 502, { error: `${path}_read_unavailable` });
+          }
+        });
+      }
     },
   };
 }

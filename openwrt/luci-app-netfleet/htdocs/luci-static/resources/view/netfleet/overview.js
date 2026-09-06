@@ -15,6 +15,7 @@ const NAVIGATION = [
 	[ 'providers', '机场' ],
 	[ 'regions', '地区' ],
 	[ 'config', '配置' ],
+	[ 'components', '组件与更新' ],
 	[ 'events', '事件与诊断' ]
 ];
 
@@ -1049,6 +1050,7 @@ return view.extend({
 
 	loadManagement: function() {
 		managed.preloadSubscriptions(this).catch(function() {});
+		managed.readOperations(this);
 		this.loadConfig();
 		compatibility.refresh(this);
 		if (!this.compatibilityPoll) {
@@ -1126,7 +1128,7 @@ return view.extend({
 				E('div', { 'class': 'cbi-page-actions' }, buttons));
 			return;
 		}
-		const title = ({ overview: '网络概览', exits: '出口', providers: '机场', regions: '地区', config: '配置', events: '事件与诊断' })[this.currentView];
+		const title = ({ overview: '网络概览', exits: '出口', providers: '机场', regions: '地区', config: '配置', components: '组件与更新', events: '事件与诊断' })[this.currentView];
 		const tabs = E('ul', { 'class': 'cbi-tabmenu' }, NAVIGATION.map(function(item) {
 			const control = E('a', {
 				'href': '#',
@@ -1135,6 +1137,15 @@ return view.extend({
 					self.currentView = item[0];
 					if (item[0] === 'events')
 						self.refreshConnections();
+					else if (item[0] === 'components') {
+						managed.loadComponents(self);
+						managed.readOperations(self);
+						self.redraw();
+					}
+					else if (item[0] === 'providers') {
+						managed.readOperations(self);
+						self.redraw();
+					}
 					else
 						self.redraw();
 				}
@@ -1151,22 +1162,24 @@ return view.extend({
 			return attrs;
 		};
 		const buttons = [
-			E('button', buttonAttrs({ 'class': 'btn cbi-button', 'click': function() { return self.refreshData(); } }, false), this.busy || this.refreshing ? '正在读取…' : '刷新')
+			E('button', buttonAttrs({ 'class': 'btn cbi-button', 'click': function() { return self.currentView === 'components' ? managed.loadComponents(self) : self.refreshData(); } }, false), this.busy || this.refreshing ? '正在读取…' : '刷新')
 		];
-		if (this.currentView !== 'config' && actions.can_enable === true)
+		const showRuntimeActions = this.currentView !== 'config' && this.currentView !== 'components';
+		if (showRuntimeActions && actions.can_enable === true)
 			buttons.push(E('button', buttonAttrs({ 'class': 'btn cbi-button cbi-button-action', 'click': function() { self.confirmAction('enable'); } }, true), '启用 NetFleet'));
-		if (this.currentView !== 'config' && actions.can_select_auto === true)
+		if (showRuntimeActions && actions.can_select_auto === true)
 			buttons.push(E('button', buttonAttrs({ 'class': 'btn cbi-button cbi-button-action', 'click': function() { self.confirmAction('select'); } }, true), '重新选优'));
-		if (this.currentView !== 'config' && actions.can_refresh === true)
+		if (showRuntimeActions && actions.can_refresh === true)
 			buttons.push(E('button', buttonAttrs({ 'class': 'btn cbi-button cbi-button-action', 'click': function() { self.confirmAction('refresh'); } }, true), '立即更新订阅'));
-		if (this.currentView !== 'config' && actions.can_disable === true)
+		if (showRuntimeActions && actions.can_disable === true)
 			buttons.push(E('button', buttonAttrs({ 'class': 'btn cbi-button cbi-button-negative', 'click': function() { self.confirmAction('disable'); } }, true), '关闭 NetFleet'));
 
 		let content;
 		if (this.currentView === 'exits') content = exitsPage(this.status);
-		else if (this.currentView === 'providers') content = providersPage(this.status, this);
+		else if (this.currentView === 'providers') content = [ managed.operationNode(this, 'subscription') ].concat(providersPage(this.status, this));
 		else if (this.currentView === 'regions') content = regionsPage(this.status);
 		else if (this.currentView === 'config') content = [ netfleetConfig.render(this) ];
+		else if (this.currentView === 'components') content = [ managed.components(this) ];
 		else if (this.currentView === 'events') content = eventsPage(this.status, this.events, this.connections, this.connectionsLoading, this.connectionsError, this.eventPage, function(page) {
 			self.eventPage = page;
 			self.redraw();
@@ -1487,11 +1500,11 @@ return view.extend({
 
 	runAction: function(action) {
 		const self = this;
+		if (action === 'refresh') return managed.runSubscription(this, function() { return netfleet.refresh(); });
 		const automaticCapability = this.status.selection && this.status.selection.automatic_capability_id;
 		let request;
 			if (action === 'enable') request = netfleet.enable();
 			else if (action === 'select') request = netfleet.selectAuto(automaticCapability);
-			else if (action === 'refresh') request = netfleet.refresh();
 			else request = netfleet.disable();
 		ui.showModal('NetFleet', [ E('p', { 'class': 'spinning' }, '正在执行并等待设备确认…') ]);
 		this.busy = true;
@@ -1499,7 +1512,7 @@ return view.extend({
 			return self.refreshData(true);
 		}).then(function() {
 			ui.hideModal();
-				ui.addNotification(null, E('p', {}, ({ enable: 'NetFleet 已启用。', select: '自动选优已完成。', refresh: '机场订阅更新已完成。', disable: 'NetFleet 已关闭。' })[action]), 'info');
+				ui.addNotification(null, E('p', {}, ({ enable: 'NetFleet 已启用。', select: '自动选优已完成。', disable: 'NetFleet 已关闭。' })[action]), 'info');
 		}).catch(function(error) {
 			ui.hideModal();
 			if (error && error.netfleetKind === 'request_aborted')

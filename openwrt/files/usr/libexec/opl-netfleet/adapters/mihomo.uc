@@ -55,8 +55,25 @@ export function controller_ready(secret, timeout_seconds) {
 		length(version.version) > 0;
 };
 
+export function controller_version(secret, timeout_seconds) {
+	if (!secret) return null;
+	const value = api_json(secret, "/version", timeout_seconds)?.version;
+	return type(value) == "string" && length(value) <= 128 ? value : null;
+};
+
 export function proxy_providers(secret, timeout_seconds) {
 	return api_json(secret, "/providers/proxies", timeout_seconds);
+};
+
+export function test_group_path(secret, group, checks) {
+	const latency = checks?.latency;
+	if (!secret || type(group) != "string" || !length(group) || type(latency?.url) != "string" ||
+		type(latency.timeout_ms) != "int" || latency.timeout_ms < 100 || latency.timeout_ms > 10000 ||
+		type(latency.expected_status) != "int") return false;
+	const path = `/proxies/${url_path_segment(group)}/delay?url=${url_path_segment(latency.url)}` +
+		`&timeout=${latency.timeout_ms}&expected=${latency.expected_status}`;
+	const result = api_json(secret, path, int((latency.timeout_ms + 999) / 1000) + 3);
+	return type(result?.delay) == "int" && result.delay >= 0;
 };
 
 function nonempty_string(value) {

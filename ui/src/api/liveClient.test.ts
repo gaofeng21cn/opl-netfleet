@@ -99,5 +99,20 @@ describe('LiveNetFleetClient', () => {
     await expect(client.enable()).rejects.toThrow('只读模式');
     await expect(client.selectAuto()).rejects.toThrow('只读模式');
     await expect(client.disable()).rejects.toThrow('只读模式');
+    await expect(client.components()).rejects.toThrow('设备尚未提供组件管理信息');
+    await expect(client.operations()).rejects.toThrow('设备操作进度暂不可读取');
+  });
+
+  it('reads components and operations separately without triggering a feed update', async () => {
+    const calls: string[] = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      calls.push(String(input));
+      expect(init?.method).toBeUndefined();
+      return new Response(JSON.stringify(String(input).endsWith('/components') ? { supported: true } : { subscription: null, packages: null }), { status: 200 });
+    };
+    const client = new LiveNetFleetClient(fetcher);
+    await expect(client.components()).resolves.toEqual({ supported: true });
+    await expect(client.operations()).resolves.toEqual({ subscription: null, packages: null });
+    expect(calls).toEqual(['/__netfleet_live/components', '/__netfleet_live/operation']);
   });
 });
