@@ -220,6 +220,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.05)
         self.assertEqual((await self.health())["active_requests"], 0)
         self.assertEqual((await self.health())["rules"]["test"]["upstream_protocol"], "h2")
+        self.assertEqual((await self.health())["failure_events"], [])
 
     async def test_websocket_uses_h1(self):
         reader, writer = await asyncio.open_connection("127.0.0.1", self.proxy_port)

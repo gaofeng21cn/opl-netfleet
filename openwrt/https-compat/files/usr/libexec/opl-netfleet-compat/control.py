@@ -153,6 +153,8 @@ def status():
         reason = "draining" if health.get("active_connections") else "disabled"
     return {"installed": True, "revision": revision(), "config": config, "requested": config["enabled"],
             **kernel, "reason": reason, "active_connections": health.get("active_connections"),
+            "device_connections": {device["id"]: sum(health.get("clients_by_address", {}).get(address, 0) for address in device["addresses"])
+                                   if health.get("active_connections") is not None else None for device in config["devices"]},
             "active_requests": health.get("active_requests"), "rules": health.get("rules", {}),
             "recovery": state.get("recovery", {}), "ca_sha256": fingerprint,
             "rule_recovery": state.get("rule_recovery", {}),
@@ -163,6 +165,10 @@ def save_state(state, previous):
     events = previous.get("events", [])
     if (state.get("reason"), state.get("intercepting")) != (previous.get("reason"), previous.get("intercepting")):
         events = [*events, {"at": int(time.time()), "reason": state.get("reason"), "intercepting": state.get("intercepting", False)}][-100:]
+    for identity, current in state.get("rule_recovery", {}).items():
+        old = previous.get("rule_recovery", {}).get(identity, {})
+        if (current.get("reason"), current.get("intercepting")) != (old.get("reason"), old.get("intercepting")):
+            events = [*events, {"at": int(time.time()), "rule": identity, "reason": current.get("reason"), "intercepting": current.get("intercepting", False)}][-100:]
     atomic(STATE, {**state, "events": events, "last_tick": time.monotonic()})
 
 
@@ -225,7 +231,7 @@ def tick():
         save_state(state, previous)
         return
     active = effective(config, read(TRUST, {}), ca_fingerprint())
-    rule_states = previous.get("rule_recovery", {})
+    rule_states = dict(previous.get("rule_recovery", {}))
     observed = {**previous.get("observed", {}), **health.get("observed", {})}
     state["observed"] = observed
     pending = [{**rule, **observed.get(rule["id"], {})} for rule in active["rules"] if rule["enabled"] and rule["strategy"] == "h2"

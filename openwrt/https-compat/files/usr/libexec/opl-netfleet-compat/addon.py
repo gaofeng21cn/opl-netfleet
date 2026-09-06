@@ -1,5 +1,5 @@
 import asyncio
-from collections import deque
+from collections import Counter, deque
 import hashlib
 import json
 import os
@@ -28,7 +28,7 @@ class Compatibility:
         self.server = None
         self.socket_path = None
         self.probe = None
-        self.clients = set()
+        self.clients = {}
         self.failures = deque(maxlen=100)
         self.failed_tls_clients = set()
         self.observed = {}
@@ -75,6 +75,7 @@ class Compatibility:
             writer.write(json.dumps({"service": "netfleet-https-compat", "pid": os.getpid(), "ready": valid,
                                      "revision": self.revision, "active_requests": sum(client in clients for client in self.active.values()),
                                      "active_connections": len(self.clients), "processing_chain": processing,
+                                     "clients_by_address": dict(Counter(self.clients.values())),
                                      "failure_events": list(self.failures),
                                      "observed": self.observed,
                                      "rules": {key: value for key, value in self.results.items() if key != "_health"}}).encode() + b"\n")
@@ -182,10 +183,10 @@ class Compatibility:
     def client_connected(self, client):
         internal = client.peername[0] in ("127.0.0.1", "::1") and client.sockname[1] == 18444
         if not internal:
-            self.clients.add(client.id)
+            self.clients[client.id] = client.peername[0]
 
     def client_disconnected(self, client):
-        self.clients.discard(client.id)
+        self.clients.pop(client.id, None)
         self.failed_tls_clients.discard(client.id)
         self.selected.pop(client.id, None)
         self.protocols.pop(client.id, None)

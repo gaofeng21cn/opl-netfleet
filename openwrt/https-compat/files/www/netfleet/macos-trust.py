@@ -54,7 +54,7 @@ def main():
         if args.action == "revoke":
             status = remote(args.target, "probe", {"revision": status["revision"], "operation": "trust_revoke", "device": args.device})
             # Removing trust during an established request can break its next TLS connection.
-            if status.get("active_connections") != 0:
+            if status.get("device_connections", {}).get(args.device) != 0:
                 raise ValueError("接管已撤销；现有连接尚未排空，请稍后再次撤销本机信任")
             subprocess.run(["sudo", "security", "delete-certificate", "-Z", fingerprint, KEYCHAIN], check=True)
             print(json.dumps({"revoked": True, "ca_sha256": fingerprint}))

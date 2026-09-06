@@ -264,11 +264,27 @@ function watch() {
 
 function compatibility_snapshot() {
 	const uci = cursor();
+	const service = parse(capture("ubus call service list '{\"name\":\"opl-netfleet-compat\"}'"));
+	const engine = service?.["opl-netfleet-compat"]?.instances?.engine;
+	const membership = engine?.running == true && type(engine.pid) == "int" ? fs.readfile(`/proc/${engine.pid}/cgroup`) : null;
+	let engine_group = null;
+	for (let line in split(membership ?? "", "\n"))
+		if (index(line, "0::/") == 0) engine_group = substr(line, 4);
 	let custom = false;
 	for (let kind in ["router_access_control", "lan_access_control"]) {
 		let defaults = 0;
 		uci.foreach("netfleet", kind, (section) => {
 			if (`${section.enabled}` != "1") return;
+			// Router service exclusions are equivalent only when the actual engine cannot match them.
+			if (kind == "router_access_control" && engine_group != null && length(section.cgroup ?? []) > 0) {
+				let excluded = true;
+				for (let key in ["ip", "ip6", "mac", "user", "group"])
+					if (length(section[key] ?? []) > 0) excluded = false;
+				for (let group in section.cgroup)
+					if (!match(group, /^[A-Za-z0-9_\/-]+$/) || group == engine_group || index(engine_group, `${group}/`) == 0)
+						excluded = false;
+				if (excluded) return;
+			}
 			for (let key in ["ip", "ip6", "mac", "user", "group", "cgroup"])
 				if (length(section[key] ?? []) > 0) custom = true;
 			if (`${section.proxy}` != "1") custom = true;

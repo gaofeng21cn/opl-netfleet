@@ -155,7 +155,7 @@ function render(controller) {
 			state.installed ? E('a', { 'href': '/netfleet/macos-trust.py', 'download': 'netfleet-macos-trust.py' }, 'macOS 接入工具') : '' ]),
 		E('small', {}, state.ca_sha256 ? 'CA SHA-256：' + state.ca_sha256 : ''),
 		E('h4', {}, '兼容事件'), table([ '时间', '接管', '原因' ], state.events.slice().reverse().map(function(event) {
-			return E('tr', {}, [ E('td', {}, new Date(event.at * 1000).toLocaleString()), E('td', {}, event.intercepting ? '是' : '否'), E('td', {}, reason(event.reason)) ]);
+			return E('tr', {}, [ E('td', {}, new Date(event.at * 1000).toLocaleString()), E('td', {}, event.intercepting ? '是' : '否'), E('td', {}, (event.rule ? event.rule + '：' : '') + reason(event.reason)) ]);
 		})) ]);
 }
 
