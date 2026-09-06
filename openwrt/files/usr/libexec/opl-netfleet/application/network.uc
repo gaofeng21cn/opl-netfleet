@@ -113,8 +113,10 @@ function stage(found, settings, work) {
 	const extra = fs.lstat(MIXIN) == null ? {} : read_json(MIXIN);
 	if (type(extra) != "object") return false;
 	if (extra.dns == null) extra.dns = {};
-	for (let field in ["nameserver", "default-nameserver", "proxy-server-nameserver", "direct-nameserver", "nameserver-policy", "proxy-server-nameserver-policy"])
-		extra.dns[field] = profile.dns[field];
+	for (let field in ["nameserver", "default-nameserver", "proxy-server-nameserver", "direct-nameserver", "nameserver-policy", "proxy-server-nameserver-policy"]) {
+		if (profile.dns[field] == null) delete extra.dns[field];
+		else extra.dns[field] = profile.dns[field];
+	}
 	// Retain fallback resolvers when switching the represented resolver lists to the private overlay.
 	if (profile.dns.fallback != null) extra.dns.fallback = profile.dns.fallback;
 	set_value(uci, "mixin", "dns_nameserver", false);

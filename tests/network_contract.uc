@@ -40,6 +40,7 @@ rejects((settings) => { settings.listeners.mixed_port = 9090; }, "controller_por
 rejects((settings) => { settings.listeners.mixed_port = 0; }, "proxy_probe_listener_retained");
 rejects((settings) => { settings.dns.nameservers = ["file:///etc/passwd"]; }, "local_resolver_uri_rejected");
 rejects((settings) => { settings.dns.proxy_nameservers = []; }, "proxy_policy_needs_default_resolver");
+rejects((settings) => { settings.dns.default_nameservers = []; }, "configured_bootstrap_resolver_retained");
 rejects((settings) => { settings.dns.nameservers = ["udp://example.test\nsecret"]; }, "resolver_control_character_rejected");
 rejects((settings) => { settings.dns.policies = [{ domain: "+.example.test", nameservers: ["198.51.100.53"] }]; }, "wildcard_domain_rejected");
 rejects((settings) => { settings.lan.interfaces = ["../../wan"]; }, "unowned_interface_rejected");
@@ -67,3 +68,6 @@ check(rendered.private_field.keep && rendered.secret == profile.secret && render
 	rendered.dns.fallback[0] == "198.51.100.56", "unrepresented_configuration_preserved");
 check(rendered["mixed-port"] == 17890 && rendered.authentication[0] == "user:private-password", "candidate_listener_and_authentication");
 print("network_contract passed\n");
+const omitted = clone(profile);
+delete omitted.dns["default-nameserver"];
+check(runtime_profile(omitted, project(omitted, sections)).dns["default-nameserver"] == null, "omitted_bootstrap_not_replaced_by_invalid_empty_list");

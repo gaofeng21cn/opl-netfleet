@@ -134,6 +134,8 @@ export function validate_request(request, revision, current, resources) {
 		validate_policies(settings.dns.proxy_policies, errors, "dns.proxy_policies");
 		if (length(settings.dns.proxy_policies ?? []) && !length(settings.dns.proxy_nameservers ?? []))
 			push(errors, { path: "dns.proxy_nameservers", reason: "proxy_resolver_required" });
+		if (length(current.dns.default_nameservers) && !length(settings.dns.default_nameservers ?? []))
+			push(errors, { path: "dns.default_nameservers", reason: "default_resolver_required" });
 	}
 	if (fields(settings.router, ["enabled"], errors, "router")) boolean(settings.router.enabled, errors, "router.enabled");
 	if (fields(settings.lan, ["enabled", "interfaces", "rules"], errors, "lan")) {
@@ -214,7 +216,10 @@ export function runtime_profile(original, settings) {
 	const profile = copy(original);
 	if (profile.dns == null) profile.dns = {};
 	const mapping = { nameservers: "nameserver", default_nameservers: "default-nameserver", proxy_nameservers: "proxy-server-nameserver", direct_nameservers: "direct-nameserver" };
-	for (let key, name in mapping) profile.dns[name] = copy(settings.dns[key]);
+	for (let key, name in mapping) {
+		if (key == "default_nameservers" && !length(settings.dns[key])) delete profile.dns[name];
+		else profile.dns[name] = copy(settings.dns[key]);
+	}
 	profile.dns["nameserver-policy"] = managed_policy(profile.dns["nameserver-policy"], settings.dns.policies);
 	profile.dns["proxy-server-nameserver-policy"] = managed_policy(profile.dns["proxy-server-nameserver-policy"], settings.dns.proxy_policies);
 	profile["mixed-port"] = settings.listeners.mixed_port;
