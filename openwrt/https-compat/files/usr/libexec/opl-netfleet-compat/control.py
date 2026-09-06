@@ -93,7 +93,17 @@ def engine_health(probe=False):
                     return value
     except (OSError, ValueError):
         pass
-    return {"ready": False, "active_requests": None, "active_connections": None, "rules": {}}
+    connections = None
+    try:
+        result = subprocess.run(["ubus", "call", "service", "list", '{"name":"opl-netfleet-compat"}'],
+                                capture_output=True, text=True, timeout=0.4)
+        if result.returncode == 0:
+            instances = json.loads(result.stdout).get("opl-netfleet-compat", {}).get("instances", {})
+            if not any(instance.get("running") for instance in instances.values()):
+                connections = 0
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+    return {"ready": False, "active_requests": None, "active_connections": connections, "rules": {}}
 
 
 def snapshot():
@@ -377,7 +387,10 @@ def main():
             if request.get("operation") == "recover":
                 state = read(STATE, {})
                 if request.get("rule"):
-                    state.get("rule_recovery", {}).pop(request["rule"], None)
+                    identity = request["rule"]
+                    old = state.setdefault("rule_recovery", {}).get(identity, {})
+                    last_error = max([old.get("last_error", 0), *[event["id"] for event in engine_health().get("failure_events", []) if event["rule"] == identity]])
+                    state["rule_recovery"][identity] = {"last_error": last_error}
                 else:
                     state.pop("recovery", None)
                     state.pop("unhealthy_since", None)

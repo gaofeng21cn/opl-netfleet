@@ -13,6 +13,13 @@ from https_compat_controller import Controller
 
 
 class Native(Kernel):
+    @staticmethod
+    def command(*args):
+        result = subprocess.run(args, capture_output=True, text=True, timeout=15)
+        if result.returncode:
+            logs = subprocess.run(["logread", "-e", "opl-netfleet-core"], capture_output=True, text=True, timeout=2)
+            raise AssertionError(f"{args}: {result.stdout} {result.stderr} {logs.stdout}")
+
     async def asyncSetUp(self):
         await super().asyncSetUp()
         await self.stop_proxy()
