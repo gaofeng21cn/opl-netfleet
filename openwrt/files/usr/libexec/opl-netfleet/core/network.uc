@@ -190,7 +190,7 @@ export function validate_request(request, revision, current, resources) {
 				if (type(credential.username) != "string" || !match(credential.username, /^[^[:cntrl:][:space:]:]{1,128}$/) || index(seen, credential.username) >= 0)
 					push(errors, { path: "listeners.credentials.username", reason: "invalid_username" });
 				push(seen, credential.username);
-				if (type(credential.password) != "string" || !match(credential.password, /^[^[:cntrl:]]{1,256}$/))
+				if (type(credential.password) != "string" || length(credential.password) < 1 || length(credential.password) > 256 || match(credential.password, /[[:cntrl:]]/))
 					push(errors, { path: "listeners.credentials.password", reason: "password_required" });
 				credential.password_configured = true;
 			}
