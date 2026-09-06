@@ -55,7 +55,7 @@ class LocalProbe:
         try:
             async with asyncio.timeout(1.4):
                 reader, writer = await asyncio.open_connection("127.0.0.1", PROXY_PORT)
-                authority = f"localhost:{TLS_PORT}"
+                authority = f"127.0.0.1:{TLS_PORT}"
                 writer.write(f"CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n\r\n".encode())
                 await writer.drain()
                 if not (await reader.readuntil(b"\r\n\r\n")).startswith(b"HTTP/1.1 200 "):

@@ -40,7 +40,7 @@ cp -R "$work/openwrt/mihomo-meta" "$sdk/package/mihomo-meta"
 cp "$key" "$sdk/private-key.pem"
 chmod 0600 "$sdk/private-key.pem"
 "$sdk/staging_dir/host/bin/openssl" ec -in "$sdk/private-key.pem" -pubout >"$sdk/public-key.pem"
-make -C "$sdk" "package/$package/clean"
+make -C "$sdk" "package/$package/clean" V=s
 jobs=${NETFLEET_COMPAT_BUILD_JOBS:-8}
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]]
 # Build real library metadata without optional kernel crypto engines.
