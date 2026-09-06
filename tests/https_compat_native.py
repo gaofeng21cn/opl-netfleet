@@ -13,6 +13,8 @@ from https_compat_controller import Controller
 
 
 class Native(Kernel):
+    ORIGIN_PORT = 443
+
     @staticmethod
     def command(*args):
         result = subprocess.run(args, capture_output=True, text=True, timeout=15)
@@ -74,6 +76,10 @@ class Native(Kernel):
         self.addCleanup(self.command, "/etc/init.d/opl-netfleet-core", "stop")
         self.owner = Controller()
         self.addCleanup(self.disable)
+        hosts = Path("/etc/hosts")
+        original_hosts = hosts.read_bytes()
+        self.addCleanup(hosts.write_bytes, original_hosts)
+        hosts.write_bytes(original_hosts + b"\n198.51.100.10 localhost\n2001:db8:88::10 localhost\n")
 
     def disable(self):
         status = self.owner.call("get")
@@ -100,6 +106,24 @@ class Native(Kernel):
             await asyncio.sleep(1)
         wire = await self.request()
         self.assertTrue(wire["h2"], {"wire": wire, "engine": self.owner.health()})
+        self.assertTrue(self.owner.health(probe=True)["transparent_chain"])
+        # The explicit probe stays healthy when only the transparent ingress fails.
+        self.command("nft", "insert", "rule", "inet", "netfleet_compat", "private_listener",
+                     "tcp", "dport", "18443", "reject", "with", "tcp", "reset")
+        broken = self.owner.health(probe=True)
+        self.assertTrue(broken["processing_chain"])
+        self.assertFalse(broken["transparent_chain"])
+        await asyncio.sleep(3)
+        self.assertFalse(self.owner.call("get")["intercepting"])
+        self.assertEqual(self.owner.call("get")["reason"], "transparent_chain_failed")
+        rules = json.loads(subprocess.check_output(["nft", "-j", "list", "chain", "inet", "netfleet_compat", "private_listener"]))
+        first = next(item["rule"] for item in rules["nftables"] if "rule" in item)
+        self.command("nft", "delete", "rule", "inet", "netfleet_compat", "private_listener", "handle", str(first["handle"]))
+        self.owner.call("probe", {"revision": self.owner.call("get")["revision"], "operation": "recover"})
+        deadline = time.monotonic() + 85
+        while not self.owner.call("get")["intercepting"]:
+            self.assertLess(time.monotonic(), deadline, self.owner.call("get"))
+            await asyncio.sleep(1)
         # Production uses one wildcard transparent listener for both families.
         config["devices"][0]["addresses"].append("2001:db8:77::2")
         saved = self.owner.call("apply", {"revision": self.owner.call("get")["revision"], "config": config})

@@ -160,6 +160,20 @@ async def probe_rules(rules):
     return dict(await asyncio.gather(*(check(rule) for rule in rules)))
 
 
+async def resolve_targets(rules):
+    async def resolve(rule):
+        if rule["match"] == "suffix":
+            return rule["id"], ["0.0.0.0/0", "::/0"]
+        try:
+            async with asyncio.timeout(0.7):
+                records = await asyncio.get_running_loop().getaddrinfo(
+                    rule["domain"], rule["port"], type=socket.SOCK_STREAM)
+                return rule["id"], sorted({record[4][0] for record in records})
+        except (OSError, asyncio.TimeoutError):
+            return rule["id"], []
+    return dict(await asyncio.gather(*(resolve(rule) for rule in rules)))
+
+
 def status():
     config = validate(read(CONFIG, DEFAULT))
     state = read(STATE, {})
@@ -218,14 +232,18 @@ def tick():
         network = snapshot()
         profile = read(Path("/etc/opl-netfleet/native/run/config.yaml"), {})
         reason = admission(profile, network)
+        if not reason:
+            gateway.prepare(network["interfaces"], network.get("dscp_bypass", []))
     except (OSError, ValueError, subprocess.SubprocessError):
         network, reason = {}, "native_gateway_unavailable"
     health = engine_health(probe=True)
     expected = hashlib.sha256(EFFECTIVE.read_bytes()).hexdigest() if EFFECTIVE.exists() else None
-    healthy = not reason and health.get("ready") and health.get("processing_chain") is True and health.get("revision") == expected
+    healthy = (not reason and health.get("ready") and health.get("processing_chain") is True
+               and health.get("transparent_chain") is True and health.get("revision") == expected)
     if not reason:
         reason = ("engine_unavailable" if not health.get("ready") else
                   "processing_chain_failed" if health.get("processing_chain") is not True else
+                  "transparent_chain_failed" if health.get("transparent_chain") is not True else
                   "engine_config_pending" if health.get("revision") != expected else None)
     recovery = advance(previous.get("recovery"), requested=True, healthy=bool(healthy), reason=reason, now=now)
     last_pid = previous.get("engine_pid")
@@ -240,7 +258,8 @@ def tick():
     state["engine_pid"] = health.get("pid", last_pid)
     if not recovery["intercepting"]:
         gateway.bypass()
-        if not health.get("ready") or health.get("processing_chain") is not True:
+        if (not health.get("ready") or health.get("processing_chain") is not True
+                or health.get("transparent_chain") is not True):
             since = previous.get("unhealthy_since", now)
             state["unhealthy_since"] = since
             if now - since >= 10 and not recovery["latched"]:
@@ -295,16 +314,19 @@ def tick():
         state["reason"] = "rules_recovering"
         save_state(state, previous)
         return
-    pairs = {(device, rule["port"]) for rule in active["rules"] if rule["enabled"] and rule["strategy"] == "h2" for device in rule["devices"]}
+    target_rules = [rule for rule in active["rules"] if rule["enabled"] and rule["strategy"] == "h2"]
+    targets = asyncio.run(resolve_targets(target_rules))
+    pairs = {(device, rule["port"], destination) for rule in target_rules
+             for device in rule["devices"] for destination in targets[rule["id"]]}
     candidates = []
     for device in active["devices"]:
-        for identity, port in pairs:
+        for identity, port, destination in pairs:
             if identity != device["id"]:
                 continue
             for address in device["addresses"]:
                 family = 6 if ":" in address else 4
-                if network.get(f"ipv{family}_proxy"):
-                    candidates.append((address, "::/0" if family == 6 else "0.0.0.0/0", port))
+                if network.get(f"ipv{family}_proxy") and (":" in destination) == (family == 6):
+                    candidates.append((address, destination, port))
     if candidates:
         gateway.prepare(network["interfaces"], network.get("dscp_bypass", []))
         gateway.renew(candidates)

@@ -33,7 +33,7 @@ def prepare(interfaces, dscp_bypass=()):
         raise ValueError("invalid_dscp_bypass")
     dscp = ", ".join(str(value) for value in dscp_bypass)
     exclusions = f"ip dscp {{ {dscp} }} return\n  ip6 dscp {{ {dscp} }} return" if dscp else ""
-    signature = hashlib.sha256(json.dumps([2, interfaces, list(dscp_bypass)]).encode()).hexdigest()
+    signature = hashlib.sha256(json.dumps([3, interfaces, list(dscp_bypass)]).encode()).hexdigest()
     present = exists()
     if present:
         current = json.loads(run(["nft", "-j", "list", "table", "inet", TABLE]))
@@ -58,6 +58,11 @@ def prepare(interfaces, dscp_bypass=()):
   type filter hook input priority -1; policy accept;
   tcp dport {PORT} ct status dnat accept
   tcp dport {PORT} reject with tcp reset
+ }}
+ chain local_probe {{
+  type nat hook output priority -101; policy accept;
+  meta mark 0x02000000 ip saddr 127.0.0.1 ip daddr 127.0.0.1 tcp dport 18445 redirect to :{PORT}
+  meta mark 0x02000000 ip6 saddr ::1 ip6 daddr ::1 tcp dport 18445 redirect to :{PORT}
  }}
 }}
 """)

@@ -53,6 +53,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
     DEVICE = "127.0.0.1"
     MODE = "regular"
     PROXY_PORT = None
+    ORIGIN_PORT = None
     PRESERVE_SOURCE_PORT = False
 
     async def asyncSetUp(self):
@@ -64,7 +65,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         self.first_upload = asyncio.Event()
         self.finish_sse = asyncio.Event()
         self.shutdown = asyncio.Event()
-        self.upstream_port, self.proxy_port = free_port(), self.PROXY_PORT or free_port()
+        self.upstream_port, self.proxy_port = self.ORIGIN_PORT or free_port(), self.PROXY_PORT or free_port()
         config = Config()
         config.bind = [f"{'[' + self.BIND + ']' if ':' in self.BIND else self.BIND}:{self.upstream_port}"]
         config.certfile = str(self.directory / "upstream.pem")

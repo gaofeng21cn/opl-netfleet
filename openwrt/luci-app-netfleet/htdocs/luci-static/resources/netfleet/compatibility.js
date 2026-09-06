@@ -9,6 +9,7 @@ function reason(value) {
 		ca_not_ready: 'CA 未就绪，当前旁路',
 		lease_expired: '接管许可已到期', maintenance: '组件维护中，当前旁路', no_verified_targets: '没有已验证的接入目标',
 		manual_recovery_required: '故障频繁，等待人工恢复', processing_chain_failed: '本地处理链异常',
+		transparent_chain_failed: '透明接管入口异常，已旁路',
 		engine_unavailable: '兼容引擎未就绪', engine_config_pending: '等待引擎载入配置',
 		native_gateway_unavailable: '原生网关暂不可用', native_gateway_not_ready: '原生网关尚未就绪',
 		native_ownership_guard_missing: '原生网关缺少连接归属保护',

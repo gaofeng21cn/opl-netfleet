@@ -70,11 +70,13 @@ class Compatibility:
         try:
             command = await asyncio.wait_for(reader.readline(), 1)
             valid = self.refresh()
-            processing = await self.probe.check() if self.probe and command == b"probe\n" else None
+            processing, transparent = (await asyncio.gather(self.probe.check(), self.probe.transparent_check())
+                                       if self.probe and command == b"probe\n" else (None, None))
             clients = {identity for identity, rule in self.selected.items() if rule["id"] != "_health"}
             writer.write(json.dumps({"service": "netfleet-https-compat", "pid": os.getpid(), "ready": valid,
                                      "revision": self.revision, "active_requests": sum(client in clients for client in self.active.values()),
                                      "active_connections": len(self.clients), "processing_chain": processing,
+                                     "transparent_chain": transparent,
                                      "clients_by_address": dict(Counter(self.clients.values())),
                                      "failure_events": list(self.failures),
                                      "observed": self.observed,
@@ -186,7 +188,7 @@ class Compatibility:
                                       "transport_error": not cancelled, "client_cancelled": cancelled}
 
     def client_connected(self, client):
-        internal = client.peername[0] in ("127.0.0.1", "::1") and client.sockname[1] == 18444
+        internal = client.peername[0] in ("127.0.0.1", "::1") and client.sockname[1] in (18444, TLS_PORT)
         if not internal:
             self.clients[client.id] = client.peername[0]
 
