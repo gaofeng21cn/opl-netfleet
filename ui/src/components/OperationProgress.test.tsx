@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { OperationProgress } from './OperationProgress';
+import { OperationProgress, operationRunning } from './OperationProgress';
 import { ComponentsView } from '../views/ComponentsView';
 import type { OperationSnapshot } from '../types';
 
@@ -30,5 +30,16 @@ describe('operation progress', () => {
     expect(html).toContain('设备未提供组件信息');
     expect(html).not.toContain('0.5.2');
     expect(html).not.toContain('1.19.30');
+  });
+
+  it('keeps a failed update distinct from its separately confirmed recovery outcome', () => {
+    for (const [recovery, expected] of [['restored', '已恢复更新前状态'], ['failed', '恢复失败'], ['direct', '已恢复网络直通']] as const) {
+      const result = { ...operation, state: 'failed' as const, recovery };
+      const html = renderToStaticMarkup(<OperationProgress operation={result} />);
+      expect(html).toContain('执行失败');
+      expect(html).toContain(expected);
+      expect(html).not.toContain('已完成');
+      expect(operationRunning(result)).toBe(false);
+    }
   });
 });

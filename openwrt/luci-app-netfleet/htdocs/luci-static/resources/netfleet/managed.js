@@ -109,6 +109,7 @@ function operationNode(controller, kind) {
 	if (operation && Number(operation.total) > 0) details.push(E('span', {}, (kind === 'subscription' ? '已处理 ' : '已完成 ') + Number(operation.completed || 0) + ' / ' + Number(operation.total) + (kind === 'subscription' ? ' 个机场' : ' 个文件')));
 	details.push(E('span', {}, '已耗时 ' + (elapsed < 60 ? elapsed + ' 秒' : Math.floor(elapsed / 60) + ' 分 ' + elapsed % 60 + ' 秒')));
 	if (operation && operation.error) details.push(E('span', { 'class': 'is-warning' }, errorLabel(operation.error)));
+	if (operation && operation.recovery) details.push(E('span', {}, ({ restored: '已恢复更新前状态', failed: '恢复失败', direct: '已恢复网络直通' })[operation.recovery] || '恢复结果尚未确认'));
 	return E('div', Object.assign(attrs, { 'class': attrs.class + (disconnected || operation && ['failed', 'interrupted'].includes(operation.state) ? ' is-warning' : '') }), [
 		E('div', { 'class': 'netfleet-operation-title' }, kind === 'subscription' ? '机场订阅更新' : '组件与更新'),
 		E('div', { 'class': 'netfleet-operation-detail' }, details)
@@ -151,8 +152,8 @@ function readOperations(controller) {
 		updateOperationNodes(controller);
 		const snapshot = controller.operations || {};
 		const running = controller.subscriptionRequest || isRunning(snapshot.subscription) || isRunning(snapshot.packages);
-		if (running || ['providers', 'components'].includes(controller.currentView))
-			controller.operationTimer = setTimeout(function() { if (!controller.root || controller.root.isConnected !== false) readOperations(controller); }, running ? 1000 : 15000);
+		if (running)
+			controller.operationTimer = setTimeout(function() { if (!controller.root || controller.root.isConnected !== false) readOperations(controller); }, 1000);
 	});
 	return controller.operationRead;
 }

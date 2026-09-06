@@ -152,7 +152,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
       } catch (reason) {
         if (!cancelled) setOperationError(reason instanceof Error ? reason.message : '操作进度读取失败');
       }
-      if (!cancelled) timer = setTimeout(readOperations, active ? 1000 : 15000);
+      if (!cancelled && active) timer = setTimeout(readOperations, 1000);
     };
     void readOperations();
     return () => { cancelled = true; clearTimeout(timer); };

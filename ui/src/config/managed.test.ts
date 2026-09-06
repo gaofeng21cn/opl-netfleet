@@ -145,6 +145,33 @@ describe('native LuCI managed operations', () => {
     expect(label(h.managed.operationNode(h.controller, 'packages'))).toContain('等待设备执行');
   });
 
+  it('polls only an active operation and stops polling when it finishes, including on the provider page', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = harness();
+      h.controller.currentView = 'providers';
+      await h.managed.readOperations(h.controller);
+      expect(vi.getTimerCount()).toBe(0);
+      h.api.operationGet.mockResolvedValueOnce({ subscription: { id: 'current', state: 'running' }, packages: null });
+      await h.managed.readOperations(h.controller);
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(h.api.operationGet).toHaveBeenCalledTimes(3);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('shows restoration without describing a failed subscription update as successful', () => {
+    const h = harness();
+    for (const [recovery, expected] of [['restored', '已恢复更新前状态'], ['failed', '恢复失败'], ['direct', '已恢复网络直通']]) {
+      h.controller.operations = { subscription: { id: 'failed', state: 'failed', recovery, started_at: 1, completed: 1, total: 3 } };
+      const progress = label(h.managed.operationNode(h.controller, 'subscription'));
+      expect(progress).toContain('执行失败');
+      expect(progress).toContain(expected);
+      expect(progress).not.toContain('已完成');
+    }
+  });
+
   it('reports failed owner outcome and does not announce successful migration', async () => {
     const h = harness();
     h.api.migrationApply.mockRejectedValueOnce(Object.assign(new Error('migration_failed'), { detail: { rollback: { ok: true } } }));

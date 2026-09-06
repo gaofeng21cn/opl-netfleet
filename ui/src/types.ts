@@ -289,6 +289,7 @@ export interface OperationSnapshot {
   id: string;
   kind: 'subscription' | 'packages';
   state: 'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted';
+  recovery?: 'restored' | 'failed' | 'direct' | null;
   phase: string;
   started_at: number;
   updated_at: number;

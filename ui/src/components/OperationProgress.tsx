@@ -27,6 +27,7 @@ export function OperationProgress({ operation, error, now = Date.now() / 1000 }:
       {(operation.total ?? 0) > 0 && <span>{operation.kind === 'subscription' ? '已处理' : '已完成'} {operation.completed} / {operation.total} 个{operation.kind === 'subscription' ? '机场' : '文件'}</span>}
       <span>已耗时 {elapsed < 60 ? `${elapsed} 秒` : `${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒`}</span>
       {operation.error && <span>{componentError(operation.error)}</span>}
+      {operation.recovery && <span>{{ restored: '已恢复更新前状态', failed: '恢复失败', direct: '已恢复网络直通' }[operation.recovery]}</span>}
     </div>
   </section>;
 }
