@@ -7,6 +7,22 @@
 function errorLabel(code) {
 	if (typeof code === 'string' && code.endsWith('_rolled_back')) return errorLabel(code.slice(0, -12)) + '；已恢复更新前版本和运行状态';
 	return ({
+		dashboard_managed_externally: '面板由 Nikki 管理',
+		dashboard_path_unmanaged: '当前面板目录未由 NetFleet 管理',
+		dashboard_unpacker_unavailable: '缺少面板解压组件，请安装 unzip',
+		dashboard_state_unavailable: '无法读取或保存面板更新记录',
+		dashboard_release_check_failed: '无法检查面板发行源，请检查设备联网后重试',
+		dashboard_candidate_changed: '面板候选版本已变化，请重新检查更新',
+		dashboard_stage_unavailable: '无法准备面板更新目录，未开始替换',
+		dashboard_download_failed: '面板下载失败，当前资源未替换',
+		dashboard_asset_mismatch: '面板下载内容未通过校验，当前资源未替换',
+		dashboard_archive_invalid: '面板压缩包无效，当前资源未替换',
+		dashboard_insufficient_space: '面板更新空间不足，当前资源未替换',
+		dashboard_unpack_failed: '面板解压失败，当前资源未替换',
+		dashboard_replace_failed: '面板资源替换失败',
+		dashboard_readback_failed: '更新后的面板访问检查失败',
+		dashboard_recovery_failed: '面板资源恢复未确认，请检查当前面板',
+		dashboard_update_failed: '面板更新未完成，请重新读取状态',
 		subscription_revision_changed: '订阅已被其他操作修改，请重新读取后保存',
 		invalid_subscription_id: '订阅标识只能包含英文字母、数字和下划线',
 		invalid_subscription_url: '订阅地址必须是有效的 HTTP 或 HTTPS 地址',
@@ -100,6 +116,12 @@ function operationNode(controller, kind) {
 	const disconnected = controller.operationError && (pending || isRunning(operation));
 	const attrs = { 'class': 'netfleet-operation', 'data-netfleet-operation': kind, 'role': 'status', 'aria-live': 'polite' };
 	if (!operation && !pending) return E('div', Object.assign(attrs, { 'hidden': true }));
+	if (kind === 'packages' && operation.state === 'succeeded' && !operation.error && !operation.recovery) {
+		const subject = ({ netfleet: 'NetFleet', mihomo: 'Mihomo', feed: '软件包源' })[operation.subject] || '组件';
+		return E('div', Object.assign(attrs, { 'class': 'netfleet-operation-summary' }),
+			(operation.subject === 'feed' ? '最近检查：' : '最近更新：') + subject + ' · 已完成' +
+			(operation.finished_at ? ' · ' + new Date(operation.finished_at * 1000).toLocaleString() : ''));
+	}
 	const active = pending || isRunning(operation);
 	const state = disconnected ? '连接中断，执行结果尚未确认' : !operation ? '等待设备接收' :
 		({ queued: '已提交，等待设备执行', running: PHASE_LABELS[operation.phase] || '处理中', succeeded: '已完成', failed: '执行失败', interrupted: '执行已中断，结果尚未确认' })[operation.state] || '等待设备确认';
@@ -193,6 +215,7 @@ function loadComponents(controller) {
 }
 
 function startPackageOperation(controller, component) {
+	if (componentsLocked(controller)) return Promise.resolve();
 	controller.componentsError = null;
 	controller.componentsStarting = true;
 	controller.packageTarget = component ? { component: component.id, version: component.available_version } : null;
@@ -201,43 +224,129 @@ function startPackageOperation(controller, component) {
 	return request.then(function(result) {
 		controller.packageOperationId = result.operation.id;
 		controller.operations = Object.assign({}, controller.operations, { packages: result.operation });
-		return readOperations(controller);
+		return readOperations(controller).then(function() { if (!isRunning(result.operation)) return loadComponents(controller); });
 	}).catch(function(error) { controller.componentsError = error; }).finally(function() { controller.componentsStarting = false; controller.redraw(); });
+}
+
+function componentsLocked(controller) {
+	return controller.busy || !controller.liveDataReady || controller.componentsStarting || controller.componentsChecking ||
+		controller.dashboardBusy || isRunning(controller.operations && controller.operations.packages);
+}
+
+function dashboardFailure(controller, error) {
+	controller.dashboardError = error;
+	if (error.detail && error.detail.id === 'zashboard') controller.components.dashboard = error.detail;
+}
+
+function checkUpdates(controller) {
+	if (componentsLocked(controller) || !controller.components) return Promise.resolve();
+	const snapshot = controller.components;
+	controller.componentsChecking = true;
+	controller.dashboardAction = 'check';
+	controller.dashboardError = null;
+	controller.redraw();
+	// The two sources share the device mutation lock, so finish the bounded resource check first.
+	const dashboard = snapshot.dashboard && snapshot.dashboard.managed ? api.dashboardCheck().then(function(result) {
+		controller.components.dashboard = result;
+	}).catch(function(error) { dashboardFailure(controller, error); }) : Promise.resolve();
+	return dashboard.then(function() {
+		controller.componentsChecking = false;
+		if (snapshot.supported && snapshot.feed && snapshot.feed.configured) return startPackageOperation(controller);
+	}).finally(function() { controller.componentsChecking = false; controller.redraw(); });
+}
+
+function updateDashboard(controller, version) {
+	if (componentsLocked(controller)) return Promise.resolve();
+	controller.dashboardBusy = true;
+	controller.dashboardAction = 'update';
+	controller.dashboardError = null;
+	controller.redraw();
+	return api.dashboardUpdate(version).then(function(result) {
+		controller.components.dashboard = result;
+	}).catch(function(error) { dashboardFailure(controller, error); }).finally(function() { controller.dashboardBusy = false; controller.redraw(); });
+}
+
+function coreVersion(value) { return String(value || '').replace(/^v/, '').replace(/-r\d+$/, ''); }
+function componentMismatch(component) {
+	return component.id === 'mihomo' && component.installed_version && component.running_version &&
+		coreVersion(component.installed_version) !== coreVersion(component.running_version);
 }
 
 function componentsPage(controller) {
 	const snapshot = controller.components;
-	const operation = controller.operations && controller.operations.packages;
-	const active = controller.componentsStarting || isRunning(operation);
-	const content = [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h3', {}, '已安装组件'), E('div', { 'class': 'netfleet-inline-actions' }, [
-		button('重新读取', function() { loadComponents(controller); readOperations(controller); }, controller.componentsLoading),
-		button('检查更新', function() { return startPackageOperation(controller); }, active || !snapshot || !snapshot.supported)
+	const active = componentsLocked(controller);
+	const feed = snapshot && snapshot.feed || {};
+	const dashboard = snapshot && snapshot.dashboard;
+	const refresh = button('↻', function() { return Promise.all([loadComponents(controller), readOperations(controller), controller.refreshData(true)]); },
+		controller.componentsLoading || controller.refreshing || controller.busy || controller.componentsStarting || controller.componentsChecking || controller.dashboardBusy || isRunning(controller.operations && controller.operations.packages));
+	refresh.setAttribute('title', '刷新设备组件状态');
+	refresh.setAttribute('aria-label', '刷新设备组件状态');
+	const check = button(controller.componentsChecking ? '正在检查更新…' : '检查更新', function() { return checkUpdates(controller); },
+		active || !snapshot || !(snapshot.supported && feed.configured || dashboard && dashboard.managed));
+	if (!controller.liveDataReady) check.setAttribute('title', '等待设备实时状态恢复');
+	else if (active) check.setAttribute('title', '设备正在执行操作');
+	const content = [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h3', {}, '安装与更新'), E('div', { 'class': 'netfleet-inline-actions' }, [
+		refresh, check
 	]) ]), operationNode(controller, 'packages') ];
 	if (controller.componentsError) content.push(E('p', { 'class': 'is-warning', 'role': 'alert' }, '组件信息未能确认：' + errorLabel(controller.componentsError.message)));
 	if (!snapshot) {
 		content.push(E('p', { 'class': controller.componentsLoading ? 'spinning' : '' }, controller.componentsLoading ? '正在读取已安装组件…' : '当前设备未提供组件管理接口，请确认 NetFleet 已更新。'));
 		return E('section', { 'class': 'cbi-section netfleet-components' }, content);
 	}
-	const rows = snapshot.components.map(function(component) {
-		const canUpdate = snapshot.supported && component.managed && component.update_available && component.available_version;
-		const update = component.id === 'luci' ? E('span', { 'class': 'netfleet-muted' }, '随 NetFleet 更新') : button('更新', function() {
+	const sourceStates = [ E('span', { 'class': feed.error ? 'is-warning' : '' }, !snapshot.supported ? '软件包：当前安装方式不支持包管理' :
+		!feed.configured ? '软件包：未配置更新源' : feed.error ? '软件包检查失败：' + errorLabel(feed.error) : '软件包：' + (feed.checked_at ? '检查于 ' + new Date(feed.checked_at * 1000).toLocaleString() : '尚未检查更新')) ];
+	if (dashboard) sourceStates.push(E('span', { 'class': controller.dashboardError || dashboard.error ? 'is-warning' : '' },
+		!dashboard.managed ? errorLabel(dashboard.reason || 'dashboard_managed_externally') : controller.dashboardError || dashboard.error ?
+		(controller.dashboardError && controller.dashboardAction === 'update' ? '面板更新失败：' : '面板检查失败：') +
+		(controller.dashboardError && controller.dashboardError.detail && controller.dashboardError.detail.rollback ? failure(controller.dashboardError) : errorLabel(controller.dashboardError && controller.dashboardError.message || dashboard.error)) :
+		'面板：' + (controller.componentsChecking ? '正在检查更新…' : controller.dashboardBusy ? '正在更新资源…' : dashboard.checked_at ? '检查于 ' + new Date(dashboard.checked_at * 1000).toLocaleString() : '尚未检查更新')));
+	content.push(E('div', { 'class': 'netfleet-component-checks', 'role': 'status' }, sourceStates));
+	const luci = snapshot.components.find(function(item) { return item.id === 'luci'; });
+	const rows = snapshot.components.filter(function(item) { return item.id !== 'luci'; }).map(function(component) {
+		const mismatch = componentMismatch(component);
+		const pairMismatch = component.id === 'netfleet' && luci && component.installed_version !== luci.installed_version;
+		const hasUpdate = component.update_available || component.id === 'netfleet' && luci && luci.update_available && luci.available_version === component.available_version;
+		const canUpdate = snapshot.supported && feed.configured && !feed.error && component.managed && hasUpdate && component.available_version;
+		const update = canUpdate ? button(mismatch ? '更新软件包' : '更新', function() {
 			ui.showModal('更新 ' + component.label, [ E('p', {}, (component.id === 'mihomo' ? '核心更新会短暂中断代理连接，设备将校验当前配置并检查重启后的运行状态。' : '将同时更新 NetFleet 与 LuCI 界面，完成后重新载入页面。') + '目标版本：' + component.available_version),
+				mismatch ? E('p', { 'class': 'is-warning' }, '当前运行 ' + component.running_version + '，安装记录 ' + component.installed_version + '。本次将安装所列候选软件包，请核对版本。') : '',
 				E('div', { 'class': 'right' }, [ button('取消', ui.hideModal), ' ', button('确认更新', function() { ui.hideModal(); return startPackageOperation(controller, component); }) ]) ]);
-		}, active || !canUpdate);
-		return E('tr', {}, [ E('td', {}, component.label), E('td', {}, component.installed_version || '未安装'), E('td', {}, component.running_version || (component.id === 'mihomo' ? '未提供' : '不适用')),
-			E('td', {}, component.available_version || '尚未检查'), E('td', {}, component.reason ? errorLabel(component.reason) : component.update_available ? '可更新' : component.available_version ? '已是当前源最新版本' : '等待检查'), E('td', {}, update) ]);
+		}, active) : '';
+		const current = [ E('strong', {}, component.id === 'mihomo' ? component.running_version || '核心运行版本暂不可读取' : component.installed_version || '未安装') ];
+		if (component.id === 'mihomo' && component.installed_version) current.push(E('small', {}, '安装记录 ' + component.installed_version));
+		if (mismatch) current.push(E('span', { 'class': 'is-warning' }, '运行版本与安装记录不一致'));
+		if (pairMismatch) current.push(E('span', { 'class': 'is-warning' }, 'NetFleet 与 LuCI 安装版本不一致'));
+		if (component.reason) current.push(E('small', {}, errorLabel(component.reason)));
+		const available = component.available_version && !feed.error ? [ hasUpdate ? '候选版本 ' + component.available_version : '当前更新源暂无新版' ] : [];
+		return E('tr', {}, [ E('td', {}, [ E('strong', {}, component.label), E('small', {}, component.id === 'netfleet' ? '包含 LuCI 管理界面' : '代理核心') ]),
+			E('td', {}, current), E('td', {}, available), E('td', { 'class': 'netfleet-component-actions' }, update) ]);
 	});
+	if (dashboard) {
+		const controls = [];
+		if (dashboard.available && controller.dashboardUrl) controls.push(E('a', { 'class': 'netfleet-dashboard-link', 'href': controller.dashboardUrl, 'target': '_blank', 'rel': 'noopener' }, '打开面板 ↗'));
+		if (dashboard.managed && dashboard.update_available && dashboard.available_version && !dashboard.error && !controller.dashboardError) controls.push(button(dashboard.available ? '更新面板' : '安装面板', function() {
+			const version = dashboard.available_version;
+			ui.showModal('更新 Zashboard', [ E('p', {}, '目标版本：' + version + '。只更新面板资源，不重启核心；失败时保留当前面板。'),
+				E('div', { 'class': 'right' }, [ button('取消', ui.hideModal), ' ', button('确认更新', function() { ui.hideModal(); return updateDashboard(controller, version); }) ]) ]);
+		}, active));
+		rows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, 'Zashboard'), E('small', {}, '实时运行面板') ]),
+			E('td', {}, [ E('strong', {}, dashboard.available ? '已安装，可使用' : '未安装'),
+				dashboard.available ? E('small', {}, dashboard.installed_version || '版本未记录') : '', !dashboard.managed ? E('small', {}, errorLabel(dashboard.reason || 'dashboard_managed_externally')) : '' ]),
+			E('td', {}, dashboard.available_version && !dashboard.error && !controller.dashboardError ? dashboard.update_available ? '候选版本 ' + dashboard.available_version : '当前更新源暂无新版' : ''),
+			E('td', { 'class': 'netfleet-component-actions' }, controls) ]));
+	}
 	content.push(E('div', { 'class': 'table cbi-section-table netfleet-component-table' }, E('table', { 'class': 'table' }, [
-		E('thead', {}, E('tr', {}, ['组件', '已安装版本', '运行版本', '可用版本', '状态', '操作'].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, rows)
+		E('thead', {}, E('tr', {}, ['组件', '当前版本与状态', '更新', '操作'].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, rows)
 	])));
-	const feed = snapshot.feed || {};
-	content.push(E('h3', {}, '更新源'), E('dl', { 'class': 'netfleet-component-meta' }, [
-		E('dt', {}, '设备架构'), E('dd', {}, snapshot.architecture || '未提供'), E('dt', {}, 'Feed'), E('dd', {}, feed.configured ? feed.url || '已配置' : '未配置'),
-		E('dt', {}, '最后检查'), E('dd', {}, feed.checked_at ? new Date(feed.checked_at * 1000).toLocaleString() : '尚未检查'),
-		E('dt', {}, '更新方式'), E('dd', {}, '手动确认更新')
-	]));
-	if (feed.error) content.push(E('p', { 'class': 'is-warning' }, errorLabel(feed.error)));
-	content.push(E('details', {}, [ E('summary', {}, '运行依赖（' + (snapshot.dependencies || []).filter(function(item) { return item.available; }).length + ' / ' + (snapshot.dependencies || []).length + ' 可用）'),
+	content.push(E('details', { 'class': 'netfleet-component-details' }, [ E('summary', {}, '更新源与安装详情'), E('dl', { 'class': 'netfleet-component-meta' }, [
+		snapshot.architecture ? [ E('dt', {}, '设备架构'), E('dd', {}, snapshot.architecture) ] : '',
+		feed.url ? [ E('dt', {}, '软件包源'), E('dd', {}, feed.url) ] : '',
+		luci ? [ E('dt', {}, 'LuCI 界面'), E('dd', {}, (luci.installed_version || '未安装') + ' · 随 NetFleet 更新') ] : '',
+		dashboard && dashboard.release_url && dashboard.release_url.startsWith('https://github.com/') ? [ E('dt', {}, '面板发行说明'), E('dd', {}, E('a', { 'href': dashboard.release_url, 'target': '_blank', 'rel': 'noopener' }, 'Zashboard 发行说明 ↗')) ] : ''
+	]) ]));
+	const missing = (snapshot.dependencies || []).filter(function(item) { return !item.available; });
+	if (snapshot.supported && (snapshot.dependencies || []).length) content.push(E('details', { 'open': missing.length ? true : null, 'class': 'netfleet-component-details' }, [ E('summary', { 'class': missing.length ? 'is-warning' : '' }, missing.length ? '缺少 ' + missing.length + ' 项运行依赖' : '运行依赖正常'),
+		missing.length ? E('p', {}, '请通过 OpenWrt 软件包管理安装缺少的依赖。') : '',
 		E('ul', { 'class': 'netfleet-dependencies' }, (snapshot.dependencies || []).map(function(item) { return E('li', {}, [E('strong', {}, item.label), E('span', { 'class': item.available ? '' : 'is-warning' }, item.available ? item.installed_version || '已安装' : '缺少')]); }))
 	]));
 	return E('section', { 'class': 'cbi-section netfleet-components' }, content);

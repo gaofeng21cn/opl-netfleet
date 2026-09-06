@@ -1157,7 +1157,7 @@ return view.extend({
 				attrs.disabled = true;
 			return attrs;
 		};
-		const buttons = [
+		const buttons = this.currentView === 'components' ? [] : [
 			E('button', buttonAttrs({ 'class': 'btn cbi-button', 'click': function() { return self.currentView === 'components' ? managed.loadComponents(self) : self.refreshData(); } }, false), this.busy || this.refreshing ? '正在读取…' : '刷新')
 		];
 		const showRuntimeActions = this.currentView !== 'config' && this.currentView !== 'components';
@@ -1175,7 +1175,7 @@ return view.extend({
 		else if (this.currentView === 'providers') content = [ managed.operationNode(this, 'subscription') ].concat(providersPage(this.status, this));
 		else if (this.currentView === 'regions') content = regionsPage(this.status);
 		else if (this.currentView === 'config') content = [ netfleetConfig.render(this) ];
-		else if (this.currentView === 'components') content = [ managed.components(this), management.dashboard(this) ];
+		else if (this.currentView === 'components') content = [ managed.components(this) ];
 		else if (this.currentView === 'events') content = eventsPage(this.status, this.events, this.connections, this.connectionsLoading, this.connectionsError, this.eventPage, function(page) {
 			self.eventPage = page;
 			self.redraw();

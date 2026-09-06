@@ -257,7 +257,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
         )}
       </div>
 
-      <DataSourceBar source={source} statusError={statusError} eventsError={eventsError} />
+      {view !== 'components' && <DataSourceBar source={source} statusError={statusError} eventsError={eventsError} />}
 
       {preview && (
         <div className="nf-mobile-preview">
@@ -295,7 +295,10 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
         onSave={(next) => setConfigState({ ...configState, draft: next, saved: next })}
       />}
       {view === 'events' && <EventsView key={`${source.mode}|${source.target_label}|${preview?.scenario}`} snapshot={visibleEvents} status={status} connections={connections} connectionsLoading={connectionsLoading} connectionsError={connectionsError} error={eventsError} client={client} />}
-      {view === 'components' && <ComponentsView snapshot={components} operation={operations.packages} error={componentsError} operationError={operationError} loading={componentsLoading} onRead={() => void refreshComponents()} />}
+      {view === 'components' && <>
+        <ComponentsView snapshot={components} operation={operations.packages} error={componentsError} operationError={operationError} loading={componentsLoading} onRead={() => void Promise.all([refreshComponents(), refresh()])} />
+        <DataSourceBar source={source} statusError={statusError} eventsError={eventsError} />
+      </>}
 
       {dialog && <ConfirmDialog
         title={{ enable: '启用 NetFleet', select: '重新自动选优', disable: '关闭 NetFleet' }[dialog]}

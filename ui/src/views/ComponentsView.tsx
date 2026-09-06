@@ -3,20 +3,23 @@ import type { ComponentsSnapshot, DashboardComponent, OperationSnapshot } from '
 import { OperationProgress } from '../components/OperationProgress';
 import { componentError } from '../lib/componentError';
 
-export function DashboardComponentSection({ dashboard }: { dashboard?: DashboardComponent }) {
-  const releaseUrl = dashboard?.release_url?.startsWith('https://github.com/') ? dashboard.release_url : null;
-  const reason = dashboard?.reason === 'native_backend_required' ? '由 Nikki 管理' : dashboard?.reason ? componentError(dashboard.reason) : null;
-  return <section className="nf-components-dashboard">
-    <div className="nf-section-heading"><h2>实时运行面板</h2><button type="button" disabled title="本机预览只读，请在设备 LuCI 中检查面板更新"><RefreshCw aria-hidden="true" />检查面板更新</button></div>
-    <div className="nf-table-wrap"><table><thead><tr><th>组件</th><th>已安装版本</th><th>可用版本</th><th>状态</th><th>操作</th></tr></thead><tbody><tr>
-      <td><strong>Zashboard</strong></td>
-      <td>{dashboard ? dashboard.installed_version || (dashboard.available ? '版本未记录' : '未安装') : '设备未提供'}</td>
-      <td>{dashboard?.available_version || '尚未检查'}</td>
-      <td>{!dashboard ? '当前设备未提供面板版本信息' : dashboard.error ? componentError(dashboard.error) : reason || (dashboard.update_available ? '可更新' : dashboard.available_version ? '已是当前最新版本' : dashboard.available ? '可使用' : '未安装')}</td>
-      <td><button type="button" disabled title="本机预览只读，请在设备 LuCI 中更新面板"><Download aria-hidden="true" />{dashboard?.available ? '更新面板' : '安装面板'}</button></td>
-    </tr></tbody></table></div>
-    <div className="nf-dashboard-meta"><span>最后检查：{dashboard?.checked_at ? new Date(dashboard.checked_at * 1000).toLocaleString() : '尚未检查'}</span>{releaseUrl && <a href={releaseUrl} target="_blank" rel="noopener noreferrer">发行说明<ExternalLink aria-hidden="true" /></a>}<span>独立更新，不重启代理核心</span></div>
-  </section>;
+const previewReason = '本机预览只读，请在设备 LuCI 中操作';
+const coreVersion = (value: string) => value.replace(/^v/, '').replace(/-r\d+$/, '');
+const checkedTime = (value: number | null) => value ? `检查于 ${new Date(value * 1000).toLocaleString()}` : '尚未检查更新';
+
+function DashboardRow({ dashboard }: { dashboard: DashboardComponent }) {
+  return <tr>
+    <td><strong>Zashboard</strong><small>实时运行面板</small></td>
+    <td><strong>{dashboard.available ? '已安装，可使用' : '未安装'}</strong>
+      {dashboard.available && <small>{dashboard.installed_version || '版本未记录'}</small>}
+      {!dashboard.managed && <small>{componentError(dashboard.reason || 'dashboard_managed_externally')}</small>}
+    </td>
+    <td>{dashboard.available_version && !dashboard.error ? dashboard.update_available ? `候选版本 ${dashboard.available_version}` : '当前更新源暂无新版' : null}</td>
+    <td className="nf-component-actions">
+      {dashboard.available && <button type="button" disabled title={previewReason}><ExternalLink aria-hidden="true" />打开面板</button>}
+      {dashboard.managed && dashboard.update_available && dashboard.available_version && !dashboard.error && <button type="button" disabled title={previewReason}><Download aria-hidden="true" />{dashboard.available ? '更新面板' : '安装面板'}</button>}
+    </td>
+  </tr>;
 }
 
 export function ComponentsView({ snapshot, operation, error, operationError, loading, onRead }: {
@@ -28,31 +31,49 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
   onRead(): void;
 }) {
   const feed = snapshot?.feed;
+  const dashboard = snapshot?.dashboard;
+  const luci = snapshot?.components.find(component => component.id === 'luci');
+  const missing = snapshot?.dependencies.filter(item => !item.available) || [];
   return <div className="nf-components">
-    <div className="nf-section-heading"><h2>已安装组件</h2><div className="nf-components-actions">
-      <button type="button" onClick={onRead} disabled={loading} title="重新读取设备组件信息"><RefreshCw aria-hidden="true" className={loading ? 'is-spinning' : ''} />重新读取</button>
-      <button type="button" disabled title="本机预览只读，请在设备 LuCI 中检查更新"><Download aria-hidden="true" />检查更新</button>
+    <div className="nf-section-heading"><h2>安装与更新</h2><div className="nf-components-actions">
+      <button type="button" onClick={onRead} disabled={loading} title="刷新设备组件状态" aria-label="刷新设备组件状态"><RefreshCw aria-hidden="true" className={loading ? 'is-spinning' : ''} /></button>
+      <button type="button" disabled title={previewReason}><RefreshCw aria-hidden="true" />检查更新</button>
     </div></div>
     <OperationProgress operation={operation} error={operationError} />
     {error && <div className="nf-alert" role="alert">{error}</div>}
     {!snapshot ? <p>{loading ? '正在读取已安装组件…' : '当前设备尚未提供组件管理信息。'}</p> : <>
-      <div className="nf-table-wrap"><table><thead><tr>{['组件', '已安装版本', '运行版本', '可用版本', '状态', '操作'].map(label => <th key={label}>{label}</th>)}</tr></thead>
-        <tbody>{snapshot.components.map(component => <tr key={component.id}>
-          <td><strong>{component.label}</strong></td><td>{component.installed_version || '未安装'}</td><td>{component.running_version || (component.id === 'mihomo' ? '未提供' : '不适用')}</td>
-          <td>{component.available_version || '尚未检查'}</td>
-          <td>{component.reason ? componentError(component.reason) : component.update_available ? '可更新' : component.available_version ? '已是当前源最新版本' : '等待检查'}</td>
-          <td>{component.id === 'luci' ? '随 NetFleet 更新' : <button type="button" disabled title="本机预览只读，请在设备 LuCI 中更新"><Download aria-hidden="true" />更新</button>}</td>
-        </tr>)}</tbody></table></div>
-      <section className="nf-components-feed"><h2>更新源</h2><dl>
-        <dt>设备架构</dt><dd>{snapshot.architecture || '未提供'}</dd>
-        <dt>Feed</dt><dd>{feed?.configured ? feed.url || '已配置' : '未配置'}</dd>
-        <dt>最后检查</dt><dd>{feed?.checked_at ? new Date(feed.checked_at * 1000).toLocaleString() : '尚未检查'}</dd>
-        <dt>更新方式</dt><dd>手动确认更新</dd>
-      </dl>{feed?.error && <div className="nf-alert">{componentError(feed.error)}</div>}</section>
-      <details className="nf-components-dependencies"><summary>运行依赖（{snapshot.dependencies.filter(item => item.available).length} / {snapshot.dependencies.length} 可用）</summary>
-        <ul>{snapshot.dependencies.map(item => <li key={item.id}><strong>{item.label}</strong><span>{item.available ? item.installed_version || '已安装' : '缺少'}</span></li>)}</ul>
-      </details>
-      <DashboardComponentSection dashboard={snapshot.dashboard} />
+      <div className="nf-component-checks" role="status">
+        <span className={feed?.error ? 'is-warning' : ''}>{!snapshot.supported ? '软件包：当前安装方式不支持包管理' : !feed?.configured ? '软件包：未配置更新源' : feed.error ? `软件包检查失败：${componentError(feed.error)}` : `软件包：${checkedTime(feed.checked_at)}`}</span>
+        {dashboard && <span className={dashboard.error ? 'is-warning' : ''}>{!dashboard.managed ? componentError(dashboard.reason || 'dashboard_managed_externally') : dashboard.error ? `面板检查失败：${componentError(dashboard.error)}` : `面板：${checkedTime(dashboard.checked_at)}`}</span>}
+      </div>
+      <div className="nf-table-wrap"><table><thead><tr>{['组件', '当前版本与状态', '更新', '操作'].map(label => <th key={label}>{label}</th>)}</tr></thead>
+        <tbody>{snapshot.components.filter(component => component.id !== 'luci').map(component => {
+          const mismatch = component.id === 'mihomo' && component.installed_version && component.running_version && coreVersion(component.installed_version) !== coreVersion(component.running_version);
+          const pairMismatch = component.id === 'netfleet' && luci && luci.installed_version !== component.installed_version;
+          const hasUpdate = component.update_available || component.id === 'netfleet' && luci?.update_available && luci.available_version === component.available_version;
+          const canUpdate = snapshot.supported && feed?.configured && !feed.error && component.managed && hasUpdate && component.available_version;
+          return <tr key={component.id}>
+            <td><strong>{component.label}</strong><small>{component.id === 'netfleet' ? '包含 LuCI 管理界面' : '代理核心'}</small></td>
+            <td><strong>{component.id === 'mihomo' ? component.running_version || '核心运行版本暂不可读取' : component.installed_version || '未安装'}</strong>
+              {component.id === 'mihomo' && component.installed_version && <small>安装记录 {component.installed_version}</small>}
+              {mismatch && <span className="is-warning">运行版本与安装记录不一致</span>}
+              {pairMismatch && <span className="is-warning">NetFleet 与 LuCI 安装版本不一致</span>}
+              {component.reason && <small>{componentError(component.reason)}</small>}
+            </td>
+            <td>{component.available_version && !feed?.error ? hasUpdate ? `候选版本 ${component.available_version}` : '当前更新源暂无新版' : null}</td>
+            <td className="nf-component-actions">{canUpdate && <button type="button" disabled title={previewReason}><Download aria-hidden="true" />{mismatch ? '更新软件包' : '更新'}</button>}</td>
+          </tr>;
+        })}{dashboard && <DashboardRow dashboard={dashboard} />}</tbody></table></div>
+      <details className="nf-component-details"><summary>更新源与安装详情</summary><dl>
+        {snapshot.architecture && <><dt>设备架构</dt><dd>{snapshot.architecture}</dd></>}
+        {feed?.url && <><dt>软件包源</dt><dd>{feed.url}</dd></>}
+        {luci && <><dt>LuCI 界面</dt><dd>{luci.installed_version || '未安装'} · 随 NetFleet 更新</dd></>}
+        {dashboard?.release_url?.startsWith('https://github.com/') && <><dt>面板发行说明</dt><dd><a href={dashboard.release_url} target="_blank" rel="noopener noreferrer">Zashboard 发行说明<ExternalLink aria-hidden="true" /></a></dd></>}
+      </dl></details>
+      {snapshot.supported && snapshot.dependencies.length > 0 && <details className="nf-component-details nf-components-dependencies" open={missing.length > 0 || undefined}><summary className={missing.length ? 'is-warning' : ''}>{missing.length ? `缺少 ${missing.length} 项运行依赖` : '运行依赖正常'}</summary>
+        {missing.length > 0 && <p>请通过 OpenWrt 软件包管理安装缺少的依赖。</p>}
+        <ul>{snapshot.dependencies.map(item => <li key={item.id}><strong>{item.label}</strong><span className={item.available ? '' : 'is-warning'}>{item.available ? item.installed_version || '已安装' : '缺少'}</span></li>)}</ul>
+      </details>}
     </>}
   </div>;
 }

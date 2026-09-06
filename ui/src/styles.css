@@ -378,22 +378,28 @@
 .nf-components { margin-top: 22px; }
 .nf-components .nf-table-wrap { margin: 16px 0 26px; }
 .nf-components .nf-table-wrap th, .nf-components .nf-table-wrap td { padding: 14px 16px; font-size: 14px; }
+.nf-components table { min-width: 700px; table-layout: fixed; }
+.nf-components th:nth-child(1) { width: 18%; }
+.nf-components th:nth-child(2) { width: 34%; }
+.nf-components th:nth-child(3) { width: 25%; }
+.nf-components td { vertical-align: top; overflow-wrap: anywhere; }
+.nf-components td > strong, .nf-components td > small, .nf-components td > .is-warning { display: block; }
+.nf-components td > small { margin-top: 6px; font-size: 13px; color: var(--nf-muted); }
+.nf-component-actions > * { margin: 0 8px 8px 0; }
+.nf-component-checks { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 12px 0; font-size: 13px; color: var(--nf-muted); }
+.nf-operation-summary { margin: 12px 0; font-size: 13px; color: var(--nf-muted); }
 .nf-components-actions, .nf-operation-detail { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 22px; }
 .nf-components button { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 6px 11px; border: 1px solid var(--nf-border); border-radius: 4px; color: var(--nf-text); background: #fff; font: inherit; font-size: 13px; cursor: pointer; }
 .nf-components button:disabled { opacity: .5; cursor: not-allowed; }
 .nf-components button svg { width: 15px; height: 15px; }
-.nf-components-feed h2 { font-size: 17px; }
-.nf-components-feed dl { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 13px 18px; padding: 12px 0; font-size: 14px; }
-.nf-components-feed dd { margin: 0; overflow-wrap: anywhere; }
-.nf-components-dependencies { border-top: 1px solid var(--nf-border); padding: 20px 0; font-size: 14px; }
-.nf-components-dependencies summary { cursor: pointer; }
+.nf-component-details { border-top: 1px solid var(--nf-border); padding: 16px 0; font-size: 14px; }
+.nf-component-details summary { cursor: pointer; }
+.nf-component-details dl { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 13px 18px; padding: 12px 0; }
+.nf-component-details dd { margin: 0; overflow-wrap: anywhere; }
+.nf-component-details dd a { display: inline-flex; align-items: center; gap: 6px; }
+.nf-component-details dd svg { width: 14px; height: 14px; }
 .nf-components-dependencies ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px 28px; padding: 16px 0; list-style: none; }
 .nf-components-dependencies li { display: flex; justify-content: space-between; gap: 16px; }
-.nf-components-dashboard { padding: 24px 0; border-top: 1px solid var(--nf-border); }
-.nf-components-dashboard .nf-table-wrap { margin-bottom: 12px; }
-.nf-dashboard-meta { display: flex; flex-wrap: wrap; gap: 10px 24px; color: var(--nf-muted); font-size: 13px; }
-.nf-dashboard-meta a { display: inline-flex; align-items: center; gap: 6px; color: var(--nf-accent); }
-.nf-dashboard-meta svg { width: 14px; height: 14px; }
 .nf-management { min-width: 0; }
 .nf-management button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 6px 12px; border: 1px solid var(--nf-border); border-radius: 4px; color: var(--nf-text); background: var(--nf-surface); font-size: 13px; }
 .nf-management button:hover:not(:disabled) { border-color: var(--nf-accent-border); color: var(--nf-accent); }
