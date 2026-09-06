@@ -96,6 +96,15 @@ function candidate(version, archive) {
 	fs.writefile(`${work}/release.json`, sprintf("%J", data));
 };
 assert(resource().managed && resource().available && resource().installed_version == null, "unrecorded_version_is_unknown");
+const original_html = fs.readfile(`${ui}/index.html`);
+fs.mkdir(`${ui}/assets`);
+fs.writefile(`${ui}/index.html`, '<script type="module" src="./assets/index-fixture.js"></script>');
+fs.writefile(`${ui}/assets/index-fixture.js`, 'var unrelated=ref("9.9.9"),version=ref("3.25.0");check("https://api.github.com/repos/Zephyruso/zashboard/releases/latest",version.value)');
+assert(resource().installed_version == "v3.25.0", "imported_resource_version_detected");
+assert(fs.lstat("/etc/opl-netfleet/native/dashboard.json") == null, "detection_does_not_forge_install_commit");
+fs.writefile(`${ui}/index.html`, original_html);
+fs.unlink(`${ui}/assets/index-fixture.js`);
+fs.rmdir(`${ui}/assets`);
 assert(fs.lstat(`${work}/curl-count`) == null, "read_only_without_network");
 candidate("v99.1.0", "valid.zip");
 assert(check().ok === true && resource().available_version == "v99.1.0", "explicit_upstream_check");

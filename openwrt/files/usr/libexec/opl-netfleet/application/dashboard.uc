@@ -4,6 +4,7 @@ import { UCI_PACKAGE, RUN_DIR, ROOT_DIR, KIND, API } from "../adapters/runtime.u
 import { read_yaml, read_json, api_secret, sha256, shell_quote as q } from "../adapters/uci.uc";
 import { private_file, private_directory, atomic_json } from "../adapters/native.uc";
 import { controller_version } from "../adapters/mihomo.uc";
+import { bundled_version } from "../adapters/dashboard_version.uc";
 
 const CACHE_DIR = "/tmp/opl-netfleet-dashboard";
 const CACHE = `${CACHE_DIR}/checked.json`;
@@ -61,13 +62,14 @@ function checked() { return private_file(CACHE) ? read_json(CACHE) : null; };
 export function resource() {
 	const config = configuration();
 	const current = installed(config.directory);
+	const version = current?.version ?? bundled_version(config.directory);
 	const candidate = checked();
 	const safe = safe_directory(config.directory);
 	const supported = KIND == "native-mihomo" && safe && shell("command -v unzip");
 	return { id: "zashboard", label: "Zashboard", available: fs.stat(`${config.directory}/index.html`)?.type == "file",
-		managed: supported, installed_version: current?.version ?? null,
+		managed: supported, installed_version: version,
 		available_version: candidate?.version ?? null,
-		update_available: supported && version_valid(candidate?.version) && candidate.version != current?.version,
+		update_available: supported && version_valid(candidate?.version) && candidate.version != version,
 		checked_at: candidate?.checked_at ?? null, error: candidate?.error ?? null,
 		reason: KIND != "native-mihomo" ? "dashboard_managed_externally" : !safe ? "dashboard_path_unmanaged" :
 			!supported ? "dashboard_unpacker_unavailable" : null,

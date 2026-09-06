@@ -129,7 +129,9 @@ LuCI 的启用、单次选优、立即更新订阅、关闭和配置应用都必
 RPC 是调用设备 owner 的薄适配器，不维护第二份网络状态。`components_get` 只读已安装组件、
 实际运行核心版本、关键依赖、最近一次 Feed 检查及独立的 `dashboard` 资源状态；`components_check` 与 `components_update`
 分别启动显式版本检查及固定组件、固定版本的后台更新。更新流程见[软件包合同](packaging.md)。
-`dashboard` 不作为 APK 包：安装版本未记录时返回 `null`；`dashboard_check` 显式查询官方
+`dashboard` 不作为 APK 包：`installed_version` 来自有效安装记录或本地资源识别，两者均
+无可靠证据时才返回 `null`；识别规则见[设备独立管理](management.md#规则与运行面)。
+`dashboard_check` 显式查询官方
 Release 并缓存候选，`dashboard_update` 接受用户确认的版本，绑定该候选的官方 HTTPS
 资产与摘要执行有界资源事务。两者都不随组件页读取自动执行，也不重启核心；资源事务
 和恢复合同见[设备独立管理](management.md#规则与运行面)。
