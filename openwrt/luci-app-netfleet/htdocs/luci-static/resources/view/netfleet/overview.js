@@ -437,7 +437,10 @@ function joined(values) {
 
 function currentRegionPlan(status) {
 	return (status.regions || []).filter(function(region) {
-		return Number(region.available_node_count) > 0 && Number(region.available_provider_count) > 0;
+		// Node inventory is an optional diagnostic projection.  A region is
+		// usable when at least one measured candidate group and provider are
+		// available; an unknown node inventory must not hide a real route.
+		return Number(region.available_count) > 0 && Number(region.available_provider_count) > 0;
 	});
 }
 
@@ -546,13 +549,14 @@ function overviewDigest(status, events, navigate) {
 	].concat(decision));
 
 	const unavailableProviders = providers.filter(function(provider) {
-		return provider.available_count != null && Number(provider.available_count) === 0 ||
+		return provider.quota && provider.quota.state === 'exhausted' ? false :
+			provider.available_count != null && Number(provider.available_count) === 0 ||
 			provider.available_region_count != null && Number(provider.available_region_count) === 0;
 	});
 	const exhaustedProviders = providers.filter(function(provider) { return provider.quota && provider.quota.state === 'exhausted'; });
 	const unavailableSelectedRegions = regions.filter(function(region) {
-		return region.selected && region.available_node_count != null && region.available_provider_count != null &&
-			(Number(region.available_node_count) === 0 || Number(region.available_provider_count) === 0);
+		return region.selected && region.available_count != null && region.available_provider_count != null &&
+			(Number(region.available_count) === 0 || Number(region.available_provider_count) === 0);
 	});
 	const lanRuntime = status.runtime.lan_runtime || {};
 	const attention = [
@@ -820,6 +824,7 @@ function regionsPage(status) {
 		return Number(Boolean(b.selected)) - Number(Boolean(a.selected)) ||
 			(Number(a.last_best_delay_ms) || Infinity) - (Number(b.last_best_delay_ms) || Infinity) ||
 			(Number(a.average_best_delay_ms) || Infinity) - (Number(b.average_best_delay_ms) || Infinity) ||
+			(Number(b.available_count) || -1) - (Number(a.available_count) || -1) ||
 			(Number(b.available_node_count) || -1) - (Number(a.available_node_count) || -1) ||
 			regionName(status, a.id).localeCompare(regionName(status, b.id), 'zh-CN');
 	});
@@ -1506,9 +1511,9 @@ return view.extend({
 		const self = this;
 		if (action === 'refresh') return managed.runSubscription(this, function() { return netfleet.refresh(); });
 		const automaticCapability = this.status.selection && this.status.selection.automatic_capability_id;
+		if (action === 'select') return managed.runSelection(this, function() { return netfleet.selectAuto(automaticCapability); });
 		let request;
 			if (action === 'enable') request = netfleet.enable();
-			else if (action === 'select') request = netfleet.selectAuto(automaticCapability);
 			else request = netfleet.disable();
 		ui.showModal('NetFleet', [ E('p', { 'class': 'spinning' }, '正在执行并等待设备确认…') ]);
 		this.busy = true;

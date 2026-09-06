@@ -3,7 +3,7 @@ import * as fs from "fs";
 let current = null;
 
 function path(kind) {
-	return index(["subscription", "packages"], kind) >= 0 ? `/tmp/opl-netfleet-operation-${kind}.json` : null;
+	return index(["subscription", "selection", "packages"], kind) >= 0 ? `/tmp/opl-netfleet-operation-${kind}.json` : null;
 };
 
 function process_identity(pid) {

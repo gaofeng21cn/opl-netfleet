@@ -80,11 +80,11 @@ const healthy: StatusSnapshot = {
     { id: 'gamma', display_name: 'Gamma 备用机场', subscription_section: 'gamma-source', role: 'reserve', billing: 'buyout', selected: false, available_region_count: 3, region_count: 4, available_node_count: 14, node_count: 19, node_count_known: true, available_count: 8, candidate_count: 12, best_delay_ms: 168, last_best_delay_ms: 168, average_best_delay_ms: 168, delay_sample_count: 1, quota: { state: 'unknown' } },
   ],
   regions: [
-    { id: 'japan', display_name: '🇯🇵 日本', mode: 'automatic', selected: true, available_provider_count: 2, provider_count: 3, available_node_count: 11, node_count: 13, last_best_delay_ms: 78, average_best_delay_ms: 84, delay_sample_count: 24 },
-    { id: 'singapore', display_name: '🇸🇬 新加坡', mode: 'automatic', selected: true, available_provider_count: 2, provider_count: 2, available_node_count: 8, node_count: 9, last_best_delay_ms: 102, average_best_delay_ms: 118, delay_sample_count: 24 },
-    { id: 'hong_kong', display_name: '🇭🇰 香港', mode: 'automatic', available_provider_count: 2, provider_count: 2, available_node_count: 7, node_count: 8, last_best_delay_ms: 92, average_best_delay_ms: 101, delay_sample_count: 24 },
-    { id: 'taiwan', display_name: '🇹🇼 台湾', mode: 'automatic', available_provider_count: 2, provider_count: 2, available_node_count: 5, node_count: 6, last_best_delay_ms: 96, average_best_delay_ms: 96, delay_sample_count: 1 },
-    { id: 'united_states', display_name: '🇺🇸 美国', mode: 'automatic', available_provider_count: 3, provider_count: 3, available_node_count: 9, node_count: 12, last_best_delay_ms: 168, average_best_delay_ms: 176, delay_sample_count: 24 },
+    { id: 'japan', display_name: '🇯🇵 日本', mode: 'automatic', selected: true, available_provider_count: 2, provider_count: 3, available_count: 4, available_node_count: 11, node_count: 13, last_best_delay_ms: 78, average_best_delay_ms: 84, delay_sample_count: 24 },
+    { id: 'singapore', display_name: '🇸🇬 新加坡', mode: 'automatic', selected: true, available_provider_count: 2, provider_count: 2, available_count: 4, available_node_count: 8, node_count: 9, last_best_delay_ms: 102, average_best_delay_ms: 118, delay_sample_count: 24 },
+    { id: 'hong_kong', display_name: '🇭🇰 香港', mode: 'automatic', available_provider_count: 2, provider_count: 2, available_count: 3, available_node_count: 7, node_count: 8, last_best_delay_ms: 92, average_best_delay_ms: 101, delay_sample_count: 24 },
+    { id: 'taiwan', display_name: '🇹🇼 台湾', mode: 'automatic', available_provider_count: 2, provider_count: 2, available_count: 2, available_node_count: 5, node_count: 6, last_best_delay_ms: 96, average_best_delay_ms: 96, delay_sample_count: 1 },
+    { id: 'united_states', display_name: '🇺🇸 美国', mode: 'automatic', available_provider_count: 3, provider_count: 3, available_count: 2, available_node_count: 9, node_count: 12, last_best_delay_ms: 168, average_best_delay_ms: 176, delay_sample_count: 24 },
   ],
   actions: { can_enable: false, can_select_auto: true, can_refresh: true, can_disable: true },
 };

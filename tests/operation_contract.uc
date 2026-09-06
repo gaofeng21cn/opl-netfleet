@@ -5,8 +5,10 @@ import { ok } from "../openwrt/files/usr/libexec/opl-netfleet/output.uc";
 function check(value, message) { if (!value) die(message); };
 const path = "/tmp/opl-netfleet-operation-subscription.json";
 const package_path = "/tmp/opl-netfleet-operation-packages.json";
+const selection_path = "/tmp/opl-netfleet-operation-selection.json";
 const previous = fs.readfile(path);
 const previous_packages = fs.readfile(package_path);
+const previous_selection = fs.readfile(selection_path);
 
 begin("subscription", "preparing", { total: 2 });
 let snapshot = get("subscription");
@@ -59,6 +61,20 @@ stored.owner.started = "different-process";
 fs.writefile(path, sprintf("%J", stored));
 check(get("subscription").state == "interrupted", "reused PID does not claim the operation is alive");
 
+begin("selection", "preparing", { subject: "overseas", total: 2, completed: 0 });
+snapshot = get("selection");
+check(snapshot.state == "running" && snapshot.kind == "selection" && snapshot.phase == "preparing" && snapshot.total == 2,
+	"selection operation publishes its initial progress");
+update("checking", { subject: "provider-check", total: 2, completed: 0 });
+update("selecting", { subject: "overseas", completed: 1 });
+check(get("selection").phase == "selecting" && get("selection").completed == 1, "selection operation advances through measured candidates");
+finish(true, null, { ok: true });
+check(get("selection").state == "succeeded" && get("selection").phase == "selecting", "selection operation closes successfully");
+
+begin("selection", "preparing", { total: 1 });
+finish(false, "protected_probe_failed", { rollback: { ok: true } });
+check(get("selection").state == "failed" && get("selection").recovery == "restored", "selection failure reports confirmed restoration");
+
 begin("packages", "installing", { id: "packages-test_123", total: 2, subject: "https://example.invalid/?token=private" });
 snapshot = get("packages");
 check(snapshot.id == "packages-test_123" && snapshot.subject == null, "worker request identity is bound without exposing URLs");
@@ -68,4 +84,5 @@ check(begin("../../outside", "downloading") == null && get("../../outside") == n
 
 if (previous == null) fs.unlink(path); else fs.writefile(path, previous);
 if (previous_packages == null) fs.unlink(package_path); else fs.writefile(package_path, previous_packages);
+if (previous_selection == null) fs.unlink(selection_path); else fs.writefile(selection_path, previous_selection);
 print("operation_contract_ok\n");

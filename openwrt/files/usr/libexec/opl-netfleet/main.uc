@@ -1953,6 +1953,7 @@ function automatic_select_action(policy, capability, evidence, trigger, initiato
 	if (length(automatic_names) == 0 || capability != automatic_names[0]) {
 		fail("select", "automatic_root_required", automatic_names[0] ?? null);
 	}
+	operation_update("checking", { subject: "机场健康检查", total: length(automatic_names), completed: 0 });
 	for (let i = 0; i < length(automatic_names); i++) {
 		const entry = manifest?.generated_groups?.[automatic_names[i]];
 		if (entry?.mode != "automatic" || length(entry?.candidate_groups ?? []) == 0) {
@@ -1990,6 +1991,7 @@ function automatic_select_action(policy, capability, evidence, trigger, initiato
 		const name = automatic_names[i];
 		const parent = policy.capabilities?.[name]?.prefer_region_from;
 		const preferred_region = parent == null ? null : results[parent]?.decision?.region_id;
+		operation_update("selecting", { subject: name, total: length(automatic_names), completed: i });
 		const result = automatic_round(policy, manifest, manifest.generated_groups[name], name, secret,
 			baseline_probes.ok, state, provider_measurement_ok, preferred_region);
 		results[name] = result;
@@ -2011,6 +2013,7 @@ function automatic_select_action(policy, capability, evidence, trigger, initiato
 	for (let i = 0; i < length(automatic_names); i++) {
 		const name = automatic_names[i];
 		const result = results[name];
+		operation_update("reloading", { subject: name, total: length(automatic_names), completed: i });
 		const activation = activate_preferred_choice(secret, manifest.generated_groups[name],
 			result.decision.group, policy, false, false);
 		activations[name] = activation;
@@ -2027,6 +2030,7 @@ function automatic_select_action(policy, capability, evidence, trigger, initiato
 			fail("select", "automatic_selection_failed", { capability: name, activation: activation, fallback: fallback });
 		}
 	}
+	operation_update("verifying", { subject: null, total: length(automatic_names), completed: length(automatic_names) });
 	const activation_probes = protected_probes(policy);
 	if (!activation_probes.ok) {
 		const restored = baseline_probes.ok &&
@@ -2079,6 +2083,7 @@ function select_action(policy, evidence) {
 	if (!capability || !choice) {
 		fail("select", "usage", "select <capability> <exact-member>");
 	}
+	operation_begin("selection", "preparing", { subject: capability, total: 1, completed: 0 });
 	if (choice == "auto") {
 		automatic_select_action(policy, capability, evidence, "manual", ARGV[3]);
 		return;
@@ -2089,6 +2094,7 @@ function select_action(policy, evidence) {
 		fail("select", allowed.error, null);
 	}
 	const secret = api_secret();
+	operation_update("checking", { subject: capability, total: 1, completed: 0 });
 	const manifest_entry = manifest?.generated_groups?.[capability];
 	const before = secret ? proxies(secret)?.proxies?.[allowed.group]?.now ?? null : null;
 	const baseline = protected_probes(policy);
@@ -2099,6 +2105,7 @@ function select_action(policy, evidence) {
 		}
 		fail("select", "protected_probe_failed", { probes: baseline, recovery: recovery });
 	}
+	operation_update("selecting", { subject: capability, total: 1, completed: 0 });
 	const activation = secret && manifest_entry ?
 		activate_manual_choice(secret, manifest_entry, allowed.choice, policy, true) :
 		{ ok: false, error: "selector_write_failed" };
@@ -2117,6 +2124,7 @@ function select_action(policy, evidence) {
 		}
 		fail("select", activation.error, { activation: activation, recovery: recovery });
 	}
+	operation_update("verifying", { subject: null, total: 1, completed: 1 });
 	const events_recorded = record_events([decision_event("select", capability, before, {
 		selected_group: allowed.choice,
 		selected_leaf: activation.leaf,
@@ -2155,6 +2163,7 @@ function maintain_action(policy, evidence) {
 		});
 		return;
 	}
+	operation_begin("selection", "preparing", { subject: root, total: length(automatic_names), completed: 0 });
 	automatic_select_action(policy, root, evidence, ARGV[1] ?? "scheduled", ARGV[2] ?? "supervisor");
 };
 

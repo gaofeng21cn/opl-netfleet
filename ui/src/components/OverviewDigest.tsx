@@ -27,7 +27,7 @@ export function OverviewDigest({
     status.active && status.runtime.netfleet_present && status.runtime.controller_available,
   );
   const availableProviders = status.providers.filter((provider) => (
-    availabilityMeasured && Number(provider.available_node_count) > 0 && Number(provider.available_region_count) > 0
+    availabilityMeasured && Number(provider.available_count) > 0 && Number(provider.available_region_count) > 0
   ));
   const selectedProviders = availabilityMeasured ? status.providers.filter((provider) => provider.selected) : [];
   const fastestProvider = fastest(availableProviders, (provider) => provider.last_best_delay_ms ?? provider.best_delay_ms);
@@ -46,14 +46,16 @@ export function OverviewDigest({
   const latest = latestDecision(events.events);
 
   const unavailableProviders = status.providers.filter((provider) => (
-    (provider.available_node_count != null && Number(provider.available_node_count) === 0) ||
+    provider.quota?.state !== 'exhausted' &&
+    ((provider.available_count != null && Number(provider.available_count) === 0) ||
     (provider.available_region_count != null && Number(provider.available_region_count) === 0)
+    )
   ));
   const exhaustedProviders = status.providers.filter((provider) => provider.quota?.state === 'exhausted');
   const unavailableSelectedRegions = status.regions.filter((region) => (
     region.selected &&
-    region.available_node_count != null && region.available_provider_count != null &&
-    (Number(region.available_node_count) === 0 || Number(region.available_provider_count) === 0)
+    region.available_count != null && region.available_provider_count != null &&
+    (Number(region.available_count) === 0 || Number(region.available_provider_count) === 0)
   ));
   const attention = [
     !status.runtime.mihomo_running ? 'Mihomo 未运行' : null,

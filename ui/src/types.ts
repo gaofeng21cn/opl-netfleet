@@ -96,6 +96,8 @@ export interface Region {
   selected?: boolean;
   available_provider_count?: number | null;
   provider_count?: number | null;
+  available_count?: number | null;
+  candidate_count?: number | null;
   available_node_count?: number | null;
   node_count?: number | null;
   last_best_delay_ms?: number | null;
