@@ -46,7 +46,8 @@ jobs=${NETFLEET_COMPAT_BUILD_JOBS:-8}
 # Build real library metadata without optional kernel crypto engines.
 make -C "$sdk" -j"$jobs" package/toolchain/compile package/feeds/base/openssl/compile \
   CONFIG_OPENSSL_ENGINE= CONFIG_OPENSSL_ENGINE_BUILTIN_DEVCRYPTO= \
-  CONFIG_PACKAGE_libopenssl-devcrypto= NO_DEPS=1 V=s
+  CONFIG_PACKAGE_libopenssl-devcrypto= CONFIG_PACKAGE_libopenssl-afalg= \
+  CONFIG_PACKAGE_libopenssl-padlock= NO_DEPS=1 V=s
 make -C "$sdk" "package/$package/compile" NETFLEET_COMPAT_RUNTIME="$runtime" NO_DEPS=1 V=s
 mapfile -t packages < <(find "$sdk/bin/packages" -type f -name "$package-*.apk")
 test "${#packages[@]}" = 1
