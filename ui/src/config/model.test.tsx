@@ -32,6 +32,13 @@ describe('本地配置参考模型', () => {
       available_provider_count: 0,
       available_node_count: 1,
       mode: 'automatic',
+    }, {
+      id: 'paths-only',
+      display_name: 'XX 路径可用',
+      available_count: 2,
+      available_provider_count: 1,
+      available_node_count: null,
+      mode: 'automatic',
     });
     const draft = createConfigDraft(status);
 
@@ -40,6 +47,8 @@ describe('本地配置参考模型', () => {
     ]);
     expect(draft.regions.map((item) => item.id)).not.toContain('switzerland');
     expect(draft.regions.map((item) => item.id)).not.toContain('detached');
+    expect(draft.regions.map((item) => item.id)).toContain('paths-only');
+    expect(draft.regions.find((item) => item.id === 'paths-only')).toMatchObject({ availablePaths: 2, availableNodes: null });
     expect(draft.regions).toHaveLength(status.regions.length - 2);
     expect(draft.capabilities.map((item) => item.displayName)).toEqual(['海外加速', 'AI 出口']);
     expect(draft.capabilities[1].regionIds).not.toContain('hong_kong');

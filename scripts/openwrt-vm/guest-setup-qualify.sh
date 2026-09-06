@@ -153,6 +153,9 @@ else
 	mkdir -p /usr/share/opl-netfleet /etc/opl-netfleet
 	cp -R /tmp/openwrt/files/usr/share/opl-netfleet/nikki /usr/share/opl-netfleet/
 	cp /tmp/openwrt/files/etc/config/netfleet /usr/share/opl-netfleet/netfleet.config
+	cp /tmp/openwrt/files/etc/opl-netfleet/policy.example.json /etc/opl-netfleet/policy.example.json
+	cp /tmp/openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json /etc/opl-netfleet/policy-sources/base-v1.json
+	cp /tmp/openwrt/files/etc/opl-netfleet/rulesets.lock.json /etc/opl-netfleet/rulesets.lock.json
 	cp /tmp/openwrt/files/etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet-core
 	cp /tmp/openwrt/files/etc/init.d/opl-netfleet /etc/init.d/opl-netfleet
 	chmod 0755 "$main" /usr/libexec/opl-netfleet/supervisor.uc "$gateway" /etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet
