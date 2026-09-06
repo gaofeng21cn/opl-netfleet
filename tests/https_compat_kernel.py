@@ -21,6 +21,7 @@ class Kernel(Protocol):
     PROXY_PORT = gateway.PORT
     PRESERVE_SOURCE_PORT = True
     DESTINATION = "198.51.100.10"
+    HOST = "localhost"
 
     async def asyncSetUp(self):
         if not Path("/tmp/netfleet-compat-vm-authorized").exists():
@@ -54,7 +55,8 @@ class Kernel(Protocol):
     def command(*args):
         subprocess.run(args, check=True, capture_output=True, timeout=5)
 
-    async def request(self, host="localhost", ca=None, source=None, hold=False, h2=False):
+    async def request(self, host=None, ca=None, source=None, hold=False, h2=False):
+        host = host or self.HOST
         code = """import json,socket,ssl,sys
 context=ssl.create_default_context(cafile=sys.argv[2]); context.set_alpn_protocols(['h2','http/1.1'] if sys.argv[7]=='h2' else ['http/1.1'])
 source=(sys.argv[5],0) if sys.argv[5] else None

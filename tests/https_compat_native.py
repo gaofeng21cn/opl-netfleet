@@ -13,7 +13,7 @@ from https_compat_controller import Controller
 
 
 class Native(Kernel):
-    ORIGIN_PORT = 443
+    HOST = "wire.example"
 
     @staticmethod
     def command(*args):
@@ -25,6 +25,13 @@ class Native(Kernel):
     async def asyncSetUp(self):
         await super().asyncSetUp()
         await self.stop_proxy()
+        # Port 443 in the router namespace belongs to LuCI. The wire origin
+        # owns 443 only inside its isolated namespace.
+        self.upstream_port = 443
+        policy_path = self.directory / "config.json"
+        policy = json.loads(policy_path.read_text())
+        policy["rules"][0].update(domain=self.HOST, port=443)
+        policy_path.write_text(json.dumps(policy))
         self.command("ip", "addr", "del", "198.51.100.10/32", "dev", "lo")
         self.addCleanup(self.command, "ip", "addr", "add", "198.51.100.10/32", "dev", "lo")
         self.command("ip", "netns", "add", "nfcompat-origin")
@@ -67,7 +74,7 @@ class Native(Kernel):
         root = Path("/etc/opl-netfleet")
         (root / "backend.json").write_text('{"kind":"native-mihomo"}')
         (root / "native/profiles").mkdir(parents=True, exist_ok=True, mode=0o700)
-        (root / "native/profiles/compat.json").write_text(json.dumps({"rules": ["MATCH,DIRECT"], "hosts": {"localhost": "198.51.100.10"}}))
+        (root / "native/profiles/compat.json").write_text(json.dumps({"rules": ["MATCH,DIRECT"], "hosts": {self.HOST: "198.51.100.10"}}))
         bundle = Path("/etc/ssl/certs/ca-certificates.crt")
         previous_bundle = bundle.read_bytes()
         self.addCleanup(bundle.write_bytes, previous_bundle)
@@ -79,7 +86,7 @@ class Native(Kernel):
         hosts = Path("/etc/hosts")
         original_hosts = hosts.read_bytes()
         self.addCleanup(hosts.write_bytes, original_hosts)
-        hosts.write_bytes(original_hosts + b"\n198.51.100.10 localhost\n2001:db8:88::10 localhost\n")
+        hosts.write_bytes(original_hosts + b"\n198.51.100.10 wire.example\n2001:db8:88::10 wire.example\n")
 
     def disable(self):
         status = self.owner.call("get")
