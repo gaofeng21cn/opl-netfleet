@@ -10,7 +10,7 @@ check(error_code("private error contents", "network_apply_failed") == "network_a
 const profile = { "mixed-port": 7890, authentication: ["user:private-password"],
 	"tproxy-port": 7892, "external-controller": "0.0.0.0:9090", secret: "unchanged-secret", private_field: { keep: true },
 	dns: { nameserver: ["udp://127.0.0.1:1054"], "default-nameserver": ["198.51.100.53"],
-		"proxy-server-nameserver": ["198.51.100.53"], "direct-nameserver": ["198.51.100.53"],
+		"proxy-server-nameserver": ["system"], "direct-nameserver": ["198.51.100.53"],
 		"nameserver-policy": { "example.test": ["198.51.100.54"], "+.private.test": ["198.51.100.55"] },
 		"proxy-server-nameserver-policy": { "exit.example.test": ["198.51.100.54"], "geosite:private": ["198.51.100.55"] },
 		"fake-ip-filter": ["+.keep.test"], fallback: ["198.51.100.56"] } };

@@ -93,7 +93,8 @@ function address(value, family) {
 	return length(parts) == 1 || (match(parts[1], /^[0-9]+$/) && int(parts[1]) <= (family == 4 ? 32 : 128));
 };
 function resolver(value) {
-	if (type(value) != "string" || length(value) == 0 || length(value) > 2048 || match(value, /[\x00-\x20\x7f]/)) return false;
+	if (type(value) != "string" || length(value) == 0 || length(value) > 2048 || match(value, /[[:cntrl:][:space:]]/)) return false;
+	if (value == "system") return true;
 	if (ipv4(value) || ipv6(value)) return true;
 	// Resolver syntax remains Mihomo's contract; only network transports enter this form.
 	return match(value, /^(https|tls|quic|tcp|udp):\/\/[^\s]+$/) != null;
@@ -186,10 +187,10 @@ export function validate_request(request, revision, current, resources) {
 					push(errors, { path: "listeners.credentials.id", reason: "invalid_credential_id" });
 				push(ids, credential.id);
 				if (credential.password == null) credential.password = previous?.password;
-				if (type(credential.username) != "string" || !match(credential.username, /^[^\x00-\x20\x7f:]{1,128}$/) || index(seen, credential.username) >= 0)
+				if (type(credential.username) != "string" || !match(credential.username, /^[^[:cntrl:][:space:]:]{1,128}$/) || index(seen, credential.username) >= 0)
 					push(errors, { path: "listeners.credentials.username", reason: "invalid_username" });
 				push(seen, credential.username);
-				if (type(credential.password) != "string" || !match(credential.password, /^[^\x00-\x1f\x7f]{1,256}$/))
+				if (type(credential.password) != "string" || !match(credential.password, /^[^[:cntrl:]]{1,256}$/))
 					push(errors, { path: "listeners.credentials.password", reason: "password_required" });
 				credential.password_configured = true;
 			}
