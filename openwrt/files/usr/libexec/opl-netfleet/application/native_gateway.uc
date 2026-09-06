@@ -238,7 +238,8 @@ function watch() {
 			shell(`logger -t ${SERVICE} lifecycle_reconcile_failed`);
 	};
 	const pending = loop.timer(-1, synchronize);
-	const compatibility = loop.timer(-1, () => {
+	let compatibility = null;
+	compatibility = loop.timer(-1, () => {
 		compatibility.set(2000);
 		if (fs.stat(COMPAT) != null) shell(`timeout 4 /usr/bin/python3 ${COMPAT} tick >/dev/null 2>&1 &`);
 	});

@@ -9,6 +9,7 @@ import socket
 import ssl
 import subprocess
 import sys
+import tarfile
 import time
 
 sys.path.insert(0, "/usr/lib/opl-netfleet-compat/vendor")
@@ -369,6 +370,21 @@ def main():
             prepare_ca()
             atomic(EFFECTIVE, effective(validate(read(CONFIG, DEFAULT)), read(TRUST, {}), ca_fingerprint()))
             return {"prepared": True}
+        if action == "private-backup":
+            destination = Path(sys.argv[2])
+            if not destination.is_absolute() or destination.parent.stat().st_mode & 0o077:
+                raise ValueError("private_backup_directory_required")
+            if not (CA / "mitmproxy-ca.pem").is_file():
+                raise ValueError("ca_not_prepared")
+            with destination.open("xb") as output:
+                os.chmod(destination, 0o600)
+                with tarfile.open(fileobj=output, mode="w:gz") as archive:
+                    for path in (CONFIG, TRUST, CA):
+                        if path.exists():
+                            archive.add(path, arcname=str(path.relative_to(BASE)))
+                output.flush()
+                os.fsync(output.fileno())
+            return {"private_backup_created": True, "ca_sha256": ca_fingerprint()}
         if action == "bypass":
             gateway.bypass()
             return {"intercepting": False}

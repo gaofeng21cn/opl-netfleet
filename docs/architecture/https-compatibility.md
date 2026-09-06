@@ -58,3 +58,7 @@ python3 netfleet-macos-trust.py revoke --target router-admin --device mac
 系统信任证明只证明系统证书库，Codex App、CLI 和图片运行时分别显示实际验证状态。
 未实际验证的运行时保持“待实际验证”，不能由系统证书安装成功推导为应用已经可用。
 设备地址变更使旧信任接入记录失效。撤销接管后，工具确认连接排空才移除系统信任。
+
+设备管理员通过 `control.py private-backup /root/netfleet-compat-private.tar.gz` 生成
+包含配置、接入记录和 CA 私钥的私有备份。目标目录必须仅管理员可访问，备份文件
+使用 0600 权限；此动作不暴露给 rpcd 或浏览器。普通诊断导出不包含这份备份。
