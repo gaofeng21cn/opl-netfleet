@@ -79,6 +79,7 @@ ucode /tmp/tests/extensions_device.uc /tmp/openwrt/files/usr/libexec/rpcd/opl-ne
 	/tmp/openwrt/luci-app-netfleet/root/usr/share/rpcd/acl.d/luci-app-netfleet.json >>"$work/contracts.log" 2>&1
 printf '{"kind":"native-mihomo"}\n' >/etc/opl-netfleet/backend.json
 ucode /tmp/tests/backend_contract.uc native-mihomo >>"$work/contracts.log" 2>&1
+ucode /tmp/tests/plugins_device.uc >>"$work/contracts.log" 2>&1
 cat /tmp/local-probe.crt >>/etc/ssl/certs/ca-certificates.crt
 printf '192.168.1.2 netfleet-probe.test www.gstatic.com\n' >>/etc/hosts
 

@@ -12,6 +12,9 @@ function declare(options) {
 }
 
 const calls = {
+	pluginsList: declare({ object: 'opl-netfleet', method: 'plugins_list' }),
+	pluginRead: declare({ object: 'opl-netfleet', method: 'plugin_read', params: [ 'request' ] }),
+	pluginCall: declare({ object: 'opl-netfleet', method: 'plugin_call', params: [ 'request' ] }),
 	compatibilityGet: declare({ object: 'opl-netfleet', method: 'compatibility_get' }),
 	compatibilityCa: declare({ object: 'opl-netfleet', method: 'compatibility_ca' }),
 	compatibilityApply: declare({ object: 'opl-netfleet', method: 'compatibility_apply', params: [ 'request' ] }),
@@ -144,6 +147,9 @@ return baseclass.extend({
 	dashboardCheck: function() { return withRpcTimeout(60, function() { return execute('dashboardCheck'); }); },
 	dashboardUpdate: function(version) { return withRpcTimeout(180, function() { return executeRequest('dashboardUpdate', version); }); },
 	componentsGet: function() { return execute('componentsGet'); },
+	pluginsList: function() { return execute('pluginsList'); },
+	pluginRead: function(request) { return withRpcTimeout(70, function() { return executeRequest('pluginRead', request); }); },
+	pluginCall: function(request) { return withRpcTimeout(200, function() { return executeRequest('pluginCall', request); }); },
 	componentsCheck: function() { return execute('componentsCheck'); },
 	componentsUpdate: function(component, version) {
 		return calls.componentsUpdate(component, version).then(function(response) {
