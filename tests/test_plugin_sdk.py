@@ -36,6 +36,7 @@ class PluginSDKTests(unittest.TestCase):
         manifest, files = SDK.validate(source)
         self.assertEqual("opl-netfleet-plugin-link-health", manifest["package"])
         self.assertEqual({"inspect": "read"}, manifest["actions"])
+        self.assertEqual([], manifest["backends"])
         self.assertIn('const ID = "link-health";', (source / "control").read_text())
         self.assertTrue(os.access(source / "control", os.X_OK))
         self.assertIn(Path("LICENSE"), files)
@@ -49,7 +50,7 @@ class PluginSDKTests(unittest.TestCase):
             {"id": "../escape"}, {"id": "Wrong-ID"}, {"api_version": True},
             {"api_version": 2}, {"package": "opl-netfleet"},
             {"actions": {"load": "write"}}, {"actions": {"inspect": "shell"}},
-            {"backends": []}, {"dependencies": ["ucode;id"]},
+            {"backends": ["../backend"]}, {"dependencies": ["ucode;id"]},
             {"permissions": ["root"]}, {"version": "1.0\nPKG_NAME:=bad"},
         ]
         for fields in invalid:

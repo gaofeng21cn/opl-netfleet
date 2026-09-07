@@ -63,8 +63,8 @@ def validate_process(manifest):
         if len(set(manifest[key])) != len(manifest[key]):
             raise ValueError(f"{key} must not contain duplicates")
     validate_package_names(manifest["dependencies"], "dependencies")
-    if not manifest["backends"] or set(manifest["backends"]) - {"native-mihomo", "nikki-mihomo"}:
-        raise ValueError("unsupported backend")
+    if any(not valid_id(backend) for backend in manifest["backends"]):
+        raise ValueError("invalid backend identity")
     if set(manifest["permissions"]) - {"diagnostics", "network", "resources"}:
         raise ValueError("unsupported permission")
     actions = manifest["actions"]

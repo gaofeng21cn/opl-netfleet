@@ -385,9 +385,11 @@ function management(action, argv, root, options) {
 		if (item.manifest.api_version != API_VERSION && index(['get','unload'], input.action) < 0) return failure('plugin_api_incompatible');
 		if (!item.process) return service_request(input, item, host);
 		if (index(['get','unload'], input.action) < 0) {
-			const environment_service = host.system.environment;
-			const environment = environment_service == null ? null : host.use(environment_service.service)[environment_service.method]();
-			if (environment?.backend == null || index(item.manifest.backends, environment.backend) < 0) return failure('plugin_backend_unsupported');
+			if (length(item.manifest.backends)) {
+				const environment_service = host.system.environment;
+				const environment = environment_service == null ? null : host.use(environment_service.service)[environment_service.method]();
+				if (environment?.backend == null || index(item.manifest.backends, environment.backend) < 0) return failure('plugin_backend_unsupported');
+			}
 			for (let name in item.manifest.dependencies) if (system(`apk --no-network info -e ${q(name)} >/dev/null 2>&1 || opkg status ${q(name)} 2>/dev/null | grep -q '^Status: .* installed$'`) != 0) return failure('plugin_dependency_missing');
 		}
 		host.acquire({ [input.id]: true });

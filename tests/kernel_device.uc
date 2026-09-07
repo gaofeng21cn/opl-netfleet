@@ -97,6 +97,27 @@ function events() { return split(trim(fs.readfile(`${root}/events`) ?? ''), '\n'
 function ordered(expected, message) { check(sprintf('%J', events()) == sprintf('%J', expected), `${message}: ${sprintf('%J', events())}`); };
 
 try {
+	write(`${root}/profile.json`, profile);
+	directory(`${root}/plugins/independent`);
+	const independent = { schema: 'opl-netfleet-plugin.v1', id: 'independent', label: 'Independent process',
+		version: '1.0.0', api_version: 1, package: 'opl-netfleet-plugin-independent',
+		dependencies: [], backends: [], permissions: ['diagnostics'], actions: {} };
+	write(`${root}/plugins/independent/manifest.json`, independent);
+	write(`${root}/plugins/independent/control`, '#!/usr/bin/env ucode\n' +
+		"import * as fs from 'fs';\n" + sprintf('const state = %J;\n', `${root}/state/process-loaded`) +
+		"if (ARGV[0] == 'load') fs.writefile(state, '1');\n" +
+		"if (ARGV[0] == 'unload') fs.unlink(state);\n" +
+		"printf('%J\\n', {ok:true,result:{loaded:fs.lstat(state)!=null,ready:fs.lstat(state)!=null}});\n");
+	check(fs.chmod(`${root}/plugins/independent/control`, 0700), 'process control is executable');
+	check(call('independent', 'load').result.ready == true, 'kernel-only process loads without a backend service');
+	check(call('independent', 'reload').result.ready == true, 'kernel-only process reloads');
+	check(call('independent', 'unload').result.loaded == false, 'kernel-only process unloads');
+	independent.backends = ['custom-backend'];
+	write(`${root}/plugins/independent/manifest.json`, independent);
+	check(call('independent', 'load').error == 'plugin_backend_unsupported', 'backend-bound process still requires its environment');
+	check(call('independent', 'get').ok && call('independent', 'unload').ok, 'backend absence preserves inspection and exit');
+	remove(`${root}/plugins/independent`);
+
 	plugin('scratch', {}, false, false);
 	check(call('scratch', 'get').result.loaded == false, 'new service starts disabled');
 	check(call('scratch', 'load').result.ready == true, 'public load establishes a service binding');

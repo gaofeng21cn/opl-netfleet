@@ -41,6 +41,10 @@ UCode 服务插件使用 `opl-netfleet-service-plugin.v1` 声明具名服务、�
 权限类别和自定义动作的读写分类。入口路径由安装布局确定，浏览器不能指定可执行文件
 或 shell 命令。`control` 可使用设备已安装的任何语言运行时。
 
+`backends` 为空数组表示后端无关，可在只安装微内核的系统中运行。非空数组声明所需
+后端 ID，宿主通过系统配置的 environment 服务检查当前后端；缺少提供者或身份不符时
+拒绝加载及业务动作，保留 get 和 unload。后端身份由功能插件提供，内核不限定后端种类。
+
 每次调用启动当前 `control <action> <request-file>`，没有常驻代码缓存。请求是私有
 JSON 文件，其中 `request` 对象包含 `api_version`、`id`、`action` 和 `params`；宿主
 从标准输出读取 JSON 响应。成功响应返回 `ok: true` 与 `result` 对象，失败返回

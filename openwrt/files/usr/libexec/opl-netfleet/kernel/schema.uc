@@ -33,10 +33,10 @@ export function descriptor_error(value, id) {
 		return null;
 	}
 	if (value.schema != 'opl-netfleet-plugin.v1' || type(value.dependencies) != 'array' || type(value.backends) != 'array' ||
-		!length(value.backends) || type(value.permissions) != 'array' || type(value.actions) != 'object') return 'plugin_manifest_invalid';
+		type(value.permissions) != 'array' || type(value.actions) != 'object') return 'plugin_manifest_invalid';
 	for (let key in keys(value)) if (index(['schema','id','label','version','api_version','package','dependencies','backends','permissions','actions'], key) < 0) return 'plugin_manifest_invalid';
 	for (let name in value.dependencies) if (type(name) != 'string' || !match(name, /^[a-z][a-z0-9+-]*$/)) return 'plugin_manifest_invalid';
-	for (let backend in value.backends) if (index(['native-mihomo','nikki-mihomo'], backend) < 0) return 'plugin_manifest_invalid';
+	for (let backend in value.backends) if (!valid_id(backend)) return 'plugin_manifest_invalid';
 	for (let permission in value.permissions) if (index(['diagnostics','network','resources'], permission) < 0) return 'plugin_manifest_invalid';
 	for (let action, access in value.actions) if (!valid_id(action) || index(['get','load','unload','reload'], action) >= 0 || index(['read','write'], access) < 0) return 'plugin_manifest_invalid';
 	return null;

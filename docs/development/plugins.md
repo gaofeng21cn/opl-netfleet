@@ -119,6 +119,8 @@ python3 scripts/netfleet-plugin.py validate /tmp/device-info
 单次进程调用应在 30 秒内完成，响应不超过 64 KiB。长时工作交给插件自己的受管服务，
 入口返回实际状态。运行依赖填入 `dependencies`，额外文件放在 `resources/` 中。
 安装或升级后使用显式 load 启用进程插件。
+`backends: []` 表示后端无关，设备信息示例因此只依赖微内核和其声明的系统包。
+需要特定后端时，在数组中填写对应 ID；宿主从系统绑定的 environment 服务取得当前身份。
 
 ## 生成与发布软件包
 

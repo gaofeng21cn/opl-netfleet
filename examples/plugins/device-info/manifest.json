@@ -6,7 +6,7 @@
   "api_version": 1,
   "package": "opl-netfleet-plugin-device-info",
   "dependencies": ["ucode", "ucode-mod-fs", "ucode-mod-ubus"],
-  "backends": ["native-mihomo", "nikki-mihomo"],
+  "backends": [],
   "permissions": ["diagnostics"],
   "actions": {"inspect": "read"}
 }

@@ -2,6 +2,7 @@
 """Build disposable signed APK revisions without altering the release candidate."""
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -22,7 +23,7 @@ def sdk_path():
     return tools[0].parents[3]
 
 
-def build(candidate, output):
+def build(candidate, output, baseline=None):
     sdk = sdk_path()
     apk = sdk / "staging_dir/host/bin/apk"
     if not apk.is_file():
@@ -71,6 +72,8 @@ def build(candidate, output):
                 shutil.copy2(archive, output / kind / archive.name)
         (output / "old").mkdir()
         core_versions = {}
+        package_versions = {}
+        legacy = None
         artifacts = {item["package"]: item["name"] for item in manifest["artifacts"] + manifest["dependency_artifacts"]}
         for name, filename in artifacts.items():
             archive = candidate / filename
@@ -79,6 +82,7 @@ def build(candidate, output):
             base, release = package_version.rsplit("-r", 1)
             prior = f"{base}-r{int(release) - 1}"
             following = f"{base}-r{int(release) + 1}"
+            package_versions[name] = {"current": package_version, "old": prior, "bad": following}
             if name == "mihomo-meta":
                 core_versions = {"core_version": package_version, "core_old_version": prior, "core_bad_version": following}
             root = scratch / name
@@ -121,10 +125,36 @@ def build(candidate, output):
         for kind in ("old", "good", "bad", "bad-core"):
             run("--allow-untrusted", "mkndx", "--output", output / kind / "packages.adb",
                 "--sign", private_key, *sorted((output / kind).glob("*.apk")))
+        if baseline is not None:
+            legacy_dir = output / "legacy"
+            legacy_dir.mkdir()
+            shutil.copy2(baseline / "baseline.pem", legacy_dir / "baseline.pem")
+            legacy = {"artifacts": []}
+            for archive in sorted(baseline.glob("*.apk")):
+                target = legacy_dir / archive.name
+                shutil.copy2(archive, target)
+                run("verify", "--keys-dir", legacy_dir, target)
+                metadata = json.loads(run("adbdump", "--format", "json", target))
+                name = metadata["info"]["name"]
+                if name not in ("opl-netfleet", "luci-app-netfleet"):
+                    raise SystemExit("Legacy fixture must contain only the monolith and LuCI")
+                legacy["artifacts"].append({"name": target.name, "package": name,
+                                            "version": metadata["info"]["version"],
+                                            "sha256": hashlib.sha256(target.read_bytes()).hexdigest()})
+                if name == "opl-netfleet":
+                    legacy_root = scratch / "legacy"
+                    legacy_root.mkdir()
+                    run("--allow-untrusted", "extract", "--destination", legacy_root, target)
+                    legacy["build"] = json.loads((legacy_root / "usr/share/opl-netfleet/build.json").read_text())
+            if {item["package"] for item in legacy["artifacts"]} != {"opl-netfleet", "luci-app-netfleet"}:
+                raise SystemExit("Legacy fixture requires the monolith and LuCI APKs")
+            legacy["key_sha256"] = hashlib.sha256((legacy_dir / "baseline.pem").read_bytes()).hexdigest()
     (output / "fixture.json").write_text(json.dumps({
         "schema_version": 1, "version": version, "old_version": old_version, "bad_version": bad_version,
         "source_commit": manifest["source_commit"], "source_tree": manifest["source_tree"],
         "product_packages": sorted(manifest["artifact_files"]),
+        "package_versions": package_versions,
+        "legacy": legacy,
         **core_versions,
     }, sort_keys=True) + "\n")
 
@@ -133,5 +163,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("candidate", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--baseline", type=Path)
     arguments = parser.parse_args()
-    build(arguments.candidate.resolve(), arguments.output.resolve())
+    build(arguments.candidate.resolve(), arguments.output.resolve(),
+          arguments.baseline.resolve() if arguments.baseline is not None else None)

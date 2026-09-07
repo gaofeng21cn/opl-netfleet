@@ -275,8 +275,12 @@ if [ -n "$package_archive" ]; then
 		echo "OpenWrt qualification package manifest mismatch" >&2
 		exit 1
 	}
-	if [ "$lane_mode" = all ] || [ "$lane_mode" = setup ]; then
-		python3 "$workspace/scripts/openwrt-vm/component-fixtures.py" "$feed_dir" "$feed_dir/components-fixtures"
+	if [ "$lane_mode" = all ] || [ "$lane_mode" = setup ] || [ "$lane_mode" = package ]; then
+		set -- "$feed_dir" "$feed_dir/components-fixtures"
+		if [ -n "${NETFLEET_VM_PACKAGE_BASELINE:-}" ]; then
+			set -- "$@" --baseline "$NETFLEET_VM_PACKAGE_BASELINE"
+		fi
+		python3 "$workspace/scripts/openwrt-vm/component-fixtures.py" "$@"
 	fi
 	python3 -m http.server "$feed_port" --bind 0.0.0.0 --directory "$feed_dir" \
 		>"$work/package-feed.log" 2>&1 &

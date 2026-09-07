@@ -10,6 +10,8 @@ feed_url=${5:?}
 fixture=/tmp/netfleet-runtime-fixture
 candidate=$fixture/feed-readback
 probe_url=https://netfleet-probe.test:$probe_port/generate_204
+main=/usr/libexec/opl-netfleet/main.uc
+legacy_upgraded=false
 stage=feed_readback
 
 finish() {
@@ -27,6 +29,7 @@ finish() {
 			"$fixture/package-info.after" \
 			"$fixture/package-rpcd-direct.json" "$fixture/package-rpcd-ubus.txt" \
 			"$fixture/package-helper-primary.log" "$fixture/package-helper-reserve.log" \
+			"$fixture"/lifecycle-*.json "$fixture"/lifecycle-*.log \
 			/tmp/opl-netfleet-onboarding/*.json /etc/opl-netfleet/policy.json \
 			/etc/nikki/profiles/opl-netfleet/mvp.manifest.json; do
 			[ ! -s "$path" ] || { echo "--- $path" >&2; cat "$path" >&2; }
@@ -39,6 +42,58 @@ finish() {
 	exit "$rc"
 }
 trap finish EXIT INT TERM
+
+owner_locked() {
+	(
+		exec 9>/var/lock/opl-netfleet-deploy.lock
+		flock 9
+		"$@" 9>&-
+	)
+}
+package_transaction() {
+	owner_locked "$real_apk" --no-network add "$@" >>"$fixture/package-manager.log" 2>&1
+}
+lifecycle_snapshot() {
+	sha256sum /etc/config/nikki /etc/opl-netfleet/policy.json \
+		/etc/nikki/subscriptions/base.yaml /etc/nikki/subscriptions/alpha.yaml \
+		/etc/nikki/subscriptions/beta.yaml /etc/nikki/profiles/OPL-NetFleet.json \
+		/etc/nikki/profiles/opl-netfleet/mvp.manifest.json >"$fixture/${1}.inputs"
+	for path in /etc/config/netfleet /etc/opl-netfleet/backend.json; do
+		if [ -f "$path" ]; then
+			sha256sum "$path" >>"$fixture/${1}.inputs"
+		else
+			printf 'absent %s\n' "$path" >>"$fixture/${1}.inputs"
+		fi
+	done
+	curl -fsS --connect-timeout 2 --max-time 5 -H 'Authorization: Bearer netfleet-vm-fixture' \
+		http://127.0.0.1:9090/proxies >"$fixture/${1}.proxies"
+	ucode -e 'import { readfile } from "fs";
+		const proxies = json(readfile(ARGV[0])).proxies;
+		const result = {}; for (let name in sort(keys(proxies)))
+			if (proxies[name].type == "Selector") result[name] = proxies[name].now;
+		printf("%J\n", result);' "$fixture/${1}.proxies" >"$fixture/${1}.routes"
+}
+lifecycle_restored() {
+	ucode "$main" status >"$fixture/lifecycle-status.json"
+	[ "$(jsonfilter -i "$fixture/lifecycle-status.json" -e '@.result.active')" = true ]
+	/etc/init.d/opl-netfleet running >/dev/null 2>&1
+	/etc/init.d/nikki running >/dev/null 2>&1
+	ucode "$main" probe >"$fixture/lifecycle-probe.json"
+	[ "$(jsonfilter -i "$fixture/lifecycle-probe.json" -e '@.result.ok')" = true ]
+	lifecycle_snapshot after
+	cmp "$fixture/${1}.inputs" "$fixture/after.inputs"
+	cmp "$fixture/${1}.routes" "$fixture/after.routes"
+	for marker in .kernel .kernel-plugins .coordinator; do
+		[ ! -e "/var/run/opl-netfleet-plugin-maintenance/$marker" ]
+	done
+	for record in /var/run/opl-netfleet-plugin-maintenance/.resources/*.json \
+		/var/run/opl-netfleet-plugin-maintenance/*/state.json; do
+		[ ! -e "$record" ]
+	done
+	[ ! -e /var/run/opl-netfleet-mihomo-handoff/state.json ]
+	[ ! -e /tmp/opl-netfleet-package-upgrade-state ]
+	[ ! -e /tmp/opl-netfleet-microkernel-migration ]
+}
 
 mkdir -p "$candidate"
 uclient-fetch -q -O "$candidate/manifest.json" "$feed_url/manifest.json"
@@ -374,6 +429,43 @@ ubus call opl-netfleet probe '{}' >"$fixture/package-probe.json"
 [ "$(jsonfilter -i "$fixture/package-probe.json" -e '@.ok')" = true ]
 [ "$(jsonfilter -i "$fixture/package-probe.json" -e '@.result.ok')" = true ]
 
+stage=plugin_package_upgrade
+uclient-fetch -q -O "$fixture/lifecycle-fixture.json" "$feed_url/components-fixtures/fixture.json"
+uclient-fetch -q -O /etc/apk/keys/netfleet-component-fixture.pem \
+	"$feed_url/components-fixtures/component-fixture.pem"
+lifecycle_snapshot lifecycle-before
+cp /etc/apk/world "$fixture/lifecycle-world.before"
+for package_name in opl-netfleet-plugin-dashboard opl-netfleet-kernel; do
+	package_old=$(ucode -e 'import { readfile } from "fs";
+		print(json(readfile(ARGV[0])).package_versions[ARGV[1]].old);' \
+		"$fixture/lifecycle-fixture.json" "$package_name")
+	package_current=$(ucode -e 'import { readfile } from "fs";
+		print(json(readfile(ARGV[0])).package_versions[ARGV[1]].current);' \
+		"$fixture/lifecycle-fixture.json" "$package_name")
+	stage=upgrade_$package_name
+	uclient-fetch -q -O "$candidate/$package_name-$package_old.apk" \
+		"$feed_url/components-fixtures/good/$package_name-$package_old.apk"
+	uclient-fetch -q -O "$candidate/$package_name-$package_current.apk" \
+		"$feed_url/$package_name-$package_current.apk"
+	core_before=$(cat /var/run/nikki/mihomo.pid)
+	scheduler_before=$(ubus call service list '{"name":"opl-netfleet"}' |
+		jsonfilter -e '@["opl-netfleet"].instances.*.pid')
+	package_transaction "$candidate/$package_name-$package_old.apk"
+	"$real_apk" list --manifest | grep -Fqx "$package_name $package_old"
+	lifecycle_restored lifecycle-before
+	package_transaction "$candidate/$package_name-$package_current.apk"
+	"$real_apk" list --manifest | grep -Fqx "$package_name $package_current"
+	lifecycle_restored lifecycle-before
+	if [ "$package_name" = opl-netfleet-plugin-dashboard ]; then
+		[ "$(cat /var/run/nikki/mihomo.pid)" = "$core_before" ]
+		[ "$(ubus call service list '{"name":"opl-netfleet"}' |
+			jsonfilter -e '@["opl-netfleet"].instances.*.pid')" = "$scheduler_before" ]
+	fi
+done
+"$real_apk" --no-network del opl-netfleet-plugin-dashboard opl-netfleet-kernel \
+	>>"$fixture/package-manager.log" 2>&1
+cmp /etc/apk/world "$fixture/lifecycle-world.before"
+
 stage=disable
 ubus call opl-netfleet disable '{}' >"$fixture/package-disable.json"
 [ "$(jsonfilter -i "$fixture/package-disable.json" -e '@.result.state')" = native_profile ]
@@ -392,6 +484,63 @@ stage=uninstall
 [ ! -e /usr/libexec/opl-netfleet/main.uc ]
 [ ! -e /usr/share/luci/menu.d/luci-app-netfleet.json ]
 
+if [ "$(jsonfilter -i "$fixture/lifecycle-fixture.json" -e '@.legacy.key_sha256')" ]; then
+	stage=legacy_monolith_install
+	uclient-fetch -q -O /etc/apk/keys/netfleet-legacy-fixture.pem \
+		"$feed_url/components-fixtures/legacy/baseline.pem"
+	[ "$(sha256sum /etc/apk/keys/netfleet-legacy-fixture.pem | awk '{print $1}')" = \
+		"$(jsonfilter -i "$fixture/lifecycle-fixture.json" -e '@.legacy.key_sha256')" ]
+	ucode -e 'import { readfile } from "fs";
+		for (let artifact in json(readfile(ARGV[0])).legacy.artifacts)
+			printf("%s %s\n", artifact.sha256, artifact.name);' \
+		"$fixture/lifecycle-fixture.json" >"$fixture/legacy-files.txt"
+	legacy_packages=
+	while read -r expected filename; do
+		case "$filename" in */*|*..*|"") exit 1 ;; esac
+		uclient-fetch -q -O "$candidate/$filename" "$feed_url/components-fixtures/legacy/$filename"
+		[ "$(sha256sum "$candidate/$filename" | awk '{print $1}')" = "$expected" ]
+		legacy_packages="$legacy_packages $candidate/$filename"
+	done <"$fixture/legacy-files.txt"
+	# The core may have been autoremove'd with the new product; resolve the old
+	# product's real system dependencies from the same configured signed feeds.
+	owner_locked "$real_apk" --timeout 300 add $legacy_packages >>"$fixture/package-manager.log" 2>&1
+	[ -f /usr/libexec/opl-netfleet/application/native_gateway.uc ]
+	[ ! -e /usr/libexec/opl-netfleet/kernel/host.uc ]
+	[ "$(jsonfilter -i /usr/share/opl-netfleet/build.json -e '@.source_commit')" = \
+		"$(jsonfilter -i "$fixture/lifecycle-fixture.json" -e '@.legacy.build.source_commit')" ]
+	stage=legacy_monolith_activate
+	owner_locked ucode "$main" compile >"$fixture/lifecycle-legacy-compile.json"
+	[ "$(jsonfilter -i "$fixture/lifecycle-legacy-compile.json" -e '@.ok')" = true ]
+	owner_locked ucode "$main" enable >"$fixture/lifecycle-legacy-enable.json"
+	[ "$(jsonfilter -i "$fixture/lifecycle-legacy-enable.json" -e '@.ok')" = true ]
+	/etc/init.d/opl-netfleet enable
+	/etc/init.d/opl-netfleet start
+	/etc/init.d/opl-netfleet running >/dev/null 2>&1
+	lifecycle_snapshot legacy-before
+	stage=legacy_monolith_upgrade
+	current_packages=
+	while read -r package_name package_version; do
+		filename=$package_name-$package_version.apk
+		uclient-fetch -q -O "$candidate/$filename" "$feed_url/$filename"
+		current_packages="$current_packages $candidate/$filename"
+	done <"$fixture/product-packages.txt"
+	package_transaction $current_packages
+	lifecycle_restored legacy-before
+	/etc/init.d/opl-netfleet enabled >/dev/null 2>&1
+	for directory in application domain adapters platform; do
+		[ ! -e "/usr/libexec/opl-netfleet/$directory" ]
+	done
+	while read -r package_name package_version; do
+		"$real_apk" list --manifest | grep -Fqx "$package_name $package_version"
+	done <"$fixture/product-packages.txt"
+	owner_locked ucode "$main" disable >"$fixture/lifecycle-legacy-disable.json"
+	product_packages=$(awk '{print $1}' "$fixture/product-packages.txt")
+	"$real_apk" del $product_packages >>"$fixture/package-manager.log" 2>&1
+	[ ! -e "$main" ]
+	/etc/init.d/nikki running >/dev/null 2>&1
+	legacy_upgraded=true
+fi
+
 stage=complete
-printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_release":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","checks":{"manifest":true,"signing_key":true,"feed_bootstrap":true,"feed_install":true,"feed_install_inactive":true,"feed_upgrade_transaction":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"probe_rpc":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
-	"$source_commit" "$source_tree" "$manifest_sha" "$version" "$release"
+printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_release":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","lifecycle":{"legacy_monolith_upgrade":%s},"checks":{"manifest":true,"signing_key":true,"feed_bootstrap":true,"feed_install":true,"feed_install_inactive":true,"feed_upgrade_transaction":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"probe_rpc":true,"independent_plugin_upgrade":true,"independent_plugin_keeps_owners_running":true,"kernel_upgrade":true,"lifecycle_restores_routes_and_private_inputs":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
+	"$source_commit" "$source_tree" "$manifest_sha" "$version" "$release" "$legacy_upgraded"
