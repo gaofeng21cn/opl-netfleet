@@ -61,7 +61,9 @@ it('keeps checks neutral, separates source failures and folds healthy dependenci
   value.feed.error = 'feed_check_failed';
   value.dashboard = { ...dashboard, checked_at: 100, installed_version: 'v3.0.0', available_version: 'v3.0.0' };
   let html = render(value);
-  expect(html).toContain('软件包检查失败');
+  expect(html).toContain('软件包：上次检查失败');
+  expect(html).toContain('关闭软件包源检查结果');
+  expect(html).not.toContain('尚未检查更新');
   expect(html).toContain('当前更新源暂无新版');
   expect(html).not.toContain('更新软件包');
   value.dependencies[0].available = false;

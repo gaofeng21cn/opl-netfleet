@@ -67,7 +67,7 @@ global.sessionStorage = storage;
 global.document = { body: { appendChild() {} }, querySelectorAll() { return []; } };
 const baseclass = { extend: value => value };
 function module(name, api) {
-    return new Function('baseclass', 'ui', 'api', 'E', fs.readFileSync(path.join(resources, name), 'utf8'))(baseclass, ui, api, E);
+    return new Function('baseclass', 'ui', 'api', 'E', 'managed', fs.readFileSync(path.join(resources, name), 'utf8'))(baseclass, ui, api, E, name === 'managed.js' ? null : module('managed.js', api));
 }
 function configModule(management) {
     return new Function('baseclass', 'ui', 'management', 'E', 'compatibility', fs.readFileSync(path.join(resources, 'config.js'), 'utf8'))(baseclass, ui, management, E, { render: () => null });
@@ -344,8 +344,8 @@ await pending; await tick();
 assert.deepEqual(calls, ['dashboard', 'packages']);
 assert(owner.dashboardError);
 root = managed.components(owner);
-assert(text(root).includes('面板检查失败'));
-assert(text(root).includes('最近检查：软件包源'));
+assert(text(root).includes('面板：上次检查失败'));
+assert(text(root).includes('软件包源检查'));
 assert(!text(root).includes('已耗时'));
 assert(!button(root, '检查更新').disabled);
 owner.operations = {};
@@ -355,6 +355,64 @@ await fire(button(managed.components(owner), '检查更新'));
 assert.equal(owner.dashboardError, null);
 assert.equal(owner.components.dashboard.checked_at, 100);
 assert(owner.componentsError);
+""")
+
+    def test_operation_results_dismiss_without_changing_owner_or_hiding_new_work(self):
+        self.run_js(r"""
+const records = new Map();
+global.sessionStorage = { getItem: key => records.get(key), setItem: (key, value) => records.set(key, value) };
+const managed = module('managed.js', {});
+const owner = controller();
+const done = { id: 'operation-1', kind: 'subscription', state: 'succeeded', phase: 'done', started_at: 100, finished_at: 137, updated_at: 137, total: 3, completed: 3, subject: 'private-name' };
+owner.operations = { subscription: clone(done) };
+let root = managed.operationNode(owner, 'subscription');
+assert(text(root).includes('完成于 ' + new Date(137000).toLocaleString()));
+assert(text(root).includes('耗时 37 秒'));
+assert(!text(root).includes('[object HTMLElement]'));
+fire(find(root, node => node.attrs['aria-label'] === '关闭机场订阅更新结果'));
+assert.deepEqual(owner.operations.subscription, done, 'dismiss never changes the device snapshot');
+assert(managed.operationNode(owner, 'subscription').attrs.hidden);
+const reloaded = controller(); reloaded.operations = clone(owner.operations);
+assert(managed.operationNode(reloaded, 'subscription').attrs.hidden, 'dismiss survives page reload in the same session');
+assert(!JSON.stringify([...records]).includes('private-name'));
+owner.operations.subscription = { ...done, id: 'operation-2', state: 'running', phase: 'downloading', finished_at: null };
+root = managed.operationNode(owner, 'subscription');
+assert(!root.attrs.hidden);
+assert(!find(root, node => node.attrs['aria-label'] === '关闭机场订阅更新结果'));
+owner.operationError = new Error('disconnected');
+assert(text(managed.operationNode(owner, 'subscription')).includes('执行结果尚未确认'));
+owner.operationError = null;
+owner.operations.subscription = { ...done, id: 'operation-2', state: 'failed', error: 'package_install_failed', recovery: 'failed' };
+root = managed.operationNode(owner, 'subscription');
+assert(text(root).includes('执行失败'));
+assert(text(root).includes('恢复失败'));
+fire(find(root, node => node.attrs['aria-label'] === '关闭机场订阅更新结果'));
+owner.operations.subscription.recovery = 'restored';
+assert(!managed.operationNode(owner, 'subscription').attrs.hidden, 'new recovery evidence must reappear');
+owner.operations.subscription.finished_at = null;
+root = managed.operationNode(owner, 'subscription');
+assert(text(root).includes('记录更新于'));
+assert(!text(root).includes('耗时'));
+managed.notify(null, E('p', {}, '配置已保存'), 'info');
+assert(notifications.at(-1).text.includes('收到反馈'));
+""")
+
+    def test_closed_component_failure_keeps_current_status_and_diagnostics(self):
+        self.run_js(r"""
+const managed = module('managed.js', {});
+const owner = controller();
+owner.components = { supported: true, components: [], dependencies: [], feed: { configured: true, checked_at: 102, error: 'feed_check_failed' } };
+owner.operations = { packages: { id: 'feed-1', kind: 'packages', subject: 'feed', state: 'failed', error: 'feed_check_failed', started_at: 100, finished_at: 102 } };
+let root = managed.components(owner);
+assert.equal(all(root, node => node.attrs.class === 'netfleet-result-body').length, 1, 'one visible failure result');
+fire(find(root, node => node.attrs['aria-label'] === '关闭软件包源检查结果'));
+root = managed.components(owner);
+assert.equal(all(root, node => node.attrs.class === 'netfleet-result-body').length, 0);
+assert(text(root).includes('上次检查失败'));
+const detail = find(root, node => node.tag === 'details' && text(node).includes('技术详情'));
+assert(text(detail).includes('更新源检查失败'));
+assert(!detail.open);
+assert(!button(root, '检查更新').disabled, 'dismiss is not a mutation lock');
 """)
 
     def test_components_group_versions_and_keep_failures_actionable(self):

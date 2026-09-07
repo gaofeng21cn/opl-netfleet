@@ -507,6 +507,7 @@ function createPage(storage, api, notifications) {
     };
     let dashboardOpens = 0;
     const managed = {
+        notify: ui.addNotification,
         preloadSubscriptions: function() { return Promise.resolve(); },
         readOperations: function() { return Promise.resolve(); },
         loadComponents: function() { return Promise.resolve(); },
