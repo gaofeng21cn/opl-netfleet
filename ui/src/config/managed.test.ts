@@ -10,7 +10,11 @@ interface Element {
   textContent?: string;
 }
 
-const E = (tag: string, attrs: Record<string, any> = {}, children: Element | string | Array<Element | string> = []): Element => ({ tag, attrs, children: Array.isArray(children) ? children : [children], value: attrs.value || '' });
+const E = (tag: string, attrs: Record<string, any> = {}, children: Element | string | Array<Element | string> = []): Element => {
+  const items = Array.isArray(children) ? children : [children];
+  const selected = tag === 'select' ? items.find((item) => typeof item !== 'string' && item.attrs.selected) as Element | undefined : undefined;
+  return { tag, attrs, children: items, value: attrs.value || selected?.attrs.value || '' };
+};
 const all = (elements: Array<Element | string>): Element[] => elements.flatMap((item) => typeof item === 'string' ? [] : [item, ...all(item.children)]);
 const label = (element: Element): string => element.children.map((item) => typeof item === 'string' ? item : label(item)).join('');
 
@@ -76,7 +80,7 @@ describe('native LuCI managed operations', () => {
     expect(inputs[3].attrs.choices).toEqual({ clash: 'clash', 'clash.meta': 'clash.meta', mihomo: 'mihomo' });
     inputs[1].value = 'New Name';
     h.button('保存订阅').attrs.click();
-    await vi.waitFor(() => expect(h.api.subscriptionsSet).toHaveBeenCalledWith({ revision: 'revision-1', source: { id: 'alpha', name: 'New Name', url: 'https://example.test/subscription', user_agent: 'custom-client/1.0', info_url: 'https://example.test/quota' } }));
+    await vi.waitFor(() => expect(h.api.subscriptionsSet).toHaveBeenCalledWith({ revision: 'revision-1', source: { id: 'alpha', name: 'New Name', url: 'https://example.test/subscription', user_agent: 'custom-client/1.0', info_url: 'https://example.test/quota', quota_reset_day: null } }));
   });
 
   it('allows choosing a preset and clearing the usage address without changing the subscription', async () => {
@@ -87,7 +91,34 @@ describe('native LuCI managed operations', () => {
     inputs[3].value = 'mihomo';
     inputs[4].value = '';
     h.button('保存订阅').attrs.click();
-    await vi.waitFor(() => expect(h.api.subscriptionsSet).toHaveBeenCalledWith({ revision: 'revision-1', source: { id: 'alpha', name: 'Alpha', url: 'https://example.test/subscription', user_agent: 'mihomo', info_url: '' } }));
+    await vi.waitFor(() => expect(h.api.subscriptionsSet).toHaveBeenCalledWith({ revision: 'revision-1', source: { id: 'alpha', name: 'Alpha', url: 'https://example.test/subscription', user_agent: 'mihomo', info_url: '', quota_reset_day: null } }));
+  });
+
+  it('reads, edits and clears the monthly quota reset day without refreshing subscriptions', async () => {
+    const h = harness(true);
+    await h.managed.subscriptions(h.controller);
+    h.controller.subscriptionState.sources[0].quota_reset_day = 15;
+    h.api.subscriptionsSet.mockImplementation(async (request: any) => {
+      h.controller.subscriptionState.sources[0] = { ...h.controller.subscriptionState.sources[0], ...request.source };
+      return h.controller.subscriptionState;
+    });
+    h.button('编辑').attrs.click();
+    const reset = () => h.nodes().find((node) => node.attrs.id === 'netfleet-source-reset-day')!;
+    expect(reset().value).toBe('15');
+    expect(reset().children).toHaveLength(32);
+    reset().value = '31';
+    h.button('保存订阅').attrs.click();
+    await vi.waitFor(() => expect(h.button('编辑')).toBeDefined());
+    expect(h.nodes().some((node) => label(node).includes('每月 31 日重置'))).toBe(true);
+    h.button('编辑').attrs.click();
+    expect(reset().value).toBe('31');
+    reset().value = '';
+    h.button('保存订阅').attrs.click();
+    await vi.waitFor(() => expect(h.button('编辑')).toBeDefined());
+    expect(h.controller.subscriptionState.sources[0].quota_reset_day).toBeNull();
+    expect(h.api.subscriptionsRefresh).not.toHaveBeenCalled();
+    h.button('关闭').attrs.click();
+    expect(h.controller.refreshData).toHaveBeenCalledWith(true, true);
   });
 
   it('allows source edits while active without implicitly refreshing or stopping the runtime', async () => {

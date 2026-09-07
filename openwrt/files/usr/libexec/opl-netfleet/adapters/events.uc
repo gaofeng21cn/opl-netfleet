@@ -18,7 +18,10 @@ export function write_events(store) {
 };
 
 export function core_netfleet_lines(group_names) {
-	const command = KIND == "native-mihomo" ? `logread -e ${shell_quote(SERVICE)} | tail -n 512` : `tail -n 512 ${shell_quote(LOG_PATH)}`;
+	// logread retries for 11 seconds when this OpenWrt installation has no logd.
+	// Optional diagnostic logs must not block the durable event snapshot.
+	if (KIND == "native-mihomo" && system("ubus -t 1 list log >/dev/null 2>&1") != 0) return [];
+	const command = KIND == "native-mihomo" ? `logread -l 512 -e ${shell_quote(SERVICE)}` : `tail -n 512 ${shell_quote(LOG_PATH)}`;
 	const process = popen(`${command} 2>/dev/null`);
 	if (!process) return [];
 	let result = [];

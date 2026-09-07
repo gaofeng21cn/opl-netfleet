@@ -282,7 +282,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
         <PolicySummary snapshot={status} />
         <RecoverySection snapshot={status} />
       </>}
-      {view === 'providers' && <><OperationProgress operation={operations.subscription} error={operationError} scope={`${source.mode}|${source.target_label}`} /><ProviderTable snapshot={status} full /></>}
+      {view === 'providers' && <><OperationProgress operation={operations.subscription} error={operationError} scope={`${source.mode}|${source.target_label}`} /><ProviderTable key={`${source.mode}|${source.target_label}|${preview?.scenario}`} snapshot={status} full /></>}
       {view === 'regions' && <RegionTable snapshot={status} full />}
       {view === 'config' && configState && <ConfigView
         key={configKey}

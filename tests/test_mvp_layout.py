@@ -507,6 +507,7 @@ function createPage(storage, api, notifications) {
     };
     let dashboardOpens = 0;
     const managed = {
+		quotaResetLabel: function(day) { return Number.isInteger(day) && day >= 1 && day <= 31 ? '每月 ' + day + ' 日重置' : ''; },
         notify: ui.addNotification,
         preloadSubscriptions: function() { return Promise.resolve(); },
         readOperations: function() { return Promise.resolve(); },

@@ -2,6 +2,11 @@ export function valid_id(id) {
 	return type(id) == "string" && match(id, /^[A-Za-z0-9_]+$/) != null;
 };
 
+export function quota_reset_day(value) {
+	if (type(value) == "string" && match(value, /^([1-9]|[12][0-9]|3[01])$/)) return int(value);
+	return type(value) == "int" && value >= 1 && value <= 31 ? value : null;
+};
+
 function safe_text(value) {
 	if (type(value) != "string") return false;
 	for (let i = 0; i < length(value); i++) {
@@ -25,13 +30,17 @@ export function desired_source(envelope, previous) {
 			return { ok: false, error: "unknown_subscription_field" };
 	}
 	for (let key in envelope.source) {
-		if (index(["id", "name", "url", "user_agent", "info_url", "prefer"], key) < 0)
+		if (index(["id", "name", "url", "user_agent", "info_url", "prefer", "quota_reset_day"], key) < 0)
 			return { ok: false, error: "unknown_source_field" };
 	}
 	if (envelope.delete != null && type(envelope.delete) != "bool")
 		return { ok: false, error: "invalid_delete" };
 	if (envelope.delete == true) return { ok: true, deleted: true, id: envelope.source.id };
 	const source = {};
+	if (exists(envelope.source, "quota_reset_day") && envelope.source.quota_reset_day != null &&
+		(type(envelope.source.quota_reset_day) != "int" || quota_reset_day(envelope.source.quota_reset_day) == null))
+		return { ok: false, error: "invalid_quota_reset_day" };
+	source.quota_reset_day = exists(envelope.source, "quota_reset_day") ? envelope.source.quota_reset_day : quota_reset_day(previous?.quota_reset_day);
 	for (let key in ["name", "url", "user_agent", "info_url", "prefer"])
 		source[key] = envelope.source[key] ?? previous?.[key] ?? "";
 	source.id = envelope.source.id;
@@ -95,6 +104,7 @@ export function public_source(source, cache) {
 		has_url: length(source.url ?? "") > 0,
 		has_info_url: length(source.info_url ?? "") > 0,
 		prefer: source.prefer ?? "remote",
+		quota_reset_day: quota_reset_day(source.quota_reset_day),
 		cache_present: cache?.present == true,
 		cache_current: current,
 		pending_update: !current,

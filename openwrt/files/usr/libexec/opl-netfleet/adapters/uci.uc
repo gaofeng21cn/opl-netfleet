@@ -1,6 +1,7 @@
 import { popen, writefile, readfile, stat } from "fs";
 import { cursor } from "uci";
 import { UCI_PACKAGE } from "./runtime.uc";
+import { quota_reset_day } from "../core/subscriptions.uc";
 
 export const POLICY_PATH = "/etc/opl-netfleet/policy.json";
 export const EVIDENCE_PATH = "/etc/opl-netfleet/evidence.json";
@@ -260,6 +261,11 @@ export function subscription_quota(section, config) {
 		match(trim(expiry_raw), /^[0-9]{4}-[0-9]{2}-[0-9]{2}([ T][0-9]{2}:[0-9]{2}:[0-9]{2})?$/) ?
 		trim(expiry_raw) : null;
 	const result = { state: "unknown" };
+	const reset_day = quota_reset_day(uci.get(UCI_PACKAGE, section, "quota_reset_day"));
+	if (reset_day != null) {
+		result.reset_day = reset_day;
+		result.reset_day_source = "manual";
+	}
 	if (expires_at != null) result.expires_at = expires_at;
 	let available_raw = uci.get(UCI_PACKAGE, section, available_field);
 	if (available_raw == null && available_field != "available") {
