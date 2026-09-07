@@ -41,7 +41,9 @@ class InstalledIdentity(unittest.TestCase):
             self.assertTrue(loaded["loaded"])
             self.assertFalse(loaded["source_ready"])
             def command(*args):
-                return subprocess.run(args, check=True, capture_output=True, text=True, timeout=5).stdout
+                result = subprocess.run(args, capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 0, (args, result.stderr))
+                return result.stdout
             namespace, interface, peer = "nfidentity-test", "nfidentity0", "nfidentity1"
             command("ip", "netns", "add", namespace)
             self.addCleanup(command, "ip", "netns", "del", namespace)
@@ -55,7 +57,7 @@ class InstalledIdentity(unittest.TestCase):
             command("ip", "-n", namespace, "-6", "addr", "add", "fe80::1/64", "dev", peer, "nodad")
             command("ip", "-n", namespace, "-6", "addr", "add", "2001:db8::2/64", "dev", peer, "nodad")
             def candidate(ip):
-                command("conntrack", "-I", "-f", "ipv6", "-p", "tcp", "-s", ip, "-d", "2001:db8:1::80",
+                command("conntrack", "-I", "-p", "tcp", "-s", ip, "-d", "2001:db8:1::80",
                         "--sport", "45555", "--dport", "443", "--state", "ESTABLISHED", "--timeout", "120")
                 self.addCleanup(subprocess.run, ["conntrack", "-D", "-f", "ipv6", "-s", ip],
                                 capture_output=True, timeout=5)
