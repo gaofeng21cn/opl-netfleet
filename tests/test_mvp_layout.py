@@ -565,7 +565,7 @@ function createPage(storage, api, notifications) {
     assert.strictEqual(initialResolved, true, 'cached load must not wait for RPC');
     const root = page.render(await initialPromise);
     assert(nodeText(root.children[0]).includes('NetFleet v0.3.0 · aaaaaaa'));
-    assert.strictEqual(page.styleLink.attrs.href, 'netfleet/native.css?v=' + 'a'.repeat(40));
+    assert.strictEqual(page.styleLink.attrs.href, 'netfleet/native.css');
     assert.strictEqual(page.liveDataReady, false);
     assert(nodeText(root).includes('缓存数据，正在更新'));
     assert(nodeText(root).includes('NetFleet 当前未接管，机场和地区的实时可用性未测量'));

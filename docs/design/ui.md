@@ -40,6 +40,8 @@ NetFleet 是面向电脑使用的 OpenWrt 网络运维界面。页面应安静�
 
 生产 LuCI 不加载 React、组件库、远程字体或额外运行时。视觉统一只能通过原生 `view.extend`、`E()` 和 scoped CSS 完成。
 
+部署后的 CSS 与页面脚本使用同一 LuCI 包版本目录；不得使用设备 runtime 的版本或提交作为 CSS 缓存标识。仅升级界面也必须同时换用新脚本与新样式，不要求用户手动清理浏览器缓存。
+
 ## 颜色与主题
 
 设备端颜色从 LuCI 主题变量投影到 NetFleet token。优先级如下：

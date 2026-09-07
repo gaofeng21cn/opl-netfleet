@@ -77,11 +77,8 @@ function ageLabel(value) {
 	return String(Math.floor(ageSeconds / 86400)) + ' 天前';
 }
 
-function ensureStyles(status) {
-	const build = status && status.build || {};
-	const cacheKey = text(build.source_commit, text(build.version, 'unknown'));
-	const base = L.resource('netfleet/native.css');
-	const href = base + (base.indexOf('?') >= 0 ? '&' : '?') + 'v=' + encodeURIComponent(cacheKey);
+function ensureStyles() {
+	const href = L.resource('netfleet/native.css');
 	let link = document.getElementById('netfleet-native-style');
 	if (!link) {
 		link = E('link', {
@@ -1111,7 +1108,7 @@ return view.extend({
 		this.onboarding = initial.onboarding || null;
 		this.nativeSetup = initial.nativeSetup || null;
 		this.status = initial.status || null;
-		ensureStyles(this.status);
+		ensureStyles();
 		this.events = initial.events || { events: [] };
 		this.connections = { connections: [], count: 0, truncated: false };
 		this.connectionsLoading = false;
@@ -1199,7 +1196,7 @@ return view.extend({
 
 	acceptLiveData: function(result, readDurationMs) {
 		this.status = result[0];
-		ensureStyles(this.status);
+		ensureStyles();
 		this.events = result[1];
 		this.fetchedAt = new Date();
 		this.readDurationMs = readDurationMs;

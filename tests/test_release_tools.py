@@ -91,6 +91,11 @@ class ReleaseToolsTests(unittest.TestCase):
                         pending.append(resources / (dependency.replace('.', '/') + '.js'))
                 self.assertEqual(set((resources / f'netfleet/{version}').glob('*.js')) | {view}, visited)
                 self.assertFalse((resources / 'netfleet/managed.js').exists())
+                stylesheet = resources / f'netfleet/{version}/native.css'
+                self.assertEqual(stylesheet.read_bytes(), (package / 'htdocs/luci-static/resources/netfleet/native.css').read_bytes())
+                self.assertIn(f"L.resource('netfleet/{version}/native.css')", view.read_text())
+                self.assertFalse((resources / 'netfleet/native.css').exists())
+                visited.add(stylesheet)
                 namespaces.append({str(path.relative_to(resources)) for path in visited})
             self.assertFalse(namespaces[0] & namespaces[1])
 
