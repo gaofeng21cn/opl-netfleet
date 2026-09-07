@@ -47,14 +47,14 @@ function system_profile(root, options) {
 
 function plugin_files(directory, owner, relative, files) {
 	const path = relative == '' ? directory : `${directory}/${relative}`;
-	if (!trusted(path, 'directory', owner)) raise(`plugin_directory_unsafe:${relative}`);
+	if (!trusted(path, 'directory', owner)) raise('plugin_files_unsafe');
 	for (let name in sort(fs.lsdir(path) ?? [])) {
 		if (!match(name, /^[A-Za-z0-9][A-Za-z0-9._-]*$/)) raise(`plugin_payload_name_invalid:${name}`);
 		const child = relative == '' ? name : `${relative}/${name}`, full = `${directory}/${child}`;
 		const info = fs.lstat(full);
 		if (info?.type == 'directory') plugin_files(directory, owner, child, files);
 		else {
-			if (!trusted(full, 'file', owner) || info.size > 1048576 || length(files) >= 512) raise(`plugin_payload_unsafe:${child}`);
+			if (!trusted(full, 'file', owner) || info.size > 1048576 || length(files) >= 512) raise('plugin_files_unsafe');
 			push(files, full);
 		}
 	}
