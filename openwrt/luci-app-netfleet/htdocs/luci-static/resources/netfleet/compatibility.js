@@ -19,9 +19,13 @@ function reason(value) {
 		lease_expired: '接管许可已到期', maintenance: '组件维护中，当前旁路', no_verified_targets: '没有已验证的接入目标',
 		manual_recovery_required: '反复恢复后仍故障，等待人工恢复', rules_bypassed: '目标规则当前旁路，详见规则状态',
 		historical_failure: '旧版本未记录具体原因', upstream_probe_timeout: '上游恢复探测超时', upstream_certificate_failed: '上游证书验证失败',
-		upstream_h2_not_negotiated: '上游未协商 HTTP/2', upstream_connect_failed: '上游连接失败',
+		upstream_h2_not_negotiated: '上游未协商 HTTP/2',
 		upstream_tls_failed: '上游 TLS 握手失败', client_tls_failed: '客户端 TLS 握手失败',
 		upstream_timeout: '上游传输超时', upstream_connection_reset: '上游连接被重置',
+		upstream_connect_failed: '上游连接建立失败', upstream_connection_refused: '上游拒绝连接',
+		upstream_dns_failed: '上游地址解析失败', upstream_unreachable: '上游网络不可达',
+		upstream_bind_failed: '上游连接的本地地址绑定失败',
+		source_port_unavailable: '本次连接的源端口不可用', client_request_invalid: '客户端请求格式无效',
 		upstream_transport_failed: '上游传输中断', client_cancelled: '客户端已取消', processing_chain_failed: '本地处理链异常',
 		transparent_chain_failed: '透明接管入口异常，已旁路',
 		engine_unavailable: '兼容引擎未就绪', engine_config_pending: '等待引擎载入配置',
@@ -167,7 +171,7 @@ function render(controller) {
 			E('td', {}, rule.strategy === 'h2' ? 'HTTP/2' : '旁路'),
 			E('td', {}, [ E('strong', { 'class': recovery.latched ? 'is-warning' : '' }, !rule.enabled ? '规则已关闭' : !state.requested ? '模块已关闭' : rule.strategy === 'bypass' ? '旁路' : recovery.intercepting ? '正在接管' : '当前旁路'),
 				state.requested && rule.enabled && recovery.reason ? E('small', {}, reason(recovery.reason)) : '',
-				result.at ? E('small', {}, '最近 ' + (result.upstream_protocol || '协议未确认') + ' · ' + new Date(result.at * 1000).toLocaleString()) : E('small', {}, '尚无转发记录') ]),
+				result.at ? E('small', {}, '最近 ' + (result.reason ? reason(result.reason) : result.upstream_protocol || '协议未确认') + ' · ' + new Date(result.at * 1000).toLocaleString()) : E('small', {}, '尚无转发记录') ]),
 			E('td', {}, [ button('编辑', function() { edit(controller, 'rules', rule); }, busy), button('删除', function() {
 				return applyConfig(function(config) { config.rules = config.rules.filter(function(value) { return value.id !== rule.id; }); });
 			}, busy), recovery.latched ? button('恢复', function() { return mutate(controller, 'compatibilityProbe', { operation: 'recover', rule: rule.id }); }, busy) : '' ]) ]);

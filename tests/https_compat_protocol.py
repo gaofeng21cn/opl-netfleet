@@ -100,7 +100,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         self.proxy = await asyncio.create_subprocess_exec(sys.executable, str(ADDON.with_name("mitmdump")),
             "--listen-host", self.BIND, "--listen-port", str(self.proxy_port), "--mode", self.MODE,
             "-s", str(ADDON), "--set", "upstream_cert=false", "--set", "connection_strategy=lazy",
-            "--set", f"netfleet_preserve_source_port={str(self.PRESERVE_SOURCE_PORT).lower()}",
+            "--set", f"netfleet_preserve_source_port={str(self.PRESERVE_SOURCE_PORT or self._testMethodName == 'test_source_port_conflict_does_not_bypass_target').lower()}",
             "--set", f"confdir={self.directory / 'ca'}", "--set", "flow_detail=0",
             "--set", f"ssl_verify_upstream_trusted_ca={trusted_ca}",
             "--set", f"netfleet_config={self.directory / 'config.json'}",
@@ -308,6 +308,44 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         failures = (await self.health())["failure_events"]
         self.assertEqual(failures[-1]["reason"], "upstream_tls_failed")
         self.assertIn("time", failures[-1])
+
+    async def test_invalid_client_request_does_not_bypass_target(self):
+        reader, writer = await asyncio.open_connection("127.0.0.1", self.proxy_port)
+        try:
+            host = f"localhost:{self.upstream_port}"
+            writer.write(f"CONNECT {host} HTTP/1.1\r\nHost: {host}\r\n\r\n".encode())
+            await writer.drain()
+            self.assertIn(b"200", await reader.readuntil(b"\r\n\r\n"))
+            await writer.start_tls(self.client_context, server_hostname="localhost")
+            writer.write(f"GET /invalid HTTP/1.1\r\nHost: {host}\r\nContent-Length: 0\r\nTransfer-Encoding: chunked\r\n\r\n".encode())
+            await writer.drain()
+            self.assertIn(b"400", await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 3))
+        finally:
+            writer.close()
+            await writer.wait_closed()
+        self.assertEqual(self.received, [])
+        health = await self.health()
+        self.assertEqual(health["rules"]["test"]["reason"], "client_request_invalid")
+        self.assertEqual(health["failure_events"], [])
+        self.assertEqual((await self.client.get(self.url + "/valid")).status_code, 200)
+
+    async def test_connect_failure_is_classified_before_tls(self):
+        await self.stop_upstream()
+        response = await self.client.post(self.url + "/not-replayed", content=b"private-body")
+        self.assertEqual(response.status_code, 502)
+        health = await self.health()
+        self.assertEqual(health["failure_events"][-1]["reason"], "upstream_connection_refused")
+        self.assertIsNone(health["failure_events"][-1]["upstream_protocol"])
+        self.assertEqual(len(health["failure_events"]), 1)
+
+    async def test_source_port_conflict_does_not_bypass_target(self):
+        # The local client owns this port. Wildcard binding it for egress must fail.
+        response = await self.client.post(self.url + "/not-replayed", content=b"private-body")
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(self.received, [])
+        health = await self.health()
+        self.assertEqual(health["rules"]["test"]["reason"], "source_port_unavailable")
+        self.assertEqual(health["failure_events"], [])
 
     async def test_disabled_policy_tunnels_without_decrypting(self):
         path = self.directory / "config.json"
