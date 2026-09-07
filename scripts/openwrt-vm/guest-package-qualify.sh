@@ -341,6 +341,11 @@ done
 [ "$rpc_ready" = true ]
 
 stage=onboarding_prepare
+# The fixture supplies Nikki's files from source. Give its still-running owner
+# the package dependencies used by its Mihomo process and restart script.
+"$real_apk" --no-network add --virtual netfleet-vm-nikki-dependencies \
+	mihomo ip-full kmod-nft-socket kmod-nft-tproxy coreutils-timeout unzip \
+	>>"$fixture/package-manager.log" 2>&1
 /etc/init.d/opl-netfleet stop >/dev/null 2>&1 || true
 /etc/init.d/opl-netfleet disable >/dev/null 2>&1 || true
 /etc/init.d/nikki stop >/dev/null 2>&1 || true
