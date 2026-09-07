@@ -67,12 +67,11 @@ export function ProvidersSection({ draft, status, onChange }: SectionProps) {
   return <section className="nf-config-section">
     <SectionHeading title="机场" description="选择参与 NetFleet 的订阅及其运行角色。" />
     <SubscriptionsPreview status={status} />
-    <div className="nf-table-wrap nf-config-table">
-      <table><thead><tr><th>参与</th><th>机场</th><th>真实资源</th><th>故障层级</th><th>计费方式</th><th>操作</th></tr></thead>
+    <div className="nf-table-wrap nf-config-table nf-config-provider-table">
+      <table><thead><tr><th>参与机场与资源</th><th>故障层级</th><th>计费方式</th><th>操作</th></tr></thead>
         <tbody>{draft.providers.map((provider) => <tr key={provider.id}>
-          <td><input aria-label={`${provider.displayName} 参与 NetFleet`} type="checkbox" checked={provider.enabled} onChange={(event) => onChange({ ...draft, providers: replaceAt(draft.providers, provider.id, { enabled: event.target.checked }) })} /></td>
-          <td><strong>{provider.displayName}</strong><small>{provider.id}</small></td>
-          <td>{provider.availableRegions ?? '未提供'} 个地区 / {provider.availableNodes ?? '未提供'} 个节点</td>
+          <td><label className="nf-provider-choice"><input aria-label={`${provider.displayName} 参与 NetFleet`} type="checkbox" checked={provider.enabled} onChange={(event) => onChange({ ...draft, providers: replaceAt(draft.providers, provider.id, { enabled: event.target.checked }) })} /><strong title={provider.id}>{provider.displayName}</strong></label>
+            <small>{provider.availableRegions ?? '未提供'} 个地区 / {provider.availableNodes ?? '未提供'} 个节点</small></td>
           <td><select aria-label={`${provider.displayName} 故障层级`} value={provider.role} disabled={!provider.enabled} onChange={(event) => onChange({ ...draft, providers: replaceAt(draft.providers, provider.id, { role: event.target.value as 'primary' | 'reserve' }) })}><option value="primary">主用机场</option><option value="reserve">备用机场</option></select></td>
           <td><select aria-label={`${provider.displayName} 计费方式`} value={provider.billing} disabled={!provider.enabled} onChange={(event) => onChange({ ...draft, providers: replaceAt(draft.providers, provider.id, { billing: event.target.value as 'subscription' | 'buyout' }) })}><option value="subscription">订阅制</option><option value="buyout">买断制</option></select></td>
           <td><button className="nf-icon-button" type="button" title="移除机场" aria-label={`移除 ${provider.displayName}`} onClick={() => onChange({ ...draft, providers: draft.providers.filter((item) => item.id !== provider.id) })}><Trash2 aria-hidden="true" /></button></td>
@@ -100,12 +99,11 @@ export function RegionsSection({ draft, onChange }: SectionProps) {
   const selectedId = available.some((item) => item.id === selected) ? selected : available[0]?.id || '';
   return <section className="nf-config-section">
     <SectionHeading title="地区映射" description="地区来自当前机场的真实节点；只修正识别结果，不预设必须存在的地区。" />
-    <div className="nf-table-wrap nf-config-table">
-      <table><thead><tr><th>识别状态</th><th>地区名称</th><th>真实覆盖</th><th>使用机场</th><th>自动选优</th><th>操作</th></tr></thead>
+    <div className="nf-table-wrap nf-config-table nf-config-region-table">
+      <table><thead><tr><th>地区与覆盖</th><th>使用机场</th><th>使用方式</th><th>操作</th></tr></thead>
         <tbody>{draft.regions.map((region) => <tr key={region.id}>
-          <td><span className="nf-mapping-ok"><CheckCircle2 aria-hidden="true" />已识别</span></td>
-          <td><input aria-label={`${regionalDisplayName(region.displayName)} 地区名称`} value={regionalDisplayName(region.displayName)} onChange={(event) => onChange({ ...draft, regions: replaceAt(draft.regions, region.id, { displayName: event.target.value }) })} /></td>
-          <td>{region.availableProviders ?? '未提供'} 个机场 / {region.availableNodes ?? '未提供'} 个节点</td>
+          <td><input aria-label={`${regionalDisplayName(region.displayName)} 地区名称`} value={regionalDisplayName(region.displayName)} onChange={(event) => onChange({ ...draft, regions: replaceAt(draft.regions, region.id, { displayName: event.target.value }) })} />
+            <small>{region.availableProviders ?? '未提供'} 个机场 / {region.availableNodes ?? '未提供'} 个节点</small></td>
           <td><div className="nf-region-checks">{draft.providers.map((provider) => {
             const option = draft.providerOptions.find((item) => item.id === provider.id);
             const supported = provider.regionIds.includes(region.id) || option?.regionIds.includes(region.id);

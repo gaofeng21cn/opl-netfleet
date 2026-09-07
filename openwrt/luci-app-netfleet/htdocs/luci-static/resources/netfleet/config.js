@@ -146,9 +146,8 @@ function providers(controller) {
 		} };
 		if (provider.enabled) enabledAttrs.checked = true;
 		return E('tr', {}, [
-			E('td', {}, E('input', enabledAttrs)),
-			E('td', {}, [ E('strong', {}, provider.display_name), E('small', {}, provider.id) ]),
-			E('td', {}, status.id ? String(status.available_region_count ?? 0) + ' 个地区 / ' + (status.node_count_known === true ? String(status.available_node_count ?? 0) + ' 个节点' : '节点未提供') : provider.region_ids.length + ' 个已识别地区 / 待应用'),
+			E('td', {}, [ E('label', { 'class': 'netfleet-check' }, [ E('input', enabledAttrs), E('strong', { 'title': provider.id }, provider.display_name) ]),
+				E('small', {}, status.id ? String(status.available_region_count ?? 0) + ' 个地区 / ' + (status.node_count_known === true ? String(status.available_node_count ?? 0) + ' 个节点' : '节点未提供') : provider.region_ids.length + ' 个已识别地区 / 待应用') ]),
 			E('td', {}, select(provider.role, [ [ 'primary', '主用机场' ], [ 'reserve', '备用机场' ] ], function(event) {
 				update(controller, function(next) { next.providers.find(function(item) { return item.id === provider.id; }).role = event.target.value; });
 			}, !provider.enabled)),
@@ -180,10 +179,10 @@ function providers(controller) {
 		})
 	]) : E('p', { 'class': 'netfleet-empty-note' }, '没有尚未接管的订阅。');
 	return E('section', {}, [
-		sectionHeading('机场', '选择参与 NetFleet 的订阅及其运行角色。'),
-		compactButton('管理订阅', function() { controller.manageSubscriptions(); }),
-		E('div', { 'class': 'table netfleet-config-table' }, [
-			E('table', {}, [ E('thead', {}, E('tr', {}, [ E('th', {}, '参与'), E('th', {}, '机场'), E('th', {}, '真实资源'), E('th', {}, '故障层级'), E('th', {}, '计费方式'), E('th', {}, '操作') ])), E('tbody', {}, rows) ])
+		E('div', { 'class': 'netfleet-section-heading' }, [ sectionHeading('机场', '选择参与 NetFleet 的订阅及其运行角色。'),
+			compactButton('管理订阅', function() { controller.manageSubscriptions(); }) ]),
+		E('div', { 'class': 'netfleet-config-table netfleet-provider-table' }, [
+			E('table', {}, [ E('thead', {}, E('tr', {}, [ E('th', {}, '参与机场与资源'), E('th', {}, '故障层级'), E('th', {}, '计费方式'), E('th', {}, '操作') ])), E('tbody', {}, rows) ])
 		]),
 		addControls
 	]);
@@ -200,9 +199,8 @@ function regions(controller) {
 			'change': function(event) { update(controller, function(next) { next.regions.find(function(item) { return item.id === region.id; }).display_name = event.target.value; }); }
 		});
 		return E('tr', {}, [
-			E('td', {}, E('span', { 'class': 'netfleet-mapping-ok' }, '已识别')),
-			E('td', {}, [ E('strong', { 'class': 'netfleet-region-code' }, regionalDisplayName(region.flag, '')), input ]),
-			E('td', {}, status.id ? String(status.available_provider_count ?? 0) + ' 个机场 / ' + String(status.available_node_count ?? 0) + ' 个节点' : '待应用'),
+			E('td', {}, [ E('div', { 'class': 'netfleet-region-name' }, [ E('strong', { 'class': 'netfleet-region-code' }, regionalDisplayName(region.flag, '')), input ]),
+				E('small', {}, status.id ? String(status.available_provider_count ?? 0) + ' 个机场 / ' + String(status.available_node_count ?? 0) + ' 个节点' : '已识别，待应用') ]),
 			E('td', {}, E('div', { 'class': 'netfleet-region-checks' }, providers.map(function(provider) {
 				const option = optionById(controller.configDraft.provider_options, provider.id);
 				const supported = provider.region_ids.indexOf(region.id) >= 0 || (option && option.region_ids.indexOf(region.id) >= 0);
@@ -250,8 +248,8 @@ function regions(controller) {
 	]) : E('p', { 'class': 'netfleet-empty-note' }, '当前机场缓存没有更多可添加地区。');
 	return E('section', {}, [
 		sectionHeading('地区映射', '地区来自当前机场的真实节点；只修正识别结果，不预设必须存在的地区。'),
-		E('div', { 'class': 'table netfleet-config-table' }, [
-			E('table', {}, [ E('thead', {}, E('tr', {}, [ E('th', {}, '识别状态'), E('th', {}, '地区名称'), E('th', {}, '真实覆盖'), E('th', {}, '使用机场'), E('th', {}, '自动选优'), E('th', {}, '操作') ])), E('tbody', {}, rows) ])
+		E('div', { 'class': 'netfleet-config-table netfleet-region-table' }, [
+			E('table', {}, [ E('thead', {}, E('tr', {}, [ E('th', {}, '地区与覆盖'), E('th', {}, '使用机场'), E('th', {}, '使用方式'), E('th', {}, '操作') ])), E('tbody', {}, rows) ])
 		]),
 		addControls
 	]);
@@ -399,7 +397,7 @@ function routing(controller) {
 	});
 	return E('section', {}, [
 		sectionHeading('业务规则', '按域名后缀或 IP 网段指定出口，也可设为直连。'),
-		E('div', { 'class': 'table netfleet-config-table' }, [
+		E('div', { 'class': 'netfleet-config-table netfleet-routing-table' }, [
 			E('table', {}, [ E('thead', {}, E('tr', {}, [ E('th', {}, '匹配类型'), E('th', {}, '匹配内容'), E('th', {}, '使用出口'), E('th', {}, '操作') ])), E('tbody', {}, rows) ])
 		]),
 		E('div', { 'class': 'netfleet-inline-add' }, [

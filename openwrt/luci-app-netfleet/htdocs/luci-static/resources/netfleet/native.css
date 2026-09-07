@@ -839,6 +839,7 @@
 
 .netfleet-config-page {
 	margin-top: 18px;
+	container-type: inline-size;
 }
 
 .netfleet-config-intro,
@@ -918,8 +919,9 @@
 	margin-bottom: 18px;
 }
 
-.netfleet-config-heading h3 {
+.netfleet-native .netfleet-config-heading h3 {
 	margin: 0 0 5px;
+	padding: 0;
 	font-size: 21px;
 }
 
@@ -1000,9 +1002,9 @@
 
 .netfleet-config-row {
 	display: grid;
-	grid-template-columns: minmax(280px, 1fr) minmax(280px, 0.9fr);
-	align-items: center;
-	gap: 28px;
+	grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1fr);
+	align-items: start;
+	gap: 24px;
 	min-height: 78px;
 	padding: 12px 0;
 	border-bottom: 1px solid rgba(127, 127, 127, 0.18);
@@ -1012,10 +1014,26 @@
 	display: block;
 	margin-bottom: 2px;
 }
+.netfleet-config-row > div:first-child { padding-top: 6px; }
+
+.netfleet-config-row > *,
+.netfleet-config-control {
+	min-width: 0;
+}
+
+.netfleet-config-page input:not([type="checkbox"]),
+.netfleet-config-page select,
+.netfleet-config-page textarea {
+	box-sizing: border-box;
+	min-width: 0 !important;
+	max-width: 100%;
+	margin: 0;
+	font-size: 14px;
+}
 
 .netfleet-config-control select,
-.netfleet-config-control input[type="url"],
-.netfleet-config-control input[type="number"] {
+.netfleet-config-control input:not([type="checkbox"]),
+.netfleet-config-control textarea {
 	width: 100%;
 	min-height: 40px;
 	font-size: 14px;
@@ -1038,30 +1056,51 @@
 	gap: 8px;
 	min-height: 34px;
 	cursor: pointer;
+	margin: 0;
+	line-height: 1.5;
 }
 
 .netfleet-check input {
 	width: 17px;
 	height: 17px;
+	flex: 0 0 17px;
+	margin: 0;
 }
 
 .netfleet-config-table {
+	display: block;
 	overflow: auto;
+	margin: 16px 0;
 }
 
 .netfleet-config-table table {
 	width: 100%;
-	min-width: 760px;
+	min-width: 560px;
+	table-layout: fixed;
 	border-collapse: collapse;
 }
 
 .netfleet-config-table th,
 .netfleet-config-table td {
-	padding: 12px 13px;
+	padding: 12px;
 	border-bottom: 1px solid rgba(127, 127, 127, 0.16);
 	text-align: left;
 	vertical-align: middle;
+	overflow-wrap: anywhere;
 }
+
+.netfleet-config-table th:last-child { width: 100px; }
+.netfleet-config-table.netfleet-provider-table th:first-child { width: 36%; }
+.netfleet-config-table.netfleet-region-table th:first-child { width: 29%; }
+.netfleet-config-table.netfleet-region-table th:nth-child(2) { width: 32%; }
+.netfleet-routing-table th:nth-child(2) { width: 38%; }
+.netfleet-config-table .netfleet-region-checks { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.netfleet-config-table .netfleet-check { min-height: 26px; }
+.netfleet-config-table .btn { min-width: 0; margin: 0; white-space: nowrap; }
+.netfleet-config-table select, .netfleet-config-table input:not([type="checkbox"]) { width: 100%; }
+.netfleet-region-name { display: flex; align-items: center; gap: 8px; }
+.netfleet-region-name input { flex: 1; }
+.netfleet-config-table small { margin-top: 5px; line-height: 1.5; }
 
 .netfleet-config-table th {
 	background: var(--nf-surface-muted);
@@ -1098,8 +1137,9 @@
 .netfleet-capability-config,
 .netfleet-capability-editor {
 	display: grid;
-	gap: 18px;
+	gap: 0;
 }
+.netfleet-capability-head { padding: 12px 0; }
 
 .netfleet-capability-editor + .netfleet-capability-editor {
 	padding-top: 22px;
@@ -1163,8 +1203,24 @@
 
 .netfleet-region-checks {
 	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
+	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 	gap: 6px 12px;
+}
+
+@container (max-width: 960px) {
+	.netfleet-config-page .netfleet-config-layout { grid-template-columns: minmax(0, 1fr); }
+	.netfleet-config-nav { flex-direction: row; flex-wrap: wrap; padding: 8px; gap: 4px; border-right: 0; border-bottom: 1px solid var(--nf-border); }
+	.netfleet-config-nav button { min-height: 38px; padding: 6px 12px; border-left: 0; border-bottom: 2px solid transparent; }
+	.netfleet-config-nav button.is-active { border-bottom-color: var(--nf-accent); }
+	.netfleet-config-content { padding: 20px; }
+	.netfleet-config-actions { flex-wrap: wrap; }
+}
+
+@container (max-width: 600px) {
+	.netfleet-config-page .netfleet-config-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+	.netfleet-config-content { padding: 16px; }
+	.netfleet-environment { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.netfleet-capability-head { flex-wrap: wrap; }
 }
 
 .netfleet-recovery-summary {
@@ -1291,11 +1347,6 @@
 
 	.netfleet-config-layout {
 		grid-template-columns: 150px minmax(0, 1fr);
-	}
-
-	.netfleet-config-row {
-		grid-template-columns: 1fr;
-		gap: 8px;
 	}
 
 	.netfleet-region-checks {
@@ -1514,16 +1565,23 @@
 .netfleet-native .netfleet-component-table { display: block; width: 100%; max-width: 100%; overflow-x: auto; margin: 18px 0 26px; }
 .netfleet-native .netfleet-component-table table { min-width: 700px; table-layout: fixed; }
 .netfleet-native .netfleet-component-table th { text-align: left; }
-.netfleet-native .netfleet-component-table th:nth-child(1) { width: 18%; }
-.netfleet-native .netfleet-component-table th:nth-child(2) { width: 34%; }
-.netfleet-native .netfleet-component-table th:nth-child(3) { width: 25%; }
-.netfleet-native .netfleet-component-table td { vertical-align: top; overflow-wrap: anywhere; }
+.netfleet-native .netfleet-component-table th:nth-child(1) { width: 22%; }
+.netfleet-native .netfleet-component-table th:nth-child(2) { width: 30%; }
+.netfleet-native .netfleet-component-table th:nth-child(3) { width: 28%; }
+.netfleet-native .netfleet-software-table th:nth-child(1) { width: 27%; }
+.netfleet-native .netfleet-software-table th:nth-child(2) { width: 36%; }
+.netfleet-native .netfleet-software-table th:nth-child(3) { width: 37%; }
+.netfleet-native .netfleet-component-table table.table td { vertical-align: top; overflow-wrap: anywhere; }
 .netfleet-native .netfleet-component-table td > strong,
 .netfleet-native .netfleet-component-table td > small,
 .netfleet-native .netfleet-component-table td > .is-warning { display: block; }
 .netfleet-native .netfleet-component-table small { margin-top: 6px; font-size: 13px; color: var(--nf-muted); }
 .netfleet-native .netfleet-component-actions > * { margin: 0 8px 8px 0; }
-.netfleet-native .netfleet-component-checks { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 13px; color: var(--nf-muted); margin: 12px 0; }
+.netfleet-native .netfleet-component-actions > div:empty { display: none; }
+.netfleet-native .netfleet-components .netfleet-section-heading h3 { background: transparent; flex: 1; }
+.netfleet-native .netfleet-component-checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 8px 24px; padding: 12px 0; border-block: 1px solid var(--nf-border-subtle); font-size: 13px; color: var(--nf-muted); margin: 12px 0; }
+.netfleet-native .netfleet-component-modules { margin: 28px 0; }
+.netfleet-native .netfleet-component-modules .netfleet-follow-note { font-size: 13px; }
 .netfleet-native .netfleet-operation.is-result { display: flex; align-items: flex-start; gap: 16px; padding: 8px 16px; }
 .netfleet-native .netfleet-result-body { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: baseline; }
 .netfleet-native .netfleet-result-body > strong { flex-shrink: 0; }
@@ -1548,7 +1606,26 @@
 .netfleet-native .netfleet-management-section { margin: 26px 0; padding-top: 18px; border-top: 1px solid var(--nf-border, #ddd); }
 .netfleet-native .netfleet-management-table { overflow-x: auto; margin: 16px 0; }
 .netfleet-native .netfleet-management-table table { width: 100%; min-width: 620px; }
-.netfleet-native .netfleet-management-table td { vertical-align: top; }
+.netfleet-native .netfleet-management-table table.table td { vertical-align: top; }
+.netfleet-native .netfleet-management-table table { table-layout: fixed; }
+.netfleet-native .netfleet-management-table th:last-child { width: 160px; }
+.netfleet-native .netfleet-management-table input:not([type="checkbox"]),
+.netfleet-native .netfleet-management-table textarea { width: 100%; }
+.netfleet-native .netfleet-management-table td { overflow-wrap: anywhere; }
+.netfleet-native .netfleet-management-table .netfleet-inline-actions { display: table-cell; }
+.netfleet-native .netfleet-management-table .btn { margin: 0 6px 6px 0; white-space: nowrap; }
+.netfleet-native .netfleet-management-devices table { min-width: 660px; }
+.netfleet-native .netfleet-management-devices th:first-child { width: 86px; }
+.netfleet-native .netfleet-management-devices th:nth-child(2) { width: 40%; }
+.netfleet-native .netfleet-management-devices th:nth-child(3),
+.netfleet-native .netfleet-management-devices th:nth-child(4) { width: 86px; }
+.netfleet-native .netfleet-management-devices th:last-child { width: 110px; }
+.netfleet-native .netfleet-address-field { display: grid; gap: 4px; margin: 0 0 10px; font-size: 13px; }
+.netfleet-native .netfleet-config-control input[type="number"] { max-width: 160px; }
+.netfleet-native .netfleet-config-page .netfleet-config-actions .btn { margin: 0; white-space: nowrap; }
+.netfleet-native .netfleet-config-page .netfleet-inline-add { align-items: center; }
+.netfleet-native .netfleet-config-page .netfleet-inline-add > input,
+.netfleet-native .netfleet-config-page .netfleet-inline-add > select { flex: 1 1 150px; width: auto; }
 .netfleet-native .netfleet-list-input { width: 100%; min-width: 180px; resize: vertical; font: inherit; line-height: 1.5; }
 .netfleet-native .netfleet-profile-editor { width: 100%; min-height: 320px; max-height: 60vh; box-sizing: border-box; resize: vertical; font-family: monospace; line-height: 1.6; }
 .netfleet-native .netfleet-core-log { max-height: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; padding: 16px; }

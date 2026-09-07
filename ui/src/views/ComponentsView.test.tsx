@@ -28,11 +28,11 @@ it('distinguishes installed unversioned Zashboard resources from an absent insta
   expect(missing).not.toContain('版本未记录');
 });
 
-it('groups the paired packages and shows core version mismatch without guessing an upgrade', () => {
+it('shows independent UI versions without a false alarm and preserves real core mismatch', () => {
   const value = snapshot();
   const html = render(value);
-  expect(html.match(/<tr>/g)).toHaveLength(4);
-  expect(html).toContain('随 NetFleet 更新');
+  expect(html.match(/<tr>/g)).toHaveLength(5);
+  expect(html).toContain('由 NetFleet 更新入口管理');
   expect(html).toContain('运行版本与安装记录不一致');
   expect(html).toContain('更新软件包');
   expect(html).not.toContain('不适用');
@@ -40,11 +40,13 @@ it('groups the paired packages and shows core version mismatch without guessing 
   value.components[2].installed_version = '1.19.30-r1';
   expect(render(value)).not.toContain('运行版本与安装记录不一致');
   value.components[1].installed_version = '0.9.0-r1';
-  expect(render(value)).toContain('NetFleet 与 LuCI 安装版本不一致');
+  expect(render(value)).not.toContain('NetFleet 与 LuCI 安装版本不一致');
+  expect(render(value)).toContain('0.9.0-r1');
   value.components[0].available_version = '1.0.0-r1';
-  value.components[1].available_version = '1.0.0-r1';
+  value.components[1].available_version = '1.2.0-r1';
   value.components[1].update_available = true;
-  expect(render(value)).toContain('候选版本 1.0.0-r1');
+  expect(render(value)).toContain('界面可更新至 1.2.0-r1');
+  expect(render(value)).toContain('候选版本 1.2.0-r1');
 });
 
 it('does not mistake a missing unpacker for externally managed dashboard resources', () => {
@@ -76,7 +78,8 @@ it('projects optional package versions and dependencies without duplicating reso
   const value = snapshot();
   value.extensions = [extension(), extension({ id: 'zashboard', label: 'Zashboard', kind: 'resource' })];
   const html = render(value);
-  expect(html.match(/<tr>/g)).toHaveLength(5);
+  expect(html.match(/<tr>/g)).toHaveLength(7);
+  expect(html).toContain('功能模块');
   expect(html.match(/<strong>Zashboard<\/strong>/g)).toHaveLength(1);
   const row = html.split('<tr>').find(part => part.includes('<strong>HTTPS 兼容</strong>'))!.split('</tr>')[0];
   expect(row).toContain('0.2.0-r1');
