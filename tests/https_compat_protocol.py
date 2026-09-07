@@ -248,6 +248,28 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.content, b"")
         self.assertEqual((await self.client.get(self.url + "/download")).status_code, 200)
 
+    async def test_address_rotation_keeps_old_connection_drain_accounting(self):
+        async with self.client.stream("GET", self.url + "/sse") as stream:
+            iterator = stream.aiter_raw()
+            self.assertEqual(await anext(iterator), b"data: first\n\n")
+            config_path = self.directory / "config.json"
+            policy = json.loads(config_path.read_text())
+            policy["devices"][0]["addresses"] = ["192.0.2.99"]
+            config_path.write_text(json.dumps(policy))
+            health = await self.health()
+            self.assertEqual(health["clients_by_device"], {"mac": 1})
+            self.assertEqual(health["unassigned_connections"], 0)
+            self.assertEqual(health["active_requests"], 1)
+            self.finish_sse.set()
+            self.assertEqual(await anext(iterator), b"data: done\n\n")
+        await self.client.aclose()
+        for _ in range(40):
+            health = await self.health()
+            if health["active_connections"] == 0:
+                break
+            await asyncio.sleep(0.05)
+        self.assertEqual(health["clients_by_device"], {})
+
     async def test_websocket_uses_h1(self):
         reader, writer = await asyncio.open_connection("127.0.0.1", self.proxy_port)
         try:

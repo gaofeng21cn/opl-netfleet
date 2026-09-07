@@ -27,7 +27,8 @@ function E(tag, attrs, children) {
     node.toString = () => '[object HTMLElement]';
     node.value = node.attrs.value == null ? tag === 'textarea' ? text(node.children) : '' : String(node.attrs.value);
     // HTML boolean attributes are true by presence, including disabled="false".
-    for (const name of ['disabled', 'checked', 'open']) {
+    node.type = node.attrs.type;
+    for (const name of ['disabled', 'checked', 'open', 'required']) {
         if (node.attrs[name] != null) node.attrs[name] = String(node.attrs[name]);
         Object.defineProperty(node, name, { get: () => node.attrs[name] != null, set: value => { if (value) node.attrs[name] = ''; else delete node.attrs[name]; } });
     }
@@ -37,7 +38,8 @@ function E(tag, attrs, children) {
     parent(node.children);
     node.remove = () => {};
     node.click = () => node.attrs.click && node.attrs.click({ target: node });
-    node.reportValidity = () => !node.attrs.required || !!node.value;
+    node.replaceChildren = (...items) => { node.children = items; parent(items); };
+    node.reportValidity = () => !node.required || !!node.value;
     return node;
 }
 function all(root, predicate) {
@@ -675,6 +677,62 @@ fire(find(modal.content, node => node.tag === 'button' && node.attrs.title === '
 await tick();
 assert.equal(serviceCalls.at(-1)[1].action, 'get');
 assert.equal(serviceCalls.at(-1)[1].revision, 'service-r3', 'read after reload uses the current service identity');
+""")
+
+    def test_identity_source_setup_and_dynamic_device_binding(self):
+        self.run_js(r"""
+const owner = controller();
+owner.compatibilityTab = 'devices';
+owner.compatibility = { installed: true, requested: false, active_connections: 0, revision: 'compat-r1',
+  config: { rules: [], devices: [{ id: 'mac', name: 'Mac', addresses: ['192.0.2.2'] }] }, trust: {}, rules: {}, events: [] };
+let source = { loaded: false, ready: false, source_ready: false, revision: 'code-r1', config_revision: null,
+  config: { source: 'local', enabled: false, interfaces: [] }, devices: [], binding: '1'.repeat(64) };
+const calls = [];
+const api = { compatibilityGet: async () => clone(owner.compatibility),
+  pluginRead: async request => {
+    calls.push(request);
+    if (request.action === 'sync') source = { ...source, source_ready: true,
+      devices: [{ mac: '02:00:00:00:00:01', name: 'Mac', addresses: ['192.0.2.2', '2001:db8::2'] }] };
+    return clone(source);
+  }, pluginCall: async request => {
+    calls.push(request);
+    assert.equal(request.revision, 'code-r1');
+    if (request.action === 'load') source = { ...source, loaded: true, ready: true, config_revision: 'private-r1' };
+    else {
+      assert.equal(request.params.config_revision, 'private-r1', 'first configure uses revision returned by load');
+      assert.equal(request.params.config.password, 'fixture-secret');
+      const { password, ...config } = request.params.config;
+      source = { ...source, config, config_revision: 'private-r2', credential_present: true };
+    }
+    return clone(source);
+  }, compatibilityApply: async request => {
+    assert.equal(request.revision, 'compat-r1');
+    assert.deepEqual(request.config.devices[0].identity, { binding: '1'.repeat(64), mac: '02:00:00:00:00:01' });
+    assert.deepEqual(request.config.devices[0].addresses, []);
+    calls.push({ action: 'bound' });
+  } };
+owner.identitySource = clone(source);
+const compatibility = module('compatibility.js', api);
+let root = compatibility.render(owner);
+fire(button(root, '管理来源'));
+fire(find(modal.content, node => node.tag === 'select'), 'change', { value: 'unifi' });
+fire(find(modal.content, node => node.tag === 'input' && node.type === 'checkbox'), 'change', { checked: true });
+const field = label => find(find(modal.content, node => node.tag === 'label' && text(node).startsWith(label)), node => node.tag === 'input');
+fire(field('UniFi 控制器'), 'input', { value: 'https://controller.example' });
+fire(field('Network 只读账号'), 'input', { value: 'viewer' });
+const password = field('密码');
+fire(password, 'input', { value: 'fixture-secret' });
+await fire(button(modal.content, '保存并验证'));
+assert.equal(password.value, '');
+assert.deepEqual(calls.filter(call => ['load', 'configure', 'sync'].includes(call.action)).map(call => call.action), ['load', 'configure', 'sync']);
+assert.equal(owner.identitySource.source_ready, true);
+root = compatibility.render(owner);
+assert(!text(root).includes('fixture-secret'));
+fire(button(root, '编辑'));
+fire(find(modal.content, node => node.tag === 'select'), 'change', { value: '02:00:00:00:00:01' });
+await fire(button(modal.content, '保存'));
+assert.equal(calls.at(-1).action, 'get');
+assert(calls.some(call => call.action === 'bound'));
 """)
 
     def test_unmanaged_compatibility_preserves_revision_bound_disable(self):
