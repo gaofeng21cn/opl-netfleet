@@ -1,6 +1,6 @@
 import type { DeviceConfigSnapshot, StatusSnapshot } from '../types';
 
-export type ConfigSectionId = 'foundation' | 'network' | 'providers' | 'regions' | 'exits' | 'routing' | 'automation' | 'safety' | 'files' | 'compatibility';
+export type ConfigSectionId = 'foundation' | 'network' | 'providers' | 'regions' | 'exits' | 'routing' | 'automation' | 'safety' | 'files';
 
 export interface ProviderDraft {
   id: string;

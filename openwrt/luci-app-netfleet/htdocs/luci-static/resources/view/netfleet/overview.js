@@ -1062,12 +1062,20 @@ return view.extend({
 		managed.preloadSubscriptions(this).catch(function() {});
 		managed.readOperations(this);
 		this.loadConfig();
-		compatibility.refresh(this);
 		if (!this.compatibilityPoll) {
-			this.compatibilityPoll = () => compatibility.refresh(this);
+			this.compatibilityPoll = () => this.currentView === 'components' && this.componentDetail === 'https-compat' ? compatibility.refresh(this) : Promise.resolve();
 			poll.add(this.compatibilityPoll, 5);
 		}
 		return this.prepareDashboard();
+	},
+
+	openCompatibility: function(tab) {
+		this.currentView = 'components';
+		this.componentDetail = 'https-compat';
+		this.compatibilityTab = tab || 'rules';
+		this.redraw();
+		managed.loadComponents(this);
+		return compatibility.refresh(this);
 	},
 
 	loadConfig: function() {
@@ -1145,6 +1153,7 @@ return view.extend({
 				'click': function(event) {
 					event.preventDefault();
 					self.currentView = item[0];
+					self.componentDetail = null;
 					if (item[0] === 'events') {
 						management.load(self, 'maintenance');
 						self.refreshConnections();
@@ -1191,7 +1200,7 @@ return view.extend({
 		else if (this.currentView === 'providers') content = [ managed.operationNode(this, 'subscription') ].concat(providersPage(this.status, this));
 		else if (this.currentView === 'regions') content = regionsPage(this.status);
 		else if (this.currentView === 'config') content = [ netfleetConfig.render(this) ];
-		else if (this.currentView === 'components') content = [ managed.components(this) ];
+		else if (this.currentView === 'components') content = [ this.componentDetail === 'https-compat' ? compatibility.render(this) : managed.components(this) ];
 		else if (this.currentView === 'events') content = eventsPage(this.status, this.events, this.connections, this.connectionsLoading, this.connectionsError, this.eventPage, function(page) {
 			self.eventPage = page;
 			self.redraw();
@@ -1204,10 +1213,8 @@ return view.extend({
 		if (this.currentView !== 'components' && this.currentView !== 'config')
 			content.unshift(managed.operationNode(this, 'selection'));
 		if (this.currentView === 'events')
-			content.push(E('div', { 'class': 'netfleet-config-row' }, [
-				E('span', {}, 'HTTPS 兼容：' + compatibility.label(this.compatibility) +
-					(this.compatibility ? ' · ' + this.compatibility.config.rules.filter(rule => rule.enabled).length + ' 条启用规则' : '')),
-				E('button', { 'class': 'btn cbi-button', 'click': function() { self.currentView = 'config'; self.configSection = 'compatibility'; self.redraw(); } }, '管理')
+			content.push(E('div', { 'class': 'netfleet-inline-actions' }, [
+				E('button', { 'class': 'btn cbi-button', 'click': function() { return self.openCompatibility('diagnostics'); } }, 'HTTPS 兼容诊断')
 			]));
 
 		let sourceName = '设备实时 RPC';

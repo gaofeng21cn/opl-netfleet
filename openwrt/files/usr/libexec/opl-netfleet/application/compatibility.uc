@@ -9,7 +9,7 @@ const DECLARATION = "/usr/libexec/opl-netfleet-compat/extension.json";
 export const extension = {
 	id: "https-compat", label: "HTTPS 兼容", api_version: API_VERSION, kind: "optional",
 	package: "opl-netfleet-https-compat", dependencies: ["python3", "ca-bundle", "coreutils-timeout"],
-	permission_class: "network_interception", ui: ["settings", "components", "diagnostics"],
+	permission_class: "network_interception", ui: ["components", "diagnostics"],
 	commands: {
 		"compatibility-get": { method: "get", access: "read", backends: ["native-mihomo", "nikki-mihomo"] },
 		"compatibility-ca": { method: "ca", access: "read", backends: ["native-mihomo"] },

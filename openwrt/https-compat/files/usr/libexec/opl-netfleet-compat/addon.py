@@ -148,6 +148,13 @@ class Compatibility:
         flow.response.stream = True
         identity = flow.metadata.get("netfleet_rule")
         if identity:
+            # h2 delimits streams itself. Without h1 framing, each streamed response
+            # forces EOF and another pair of TCP/TLS handshakes on the next request.
+            if (flow.request.http_version == "HTTP/1.1" and flow.response.is_http2
+                    and flow.request.method.upper() not in ("HEAD", "CONNECT")
+                    and flow.response.status_code >= 200 and flow.response.status_code not in (204, 304)
+                    and "content-length" not in flow.response.headers):
+                flow.response.headers["transfer-encoding"] = "chunked"
             self.results[identity] = {"at": int(time.time()), "upstream_protocol": flow.server_conn.alpn.decode("ascii") if flow.server_conn.alpn else None,
                                       "http_status": flow.response.status_code,
                                       "transport_error": self.protocols.get(flow.client_conn.id) == (b"h2",) and flow.server_conn.alpn != b"h2"}

@@ -1,4 +1,6 @@
 import { Download, ExternalLink, RefreshCw, Settings } from 'lucide-react';
+import { useState } from 'react';
+import { CompatibilityView } from './CompatibilityView';
 import type { ComponentsSnapshot, DashboardComponent, ExtensionComponent, OperationSnapshot } from '../types';
 import { OperationProgress } from '../components/OperationProgress';
 import { componentError } from '../lib/componentError';
@@ -8,7 +10,7 @@ const previewReason = '本机预览只读，请在设备 LuCI 中操作';
 const coreVersion = (value: string) => value.replace(/^v/, '').replace(/-r\d+$/, '');
 const checkedTime = (value: number | null, failed?: string | null) => value ? `检查于 ${new Date(value * 1000).toLocaleString()}` : failed ? '检查时间未记录' : '尚未检查更新';
 
-function ExtensionRow({ extension }: { extension: ExtensionComponent }) {
+function ExtensionRow({ extension, onManage }: { extension: ExtensionComponent; onManage(): void }) {
   const state = { ready: '可配置', not_installed: '未安装', incompatible: '模块版本不兼容', backend_unsupported: '当前后端不支持', dependency_missing: '缺少依赖', unknown: '状态未确认' }[extension.state];
   const absent = extension.state === 'not_installed' && !extension.available;
   const missing = extension.dependencies.filter(dependency => dependency.available === false);
@@ -27,7 +29,7 @@ function ExtensionRow({ extension }: { extension: ExtensionComponent }) {
       </details>}
     </td>
     <td>通过 OpenWrt 软件包管理</td>
-    <td className="nf-component-actions">{extension.id === 'https-compat' && <button type="button" disabled title={previewReason}><Settings aria-hidden="true" />配置</button>}</td>
+    <td className="nf-component-actions">{extension.id === 'https-compat' && <button type="button" onClick={onManage}><Settings aria-hidden="true" />管理</button>}</td>
   </tr>;
 }
 
@@ -55,6 +57,8 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
   loading: boolean;
   onRead(): void;
 }) {
+  const [detail, setDetail] = useState<string | null>(null);
+  if (detail === 'https-compat') return <CompatibilityView extension={snapshot?.extensions?.find(item => item.id === detail)} onBack={() => setDetail(null)} />;
   const feed = snapshot?.feed;
   const dashboard = snapshot?.dashboard;
   const luci = snapshot?.components.find(component => component.id === 'luci');
@@ -96,7 +100,7 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
             <td>{component.available_version && !feed?.error ? hasUpdate ? `候选版本 ${component.available_version}` : '当前更新源暂无新版' : null}</td>
             <td className="nf-component-actions">{canUpdate && <button type="button" disabled title={previewReason}><Download aria-hidden="true" />{mismatch ? '更新软件包' : '更新'}</button>}</td>
           </tr>;
-        })}{snapshot.extensions?.filter(extension => extension.kind === 'optional').map(extension => <ExtensionRow key={extension.id} extension={extension} />)}{dashboard && <DashboardRow dashboard={dashboard} />}</tbody></table></div>
+        })}{snapshot.extensions?.filter(extension => extension.kind === 'optional').map(extension => <ExtensionRow key={extension.id} extension={extension} onManage={() => setDetail(extension.id)} />)}{dashboard && <DashboardRow dashboard={dashboard} />}</tbody></table></div>
       <details className="nf-component-details"><summary>技术详情：更新源与安装信息</summary>
         {feed?.error && <p>软件包源最近错误：{componentError(feed.error)}</p>}
         {packageFailed && <p>最近组件操作：{componentError(operation.error || 'component_operation_failed')}{operation.recovery && `；${{ restored: '已恢复更新前状态', failed: '恢复失败', direct: '已恢复网络直通' }[operation.recovery]}`}</p>}
