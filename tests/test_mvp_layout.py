@@ -18,6 +18,26 @@ PAYLOAD_SPEC.loader.exec_module(PAYLOAD)
 
 
 class MvpLayoutTests(unittest.TestCase):
+    def test_dynamic_ui_packages_require_the_composition_host(self):
+        with tempfile.TemporaryDirectory(prefix="netfleet-host-compatibility-") as temporary:
+            root = Path(temporary)
+            (root / "include").mkdir()
+            (root / "rules.mk").touch()
+            (root / "include/package.mk").touch()
+            for source, package, required in ((ROOT / "openwrt", "opl-netfleet", True),
+                                              (ROOT / "openwrt", "opl-netfleet-plugin-product-ui", True),
+                                              (ROOT / "openwrt", "opl-netfleet-plugin-models", False),
+                                              (LUCI, "luci-app-netfleet", True)):
+                harness = root / "metadata.mk"
+                harness.write_text(f"$(info __BEGIN__)\n$(info $(Package/{package}))\n$(info __END__)\nall:;@:\n")
+                result = subprocess.run([
+                    "make", "--no-print-directory", "-f", str(source / "Makefile"), "-f", str(harness),
+                    f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", "all",
+                ], cwd=source, capture_output=True, text=True, check=True)
+                definition = result.stdout.split("__BEGIN__\n", 1)[1].split("__END__", 1)[0]
+                floor = "EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.0)"
+                self.assertEqual(required, floor in definition, package)
+
     def test_payload_revision_matches_runtime_directory_order_and_content(self):
         with tempfile.TemporaryDirectory(prefix="netfleet-payload-revision-") as temporary:
             root = Path(temporary)

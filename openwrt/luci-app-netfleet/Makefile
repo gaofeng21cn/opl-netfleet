@@ -15,6 +15,7 @@ define Package/luci-app-netfleet
   CATEGORY:=LuCI
   TITLE:=OPL NetFleet status and recovery interface
   DEPENDS:=+luci-base +opl-netfleet-kernel
+  EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.0)
   PKGARCH:=all
 endef
 

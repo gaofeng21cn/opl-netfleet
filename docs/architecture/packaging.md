@@ -16,6 +16,9 @@ Fleet 安装的前置检查、快照和回滚顺序统一由[部署事务](../op
 进程插件与 UCode 服务插件使用相同的 `/usr/libexec/opl-netfleet/plugins/<id>/` 安装空间，
 服务组合合同见[微内核与功能插件](microkernel.md)。
 
+默认产品、LuCI、`product-ui` 及当前 SDK 生成的插件包声明内核最低版本为 `0.8.0`，
+由软件包管理器解析版本依赖，确保安装后具备通用插件 RPC、贡献与作用域接口。
+
 包列表、服务绑定与插件依赖从源码 manifest 生成。每个服务的 `requires` 解析为提供者包，
 `package_dependencies` 声明功能实际使用的 OpenWrt 系统包；构建前检查缺失服务、接口版本和
 包依赖环。内核不依赖 Mihomo、订阅、选路或其他业务组件。默认系统配置的

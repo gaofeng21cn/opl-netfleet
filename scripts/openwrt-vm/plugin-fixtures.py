@@ -22,6 +22,21 @@ HOOKS = {"preinst": "pre-install", "postinst": "post-install",
          "prerm": "pre-deinstall", "postrm": "post-deinstall"}
 
 
+def package_dependencies(definition):
+    declared = re.search(r"(?m)^\s*DEPENDS:=(.*)$", definition).group(1).split()
+    dependencies = {value.removeprefix("+"): value.removeprefix("+") for value in declared}
+    extra = re.search(r"(?m)^\s*EXTRA_DEPENDS:=(.*)$", definition)
+    for constraint in (extra.group(1).split(",") if extra else []):
+        if not constraint.strip():
+            continue
+        match = re.fullmatch(r"\s*([a-z0-9][a-z0-9+_.-]*)\s*(?:\(([<>]=?|=|~)\s*([^\s()]+)\))?\s*", constraint)
+        if match is None:
+            raise ValueError(f"unsupported OpenWrt extra dependency: {constraint}")
+        name, operator, version = match.groups()
+        dependencies[name] = name + (operator + version if operator else "")
+    return list(dependencies.values())
+
+
 def stage_plugin(example, destination, version):
     destination.mkdir()
     source = destination / "source"
@@ -65,10 +80,9 @@ def stage_plugin(example, destination, version):
                         "\n".join(line for line in extracted[phase].splitlines() if not line.startswith("#!")) + "\n")
         subprocess.run(["sh", "-n", str(path)], check=True)
         scripts[kind] = path
-    dependencies = re.search(r"DEPENDS:=(.*)", extracted["definition"]).group(1).split()
     return {"id": manifest["id"], "package": manifest["package"], "version": version,
             "revision": generated["revision"], "payload": payload, "scripts": scripts,
-            "dependencies": [value.removeprefix("+") for value in dependencies]}
+            "dependencies": package_dependencies(extracted["definition"])}
 
 
 def build(output, sdk):
@@ -107,12 +121,20 @@ def build(output, sdk):
             subprocess.run(command, check=True, capture_output=True, text=True)
             subprocess.run([str(apk), "verify", "--keys-dir", str(output), str(target)],
                            check=True, capture_output=True, text=True)
-            return {"name": target.name, "sha256": hashlib.sha256(target.read_bytes()).hexdigest()}
+            metadata = json.loads(subprocess.run([str(apk), "adbdump", "--format", "json", str(target)],
+                                                 check=True, capture_output=True, text=True).stdout)
+            actual_dependencies = metadata["info"].get("depends", [])
+            if set(actual_dependencies) != set(dependencies):
+                raise ValueError(f"APK dependency readback mismatch: {name}")
+            return {"name": target.name, "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+                    "dependencies": actual_dependencies}
 
         host = scratch / "host"
         host.mkdir()
         receipt["host"] = pack("netfleet-plugin-vm-host", "1.0.0-r1", host,
-                               provides=("netfleet-plugin-api-v1=1", "opl-netfleet-kernel=0.8.0"))
+                               provides=("netfleet-plugin-api-v1=1", "opl-netfleet-kernel=0.8.0", "ucode-mod-fs=1"))
+        receipt["old_host"] = pack("netfleet-plugin-vm-old-host", "1.0.0-r1", host,
+                                   provides=("netfleet-plugin-api-v1=1", "opl-netfleet-kernel=0.7.0", "ucode-mod-fs=1"))
         for identity in ("device-info", "workspace-note"):
             receipt["plugins"][identity] = {}
             for version in ("0.1.0", "0.1.1"):
@@ -120,6 +142,20 @@ def build(output, sdk):
                 artifact = pack(staged["package"], f"{version}-r1", staged["payload"],
                                 staged["dependencies"], staged["scripts"])
                 receipt["plugins"][identity][version] = {**artifact, "revision": staged["revision"]}
+        note = output / receipt["plugins"]["workspace-note"]["0.1.0"]["name"]
+        for label, permitted in (("old_host", False), ("host", True)):
+            sandbox = scratch / f"solver-{label}"
+            sandbox.mkdir()
+            solved = subprocess.run([
+                str(apk), "--root", str(sandbox), "--arch", "noarch", "--initdb", "--no-network",
+                "--no-scripts", "--allow-untrusted", "--simulate", "add", str(output / receipt[label]["name"]), str(note),
+            ], capture_output=True, text=True)
+            if (solved.returncode == 0) != permitted:
+                raise ValueError(f"APK kernel compatibility result unexpected: {label}: {solved.stderr}")
+            if not permitted and "opl-netfleet-kernel>=0.8.0" not in solved.stderr + solved.stdout:
+                raise ValueError(f"APK rejected old host for an unrelated dependency: {solved.stderr}")
+        receipt["host_compatibility"] = {"minimum_kernel": "0.8.0", "old_kernel_rejected": True,
+                                         "current_kernel_accepted": True}
     (output / "fixture.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
     return receipt
 

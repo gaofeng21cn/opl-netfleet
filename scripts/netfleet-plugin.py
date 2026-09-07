@@ -310,6 +310,7 @@ define Package/{package}
   CATEGORY:=Network
   TITLE:=NetFleet plugin: {plugin_id}
   DEPENDS:={dependencies}
+  EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.0)
   PKGARCH:=all
 endef
 

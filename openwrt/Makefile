@@ -118,6 +118,7 @@ define Package/opl-netfleet
   CATEGORY:=Network
   TITLE:=OPL NetFleet default network platform
   DEPENDS:=+opl-netfleet-kernel $(foreach plugin,$(NETFLEET_PLUGINS),+opl-netfleet-plugin-$(plugin))
+  EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.0)
   PKGARCH:=all
 endef
 
@@ -364,6 +365,7 @@ define Package/opl-netfleet-plugin-$(1)
   VERSION:=$(shell python3 ./plugin-packages.py version $(1))-r$(PKG_RELEASE)
   REPLACES:=opl-netfleet
   DEPENDS:=+opl-netfleet-kernel $(shell python3 ./plugin-packages.py dependencies $(1))
+  EXTRA_DEPENDS:=$(if $(filter product-ui,$(1)),opl-netfleet-kernel (>=0.8.0))
   PKGARCH:=all
 endef
 

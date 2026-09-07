@@ -18,7 +18,7 @@ Options:
   --diagnostic <lane>  Run native, setup, migration, runtime, package, or compatibility diagnostics
   --compat-runtime <dir>  Isolated musl dependency payload for compatibility diagnostics
   --compat-package <dir>  Signed optional APK candidate; requires --packages
-  --plugin-packages <dir>  Signed plugin test packages for the native diagnostic lane
+  --plugin-packages <dir>  Signed plugin tests in the full suite or native diagnostic lane
   --output <path>   Qualification receipt path outside the repository
   -h, --help        Show this help
 EOF
@@ -86,7 +86,7 @@ done
 [[ "$diagnostic" != compatibility || -d "$compat_runtime/vendor/mitmproxy" || -f "$compat_package/compat-manifest.json" ]] || die "compatibility diagnostic requires --compat-runtime or --compat-package"
 [[ -z "$compat_package" || "$diagnostic" == compatibility && -n "$packages" ]] || die "--compat-package requires compatibility diagnostic and --packages"
 [[ "$diagnostic" == compatibility || -z "$compat_runtime" ]] || die "compatibility payload is diagnostic-only"
-[[ -z "$plugin_packages" || "$diagnostic" == native ]] || die "plugin packages require the native diagnostic lane"
+[[ -z "$plugin_packages" || "$diagnostic" == all || "$diagnostic" == native ]] || die "plugin packages require the full suite or native diagnostic lane"
 [[ "$diagnostic" != package || -n "$packages" ]] || die "package diagnostic requires --packages"
 [[ "$diagnostic" == all || "$diagnostic" == package || "$diagnostic" == setup || "$diagnostic" == compatibility || -z "$packages" ]] || die "this diagnostic does not accept --packages"
 [[ "$source_ref" != -* ]] || die "source ref cannot begin with '-'"

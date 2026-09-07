@@ -465,7 +465,7 @@ actual_transfer=$(ssh $ssh_common root@127.0.0.1 \
 }
 ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf /tmp/runtime-source.tar && rm -f /tmp/runtime-source.tar'
 if [ -n "${NETFLEET_PLUGIN_PACKAGES:-}" ]; then
-	[ "$lane_mode" = native ] || exit 1
+	[ "$lane_mode" = native ] || [ "$lane_mode" = all ] || exit 1
 	tar -cf "$work/plugin-packages.tar" -C "$NETFLEET_PLUGIN_PACKAGES" .
 	tar -cf - -C "$work" plugin-packages.tar | ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf -'
 	expected_plugin_sha=$(sha256_file "$work/plugin-packages.tar")

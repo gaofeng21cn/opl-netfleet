@@ -289,6 +289,7 @@ class PluginSDKTests(unittest.TestCase):
                 package = self.root / f"package-{kind}"
                 SDK.package_source(source, package, "Apache-2.0", 1)
                 definition = self.extract_hook(package, "")
+                self.assertIn("EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.0)", definition)
                 dependencies = re.search(r"DEPENDS:=(.*)", definition).group(1).split()
                 expected = ["+opl-netfleet-kernel"]
                 expected += (["+" + name for name in manifest["package_dependencies"]] if kind == "service"

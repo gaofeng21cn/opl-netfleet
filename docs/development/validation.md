@@ -50,7 +50,8 @@ qualification，HTTPS 模块另用自己的包与故障演练。
 `scripts/openwrt-vm/plugin-fixtures.py <output> --sdk <sdk>` 在隔离 Linux/amd64 SDK
 构建容器中从实际示例生成两版签名 APK；输出目录必须不存在。将输出传给
 `scripts/openwrt-vm.sh --ref <commit> --diagnostic native --plugin-packages <output> --output <receipt>`，
-验证通用 RPC、配置保存、升级保留与卸载清理。此诊断与正式产品完整 qualification 分别执行。
+验证通用 RPC、配置保存、升级保留与卸载清理。省略 `--diagnostic native` 并增加
+`--packages <candidate>`，可在完整产品 qualification 中同时执行这些插件安装检查。
 
 插件页面通过共享宿主测试验证清单导航、实例与权限绑定、失败处理和资源撤销。真实浏览器
 验收还需完成独立插件读取、编辑保存、只读访问、切页、热更新和卸载。热更新必须包含一个
