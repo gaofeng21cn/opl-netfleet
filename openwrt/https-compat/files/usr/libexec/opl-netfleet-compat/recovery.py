@@ -8,7 +8,7 @@ FAULT_WINDOW = 600
 FAULT_LIMIT = 3
 
 
-def advance(previous, *, requested, healthy, reason, now, manual_reset=False):
+def advance(previous, *, requested, healthy, reason, now, manual_reset=False, count_failure=True):
     state = dict(previous or {})
     faults = [stamp for stamp in state.get("faults", []) if now - FAULT_WINDOW <= stamp <= now]
     latched = state.get("latched", False) and not manual_reset
@@ -19,7 +19,7 @@ def advance(previous, *, requested, healthy, reason, now, manual_reset=False):
         return {"requested": False, "intercepting": False, "reason": "disabled",
                 "faults": faults, "latched": latched, "healthy_since": None}
     if not healthy:
-        if state.get("healthy") is True:
+        if count_failure and state.get("healthy") is True:
             faults.append(now)
         latched = latched or len(faults) >= FAULT_LIMIT
         return {"requested": True, "intercepting": False, "healthy": False,

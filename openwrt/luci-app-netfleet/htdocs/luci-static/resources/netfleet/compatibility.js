@@ -16,7 +16,12 @@ function reason(value) {
 		extension_package_unknown: '模块安装版本尚未确认',
 		ca_not_ready: 'CA 未就绪，当前旁路',
 		lease_expired: '接管许可已到期', maintenance: '组件维护中，当前旁路', no_verified_targets: '没有已验证的接入目标',
-		manual_recovery_required: '故障频繁，等待人工恢复', processing_chain_failed: '本地处理链异常',
+		manual_recovery_required: '反复恢复后仍故障，等待人工恢复', rules_bypassed: '目标规则当前旁路，详见规则状态',
+		historical_failure: '旧版本未记录具体原因', upstream_probe_timeout: '上游恢复探测超时', upstream_certificate_failed: '上游证书验证失败',
+		upstream_h2_not_negotiated: '上游未协商 HTTP/2', upstream_connect_failed: '上游连接失败',
+		upstream_tls_failed: '上游 TLS 握手失败', client_tls_failed: '客户端 TLS 握手失败',
+		upstream_timeout: '上游传输超时', upstream_connection_reset: '上游连接被重置',
+		upstream_transport_failed: '上游传输中断', client_cancelled: '客户端已取消', processing_chain_failed: '本地处理链异常',
 		transparent_chain_failed: '透明接管入口异常，已旁路',
 		engine_unavailable: '兼容引擎未就绪', engine_config_pending: '等待引擎载入配置',
 		native_gateway_unavailable: '原生网关暂不可用', native_gateway_not_ready: '原生网关尚未就绪',
@@ -138,6 +143,9 @@ function render(controller) {
 			E('td', {}, rule.devices.map(function(id) { return (state.config.devices.find(function(device) { return device.id === id; }) || {}).name || id; }).join('、')),
 			E('td', {}, rule.strategy === 'h2' ? 'HTTP/2' : '旁路'),
 			E('td', {}, [ E('span', {}, result.upstream_protocol || '尚未验证'), E('small', {}, reason(recovery.reason || result.reason)),
+				 recovery.last_failure ? E('small', {}, '最近故障：' + reason(recovery.last_failure.reason || 'historical_failure') +
+					(recovery.last_failure.time ? ' · ' + new Date(recovery.last_failure.time * 1000).toLocaleString() : '')) : '',
+				 recovery.probe && !recovery.probe.ok ? E('small', {}, '恢复探测：' + reason(recovery.probe.reason)) : '',
 				E('small', {}, result.at ? new Date(result.at * 1000).toLocaleString() : '') ]),
 			E('td', {}, [ button('编辑', function() { edit(controller, 'rules', rule); }, busy), button('删除', function() {
 				return applyConfig(function(config) { config.rules = config.rules.filter(function(value) { return value.id !== rule.id; }); });

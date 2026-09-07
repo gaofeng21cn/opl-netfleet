@@ -201,7 +201,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json(), {"bytes": len(body), "sha256": hashlib.sha256(body).hexdigest()})
         self.assertEqual(self.received[-1]["query"], "size=original")
         self.assertEqual(self.received[-1]["headers"][b"authorization"], b"Bearer isolated-test")
-        for status in (401, 429, 500):
+        for status in (401, 429, 500, 503):
             response = await self.client.get(self.url + f"/status/{status}")
             self.assertEqual(response.status_code, status)
             self.assertEqual(response.headers["retry-after"], "7")
@@ -266,6 +266,9 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 502)
         self.assertEqual(self.received, [])
         self.assertTrue((await self.health())["rules"]["test"]["transport_error"])
+        failures = (await self.health())["failure_events"]
+        self.assertEqual(failures[-1]["reason"], "upstream_tls_failed")
+        self.assertIn("time", failures[-1])
 
     async def test_disabled_policy_tunnels_without_decrypting(self):
         path = self.directory / "config.json"

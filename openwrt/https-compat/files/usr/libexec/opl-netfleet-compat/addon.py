@@ -162,12 +162,14 @@ class Compatibility:
         rule = self.selected.get(data.context.client.id)
         if rule and data.context.client.id not in self.failed_tls_clients:
             self.results[rule["id"]] = {"at": int(time.time()), "event": time.monotonic_ns(), "transport_error": True, "reason": reason}
-            self.record_failure(rule["id"])
+            self.record_failure(rule["id"], reason)
             self.failed_tls_clients.add(data.context.client.id)
 
-    def record_failure(self, identity):
+    def record_failure(self, identity, reason, protocol=None, status=None):
         if identity != "_health":
-            self.failures.append({"id": time.monotonic_ns(), "rule": identity, "at": time.monotonic()})
+            self.failures.append({"id": time.monotonic_ns(), "rule": identity, "at": time.monotonic(),
+                                  "time": int(time.time()), "reason": reason,
+                                  "upstream_protocol": protocol, "http_status": status})
 
     def response(self, flow):
         if flow.response.status_code != 101:
@@ -180,12 +182,18 @@ class Compatibility:
         self.active.pop(flow.id, None)
         identity = flow.metadata.get("netfleet_rule") or self.selected.get(flow.client_conn.id, {}).get("id")
         if identity:
-            cancelled = not flow.client_conn.connected
+            # The error hook may precede the connection-state transition.
+            message = str(flow.error.msg if flow.error else "").lower()
+            cancelled = not flow.client_conn.connected or message.startswith(("client disconnected", "client closed"))
+            reason = ("client_cancelled" if cancelled else
+                      "upstream_timeout" if "timed out" in message or "timeout" in message else
+                      "upstream_connection_reset" if "reset" in message else "upstream_transport_failed")
             if not cancelled and flow.client_conn.id not in self.failed_tls_clients:
-                self.record_failure(identity)
+                protocol = flow.server_conn.alpn.decode("ascii") if flow.server_conn.alpn else None
+                self.record_failure(identity, reason, protocol, flow.response.status_code if flow.response else None)
             self.results[identity] = {**self.results.get(identity, {}), "at": int(time.time()),
                                       "event": time.monotonic_ns(),
-                                      "transport_error": not cancelled, "client_cancelled": cancelled}
+                                      "transport_error": not cancelled, "client_cancelled": cancelled, "reason": reason}
 
     def client_connected(self, client):
         internal = client.peername[0] in ("127.0.0.1", "::1") and client.sockname[1] in (18444, TLS_PORT)

@@ -147,16 +147,27 @@ async def probe_rules(rules):
     context = ssl.create_default_context()
     context.set_alpn_protocols(["h2"])
     async def check(rule):
-        writer = None
+        writer, started = None, time.monotonic()
+        result = {"ok": False, "at": int(time.time()), "timeout_ms": 700}
         try:
             async with asyncio.timeout(0.7):
                 _, writer = await asyncio.open_connection(rule.get("address", rule["domain"]), rule["port"], ssl=context, server_hostname=rule["domain"])
-                return rule["id"], writer.get_extra_info("ssl_object").selected_alpn_protocol() == "h2"
-        except (OSError, asyncio.TimeoutError):
-            return rule["id"], False
+                protocol = writer.get_extra_info("ssl_object").selected_alpn_protocol()
+                result.update(ok=protocol == "h2", protocol=protocol,
+                              reason=None if protocol == "h2" else "upstream_h2_not_negotiated")
+        except asyncio.TimeoutError:
+            result["reason"] = "upstream_probe_timeout"
+        except ssl.SSLCertVerificationError:
+            result["reason"] = "upstream_certificate_failed"
+        except ssl.SSLError:
+            result["reason"] = "upstream_tls_failed"
+        except OSError:
+            result["reason"] = "upstream_connect_failed"
         finally:
             if writer:
                 writer.close()
+        result["duration_ms"] = round((time.monotonic() - started) * 1000)
+        return rule["id"], result
     return dict(await asyncio.gather(*(check(rule) for rule in rules)))
 
 
@@ -204,7 +215,8 @@ def save_state(state, previous):
     for identity, current in state.get("rule_recovery", {}).items():
         old = previous.get("rule_recovery", {}).get(identity, {})
         if (current.get("reason"), current.get("intercepting")) != (old.get("reason"), old.get("intercepting")):
-            events = [*events, {"at": int(time.time()), "rule": identity, "reason": current.get("reason"), "intercepting": current.get("intercepting", False)}][-100:]
+            events = [*events, {"at": int(time.time()), "rule": identity, "reason": current.get("reason"), "intercepting": current.get("intercepting", False),
+                                "failure": current.get("last_failure"), "probe": current.get("probe")}][-100:]
     atomic(STATE, {**state, "events": events, "last_tick": time.monotonic()})
 
 
@@ -293,15 +305,17 @@ def tick():
         errors = [event for event in health.get("failure_events", []) if event["rule"] == rule["id"]
                   and event["id"] > old.get("last_error", 0)]
         new_error = bool(errors)
-        probe_ok = probes.get(rule["id"], old.get("probe_ok", rule["match"] == "suffix"))
-        current = advance(old, requested=True, healthy=probe_ok and not new_error, reason="upstream_protocol_failed", now=now)
-        current.update({"probe_ok": probe_ok, "last_probe": now if rule["id"] in probes else old.get("last_probe", -100),
+        probe = probes.get(rule["id"], old.get("probe", {}))
+        probe_ok = probe.get("ok", old.get("probe_ok", rule["match"] == "suffix"))
+        failure = errors[-1] if errors else old.get("last_failure")
+        reason = failure.get("reason", "upstream_transport_failed") if new_error else probe.get("reason", "upstream_protocol_failed")
+        # Only a failure after admission starts another incident. A burst of failed
+        # streams and unsuccessful recovery probes all belong to the same outage.
+        current = advance(old, requested=True, healthy=probe_ok and not new_error, reason=reason, now=now,
+                          count_failure=old.get("intercepting") is True)
+        current.update({"probe": probe, "last_failure": failure, "probe_ok": probe_ok, "last_probe": now if rule["id"] in probes else old.get("last_probe", -100),
                         "last_error": max(event["id"] for event in errors) if new_error else old.get("last_error", 0)})
         if new_error:
-            current["faults"] = [stamp for stamp in old.get("faults", []) if now - 600 <= stamp <= now] + [event["at"] for event in errors if now - 600 <= event["at"] <= now]
-            current["latched"] = old.get("latched", False) or len(current["faults"]) >= 3
-            if current["latched"]:
-                current["reason"] = "manual_recovery_required"
             current["probe_ok"] = False
             current["last_probe"] = -100
         rule_states[rule["id"]] = current
@@ -332,7 +346,7 @@ def tick():
         gateway.renew(candidates)
     else:
         gateway.bypass()
-        state["reason"] = "no_verified_targets"
+        state["reason"] = "rules_bypassed" if target_rules == [] and active["rules"] else "no_verified_targets"
     state["intercepting"] = bool(candidates)
     save_state(state, previous)
 
