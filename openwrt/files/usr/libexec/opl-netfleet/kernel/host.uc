@@ -402,7 +402,8 @@ export function run(argv, root, options) {
 		else {
 			host = create(root, options);
 			const command = host.command(argv[0]);
-			if (command == null) result = failure('unknown_command');
+			if (command == null) result = { ...failure('unknown_command'), detail: { command: argv[0],
+				plugins: map(filter(host.inventory(null), item => item.state != 'available'), item => ({ id: item.id, reason: item.reason })) } };
 			else result = host.call(command.service, command.method, argv);
 		}
 	} catch (error) { result = failure(error.message ?? 'plugin_execution_failed'); }

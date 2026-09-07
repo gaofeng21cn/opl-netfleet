@@ -8,8 +8,8 @@
 
 <h1 align="center">OPL NetFleet</h1>
 
-<p align="center"><strong>Modular proxy and network management for OpenWrt</strong></p>
-<p align="center">Independent Mihomo management · multi-provider selection · extensible modules · failure recovery</p>
+<p align="center"><strong>A microkernel-based proxy and network management platform for OpenWrt</strong></p>
+<p align="center">Independent Mihomo management · multi-provider selection · composable plugins · independent hot replacement</p>
 
 <p align="center">
   <a href="https://github.com/gaofeng21cn/opl-netfleet/actions"><img src="https://img.shields.io/github/actions/workflow/status/gaofeng21cn/opl-netfleet/netfleet-release.yml?label=checks" alt="Checks" /></a>
@@ -24,16 +24,17 @@ Existing Nikki users can keep their environment or migrate to NetFleet's native 
 
 It organizes connectivity around providers, regions, and business exits, using
 current measurements to choose paths and primary, reserve, and direct tiers to
-handle failures. The core coordinates policy and recovery, while modules add
-protocol compatibility and a live dashboard. Single-device setup and declarative
-Fleet deployment share the same runtime logic.
+handle failures. The microkernel coordinates service composition and lifecycle;
+plugins provide subscriptions, policy, backends, selection, recovery, and
+management. Single-device setup and declarative Fleet deployment share the same
+runtime logic.
 
 ## What You Get
 
 - **Independent proxy management.** Native mode covers subscriptions, profiles, DNS, transparent proxying, core maintenance, and backup/restore.
 - **Multiple providers in one place.** View regions, nodes, latency, and usage; assign primary and reserve roles to provide alternatives when individual paths fail.
 - **Automatic exits for each purpose.** Standard traffic and region-constrained services can use distinct capabilities, with visible selections and switching reasons.
-- **Capabilities on demand.** HTTPS compatibility is an optional package, and Zashboard supplies the full live dashboard. The component inventory shows installation, dependencies, and API compatibility.
+- **Composable feature plugins.** First-party and third-party plugins use the same development interfaces and support independent installation, updates, and hot replacement. The component inventory shows installation, dependencies, and API compatibility.
 - **Controlled changes and recovery.** Installation, configuration generation, and takeover are separate. Failed changes restore the previous configuration; disabling returns to an independent recovery profile.
 - **Reproducible device configuration.** Fleet deploys an explicit version, validates and compiles on the device, and reads back the result.
 
@@ -69,34 +70,41 @@ Each round uses current measurements and a switch margin, keeping the active
 path stable during small latency fluctuations. History helps explain what the
 device has seen; the current choice follows the latest healthy measurements.
 
-### Microkernel Direction And Plugin Hot Loading
+### Microkernel And Plugin Hot Replacement
 
-NetFleet is evolving toward a microkernel and service composition: the kernel
-coordinates discovery, dependencies, permissions, and lifecycle, while plugins
-compose functionality. Subscriptions, selection, configuration compilation, and
-recovery policies can progressively become plugins, with dependencies and system
-configuration ensuring required capabilities are ready.
+NetFleet organizes its product functionality into **19 feature plugins and 63
+services**. The kernel handles discovery, service binding, dependency resolution,
+call admission, and code lifecycle. Subscriptions, selection, compilation,
+recovery, backends, and scheduling all run through composed services. System
+configuration explicitly selects service providers; feature packages can be
+developed, installed, and updated independently.
 
-**Extension API v1** now supports independent process plugins. Installed plugins
-are discovered automatically; loading, reloading, exiting, and upgrading them
-does not require restarting NetFleet or Mihomo. Plugins may use UCode, Shell,
-Python, or another runtime available on the device, with a shared manifest,
-CLI/RPC interface, and component management page. Built-in modules and independent
-plugins share the management surface.
+There are two development paths. **UCode service plugins** compose capabilities
+through declared dependencies and `context.use()`. **Process plugins** use
+Extension API v1 with Shell, Python, or another runtime available on the device.
+Both share the installation directory, management entry points, and packaging
+workflow. Any plugin implementing the protocol can be discovered, loaded, and
+hot-replaced.
 
-| Integrated module | Purpose | Delivery and runtime scope |
+Each call uses current plugin code. Updates wait for in-flight calls to finish,
+and new calls use the new version. Updating a plugin outside Mihomo's resource
+dependency graph, such as the selection algorithm, does not restart Mihomo.
+Resource plugins run their drain and resume lifecycle when their code or
+dependencies change.
+
+| Feature plugin | Purpose | Delivery and runtime behavior |
 | --- | --- | --- |
-| **HTTPS compatibility** | HTTP/1.1-to-HTTP/2 compatibility for selected devices and destinations | Optional native-backend package, disabled after installation; requires device trust in a private CA and explicit onboarding, with bypass to the original route on failure |
-| **Zashboard** | Live Mihomo connections, traffic, rule matches, and proxy groups | Management adapter ships with the core; dashboard assets remain separate and can be updated by the native backend without restarting Mihomo |
-| **Device information example** | OpenWrt release, uptime, memory, and load | Complete developer template and independent APK/IPK, covering load, diagnostics, reload, and exit |
+| **Default network functions** | Subscriptions, compilation, selection, activation, recovery, configuration, and scheduling | `opl-netfleet` composes the default product; each feature plugin has its own package |
+| **HTTPS compatibility** | HTTP/1.1-to-HTTP/2 compatibility for selected devices and destinations | A management plugin connects the optional converter package; explicit onboarding after device trust in a private CA, with bypass to the original route on failure |
+| **Zashboard** | Live Mihomo connections, traffic, rule matches, and proxy groups | A separate Dashboard plugin manages the entry and resources; dashboard assets can be updated without restarting Mihomo |
+| **Developer examples** | Device information and diagnostics | `host-info` demonstrates service dependencies; `device-info` demonstrates process plugins and lifecycle |
 
-Plugins own their configuration, resources, and runtime state. Updates exit the
-old implementation before loading the new version. First-party and third-party
-developers use the same scaffolding, manifest validation, OpenWrt packaging, and
-signed distribution workflow. Start with the [plugin development and installation
-guide](docs/development/plugins.md); see the [product whitepaper](docs/product/whitepaper.md)
-for the design direction and [Modules and extensions](docs/architecture/extensions.md)
-for current integration and lifecycle behavior.
+First-party and third-party developers use the same scaffolding, manifest
+validation, OpenWrt packaging, and signed distribution workflow. Start with the
+[plugin development and installation guide](docs/development/plugins.md). See
+[Microkernel and feature plugins](docs/architecture/microkernel.md) for service
+and hot-replacement contracts, and [Modules and extensions](docs/architecture/extensions.md)
+for process interfaces and component management.
 
 ### Local Execution And Recovery First
 
@@ -107,8 +115,8 @@ Runtime and recovery work without an open browser, cloud controller, or Node.js 
 Configuration is validated and staged before explicit activation and runtime
 checks. Disabling or recovering first returns to an independently usable
 Recovery Profile. If that fails, the selected backend cleans up its own network
-takeover and restores direct connectivity. Optional modules handle their own
-failure exits, while the core retains one shared recovery path.
+takeover and restores direct connectivity. The recovery plugin coordinates this
+shared path, while resource plugins handle their own failure exits.
 
 Read the [product whitepaper](docs/product/whitepaper.md) for the full rationale
 and the [architecture overview](docs/architecture/overview.md) for current
@@ -116,9 +124,8 @@ implementation behavior.
 
 ## Current Features
 
-This overview follows the current source and LuCI interfaces. Check the chosen
-release's backend, architecture, and optional-package coverage before installing;
-source availability alone does not establish qualification for every release or device.
+This overview follows the current source and LuCI interfaces. See the chosen
+release for supported platforms and qualification coverage.
 
 | Capability | Available scope |
 | --- | --- |
@@ -152,7 +159,8 @@ The target device should have:
 - for Nikki mode: a working Nikki installation, an independently usable native profile, and at least one valid subscription cache.
 
 On OpenWrt 25.12, use the one-time installer to add the signed feed and install
-both packages:
+the default product and LuCI. The package manager resolves the microkernel and
+feature-plugin dependencies:
 
 ```sh
 uclient-fetch -q -O /tmp/install-netfleet.sh https://github.com/gaofeng21cn/opl-netfleet/releases/latest/download/install-netfleet.sh && sh /tmp/install-netfleet.sh
@@ -188,8 +196,10 @@ normal package upgrade and never establishes permanent dual writes.
 ## Upgrading
 
 The LuCI **Components and Updates** page shows installed versions, the running
-Mihomo version, and key dependencies, with an explicit feed check. NetFleet and
-its LuCI interface update together. Updating Mihomo under the native backend
+Mihomo version, and key dependencies, with an explicit feed check. NetFleet
+updates the microkernel, feature plugins, and LuCI together using the default
+product inventory; third-party plugins can be maintained independently.
+Updating Mihomo under the native backend
 requires separate confirmation and validates the current configuration first;
 failures restore the previous packages and runtime. Unattended and system-wide
 upgrades are not enabled by default.
@@ -201,20 +211,18 @@ shown as unknown when unidentifiable. Available versions appear after an explici
 check. Package, core, and dashboard
 updates require separate confirmation and are not silently bundled together.
 
-After the first installation, OpenWrt can upgrade directly from the configured
-feed:
+Use the component page to update the complete product. Individual feature
+plugins can also be updated directly from the configured feed, for example:
 
 ```sh
-apk update && apk upgrade opl-netfleet luci-app-netfleet
+apk update && apk upgrade opl-netfleet-plugin-selection
 ```
 
-Package upgrades refresh program files while keeping policy, subscription
-caches, and the active configuration in place. Re-running the one-time
-installer adds any missing NetFleet packages, then upgrades only the two named
-packages without proactively upgrading already-satisfied dependencies. Keep the
-package names in the upgrade command to avoid a system-wide upgrade. It does not recreate
-instance configuration. Review the status page after the upgrade and apply a
-new configuration when ready.
+Upgrades retain policy, subscription caches, and system service bindings. Package
+hooks drain and resume around code replacement. Review versions and runtime
+state on the component and status pages after upgrading; new configurations
+still require explicit application. See the [development and installation
+guide](docs/development/plugins.md) for plugin installation, upgrades, and removal.
 
 ## Everyday Use
 
@@ -286,6 +294,17 @@ to separately authorized replicas. See [Canary promotion and recovery](docs/oper
 
 ## Development
 
+Create and validate a service plugin:
+
+```bash
+python3 scripts/netfleet-plugin.py scaffold my-plugin /tmp/my-plugin --kind service
+python3 scripts/netfleet-plugin.py validate /tmp/my-plugin
+```
+
+Use `--kind process` to create a process plugin. Both templates, service
+composition examples, SDK packaging, and signed installation are covered in
+[Plugin development and installation](docs/development/plugins.md).
+
 Fast source and contract checks:
 
 ```bash
@@ -311,6 +330,7 @@ NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
 
 - [Documentation index](docs/README.md)
 - [Architecture overview](docs/architecture/overview.md)
+- [Microkernel and feature plugins](docs/architecture/microkernel.md)
 - [Independent device management](docs/architecture/management.md)
 - [Modules and extensions](docs/architecture/extensions.md)
 - [Plugin development and installation](docs/development/plugins.md)

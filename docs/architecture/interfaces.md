@@ -1,19 +1,22 @@
 # 公开接口与 UI
 
 本文是 NetFleet 当前 RPC、状态投影、React 本地参考面、原生 LuCI 页面和浏览器缓存边界的
-权威合同。视觉语言由 [UI 设计合同](../design/ui.md)负责。
+权威合同。视觉语言由 [UI 设计合同](../design/ui.md)负责，服务绑定与命令路由由
+[微内核合同](microkernel.md)负责。
 
 ## 原生接入与管理
 
-动态插件使用 `plugins_list`、`plugin_read`、`plugin_call`。清单只发现安装文件，读取和写入
+功能服务插件和进程插件统一使用 `plugins_list`、`plugin_read`、`plugin_call`。清单只发现安装文件，读取和写入
 分别授权；请求为 `{request:{id,action,revision?,confirm?,params?}}`，写入必须携带当前
-revision 和明确确认。组件页管理已安装插件的加载、重载、退出和声明的自定义动作。
-状态与私有配置由插件持有，宿主执行生命周期并回读 loaded/ready；包管理器专用
-`plugin-drain` 不暴露给 RPC。接口及安装切换合同见[模块与扩展](extensions.md)。
+revision 和明确确认。组件页管理已安装插件的加载、重载、退出，以及进程插件声明的自定义动作。
+服务插件的业务动作由 manifest 命令绑定到对应服务方法，沿用现有 CLI/RPC 名称。
+状态与私有配置由插件持有；进程插件回读 loaded/ready，服务插件回读启用状态与绑定依赖是否可用。
+包管理器专用 `plugin-drain` 与 `plugin-package-*` 不暴露给 RPC。
+接口及安装切换合同见[模块与扩展](extensions.md)和[微内核合同](microkernel.md)。
 
 原生后端的可选 [HTTPS 兼容模块](https-compatibility.md) 使用独立的
-`compatibility_get/apply/enable/disable/probe/ca` 动作。rpcd 和 UCode 入口将请求交给
-组件 controller；该 controller 复用现有 mutation lock，不运行全局配置应用。
+`compatibility_get/apply/enable/disable/probe/ca` 动作。rpcd 经内核将请求交给
+`https-compat.control` 服务，再调用组件 controller；该 controller 复用现有 mutation lock，不运行全局配置应用。
 返回值区分用户意图、实际接管、旁路原因、配置 revision 和验证结果。组件缺失时读取
 返回未安装，基础管理页仍然可用。公开 CA 下载需要 LuCI 读取权限，信任记录与接管
 变更需要写权限；浏览器不能下载 CA 私钥。
@@ -75,19 +78,21 @@ LuCI 通过 `fs.exec_direct` 调用白名单 `opl-netfleet-transfer`，经 `cgi-
 
 ## 当前运行接口
 
-`status.recovery` 只投影 activation owner 的自动降级恢复请求；存在请求时允许用户执行 disable 取消恢复，界面显示“降级恢复中”。`active` 仍只表示当前实际接管状态，恢复原因与重试时间不能由界面自行推断。
+`status.recovery` 由 `status.control` 投影 `recovery.state` 持有的自动降级恢复请求；存在请求时允许用户执行 disable 取消恢复，界面显示“降级恢复中”。`active` 仍只表示当前实际接管状态，恢复原因与重试时间不能由界面自行推断。
 
 `status.runtime.backend` 返回当前后端的 `id/display_name`，`backend_enabled` 表示其服务
 启用状态；配置投影的 `backend` 来自同一 owner。UI 不保留 Nikki 专用状态字段别名，
 恢复文案使用实际后端名称，不能把“NetFleet 原生后端运行”描述成 Nikki 运行。
 
-root CLI 的管理动作与 RPC 共用同一实现：`subscriptions-get/set/refresh`、
+root CLI 的管理动作与 RPC 经内核路由到相同功能服务：`subscriptions-get/set/refresh`、
 `native-setup-get/apply`、`migration-get/apply`、`network-get/validate/apply`、
 `maintenance-get`、`profile-get/save/delete`、`backup-export/restore`、`core-action`、
 `diagnostics-get` 和 `dashboard-get/check/update`。涉及私有结构化输入
 的 CLI 读取设备私有文件，不通过命令行参数传递订阅地址。核心启停和网关配置由
 [正式运行 owner](runtime-and-recovery.md#运行后端与原生网关)负责，浏览器不直接调用
-gateway 的准备、附加或清理动作，不建立第二条核心生命周期。
+gateway 的准备、附加或清理动作，不建立第二条核心生命周期。原生 init 与首次设置使用
+内部 `subscriptions-update-result` 命令更新尚未进入运行应用事务的来源；运行中被引用的
+订阅仍须经 `refresh.control`，不能借内部入口绕过刷新恢复合同。
 
 原生 LuCI 是当前第一个真实公开 caller，除上述接入与管理接口外提供：
 
@@ -134,8 +139,9 @@ LuCI 的启用、单次选优、立即更新订阅、关闭和配置应用都必
 
 概览的“最近决策”只从 `enable|select|disable` 事件中选取最新记录，同秒按 owner 写入顺序取最后一条；`refresh` 是订阅操作摘要，不覆盖选路决策。事件列表对订阅更新显示实际变化数、失败数和更新结果，延迟标为“不适用”。只有明确的 `native_restored` 恢复事件才能显示“已恢复原生配置”；缺少路由字段只代表未记录，不能推断回退。退出直通按实际恢复原因显示“已恢复网络直通”，不显示测量缺失；订阅触发的选优标为“订阅更新后选优”。
 
-`components_get.extensions` 按[模块合同](extensions.md)投影模块安装版本、接口 major、
-依赖与后端适用性。它不表示运行健康，不触发网络检查或启动引擎；Zashboard 的资源状态
+`components_get.extensions` 由 `components.control` 使用内核清单投影插件安装版本、
+代码 revision、服务声明、启用状态、接口 major 和依赖；`runtime` 区分 `service` 与 `process`。
+它不表示运行健康，不触发网络检查或启动引擎；Zashboard 的资源状态
 仍复用同一 `dashboard` 读取，避免重复探测。HTTPS `get` 额外投影 `managed` 和
 `management_reason`，不兼容时禁止新接管和编辑，保留关闭与排空。
 
@@ -162,8 +168,8 @@ Release 并缓存候选，`dashboard_update` 接受用户确认的版本，绑�
 未配置设备额外暴露 `onboarding_get / onboarding_apply`。`onboarding_get` 只读当前后端
 Profile、稳定 subscription cache 和节点地区，返回脱敏预览、阻断原因及绑定发现 revision；
 不得返回订阅 URL、token 或节点正文。`onboarding_apply` 必须携带同一 revision 和显式确认，
-在全局 mutation lock 内重新发现并拒绝漂移，然后由 `main.uc` 唯一事务 owner 写入初始
-policy、compile、enable、启动 supervisor 并回读。已有有效 policy 时 onboarding 接口只返回
+在全局 mutation lock 内重新发现并拒绝漂移，然后由 `configuration.onboarding` 写入初始
+policy，复用编译和激活服务、启动 supervisor 并回读。已有有效 policy 时 onboarding 接口只返回
 `required=false`，不能覆盖现有配置；失败时必须恢复原生 Profile、服务状态和本次创建的文件。
 
 设备端配置由 `config_get / config_validate / config_save / config_apply` 四个结构化 RPC 暴露。浏览器每次配置操作先读取 fresh `config_get`，并携带 policy SHA-256 revision；陈旧 revision 必须拒绝，展示缓存不得授权配置 mutation。唯一 target-local 配置 owner 发现当前后端已有稳定命名订阅、订阅 cache 中可识别的地区、当前 Policy Source 策略组和内置 Policy Source，把白名单结构化选择 merge 到现有 canonical policy、校验全部引用，并用同目录临时文件原子替换。`config_save` 只允许在 NetFleet 未接管时更新 policy，不改变数据面；active 配置必须使用 `config_apply`，后者先返回可解释变更供 LuCI 二次确认，再在全局 mutation lock 内快照旧 policy/artifact/manifest，复用 `disable -> compile -> enable` activation owner 切换，失败恢复旧字节和旧 active owner。

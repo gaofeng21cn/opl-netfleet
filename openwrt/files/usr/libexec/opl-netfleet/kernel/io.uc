@@ -59,7 +59,7 @@ function ancestor_holds(path) {
 		if (fs.stat(base)?.uid != 0) return false;
 		for (let fd in fs.lsdir(`${base}/fdinfo`) ?? []) {
 			const info = fs.stat(`${base}/fd/${fd}`);
-			if (info?.ino != target?.ino || info?.dev != target?.dev) continue;
+			if (info?.inode != target?.inode || info?.dev?.major != target?.dev?.major || info?.dev?.minor != target?.dev?.minor) continue;
 			if (match(fs.readfile(`${base}/fdinfo/${fd}`) ?? '', /lock:.*FLOCK\s+ADVISORY\s+WRITE\s/)) return true;
 		}
 		status = fs.readfile(`${base}/status`) ?? '';

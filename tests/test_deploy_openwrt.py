@@ -484,36 +484,41 @@ class DeployOpenWrtTests(unittest.TestCase):
             else:
                 source = json.load(sys.stdin)
             expression = args[args.index("-e") + 1]
-            value = source
+            values = [source]
             for part in expression.removeprefix("@.").split("."):
                 if not part:
                     continue
                 indexed = re.fullmatch(r"([^\[]+)\[(\d+)\]", part)
                 quoted = re.fullmatch(r'([^\[]+)\["([^"]+)"\]', part)
-                if indexed:
-                    name, index = indexed.groups()
-                    if not isinstance(value, dict) or name not in value:
-                        sys.exit(1)
-                    value = value[name]
-                    if not isinstance(value, list) or int(index) >= len(value):
-                        sys.exit(1)
-                    value = value[int(index)]
-                elif quoted:
-                    name, key = quoted.groups()
-                    if not isinstance(value, dict) or name not in value:
-                        sys.exit(1)
-                    value = value[name]
-                    if not isinstance(value, dict) or key not in value:
-                        sys.exit(1)
-                    value = value[key]
-                else:
-                    if not isinstance(value, dict) or part not in value:
-                        sys.exit(1)
-                    value = value[part]
-            if isinstance(value, bool):
-                print("true" if value else "false")
-            elif value is not None:
-                print(value)
+                wildcard = re.fullmatch(r"([^\[]+)\[\*\]", part)
+                selected = []
+                for value in values:
+                    if indexed:
+                        name, index = indexed.groups()
+                        value = value.get(name) if isinstance(value, dict) else None
+                        if isinstance(value, list) and int(index) < len(value):
+                            selected.append(value[int(index)])
+                    elif quoted:
+                        name, key = quoted.groups()
+                        value = value.get(name) if isinstance(value, dict) else None
+                        if isinstance(value, dict) and key in value:
+                            selected.append(value[key])
+                    elif wildcard:
+                        value = value.get(wildcard.group(1)) if isinstance(value, dict) else None
+                        if isinstance(value, list):
+                            selected.extend(value)
+                    elif part == "*" and isinstance(value, dict):
+                        selected.extend(value.values())
+                    elif isinstance(value, dict) and part in value:
+                        selected.append(value[part])
+                values = selected
+            if not values:
+                sys.exit(1)
+            for value in values:
+                if isinstance(value, bool):
+                    print("true" if value else "false")
+                elif value is not None:
+                    print(value)
             """,
         )
         self._write_executable(
@@ -618,6 +623,27 @@ class DeployOpenWrtTests(unittest.TestCase):
                 sys.exit(0 if ok else 1)
 
             fail_action = os.environ.get("FAKE_FAIL_ACTION")
+            if action in {"plugin-package-drain", "plugin-package-remove", "plugin-package-resume"}:
+                plugin_ids = sys.argv[3:]
+                with (state / "plugin-actions.jsonl").open("a") as stream:
+                    stream.write(json.dumps({
+                        "action": action,
+                        "plugins": plugin_ids,
+                        "owner": main_path.read_text().strip(),
+                    }) + "\n")
+                failed = state / "plugin-resume-failed"
+                if fail_action == action and not failed.exists():
+                    failed.write_text("1\n")
+                    emit(False, error="plugin_resume_failed")
+                maintenance = Path(os.environ["OPL_NETFLEET_DEPLOY_ROOT"]) / "var/run/opl-netfleet-plugin-maintenance"
+                maintenance.mkdir(parents=True, exist_ok=True)
+                for plugin_id in plugin_ids:
+                    marker = maintenance / plugin_id
+                    if action == "plugin-package-drain":
+                        marker.write_text("drained\n")
+                    else:
+                        marker.unlink(missing_ok=True)
+                emit(True, {"plugins": plugin_ids})
             if (
                 os.environ.get("FAKE_REJECT_CANDIDATE_PREFLIGHT") == "1"
                 and "candidate" in main_path.parts
@@ -1306,6 +1332,99 @@ esac
 
     def _profile(self) -> str:
         return json.loads((self.device / "etc/config/nikki").read_text()).get("config.profile", "")
+
+    def _make_microkernel_upgrade(self):
+        payload = self.base / "payload"
+        system_path = "usr/share/opl-netfleet/system.json"
+        plugin_path = "usr/libexec/opl-netfleet/plugins"
+        installed = {
+            "usr/libexec/opl-netfleet/kernel/host.uc": "old-host\n",
+            system_path: json.dumps({
+                "enabled": {"models": True, "retired-feature": True},
+                "product_packages": ["opl-netfleet-plugin-models", "opl-netfleet-plugin-retired-feature"],
+            }) + "\n",
+            f"{plugin_path}/models/manifest.json": '{"id":"models","version":"1.0.0"}\n',
+            f"{plugin_path}/retired-feature/manifest.json": '{"id":"retired-feature","version":"1.0.0"}\n',
+            f"{plugin_path}/third-party/manifest.json": '{"id":"third-party","version":"2.0.0"}\n',
+            f"{plugin_path}/third-party/worker.uc": "third-party-code\n",
+            "etc/opl-netfleet/system.json": '{"enabled":{"third-party":true}}\n',
+            "var/lib/opl-netfleet/plugins/third-party/state.json": '{"value":42}\n',
+        }
+        candidate = {
+            system_path: json.dumps({
+                "enabled": {"models": True},
+                "product_packages": ["opl-netfleet-plugin-models"],
+            }) + "\n",
+            f"{plugin_path}/models/manifest.json": '{"id":"models","version":"1.1.0"}\n',
+        }
+        for root, files in ((self.device, installed), (payload, candidate)):
+            for relative, content in files.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+        paths = sorted(item for item in payload.rglob("*") if item.is_file())
+        lines = [f"{sha256(path)}  {path.relative_to(payload)}\n" for path in paths]
+        (self.bundle / "FILES.sha256").write_text("".join(lines))
+        runtime_lines = []
+        for path, line in zip(paths, lines):
+            relative = str(path.relative_to(payload))
+            if not relative.startswith((
+                "www/luci-static/resources/netfleet/",
+                "www/luci-static/resources/view/netfleet/",
+            )) and relative not in {
+                "usr/share/luci/menu.d/luci-app-netfleet.json",
+                "usr/share/rpcd/acl.d/luci-app-netfleet.json",
+            }:
+                runtime_lines.append(line)
+        with tarfile.open(self.bundle / "payload.tar", "w") as archive:
+            for path in sorted(payload.rglob("*")):
+                archive.add(path, arcname=path.relative_to(payload), recursive=False)
+        self._rewrite_bundle_manifest(
+            file_count=len(paths),
+            runtime_payload_sha256=hashlib.sha256("".join(runtime_lines).encode()).hexdigest(),
+        )
+        return installed
+
+    def test_source_upgrade_preserves_third_party_plugins_and_resumes_product_plugins(self):
+        installed = self._make_microkernel_upgrade()
+
+        result = self._run()
+
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        self.assertTrue(json.loads(result.stdout)["installed_parity"])
+        plugins = self.device / "usr/libexec/opl-netfleet/plugins"
+        self.assertEqual("1.1.0", json.loads((plugins / "models/manifest.json").read_text())["version"])
+        self.assertFalse((plugins / "retired-feature").exists())
+        for relative, content in installed.items():
+            if "third-party" in relative or relative == "etc/opl-netfleet/system.json":
+                self.assertEqual(content, (self.device / relative).read_text(), relative)
+        actions = [json.loads(line) for line in (self.state / "plugin-actions.jsonl").read_text().splitlines()]
+        self.assertEqual([
+            {"action": "plugin-package-drain", "plugins": ["models", "retired-feature"], "owner": "old-main"},
+            {"action": "plugin-package-remove", "plugins": ["retired-feature"], "owner": "new-main"},
+            {"action": "plugin-package-resume", "plugins": ["models"], "owner": "new-main"},
+        ], actions)
+        self.assertEqual([], list((self.device / "var/run/opl-netfleet-plugin-maintenance").iterdir()))
+
+    def test_source_plugin_resume_failure_restores_old_plugins_and_third_party_state(self):
+        installed = self._make_microkernel_upgrade()
+
+        result = self._run(fail_action="plugin-package-resume")
+
+        self.assertNotEqual(0, result.returncode)
+        receipt = json.loads(result.stdout)
+        self.assertEqual("plugin_resume_unconfirmed", receipt["error"])
+        self.assertEqual("restored_previous_bytes_native_profile", receipt["rollback"])
+        self.assertEqual("subscription:base", self._profile())
+        self.assertEqual("old-main\n", (self.device / "usr/libexec/opl-netfleet/main.uc").read_text())
+        for relative, content in installed.items():
+            self.assertEqual(content, (self.device / relative).read_text(), relative)
+        actions = [json.loads(line) for line in (self.state / "plugin-actions.jsonl").read_text().splitlines()]
+        self.assertEqual(
+            {"action": "plugin-package-resume", "plugins": ["models", "retired-feature"], "owner": "old-main"},
+            actions[-1],
+        )
+        self.assertEqual([], list((self.device / "var/run/opl-netfleet-plugin-maintenance").iterdir()))
 
     def test_fresh_device_instance_install_finishes_active(self):
         self._make_fresh_device()

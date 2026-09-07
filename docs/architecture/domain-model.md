@@ -1,7 +1,8 @@
 # 产品对象与 Owner
 
 本文是 NetFleet 当前产品边界、核心对象、唯一 owner 和依赖方向的权威合同。测量与选择、
-运行事务和公开接口分别由同目录其他文档负责。
+运行事务和公开接口分别由同目录其他文档负责。插件发现、服务绑定、命令路由和代码
+生命周期由[微内核与功能插件](microkernel.md)定义；本文只定义各功能服务的业务归属。
 
 ## 后端与订阅归属
 
@@ -15,7 +16,7 @@
 | Profile、订阅与运行目录根 | `/etc/nikki` | `/etc/opl-netfleet/native` |
 | Mihomo 生命周期 | Nikki 官方 init | `opl-netfleet-core` procd 服务 |
 | mixin 与网络接管 | Nikki 官方实现 | 固定版本的 Nikki mixin/nft 模块，由 NetFleet gateway 编排 |
-| 订阅编辑与下载 | Nikki；NetFleet 只投影并编排官方更新 | `application/subscriptions.uc`，共用现有设备 mutation lock |
+| 订阅编辑与下载 | Nikki；NetFleet 只投影并编排官方更新 | `subscriptions.store`，共用现有设备 mutation lock |
 
 原生订阅使用稳定的 UCI `subscription` section，保留 `name/url/user_agent/info_url/prefer`
 和额度、到期、更新元数据语义；policy 只引用 section ID，不保存凭据。缓存路径为
@@ -34,13 +35,13 @@ URL、凭据和响应头只经过私有输入文件，不进入命令行、公�
 完整响应经只读 YAML 转换和真实 `mihomo -t` 后才原子替换；相同内容不重写缓存正文或
 mtime，成功时间与额度可以更新。缓存正文摘要与已接受来源身份共同决定
 `cache_current`，不能仅凭文件存在声称新来源就绪。更新、重编译、恢复用户模式和失败
-回滚由共享 refresh owner 负责，详见[运行事务](runtime-and-recovery.md#activation)。
+回滚由 `refresh.control` 负责，详见[运行事务](runtime-and-recovery.md#activation)。
 
 ## 产品定位
 
-NetFleet 统一提供跨机场、跨地区的网络增强策略和设备端管理。两种后端共用同一个
-policy、compiler、manifest、activation、selection、evidence、supervisor 与 LuCI；
-不因去除 Nikki 依赖而增加第二选择器或降低原有多机场能力。
+NetFleet 是由微内核组合功能插件的设备端网络管理平台。默认产品提供跨机场、跨地区的
+策略、订阅、配置、诊断和运行管理。两种后端共用 policy、compiler、manifest、activation、
+selection、evidence、调度插件与 LuCI，使用同一套多机场选择和恢复规则。
 
 `nikki-mihomo` 保留 Nikki 已可独立工作的 Profile、订阅和数据面；NetFleet 是可选增强层。
 `native-mihomo` 由 NetFleet 管理订阅与 Mihomo，并复用 Nikki 开源网络接管模块，不要求
@@ -69,15 +70,15 @@ Mihomo 始终负责节点连接、组内健康检查、URLTest 与规则执行�
 | 能力资格约束 | capability 显式限定地区，并可通过 `prefer_region_from` 跟随上游能力的合规地区 |
 | 设备配置与运行回读 | UI 只投影 owner 状态、编辑结构化配置并提交命令，不解析订阅或排序候选 |
 
-capability 是 policy 中的可组合增强单元，不是动态代码插件、进程或第二控制面。`main.enabled` 是全局启用许可；每个 capability 再独立声明 `enabled`、`manual|automatic`、允许或排除地区和选择门槛；可选 `display_order` 只控制 Profile/status 的显示顺序，同值时按稳定 ID 排序，不能影响选路。每个启用能力必须恰有一个 `entry` binding；它是规则与组引用改写到 capability 可见 selector 的唯一接入点。零个或多个 `policy` binding 保留原业务分类组名称，但把其成员标准化为该 capability 的同一套用户选择面，不复制算法、节点或状态。机场运行层级只由 provider 的 `primary|reserve` role 决定：当前优选失效后先在全部主用机场中选择，主用层全部失效才进入备用机场，最后进入 `DIRECT`。生成 Profile 不复制策略来源组作为第二条 native 路径；恢复整个 Recovery Profile 只属于 enable/select/disable 的事务恢复。该差异完全由数据配置决定，engine 不按 AI、地区、机场或组名分支。全局关闭时允许全部 capability 关闭并保留配置；全局允许启用时至少要有一个 capability 开启。多个 capability 共享 provider/region 资源和同一 activation/Fail-Open owner；disabled capability 可以保留配置和 binding，compiler 直接忽略它并保持对应策略来源组原样。Fail-Open、activation 和 backend adapter 是公共且不可关闭的安全底座。
+capability 是 policy 中的可组合增强单元，与提供代码和服务的功能插件分别建模。`main.enabled` 是全局启用许可；每个 capability 再独立声明 `enabled`、`manual|automatic`、允许或排除地区和选择门槛；可选 `display_order` 只控制 Profile/status 的显示顺序，同值时按稳定 ID 排序，不能影响选路。每个启用能力必须恰有一个 `entry` binding；它是规则与组引用改写到 capability 可见 selector 的唯一接入点。零个或多个 `policy` binding 保留原业务分类组名称，但把其成员标准化为该 capability 的同一套用户选择面，不复制算法、节点或状态。机场运行层级只由 provider 的 `primary|reserve` role 决定：当前优选失效后先在全部主用机场中选择，主用层全部失效才进入备用机场，最后进入 `DIRECT`。生成 Profile 不复制策略来源组作为第二条 native 路径；恢复整个 Recovery Profile 只属于 enable/select/disable 的事务恢复。该差异完全由数据配置决定，engine 不按 AI、地区、机场或组名分支。全局关闭时允许全部 capability 关闭并保留配置；全局允许启用时至少要有一个 capability 开启。多个 capability 共享 provider/region 资源和同一 activation/Fail-Open owner；disabled capability 可以保留配置和 binding，compiler 直接忽略它并保持对应策略来源组原样。Fail-Open、activation 和 backend 由共享功能服务提供；接管、退出和恢复所需的服务依赖必须完整，插件替换或卸载先完成资源交接。
 
 `policy_source`、`recovery_profile`、`platform.json` 与 provider role 是四个独立 owner 边界：`policy_source` 只决定正常编译所读取的规则、DNS 和策略组；`recovery_profile` 只决定 NetFleet 关闭、事务失败或用户手工切回时由所选后端完整恢复的原生 Profile；Fleet 模式的私有 `platform.json` 只声明 Nikki/OpenWrt 的透明代理、DNS 模式、controller、sniffer、日志和 flow-offload 平台参数；provider role 只决定 NetFleet Profile active 时的主用/备用机场层级。`kind=bundle` 从 `/etc/opl-netfleet/policy-sources/<stable-id>.json` 读取机场无关的 JSON 基线，`kind=profile` 仍可只读引用完整所选后端 Profile；两者共用同一个 compiler、manifest、activation 和 status 路径。恢复 Profile 可以与某个 provider 使用同一个机场，但二者不能互相冒充，也不能复制该机场的节点、DNS 或订阅字节。每个 target 只能选择一份已经独立验证过规则、DNS、保护业务和可用额度的恢复 Profile；机场计费属性不能替代独立验收，也不允许影响 active Profile 的可见策略组或自动排序。
 
-automatic capability 必须形成无环依赖图，并且只有一个不声明 `prefer_region_from` 的根能力。跟随能力先过滤自身的 allowed/excluded 地区和候选资格；根能力选中的地区仍合格时直接复用该地区，否则在自身 primary、reserve 层级中按同一轮 delay 选择最快地区。每轮只对每个 provider 触发一次原生 health-check，再依依赖顺序测量各 capability selector；所有 selector 写入、protected probes 和失败恢复仍属于同一个原子 activation owner。supervisor 只负责到期调度和进程失联 grace，不实现 comparator、不持久化排名，也不增加第二循环。
+automatic capability 必须形成无环依赖图，并且只有一个不声明 `prefer_region_from` 的根能力。跟随能力先过滤自身的 allowed/excluded 地区和候选资格；根能力选中的地区仍合格时直接复用该地区，否则在自身 primary、reserve 层级中按同一轮 delay 选择最快地区。每轮只对每个 provider 触发一次原生 health-check，再依依赖顺序测量各 capability selector；所有 selector 写入、protected probes 和失败恢复仍属于同一锁内的选择或激活事务，并共享 `recovery.control`。`scheduler.control` 只负责到期调度和进程失联 grace，不实现 comparator、不持久化排名，也不增加第二循环。
 
 模块与策略只通过 policy 组合：全局开关不改变 capability 配置；capability 开关不改变 provider/region 资源；`manual|automatic` 决定可见选择面是否包含自动入口及是否参与周期轮次，不改变资源事实；provider `role` 只决定运行期主用/备用层级；`region_switch_margin_ms` 和 `leaf_switch_margin_ms` 可由 capability 覆盖全局默认。机场角色、计费类型、地区授权、测速合同和保护探针各自保留在独立分区，engine 不按 capability、机场或地区名称分支。
 
-共享接管流程从所选后端已经运行并验证的原始 Profile 开始；安装 NetFleet 后由首次设置读取当前 Profile、稳定命名 subscription cache、原始策略组和真实节点名称，生成不含 URL/token/节点正文的接管预览。发现器只把 cache 中实际存在可用节点的已知地区写入初始 policy，所有机场默认属于主用层，不从名称、计费属性或顺序猜测备用角色。发现器优先绑定原 Profile 的 `MATCH` 目标组；无法唯一识别入口组、没有有效订阅 cache、当前 Profile 不是可恢复原生 Profile 或当前 backend owner 不健康时拒绝接管。用户一次确认后，activation owner 原子完成 `policy 写入 -> compile -> enable -> supervisor enable/start -> owner readback`；任一步失败都恢复原 Profile 并删除本次生成的 policy/artifact。之后由所选后端与 Mihomo 继续负责数据面。高级用户仍可在 LuCI 调整 provider role、地区和 capability；Fleet 运维也可继续通过 deployment bundle 提供精确声明。
+共享接管流程从所选后端已经运行并验证的原始 Profile 开始；安装 NetFleet 后由首次设置读取当前 Profile、稳定命名 subscription cache、原始策略组和真实节点名称，生成不含 URL/token/节点正文的接管预览。发现器只把 cache 中实际存在可用节点的已知地区写入初始 policy，所有机场默认属于主用层，不从名称、计费属性或顺序猜测备用角色。发现器优先绑定原 Profile 的 `MATCH` 目标组；无法唯一识别入口组、没有有效订阅 cache、当前 Profile 不是可恢复原生 Profile 或当前 backend owner 不健康时拒绝接管。用户一次确认后，`configuration.onboarding` 原子编排 `policy 写入 -> compile -> enable -> supervisor enable/start -> owner readback`；任一步失败都恢复原 Profile 并删除本次生成的 policy/artifact。之后由所选后端与 Mihomo 继续负责数据面。高级用户仍可在 LuCI 调整 provider role、地区和 capability；Fleet 运维也可继续通过 deployment bundle 提供精确声明。
 
 自动选优在 enable 初次决定、用户明确触发和 `automation.selection_interval_seconds` 到期时执行同一个有界候选轮次；不并发重入，不为后台另建算法或证据。当前地区仍有合格叶子时，只有最快替代地区比当前代表叶子的 Mihomo proxy-path delay 至少快 `selection.region_switch_margin_ms`（默认 150）才切换；当前地区无合格叶子时不受该门槛限制。`checks.latency` 只负责速度排序，`fail_open.probes` 负责事务提交和运行期 fallback 资格，quota 只作同速 tie-break；三者不能互相代换。
 
@@ -100,43 +101,47 @@ automatic capability 必须形成无环依赖图，并且只有一个不声明 `
 | Recovery Profile | NetFleet 关闭、事务失败和进程级恢复时由所选后端选择的完整原始 Profile；不参与正常选优 |
 | Platform declaration | Fleet 模式的私有 `platform.json` 声明目标 Nikki UCI 与 OpenWrt flow-offload 值；canonical deploy owner 负责校验、快照、应用、官方 reload/restart 和 readback，不直接生成 nft/ip rule |
 | Ruleset lock | 公共 `rulesets.lock.json` 锁定上游 commit、URL、格式、大小、SHA-256 和许可证；提供内置 Policy Source 已引用的业务、地域和私网 MRS，不拥有规则顺序或自动更新 |
-| Runtime backend | `adapters/runtime.uc` 只解析后端身份与 namespace；`adapters/backend.uc` 统一 Profile、服务和运行回读。Nikki 模式调用官方服务，原生模式调用 `native_gateway.uc` 与 `opl-netfleet-core` |
-| Subscription owner | Nikki 模式只读发现并编排官方更新；原生模式拥有 `netfleet` subscription 的私有编辑、验证下载、有效缓存和元数据。运行中应用统一交给 main refresh，不持有选择算法或独立后台循环 |
+| Runtime backend | `platform.runtime` 解析后端身份与 namespace；`mihomo.backend` 统一 Profile、服务和运行回读。Nikki 模式调用官方服务，原生模式由 `mihomo.gateway` 与 `opl-netfleet-core` 持有运行资源，`mihomo.lifecycle` 负责插件更新时的资源交接 |
+| Subscription owner | `subscriptions.store` 持有原生订阅的私有编辑、验证下载、有效缓存和元数据；`subscriptions.providers` 与 `subscriptions.facts` 提供编译输入和事实投影。Nikki 模式只读发现并编排官方更新，运行中应用统一交给 `refresh.control` |
 | Mihomo | 节点连接、组内健康检查、URLTest delay 和叶子切换 |
-| latency adapter | 按 `checks.provider_healthcheck_timeout_ms` 并发触发 provider 原生 health-check，再对候选组当前代理链按 `checks.latency` 做一次有界 delay，输出标准化 delay 或 `unavailable`；不判断业务资格 |
-| quota adapter | 只读所选后端的 subscription metadata，输出 `available|exhausted|unknown` 和可选剩余量 |
-| qualification/comparator | 纯函数消费标准化测量和 policy，先判资格、再按 delay 和显式 tie-break 排序；不执行 I/O |
-| NetFleet compiler | 一次性读取显式配置和所选后端本地缓存，生成一个 staged 派生 Profile；用户可见 Mihomo 组名由 compiler 用固定中文模板拼接，不是 UI i18n，也不是 policy 字段 |
-| NetFleet onboarding owner | 纯发现逻辑从所选后端当前 Profile、稳定 subscription cache 和节点名称生成初始 policy 与脱敏预览；不读取订阅 URL、不下载节点、不猜备用角色，写入和接管仍交给 `main.uc` activation owner |
-| NetFleet I/O adapter | `adapters/uci.uc` 提供 JSON/YAML、UCI、quota、摘要和 evidence 的共享 I/O；私有文件与服务助手只在各 owner 的限定写集内使用，不形成第二配置源 |
-| Native setup owner | 在空白设备上绑定发现 revision，创建私有订阅与 DNS/controller 配置，验证基础 gateway，再交给共享 onboarding；失败恢复设置前状态 |
-| Backend migration owner | 将已工作的 Nikki 私有输入投影到原生 namespace，串行交接后执行共享 compile/enable/readback；失败恢复旧后端，不双写、不常驻 |
-| Network management owner | `application/network.uc` 通过受限结构管理原生 UCI/mixin 的 DNS、代理范围与监听；只保存声明并调用既有 runtime owner，保留未公开字段，不持有第二套 nft 或路由实现 |
-| Maintenance owner | `application/maintenance.uc` 管理本地 Profile、限定范围的配置备份恢复、核心维护与有界诊断；所有运行变化继续复用既有 activation/runtime owner |
-| Dashboard resource owner | `application/dashboard.uc` 管理原生 Zashboard 的已安装资源身份、显式版本检查和可恢复更新；不拥有核心包、controller 或后台更新循环 |
-| NetFleet activation owner | 唯一 one-shot 进程是 `main.uc`，执行 compile、enable、disable 和有限 select 事务；`core/activation.uc` 只提供前置条件、active 判定和 passthrough 纯函数，不持有 I/O 或恢复循环 |
-| NetFleet supervisor | 只在 policy 允许时调度既有 automatic 轮次，并在 active runtime 连续失联超过 grace 后调用既有 recovery owner；不判断候选、不保存排名、不清理 DNS/nft/路由 |
+| latency adapter | `mihomo.latency` 按 `checks.provider_healthcheck_timeout_ms` 并发触发 provider 原生 health-check，再对候选组当前代理链按 `checks.latency` 做一次有界 delay，输出标准化 delay 或 `unavailable`；不判断业务资格 |
+| quota adapter | `platform.uci.subscription_quota` 只读所选后端的 subscription metadata，输出 `available|exhausted|unknown` 和可选剩余量 |
+| qualification/comparator | `selection.algorithm` 纯函数消费标准化测量和 policy，先判资格、再按 delay 和显式 tie-break 排序；`selection.round` 编排单轮测量，`selection.control` 持有手动和自动选择事务 |
+| NetFleet compiler | `compilation.compiler` 执行纯转换，`compilation.control` 读取显式配置和后端缓存、校验并安装 staged Profile。用户可见 Mihomo 组名使用 compiler 的固定中文模板，不是 UI i18n 或 policy 字段 |
+| NetFleet onboarding owner | `configuration.onboarding-model` 从当前 Profile、稳定 subscription cache 和节点名称生成初始 policy 与脱敏预览；`configuration.onboarding` 持有确认后的写入与接管事务，复用编译和激活服务 |
+| NetFleet I/O adapter | `platform.uci` 提供 JSON/YAML、UCI、quota、摘要和 evidence 的共享 I/O；`platform.files` 与 `platform.service` 提供限定范围的私有文件和服务操作，不形成第二配置源 |
+| Native setup owner | `setup.native` 在空白设备上绑定发现 revision，创建私有订阅与 DNS/controller 配置，验证基础 gateway，再交给共享 onboarding；失败恢复设置前状态 |
+| Backend migration owner | `setup.migration` 将已工作的 Nikki 私有输入投影到原生 namespace，串行交接后执行共享 compile/enable/readback；失败恢复旧后端，不双写、不常驻 |
+| Policy configuration owner | `configuration.editor` 持有 policy 的资源发现、受限编辑和应用事务，复用编译、激活与恢复命令 |
+| Network management owner | `network.editor` 通过受限结构管理原生 UCI/mixin 的 DNS、代理范围与监听；只保存声明并调用既有 runtime owner，保留未公开字段，不持有第二套 nft 或路由实现 |
+| Maintenance owner | `maintenance.editor` 管理本地 Profile、限定范围的配置备份恢复、核心维护与有界诊断；所有运行变化继续复用既有 activation/runtime owner |
+| Dashboard resource owner | `dashboard.control` 管理原生 Zashboard 的已安装资源身份、显式版本检查和可恢复更新；不拥有核心包、controller 或后台更新循环 |
+| NetFleet activation owner | `activation.control` 持有 enable、disable 和 resume 事务；`models.activation` 只提供前置条件、active 判定和 passthrough 纯函数 |
+| NetFleet recovery owner | `recovery.control` 持有原生恢复、故障直通和事务异常处理；`recovery.state` 保存自动恢复意图；低层 selector 与 DIRECT 路径操作由 `mihomo.paths` 执行 |
+| NetFleet scheduler | `scheduler.control` 按 policy 调度共享选优、刷新和故障恢复命令，返回下一轮定时状态；supervisor 引导内核每轮加载当前调度服务，不判断候选、不保存排名、不清理 DNS/nft/路由 |
+| Status and events | `status.control`、`status.events`、`status.connections` 组合当前事实；`events.record` 与 `events.store` 持有有界事件，`events.operation` 持有操作进度，均不参与候选排名 |
+| Component update owner | `components.control` 发现已安装包和显式 Feed 候选，管理默认产品包组合与可恢复更新；功能插件安装状态来自内核清单 |
 | canonical deploy owner | 为 Fleet/可重复运维从精确 Git commit/tree 和私有 deployment bundle 完成兼容性预检、依赖补齐、Nikki 原生基线准备、NetFleet 安装/恢复和 installed parity；它不是独立插件首次设置的前置条件 |
 | NetFleet UI | owner 状态的只读投影和有限命令，不拥有配置或算法；门槛、周期、着色和说明只读 status 投影 |
-| Extension registry | 按[模块合同](extensions.md)将 HTTPS 兼容和 Zashboard 的既有动作连接到各自适配器，投影依赖与接口状态；不持有配置、生命周期、网络状态或新锁 |
+| Plugin host | 按[微内核合同](microkernel.md)解析各插件 manifest 中的服务依赖与命令；HTTPS 兼容和 Zashboard 分别由 `https-compat.control`、`dashboard.control` 提供，不维护静态业务注册表 |
 
 依赖只能向下流动，不能由投影反向写入事实：
 
 ```text
 PolicySource + target-local config + selected subscription cache
-    -> one-shot compiler
+    -> compilation.control / compilation.compiler
     -> staged Profile + manifest
-    -> activation owner <- one procd supervisor (schedule / runtime grace only)
+    -> activation.control <- scheduler.control <- supervisor / kernel
     -> selected backend Profile
     -> Mihomo current state
     <- status/UI read-only projection
 
 RecoveryProfileRef
-    -> activation rollback / disable / recover
+    -> recovery.control <- activation / selection / scheduler
     -> selected backend Recovery Profile (cleanup only if recovery fails)
 ```
 
-解耦规则如下：Policy Source 只提供编译输入；Recovery Profile 只负责原生恢复；binding 只负责把策略来源中的精确组名接到 capability；capability 只负责开关、资格、地区范围和选择参数；region/provider 是 capability 可复用的网络资源；provider 只引用所选后端的 subscription section；measurement adapters 只负责采样；qualification/comparator 只处理标准化结果；compiler 只做一次性转换，并拥有生成 Profile 的用户可见组名模板；`main.uc` 是唯一命令入口和 mutation owner，`application/onboarding.uc`、`application/configuration.uc` 只承载同一进程内的事务实现；UI/transport 只投影和转发。非 owner 模块不得维护第二份可刷新的订阅事实、私自改写 DNS/nft/路由或从 runtime snapshot 反向修改配置；订阅和 gateway 各自在其限定写集内执行已授权事务。若设备不能消费 `type:file` provider source，compile 必须失败并保持 Recovery Profile，不得引入第二下载器或节点副本。没有新的激活合同和真实 caller 时，不增加第二进程、daemon、锁、状态或 owner，不把组名模板做成配置系统，也不为伪节点卫生正则增加独立 policy 分区。
+解耦规则如下：Policy Source 只提供编译输入；Recovery Profile 只负责原生恢复；binding 只负责把策略来源中的精确组名接到 capability；capability 只负责开关、资格、地区范围和选择参数；region/provider 是 capability 可复用的网络资源；provider 只引用所选后端的 subscription section；measurement adapters 只负责采样；qualification/comparator 只处理标准化结果；compiler 只做一次性转换，并拥有生成 Profile 的用户可见组名模板。`main.uc` 只引导内核，命令由 manifest 路由到对应功能服务；配置、订阅、编译、激活、选择和恢复各自持有事务，复用同一设备 mutation lock。UI/transport 只投影和转发。非 owner 模块不得维护第二份可刷新的订阅事实、私自改写 DNS/nft/路由或从 runtime snapshot 反向修改配置；订阅和 gateway 各自在其限定写集内执行已授权事务。若设备不能消费 `type:file` provider source，compile 必须失败并保持 Recovery Profile，不得引入第二下载器或节点副本。新的功能插件通过声明服务依赖组合现有 owner，不能借插件边界复制订阅事实、恢复路径或后台循环。
 
 ### 解耦审查结论
 
@@ -150,18 +155,18 @@ RecoveryProfileRef
 | Qualification -> Comparator | 必须保持单向：先过滤，再排序 | comparator 不读取 URL、UCI、订阅原文或 runtime 文本 |
 | Compiler -> Activation | 通过 staged artifact + manifest 解耦；不能共享可变缓存 | enable 前检查输入身份，readback 用 manifest 对账 |
 | Compiler -> 用户可见组名 | 当前由 compiler 用固定中文模板拼接 Mihomo 组名（自动选优 / 主用机场 / 备用机场 / 当前优选 / 代理路径）；`display_name`、`flag` 和所选后端 metadata 只填充可变部分 | 组名变化改 compiler；UI 不得再实现一套拓扑命名；不为 i18n 增加组名配置 |
-| Application 实现边界 | `main.uc` 是唯一命令入口和 mutation owner；`application/*.uc` 只拆分同一进程内的 onboarding、配置和 provider 读取事务；`core/activation.uc` 只判定，supervisor/UI/rpcd 只调用 | 不增加第二进程、daemon、锁、状态或 owner，不复制恢复路径 |
+| 功能插件实现边界 | `main.uc` 引导通用内核，manifest 将命令绑定到功能服务；服务通过 `context.use` 消费已声明依赖，模型服务与事务服务分别演进 | 服务和包依赖无环；每项可变状态保留唯一 owner；插件交接不复制恢复路径 |
 | Activation -> Runtime backend/Mihomo | 是运行平台适配边界，共享业务算法不直接实现网络接管 | Nikki 模式调用官方生命周期；原生 gateway 复用上游 mixin/nft 并持有有界清理，均做 effective/runtime readback |
-| Runtime selection -> history | 选择器不得依赖历史；evidence 只作有界展示输入 | supervisor 只复用当前轮次，不读取历史、LKG、排名或 generation |
+| Runtime selection -> history | 选择器不得依赖历史；evidence 只作有界展示输入 | 调度服务只复用当前轮次，不读取历史、LKG 或排名；代码 generation 只约束加载一致性 |
 | UI/RPC -> owner | 只读投影/命令转发，不能成为事实源；门槛和延迟着色读 `status.selection` | 无订阅解析、无客户端候选排序或资格判定、无隐式 mutation；展示排序只影响表格，不得写死 150，不得按 capability id 子串猜测图标或文案 |
 
 ### YAML 适配边界
 
 NetFleet 自有 policy、platform、ruleset lock、evidence、manifest 和 artifact 均使用 JSON，避免设备版 YAML 工具参与核心对象解析。Mihomo 的外部 Profile 仍是 YAML，因此 adapter 只允许用 `yq -M -p yaml -o json` 做一次只读转换；禁止原地编辑、复杂表达式或把 YAML 转换变成第二配置源。Mihomo 可直接校验 JSON artifact，因此不保留 JSON -> YAML 转换。yq 不可执行或不支持该最小转换时，compile 直接失败且不改变当前 Profile、DNS、nft 或路由。
 
-因此产品对象和 artifact 边界已经解耦：compiler 经 staged manifest 交给 activation，selector 不读 I/O，UI 不拥有事实，策略输入身份与恢复目标身份也各自绑定。机场无关 `PolicySource(kind=bundle)` 可作为正常输入；`kind=profile` 作为已有 Profile 与首次设置的只读输入，并与 bundle 共用同一个 compiler 和 activation owner。这不等于一文件一 owner；quota I/O 与 JSON/YAML/evidence 同在 `adapters/uci.uc`，`application/*.uc` 只从过大的入口文件拆出同一进程内的 onboarding、配置与 provider 事务，enable/disable/select/recover 仍由 `main.uc` 这一唯一入口拥有。运行时必须继续证明：Policy Source 变化不会静默套用旧 binding；Recovery Profile 变化不会复用旧 manifest；订阅 cache 刷新不会生成第二份节点事实；supervisor 消失时数据面保持、由 `procd` 重启 owner，用户仍能调用关闭 owner 恢复原始配置。任一 gate 失败都应缩小功能，而不是增加状态层。
+产品对象和 artifact 边界通过服务合同连接：`compilation.control` 经 staged manifest 交给 `activation.control`，`selection.algorithm` 不读 I/O，UI 不拥有事实，策略输入身份与恢复目标身份也各自绑定。机场无关 `PolicySource(kind=bundle)` 和只读已有 Profile 共用相同编译与激活服务。插件包按功能分发，可以包含多个具名服务；平台 I/O、纯模型和事务分别复用，选择算法更新不要求把平台模型一同替换。运行时必须继续证明：Policy Source 变化不会静默套用旧 binding；Recovery Profile 变化不会复用旧 manifest；订阅 cache 刷新不会生成第二份节点事实；supervisor 消失时数据面保持、由 `procd` 重启宿主，用户仍能调用关闭 owner 恢复原始配置。代码热替换还须保持在途调用与资源交接一致，详见[微内核合同](microkernel.md#热替换与资源)。
 
-纯 Mihomo 拓扑能完成节点/provider/DIRECT 数据面 fallback，但不能在 Mihomo 永久退出、后端的有限 respawn 已耗尽后完成网络清理，也不能按用户要求定期执行跨地区 comparator。因此准入唯一一个前台、无持久调度状态的 `procd` supervisor。它不得扩展为 worker、第二健康算法、业务 URL 轮询器或第二 mutation owner。
+纯 Mihomo 拓扑能完成节点/provider/DIRECT 数据面 fallback，但不能在 Mihomo 永久退出、后端的有限 respawn 已耗尽后完成网络清理，也不能按用户要求定期执行跨地区 comparator。`procd` 因此持有一个 supervisor 宿主，由 `scheduler.control` 实现调度规则；宿主只跨轮保留插件返回的定时状态，每轮读取当前代码。自动恢复意图仍由 `recovery.state` 持久化，调度插件不复制健康算法、排名或网络 mutation owner。
 
 ## 最小对象
 
@@ -210,7 +215,7 @@ target-local 配置只保留下列 owner 分区：
 - `region`：稳定 region ID、显示名、可选国旗、纯展示 `display_order` 和 `automatic|manual_only`；
 - `provider_regions`：provider 到 region 的显式 filter mapping；
 - `selection`：`region_switch_margin_ms: 150` 和 `leaf_switch_margin_ms: 150` 默认值，不拥有模式；
-- `automation`：唯一 supervisor 的 enabled、选择周期、轻量状态周期和 runtime grace；
+- `automation`：`scheduler.control` 的选择开关、选择周期、轻量状态周期和 runtime grace；
 - `checks`：Mihomo delay 与 quota 适配合同；
 - `evidence`：唯一固定路径，仅保存有界显示证据；
 - `fail_open`：protected probe 列表，以及 path/guard probe ID、timeout、interval 和失败次数组成的 Mihomo fallback healthcheck。

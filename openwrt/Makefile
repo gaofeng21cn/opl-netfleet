@@ -21,7 +21,7 @@ define Package/opl-netfleet-kernel
   PROVIDES:=netfleet-plugin-api-v1
   REPLACES:=opl-netfleet
   DEPENDS:=+ucode +ucode-mod-fs +flock +coreutils-timeout
-  $(if $(CONFIG_USE_APK),EXTRA_DEPENDS:=!opl-netfleet-https-compat<0.1.5,CONFLICTS:=opl-netfleet-https-compat (< 0.1.5))
+  $(if $(CONFIG_USE_APK),EXTRA_DEPENDS:=!opl-netfleet-https-compat (< 0.1.5),CONFLICTS:=opl-netfleet-https-compat (< 0.1.5))
   PKGARCH:=all
 endef
 
@@ -259,12 +259,6 @@ define Package/opl-netfleet/postinst
 #!/bin/sh
 [ -n "$${IPKG_INSTROOT}" ] && exit 0
 main=/usr/libexec/opl-netfleet/main.uc
-for path in \
-	/etc/opl-netfleet/policy.example.json \
-	/etc/opl-netfleet/policy-sources/base-v1.json \
-	/etc/opl-netfleet/rulesets.lock.json; do
-	[ ! -f "$$path.apk-new" ] || mv -f "$$path.apk-new" "$$path" || exit 1
-done
 upgrade_state=/tmp/opl-netfleet-package-upgrade-state
 stop_netfleet() {
 	/etc/init.d/opl-netfleet stop >/dev/null 2>&1 || true
@@ -403,6 +397,19 @@ endef
 endef
 
 $(foreach plugin,$(NETFLEET_PLUGINS),$(eval $(call NetFleetServicePlugin,$(plugin))))
+
+define Package/opl-netfleet-plugin-configuration/postinst
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+for path in \
+	/etc/opl-netfleet/policy.example.json \
+	/etc/opl-netfleet/policy-sources/base-v1.json \
+	/etc/opl-netfleet/rulesets.lock.json; do
+	[ ! -f "$$path.apk-new" ] || mv -f "$$path.apk-new" "$$path" || exit 1
+done
+exec /usr/libexec/opl-netfleet-plugin-package configuration postinst
+endef
+
 $(eval $(call BuildPackage,opl-netfleet-kernel))
 $(foreach plugin,$(NETFLEET_PLUGINS),$(eval $(call BuildPackage,opl-netfleet-plugin-$(plugin))))
 $(eval $(call BuildPackage,opl-netfleet))

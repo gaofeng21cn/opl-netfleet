@@ -10,7 +10,7 @@ const source = fs.realpath(`${sourcepath(0, true)}/../openwrt/files/usr/libexec/
 check(fs.stat(source)?.type == 'file', 'kernel host source exists');
 const root = fs.mkdtemp('/tmp/netfleet-kernel-device.XXXXXX');
 check(root != null, 'private test root created');
-let lease;
+let lease, network;
 function directory(path) { check(fs.mkdir(path, 0700), `mkdir ${path}`); };
 function write(path, value) {
 	const text = type(value) == 'string' ? value : sprintf('%J', value);
@@ -29,9 +29,11 @@ const runner = `${root}/runner.uc`, override = `${root}/override.json`;
 write(runner, sprintf('import { run } from %J;\n', source) +
 	"import * as fs from 'fs';\n" + sprintf('const root = %J;\n', root) +
 	"let profile = json(fs.readfile(root + '/profile.json'));\n" +
-	"const overlay = fs.lstat(root + '/override.json') == null ? null : json(fs.readfile(root + '/override.json'));\n" +
+	"const settings = fs.lstat(root + '/options.json') == null ? {} : json(fs.readfile(root + '/options.json'));\n" +
+	"const override = settings.override_path ?? root + '/override.json';\n" +
+	"const overlay = fs.lstat(override) == null ? null : json(fs.readfile(override));\n" +
 	"if (overlay != null) profile = { ...profile, ...overlay, bindings: { ...profile.bindings, ...overlay.bindings }, enabled: { ...profile.enabled, ...overlay.enabled } };\n" +
-	"run(ARGV, root, { system: profile, override_path: root + '/override.json', lock_root: root + '/locks', maintenance_root: root + '/maintenance', network_lock: root + '/network.lock' });\n");
+	"run(ARGV, root, { system: profile, override_path: override, lock_root: root + '/locks', maintenance_root: root + '/maintenance', network_lock: root + '/network.lock' });\n");
 
 function plugin(id, requires, resource, enabled, service) {
 	service = service ?? `${id}.control`;
@@ -114,12 +116,17 @@ try {
 	check(call('scratch', 'get').result.ready, 'existing code remains callable after busy reload');
 	lease.close(); lease = null;
 	check(call('scratch', 'reload').ok, 'public reload succeeds after lease release');
+	network = fs.open(`${root}/network.lock`, 'ae', 0600);
+	check(network != null && network.lock('xn'), 'parent updater holds real exclusive network lock');
+	check(call('scratch', 'reload').ok, 'verified ancestor lock admits its own child operation');
+	network.close(); network = null;
 
 	plugin('p-one', {}, false, true);
 	plugin('p-two', {}, false, true);
 	plugin('z-base', { 'p-one.control': 1, 'p-two.control': 1 }, true, true);
 	plugin('a-dependent', { 'z-base.control': 1 }, true, true);
-	check(call('p-one', 'unload').error == 'plugin_required_by:z-base', 'public unload rejects enabled reverse dependencies');
+	check(index(['plugin_required_by:z-base', 'plugin_required_by:a-dependent'], call('p-one', 'unload').error) >= 0,
+		'public unload rejects enabled reverse dependencies');
 	write(`${root}/events`, '');
 	check(package_call('drain', 'p-one').ok, 'first package drain succeeds');
 	ordered(['drain:a-dependent', 'drain:z-base'], 'resource consumers drain before providers despite their names');
@@ -131,6 +138,15 @@ try {
 	check(package_call('resume', 'p-two').ok, 'last blocker restores shared owners');
 	ordered(['drain:a-dependent', 'drain:z-base', 'resume:z-base', 'resume:a-dependent'], 'providers resume before consumers');
 	check(state('z-base').running && state('a-dependent').running, 'shared owners return to saved state');
+
+	const original_override = fs.readfile(override);
+	write(`${root}/options.json`, { override_path: `${root}/absent/override.json` });
+	result = call('p-one', 'reload');
+	check(result.error == 'plugin_system_write_failed' && result.rollback?.ok, 'configuration write failure restores drained resources');
+	check(state('z-base').running && state('a-dependent').running && fs.lstat(`${root}/maintenance/p-one`) == null,
+		'failed configuration write leaves original owners available');
+	check(fs.readfile(override) == original_override, 'configuration failure preserves original private settings');
+	fs.unlink(`${root}/options.json`);
 
 	fault('a-dependent', 'fail-drain', true);
 	result = call('p-one', 'reload');
@@ -164,7 +180,7 @@ try {
 	check(fs.lstat(`${root}/maintenance/p-one`) == null && length(fs.lsdir(`${root}/maintenance/.resources`) ?? []) == 0,
 		'completed lifecycle removes all owned handoff records');
 } catch (error) {
-	lease?.close();
+	lease?.close(); network?.close();
 	warn(`kernel device failure; isolated artifacts retained at ${root}\n`);
 	die(error.message);
 }

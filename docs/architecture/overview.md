@@ -8,8 +8,9 @@
 
 ## 当前产品边界
 
-NetFleet 是 OpenWrt 上的模块化代理与网络管理工具，围绕多机场组织、业务出口、自动选优
-和安全恢复提供独立管理能力。当前源码有 `nikki-mihomo` 与
+NetFleet 是 OpenWrt 上基于微内核的代理与网络管理平台，围绕多机场组织、业务出口、自动选优
+和安全恢复提供独立管理能力。内核负责发现、绑定、依赖和代码生命周期，产品功能通过
+服务插件组合；自有与第三方插件共用安装布局和管理入口。当前源码有 `nikki-mihomo` 与
 `native-mihomo` 两条明确选择的后端路径。两者共用 Policy、编译、选优、证据、刷新与
 恢复事务；Mihomo 始终拥有节点连接、组内健康检查和 URLTest。
 
@@ -18,8 +19,10 @@ Nikki 模式继续使用 Nikki 的订阅和数据面 owner。原生模式由 Net
 DNS、IPv4/IPv6 透明代理和策略路由。原生模式不继续读写 Nikki 的配置或启动其服务。
 两种模式不会并行运行代理核心，也不建立双写或运行时自动回落到另一后端。
 
-当前仓库包含 UCode runtime、OpenWrt package source、薄 rpcd 适配器、原生 LuCI 页面，
-以及一个由 `procd` 直接监督的前台 supervisor。设备配置可在所选后端订阅、共享地区目录
+当前仓库包含 UCode 微内核与功能插件、OpenWrt package source、薄 rpcd 适配器、原生 LuCI 页面，
+以及一个由 `procd` 直接监督、调用调度插件的前台 supervisor。`opl-netfleet` 聚合包安装
+默认产品；`opl-netfleet-kernel` 和各功能插件可以独立安装更新，系统配置明确绑定服务
+提供者。设备配置可在所选后端订阅、共享地区目录
 和 Policy Source 组边界内维护完整 NetFleet policy。原生订阅凭据通过独立 subscriptions
 owner 保存，不进入 policy；浏览器不管理 DNS/nft 或解析节点。Zashboard 仍是独立完整
 页面，由当前后端提供资源和 controller。没有并行刷新循环、第二选择器或 sing-box 后端。
@@ -31,7 +34,8 @@ owner 保存，不进入 policy；浏览器不管理 DNS/nft 或解析节点。Z
 
 ## 当前纵向链
 
-当前实现入口为 `openwrt/files/usr/libexec/opl-netfleet/main.uc`。常用运行动作是 `status`、
+稳定入口为 `openwrt/files/usr/libexec/opl-netfleet/main.uc`，命令由微内核路由到功能插件
+声明的服务方法。服务接口、依赖与代码生命周期见[微内核与功能插件](microkernel.md)。常用运行动作是 `status`、
 `events`、`probe`、`validate`、`compile`、`enable`、`disable`、`select` 和 `refresh`；内部动作是
 `maintain`、`recover`，以及仅供 canonical installer 调用的恢复准备与恢复动作。`refresh`
 复用同一个 one-shot owner 和设备锁，不另建订阅 writer。接入、迁移、订阅与 Dashboard
@@ -73,12 +77,13 @@ RecoveryProfileRef
 
 | 当前主题 | 唯一 owner | 主要内容 |
 | --- | --- | --- |
+| 微内核与功能插件 | [microkernel.md](microkernel.md) | 服务组合、显式绑定、依赖解析、代码热替换和资源交接 |
 | 产品对象和 owner | [domain-model.md](domain-model.md) | Policy Source、Recovery Profile、provider、binding、capability 和依赖方向 |
 | 测量和选择 | [selection.md](selection.md) | 测量事实、资格、comparator、切换门槛和同轮自动选择 |
 | 编译、激活和恢复 | [runtime-and-recovery.md](runtime-and-recovery.md) | staged/active 事务、Fail-Open、supervisor 和恢复顺序 |
 | RPC 与 UI | [interfaces.md](interfaces.md) | 公开动作、状态投影、React/LuCI 双宿主和浏览器边界 |
 | HTTPS 兼容 | [https-compatibility.md](https-compatibility.md) | 可选协议转换、设备信任、接管租约和旁路 |
-| 模块与扩展 | [extensions.md](extensions.md) | 受限模块注册、API 准入、组件投影和生命周期分工 |
+| 模块与扩展 | [extensions.md](extensions.md) | 服务与进程插件接入、进程协议、API 准入和组件投影 |
 | 独立设备管理 | [management.md](management.md) | 网络接入、配置维护、备份恢复和运行面资源 |
 | 软件包与配置输入 | [packaging.md](packaging.md) | versioned package、private Instance 和 deployment bundle |
 | UI 视觉设计 | [../design/ui.md](../design/ui.md) | 主题、布局、组件、性能和可访问性 |
@@ -91,6 +96,8 @@ RecoveryProfileRef
 
 ## 修改入口
 
+- 改服务接口、依赖解析、系统绑定或代码生命周期：先更新 [microkernel.md](microkernel.md)。
+- 改进程插件协议或组件接入：先更新 [extensions.md](extensions.md)。
 - 改产品对象、依赖方向或 owner：先更新 [domain-model.md](domain-model.md)。
 - 改候选资格、测量口径、排序或切换语义：先更新 [selection.md](selection.md)。
 - 改 compile、enable、disable、supervisor 或恢复语义：先更新

@@ -35,6 +35,12 @@ finish() {
 	if [ "$rc" -ne 0 ]; then
 		echo "OpenWrt runtime qualification failed at stage: $stage" >&2
 		df -h /tmp /overlay >&2 || true
+		echo '--- installed plugin discovery' >&2
+		ls -ld /usr/libexec/opl-netfleet /usr/libexec/opl-netfleet/kernel \
+			/usr/libexec/opl-netfleet/plugins /usr/libexec/opl-netfleet/plugins/* \
+			/usr/libexec/opl-netfleet/plugins/*/manifest.json \
+			/usr/share/opl-netfleet /usr/share/opl-netfleet/system.json >&2 || true
+		timeout 10 ucode "$main" plugins-list >&2 || true
 		for dump in "$work"/connections.json "$work"/enable.json "$work"/compile.json "$work"/refresh*.json; do
 			[ ! -f "$dump" ] || { echo "--- $dump" >&2; cat "$dump" >&2; }
 		done

@@ -2,14 +2,17 @@
 
 本文是 compiler、staged/active 转换、activation、supervisor 和 Fail-Open 恢复顺序的
 权威合同。对象身份见[产品对象与 Owner](domain-model.md)，选择规则见
-[测量、资格与选择](selection.md)。
+[测量、资格与选择](selection.md)。命令路由、服务绑定和代码热替换由
+[微内核合同](microkernel.md)负责；下文的周期检查由 `scheduler.control` 执行，
+supervisor 只承载内核调用循环。
 
 ## 运行后端与原生网关
 
 后端选择和 namespace 见[产品对象](domain-model.md#后端与订阅归属)。两种后端
-共用下文的 compiler、activation 和选择合同；`adapters/backend.uc` 是 Profile、
+共用下文的 compiler、activation 和选择合同；`mihomo.backend` 是 Profile、
 服务启停和运行回读边界。Nikki 模式调用官方服务；原生模式由
-`application/native_gateway.uc` 与 `opl-netfleet-core` 管理，不增加第二控制器。
+`mihomo.gateway` 与 `opl-netfleet-core` 管理，不增加第二控制器。生命周期命令通过
+`main.uc native-gateway-*` 进入内核，再路由到 gateway 服务。
 
 原生服务使用固定版本的 Nikki `mixin.uc`、`hijack.ut` 和所需辅助模块。上游来源与
 许可证保留，UCI namespace 和受控路径映射到 NetFleet。gateway 从当前 Profile、
@@ -40,6 +43,11 @@ procd 直接持有 Mihomo 子进程，并提供有限 respawn。gateway 通过�
 服务正常退出、崩溃后的恢复与停止都必须取得实际运行或清理证据；不能用 procd 注册、
 配置文件或源码存在代替就绪。VM 只证明其隔离环境内的路径，真实设备与发布包另行验收。
 
+`mihomo.lifecycle` 持有该插件的更新交接：先保存原运行状态、Profile、可见选择和
+supervisor 状态，再退出核心及生命周期实例并回读清理；恢复时验证同一配置身份，
+恢复原运行状态与选择。交接失败保留恢复所需状态，由[微内核维护流程](microkernel.md#热替换与资源)
+控制后续代码替换，不能在 owner 尚未退出时删除其实现。
+
 网络表单、配置备份恢复和显式核心维护同样进入上述运行 owner，不直接写生成的
 nft/路由对象。network owner 先校验候选配置，再保存旧声明和运行选择，调用原生服务
 应用并回读；maintenance owner 的重启、重载及备份恢复也保留用户选择并验证网络，
@@ -49,7 +57,7 @@ nft/路由对象。network owner 先校验候选配置，再保存旧声明和�
 
 ## 首次设置与迁移
 
-空白设备的 `native-setup-get` 只读检查依赖、现有 owner、私有配置和可达上游 DNS。
+`setup.native` 为空白设备提供 `native-setup-get`，只读检查依赖、现有 owner、私有配置和可达上游 DNS。
 显式 `native-setup-apply` 绑定该 revision，建立私有 UCI、随机 controller secret、
 订阅与 DNS 配置，下载并验证订阅后启动正式 gateway。只有 gateway 与共享 onboarding
 发现都可回读时才启用开机服务；成功结果明确 `onboarding_required=true`，随后由用户
@@ -122,7 +130,14 @@ Provider/地区候选组使用 `checks.latency` 的 Mihomo 原生 `url-test` 负
 
 ## Activation
 
-配置、订阅、首次设置、迁移、设备维护及 `onboarding_apply|compile|enable|disable|select|refresh` 均由 `main.uc` 的前台命令入口执行；`core/activation.uc` 只提供纯函数判定。网络配置、备份恢复、核心维护和 Zashboard 更新与这些动作共用设备 mutation lock，不能并行替换运行输入。supervisor 只通过同一个锁调用内部 `maintain|refresh|recover`，不得直接写 UCI、subscription cache、selector、DNS、nft 或路由。
+`main.uc` 引导内核按插件 manifest 路由前台命令。`configuration.onboarding`、
+`configuration.editor`、`subscriptions.store`、`setup.native`、`setup.migration` 和
+`maintenance.editor` 分别拥有接管、配置、订阅、首次设置、迁移及维护事务；
+`compilation.control`、`activation.control`、`selection.control`、`refresh.control` 和
+`recovery.control` 持有编译、启停、选择、刷新及恢复动作，`models.activation` 只提供纯函数判定。
+所有网络 mutation 共用设备锁，不能并行替换运行输入。supervisor 宿主取得同一个锁后
+调用 `scheduler.control.tick`，调度服务同步调用共享 `maintain|refresh|recover|resume`
+命令，不再重复获取锁，也不直接写 UCI、subscription cache、selector、DNS、nft 或路由。
 
 - onboarding preview 完全只读；apply 在同一锁内重新绑定所选后端当前 Profile、subscription cache
   和生成 policy revision。package 安装不触发 apply；只有用户在 LuCI 明确确认才进入事务；
@@ -154,11 +169,12 @@ Provider/地区候选组使用 `checks.latency` 的 Mihomo 原生 `url-test` 负
 - 订阅状态投影来源、有效缓存、摘要、额度、尝试/成功时间及当前 pending/LKG 状态；
   refresh 事件只记录 section、结果和 digest，不包含凭据或正文。
 - 用户已在所选后端切到其他原始 Profile 时，NetFleet 不再把旧派生 Profile 视为 active，不擅自重新接管；
-- uninstall 先执行同一 disable 合同并停止 supervisor，再通过精确 symlink target
+- 默认产品退出与卸载先执行同一 disable 合同并停止 supervisor，再通过精确 symlink target
   所有权检查删除 NetFleet 生成的 Profile、manifest 和 provider links；恢复失败或
   生成物所有权不匹配时拒绝卸载，不删除运行文件或第三方 Profile。原生核心包卸载另须
   停止 `opl-netfleet-core` 并回读接管清理，不能把仍依赖待卸载核心的恢复 Profile 当作终点。
-- supervisor 每次只做轻量 owner readback。当前可见 capability selector 选择“自动选优”时，按 `selection_interval_seconds` 调用同一个 `select auto`；任何 capability 处于手动地区或 DIRECT 时暂停这组依赖能力的定期选择。`subscription_refresh_enabled` 默认开启，按 `subscription_refresh_interval_seconds`（默认 `43200`，12 小时）调用同一个 `refresh`；锁忙时不把失败尝试当作已执行。Mihomo/controller、LAN TProxy ingress 或 DNS 接管连续失联超过 `runtime_grace_seconds` 时调用同一个 `recover`；锁忙或恢复失败不重置失联起点，下一轮继续尝试。LAN ingress 以 effective `allow_lan`、TCP/UDP `7892` wildcard listener 和所选后端 nft TProxy rule 为准；DNS 接管以 effective `dns_enabled`、TCP/UDP DNS listener、所选后端 LAN DNS redirect rule，以及保护探针域名经路由器 resolver 的真实解析为准。进程/controller 失联优先恢复 Recovery Profile；LAN/DNS ingress 属于所有 Profile 共享的平台故障，切换 Recovery Profile 不能修复，因此直接调用所选后端 stop/cleanup 并持久进入 passthrough。恢复成功后 NetFleet 不再拥有数据面，失败后等待下一次 owner readback，不在同一轮反复重启。
+  单个功能插件的替换与卸载还须通过服务依赖检查和资源交接；具体准入由[微内核合同](microkernel.md#热替换与资源)负责。
+- `scheduler.control` 每次只做轻量 owner readback。当前可见 capability selector 选择“自动选优”时，按 `selection_interval_seconds` 调用同一个 `select auto`；任何 capability 处于手动地区或 DIRECT 时暂停这组依赖能力的定期选择。`subscription_refresh_enabled` 默认开启，按 `subscription_refresh_interval_seconds`（默认 `43200`，12 小时）调用同一个 `refresh`；锁忙时不把失败尝试当作已执行。Mihomo/controller、LAN TProxy ingress 或 DNS 接管连续失联超过 `runtime_grace_seconds` 时调用同一个 `recover`；锁忙或恢复失败不重置失联起点，下一轮继续尝试。LAN ingress 以 effective `allow_lan`、TCP/UDP `7892` wildcard listener 和所选后端 nft TProxy rule 为准；DNS 接管以 effective `dns_enabled`、TCP/UDP DNS listener、所选后端 LAN DNS redirect rule，以及保护探针域名经路由器 resolver 的真实解析为准。进程/controller 失联优先恢复 Recovery Profile；LAN/DNS ingress 属于所有 Profile 共享的平台故障，切换 Recovery Profile 不能修复，因此直接调用所选后端 stop/cleanup 并持久进入 passthrough。恢复成功后 NetFleet 不再拥有数据面，失败后等待下一次 owner readback，不在同一轮反复重启。
 
 网络 mutation 必须使用 fresh precondition digest。是否需要分离的 `plan -> apply` 公开接口由第一条真实远程 caller 决定；不得为了没有 caller 的协议预先维护 worker、Host、schema 或 operation history。
 
@@ -204,9 +220,13 @@ Mihomo 仍运行时，代理组自行沿该链路选择，`DIRECT` 是明确的�
 | preferred 仍通过速度 URL，但 path/guard protected probe 失败 | Mihomo 按 `path_probe_id` 切换 provider；`guard_probe_id` 仍失败时进入 DIRECT；定期重排仍按自己的周期运行，不由这次业务失败创建第二轮 |
 | 显式轮次全部候选失败 | 当前保护路径健康则保持实际 fallback；否则按 active guard DIRECT -> Recovery Profile -> 后端 passthrough 恢复 |
 | supervisor 或 UI 失败 | 不改变当前数据面；supervisor 由 `procd` 重启，用户仍可调用关闭 owner 恢复原始配置 |
-| 运行后端/Mihomo 连续失联，或 LAN TProxy/DNS 接管链失效且劫持可能残留 | supervisor 超过运行 grace 后调用 activation owner；进程/controller 故障先尝试 Recovery Profile，LAN/DNS ingress 故障直接调用所选后端 stop/cleanup；锁忙时下一轮继续尝试，supervisor 不自行清理 DNS/nft/路由 |
+| 运行后端/Mihomo 连续失联，或 LAN TProxy/DNS 接管链失效且劫持可能残留 | `scheduler.control` 超过运行 grace 后调用 `recovery.control`；进程/controller 故障先尝试 Recovery Profile，LAN/DNS ingress 故障直接调用所选后端 stop/cleanup；锁忙时下一轮继续尝试，调度服务不自行清理 DNS/nft/路由 |
 | disable/uninstall 原生恢复失败 | 不重新启用 NetFleet；调用所选后端 stop/cleanup。若 `safe && persistent`，关闭/卸载可以成功，即使 `business_ok` 为 `false`/`null`；否则拒绝删除并保留 artifact |
 
 增强算法与 supervisor 不直接修改 nft、DNS、默认路由或防火墙。Nikki 模式交由官方服务清理；原生模式只清理 gateway 持有的接管对象，不修改默认路由或其他防火墙 owner。若 stop 后直连保护域名本身不可达，系统只能如实报告该物理出口限制；这不表示 cleanup 失败，也不能声称“代理耗尽后仍保证这些域名可用”。
 
-运行期闭环由唯一 supervisor 完成：NetFleet Profile 是当前 owner 时读取所选后端 enabled、Mihomo 进程、controller、LAN TProxy ingress 和 DNS 接管状态；只有整条本地接管链健康才清零失联起点。连续失联超过 `runtime_grace_seconds` 后，在全局 mutation lock 下调用 `recover`。进程/controller 故障先恢复 Recovery Profile；所有 Profile 共享的 LAN/DNS ingress 故障先由后端 cleanup 进入 passthrough。自动降级不撤销启用意图：activation owner 在设备私有 `recovery.json` 中保存绑定后端和 Recovery Profile 的恢复请求与重试时间，重启后仍有效。supervisor 每隔至少 300 秒调用同一 owner 的 `resume`，经过上游检查、恢复配置准备、重新编译、启用和业务回读；失败继续保留安全恢复配置或 passthrough，成功清除请求。关闭周期选优不关闭故障恢复。手工 disable 即使当前已降级也清除请求；策略关闭、后端变更或用户切换到其他 Profile 时不自动接管。状态保留真实 `active`，另投影 `recovery`，界面将自动降级显示为“降级恢复中”，不冒充手工关闭。supervisor 不修改后端 respawn 参数、不捕获每个进程事件、不轮询远端业务 URL；DNS 查询只验证现有本地 resolver，业务验证仅发生在恢复事务内。
+运行期闭环由 `scheduler.control` 编排：NetFleet Profile 是当前 owner 时读取所选后端 enabled、Mihomo 进程、controller、LAN TProxy ingress 和 DNS 接管状态；只有整条本地接管链健康才清零失联起点。连续失联超过 `runtime_grace_seconds` 后，在宿主持有的全局 mutation lock 下调用 `recovery.control` 的 `recover` 命令。进程/controller 故障先恢复 Recovery Profile；所有 Profile 共享的 LAN/DNS ingress 故障先由后端 cleanup 进入 passthrough。
+
+自动降级不撤销启用意图：`recovery.state` 在设备私有 `recovery.json` 中保存绑定后端和 Recovery Profile 的恢复请求与重试时间，重启后仍有效。调度服务每隔至少 300 秒调用 `activation.control` 的 `resume`，经过上游检查、恢复配置准备、重新编译、启用和业务回读；失败继续保留安全恢复配置或 passthrough，成功清除请求。关闭周期选优不关闭故障恢复。手工 disable 即使当前已降级也清除请求；策略关闭、后端变更或用户切换到其他 Profile 时不自动接管。状态保留真实 `active`，另投影 `recovery`，界面将自动降级显示为“降级恢复中”，不冒充手工关闭。
+
+调度插件只向宿主返回失联起点、选择与刷新期限、上一轮就绪状态和等待时间；代码在下一轮重新加载，这些定时状态保留在宿主内存。插件不修改后端 respawn 参数、不捕获每个进程事件、不轮询远端业务 URL；DNS 查询只验证现有本地 resolver，业务验证仅发生在恢复事务内。自动恢复意图与运行事实不依赖该内存状态。
