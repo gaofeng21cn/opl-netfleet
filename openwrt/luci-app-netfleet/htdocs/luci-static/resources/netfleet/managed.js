@@ -271,7 +271,7 @@ function runSelection(controller, request) {
 	controller.redraw();
 	readOperations(controller);
 	return Promise.resolve().then(request).then(function(result) {
-		return controller.refreshData(true).then(function() { return result; });
+		return completedRead(controller, result, '测速与自动选优', function() { return controller.refreshData(true); });
 	}).catch(function(error) {
 		const uncertain = error && (error.netfleetKind === 'request_aborted' || /timeout|XHR|network/i.test(error.message || ''));
 		notify(null, E('p', {}, uncertain ? '连接中断，设备可能仍在测速；结果尚未确认。' : failure(error)), uncertain ? 'warning' : 'error');
@@ -294,7 +294,7 @@ function runSubscription(controller, request) {
 	readOperations(controller);
 	return Promise.resolve().then(request).then(function(result) {
 		controller.subscriptionState = null;
-		return controller.onboarding ? controller.refreshOnboarding().then(function() { return result; }) : controller.refreshData(true, true).then(function() { return result; });
+		return completedRead(controller, result, '订阅更新', function() { return controller.onboarding ? controller.refreshOnboarding() : controller.refreshData(true, true); });
 	}).catch(function(error) {
 		const uncertain = error && (error.netfleetKind === 'request_aborted' || /timeout|XHR|network/i.test(error.message || ''));
 		notify(null, E('p', {}, uncertain ? '连接中断，设备可能仍在更新；结果尚未确认。' : failure(error)), uncertain ? 'warning' : 'error');
@@ -303,6 +303,14 @@ function runSubscription(controller, request) {
 		controller.busy = false;
 		readOperations(controller).then(function() { controller.redraw(); });
 	});
+}
+
+function completedRead(controller, result, title, read) {
+	function unconfirmed() { notify(null, E('p', {}, title + '已返回执行结果；状态读取失败，请重新读取并查看操作记录，不要重复执行。'), 'warning'); }
+	return Promise.resolve().then(read).then(function() {
+		if (controller.refreshError) unconfirmed();
+		return result;
+	}, function() { unconfirmed(); return result; });
 }
 
 function loadComponents(controller) {
@@ -476,7 +484,7 @@ function componentsPage(controller) {
 		const hasUpdate = component.update_available || component.id === 'netfleet' && luci && luci.update_available && luci.available_version === component.available_version;
 		const canUpdate = snapshot.supported && feed.configured && !feed.error && component.managed && hasUpdate && component.available_version;
 		const update = canUpdate ? button(mismatch ? '更新软件包' : '更新', function() {
-			ui.showModal('更新 ' + component.label, [ E('p', {}, (component.id === 'mihomo' ? '核心更新会短暂中断代理连接，设备将校验当前配置并检查重启后的运行状态。' : '将同时更新 NetFleet 与 LuCI 界面，完成后重新载入页面。') + '目标版本：' + component.available_version),
+			ui.showModal('更新 ' + component.label, [ E('p', {}, (component.id === 'mihomo' ? '核心更新会中断已有代理连接，设备将校验当前配置并检查重启后的运行状态。' : '将更新 NetFleet 与 LuCI 界面；基础包更新会停止并恢复运行服务，已有连接可能中断。完成后重新载入页面，私有配置保留。') + '目标版本：' + component.available_version),
 				mismatch ? E('p', { 'class': 'is-warning' }, '当前运行 ' + component.running_version + '，安装记录 ' + component.installed_version + '。本次将安装所列候选软件包，请核对版本。') : '',
 				E('div', { 'class': 'right' }, [ button('取消', ui.hideModal), ' ', button('确认更新', function() { ui.hideModal(); return startPackageOperation(controller, component); }) ]) ]);
 		}, active) : '';
@@ -486,6 +494,7 @@ function componentsPage(controller) {
 		if (pairMismatch) current.push(E('span', { 'class': 'is-warning' }, 'NetFleet 与 LuCI 安装版本不一致'));
 		if (component.reason) current.push(E('small', {}, errorLabel(component.reason)));
 		const available = component.available_version && !feed.error ? [ hasUpdate ? '候选版本 ' + component.available_version : '当前更新源暂无新版' ] : [];
+		if (hasUpdate && !feed.error) available.push(E('small', {}, component.id === 'mihomo' ? '更新核心会中断已有代理连接' : '基础包更新会停止并恢复服务，私有配置保留'));
 		return E('tr', {}, [ E('td', {}, [ E('strong', {}, component.label), E('small', {}, component.id === 'netfleet' ? '包含 LuCI 管理界面' : '代理核心') ]),
 			E('td', {}, current), E('td', {}, available), E('td', { 'class': 'netfleet-component-actions' }, update) ]);
 	});
@@ -625,7 +634,7 @@ function showSubscriptions(controller, refresh) {
 				E('td', {}, source.pending_update ? (source.using_previous_cache ? '待更新，继续使用上次可用缓存' : '待更新订阅后生效') : source.cache_current ? '已生效' : '尚未更新'),
 				E('td', {}, [ button('编辑', function() { editSource(controller, state, source); }), ' ',
 					button('更新', function() {
-						ui.showModal('更新订阅', [ E('p', {}, '确认更新“' + (source.name || source.id) + '”？使用中的订阅发生变化时，将重载运行配置并重新选优。'),
+						ui.showModal('更新订阅', [ E('p', {}, '只更新“' + (source.name || source.id) + '”。内容未变化时不重载；使用中的内容变化后会重启核心并重新选优，已有连接可能中断。尚未使用的订阅只更新缓存。'),
 							E('div', { 'class': 'right' }, [ button('取消', function() { showSubscriptions(controller); }), ' ', button('确认更新', function() {
 								return runSubscription(controller, function() { return api.subscriptionsRefresh(source.id); });
 							}) ]) ]);

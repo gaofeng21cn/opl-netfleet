@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { CheckCircle2, ClipboardCheck, Eye, LockKeyhole, RotateCcw, Save, WandSparkles } from 'lucide-react';
 import type { ConfigDraft, ConfigSectionId } from './model';
-import { configSummary, validateConfigDraft } from './model';
+import { configChanges, configSummary, validateConfigDraft } from './model';
 import {
   AutomationSection,
   ExitsSection,
@@ -36,6 +36,7 @@ export function ConfigView({ draft, savedDraft, status, client, onChange, onSave
   const separateManagement = section === 'network' || section === 'files';
   const dirty = JSON.stringify(draft) !== JSON.stringify(savedDraft);
   const summary = configSummary(draft);
+  const changes = configChanges(savedDraft, draft);
 
   const change = (next: ConfigDraft) => {
     setValidation(null);
@@ -102,7 +103,8 @@ export function ConfigView({ draft, savedDraft, status, client, onChange, onSave
     </div>
 
     {review && !separateManagement && <section className="nf-config-review">
-      <div className="nf-config-section-heading"><h2>配置摘要</h2><p>这里只展示产品语义，不展示底层配置字段。</p></div>
+      <div className="nf-config-section-heading"><h2>变更预览</h2><p>本地预览不写入设备。设备端应用策略变更时会切换运行配置，已有连接可能中断。</p></div>
+      {changes.length ? <ul>{changes.map((item, index) => <li key={index}>{item}</li>)}</ul> : <p>没有新的草稿变更。</p>}
       <dl><div><dt>策略基础</dt><dd>{draft.policySource.displayName}</dd></div><div><dt>参与机场</dt><dd>{summary.providerCount} 个，其中主用 {summary.primaryCount}、备用 {summary.reserveCount}</dd></div><div><dt>地区</dt><dd>{summary.automaticRegionCount} 个参与自动选优</dd></div><div><dt>出口</dt><dd>{summary.capabilityCount} 个已启用</dd></div><div><dt>业务规则</dt><dd>{draft.routingRules.length} 条</dd></div><div><dt>周期选优</dt><dd>{draft.automation.enabled ? `${draft.automation.selectionIntervalSeconds / 60} 分钟` : '已关闭'}</dd></div><div><dt>恢复配置</dt><dd>{draft.recoveryProfile.displayName}</dd></div></dl>
     </section>}
 
@@ -116,7 +118,7 @@ export function ConfigView({ draft, savedDraft, status, client, onChange, onSave
       <div>
         <button type="button" disabled={!dirty} onClick={() => { onChange(savedDraft); setValidation(null); setMessage(null); }}><RotateCcw aria-hidden="true" />放弃更改</button>
         <button type="button" onClick={validate}><ClipboardCheck aria-hidden="true" />校验配置</button>
-        <button type="button" onClick={() => setReview(!review)}><Eye aria-hidden="true" />{review ? '收起摘要' : '查看变更'}</button>
+        <button type="button" onClick={() => setReview(!review)}><Eye aria-hidden="true" />{review ? '收起变更' : '查看变更'}</button>
         <button className="nf-button-primary" type="button" disabled={!dirty} onClick={save}><Save aria-hidden="true" />{status.active ? '应用本地预览' : '保存本地预览'}</button>
       </div>
     </div>}

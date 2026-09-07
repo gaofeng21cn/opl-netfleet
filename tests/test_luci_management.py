@@ -1,5 +1,8 @@
 import pathlib
+import re
+import shutil
 import subprocess
+import tempfile
 import unittest
 
 
@@ -70,7 +73,8 @@ global.L = { url: value => '/cgi-bin/luci/' + value };
 global.crypto = require('node:crypto').webcrypto;
 const baseclass = { extend: value => value };
 function module(name, api) {
-    return new Function('baseclass', 'ui', 'api', 'E', 'managed', fs.readFileSync(path.join(resources, name), 'utf8'))(baseclass, ui, api, E, name === 'managed.js' ? null : module('managed.js', api));
+    const product = new Function('baseclass', fs.readFileSync(path.join(resources, 'product.js'), 'utf8'))(baseclass);
+    return new Function('baseclass', 'ui', 'api', 'E', 'managed', 'product', fs.readFileSync(path.join(resources, name), 'utf8'))(baseclass, ui, api, E, name === 'managed.js' ? null : module('managed.js', api), product);
 }
 function configModule(management) {
     return new Function('baseclass', 'ui', 'management', 'E', 'compatibility', fs.readFileSync(path.join(resources, 'config.js'), 'utf8'))(baseclass, ui, management, E, { render: () => null });
@@ -106,6 +110,23 @@ function controller() {
 
 
 class LuciManagementTests(unittest.TestCase):
+    def test_staged_modules_resolve_every_versioned_dependency(self):
+        with tempfile.TemporaryDirectory(prefix="netfleet-luci-assets-") as directory:
+            resources = pathlib.Path(directory) / "resources"
+            package = ROOT / "openwrt/luci-app-netfleet"
+            installs = re.findall(r"\$\(INSTALL_DATA\) \./htdocs/luci-static/resources/(\S+) \$\(1\)/www/luci-static/resources/(\S+)", (package / "Makefile").read_text())
+            self.assertTrue(installs)
+            for source, destination in installs:
+                target = resources / destination
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(RESOURCES.parent / source, target)
+            result = subprocess.run(["sh", str(ROOT / "openwrt/luci-app-netfleet/stage-assets.sh"), str(resources), "vtest"], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for script in resources.rglob("*.js"):
+                for dependency in re.findall(r"require (netfleet\.[A-Za-z0-9_.]+)", script.read_text()):
+                    self.assertTrue(dependency.startswith("netfleet.vtest."), dependency)
+                    self.assertTrue((resources / (dependency.replace(".", "/") + ".js")).is_file(), dependency)
+
     def run_js(self, source):
         result = subprocess.run(
             ["node", "-e", HARNESS + "\n(async () => {\n" + source + "\n})().catch(error => { console.error(error.stack || error); process.exit(1); });", str(RESOURCES)],
@@ -141,7 +162,9 @@ owner.networkDraft.dns.nameservers.push('4.4.4.4');
 assert.deepEqual(sent[0][1].settings.dns.nameservers, ['8.8.8.8', '8.8.4.4'], 'requests must not alias editable state');
 fire(button(root, '应用网络配置'));
 assert.equal(modal.title, '应用网络配置');
-await fire(button(modal.content, '确认'));
+assert(text(modal.content).includes('DNS 解析、代理监听与认证'));
+assert(!text(modal.content).includes('updated-operator'), 'change review must not expose credentials');
+await fire(button(modal.content, '确认应用'));
 assert.equal(sent[1][0], 'apply');
 assert.equal(sent[1][1].revision, 'network-r1');
 assert.equal(sent[1][1].settings.lan.rules[0].ipv6[0], '2001:db8::10');
@@ -179,19 +202,57 @@ assert(find(root, node => node.attrs['aria-label'] === '选择配置备份').dis
 root = management.maintenance(owner);
 assert(button(root, '重启核心').disabled);
 owner.liveDataReady = true;
+owner.networkDraft.router.enabled = false;
 root = management.network(owner);
 fire(button(root, '应用网络配置'));
 owner.liveDataReady = false;
-await fire(button(modal.content, '确认'));
+await fire(button(modal.content, '确认应用'));
 assert.equal(writes, 0, 'confirmation must recheck live state');
 owner.liveDataReady = true;
 fire(button(management.network(owner), '应用网络配置'));
-await fire(button(modal.content, '确认'));
+await fire(button(modal.content, '确认应用'));
 assert.equal(writes, 1);
 assert.equal(owner.busy, false);
 assert(notifications.some(item => item.text.includes('网络配置已变化') && item.text.includes('已恢复操作前状态')));
 owner.networkState = { available: false, reason: 'native_backend_required' };
 assert(!button(management.network(owner), '应用网络配置'));
+""")
+
+    def test_no_change_skips_write_and_read_failure_does_not_retry_success(self):
+        self.run_js(r"""
+let writes = 0;
+const api = { networkGet: async () => networkState(), networkApply: async () => { writes++; return { state: 'applied' }; } };
+const management = module('management.js', api);
+const owner = controller(); await management.load(owner, 'network');
+await fire(button(management.network(owner), '应用网络配置'));
+assert.equal(modal, null);
+assert.equal(writes, 0);
+assert(owner.networkResult.includes('无需应用'));
+owner.networkDraft.router.enabled = false;
+owner.refreshData = async () => { throw new Error('transport interrupted'); };
+fire(button(management.network(owner), '应用网络配置'));
+await fire(button(modal.content, '确认应用'));
+assert.equal(writes, 1);
+assert.equal(owner.busy, false);
+assert(notifications.some(item => item.severity === 'warning' && item.text.includes('已完成') && item.text.includes('不要重复执行')));
+assert(!notifications.some(item => item.severity === 'error'));
+""")
+
+    def test_subscription_and_selection_read_failure_keep_execution_result(self):
+        self.run_js(r"""
+const managed = module('managed.js', { operationGet: async () => ({ subscription: null, selection: null, packages: null }) });
+for (const action of ['runSubscription', 'runSelection']) {
+    const owner = controller();
+    owner.refreshData = async () => { throw new Error('read timed out'); };
+    let writes = 0;
+    const result = await managed[action](owner, async () => { writes++; return { state: 'unchanged' }; });
+    assert.equal(writes, 1);
+    assert.equal(result.state, 'unchanged');
+    assert.equal(owner.busy, false);
+    clearTimeout(owner.operationTimer);
+}
+assert.equal(notifications.filter(item => item.text.includes('不要重复执行')).length, 2);
+assert(!notifications.some(item => item.text.includes('可能仍在更新') || item.text.includes('可能仍在测速')));
 """)
 
     def test_profile_import_is_memory_only_and_clears_after_save_or_cancel(self):

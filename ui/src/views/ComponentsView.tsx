@@ -97,7 +97,7 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
               {pairMismatch && <span className="is-warning">NetFleet 与 LuCI 安装版本不一致</span>}
               {component.reason && <small>{componentError(component.reason)}</small>}
             </td>
-            <td>{component.available_version && !feed?.error ? hasUpdate ? `候选版本 ${component.available_version}` : '当前更新源暂无新版' : null}</td>
+            <td>{component.available_version && !feed?.error ? hasUpdate ? <>{`候选版本 ${component.available_version}`}<small>{component.id === 'mihomo' ? '更新核心会中断已有代理连接' : '基础包更新会停止并恢复服务，私有配置保留'}</small></> : '当前更新源暂无新版' : null}</td>
             <td className="nf-component-actions">{canUpdate && <button type="button" disabled title={previewReason}><Download aria-hidden="true" />{mismatch ? '更新软件包' : '更新'}</button>}</td>
           </tr>;
         })}{snapshot.extensions?.filter(extension => extension.kind === 'optional').map(extension => <ExtensionRow key={extension.id} extension={extension} onManage={() => setDetail(extension.id)} />)}{dashboard && <DashboardRow dashboard={dashboard} />}</tbody></table></div>

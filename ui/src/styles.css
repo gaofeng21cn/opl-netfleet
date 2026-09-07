@@ -599,3 +599,10 @@
   .nf-compatibility > .nf-form-row > label { grid-column: 1 / -1; }
   .nf-compat-tabs button { flex: 1; padding: 8px; }
 }
+/* Diagnosis follows the same unframed sections as the native settings pages. */
+.nf-network-diagnosis { padding: 18px 0; border-top: 1px solid var(--nf-border, #dce2e7); }
+.nf-diagnosis-query { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.nf-diagnosis-query input { flex: 1 1 280px; min-width: 0; max-width: 620px; }
+.nf-diagnosis-checks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 20px 0 12px; }
+.nf-diagnosis-checks dd { margin: 5px 0 0; font-weight: 600; }
+@media (max-width: 640px) { .nf-diagnosis-checks { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

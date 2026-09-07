@@ -6,17 +6,18 @@
 
 ## 0. 独立只读基线
 
-任何 mutation 前分别记录每个目标的 Nikki 当前 Profile、订阅 cache、Mihomo 单实例、
-DNS/nft/IPv4、基础业务访问和可回退路径。每个目标必须单独授权；一台设备的授权和基线
+任何 mutation 前分别记录每个目标的实际后端、当前 Profile、订阅 cache、Mihomo 单实例、
+DNS/nft/IPv4/IPv6、基础业务访问和可回退路径。原生模式回读 NetFleet 核心与网关，Nikki
+模式回读 Nikki；不能用旧模式的操作路径管理新后端。每个目标必须单独授权；一台设备的授权和基线
 不能推断另一台设备已满足条件。
 
 ## 1. Canary
 
-1. 安装或复制 disabled runtime，确认网络、Profile、DNS/nft、路由和服务无差异。
+1. 在符合[软件包支持边界](../architecture/packaging.md)的空白设备安装签名包，确认安装本身不接管网络；已有设备升级则恢复升级前的运行状态。
 2. 只在 canary 执行 compile，取得 staged JSON、manifest、`mihomo -t` 和引用回读。
-3. 先以最小真实 capability 执行 enable，回读 Nikki effective Profile、Mihomo 当前链、
-   DNS/nft/IPv4 和业务访问。
-4. 验证 manual select、disable、Nikki 手工切回、持久化和 active uninstall 的拒绝或安全退回。
+3. 先以最小真实 capability 执行 enable，回读所选后端 effective Profile、Mihomo 当前链、
+   DNS/nft/IPv4/IPv6 和业务访问。
+4. 验证手动选择、关闭、恢复配置、持久化和 active uninstall 的拒绝或安全退回；原生模式必须在 Nikki 停止时完成。
 5. 只有以上证据通过，才试验故障选择；protected probe 失败先进入已验证的 DIRECT guard，
    guard 无法回读才恢复 native Profile。
 6. 通过后冻结 canonical artifact、配置合同和验收命令，形成唯一复制输入。
@@ -24,19 +25,39 @@ DNS/nft/IPv4、基础业务访问和可回退路径。每个目标必须单独�
 ## 2. Replica
 
 1. 重新取得 replica 的独立授权、备份和只读基线；canary 成功不能代替授权。
-2. 原样安装同一 artifact，先验证 disabled 无网络差异，再按 canary 已证明的顺序执行。
-3. 不因远程路径困难而减少 owner readback；失败立即 disable 或切回原始 Nikki Profile。
+2. 原样安装同一 artifact，按首次安装或升级的对应路径验收，不为验证而停止正在运行的网络。
+3. 不因远程路径困难而减少 owner readback；失败走所选后端正式退出与恢复入口，不启动另一个后端接管。
 4. replica 只复制已经冻结并证明的能力，不在首次推广中引入新算法、UI 或目标专用补丁。
 
 ## 最短复原路径
 
-- 只安装或 compile：无需恢复，Nikki 当前原始 Profile 继续工作。
-- 已 enable 且 NetFleet 仍可执行：在 Nikki 选择 Recovery Profile，或执行 `disable`，再确认
+- 只首次安装或 compile：当前运行路径不变，不需要进行额外接管或恢复。
+- 已 enable 且 NetFleet 仍可执行：执行 `disable`，再确认
   effective Profile、DNS/nft/路由和业务访问。
-- NetFleet 已崩溃或被卸载：直接在 Nikki 手工切回 Recovery Profile；该路径不能依赖
-  NetFleet CLI、RPC、supervisor 或历史状态。
-- 恢复或卸载失败：停止删除动作，保留 staged/active artifact 和原始 Profile，使用 Nikki
-  官方恢复路径；不得靠重复重试或手写 DNS/nft 清理掩盖问题。
+- NetFleet 管理接口不可用：保留当前运行和恢复文件，通过所选后端的服务与恢复入口处理；
+  原生模式不自动启动 Nikki。核心及网关退出必须确认已释放自身资源，基础联网能独立恢复。
+- 恢复或卸载失败：停止删除动作，保留 staged/active artifact 和原始 Profile；
+  不得靠重复重试或手写 DNS/nft 清理掩盖问题。无法重新证明管理面时返回需要现场恢复，
+  不执行重启设备或固件操作。
 
 automatic 能力必须先在 canary 取得同轮选择、能力资格、保护探针和 owner readback；
 replica 只复制冻结后的能力，并仍需独立完成 installed/effective/runtime/business 验收。
+
+## 独立用户工作流验收
+
+验收必须使用将要发布的同一签名资产，不能以开发目录或旧 VM 结果替代。
+
+| 用户流程 | 必须回读的结果 |
+| --- | --- |
+| 首次安装与接入 | 安装不接管；添加真实订阅后显式接管；Mihomo、DNS、透明代理与业务访问一致 |
+| 日常订阅维护 | 修改来源先保留旧缓存；单机场更新不下载其他来源；无变化不重载；失败保留可用缓存 |
+| 策略与网络设置 | 变更摘要与确认请求一致；无变化不重载；旧 revision 被拒绝；应用失败报告恢复结果 |
+| 软件与资源更新 | 区分基础包、核心和面板；私有配置保留；已安装身份与实际运行版本回读一致 |
+| 浏览器中断 | 先读取设备操作结果，不因请求或后续读取失败而自动重复写入 |
+| 诊断与恢复 | 无连接、读取失败与运行故障分别显示；核心控制接口不可用时仍能读取启动日志 |
+| 备份与恢复 | 备份含必要私有输入；拒绝无效或陈旧恢复；恢复后回读配置、核心与业务链路 |
+
+网络质量对照在同一设备、同一入口和可比时段记录：读取耗时、更新阶段耗时、核心 PID
+是否变化、已有长连接是否中断、DNS 与代表性直连/代理业务是否成功。吞吐测试按需显式
+执行并控制流量，不把 URLTest 延迟当成带宽，也不将本机代理的成功当成路由器验收。
+支持范围与架构依赖以软件包合同为准，未完成对应设备或发布资产验收的平台不能宣称支持。

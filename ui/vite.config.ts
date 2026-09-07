@@ -51,21 +51,11 @@ function liveBridgePlugin(target?: string, targetLabel = '设备'): Plugin {
         let events: unknown;
         let config: unknown;
         const errors: { status?: string; events?: string; config?: string } = {};
-        try {
-          status = await readRemote(validTarget, 'status');
-        } catch {
-          errors.status = '设备状态读取失败';
-        }
-        try {
-          events = await readRemote(validTarget, 'events');
-        } catch {
-          errors.events = '设备事件读取失败';
-        }
-        try {
-          config = await readRemote(validTarget, 'config_get');
-        } catch {
-          errors.config = '设备配置读取失败';
-        }
+        await Promise.all([
+          readRemote(validTarget, 'status').then(value => { status = value; }, () => { errors.status = '设备状态读取失败'; }),
+          readRemote(validTarget, 'events').then(value => { events = value; }, () => { errors.events = '设备事件读取失败'; }),
+          readRemote(validTarget, 'config_get').then(value => { config = value; }, () => { errors.config = '设备配置读取失败'; }),
+        ]);
         sendJson(response, status || events || config ? 200 : 502, {
           status,
           events,
@@ -76,7 +66,7 @@ function liveBridgePlugin(target?: string, targetLabel = '设备'): Plugin {
             label: '设备实时只读',
             target_label: targetLabel,
             read_only: true,
-            connected: Boolean(status || events),
+            connected: Boolean(status),
             fetched_at: Math.floor(Date.now() / 1000),
             duration_ms: Date.now() - started,
           },

@@ -511,7 +511,9 @@ function createPage(storage, api, notifications) {
     api.nativeSetupGet = function() { return Promise.resolve({ ready: false }); };
     api.dashboardGet = function() { return Promise.resolve({ available: true, port: 9090, protocol: 'http', ui_name: 'zashboard', secret: 'private-secret' }); };
     const management = { load: function() { return Promise.resolve(); }, maintenance: function() { return null; }, dashboard: function() { return null; } };
-    const factory = new Function('view', 'ui', 'managed', 'management', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', 'compatibility', 'poll', source);
+    const productSource = fs.readFileSync(require('path').resolve(require('path').dirname(process.argv[1]), '../../netfleet/product.js'), 'utf8');
+    const product = new Function('baseclass', 'E', productSource)({ extend: value => value }, E);
+    const factory = new Function('view', 'ui', 'managed', 'management', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', 'compatibility', 'poll', 'product', source);
     const page = factory(view, ui, managed, management, api, netfleetConfig, E, {
         resource: function(value) { return value; },
         url: function(value) { return '/cgi-bin/luci/' + value; }
@@ -520,7 +522,7 @@ function createPage(storage, api, notifications) {
         assert.strictEqual(parsed.hostname, 'router.example');
         assert.strictEqual(parsed.pathname, '/ui/zashboard/');
         assert.strictEqual(parsed.searchParams.get('secret'), 'private-secret');
-    } }, close: function() {} }; } }, document, { refresh: () => Promise.resolve(), label: () => '未安装' }, { add: () => {} });
+    } }, close: function() {} }; } }, document, { refresh: () => Promise.resolve(), label: () => '未安装' }, { add: () => {} }, product);
     page.styleLink = styleLink;
     page.dashboardOpens = function() { return dashboardOpens; };
     return page;

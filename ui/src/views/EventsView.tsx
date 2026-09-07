@@ -1,6 +1,7 @@
 import { displayEventName, eventDelay, eventReason, eventResult } from '../lib/format';
 import type { ConnectionsSnapshot, EventsSnapshot, NetFleetClient, StatusSnapshot } from '../types';
 import { CoreMaintenance } from './CoreMaintenance';
+import { NetworkDiagnosis } from './NetworkDiagnosis';
 
 const actionName = (action: string, trigger?: string) => action === 'select' && trigger === 'scheduled'
   ? '定期选优'
@@ -13,7 +14,7 @@ const initiatorName = (initiator?: string) => ({
   supervisor: '后台选优',
 }[initiator || ''] || initiator || '未提供');
 
-export function EventsView({ snapshot, status, connections, connectionsLoading, connectionsError, error, client }: {
+export function EventsView({ snapshot, status, connections, connectionsLoading, connectionsError, error, client, stale, refresh }: {
   snapshot: EventsSnapshot;
   status: StatusSnapshot;
   connections: ConnectionsSnapshot;
@@ -21,6 +22,8 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
   connectionsError?: string | null;
   error?: string | null;
   client?: NetFleetClient;
+  stale?: boolean;
+  refresh?: () => void;
 }) {
   const [page, setPage] = useState(0);
   const rows = snapshot.events.slice().reverse();
@@ -49,6 +52,7 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
           <button type="button" aria-label="下一页" title="下一页" disabled={currentPage === pageCount - 1} onClick={() => setPage(currentPage + 1)}><ChevronRight aria-hidden="true" /></button>
         </nav>}
       </section>
+      <NetworkDiagnosis status={status} connections={connections} loading={connectionsLoading} error={connectionsError} stale={stale} refresh={refresh} />
       <section className="nf-diagnostic-strip" aria-label="诊断状态">
         <dl><dt>设备控制接口</dt><dd className={status.runtime.controller_available ? 'is-ok' : 'is-warning'}>{status.runtime.controller_available ? '可读取' : '不可用'}</dd></dl>
         <dl><dt>事件存储</dt><dd className={snapshot.store_valid === false ? 'is-warning' : 'is-ok'}>{snapshot.store_valid === false ? '异常' : '有效'}</dd></dl>
@@ -68,7 +72,7 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
               <td>{connection.destination}</td><td>{connection.destination_port ?? '未提供'}</td>
               <td>{connection.network?.toUpperCase() || '未提供'}</td>
               <td>{[connection.rule, connection.rule_payload].filter(Boolean).join(' / ') || '未提供'}</td>
-              <td>{connection.chains.map(item => item === 'DIRECT' ? '直连' : item).join(' → ') || '直连'}</td>
+              <td>{connection.chains.map(item => item === 'DIRECT' ? '直连' : item).join(' → ') || '未记录链路'}</td>
             </tr>
           ))}{!connections.connections.length && <tr><td colSpan={5}>{connectionsLoading ? '正在读取当前活动连接…' : '当前没有活动连接'}</td></tr>}</tbody>
         </table></div>

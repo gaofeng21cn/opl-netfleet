@@ -99,17 +99,20 @@ def prepare_ca():
 
 
 def engine_health(probe=False):
-    try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-            connection.settimeout(1.8 if probe else 0.4)
-            connection.connect(str(RUN / "engine.sock"))
-            connection.sendall(b"probe\n" if probe else b"status\n")
-            with connection.makefile("rb") as stream:
-                value = json.loads(stream.readline(65536))
-                if value.get("service") == "netfleet-https-compat":
-                    return value
-    except (OSError, ValueError):
-        pass
+    # A busy event loop can delay one socket reply while the data plane is healthy.
+    # Recheck the full chain once; this function never renews the kernel lease.
+    for _ in range(2 if probe else 1):
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+                connection.settimeout(1.8 if probe else 0.4)
+                connection.connect(str(RUN / "engine.sock"))
+                connection.sendall(b"probe\n" if probe else b"status\n")
+                with connection.makefile("rb") as stream:
+                    value = json.loads(stream.readline(65536))
+                    if value.get("service") == "netfleet-https-compat":
+                        return value
+        except (OSError, ValueError):
+            pass
     connections = None
     try:
         result = subprocess.run(["ubus", "call", "service", "list", '{"name":"opl-netfleet-compat"}'],
