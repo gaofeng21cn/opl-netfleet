@@ -113,7 +113,13 @@ class LuciManagementTests(unittest.TestCase):
     def test_staged_modules_resolve_every_versioned_dependency(self):
         with tempfile.TemporaryDirectory(prefix="netfleet-luci-assets-") as directory:
             resources = pathlib.Path(directory) / "resources"
-            shutil.copytree(RESOURCES.parent, resources)
+            package = ROOT / "openwrt/luci-app-netfleet"
+            installs = re.findall(r"\$\(INSTALL_DATA\) \./htdocs/luci-static/resources/(\S+) \$\(1\)/www/luci-static/resources/(\S+)", (package / "Makefile").read_text())
+            self.assertTrue(installs)
+            for source, destination in installs:
+                target = resources / destination
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(RESOURCES.parent / source, target)
             result = subprocess.run(["sh", str(ROOT / "openwrt/luci-app-netfleet/stage-assets.sh"), str(resources), "vtest"], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             for script in resources.rglob("*.js"):

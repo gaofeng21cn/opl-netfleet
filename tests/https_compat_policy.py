@@ -17,6 +17,37 @@ import control
 
 
 class Decisions(unittest.TestCase):
+    def test_health_rechecks_full_chain_after_socket_timeout(self):
+        health = {"service": "netfleet-https-compat", "ready": True,
+                  "processing_chain": True, "transparent_chain": True}
+        with patch.object(control.socket, "socket") as socket_factory:
+            connection = socket_factory.return_value.__enter__.return_value
+            reader = connection.makefile.return_value.__enter__.return_value
+            reader.readline.side_effect = [TimeoutError(), json.dumps(health).encode()]
+            self.assertEqual(control.engine_health(probe=True), health)
+            self.assertEqual(connection.sendall.call_args_list[0].args, (b"probe\n",))
+            self.assertEqual(connection.sendall.call_args_list[1].args, (b"probe\n",))
+            self.assertEqual(socket_factory.call_count, 2)
+
+    def test_persistent_health_failure_remains_bounded(self):
+        with patch.object(control.socket, "socket") as socket_factory, patch.object(control.subprocess, "run") as service:
+            socket_factory.return_value.__enter__.return_value.connect.side_effect = TimeoutError()
+            service.return_value.returncode = 1
+            self.assertFalse(control.engine_health(probe=True)["ready"])
+            self.assertEqual(socket_factory.call_count, 2)
+            socket_factory.reset_mock()
+            self.assertFalse(control.engine_health()["ready"])
+            self.assertEqual(socket_factory.call_count, 1)
+
+    def test_explicit_processing_failure_is_not_retried(self):
+        health = {"service": "netfleet-https-compat", "ready": True,
+                  "processing_chain": False, "transparent_chain": True}
+        with patch.object(control.socket, "socket") as socket_factory:
+            connection = socket_factory.return_value.__enter__.return_value
+            connection.makefile.return_value.__enter__.return_value.readline.return_value = json.dumps(health).encode()
+            self.assertEqual(control.engine_health(probe=True), health)
+            self.assertEqual(socket_factory.call_count, 1)
+
     def test_recovery_window_disable_and_manual_reset(self):
         state = None
         now = 0
