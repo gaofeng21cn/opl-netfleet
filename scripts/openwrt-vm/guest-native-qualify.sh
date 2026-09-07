@@ -335,6 +335,44 @@ ucode "$main" status >"$work/refreshed-result.json"
 assert_json "$work/refreshed-result.json" '@.result.active' true
 ucode "$main" subscriptions-get >"$work/subscriptions-result.json"
 assert_json "$work/subscriptions-result.json" '@.result.sources[0].pending_update' false
+stage=automatic_recovery_intent
+run_main recover runtime_unavailable >"$work/recovery-result.json"
+ucode "$main" status >"$work/recovering-result.json"
+assert_json "$work/recovering-result.json" '@.result.active' false
+assert_json "$work/recovering-result.json" '@.result.recovery.reason' runtime_unavailable
+assert_json "$work/recovering-result.json" '@.result.actions.can_disable' true
+run_main resume >"$work/deferred-result.json"
+assert_json "$work/deferred-result.json" '@.result.state' unchanged
+run_main disable vm >"$work/cancel-recovery-result.json"
+test ! -e /etc/opl-netfleet/recovery.json
+run_main resume >"$work/cancelled-result.json"
+assert_json "$work/cancelled-result.json" '@.result.state' unchanged
+test "$(uci get netfleet.config.profile)" = file:fixture.json
+run_main compile >"$work/recompile-result.json"
+run_main enable vm >"$work/reenable-result.json"
+run_main recover runtime_unavailable >"$work/recovery-again-result.json"
+# Advance only the private fixture deadline; production retries remain bounded.
+ucode -e 'import { readfile, writefile } from "fs";
+	const path = "/etc/opl-netfleet/recovery.json";
+	const value = json(readfile(path)); value.retry_at = 0;
+	writefile(path, sprintf("%J", value));'
+cp /etc/opl-netfleet/policy.json "$work/recovery-policy.json"
+ucode -e 'import { readfile, writefile } from "fs";
+	const path = "/etc/opl-netfleet/policy.json";
+	const value = json(readfile(path)); value.automation.enabled = false;
+	writefile(path, sprintf("%J", value));'
+/etc/init.d/opl-netfleet start
+recovered=0
+for attempt in $(seq 1 90); do
+	if [ "$(uci get netfleet.config.profile)" = file:OPL-NetFleet.json ] &&
+		[ ! -e /etc/opl-netfleet/recovery.json ]; then recovered=1; break; fi
+	sleep 2
+done
+test "$recovered" = 1
+/etc/init.d/opl-netfleet stop
+cp "$work/recovery-policy.json" /etc/opl-netfleet/policy.json
+ucode "$main" probe >"$work/resumed-probe-result.json"
+assert_json "$work/resumed-probe-result.json" '@.ok' true
 stage=shared_disable
 run_main disable vm >"$work/disable-result.json"
 assert_json "$work/disable-result.json" '@.result.state' native_profile
