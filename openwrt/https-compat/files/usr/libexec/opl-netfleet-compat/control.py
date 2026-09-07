@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 import socket
-import ssl
 import subprocess
 import sys
 import tarfile
@@ -159,31 +158,25 @@ def effective(config, trust, fingerprint, source=None):
 
 
 async def probe_rules(rules):
-    context = ssl.create_default_context()
-    context.set_alpn_protocols(["h2"])
-    async def check(rule):
-        writer, started = None, time.monotonic()
-        result = {"ok": False, "at": int(time.time()), "timeout_ms": 700}
-        try:
-            async with asyncio.timeout(0.7):
-                _, writer = await asyncio.open_connection(rule.get("address", rule["domain"]), rule["port"], ssl=context, server_hostname=rule["domain"])
-                protocol = writer.get_extra_info("ssl_object").selected_alpn_protocol()
-                result.update(ok=protocol == "h2", protocol=protocol,
-                              reason=None if protocol == "h2" else "upstream_h2_not_negotiated")
-        except asyncio.TimeoutError:
-            result["reason"] = "upstream_probe_timeout"
-        except ssl.SSLCertVerificationError:
-            result["reason"] = "upstream_certificate_failed"
-        except ssl.SSLError:
-            result["reason"] = "upstream_tls_failed"
-        except OSError:
-            result["reason"] = "upstream_connect_failed"
-        finally:
-            if writer:
-                writer.close()
-        result["duration_ms"] = round((time.monotonic() - started) * 1000)
-        return rule["id"], result
-    return dict(await asyncio.gather(*(check(rule) for rule in rules)))
+    writer = None
+    try:
+        request = {"command": "probe_upstreams", "revision": hashlib.sha256(EFFECTIVE.read_bytes()).hexdigest(),
+                   "rules": [{key: rule[key] for key in ("id", "domain", "port", "address") if key in rule} for rule in rules]}
+        async with asyncio.timeout(1.8):
+            reader, writer = await asyncio.open_unix_connection(str(RUN / "engine.sock"))
+            writer.write(json.dumps(request).encode() + b"\n")
+            await writer.drain()
+            response = json.loads(await reader.readline())
+            if response.get("service") == "netfleet-https-compat" and response.get("revision") == request["revision"]:
+                probes = response.get("probes", {})
+                if isinstance(probes, dict) and all(isinstance(probes.get(rule["id"]), dict) for rule in rules):
+                    return probes
+    except (OSError, ValueError, asyncio.TimeoutError):
+        pass
+    finally:
+        if writer:
+            writer.close()
+    return {rule["id"]: {"ok": False, "at": int(time.time()), "reason": "engine_probe_unavailable"} for rule in rules}
 
 
 async def resolve_targets(rules):

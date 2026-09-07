@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -71,7 +72,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         config.certfile = str(self.directory / "upstream.pem")
         config.keyfile = str(self.directory / "upstream.key")
         config.alpn_protocols = ["h2", "http/1.1"]
-        if self._testMethodName == "test_h2_required_upstream_h1_is_not_replayed":
+        if self._testMethodName in ("test_h2_required_upstream_h1_is_not_replayed", "test_upstream_recovery_rejects_h1"):
             config.alpn_protocols = ["http/1.1"]
         config.accesslog = None
         config.errorlog = None
@@ -148,6 +149,35 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         writer.close()
         await writer.wait_closed()
         return data
+
+    async def recovery_probe(self):
+        sys.path.insert(0, str(ADDON.parent))
+        import control
+        with patch.object(control, "RUN", self.directory), patch.object(control, "EFFECTIVE", self.directory / "config.json"), \
+                patch.object(control.asyncio, "open_connection", side_effect=AssertionError("controller must not connect to upstream")):
+            return await control.probe_rules(json.loads((self.directory / "config.json").read_text())["rules"])
+
+    async def test_upstream_recovery_uses_engine_socket(self):
+        result = (await self.recovery_probe())["test"]
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["protocol"], "h2")
+        self.assertEqual(self.received, [], "recovery must not send a business request")
+        reader, writer = await asyncio.open_unix_connection(str(self.directory / "engine.sock"))
+        writer.write(json.dumps({"command": "probe_upstreams", "revision": "stale", "rules": []}).encode() + b"\n")
+        await writer.drain()
+        self.assertEqual(json.loads(await reader.readline())["probes"], {})
+        writer.close()
+        await writer.wait_closed()
+        await self.stop_proxy()
+        result = (await self.recovery_probe())["test"]
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason"], "engine_probe_unavailable")
+
+    async def test_upstream_recovery_rejects_h1(self):
+        result = (await self.recovery_probe())["test"]
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason"], "upstream_h2_not_negotiated")
+        self.assertEqual(self.received, [])
 
     async def application(self, scope, receive, send):
         if scope["type"] == "websocket":
@@ -323,6 +353,9 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         # The server has already loaded its certificate; change only the proxy's trust anchor.
         await asyncio.sleep(0.05)
         (self.directory / "upstream.pem").write_bytes((self.directory / "ca/mitmproxy-ca-cert.pem").read_bytes())
+        probe = (await self.recovery_probe())["test"]
+        self.assertFalse(probe["ok"])
+        self.assertEqual(probe["reason"], "upstream_certificate_failed")
         response = await self.client.post(self.url + "/never-upload", content=b"private-body")
         self.assertEqual(response.status_code, 502)
         self.assertEqual(self.received, [])

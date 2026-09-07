@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import ssl
 import sys
 import time
 
@@ -63,7 +64,7 @@ class Compatibility:
         self.socket_path = Path(ctx.options.netfleet_socket)
         self.socket_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.socket_path.unlink(missing_ok=True)
-        self.server = await asyncio.start_unix_server(self.health, path=str(self.socket_path), limit=1024)
+        self.server = await asyncio.start_unix_server(self.health, path=str(self.socket_path), limit=65536)
         os.chmod(self.socket_path, 0o600)
         if ctx.options.netfleet_local_probe:
             self.probe = LocalProbe(ctx.options.confdir)
@@ -73,6 +74,13 @@ class Compatibility:
         try:
             command = await asyncio.wait_for(reader.readline(), 1)
             valid = self.refresh()
+            if command.startswith(b"{"):
+                request = json.loads(command)
+                probes = await self.probe_upstreams(request) if valid else {}
+                writer.write(json.dumps({"service": "netfleet-https-compat", "revision": self.revision,
+                                         "probes": probes}).encode() + b"\n")
+                await writer.drain()
+                return
             processing, transparent = (await asyncio.gather(self.probe.check(), self.probe.transparent_check())
                                        if self.probe and command == b"probe\n" else (None, None))
             clients = {identity for identity, rule in self.selected.items() if rule["id"] != "_health"}
@@ -87,9 +95,58 @@ class Compatibility:
                                      "observed": self.observed,
                                      "rules": {key: value for key, value in self.results.items() if key != "_health"}}).encode() + b"\n")
             await writer.drain()
+        except (OSError, ValueError, asyncio.TimeoutError):
+            pass
         finally:
             writer.close()
-            await writer.wait_closed()
+            try:
+                await writer.wait_closed()
+            except OSError:
+                pass
+
+    async def probe_upstreams(self, request):
+        if request.get("command") != "probe_upstreams" or request.get("revision") != self.revision:
+            return {}
+        rules = request.get("rules")
+        if not isinstance(rules, list):
+            return {}
+        configured = {rule["id"]: rule for rule in self.config["rules"] if rule["enabled"]}
+        for rule in rules:
+            if not isinstance(rule, dict):
+                return {}
+            target = configured.get(rule.get("id"))
+            host = rule.get("domain")
+            if (not target or not isinstance(host, str) or rule.get("port") != target["port"]
+                    or not (host == target["domain"] or target["match"] == "suffix" and host.endswith("." + target["domain"]))
+                    or not isinstance(rule.get("address", host), str)):
+                return {}
+        # Run in the engine's cgroup: the lifecycle controller is excluded from Mihomo.
+        context = ssl.create_default_context(cafile=ctx.options.ssl_verify_upstream_trusted_ca)
+        context.set_alpn_protocols(["h2"])
+        async def check(rule):
+            writer, started = None, time.monotonic()
+            result = {"ok": False, "at": int(time.time()), "timeout_ms": 700}
+            try:
+                async with asyncio.timeout(0.7):
+                    _, writer = await asyncio.open_connection(rule.get("address", rule["domain"]), rule["port"],
+                                                              ssl=context, server_hostname=rule["domain"])
+                    protocol = writer.get_extra_info("ssl_object").selected_alpn_protocol()
+                    result.update(ok=protocol == "h2", protocol=protocol,
+                                  reason=None if protocol == "h2" else "upstream_h2_not_negotiated")
+            except asyncio.TimeoutError:
+                result["reason"] = "upstream_probe_timeout"
+            except ssl.SSLCertVerificationError:
+                result["reason"] = "upstream_certificate_failed"
+            except ssl.SSLError:
+                result["reason"] = "upstream_tls_failed"
+            except OSError:
+                result["reason"] = "upstream_connect_failed"
+            finally:
+                if writer:
+                    writer.close()
+            result["duration_ms"] = round((time.monotonic() - started) * 1000)
+            return rule["id"], result
+        return dict(await asyncio.gather(*(check(rule) for rule in rules)))
 
     def tls_clienthello(self, data):
         context = data.context
