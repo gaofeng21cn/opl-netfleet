@@ -1,5 +1,6 @@
 """Full native gateway -> compatibility -> Mihomo -> TLS origin wire experiment."""
 import asyncio
+import ipaddress
 import json
 from pathlib import Path
 import signal
@@ -62,6 +63,12 @@ class Native(Kernel):
         self.addAsyncCleanup(self.stop_origin)
         self.command("ubus", "call", "network", "add_dynamic", json.dumps({"name": "nfcompat", "proto": "static", "device": "nfcompat0", "ipaddr": ["10.77.0.1/24"], "ip6addr": ["2001:db8:77::1/64"]}))
         self.addCleanup(self.command, "ubus", "call", "network.interface.nfcompat", "remove")
+        # Documentation prefixes are classified as private and miss mitmproxy's
+        # default block_global rejection. This source exists only on the VM veth.
+        self.global_source = "2000:77::2"
+        self.assertTrue(ipaddress.ip_address(self.global_source).is_global)
+        self.command("ip", "-n", "netfleet-compat-test", "-6", "addr", "add", self.global_source + "/128", "dev", "nfcompat1", "nodad")
+        self.command("ip", "-6", "route", "add", self.global_source + "/128", "dev", "nfcompat0")
         if not Path("/etc/config/netfleet").exists():
             self.command("cp", "/usr/share/opl-netfleet/netfleet.config", "/etc/config/netfleet")
         for assignment in ("netfleet.config.enabled=1", "netfleet.config.profile=file:compat.json", "netfleet.mixin.api_secret=compat-fixture"):
@@ -133,6 +140,7 @@ class Native(Kernel):
             await asyncio.sleep(1)
         # Production uses one wildcard transparent listener for both families.
         config["devices"][0]["addresses"].append("2001:db8:77::2")
+        config["devices"][0]["addresses"].append(self.global_source)
         saved = self.owner.call("apply", {"revision": self.owner.call("get")["revision"], "config": config})
         self.owner.call("probe", {"revision": saved["revision"], "operation": "trust_record", "device": "mac",
                                   "report": {"system": True, "ca_sha256": saved["ca_sha256"]}})
@@ -143,6 +151,8 @@ class Native(Kernel):
         self.DESTINATION = "2001:db8:88::10"
         wire6 = await self.request()
         self.assertTrue(wire6["h2"], {"wire": wire6, "health": self.owner.health()})
+        global_wire = await self.request(source=self.global_source)
+        self.assertTrue(global_wire["h2"], {"wire": global_wire, "health": self.owner.health()})
         self.assertEqual((await self.request(ca=self.directory / "upstream.pem", h2=True))["alpn"], "h2")
         self.assertFalse((await self.request(host="other.example", ca=self.directory / "upstream.pem"))["h2"])
         self.DESTINATION = "198.51.100.10"

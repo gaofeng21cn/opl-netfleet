@@ -406,6 +406,7 @@ def main():
         os.execv("/usr/libexec/opl-netfleet-compat/mitmdump", ["mitmdump", "--mode", "transparent@18443",
             "--mode", "regular@127.0.0.1:18444", "-s", "/usr/libexec/opl-netfleet-compat/addon.py",
             "--set", f"confdir={CA}", "--set", "upstream_cert=false", "--set", "connection_strategy=lazy",
+            "--set", "block_global=false",
             "--set", "netfleet_preserve_source_port=true", "--set", "netfleet_local_probe=true",
             "--set", f"ssl_verify_upstream_trusted_ca={CA / 'upstream-trust.pem'}",
             "--set", f"netfleet_config={EFFECTIVE}", "--set", "flow_detail=0", "--set", "termlog_verbosity=error"])
