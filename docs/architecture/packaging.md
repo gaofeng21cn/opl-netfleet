@@ -2,6 +2,7 @@
 
 本文是 versioned OpenWrt package、private OPL Instance 和 deployment bundle 之间边界的
 权威合同。具体命令和当前可用入口由[根目录 README](../../README.md)负责。
+Fleet 安装的前置检查、快照和回滚顺序统一由[部署事务](../operations/deployment.md)维护。
 
 ## Versioned package and deployment-bundle inputs
 
