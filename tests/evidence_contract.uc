@@ -80,7 +80,7 @@ if (third.capabilities.standard?.regions?.near?.last_best_delay_ms != 50 ||
 }
 
 const catalog = [{ region: "near", provider: "provider" }, { region: "far", provider: "provider" }];
-const interrupted = selection_snapshot(first, [], "standard", null, { ok: true }, identity, catalog);
+const interrupted = selection_snapshot(first, [], "standard", decision("standard-one", "near", 40), { ok: true }, identity, catalog);
 if (interrupted.capabilities.standard.regions.far.sample_count != 1 ||
 	interrupted.capabilities.standard.regions.far.sampled_at != first.capabilities.standard.regions.far.sampled_at ||
 	interrupted.capabilities.standard.providers.provider.sample_count != 1 ||
@@ -90,7 +90,7 @@ if (interrupted.capabilities.standard.regions.far.sample_count != 1 ||
 }
 const resumed = selection_snapshot(interrupted, [candidate("far-again", "far", 100, "standard")],
 	"standard", decision("far-again", "far", 100), { ok: true }, identity, catalog);
-const removed = selection_snapshot(resumed, [], "standard", null, { ok: true }, identity,
+const removed = selection_snapshot(resumed, [], "standard", decision("standard-one", "near", 40), { ok: true }, identity,
 	[{ region: "near", provider: "other" }]);
 if (resumed.capabilities.standard.regions.far.sample_count != 2 ||
 	resumed.capabilities.standard.regions.far.total_best_delay_ms != 180 ||
