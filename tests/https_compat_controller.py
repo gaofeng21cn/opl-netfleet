@@ -19,8 +19,14 @@ class Controller(unittest.TestCase):
             path = Path("/tmp/netfleet-controller-request.json")
             path.write_text(json.dumps({"request": request}))
             command.append(str(path))
-        result = subprocess.run(command, capture_output=True, text=True, timeout=15)
-        value = json.loads(result.stdout)
+        deadline = time.monotonic() + 5
+        while True:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+            value = json.loads(result.stdout)
+            # Busy is returned before mutation. Never retry timeouts or unknown results.
+            if not success or value.get("error") != "mutation_busy" or time.monotonic() >= deadline:
+                break
+            time.sleep(0.2)
         self.assertEqual(value["ok"], success, value)
         return value.get("result", value)
 

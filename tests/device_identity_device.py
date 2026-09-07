@@ -1,12 +1,8 @@
 """Exercise both installed owners in the disposable OpenWrt VM."""
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import hashlib
 import json
 from pathlib import Path
-import ssl
 import subprocess
 import tempfile
-import threading
 import time
 import unittest
 
@@ -26,8 +22,13 @@ class InstalledIdentity(unittest.TestCase):
                 if request is not None:
                     (root / "request.json").write_text(json.dumps({"request": request}))
                     argv.append(str(root / "request.json"))
-                result = subprocess.run(argv, capture_output=True, text=True, timeout=15)
-                data = json.loads(result.stdout)
+                deadline = time.monotonic() + 5
+                while True:
+                    result = subprocess.run(argv, capture_output=True, text=True, timeout=15)
+                    data = json.loads(result.stdout)
+                    if data.get("error") != "mutation_busy" or time.monotonic() >= deadline:
+                        break
+                    time.sleep(0.2)
                 self.assertTrue(data["ok"], data)
                 return data["result"]
             listed = call("plugins-list")
@@ -39,41 +40,33 @@ class InstalledIdentity(unittest.TestCase):
             loaded = source("load")
             self.assertTrue(loaded["loaded"])
             self.assertFalse(loaded["source_ready"])
-            subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
-                            "-subj", "/CN=localhost", "-keyout", str(root / "key"), "-out", str(root / "cert")],
-                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            addresses = ["2001:db8::2"]
-            class Handler(BaseHTTPRequestHandler):
-                def log_message(self, *args):
-                    pass
-
-                def do_POST(self):
-                    self.rfile.read(int(self.headers["Content-Length"]))
-                    self.send_response(200)
-                    self.send_header("Set-Cookie", "TOKEN=fixture; Secure")
-                    self.end_headers()
-
-                def do_GET(self):
-                    self.send_response(200)
-                    self.end_headers()
-                    self.wfile.write(json.dumps([{"mac": MAC, "hostname": "Mac", "ip": "192.0.2.2",
-                                                 "ipv6_address": addresses, "last_seen": time.time()}]).encode())
-            server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-            tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            tls.load_cert_chain(root / "cert", root / "key")
-            server.socket = tls.wrap_socket(server.socket, server_side=True)
-            worker = threading.Thread(target=server.serve_forever, daemon=True)
-            worker.start()
-            self.addCleanup(server.server_close)
-            self.addCleanup(server.shutdown)
-            pin = hashlib.sha256(ssl.PEM_cert_to_DER_cert((root / "cert").read_text())).hexdigest()
-            config = {"enabled": True, "source": "unifi", "endpoint": f"https://127.0.0.1:{server.server_port}",
-                      "site": "default", "username": "viewer", "password": "fixture", "certificate_sha256": pin}
-            configured = source("configure", {"config_revision": loaded["config_revision"], "config": config})
+            def command(*args):
+                return subprocess.run(args, check=True, capture_output=True, text=True, timeout=5).stdout
+            namespace, interface, peer = "nfidentity-test", "nfidentity0", "nfidentity1"
+            command("ip", "netns", "add", namespace)
+            self.addCleanup(command, "ip", "netns", "del", namespace)
+            command("ip", "link", "add", interface, "type", "veth", "peer", "name", peer)
+            command("ip", "link", "set", peer, "netns", namespace)
+            command("ip", "link", "set", interface, "address", "02:00:00:00:00:fe")
+            command("ip", "-n", namespace, "link", "set", peer, "address", MAC)
+            command("ip", "link", "set", interface, "up")
+            command("ip", "-n", namespace, "link", "set", peer, "up")
+            command("ip", "-6", "addr", "add", "fe80::fe/64", "dev", interface, "nodad")
+            command("ip", "-n", namespace, "-6", "addr", "add", "fe80::1/64", "dev", peer, "nodad")
+            command("ip", "-n", namespace, "-6", "addr", "add", "2001:db8::2/64", "dev", peer, "nodad")
+            def candidate(ip):
+                command("conntrack", "-I", "-f", "ipv6", "-p", "tcp", "-s", ip, "-d", "2001:db8:1::80",
+                        "--sport", "45555", "--dport", "443", "--state", "ESTABLISHED", "--timeout", "120")
+                self.addCleanup(subprocess.run, ["conntrack", "-D", "-f", "ipv6", "-s", ip],
+                                capture_output=True, timeout=5)
+            candidate("2001:db8::2")
+            before_routes = command("ip", "-6", "-j", "route", "show", "table", "main")
+            config = {"enabled": True, "source": "local", "interfaces": [interface]}
+            source("configure", {"config_revision": loaded["config_revision"], "config": config})
             synced = source("sync")
             self.assertTrue(synced["source_ready"], synced)
             compat = call("compatibility-get")
-            desired = {"schema": 1, "enabled": False, "devices": [{"id": "dynamic", "name": "Dynamic", "addresses": ["192.0.2.2"]}],
+            desired = {"schema": 1, "enabled": False, "devices": [{"id": "dynamic", "name": "Dynamic", "addresses": ["2001:db8::2"]}],
                        "rules": [{"id": "target", "name": "Target", "devices": ["dynamic"], "domain": "example.com", "match": "exact", "port": 443, "enabled": True, "strategy": "h2"}]}
             compat = call("compatibility-apply", {"revision": compat["revision"], "config": desired})
             compat = call("compatibility-probe", {"revision": compat["revision"], "operation": "trust_record", "device": "dynamic",
@@ -82,7 +75,9 @@ class InstalledIdentity(unittest.TestCase):
             bound = call("compatibility-apply", {"revision": compat["revision"], "config": desired})
             self.assertTrue(bound["trust"]["dynamic"]["verified"])
             self.assertIn("2001:db8::2", bound["device_addresses"]["dynamic"])
-            addresses[:] = ["2001:db8::3"]
+            command("ip", "-n", namespace, "-6", "addr", "del", "2001:db8::2/64", "dev", peer)
+            command("ip", "-n", namespace, "-6", "addr", "add", "2001:db8::3/64", "dev", peer, "nodad")
+            candidate("2001:db8::3")
             # Advance the source's private fixture clock; no real device uses this path.
             Path("/var/run/opl-netfleet-device-identity/attempt.json").unlink()
             source("sync")
@@ -91,6 +86,7 @@ class InstalledIdentity(unittest.TestCase):
             self.assertNotIn("2001:db8::2", changed["device_addresses"]["dynamic"])
             self.assertEqual(changed["revision"], bound["revision"])
             self.assertEqual(changed["trust"], bound["trust"])
+            self.assertEqual(command("ip", "-6", "-j", "route", "show", "table", "main"), before_routes)
             source("unload")
             unavailable = call("compatibility-get")
             self.assertEqual(unavailable["device_addresses"]["dynamic"], [])

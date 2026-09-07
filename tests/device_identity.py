@@ -146,12 +146,56 @@ class Source(unittest.TestCase):
 
     def test_local_neighbour_cannot_assign_the_next_hop_to_a_client(self):
         config = {"source": "local", "enabled": True, "interfaces": ["br-lan"]}
-        neighbour = {"dst": NEW, "lladdr": MAC, "dev": "br-lan", "state": ["REACHABLE"]}
+        neighbour = {"dst": "192.0.2.2", "lladdr": MAC, "dev": "br-lan", "state": ["REACHABLE"]}
+        link = {"ifname": "br-lan", "flags": ["UP"], "address": "02:00:00:00:00:fe",
+                "addr_info": [{"family": "inet6", "scope": "link", "local": "fe80::fe"}]}
         for route in ({"dev": "br-lan", "gateway": "2001:db8::1"}, {"dev": "other"}):
-            with patch.object(identity, "ip_command", side_effect=[[neighbour], [route]]):
+            with patch.object(identity, "ip_command", side_effect=[[neighbour], [route], [link]]), \
+                    patch.object(identity, "connection_addresses", return_value=[]):
                 self.assertEqual(identity.local(config, time.time()), [])
-        with patch.object(identity, "ip_command", side_effect=[[neighbour], [{"dev": "br-lan"}]]):
-            self.assertEqual(identity.local(config, time.time())[0]["addresses"], [NEW])
+        with patch.object(identity, "ip_command", side_effect=[[neighbour], [{"dev": "br-lan"}], [link]]), \
+                patch.object(identity, "connection_addresses", return_value=[]):
+            self.assertEqual(identity.local(config, time.time())[0]["addresses"], ["192.0.2.2"])
+
+    def test_local_candidates_need_fresh_on_link_confirmation(self):
+        config = {"source": "local", "enabled": True, "interfaces": ["observe0"]}
+        self.save(config)
+        link = {"ifname": "observe0", "flags": ["UP"], "address": "02:00:00:00:00:fe",
+                "addr_info": [{"family": "inet6", "scope": "link", "local": "fe80::fe"}]}
+        def addresses(confirmed):
+            with patch.object(identity, "ip_command", side_effect=[[], [link]]), \
+                    patch.object(identity, "connection_addresses", return_value=[NEW, "2001:db8::99"]), \
+                    patch.object(identity, "observe", return_value=confirmed) as observed:
+                result = identity.sync(config, force=True)
+                self.assertEqual(observed.call_args.args[0], [("observe0", "fe80::fe", "02:00:00:00:00:fe")])
+                return result
+        confirmed = addresses([(NEW, MAC)])
+        self.assertEqual(confirmed["devices"][0]["addresses"], [NEW])
+        conflict = addresses([(NEW, MAC), (NEW, "02:00:00:00:00:02")])
+        self.assertTrue(all(not row["addresses"] for row in conflict["devices"]))
+        self.assertEqual(addresses([])["devices"], [])
+
+    def test_conntrack_candidates_only_use_original_ipv6_sources(self):
+        xml = b'<conntrack><flow><meta direction="original"><layer3><src>2001:db8::2</src></layer3></meta><meta direction="reply"><layer3><src>2001:db8::80</src></layer3></meta></flow></conntrack>'
+        with patch.object(identity.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, xml)):
+            self.assertEqual(identity.connection_addresses(), ["2001:db8::2"])
+
+    def test_neighbor_reply_validation(self):
+        from scapy.layers.inet6 import IPv6, ICMPv6ND_NA, ICMPv6NDOptDstLLAddr
+        from scapy.layers.l2 import Ether
+        from neighbor import advertisement
+
+        source, destination = "fe80::fe", "02:00:00:00:00:fe"
+        packet = Ether(src=MAC, dst=destination) / IPv6(src="fe80::1", dst=source, hlim=255) / \
+                 ICMPv6ND_NA(tgt=NEW, S=1, R=0) / ICMPv6NDOptDstLLAddr(lladdr=MAC)
+        self.assertEqual(advertisement(Ether(bytes(packet)), [NEW], destination, source), (NEW, MAC))
+        for layer, field, value in ((IPv6, "hlim", 64), (IPv6, "dst", "fe80::99"),
+                                    (ICMPv6ND_NA, "tgt", "2001:db8::99"), (ICMPv6ND_NA, "S", 0),
+                                    (ICMPv6ND_NA, "R", 1), (ICMPv6ND_NA, "cksum", 1),
+                                    (ICMPv6NDOptDstLLAddr, "lladdr", destination), (Ether, "dst", MAC)):
+            changed = packet.copy()
+            setattr(changed[layer], field, value)
+            self.assertIsNone(advertisement(Ether(bytes(changed)), [NEW], destination, source), (layer, field))
 
 
 if __name__ == "__main__":

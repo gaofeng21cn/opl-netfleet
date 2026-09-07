@@ -17,6 +17,10 @@ import sys
 import tempfile
 import time
 from urllib.parse import urlsplit, quote
+import xml.etree.ElementTree as ET
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from neighbor import observe
 
 BASE = Path("/etc/opl-netfleet/device-identity")
 RUN = Path("/var/run/opl-netfleet-device-identity")
@@ -201,7 +205,8 @@ def ip_command(*args):
 
 def local(config, now):
     devices = {}
-    for row in ip_command("neigh", "show")[:1024]:
+    neighbours = ip_command("neigh", "show")[:1024]
+    for row in neighbours:
         if row.get("dev") not in config["interfaces"] or not set(row.get("state", [])) & {"REACHABLE", "DELAY", "PROBE"}:
             continue
         ip = address(row.get("dst"))
@@ -217,7 +222,53 @@ def local(config, now):
             continue
         item = devices.setdefault(identity, {"mac": identity, "name": identity, "addresses": [], "ttl": TTL, "reason": None})
         item["addresses"].append(ip)
+    links = []
+    for row in ip_command("address", "show"):
+        if row.get("ifname") not in config["interfaces"] or "UP" not in row.get("flags", []):
+            continue
+        sources = [ip["local"] for ip in row.get("addr_info", [])
+                   if ip.get("family") == "inet6" and ip.get("scope") == "link"
+                   and not ip.get("tentative") and not ip.get("dadfailed")]
+        if sources and row.get("address"):
+            links.append((row["ifname"], sources[0], mac(row["address"])))
+    if not links:
+        raise ValueError("local_observation_interface_unavailable")
+    current = read(RUN / "cache.json", {})
+    previous = current.get("devices", []) if current.get("revision") == revision(config) else []
+    candidates = sorted({ip for value in [
+        *(row.get("dst") for row in neighbours),
+        *(ip for row in previous for ip in row.get("addresses", [])),
+        *connection_addresses(),
+    ] if (ip := address(value)) and ipaddress.ip_address(ip).version == 6})
+    cursor = read(RUN / "cursor.json", 0) % max(1, len(candidates))
+    selected = (candidates[cursor:] + candidates[:cursor])[:64]
+    confirmed = observe(links, selected)
+    atomic(RUN / "cursor.json", cursor + len(selected))
+    ownership = {}
+    for ip, identity in confirmed:
+        ownership.setdefault(ip, set()).add(identity)
+    # Revalidated addresses replace neighbour-cache claims, including conflicts.
+    for item in devices.values():
+        item["addresses"] = [ip for ip in item["addresses"] if ip not in selected]
+    for ip, identities in ownership.items():
+        for identity in identities:
+            item = devices.setdefault(identity, {"mac": identity, "name": identity, "addresses": [], "ttl": TTL, "reason": None})
+            item["addresses"].append(ip)
+    for item in devices.values():
+        item["addresses"] = sorted(set(item["addresses"]))
     return list(devices.values())
+
+
+def connection_addresses():
+    result = subprocess.run(["conntrack", "-L", "-f", "ipv6", "-o", "xml"],
+                            capture_output=True, timeout=0.8, check=True)
+    if len(result.stdout) > MAX_BODY:
+        raise ValueError("local_response_too_large")
+    try:
+        root = ET.fromstring(result.stdout)
+    except ET.ParseError as error:
+        raise ValueError("local_connections_invalid") from error
+    return [row.text for row in root.findall("./flow/meta[@direction='original']/layer3/src") if row.text]
 
 
 def unique_devices(devices):

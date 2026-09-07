@@ -43,6 +43,7 @@ function sourceReason(value) {
 		controller_certificate_changed: '控制器证书指纹不符', controller_ipv6_data_missing: '控制器未返回完整 IPv6 信息',
 		controller_timeout: '控制器读取超时', controller_request_failed: '控制器请求失败',
 		controller_response_invalid: '控制器返回格式不符', source_unavailable: '地址来源暂不可达',
+		local_observation_interface_unavailable: '局域网观察接口未就绪', local_connections_invalid: '本机连接信息读取失败',
 		address_identity_conflict: '地址归属冲突，冲突地址已旁路' })[value] || value || '同步正常';
 }
 
@@ -75,7 +76,7 @@ async function sourceAction(controller, action, params) {
 function editSource(controller) {
 	const source = controller.identitySource;
 	if (!source || controller.compatibilityBusy) return;
-	const draft = Object.assign({ source: 'unifi', enabled: true, endpoint: '', site: 'default', username: '', certificate_sha256: '', interfaces: [] }, source.config);
+	const draft = Object.assign({ source: 'local', enabled: true, endpoint: '', site: 'default', username: '', certificate_sha256: '', interfaces: [] }, source.config);
 	const fields = [];
 	const rows = E('div', {});
 	function field(key, label, type) {
@@ -87,7 +88,7 @@ function editSource(controller) {
 	}
 	function showFields() {
 		fields.length = 0;
-		rows.replaceChildren(...(draft.source === 'local' ? [ field('interfaces', '客户端直连接口') ] : [
+		rows.replaceChildren(...(draft.source === 'local' ? [ field('interfaces', '局域网观察接口') ] : [
 			field('endpoint', 'UniFi 控制器 HTTPS 地址'), field('site', '站点'), field('username', 'Network 只读账号'),
 			field('password', source.credential_present ? '新密码（留空保留）' : '密码', 'password'),
 			field('certificate_sha256', '控制器证书 SHA-256（系统信任时留空）') ]));
@@ -98,7 +99,7 @@ function editSource(controller) {
 			'change': function(event) { draft.enabled = event.target.checked; } }), '自动同步设备地址' ]),
 		E('label', { 'class': 'netfleet-config-row' }, [ E('span', {}, '来源'), E('select', { 'class': 'cbi-input-select',
 			'change': function(event) { draft.source = event.target.value; showFields(); }
-		}, [ [ 'unifi', 'UniFi 控制器' ], [ 'local', '本地直连邻居' ] ].map(item => E('option', { 'value': item[0], 'selected': draft.source === item[0] ? '' : null }, item[1]))) ]),
+		}, [ [ 'local', 'NetFleet 本机网络' ], [ 'unifi', 'UniFi 控制器（可选）' ] ].map(item => E('option', { 'value': item[0], 'selected': draft.source === item[0] ? '' : null }, item[1]))) ]),
 		rows, E('div', { 'class': 'right' }, [ button('取消', ui.hideModal), button('保存并验证', function() {
 			const config = Object.assign({}, draft);
 			if (!config.password) delete config.password;
