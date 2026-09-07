@@ -144,6 +144,9 @@ install_fixture $old_packages >"$work/downgrade.log" 2>&1
 unchanged
 rpc_ready
 stage=installer_product_upgrade
+# Local APK files pin their checksum; a normal feed installation has no pin.
+apk --no-network add $product_packages >"$work/unpin.log" 2>&1
+for name in $product_packages; do apk list --manifest | grep -Fqx "$name $old"; done
 uclient-fetch -q -O "$work/install-netfleet.sh" "$feed_url/install-netfleet.sh"
 # The isolated proxy only serves local fixtures; system dependencies are installed.
 mv /etc/apk/repositories.d/distfeeds.list "$work/distfeeds.list"
