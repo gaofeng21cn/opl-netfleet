@@ -408,6 +408,52 @@ wait_clean
 direct_probe >"$work/direct-after-stop.log" 2>&1
 /etc/init.d/opl-netfleet-core stop
 assert_clean
+stage=stopped_subscription_and_activation
+uci set netfleet.config.enabled=0
+uci set netfleet.config.profile=file:OPL-NetFleet.json
+uci commit netfleet
+ucode "$main" status >"$work/stopped-status.json"
+assert_json "$work/stopped-status.json" '@.result.actions.can_enable' true
+assert_json "$work/stopped-status.json" '@.result.actions.can_refresh' true
+run_main subscriptions-refresh fixture vm >"$work/stopped-refresh.json"
+assert_json "$work/stopped-refresh.json" '@.result.result.ok' true
+assert_json "$work/stopped-refresh.json" '@.result.result.reloaded' false
+test "$(uci get netfleet.config.enabled)" = 0
+assert_clean
+run_main compile >"$work/stopped-compile.json"
+run_main enable vm >"$work/stopped-enable.json"
+wait_ready
+ucode "$main" status >"$work/cold-started.json"
+assert_json "$work/cold-started.json" '@.result.active' true
+run_main disable vm >"$work/cold-disable.json"
+/etc/init.d/opl-netfleet-core stop
+uci set netfleet.config.enabled=0
+uci commit netfleet
+ucode "$main" config-get >"$work/stopped-config.json"
+ucode -e 'import { readfile, writefile } from "fs";
+	const config = json(readfile(ARGV[0])).result;
+	const request = { revision: config.revision,
+		policy_source: { kind: config.policy_source.kind, ref: config.policy_source.ref },
+		recovery_profile_ref: config.recovery_profile.ref,
+		providers: {}, regions: {}, capabilities: {}, routing_rules: config.routing_rules,
+		automation: config.automation, safety: config.safety };
+	for (let provider in config.providers) request.providers[provider.id] = {
+		section: provider.section, enabled: provider.enabled, role: provider.role,
+		billing: provider.billing, region_ids: provider.region_ids };
+	for (let region in config.regions) request.regions[region.id] = {
+		display_name: region.display_name, mode: region.mode };
+	for (let capability in config.capabilities) request.capabilities[capability.id] = {
+		display_name: capability.display_name, enabled: capability.enabled, mode: capability.mode,
+		region_ids: capability.region_ids, prefer_region_from: capability.prefer_region_from,
+		entry_group: capability.entry_group, policy_groups: capability.policy_groups };
+	writefile(ARGV[1], sprintf("%J", { request: request }));
+	' "$work/stopped-config.json" "$work/stopped-apply-request.json"
+run_main config-apply "$work/stopped-apply-request.json" >"$work/stopped-apply.json"
+assert_json "$work/stopped-apply.json" '@.ok' true
+assert_json "$work/stopped-apply.json" '@.result.config.active' true
+run_main disable vm >"$work/cold-apply-disable.json"
+/etc/init.d/opl-netfleet-core stop
+wait_clean
 stage=core_failure
 /etc/init.d/opl-netfleet-core start
 wait_ready

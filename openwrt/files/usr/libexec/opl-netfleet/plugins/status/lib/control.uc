@@ -71,7 +71,7 @@ status_action = function(policy, evidence) {
 	ok("status", build_status(policy, manifest, state, evidence, {
 		build: installed_build(),
 		backend: backend_metadata(),
-		active: is_active(profile),
+		active: is_active(profile) && enabled && mihomo_running,
 		recovery: pending_recovery(policy),
 		profile: profile,
 		profile_display_name: profile_display_name(profile),

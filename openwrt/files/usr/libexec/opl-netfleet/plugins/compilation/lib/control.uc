@@ -21,6 +21,8 @@ const load_policy_source = context.use("mihomo.policy-source").load;
 const is_active = context.use("models.activation").is_active;
 const load_policy = context.use("platform.documents").load_policy;
 const current_profile = context.use("platform.profile").current_profile;
+const backend_enabled = context.use("platform.profile").backend_enabled;
+const running = context.use("mihomo.backend").running;
 const shell_quote = context.use("platform.process").shell_quote;
 const sha256 = context.use("platform.storage").sha256;
 const POLICY_PATH = context.use("platform.paths").POLICY_PATH;
@@ -34,7 +36,7 @@ compile_result = function(policy, allow_active) {
 	if (system("printf '{}' | yq -M -p yaml -o json >/dev/null 2>&1") != 0)
 		return { ok: false, error: "yaml_reader_unavailable" };
 	const current = current_profile();
-	if (is_active(current) && allow_active != true) {
+	if (is_active(current) && (backend_enabled() || running()) && allow_active != true) {
 		return { ok: false, error: "active_profile_requires_disable", detail: current };
 	}
 	const source_path = resolve_policy_source(policy.policy_source);

@@ -37,7 +37,8 @@
         "platform.profile": 1,
         "platform.process": 1,
         "platform.subscriptions": 1,
-        "platform.paths": 1
+        "platform.paths": 1,
+        "recovery.control": 1
       }
     },
     "configuration.onboarding": {

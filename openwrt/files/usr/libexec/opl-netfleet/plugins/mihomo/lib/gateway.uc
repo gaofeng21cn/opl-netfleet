@@ -145,11 +145,13 @@ prepare = function() {
 };
 cleanup = function() {
 	// The optional TLS layer cannot remain attached while the original gateway is changing.
-	if (shell("nft list table inet netfleet_compat") && !shell("nft delete table inet netfleet_compat"))
-		return { ok: false, error: "compatibility_cleanup_failed" };
+	const compatibility_clean = !shell("nft list table inet netfleet_compat") ||
+		shell("nft delete table inet netfleet_compat");
+	const cleaned = compatibility_clean ? { ok: true, result: { clean: true } } :
+		{ ok: false, error: "compatibility_cleanup_failed", result: { clean: false, base_clean: true } };
 	const state = ownership();
 	if (state == null) return shell("nft list table inet netfleet") ?
-		{ ok: false, error: "network_owner_unknown" } : { ok: true, result: { clean: true } };
+		{ ok: false, error: "network_owner_unknown" } : cleaned;
 	if (state.service != SERVICE || !match(`${state.table}`, /^[0-9]+$/) ||
 		!match(`${state.pref}`, /^[0-9]+$/) || !match(state.mark ?? "", /^0x[0-9A-Fa-f]+$/) ||
 		!match(state.mask ?? "", /^0x[0-9A-Fa-f]+$/)) return { ok: false, error: "network_owner_invalid" };
@@ -167,7 +169,7 @@ cleanup = function() {
 		if (!shell(`sysctl -q -w ${shell_quote(`${name}=${value}`)}`)) return { ok: false, error: "bridge_restore_failed" };
 	}
 	fs.unlink(OWNERSHIP);
-	return { ok: true, result: { clean: true } };
+	return cleaned;
 };
 attach = function() {
 	const current = status();

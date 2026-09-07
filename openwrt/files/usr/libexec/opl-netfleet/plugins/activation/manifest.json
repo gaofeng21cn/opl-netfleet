@@ -26,6 +26,7 @@
         "models.ordering": 1,
         "models.policy": 1,
         "platform.documents": 1,
+        "platform.runtime": 1,
         "recovery.control": 1,
         "recovery.state": 1,
         "selection.round": 1,

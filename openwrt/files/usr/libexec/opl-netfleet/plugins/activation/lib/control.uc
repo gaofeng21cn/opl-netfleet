@@ -53,6 +53,8 @@ const write_evidence = context.use("platform.documents").write_evidence;
 const read_json = context.use("platform.storage").read_json;
 const backend_enabled = context.use("platform.profile").backend_enabled;
 const set_backend_enabled = context.use("platform.profile").set_backend_enabled;
+const BACKEND_KIND = context.use("platform.runtime").KIND;
+const prepare_recovery_action = context.use("recovery.control").prepare_recovery_action;
 const restore_recovery_with_probes = context.use("recovery.control").restore_recovery_with_probes;
 const recover_fail_open = context.use("recovery.control").recover_fail_open;
 const restore_profile_with_probes = context.use("recovery.control").restore_profile_with_probes;
@@ -80,14 +82,14 @@ fail_enable_after_switch = function(policy, original_profile, reason, details) {
 };
 
 enable_action = function(policy, evidence) {
-	const current = current_profile();
+	let current = current_profile();
+	const stopped = BACKEND_KIND == "native-mihomo" && backend_enabled() != true && !running();
 	if (policy.main.enabled != true) {
 		fail("enable", "disabled_by_policy", null);
 	}
 	if (!upstream_ready()) {
 		fail("enable", "upstream_unavailable", { profile: current });
 	}
-	const base_probes = require_protected_probes(policy, "enable");
 	const manifest = load_manifest();
 	const capability_names = sorted_keys(manifest?.generated_groups ?? {});
 	const automatic_names = automatic_capability_order(policy, manifest);
@@ -102,7 +104,7 @@ enable_action = function(policy, evidence) {
 		fail("enable", "automatic_dependency_invalid", null);
 	}
 	const recovery_profile_ref = policy.recovery_profile.ref;
-	const precondition = enable_precondition(current, recovery_profile_ref, manifest);
+	const precondition = enable_precondition(stopped ? recovery_profile_ref : current, recovery_profile_ref, manifest);
 	if (!precondition.ok) {
 		fail("enable", precondition.error, { current: current, expected: recovery_profile_ref });
 	}
@@ -118,6 +120,11 @@ enable_action = function(policy, evidence) {
 	if (!test_profile(ARTIFACT_PATH)) {
 		fail("enable", "staged_profile_invalid", ARTIFACT_PATH);
 	}
+	if (stopped) {
+		prepare_recovery_action(policy, current, true);
+		current = current_profile();
+	}
+	const base_probes = require_protected_probes(policy, "enable");
 	const before_secret = api_secret();
 	// A newly activated NetFleet profile can start URLTest groups before the
 	// automatic round reaches its first controller read.  Capture the native

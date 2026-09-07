@@ -187,9 +187,7 @@ restore_recovery_action = function(policy) {
 	ok("restore-recovery", result);
 };
 
-prepare_recovery_action = function(policy) {
-	const expected = ARGV[1];
-	const force_restart = ARGV[2] == "restart";
+prepare_recovery_action = function(policy, expected, force_restart) {
 	const current = current_profile();
 	const target = policy?.recovery_profile?.ref;
 	if (type(expected) != "string" || current != expected) {
@@ -219,11 +217,10 @@ prepare_recovery_action = function(policy) {
 		};
 	}
 	if (prepared.ok && prepared.business_ok == true) {
-		ok("prepare-recovery", prepared);
-		return;
+		return prepared;
 	}
 	let recovery = null;
-	if (!is_active(expected) && profile_exists(expected)) {
+	if (was_enabled == true && !is_active(expected) && profile_exists(expected)) {
 		const restored = restore_profile_with_probes(expected, policy);
 		recovery = {
 			ok: restored.runtime_ok == true,
@@ -441,7 +438,8 @@ disable_without_policy = function(action_name) {
 command_prepare_recovery = function(argv) {
 	const policy = load_policy();
 	if (policy == null) fail(argv[0], "policy_unreadable", POLICY_PATH);
-	guarded_mutation("prepare-recovery", policy, () => prepare_recovery_action(policy));
+	guarded_mutation("prepare-recovery", policy, () =>
+		ok("prepare-recovery", prepare_recovery_action(policy, ARGV[1], ARGV[2] == "restart")));
 };
 
 command_restore_recovery = function(argv) {

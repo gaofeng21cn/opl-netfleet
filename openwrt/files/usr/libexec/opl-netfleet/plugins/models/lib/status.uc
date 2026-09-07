@@ -788,15 +788,17 @@ build = function(policy, manifest, state, evidence, owner) {
 		providers: map(keys(providers), name => providers[name]),
 		regions: map(keys(regions), name => regions[name]),
 		actions: {
-			can_enable: policy.main.enabled == true && owner.active != true &&
-				owner.netfleet_present != true && owner.backend_enabled == true &&
-				owner.mihomo_running == true && owner.profile == policy.recovery_profile.ref,
+			can_enable: policy.main.enabled == true && owner.netfleet_present != true &&
+				((owner.active != true && owner.backend_enabled == true && owner.mihomo_running == true &&
+					owner.profile == policy.recovery_profile.ref) ||
+				 (owner.backend?.id == "native-mihomo" && owner.backend_enabled == false &&
+					owner.mihomo_running == false)),
 			can_select_auto: owner.active == true && owner.netfleet_present == true &&
 				owner.backend_enabled == true && owner.mihomo_running == true &&
 				length(automatic_capability_ids) > 0 && automatic_capability_id != null &&
 				generated[automatic_capability_id]?.mode == "automatic" &&
 				length(generated[automatic_capability_id]?.candidate_groups ?? []) > 0,
-			can_refresh: owner.backend_enabled == true &&
+			can_refresh: (owner.backend?.id == "native-mihomo" || owner.backend_enabled == true) &&
 				(owner.subscription_refresh?.provider_count ?? 0) > 0,
 			can_disable: owner.active || owner.netfleet_present == true || owner.recovery != null
 		}

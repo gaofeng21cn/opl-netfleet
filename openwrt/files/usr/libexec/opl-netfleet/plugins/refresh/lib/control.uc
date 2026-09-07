@@ -241,7 +241,7 @@ refresh_action = function(policy, section, initiator) {
 		ok("refresh", { state: "failed", result: result });
 		return;
 	}
-	const active = is_active(current_profile());
+	const active = is_active(current_profile()) && running();
 	let selections = {};
 	if (active) {
 		const manifest = read_json(MANIFEST_PATH);

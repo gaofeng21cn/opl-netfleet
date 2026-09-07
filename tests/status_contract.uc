@@ -501,6 +501,15 @@ const stale_owner_result = build(policy, manifest, state, evidence, {
 	mihomo_running: true,
 	quotas: {}
 });
+const stopped_owner = {
+	active: false, profile: "file:OPL-NetFleet.json", backend: { id: "native-mihomo" },
+	netfleet_present: false, backend_enabled: false, mihomo_running: false,
+	cleanup: { ok: true }, subscription_refresh: { provider_count: 1 }, quotas: {}
+};
+const stopped_result = build(policy, manifest, null, evidence, stopped_owner);
+const uncertain_result = build(policy, manifest, null, evidence, { ...stopped_owner, mihomo_running: true });
+if (stopped_result.actions.can_enable != true || stopped_result.actions.can_refresh != true ||
+	uncertain_result.actions.can_enable != false) die("stopped_native_actions_failed");
 const native_state = {
 	proxies: {
 		OUTBOUND: { alive: true, now: "Native-Auto" },

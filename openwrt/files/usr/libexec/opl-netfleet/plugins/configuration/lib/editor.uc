@@ -13,6 +13,7 @@ const resolve_profile = context.use("mihomo.backend").resolve_profile;
 const profile_exists = context.use("mihomo.backend").profile_exists;
 const prepare_provider_links = context.use("mihomo.backend").prepare_provider_links;
 const remove_provider_links = context.use("mihomo.backend").remove_provider_links;
+const running = context.use("mihomo.backend").running;
 const ARTIFACT_PATH = context.use("mihomo.backend").ARTIFACT_PATH;
 const MANIFEST_PATH = context.use("mihomo.backend").MANIFEST_PATH;
 const resolve_policy_source = context.use("mihomo.policy-source").resolve;
@@ -27,6 +28,8 @@ const read_json = context.use("platform.storage").read_json;
 const write_json_atomic = context.use("platform.storage").write_json_atomic;
 const sha256 = context.use("platform.storage").sha256;
 const current_profile = context.use("platform.profile").current_profile;
+const backend_enabled = context.use("platform.profile").backend_enabled;
+const enter_passthrough = context.use("recovery.control").enter_passthrough;
 const shell_quote = context.use("platform.process").shell_quote;
 const subscription_display_name = context.use("platform.subscriptions").subscription_display_name;
 const subscription_options = context.use("platform.subscriptions").subscription_options;
@@ -124,7 +127,7 @@ resources = function(policy) {
 projection = function(policy, inputs) {
 	const result = project(policy, inputs);
 	result.revision = sha256(POLICY_PATH);
-	result.active = is_active(current_profile());
+	result.active = is_active(current_profile()) && running();
 	const manifest = read_json(MANIFEST_PATH);
 	result.pending_apply = manifest?.policy_sha256 != result.revision;
 	return result;
@@ -154,7 +157,8 @@ prepare_snapshot = function() {
 	if (system(`rm -rf ${shell_quote(WORK_DIR)}`) != 0 || system(`mkdir -p ${shell_quote(WORK_DIR)}`) != 0) return null;
 	const files = [snapshot_file(POLICY_PATH, "policy.json", true), snapshot_file(ARTIFACT_PATH, "artifact.json", false), snapshot_file(MANIFEST_PATH, "manifest.json", false)];
 	for (let i = 0; i < length(files); i++) if (files[i] == null) return null;
-	return { files: files, active: is_active(current_profile()) };
+	return { files: files, active: is_active(current_profile()) && running(),
+		stopped: backend_metadata().id == "native-mihomo" && backend_enabled() != true && !running() };
 };
 
 restore_snapshot = function(snapshot) {
@@ -201,6 +205,7 @@ cleanup_snapshot = function() {
 
 rollback = function(snapshot) {
 	if (!restore_snapshot(snapshot)) return { ok: false, error: "snapshot_restore_failed" };
+	if (snapshot.stopped) return enter_passthrough(load_policy(), "config_apply_failed", true);
 	const disabled = run_owner("disable");
 	if (!disabled.ok) return { ok: false, error: "rollback_disable_failed", disable: disabled.response };
 	if (snapshot.active != true) return { ok: true, state: "inactive_restored", disable: disabled.response };
@@ -233,7 +238,7 @@ validate = function(policy, envelope_path) {
 };
 
 save = function(policy, envelope_path) {
-	if (is_active(current_profile())) fail("config-save", "active_requires_apply", null);
+	if (is_active(current_profile()) && running()) fail("config-save", "active_requires_apply", null);
 	const change = load_change(policy, "config-save", envelope_path);
 	if (length(change.changes) == 0) {
 		ok("config-save", { state: "unchanged", config: projection(policy, change.resources) });

@@ -153,6 +153,13 @@ Provider/地区候选组使用 `checks.latency` 的 Mihomo 原生 `url-test` 负
 - enable 后先给所选后端与 Mihomo 一个有界的 owner-readiness grace，确认 capability group 已发布且包含目标成员后只写一次 selector，再等待所选 provider/地区组出现真实叶子并回读 owner 状态和所有 target-local protected probes；所有 `automatic` capability 的可见 selector 必须最终精确回读为其“自动选优”成员，实际数据路径必须是优选或自动 fallback，不能把 `manual DIRECT` 当作启用成功；选定路径后只对该候选组执行一次 Mihomo 原生路径健康确认，刷新组级健康状态，不再并行遍历全部可见分支，结果不参与候选排名或延迟统计。未使用分支或祖先组在重启收敛期暂时报告 `alive=false`，不能推翻已绑定真实叶子、实际链和事务探针的成功 readback；grace 内只等待启动和 provider 收敛，不重试 selector 或健康确认；超时仍恢复原 Profile；
 - enable、select 或其异常处理在 active artifact 上失败时，先把全部 active capability guard 切到 DIRECT 并逐一回读，再只执行一次保护探针，随后恢复 Recovery Profile。原生 owner/runtime 恢复成功就停止 mutation，并把保护探针结果独立返回，不能因为远端业务探针失败而关闭一个健康的原生 owner；runtime 恢复失败时才调用所选后端 stop/cleanup 进入 passthrough，绝不重新启用已失败的 NetFleet Profile；
 - disable 先恢复 RecoveryProfileRef 并验证原生 owner/runtime；恢复成功即完成关闭，`business_ok` 单独返回。只有原生 runtime 无法恢复时才调用所选后端 stop/cleanup；`safe && persistent` 即可完成 passthrough，两项前提任一无法证明时拒绝卸载；
+- 原生后端完全停止时，显式 `enable` 和 `config_apply` 先校验候选，再由现有恢复 owner
+  启动 Recovery Profile、验证运行与保护探针，随后应用候选。启动失败返回已关闭的
+  passthrough；普通订阅刷新不借此启动核心。状态操作入口依据实际运行事实，不能因为
+  核心已关闭而隐藏启动，也不能把保存的 NetFleet Profile 名称当成正在接管。
+- 基础 gateway 清理必须尝试撤销全部自身接管。可选 HTTPS 表删除失败要独立报告，
+  不能提前返回而跳过基础 DNS、TPROXY 和策略路由清理；基础清理成功也不能伪报
+  尚未确认的 HTTPS 清理成功。
 - refresh 是唯一运行应用 writer：全局更新范围由启用 provider、Profile 型 Policy Source、
   Recovery Profile 和当前 subscription Profile 的真实引用去重形成。单项更新只下载指定
   来源；来源已被任一对象引用时仍进入同一运行应用事务，真正未使用的来源只下载并校验缓存。
