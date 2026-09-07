@@ -2,6 +2,25 @@
 import sys
 
 sys.path.insert(0, "/usr/lib/opl-netfleet-compat/vendor")
-from mitmproxy.tools.main import mitmdump
+from mitmproxy.tools import cmdline, dump
+from mitmproxy.tools.main import run
 
-mitmdump()
+
+class NetFleetMaster(dump.DumpMaster):
+    def __init__(self, options):
+        super().__init__(options)
+        # Keep the protocol stack and validation; omit interactive inspection,
+        # replay, rewriting and capture hooks from every streamed request.
+        unused = {
+            "anticache", "anticomp", "browser", "commandhistory",
+            "comment", "cut", "dumper", "export", "keepserving", "maplocal", "mapremote",
+            "modifybody", "modifyheaders", "onboarding", "proxyauth", "readfile",
+            "save", "savehar", "serverplayback", "stickyauth", "stickycookie", "upstreamauth",
+        }
+        for name in unused:
+            if addon := self.addons.get(name):
+                self.addons.remove(addon)
+
+
+if __name__ == "__main__":
+    run(NetFleetMaster, cmdline.mitmdump, sys.argv[1:])

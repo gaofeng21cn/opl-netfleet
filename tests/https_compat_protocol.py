@@ -5,9 +5,9 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path
-import shutil
 import socket
 import ssl
+import sys
 import tempfile
 import time
 import unittest
@@ -97,7 +97,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
             trusted_ca = self.directory / "trusted.pem"
             trusted_ca.write_bytes((self.directory / "upstream.pem").read_bytes() + (self.directory / "ca/mitmproxy-ca-cert.pem").read_bytes())
             extra = ["--mode", "regular@127.0.0.1:18444", "--set", "netfleet_local_probe=true"]
-        self.proxy = await asyncio.create_subprocess_exec(shutil.which("mitmdump"),
+        self.proxy = await asyncio.create_subprocess_exec(sys.executable, str(ADDON.with_name("mitmdump")),
             "--listen-host", self.BIND, "--listen-port", str(self.proxy_port), "--mode", self.MODE,
             "-s", str(ADDON), "--set", "upstream_cert=false", "--set", "connection_strategy=lazy",
             "--set", f"netfleet_preserve_source_port={str(self.PRESERVE_SOURCE_PORT).lower()}",
