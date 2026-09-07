@@ -91,7 +91,7 @@ invoke config-get
 test "$(jsonfilter -i "$work/response.json" -e '@.result.generation')" = 0
 invoke config-set '{"title":"Qualification note","text":"Keep this through package upgrade","generation":0}'
 test "$(jsonfilter -i "$work/response.json" -e '@.result.generation')" = 1
-test "$(stat -c %a "$data")" = 600
+ucode -e 'import * as fs from "fs"; exit((fs.stat(ARGV[0]).mode & 0777) == 0600 ? 0 : 1);' "$data"
 saved_sha=$(sha256sum "$data" | cut -d ' ' -f 1)
 revision_before=$(jsonfilter -i "$packages/fixture.json" -e '@.plugins["workspace-note"]["0.1.0"].revision')
 test -n "$revision_before"
