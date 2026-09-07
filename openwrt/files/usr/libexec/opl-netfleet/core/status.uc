@@ -744,6 +744,7 @@ export function build(policy, manifest, state, evidence, owner) {
 	return {
 		build: owner.build ?? { version: null, source_commit: null, source_tree: null },
 		active: owner.active,
+		recovery: owner.recovery ?? null,
 		policy_enabled: policy.main.enabled == true,
 		profile: owner.profile,
 		policy_source: policy.policy_source,
@@ -785,7 +786,7 @@ export function build(policy, manifest, state, evidence, owner) {
 				length(generated[automatic_capability_id]?.candidate_groups ?? []) > 0,
 			can_refresh: owner.backend_enabled == true &&
 				(owner.subscription_refresh?.provider_count ?? 0) > 0,
-			can_disable: owner.active || owner.netfleet_present == true
+			can_disable: owner.active || owner.netfleet_present == true || owner.recovery != null
 		}
 	};
 };
