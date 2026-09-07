@@ -274,7 +274,10 @@ build_identity=/usr/share/opl-netfleet/build.json
 [ "$(jsonfilter -i "$build_identity" -e '@.version')" = "$version" ]
 [ "$(jsonfilter -i "$build_identity" -e '@.source_commit')" = "$source_commit" ]
 [ "$(jsonfilter -i "$build_identity" -e '@.source_tree')" = "$source_tree" ]
-view_version=$(printf '%s' "$version" | tr '.' '_')
+view_version=$(ucode -e 'import { readfile } from "fs";
+	const artifacts = json(readfile(ARGV[0])).artifacts;
+	print(replace(filter(artifacts, item => item.package == "luci-app-netfleet")[0].version, /\./g, "_"));
+' "$candidate/manifest.json")
 "$real_apk" info -L luci-app-netfleet | grep -Fqx "www/luci-static/resources/view/netfleet/overview-v${view_version}.js"
 
 stage=installed_bytes

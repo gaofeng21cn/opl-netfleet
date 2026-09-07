@@ -129,8 +129,12 @@ uclient-fetch -q -O /etc/apk/keys/netfleet-component-fixture.pem "$feed_url/comp
 printf '%s\n' "$feed_url/components-fixtures/old/packages.adb" "$feed_url/components-fixtures/good/packages.adb" > /etc/apk/repositories.d/netfleet-component-fixture.list
 apk --timeout 30 --repositories-file /etc/apk/repositories.d/netfleet-component-fixture.list update >"$work/rollback-feed.log" 2>&1
 current=$(jsonfilter -i "$work/fixture.json" -e '@.version')
-old=$(jsonfilter -i "$work/fixture.json" -e '@.old_version')
 bad=$(jsonfilter -i "$work/fixture.json" -e '@.bad_version')
+package_version() {
+	ucode -e 'import { readfile } from "fs";
+		print(json(readfile(ARGV[0])).package_versions[ARGV[1]][ARGV[2]]);' \
+		"$work/fixture.json" "$1" "$2"
+}
 core_current=$(jsonfilter -i "$work/fixture.json" -e '@.core_version')
 core_old=$(jsonfilter -i "$work/fixture.json" -e '@.core_old_version')
 core_bad=$(jsonfilter -i "$work/fixture.json" -e '@.core_bad_version')
@@ -148,6 +152,7 @@ restore_fixture_world() {
 }
 old_packages=
 for name in $product_packages; do
+	old=$(package_version "$name" old)
 	uclient-fetch -q -O "$work/$name-$old.apk" "$feed_url/components-fixtures/good/$name-$old.apk"
 	old_packages="$old_packages $work/$name-$old.apk"
 done
@@ -158,14 +163,18 @@ rpc_ready
 stage=installer_product_upgrade
 # Local APK files pin their checksum; a normal feed installation has no pin.
 restore_fixture_world
-for name in $product_packages; do apk list --manifest | grep -Fqx "$name $old"; done
+for name in $product_packages; do
+	apk list --manifest | grep -Fqx "$name $(package_version "$name" old)"
+done
 uclient-fetch -q -O "$work/install-netfleet.sh" "$feed_url/install-netfleet.sh"
 # The isolated proxy only serves local fixtures; system dependencies are installed.
 mv /etc/apk/repositories.d/distfeeds.list "$work/distfeeds.list"
 NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 \
 	sh "$work/install-netfleet.sh" >"$work/installer-upgrade.log" 2>&1
 mv "$work/distfeeds.list" /etc/apk/repositories.d/distfeeds.list
-for name in $product_packages; do apk list --manifest | grep -Fqx "$name $current"; done
+for name in $product_packages; do
+	apk list --manifest | grep -Fqx "$name $(package_version "$name" current)"
+done
 unchanged
 install_fixture $old_packages >>"$work/downgrade.log" 2>&1
 restore_fixture_world
@@ -186,7 +195,7 @@ request components_update "$current"
 assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
 cmp /etc/apk/world "$work/update-world"
 for name in $product_packages; do
-	expected=$current
+	expected=$(package_version "$name" current)
 	[ "$name" != opl-netfleet-plugin-dashboard ] || expected=$independent
 	apk list --manifest | grep -Fqx "$name $expected"
 done
@@ -201,7 +210,7 @@ assert_json "$work/operation-result.json" '@.result.packages.error' runtime_veri
 assert_json "$work/operation-result.json" '@.result.packages.recovery' restored
 cmp /etc/apk/world "$work/update-world"
 for name in $product_packages; do
-	expected=$current
+	expected=$(package_version "$name" current)
 	[ "$name" != opl-netfleet-plugin-dashboard ] || expected=$independent
 	apk list --manifest | grep -Fqx "$name $expected"
 done

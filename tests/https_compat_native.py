@@ -157,7 +157,7 @@ class Native(Kernel):
         self.assertFalse((await self.request(host="other.example", ca=self.directory / "upstream.pem"))["h2"])
         self.DESTINATION = "198.51.100.10"
         self.assertFalse((await self.request(host="other.example", ca=self.directory / "upstream.pem"))["h2"])
-        packages = list(Path("/tmp/compat-runtime").glob("*.apk"))
+        packages = list(Path("/tmp/compat-runtime").glob("opl-netfleet-https-compat-*.apk"))
         if packages:
             held = await self.request(hold=True)
             upgrade = await asyncio.create_subprocess_exec("apk", "add", "--force-reinstall", str(packages[0]),
