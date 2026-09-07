@@ -367,10 +367,11 @@ function componentsPage(controller) {
 		if (extension.reason) current.push(E('small', {}, errorLabel(extension.reason)));
 		if (!absent && dependencies.length) current.push(E('details', { 'open': missing.length ? true : null }, [
 			E('summary', { 'class': missing.length ? 'is-warning' : '' }, missing.length ? '缺少 ' + missing.length + ' 项模块依赖' : '运行依赖（' + dependencies.length + '）'),
+			E('small', { 'style': 'overflow-wrap:anywhere' }, extension.package),
 			dependencies.map(function(dependency) { return E('small', { 'class': dependency.available === false ? 'is-warning' : '' },
 				dependency.id + '：' + (dependency.available == null ? '未确认' : dependency.available ? dependency.installed_version || '已安装' : '缺少')); })
 		]));
-		rows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, extension.label), E('small', {}, '可选模块 · ' + extension.package) ]),
+		rows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, extension.label), E('small', { 'title': extension.package }, '可选模块') ]),
 			E('td', {}, current), E('td', {}, ''), E('td', { 'class': 'netfleet-component-actions' }, extension.id === 'https-compat' ? button('配置', function() {
 				controller.currentView = 'config'; controller.configSection = 'compatibility'; controller.redraw();
 			}) : '') ]));

@@ -22,13 +22,6 @@ export function inspection(state) {
 	return { available: state?.available ?? false, installed_version: state?.installed_version ?? null, api_version: API_VERSION, error: null };
 };
 
-export function dispatch(action, argument) {
-	if (action == "get") return get();
-	if (action == "check") return check();
-	if (action == "update") return update(argument);
-	return { ok: false, error: "extension_action_not_allowed" };
-};
-
 const CACHE_DIR = "/tmp/opl-netfleet-dashboard";
 const CACHE = `${CACHE_DIR}/checked.json`;
 const RELEASE = "https://api.github.com/repos/Zephyruso/zashboard/releases/latest";
@@ -220,4 +213,11 @@ export function update(version) {
 	remove_owned(work);
 	if (error == null) remove_owned(previous);
 	return { ok: error == null, ...(error == null ? {} : { error: error }), result: resource(), rollback: recovery };
+};
+
+export function dispatch(action, argument) {
+	if (action == "get") return get();
+	if (action == "check") return check();
+	if (action == "update") return update(argument);
+	return { ok: false, error: "extension_action_not_allowed" };
 };

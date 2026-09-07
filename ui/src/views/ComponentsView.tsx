@@ -13,12 +13,13 @@ function ExtensionRow({ extension }: { extension: ExtensionComponent }) {
   const missing = extension.dependencies.filter(dependency => dependency.available === false);
   const warning = extension.state !== 'ready' && extension.state !== 'not_installed';
   return <tr>
-    <td><strong>{extension.label}</strong><small>可选模块 · {extension.package}</small></td>
+    <td><strong>{extension.label}</strong><small title={extension.package}>可选模块</small></td>
     <td><strong>{extension.installed_version || (absent ? '未安装' : '安装版本未确认')}</strong>
       {extension.state !== 'not_installed' && <small className={warning ? 'is-warning' : ''}>{state}</small>}
       {extension.reason && <small>{componentError(extension.reason)}</small>}
       {!absent && extension.dependencies.length > 0 && <details open={missing.length > 0 || undefined}>
         <summary className={missing.length ? 'is-warning' : ''}>{missing.length ? `缺少 ${missing.length} 项模块依赖` : `运行依赖（${extension.dependencies.length}）`}</summary>
+        <small style={{ overflowWrap: 'anywhere' }}>{extension.package}</small>
         {extension.dependencies.map(dependency => <small key={dependency.id} className={dependency.available === false ? 'is-warning' : ''}>
           {dependency.id}：{dependency.available === null ? '未确认' : dependency.available ? dependency.installed_version || '已安装' : '缺少'}
         </small>)}
