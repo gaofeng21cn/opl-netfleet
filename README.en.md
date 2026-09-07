@@ -69,13 +69,7 @@ Each round uses current measurements and a switch margin, keeping the active
 path stable during small latency fluctuations. History helps explain what the
 device has seen; the current choice follows the latest healthy measurements.
 
-### Microkernel Direction And Plugin Hot Loading
-
-NetFleet is evolving toward a microkernel and service composition: the kernel
-coordinates discovery, dependencies, permissions, and lifecycle, while plugins
-compose functionality. Subscriptions, selection, configuration compilation, and
-recovery policies can progressively become plugins, with dependencies and system
-configuration ensuring required capabilities are ready.
+### Independent Plugins
 
 **Extension API v1** now supports independent process plugins. Installed plugins
 are discovered automatically; loading, reloading, exiting, and upgrading them
@@ -114,31 +108,10 @@ Read the [product whitepaper](docs/product/whitepaper.md) for the full rationale
 and the [architecture overview](docs/architecture/overview.md) for current
 implementation behavior.
 
-## Current Features
-
-This overview follows the current source and LuCI interfaces. Check the chosen
-release's backend, architecture, and optional-package coverage before installing;
-source availability alone does not establish qualification for every release or device.
-
-| Capability | Available scope |
-| --- | --- |
-| Setup and migration | First-run wizard, native Mihomo setup, Nikki migration preflight and rollback |
-| Subscriptions and providers | Native subscription management and individual refresh, usage and cache status, primary/reserve roles, region scope |
-| Business exits and selection | Capabilities such as `standard` and `ai-compatible`, domain-suffix and IPv4/IPv6 CIDR rules, current measurements and switching reasons |
-| Network integration | Native IPv4/IPv6 TCP/UDP TProxy, LAN/router DNS, upstreams and domain overrides, device rules, listeners, and authentication |
-| Automation and recovery | Scheduled subscription refresh and recompilation, automatic selection, protected probes, layered Fail-Open, recovery profiles |
-| Configuration and maintenance | Native profile import, download, and controlled editing; private backup/restore; core restart/reload and sanitized logs |
-| Diagnostics and extensions | Provider/region/node status, events, separate Zashboard, optional HTTPS compatibility |
-| Components and delivery | Installed versions and dependencies, scoped component updates, Zashboard asset updates, APK/IPK packages, signed APK feed, Fleet deployment |
-
-NetFleet keeps stable operational summaries on its Events and Diagnostics page.
-The **Zashboard** entry opens the full dashboard in a new tab using the
-selected backend's controller and resources. Both backends use the same entry
-and Zashboard's secret-bearing connection URL. These temporary credentials must
-not enter NetFleet logs or display caches.
-
-Network, profile, and resource management belong to the native backend; Nikki
-mode retains Nikki's ownership of the corresponding resources.
+Source availability, release coverage, and device qualification are separate facts. Check the
+release's backend, architecture, and optional packages before installing. Read the
+[architecture overview](docs/architecture/overview.md) for current contracts and the
+[whitepaper](docs/product/whitepaper.md) for the design direction.
 
 ## Installation
 

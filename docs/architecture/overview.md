@@ -33,7 +33,7 @@ owner 保存，不进入 policy；浏览器不管理 DNS/nft 或解析节点。Z
 
 当前实现入口为 `openwrt/files/usr/libexec/opl-netfleet/main.uc`。常用运行动作是 `status`、
 `events`、`probe`、`validate`、`compile`、`enable`、`disable`、`select` 和 `refresh`；内部动作是
-`maintain`、`recover`，以及仅供 canonical installer 调用的恢复准备与恢复动作。`refresh`
+`maintain`、`recover`、`resume`，以及仅供 canonical installer 调用的恢复准备与恢复动作。`refresh`
 复用同一个 one-shot owner 和设备锁，不另建订阅 writer。接入、迁移、订阅与 Dashboard
 管理动作由[接口合同](interfaces.md)统一列出。
 
@@ -76,12 +76,16 @@ RecoveryProfileRef
 | 产品对象和 owner | [domain-model.md](domain-model.md) | Policy Source、Recovery Profile、provider、binding、capability 和依赖方向 |
 | 测量和选择 | [selection.md](selection.md) | 测量事实、资格、comparator、切换门槛和同轮自动选择 |
 | 编译、激活和恢复 | [runtime-and-recovery.md](runtime-and-recovery.md) | staged/active 事务、Fail-Open、supervisor 和恢复顺序 |
+| 状态呈现 | [ui-state.md](ui-state.md) | 字段的用户解释、库存计数、空态和展示顺序 |
+| 显示证据 | [evidence.md](evidence.md) | 持久聚合、可比性和失效边界 |
 | RPC 与 UI | [interfaces.md](interfaces.md) | 公开动作、状态投影、React/LuCI 双宿主和浏览器边界 |
 | HTTPS 兼容 | [https-compatibility.md](https-compatibility.md) | 可选协议转换、设备信任、接管租约和旁路 |
 | 模块与扩展 | [extensions.md](extensions.md) | 受限模块注册、API 准入、组件投影和生命周期分工 |
 | 独立设备管理 | [management.md](management.md) | 网络接入、配置维护、备份恢复和运行面资源 |
 | 软件包与配置输入 | [packaging.md](packaging.md) | versioned package、private Instance 和 deployment bundle |
 | UI 视觉设计 | [../design/ui.md](../design/ui.md) | 主题、布局、组件、性能和可访问性 |
+| 部署事务 | [../operations/deployment.md](../operations/deployment.md) | Fleet 输入、资格和目标端安装回滚 |
+| 开发验证 | [../development/validation.md](../development/validation.md) | source、UI、VM 和发布验证入口 |
 | 推广与复原 | [../operations/canary-promotion.md](../operations/canary-promotion.md) | canary 到 replica 的通用部署顺序和最短恢复路径 |
 
 长期目标只由[设计白皮书](../product/whitepaper.md)说明。已经批准但尚未实现的技术方案由

@@ -7,7 +7,7 @@
 ## 修改边界
 
 - 修改前回读真实 caller、当前 source、目标 owner surface 和生效位置。历史代码、文档、测试、CI 或其他 target 状态不能替代 live readback。
-- 第一条实现只建立 target-local `compile -> enable -> owner readback -> disable` 纵向链。没有真实仓外 caller 时，不增加 Python facade、Cordis Host、worker、公开 schema 或兼容版本。
+- 新增实现围绕现有 target-local 运行、管理或插件调用链演进。没有真实 caller 时，不增加 facade、Host、worker、公开 schema 或兼容版本。
 - provider source、节点、生成配置和 owner snapshot 留在设备私有 state。Git 只保存当前实现真正消费的脱敏合同、package source 和测试。
 - 退役接口前必须证明 successor 已接管真实 caller；caller-zero 后在同一批次删除实现、配置、测试和文档，不保留 alias、fallback 或兼容字段。
 - 产品对象、选择算法、Fail-Open 语义、运行 owner 或公开协议变化必须先更新 [docs/architecture/](docs/architecture/overview.md) 中拥有该主题的唯一文档，再修改实现和 surface。
@@ -33,12 +33,14 @@
 
 ## 文档生命周期
 
-- 每个语义主题只有一个当前 owner：设计理念和长期目标归 `docs/product/whitepaper.md`，当前产品合同按主题归 `docs/architecture/`，UI 视觉合同归 `docs/design/ui.md`，通用部署流程归 `docs/operations/`，操作入口归 `README.md`，贡献与治理规则归 `AGENTS.md`。白皮书和 proposal 不得冒充当前实现，其他位置只允许摘要和链接，不复制当前叙事。
+- 每个语义主题只有一个当前 owner：设计理念和长期目标归 `docs/product/whitepaper.md`，当前产品合同按主题归 `docs/architecture/`（接口、状态呈现、显示证据各自独立），开发操作与验证归 `docs/development/`，UI 视觉合同归 `docs/design/ui.md`，通用部署流程归 `docs/operations/`，操作入口归 `README.md`，贡献与治理规则归 `AGENTS.md`。白皮书和 proposal 不得冒充当前实现，其他位置只允许摘要和链接，不复制当前叙事。
 - 已形成方向但尚未实现的稳定方案归 `docs/proposals/`；实现后把当前合同吸收到 architecture、保留仍有价值的理由到 `docs/decisions/`，再删除 proposal。ADR 只记录未来仍有价值的理由、替代方案和重审条件，不记录任务状态或设备快照。
 - 活文档只描述当前事实和当前约束，不记录日期补丁、完成清单、路线图、设备快照、任务进度或按提交增量堆叠的历史。
 - 过时内容直接删除。Git history 是历史和归档，不创建 `docs/archive`、`legacy` 文档或兼容说明保存已退役行为。
 - 代码、接口、schema、命令或测试退役时，同一变更删除对应文档；不能把旧内容改成“已废弃”后继续留在活文档。
 - 文档校验只检查可机械证明的事实，例如相对链接、文件存在、schema、可执行示例和秘密边界。不得用关键词、固定章节、文件数量或文本快照判断语义正确性。
+- 新建或改写文档先明确读者、唯一问题和事实来源，并登记到 `docs/README.md` 的相应入口；属于已有主题的内容直接改其 owner，不追加另一份总结。拆分时同步迁移独有约束与全部入站链接。
+- 代码变更若改变某文档的事实来源，同批更新对应 owner；proposal 部分实现时只迁出已成立内容，剩余方案保持明确边界，不用完成清单续写。
 - 修改后回读全部受影响文档，确认同一主题没有第二个当前答案，并运行相应 link、contract、build 或 package gate。
 
 ## 验证与交付

@@ -12,7 +12,7 @@
 
 ## 后果
 
-策略来源可以从迁移期 Nikki Profile 演进到机场无关 bundle，而不改变恢复目标；恢复配置
+策略来源可以使用后端 Profile 或机场无关 bundle，而不改变恢复目标；恢复配置
 必须单独验证，不能从 provider、订阅名称或买断属性推断。
 
 ## 未采用
@@ -23,5 +23,4 @@
 
 ## 重审条件
 
-只有未来 native backend 已完整拥有正常运行与网络直通恢复，且原生 Profile 不再是任何真实
-恢复路径时，才重新设计 Recovery Profile 的产品表达；正常输入与恢复 owner 仍不得合并。
+只有独立原生 Profile 不再是任何真实恢复路径时，才重新设计 Recovery Profile 的产品表达；正常输入与恢复 owner 仍不得合并。

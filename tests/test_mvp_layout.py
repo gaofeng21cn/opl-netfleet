@@ -379,10 +379,6 @@ class MvpLayoutTests(unittest.TestCase):
             reference_style,
         )
 
-        ui_design = (ROOT / "docs" / "design" / "ui.md").read_text()
-        self.assertIn("生产 LuCI 不加载 React", ui_design)
-        self.assertIn("主题色负责选择和动作", ui_design)
-
     def test_native_luci_uses_display_cache_then_revalidates_once(self):
         overview = (
             LUCI

@@ -5,9 +5,11 @@
 
 ## 当前事实
 
-- [`architecture/`](architecture/overview.md)：当前产品对象、选择、运行、接口和打包合同。
+- [`architecture/`](architecture/overview.md)：当前产品对象、选择、运行、接口、状态呈现、显示证据和打包合同。
 - [`design/ui.md`](design/ui.md)：React 参考面与原生 LuCI 的视觉和交互设计合同。
+- [`operations/deployment.md`](operations/deployment.md)：Fleet 部署器的输入、资格和目标端事务。
 - [`operations/canary-promotion.md`](operations/canary-promotion.md)：通用 canary 推广与恢复流程。
+- [`development/validation.md`](development/validation.md)：源码、UI、隔离 OpenWrt 与发布验证入口。
 - [`development/plugins.md`](development/plugins.md)：插件接口、开发模板、软件包构建、安装与热加载。
 
 ## 目标与理由

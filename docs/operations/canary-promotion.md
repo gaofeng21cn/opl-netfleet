@@ -1,51 +1,52 @@
 # Canary 推广与复原
 
-本文定义同一 canonical artifact 从可本地恢复的 canary 推广到远程 replica 的通用流程。
-具体设备名称、地址、SSH route、网络拓扑和目标映射只属于 private OPL Instance 或
-`AGENTS.local.md`，不得写入公开仓库。
+本文是从隔离验证到 canary、再到 replica 的操作流程。部署器内部事务见
+[Fleet 部署事务](deployment.md)，运行恢复语义见[运行与恢复](../architecture/runtime-and-recovery.md)。
+具体设备、拓扑、SSH route 和事故记录只归 private OPL Instance 或 `AGENTS.local.md`。
 
-## 0. 独立只读基线
+## 推广前
 
-任何 mutation 前分别记录每个目标的实际后端、当前 Profile、订阅 cache、Mihomo 单实例、
-DNS/nft/IPv4/IPv6、基础业务访问和可回退路径。原生模式回读 NetFleet 核心与网关，Nikki
-模式回读 Nikki；不能用旧模式的操作路径管理新后端。每个目标必须单独授权；一台设备的授权和基线
-不能推断另一台设备已满足条件。
+确认候选的精确 source commit/tree、签名软件包身份与[隔离验证](../development/validation.md)
+结果。涉及 OpenWrt 文件、服务或数据面的候选须先有相同 source 的 QEMU qualification；
+源码测试或另一台设备的成功不能替代它。每个目标分别取得授权、可回退配置和只读基线：
+所选后端、当前 Profile、订阅缓存、Mihomo 单实例、DNS、透明代理、IPv4/IPv6 与业务探针。
+原生模式回读 NetFleet 核心与网关，Nikki 模式回读 Nikki；不能用旧模式的入口管理新后端。
+原生首次设置、Nikki 迁移和 Fleet 声明式部署使用各自入口，不能混用输入替代迁移。
 
-## 1. Canary
+## Canary
 
-1. 在符合[软件包支持边界](../architecture/packaging.md)的空白设备安装签名包，确认安装本身不接管网络；已有设备升级则恢复升级前的运行状态。
-2. 只在 canary 执行 compile，取得 staged JSON、manifest、`mihomo -t` 和引用回读。
-3. 先以最小真实 capability 执行 enable，回读所选后端 effective Profile、Mihomo 当前链、
-   DNS/nft/IPv4/IPv6 和业务访问。
-4. 验证手动选择、关闭、恢复配置、持久化和 active uninstall 的拒绝或安全退回；原生模式必须在 Nikki 停止时完成。
-5. 只有以上证据通过，才试验故障选择；protected probe 失败先进入已验证的 DIRECT guard，
-   guard 无法回读才恢复 native Profile。
-6. 通过后冻结 canonical artifact、配置合同和验收命令，形成唯一复制输入。
+1. 在符合[软件包支持边界](../architecture/packaging.md)的可本地恢复空白设备安装签名包，
+   确认安装本身不接管网络；已有设备升级则恢复升级前的运行状态。
+2. 按对应接入路径核对 staged JSON、manifest、引用与真实 `mihomo -t`；active 状态不直接 compile。
+3. 显式 enable 后回读所选后端 effective Profile、Mihomo 当前链、DNS、透明代理、IPv4/IPv6 和业务。
+4. 验证手动与自动选择、关闭、恢复配置、持久化及卸载的拒绝或安全退出；原生模式在 Nikki
+   停止时完成，Nikki 模式额外验证官方手工切回。
+5. 在已有恢复路径下验证节点、provider、地区、配额及运行 owner 故障；事务失败先建立
+   active DIRECT guard，再恢复完整 Recovery Profile，runtime 无法恢复才进入后端 cleanup。
+6. 全部通过后冻结 package、配置合同和验收动作，作为唯一推广输入。
 
-## 2. Replica
+## Replica
 
-1. 重新取得 replica 的独立授权、备份和只读基线；canary 成功不能代替授权。
-2. 原样安装同一 artifact，按首次安装或升级的对应路径验收，不为验证而停止正在运行的网络。
-3. 不因远程路径困难而减少 owner readback；失败走所选后端正式退出与恢复入口，不启动另一个后端接管。
-4. replica 只复制已经冻结并证明的能力，不在首次推广中引入新算法、UI 或目标专用补丁。
+对每个 replica 重新取得授权、备份和基线，安装同一 artifact，按首次安装或升级的对应路径
+验收，不为验证而停止正在运行的网络。首次推广不混入新算法、UI 或目标专用补丁；transport
+困难不能减少 installed、effective、runtime 与 business 证据。失败按所选后端的正式恢复
+入口退出，不启动另一个后端接管，也不因另一目标成功而继续。
 
-## 最短复原路径
+## 复原
 
-- 只首次安装或 compile：当前运行路径不变，不需要进行额外接管或恢复。
-- 已 enable 且 NetFleet 仍可执行：执行 `disable`，再确认
-  effective Profile、DNS/nft/路由和业务访问。
-- NetFleet 管理接口不可用：保留当前运行和恢复文件，通过所选后端的服务与恢复入口处理；
-  原生模式不自动启动 Nikki。核心及网关退出必须确认已释放自身资源，基础联网能独立恢复。
-- 恢复或卸载失败：停止删除动作，保留 staged/active artifact 和原始 Profile；
-  不得靠重复重试或手写 DNS/nft 清理掩盖问题。无法重新证明管理面时返回需要现场恢复，
-  不执行重启设备或固件操作。
+仅首次安装或 compile 时，原运行路径应保持不变。已经 enable 时优先执行 NetFleet
+`disable`，确认 Recovery Profile、运行 owner、DNS、透明代理和业务；Nikki 模式还可通过
+Nikki 官方页面切回独立恢复配置。管理接口不可用时保留当前运行和恢复文件，通过所选
+后端服务与恢复入口处理。原生后端不自动启动 Nikki；核心与网关退出必须回读已释放自身
+资源，基础联网能独立恢复。
 
-automatic 能力必须先在 canary 取得同轮选择、能力资格、保护探针和 owner readback；
-replica 只复制冻结后的能力，并仍需独立完成 installed/effective/runtime/business 验收。
+恢复或卸载无法证明安全时停止删除，保留仍在使用的 artifact 和配置；不手写 DNS/nft
+清理、不反复覆盖运行文件。管理面无法通过软件恢复时返回 `needs_local_recovery`，
+设备重启、关机、固件或现场/OOB 操作仍需另行精确授权。
 
 ## 独立用户工作流验收
 
-验收必须使用将要发布的同一签名资产，不能以开发目录或旧 VM 结果替代。
+验收使用将要发布的同一签名资产，不能以开发目录或旧 VM 结果替代。
 
 | 用户流程 | 必须回读的结果 |
 | --- | --- |
