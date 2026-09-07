@@ -23,7 +23,9 @@ def advertisement(packet, targets, destination, source):
 
 def probe(interface, source, hardware, targets):
     # Scapy's L2 socket keeps discovery independent of the router's normal route.
-    from scapy.all import Ether, IPv6, ICMPv6ND_NS, ICMPv6NDOptSrcLLAddr, srp
+    from scapy.layers.inet6 import IPv6, ICMPv6ND_NS, ICMPv6NDOptSrcLLAddr
+    from scapy.layers.l2 import Ether
+    from scapy.sendrecv import srp
 
     packets = []
     for target in targets:
@@ -45,7 +47,9 @@ def observe(interfaces, targets):
     if not targets or not interfaces:
         return []
     # Import once before starting workers; Scapy's initial layer registration is shared.
-    import scapy.all  # noqa: F401
+    import scapy.layers.inet6  # noqa: F401
+    import scapy.layers.l2  # noqa: F401
+    import scapy.sendrecv  # noqa: F401
 
     with ThreadPoolExecutor(max_workers=4) as workers:
         return [item for result in workers.map(lambda row: probe(*row, targets), interfaces) for item in result]
