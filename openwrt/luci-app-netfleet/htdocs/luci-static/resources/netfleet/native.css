@@ -612,18 +612,39 @@
 	gap: 24px;
 	margin: 0 0 26px;
 	padding: 13px 17px;
+	border-left: 3px solid var(--nf-warning);
+	border-radius: 0 4px 4px 0;
+	background: rgba(161, 92, 0, 0.07);
+	color: var(--nf-text);
+	font-size: 15px;
+	line-height: 1.55;
 }
 
 .netfleet-native .netfleet-overview-attention > strong {
+	flex: 0 0 auto;
+	margin: 0;
+	padding: 0;
+	color: var(--nf-warning);
+	font-size: inherit;
+	line-height: inherit;
 	white-space: nowrap;
 }
 
 .netfleet-native .netfleet-overview-attention ul {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 7px 26px;
+	display: grid;
+	gap: 6px;
+	min-width: 0;
 	margin: 0;
-	padding-left: 19px;
+	padding: 0 0 0 19px;
+	list-style: disc outside;
+}
+
+.netfleet-native .netfleet-overview-attention li {
+	margin: 0;
+	padding: 0;
+	font-size: inherit;
+	line-height: inherit;
+	overflow-wrap: anywhere;
 }
 
 .netfleet-native .netfleet-recovery dt {

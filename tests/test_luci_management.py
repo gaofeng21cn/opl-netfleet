@@ -18,7 +18,10 @@ function text(value) {
     return typeof value === 'object' ? text(value.children) : String(value);
 }
 function E(tag, attrs, children) {
-    const node = { tag, attrs: attrs || {}, children: Array.isArray(children) ? children : children == null ? [] : [children] };
+    const items = Array.isArray(children) ? children : children == null ? [] : [children];
+    // LuCI E() appends one child level; nested arrays stringify DOM objects.
+    const node = { tag, attrs: attrs || {}, children: items.map(item => Array.isArray(item) ? String(item) : item) };
+    node.toString = () => '[object HTMLElement]';
     node.value = node.attrs.value == null ? tag === 'textarea' ? text(node.children) : '' : String(node.attrs.value);
     // HTML boolean attributes are true by presence, including disabled="false".
     for (const name of ['disabled', 'checked', 'open']) {
@@ -358,7 +361,7 @@ assert(owner.componentsError);
         self.run_js(r"""
 const owner = controller();
 const base = { managed: true, update_available: false, reason: null, installed_version: '1.0.0-r1', available_version: '1.0.0-r1' };
-owner.components = { supported: true, feed: { configured: true, checked_at: 100 }, components: [
+owner.components = { supported: true, architecture: 'aarch64_generic', feed: { configured: true, checked_at: 100, url: 'https://packages.example/netfleet' }, components: [
   { ...base, id: 'netfleet', label: 'NetFleet' }, { ...base, id: 'luci', label: 'LuCI 界面' },
   { ...base, id: 'mihomo', label: 'Mihomo', installed_version: '1.19.29', running_version: 'v1.19.30', available_version: '1.19.30-r1', update_available: true }
 ], dependencies: [{ label: 'curl', available: false }], dashboard: { managed: true, available: true } };
@@ -369,6 +372,12 @@ assert(text(root).includes('运行版本与安装记录不一致'));
 assert(text(root).includes('已安装，可使用'));
 assert(!text(root).includes('不适用'));
 assert(!text(root).includes('未提供'));
+assert(!text(root).includes('[object HTMLElement]'));
+const metadata = find(root, node => node.tag === 'dl' && node.attrs.class === 'netfleet-component-meta');
+assert.equal(all(metadata, node => node.tag === 'dt').length, 3);
+assert.equal(all(metadata, node => node.tag === 'dd').length, 3);
+assert(text(metadata).includes('aarch64_generic'));
+assert(text(metadata).includes('https://packages.example/netfleet'));
 assert(find(root, node => node.tag === 'details' && text(node).includes('缺少 1 项')).open);
 fire(button(root, '更新软件包'));
 assert(text(modal.content).includes('当前运行 v1.19.30，安装记录 1.19.29'));
@@ -398,7 +407,7 @@ assert.equal(all(root, node => node.tag === 'tbody')[0].children.length, 2);
 assert.equal(all(root, node => node.tag === 'strong' && text(node) === 'Zashboard').length, 1);
 let row = find(root, node => node.tag === 'tr' && text(node).includes('HTTPS 兼容'));
 assert(text(row).includes('0.2.0-r1'));
-assert(text(row).includes('接口可用'));
+assert(text(row).includes('可配置'));
 assert(!text(row).includes('已就绪'));
 assert(!find(row, node => node.tag === 'details').open);
 assert(text(row).includes('mitmproxy：12.2.3'));

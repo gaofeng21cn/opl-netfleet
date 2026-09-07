@@ -79,6 +79,27 @@ if (third.capabilities.standard?.regions?.near?.last_best_delay_ms != 50 ||
 	exit(1);
 }
 
+const catalog = [{ region: "near", provider: "provider" }, { region: "far", provider: "provider" }];
+const interrupted = selection_snapshot(first, [], "standard", decision("standard-one", "near", 40), { ok: true }, identity, catalog);
+if (interrupted.capabilities.standard.regions.far.sample_count != 1 ||
+	interrupted.capabilities.standard.regions.far.sampled_at != first.capabilities.standard.regions.far.sampled_at ||
+	interrupted.capabilities.standard.providers.provider.sample_count != 1 ||
+	length(interrupted.capabilities.standard.entries) != 0) {
+	print("transient_candidate_loss_erased_history\n");
+	exit(1);
+}
+const resumed = selection_snapshot(interrupted, [candidate("far-again", "far", 100, "standard")],
+	"standard", decision("far-again", "far", 100), { ok: true }, identity, catalog);
+const removed = selection_snapshot(resumed, [], "standard", decision("standard-one", "near", 40), { ok: true }, identity,
+	[{ region: "near", provider: "other" }]);
+if (resumed.capabilities.standard.regions.far.sample_count != 2 ||
+	resumed.capabilities.standard.regions.far.total_best_delay_ms != 180 ||
+	removed.capabilities.standard.regions.far != null ||
+	removed.capabilities.standard.providers.provider != null) {
+	print("catalog_history_retention_failed\n");
+	exit(1);
+}
+
 const invalid_provider_aggregate = json(sprintf("%J", third));
 invalid_provider_aggregate.capabilities.standard.providers.provider.sample_count = 0;
 if (validate(invalid_provider_aggregate).ok) {

@@ -67,14 +67,14 @@ export function countPair(available: NullableNumber, total: NullableNumber): str
 
 export function averageDelay(value: NullableNumber, sampleCount: NullableNumber): string {
   if (sampleCount === null || sampleCount === undefined || !Number.isFinite(Number(sampleCount))) {
-    return '样本未提供';
+    return '统计暂不可读';
   }
-  return Number(sampleCount) < 2 ? '样本不足' : delay(value);
+  return Number(sampleCount) === 0 ? '暂无有效测量' : Number(sampleCount) < 2 ? '仅 1 次测量' : delay(value);
 }
 
 export function quota(state?: { state?: string; remaining_bytes?: number | null }): string {
   if (state?.state === 'exhausted') return '已耗尽';
-  if (state?.state !== 'available' || !Number.isFinite(Number(state.remaining_bytes))) return '未知';
+  if (state?.state !== 'available' || state.remaining_bytes == null || !Number.isFinite(Number(state.remaining_bytes))) return '机场未返回用量';
   let amount = Number(state.remaining_bytes);
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
   let unit = 0;
@@ -87,9 +87,9 @@ export function quota(state?: { state?: string; remaining_bytes?: number | null 
 
 export function providerExpiry(provider: Provider): string {
   if (provider.billing === 'buyout') return '不限时间';
-  if (provider.billing !== 'subscription') return '未提供';
+  if (provider.billing !== 'subscription') return '计费方式未确认';
   const value = provider.quota?.expires_at?.trim();
-  return value ? value.slice(0, 10) : '未提供';
+  return value ? value.slice(0, 10) : '机场未返回到期时间';
 }
 
 const stageName = (snapshot: StatusSnapshot, stage: FailOpenStage) => {

@@ -662,7 +662,7 @@ function createPage(storage, api, notifications) {
 	page.redraw();
 	const providerPageText = nodeText(root.children[2]);
 	assert(providerPageText.includes('1 / 1 正常'));
-	assert(providerPageText.includes('每行汇总订阅状态和运行质量'));
+	assert(providerPageText.includes('资源数：当前可用 / 已加载'));
 	assert(providerPageText.includes('47/50 节点 · 订阅 52 条'));
 	assert(!providerPageText.includes('3/4 节点'));
 	assert(providerPageText.includes('缓存已更新'));

@@ -112,7 +112,8 @@ describe('地区显示与统计口径', () => {
   });
 
   it('单样本不重复显示平均值，多个样本显示真实平均', () => {
-    expect(averageDelay(96, 1)).toBe('样本不足');
+    expect(averageDelay(null, 0)).toBe('暂无有效测量');
+    expect(averageDelay(96, 1)).toBe('仅 1 次测量');
     expect(averageDelay(84, 24)).toBe('84 ms');
     expect(averageDelay(78, 2)).toBe('78 ms');
   });
@@ -120,14 +121,14 @@ describe('地区显示与统计口径', () => {
   it('机场平均最优沿用同一有效样本口径', () => {
     const providers = fixtureScenarios.healthy.status.providers;
     expect(averageDelay(providers[0].average_best_delay_ms, providers[0].delay_sample_count)).toBe('84 ms');
-    expect(averageDelay(providers[2].average_best_delay_ms, providers[2].delay_sample_count)).toBe('样本不足');
+    expect(averageDelay(providers[2].average_best_delay_ms, providers[2].delay_sample_count)).toBe('仅 1 次测量');
   });
 
   it('订阅到期时间使用 status owner 投影，买断制不猜测', () => {
     expect(providerExpiry({ id: 'subscription', role: 'primary', billing: 'subscription', quota: { state: 'available', remaining_bytes: 10, expires_at: '2027-03-12 16:00:00' } })).toBe('2027-03-12');
-    expect(providerExpiry({ id: 'missing', role: 'primary', billing: 'subscription', quota: { state: 'unknown' } })).toBe('未提供');
+    expect(providerExpiry({ id: 'missing', role: 'primary', billing: 'subscription', quota: { state: 'unknown' } })).toBe('机场未返回到期时间');
     expect(providerExpiry({ id: 'buyout', role: 'reserve', billing: 'buyout', quota: { state: 'unknown', expires_at: '2027-03-12' } })).toBe('不限时间');
-    expect(providerExpiry({ id: 'unknown', role: 'reserve', billing: 'unknown', quota: { state: 'unknown' } })).toBe('未提供');
+    expect(providerExpiry({ id: 'unknown', role: 'reserve', billing: 'unknown', quota: { state: 'unknown' } })).toBe('计费方式未确认');
     expect(quota({ state: 'available', remaining_bytes: 1024 })).toBe('1.0 KiB');
   });
 
