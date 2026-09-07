@@ -146,6 +146,9 @@ def build(output, sdk):
         for label, permitted in (("old_host", False), ("host", True)):
             sandbox = scratch / f"solver-{label}"
             sandbox.mkdir()
+            subprocess.run([str(apk), "--root", str(sandbox), "--arch", "noarch", "--initdb",
+                            "--no-network", "--no-scripts", "add"],
+                           check=True, capture_output=True, text=True)
             solved = subprocess.run([
                 str(apk), "--root", str(sandbox), "--arch", "noarch", "--initdb", "--no-network",
                 "--no-scripts", "--allow-untrusted", "--simulate", "add", str(output / receipt[label]["name"]), str(note),
