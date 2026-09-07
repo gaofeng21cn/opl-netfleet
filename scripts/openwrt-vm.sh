@@ -129,6 +129,8 @@ git -C "$repo_dir" archive "$source_commit" \
 	openwrt/mihomo-meta/source.json \
 	openwrt/https-compat \
 	openwrt/files/usr/libexec/opl-netfleet \
+	openwrt/files/usr/libexec/rpcd/opl-netfleet \
+	openwrt/luci-app-netfleet/root/usr/share/rpcd/acl.d/luci-app-netfleet.json \
 	openwrt/files/etc/init.d/opl-netfleet \
 	openwrt/files/etc/init.d/opl-netfleet-core \
 	openwrt/files/etc/config/netfleet \
