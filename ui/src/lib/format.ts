@@ -92,6 +92,10 @@ export function providerExpiry(provider: Provider): string {
   return value ? value.slice(0, 10) : '机场未返回到期时间';
 }
 
+export function quotaResetLabel(day?: number | null): string {
+  return day != null && Number.isInteger(day) && day >= 1 && day <= 31 ? `每月 ${day} 日重置` : '';
+}
+
 const stageName = (snapshot: StatusSnapshot, stage: FailOpenStage) => {
   if (stage.kind === 'preferred') return '当前优选';
   if (stage.kind === 'direct') return '直连';

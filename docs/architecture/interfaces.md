@@ -69,6 +69,8 @@ LuCI 通过 `fs.exec_direct` 调用白名单 `opl-netfleet-transfer`，经 `cgi-
 
 ## 当前运行接口
 
+`status.recovery` 只投影 activation owner 的自动降级恢复请求；存在请求时允许用户执行 disable 取消恢复，界面显示“降级恢复中”。`active` 仍只表示当前实际接管状态，恢复原因与重试时间不能由界面自行推断。
+
 `status.runtime.backend` 返回当前后端的 `id/display_name`，`backend_enabled` 表示其服务
 启用状态；配置投影的 `backend` 来自同一 owner。UI 不保留 Nikki 专用状态字段别名，
 恢复文案使用实际后端名称，不能把“NetFleet 原生后端运行”描述成 Nikki 运行。
@@ -165,6 +167,8 @@ policy、compile、enable、启动 supervisor 并回读。已有有效 policy �
 policy 配置 owner 不接受 raw policy、订阅 URL/token、节点正文、DNS/nft 命令、浏览器生成的 Profile、自定义 provider cache 路径、自定义地区正则或 quota metadata 映射。订阅凭据单独提交给 subscriptions owner，不混入 policy；原生 DNS、代理范围和监听设置通过独立 network owner 的受限结构编辑。配置文件通过 maintenance owner 校验，不能借文件导入建立另一条配置应用链。OpenWrt flow-offload、WAN/LAN 地址和任意防火墙参数不属于这些管理表单。
 
 ## LuCI 显示层合同
+
+每月流量重置日归 SubscriptionOwner 的订阅元信息：原生订阅 `quota_reset_day` 为可选 1–31 的整数，显式 `null` 清空、省略保留已有值；认证订阅管理可读写，状态只投影 quota 的 `reset_day` 与 `reset_day_source: manual`。当前标准 `Subscription-Userinfo` 没有可靠月重置日，不能从到期日、URL 或机场名称推算。该字段不进入 policy、下载身份或测速统计身份，保存不下载、不重编译、不重载；订阅刷新保留手工值。它只作套餐参考，不按日期清零用量、解除耗尽或改变可用性；月末日期的实际结算以机场为准。买断制不显示月重置日，未设置不作告警。
 
 状态中的机场正式名称由 UCI 引用的当前后端 subscription section 的 `name` 提供；section 没有名称时才回退到稳定 section ID。恢复配置的用户显示名由 status owner 通过同一 target-local 后端 metadata 解析并投影为 `recovery_profile_display_name`；无法取得可靠名称时返回 `null`，UI 显示“当前原生配置”，不得从 `subscription:`/`file:` 引用或 provider 计费属性猜名称。capability 的可见 Mihomo 组名来自 policy `display_name`；地区可见名称由可选 `flag` 与 `display_name` 组合，缺失时回退到稳定 region ID，共享 UI 再把任意一对 regional-indicator 字符通用转换为 ASCII 两位地区代码，统一显示为“地区代码 + 中文名称”，不能依赖 emoji 字体或为单个地区写特例。这些显示名只用于编译的用户表面和 status/UI projection，不参与 provider、地区或节点选择，也不能成为算法分支。内部对象仍用稳定 ID，provider/region 内部组一律 hidden。NetFleet inactive 时，status 另从当前后端 owner 和一次 controller `/proxies` 读取每个绑定策略来源组的原生实际链；LuCI 显示“当前原生出口”，capability 只标注为“下次启用配置”。原生组缺失、controller 不可用和网络直通必须分别显示，不能统一降级成“未知”。
 

@@ -5,6 +5,7 @@ import { running, lan_runtime_state } from "./adapters/backend.uc";
 import { controller_ready } from "./adapters/mihomo.uc";
 import { validate, automation, guard_probe_url } from "./core/policy.uc";
 import { is_active } from "./core/activation.uc";
+import { pending as pending_recovery } from "./adapters/recovery.uc";
 
 const MAIN = "/usr/libexec/opl-netfleet/main.uc";
 const LOCK = "/var/lock/opl-netfleet-deploy.lock";
@@ -13,6 +14,7 @@ function settings() {
 	const policy = read_json(POLICY_PATH);
 	if (policy == null || !validate(policy).ok) return null;
 	return {
+		policy: policy,
 		automation: automation(policy),
 		dns_probe_url: guard_probe_url(policy)
 	};
@@ -39,7 +41,7 @@ let was_runtime_ready = false;
 for (;;) {
 	const settings_value = settings();
 	const now = int(time());
-	if (settings_value == null || settings_value.automation.enabled != true) {
+	if (settings_value == null || settings_value.policy.main.enabled != true) {
 		unhealthy_since = null;
 		next_selection_at = null;
 		next_refresh_at = null;
@@ -62,6 +64,12 @@ for (;;) {
 	}
 
 	const owned = is_active(current_profile());
+	const recovery = pending_recovery(settings_value.policy);
+	if (!owned && recovery != null && now >= recovery.retry_at) {
+		run_owner("resume", "supervisor");
+		sleep(config.poll_interval_seconds * 1000);
+		continue;
+	}
 	const runtime_ready = owned && backend_enabled() == true && running() && runtime_controller_ready();
 	const lan_runtime = runtime_ready ? lan_runtime_state(settings_value.dns_probe_url) : null;
 	const healthy = runtime_ready && lan_runtime?.transparent_proxy_ready == true &&
@@ -75,7 +83,7 @@ for (;;) {
 		unhealthy_since = null;
 	} else if (healthy) {
 		unhealthy_since = null;
-		if (now >= next_selection_at) {
+		if (config.enabled == true && now >= next_selection_at) {
 			run_owner("maintain", "scheduled");
 			next_selection_at = now + config.selection_interval_seconds;
 		}

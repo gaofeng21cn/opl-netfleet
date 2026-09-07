@@ -5,6 +5,8 @@ export interface Quota {
   remaining_bytes?: number | null;
   total_bytes?: number | null;
   expires_at?: string | null;
+  reset_day?: number | null;
+  reset_day_source?: 'manual' | null;
 }
 
 export interface FailOpenStage {
@@ -151,6 +153,7 @@ export interface DeviceConfigSnapshot {
 
 export interface StatusSnapshot {
   active: boolean;
+  recovery?: { reason: string; requested_at: number; retry_at: number } | null;
   policy_enabled: boolean;
   profile?: string | null;
   policy_source?: { kind: 'bundle' | 'profile'; ref: string } | null;
