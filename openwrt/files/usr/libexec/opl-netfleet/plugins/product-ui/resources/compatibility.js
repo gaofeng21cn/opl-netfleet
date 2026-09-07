@@ -20,6 +20,7 @@ function reason(value) {
 		lease_expired: '接管许可已到期', maintenance: '组件维护中，当前旁路', no_verified_targets: '没有已验证的接入目标',
 		manual_recovery_required: '反复恢复后仍故障，等待人工恢复', rules_bypassed: '目标规则当前旁路，详见规则状态',
 		historical_failure: '旧版本未记录具体原因', upstream_probe_timeout: '上游恢复探测超时', upstream_certificate_failed: '上游证书验证失败',
+		engine_probe_unavailable: '转发引擎暂未完成恢复探测',
 		upstream_h2_not_negotiated: '上游未协商 HTTP/2',
 		upstream_tls_failed: '上游 TLS 握手失败', client_tls_failed: '客户端 TLS 握手失败',
 		upstream_timeout: '上游传输超时', upstream_connection_reset: '上游连接被重置',

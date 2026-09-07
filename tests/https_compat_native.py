@@ -106,6 +106,26 @@ class Native(Kernel):
 
     async def test_native_egress_and_management_expiry(self):
         self.assertFalse((await self.request(ca=self.directory / "upstream.pem"))["h2"])
+        # The controller inherits the core lifecycle cgroup, which bypasses Mihomo.
+        # Keep that direct path broken while the engine and Mihomo retain their egress.
+        self.command("nft", "add", "table", "inet", "netfleet_probe_test")
+        self.addCleanup(self.command, "nft", "delete", "table", "inet", "netfleet_probe_test")
+        self.command("nft", "add", "chain", "inet", "netfleet_probe_test", "output",
+                     "{ type filter hook output priority 0; policy accept; }")
+        self.command("nft", "add", "rule", "inet", "netfleet_probe_test", "output",
+                     "oifname", "nfcompat-up", "ip", "daddr", "198.51.100.10", "tcp", "dport", "443",
+                     "socket", "cgroupv2", "level", "3", "services/opl-netfleet-core/lifecycle", "counter", "drop")
+        self.command(sys.executable, "-c", """import os, socket
+from pathlib import Path
+Path('/sys/fs/cgroup/services/opl-netfleet-core/lifecycle/cgroup.procs').write_text(str(os.getpid()))
+try:
+    connection = socket.create_connection(('198.51.100.10', 443), timeout=0.3)
+except TimeoutError:
+    pass
+else:
+    connection.close()
+    raise AssertionError('lifecycle direct egress must be blocked')
+""")
         config = json.loads((self.directory / "config.json").read_text())
         saved = self.owner.call("apply", {"revision": self.owner.call("get")["revision"], "config": config})
         self.ca_bundle.write_bytes((self.directory / "upstream.pem").read_bytes() + self.owner.call("ca")["pem"].encode())
