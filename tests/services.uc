@@ -6,6 +6,7 @@ const workspace = fs.mkdtemp("/tmp/netfleet-service-test.XXXXXX");
 if (workspace == null) die("test workspace unavailable");
 const host = create(root, {
 	trusted_owner: fs.stat(root).uid,
+	code_locks: false,
 	system: json(fs.readfile(`${root}/../../share/opl-netfleet/system.json`)),
 	override_path: `${workspace}/system.json`,
 	lock_root: `${workspace}/locks`,
