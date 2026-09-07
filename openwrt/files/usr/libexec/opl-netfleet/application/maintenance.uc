@@ -226,7 +226,10 @@ function snapshot(work, paths, allow_unhealthy) {
 	for (let path in paths) {
 		if (length(filter(before.files, entry => entry.path == path))) continue;
 		const info = fs.lstat(path), backup = `${work}/before-${length(before.files)}`;
-		if (info != null && !readable_input(path)) return null;
+		// Generated rollback files can be 0644; they are never added to exports.
+		const generated = index([EVIDENCE_PATH, ARTIFACT_PATH, MANIFEST_PATH], path) >= 0 &&
+			info?.type == "file" && info.uid == 0 && (info.mode & 022) == 0;
+		if (info != null && !readable_input(path) && !generated) return null;
 		if (info != null && (!shell(`cp -p ${q(path)} ${q(backup)}`) || sha256(backup) != sha256(path))) return null;
 		push(before.files, { path: path, present: info != null, backup: backup, digest: info == null ? null : sha256(path) });
 	}
