@@ -7,10 +7,10 @@ let pending, clear, request, defer;
 const is_active = context.use("models.activation").is_active;
 const atomic_json = context.use("platform.files").atomic_json;
 const KIND = context.use("platform.runtime").KIND;
-const read_json = context.use("platform.uci").read_json;
-const current_profile = context.use("platform.uci").current_profile;
+const read_json = context.use("platform.storage").read_json;
+const current_profile = context.use("platform.profile").current_profile;
 
-const PATH = "/etc/opl-netfleet/recovery.json";
+const PATH = context.use("platform.paths").RECOVERY_PATH;
 
 pending = function(policy) {
 	const value = read_json(PATH);

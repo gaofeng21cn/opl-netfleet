@@ -8,10 +8,10 @@ let shell, capture, parse, directory, uci_value, enabled, merge, source_path, pr
 const private_file = context.use("platform.files").private_file;
 const private_directory = context.use("platform.files").private_directory;
 const atomic_json = context.use("platform.files").atomic_json;
-const read_json = context.use("platform.uci").read_json;
-const read_yaml = context.use("platform.uci").read_yaml;
-const shell_quote = context.use("platform.uci").shell_quote;
-const sha256 = context.use("platform.uci").sha256;
+const read_json = context.use("platform.storage").read_json;
+const read_yaml = context.use("platform.storage").read_yaml;
+const shell_quote = context.use("platform.process").shell_quote;
+const sha256 = context.use("platform.storage").sha256;
 
 const BASE = "/etc/opl-netfleet/native";
 const RUN = `${BASE}/run`;

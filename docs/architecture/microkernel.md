@@ -22,6 +22,38 @@ UCode 插件的 `manifest.json` 使用 `opl-netfleet-service-plugin.v1`，声明
 依赖图，拒绝缺失提供者、接口不匹配和循环依赖；按依赖关系创建所需服务，未使用的插件
 不执行代码。命令路由沿用既有 CLI/RPC 名称和读写权限，浏览器不能指定模块路径。
 
+## 平台能力边界
+
+业务服务声明所需能力，不以 UCI 为依赖入口。当前 OpenWrt `platform` 插件分别提供以下
+服务；系统绑定可以逐项选择其他提供者，依赖图只加载实际使用的能力实现。
+
+| 服务 | 责任与接口 |
+| --- | --- |
+| `platform.storage` | JSON/YAML 读取、文件摘要与修改时间、文本和原子 JSON 写入、目录创建 |
+| `platform.paths` | `POLICY_PATH`、`EVIDENCE_PATH`、`RECOVERY_PATH`，由安装平台确定存储位置 |
+| `platform.profile` | `current_profile`、`set_profile`、`backend_enabled`、`set_backend_enabled`，读写所选后端配置并回读 |
+| `platform.credentials` | `api_secret`、`proxy_authentication`，凭据只在设备内用于授权调用 |
+| `platform.subscriptions` | `subscription_exists`、`subscription_display_name`、`subscription_options`、`subscription_quota`，输出规范化订阅元数据 |
+| `platform.device` | `device_name`、`upstream_ready`，报告设备身份和上游可用性 |
+| `platform.process` | `shell_quote`、`run_owner`，平台命令构造与已注册业务动作调用 |
+| `platform.documents` | `validate_policy` 校验候选策略与当前平台约束，`load_policy`、`load_evidence` 加载有效文档，`write_evidence` 写入 evidence；不读取 UCI |
+
+上述能力涉及的 UCI 字段、WAN/路由探测和 CLI 路径封装在对应提供者中。共享选择控制器依赖
+profile、credentials、documents 和 paths；调度器通过 process 调用业务动作，不直接拼接
+OpenWrt 安装路径。文件工具不会因读取 JSON 而加载凭据、订阅或 UCI 实现。
+
+通用能力服务不是操作系统 API 的别名：返回值表达产品含义，后端配置仍由原 owner 保存。
+替换提供者必须保持空值、失败结果、原子写入与回读语义；不能以缓存成功代替实际写入。
+策略模型只校验 evidence 存储标识的结构；documents 校验其路径与 paths 提供者一致。
+配置加载、生成候选与备份恢复均使用该校验，恢复在写入前拒绝不匹配的路径。
+OpenWrt 仍只使用 `/etc/opl-netfleet/evidence.json`，策略不能指定另一写入位置。
+`run_owner` 继续继承调用宿主的 mutation 锁，不能绕过命令准入或启动第二个调度循环。
+
+平台能力解耦与完整宿主移植分别验证。当前 Linux 代码租约、进程身份、APK/procd 生命周期
+及 DNS/TProxy 接管属于 OpenWrt 宿主实现；它们不因业务服务可替换就自动成为 macOS 能力。
+订阅持久管理、后端设置及维护等 OpenWrt 专用服务仍包含 UCI 和本机操作。
+跨平台产品方向见[设计白皮书](../product/whitepaper.md)，插件开发使用同一服务声明与绑定合同。
+
 ## 热替换与资源
 
 每条 CLI/RPC 调用使用独立服务上下文和当前代码，不保留跨调用模块缓存。一次调用绑定

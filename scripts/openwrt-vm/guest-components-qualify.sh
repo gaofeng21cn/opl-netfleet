@@ -43,7 +43,7 @@ snapshot() {
 	if [ -f /etc/opl-netfleet/native/mixin.json ]; then sha256sum /etc/opl-netfleet/native/mixin.json >>"$1.inputs"; fi
 	ucode -e 'import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
 		const host = create("/usr/libexec/opl-netfleet");
-		const api_secret = host.use("platform.uci").api_secret;
+		const api_secret = host.use("platform.credentials").api_secret;
 		const proxies = host.use("mihomo.controller").proxies;
 		const values = proxies(api_secret(), 2)?.proxies; if (values == null) exit(1);
 		const selected = {}; for (let name in sort(keys(values))) if (values[name].type == "Selector") selected[name] = values[name].now;

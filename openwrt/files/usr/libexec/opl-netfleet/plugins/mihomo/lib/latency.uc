@@ -6,7 +6,7 @@ let controller_timeout_seconds, measure_providers, measure, latest_history, comp
 
 const url_path_segment = context.use("mihomo.controller").url_path_segment;
 const API = context.use("platform.runtime").API;
-const shell_quote = context.use("platform.uci").shell_quote;
+const shell_quote = context.use("platform.process").shell_quote;
 
 controller_timeout_seconds = function(timeout_ms) {
 	let seconds = int((timeout_ms + 999) / 1000) + 3;

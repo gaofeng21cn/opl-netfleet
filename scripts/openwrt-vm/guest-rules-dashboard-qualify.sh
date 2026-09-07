@@ -14,7 +14,7 @@ export NETFLEET_DASHBOARD_TEST_CURL="$(command -v curl)"
 ui=$(ucode -e 'import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
  import { cursor } from "uci";
  const host = create("/usr/libexec/opl-netfleet");
- const read_yaml = host.use("platform.uci").read_yaml;
+ const read_yaml = host.use("platform.storage").read_yaml;
  const RUN_DIR = host.use("platform.runtime").RUN_DIR;
  const path = read_yaml(`${RUN_DIR}/config.yaml`, true)?.["external-ui"] ?? cursor().get("netfleet", "mixin", "ui_path");
  print(substr(path, 0, 1) == "/" ? path : `${RUN_DIR}/${path}`);')
@@ -81,8 +81,8 @@ const host = create("/usr/libexec/opl-netfleet");
 const resource = host.use("dashboard.control").resource;
 const check = host.use("dashboard.control").check;
 const update = host.use("dashboard.control").update;
-const sha256 = host.use("platform.uci").sha256;
-const q = host.use("platform.uci").shell_quote;
+const sha256 = host.use("platform.storage").sha256;
+const q = host.use("platform.process").shell_quote;
 const core_service = host.use("platform.files").core_service;
 const work = ARGV[0];
 const ui = trim(fs.readfile(`${work}/ui-path`));

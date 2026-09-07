@@ -10,10 +10,12 @@
       "version": 1,
       "module": "lib/state.uc",
       "requires": {
+        "platform.paths": 1,
         "models.activation": 1,
         "platform.files": 1,
         "platform.runtime": 1,
-        "platform.uci": 1
+        "platform.storage": 1,
+        "platform.profile": 1
       }
     },
     "recovery.control": {
@@ -28,9 +30,13 @@
         "mihomo.readback": 1,
         "models.activation": 1,
         "platform.documents": 1,
-        "platform.uci": 1,
         "recovery.state": 1,
-        "subscriptions.facts": 1
+        "subscriptions.facts": 1,
+        "platform.profile": 1,
+        "platform.storage": 1,
+        "platform.device": 1,
+        "platform.credentials": 1,
+        "platform.paths": 1
       }
     }
   },

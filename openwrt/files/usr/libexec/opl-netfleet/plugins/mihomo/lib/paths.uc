@@ -17,7 +17,7 @@ const sorted_keys = context.use("models.ordering").sorted_keys;
 const automation_config = context.use("models.policy").automation;
 const provider_group_leaf = context.use("models.selector").provider_group_leaf;
 const resolve_runtime = context.use("models.status").resolve_runtime;
-const api_secret = context.use("platform.uci").api_secret;
+const api_secret = context.use("platform.credentials").api_secret;
 
 wait_for_group_member = function(secret, group, member, wait_seconds) {
 	const attempts = type(wait_seconds) == "int" && wait_seconds > 0 ? wait_seconds : 10;

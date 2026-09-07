@@ -4,8 +4,8 @@ return function(context) {
 // Bind the service functions before assigning closures that may reference them.
 let private_file, private_directory, write_private, atomic_json, core_service;
 
-const read_json = context.use("platform.uci").read_json;
-const sha256 = context.use("platform.uci").sha256;
+const read_json = context.use("platform.storage").read_json;
+const sha256 = context.use("platform.storage").sha256;
 
 const BASE = "/etc/opl-netfleet/native";
 const SERVICE = "opl-netfleet-core";

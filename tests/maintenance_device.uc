@@ -10,9 +10,9 @@ const backup_export = host.use("maintenance.editor").backup_export;
 const backup_restore = host.use("maintenance.editor").backup_restore;
 const core_action = host.use("maintenance.editor").core_action;
 const diagnostics = host.use("maintenance.editor").diagnostics;
-const sha256 = host.use("platform.uci").sha256;
-const current_profile = host.use("platform.uci").current_profile;
-const q = host.use("platform.uci").shell_quote;
+const sha256 = host.use("platform.storage").sha256;
+const current_profile = host.use("platform.profile").current_profile;
+const q = host.use("platform.process").shell_quote;
 
 function check(value, label) { if (!value) die(label); };
 const work = "/tmp/netfleet-maintenance-fixture";
@@ -33,6 +33,13 @@ if (ARGV[0] == "stopped") {
 	check(before.result.core.running == false, "stopped fixture precondition");
 	const exported = backup_export();
 	report(exported, "stopped export");
+	const invalid = cloned(exported.result.backup);
+	invalid.policy.evidence.path = "/tmp/unexpected-evidence.json";
+	const policy_digest = sha256("/etc/opl-netfleet/policy.json");
+	const rejected = invoke(backup_restore, { backup: invalid, confirm: true });
+	check(!rejected.ok && rejected.error == "backup_policy_invalid" &&
+		sha256("/etc/opl-netfleet/policy.json") == policy_digest && !get().result.core.running,
+		"stopped restore rejects platform path mismatch before changing policy or core");
 	report(invoke(backup_restore, { backup: exported.result.backup, confirm: true }), "stopped restore");
 	check(get().result.core.running == false && current_profile() == baseline_profile, "stopped restore does not start core");
 	check(diagnostics().result.controller_available == false, "diagnostics works without controller");

@@ -72,12 +72,18 @@ device has seen; the current choice follows the latest healthy measurements.
 
 ### Microkernel And Plugin Hot Replacement
 
-NetFleet organizes its product functionality into **19 feature plugins and 63
+NetFleet organizes its product functionality into **19 feature plugins and 69
 services**. The kernel handles discovery, service binding, dependency resolution,
 call admission, and code lifecycle. Subscriptions, selection, compilation,
 recovery, backends, and scheduling all run through composed services. System
 configuration explicitly selects service providers; feature packages can be
 developed, installed, and updated independently.
+
+Reusable business services access storage, backend configuration, credentials, and process
+operations through separate capability services. OpenWrt providers implement the
+platform details, while selection logic and control flows, policy validation, and
+scheduling can be reused through service bindings. See the
+[platform capability boundary](docs/architecture/microkernel.md#平台能力边界).
 
 There are two development paths. **UCode service plugins** compose capabilities
 through declared dependencies and `context.use()`. **Process plugins** use

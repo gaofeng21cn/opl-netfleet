@@ -7,10 +7,10 @@ let read_events, write_events, core_netfleet_lines;
 const KIND = context.use("platform.runtime").KIND;
 const LOG_PATH = context.use("platform.runtime").LOG_PATH;
 const SERVICE = context.use("platform.runtime").SERVICE;
-const mkdir = context.use("platform.uci").mkdir;
-const read_json = context.use("platform.uci").read_json;
-const shell_quote = context.use("platform.uci").shell_quote;
-const write_text = context.use("platform.uci").write_text;
+const mkdir = context.use("platform.storage").mkdir;
+const read_json = context.use("platform.storage").read_json;
+const shell_quote = context.use("platform.process").shell_quote;
+const write_text = context.use("platform.storage").write_text;
 
 const EVENTS_PATH = "/var/lib/opl-netfleet/events.json";
 

@@ -11,7 +11,8 @@
       "module": "lib/backend.uc",
       "requires": {
         "platform.runtime": 1,
-        "platform.uci": 1
+        "platform.process": 1,
+        "platform.storage": 1
       }
     },
     "mihomo.controller": {
@@ -19,7 +20,8 @@
       "module": "lib/controller.uc",
       "requires": {
         "platform.runtime": 1,
-        "platform.uci": 1
+        "platform.process": 1,
+        "platform.credentials": 1
       }
     },
     "mihomo.latency": {
@@ -28,7 +30,7 @@
       "requires": {
         "mihomo.controller": 1,
         "platform.runtime": 1,
-        "platform.uci": 1
+        "platform.process": 1
       }
     },
     "mihomo.policy-source": {
@@ -36,7 +38,7 @@
       "module": "lib/policy-source.uc",
       "requires": {
         "mihomo.backend": 1,
-        "platform.uci": 1
+        "platform.storage": 1
       }
     },
     "mihomo.gateway": {
@@ -44,7 +46,8 @@
       "module": "lib/gateway.uc",
       "requires": {
         "platform.files": 1,
-        "platform.uci": 1
+        "platform.storage": 1,
+        "platform.process": 1
       }
     },
     "mihomo.artifacts": {
@@ -53,7 +56,7 @@
       "requires": {
         "events.output": 1,
         "mihomo.backend": 1,
-        "platform.uci": 1
+        "platform.storage": 1
       }
     },
     "mihomo.readback": {
@@ -63,7 +66,9 @@
         "mihomo.backend": 1,
         "mihomo.controller": 1,
         "models.activation": 1,
-        "platform.uci": 1
+        "platform.storage": 1,
+        "platform.credentials": 1,
+        "platform.profile": 1
       }
     },
     "mihomo.probes": {
@@ -73,7 +78,7 @@
         "events.output": 1,
         "mihomo.controller": 1,
         "platform.documents": 1,
-        "platform.uci": 1
+        "platform.paths": 1
       }
     },
     "mihomo.paths": {
@@ -88,7 +93,7 @@
         "models.policy": 1,
         "models.selector": 1,
         "models.status": 1,
-        "platform.uci": 1
+        "platform.credentials": 1
       }
     },
     "mihomo.lifecycle": {
@@ -96,7 +101,6 @@
       "module": "lib/lifecycle.uc",
       "requires": {
         "platform.runtime": 1,
-        "platform.uci": 1,
         "platform.files": 1,
         "platform.service": 1,
         "platform.documents": 1,
@@ -104,7 +108,10 @@
         "mihomo.controller": 1,
         "mihomo.readback": 1,
         "mihomo.paths": 1,
-        "models.activation": 1
+        "models.activation": 1,
+        "platform.storage": 1,
+        "platform.profile": 1,
+        "platform.credentials": 1
       }
     }
   },

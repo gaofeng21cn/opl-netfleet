@@ -14,11 +14,11 @@ const enabled_subscription_sections = context.use("models.subscription").enabled
 const cache_accepted = context.use("models.subscription").cache_accepted;
 const subscription_quota_config = context.use("models.subscription").quota_config;
 const project_subscriptions = context.use("models.subscription").project;
-const sha256 = context.use("platform.uci").sha256;
-const read_yaml = context.use("platform.uci").read_yaml;
-const subscription_display_name = context.use("platform.uci").subscription_display_name;
-const file_mtime = context.use("platform.uci").file_mtime;
-const subscription_quota = context.use("platform.uci").subscription_quota;
+const sha256 = context.use("platform.storage").sha256;
+const read_yaml = context.use("platform.storage").read_yaml;
+const subscription_display_name = context.use("platform.subscriptions").subscription_display_name;
+const file_mtime = context.use("platform.storage").file_mtime;
+const subscription_quota = context.use("platform.subscriptions").subscription_quota;
 const load_provider_profile_result = context.use("subscriptions.providers").load;
 
 subscription_facts = function(policy) {

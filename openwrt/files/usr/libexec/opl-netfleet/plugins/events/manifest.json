@@ -16,7 +16,8 @@
       "module": "lib/store.uc",
       "requires": {
         "platform.runtime": 1,
-        "platform.uci": 1
+        "platform.storage": 1,
+        "platform.process": 1
       }
     },
     "events.operation": {

@@ -6,11 +6,11 @@ let load;
 
 const resolve_profile = context.use("mihomo.backend").resolve_profile;
 const provider_runtime_path = context.use("mihomo.backend").provider_runtime_path;
-const read_yaml = context.use("platform.uci").read_yaml;
-const subscription_exists = context.use("platform.uci").subscription_exists;
-const subscription_display_name = context.use("platform.uci").subscription_display_name;
-const subscription_quota = context.use("platform.uci").subscription_quota;
-const shell_quote = context.use("platform.uci").shell_quote;
+const read_yaml = context.use("platform.storage").read_yaml;
+const subscription_exists = context.use("platform.subscriptions").subscription_exists;
+const subscription_display_name = context.use("platform.subscriptions").subscription_display_name;
+const subscription_quota = context.use("platform.subscriptions").subscription_quota;
+const shell_quote = context.use("platform.process").shell_quote;
 
 load = function(policy) {
 	const result = {};

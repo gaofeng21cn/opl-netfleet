@@ -11,7 +11,9 @@
       "module": "lib/providers.uc",
       "requires": {
         "mihomo.backend": 1,
-        "platform.uci": 1
+        "platform.storage": 1,
+        "platform.subscriptions": 1,
+        "platform.process": 1
       }
     },
     "subscriptions.store": {
@@ -22,7 +24,9 @@
         "models.subscriptions": 1,
         "platform.files": 1,
         "platform.runtime": 1,
-        "platform.uci": 1
+        "platform.storage": 1,
+        "platform.process": 1,
+        "platform.paths": 1
       }
     },
     "subscriptions.facts": {
@@ -35,8 +39,9 @@
         "mihomo.backend": 1,
         "models.policy": 1,
         "models.subscription": 1,
-        "platform.uci": 1,
-        "subscriptions.providers": 1
+        "subscriptions.providers": 1,
+        "platform.storage": 1,
+        "platform.subscriptions": 1
       }
     }
   },

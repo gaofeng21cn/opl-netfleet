@@ -1,40 +1,29 @@
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let settings, runtime_controller_ready, run_owner, tick;
+let settings, runtime_controller_ready, tick;
 
-const read_json = context.use("platform.uci").read_json;
-const current_profile = context.use("platform.uci").current_profile;
-const backend_enabled = context.use("platform.uci").backend_enabled;
-const api_secret = context.use("platform.uci").api_secret;
-const shell_quote = context.use("platform.uci").shell_quote;
-const POLICY_PATH = context.use("platform.uci").POLICY_PATH;
+const load_policy = context.use("platform.documents").load_policy;
+const current_profile = context.use("platform.profile").current_profile;
+const backend_enabled = context.use("platform.profile").backend_enabled;
+const api_secret = context.use("platform.credentials").api_secret;
+const run_owner = context.use("platform.process").run_owner;
 const running = context.use("mihomo.backend").running;
 const lan_runtime_state = context.use("mihomo.backend").lan_runtime_state;
 const controller_ready = context.use("mihomo.controller").controller_ready;
-const validate = context.use("models.policy").validate;
 const automation = context.use("models.policy").automation;
 const guard_probe_url = context.use("models.policy").guard_probe_url;
 const is_active = context.use("models.activation").is_active;
 const pending_recovery = context.use("recovery.state").pending;
 
-const MAIN = "/usr/libexec/opl-netfleet/main.uc";
-
 settings = function() {
-	const policy = read_json(POLICY_PATH);
-	if (policy == null || !validate(policy).ok) return null;
+	const policy = load_policy();
+	if (policy == null) return null;
 	return { policy: policy, automation: automation(policy), dns_probe_url: guard_probe_url(policy) };
 };
 
 runtime_controller_ready = function() {
 	const secret = api_secret();
 	return type(secret) == "string" && length(secret) > 0 && controller_ready(secret, 2);
-};
-
-run_owner = function(action, detail) {
-	const suffix = detail == null ? "" : ` ${shell_quote(detail)}`;
-	// The supervisor host holds the mutation lock for this complete tick.
-	const command = `ucode ${shell_quote(MAIN)} ${shell_quote(action)}${suffix} >/dev/null 2>&1`;
-	return system(command) == 0;
 };
 
 tick = function(previous) {

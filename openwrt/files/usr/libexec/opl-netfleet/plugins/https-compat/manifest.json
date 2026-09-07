@@ -12,7 +12,7 @@
       "requires": {
         "models.extensions": 1,
         "platform.runtime": 1,
-        "platform.uci": 1
+        "platform.process": 1
       }
     }
   },

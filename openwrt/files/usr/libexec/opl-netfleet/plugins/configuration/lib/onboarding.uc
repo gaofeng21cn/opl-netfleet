@@ -2,7 +2,7 @@ import { popen } from "fs";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let load_policy, profile_display_name, discovery, projection, diagnostic, run_owner, cleanup, fail_apply, get, apply, command_onboarding_get, command_onboarding_apply;
+let profile_display_name, discovery, projection, diagnostic, run_owner, cleanup, fail_apply, get, apply, command_onboarding_get, command_onboarding_apply;
 
 const discover = context.use("configuration.onboarding-model").discover;
 const ok = context.use("events.output").ok;
@@ -19,34 +19,30 @@ const COMPILED_PROFILE = context.use("mihomo.backend").COMPILED_PROFILE;
 const controller_ready = context.use("mihomo.controller").controller_ready;
 const test_runtime = context.use("mihomo.controller").test_runtime;
 const is_active = context.use("models.activation").is_active;
-const validate_policy = context.use("models.policy").validate;
+const validate_policy = context.use("platform.documents").validate_policy;
+const load_policy = context.use("platform.documents").load_policy;
 const service_state = context.use("platform.service").service_state;
 const set_service_state = context.use("platform.service").set_service_state;
-const read_yaml = context.use("platform.uci").read_yaml;
-const read_json = context.use("platform.uci").read_json;
-const write_json_atomic = context.use("platform.uci").write_json_atomic;
-const sha256 = context.use("platform.uci").sha256;
-const sha256_text = context.use("platform.uci").sha256_text;
-const device_name = context.use("platform.uci").device_name;
-const current_profile = context.use("platform.uci").current_profile;
-const backend_enabled = context.use("platform.uci").backend_enabled;
-const set_backend_enabled = context.use("platform.uci").set_backend_enabled;
-const api_secret = context.use("platform.uci").api_secret;
-const set_profile = context.use("platform.uci").set_profile;
-const shell_quote = context.use("platform.uci").shell_quote;
-const subscription_display_name = context.use("platform.uci").subscription_display_name;
-const subscription_options = context.use("platform.uci").subscription_options;
-const POLICY_PATH = context.use("platform.uci").POLICY_PATH;
-const EVIDENCE_PATH = context.use("platform.uci").EVIDENCE_PATH;
+const read_yaml = context.use("platform.storage").read_yaml;
+const read_json = context.use("platform.storage").read_json;
+const write_json_atomic = context.use("platform.storage").write_json_atomic;
+const sha256 = context.use("platform.storage").sha256;
+const sha256_text = context.use("platform.storage").sha256_text;
+const device_name = context.use("platform.device").device_name;
+const current_profile = context.use("platform.profile").current_profile;
+const backend_enabled = context.use("platform.profile").backend_enabled;
+const set_backend_enabled = context.use("platform.profile").set_backend_enabled;
+const api_secret = context.use("platform.credentials").api_secret;
+const set_profile = context.use("platform.profile").set_profile;
+const shell_quote = context.use("platform.process").shell_quote;
+const subscription_display_name = context.use("platform.subscriptions").subscription_display_name;
+const subscription_options = context.use("platform.subscriptions").subscription_options;
+const POLICY_PATH = context.use("platform.paths").POLICY_PATH;
+const EVIDENCE_PATH = context.use("platform.paths").EVIDENCE_PATH;
 const load_provider_profiles = context.use("subscriptions.providers").load;
 
 const WORK_DIR = "/tmp/opl-netfleet-onboarding";
 const MAIN_PATH = "/usr/libexec/opl-netfleet/main.uc";
-
-load_policy = function() {
-	const policy = read_json(POLICY_PATH);
-	return validate_policy(policy).ok ? policy : null;
-};
 
 profile_display_name = function(reference) {
 	const prefix = "subscription:";

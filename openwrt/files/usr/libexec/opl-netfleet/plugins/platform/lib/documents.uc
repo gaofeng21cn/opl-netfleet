@@ -2,25 +2,27 @@
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let load_policy, load_evidence;
+let validate_policy, load_policy, load_evidence, write_evidence;
 
 const validate_evidence = context.use("models.evidence").validate;
-const validate_policy = context.use("models.policy").validate;
-const POLICY_PATH = context.use("platform.uci").POLICY_PATH;
-const read_json = context.use("platform.uci").read_json;
-const EVIDENCE_PATH = context.use("platform.uci").EVIDENCE_PATH;
+const validate_policy_model = context.use("models.policy").validate;
+const POLICY_PATH = context.use("platform.paths").POLICY_PATH;
+const read_json = context.use("platform.storage").read_json;
+const EVIDENCE_PATH = context.use("platform.paths").EVIDENCE_PATH;
+const mkdir = context.use("platform.storage").mkdir;
+const write_json_atomic = context.use("platform.storage").write_json_atomic;
+
+validate_policy = function(policy) {
+	const validation = validate_policy_model(policy);
+	if (validation.ok && policy.evidence.path != EVIDENCE_PATH) {
+		return { ok: false, errors: ["evidence.path must match the platform evidence path"] };
+	}
+	return validation;
+};
 
 load_policy = function(path) {
-	const source = path ?? POLICY_PATH;
-	const policy = read_json(source);
-	if (policy == null) {
-		return null;
-	}
-	const validation = validate_policy(policy);
-	if (!validation.ok) {
-		return null;
-	}
-	return policy;
+	const policy = read_json(path ?? POLICY_PATH);
+	return validate_policy(policy).ok ? policy : null;
 };
 
 load_evidence = function() {
@@ -29,5 +31,9 @@ load_evidence = function() {
 	return validation.ok ? evidence : null;
 };
 
-return { load_policy, load_evidence };
+write_evidence = function(store) {
+	return mkdir(replace(EVIDENCE_PATH, /\/[^/]+$/, "")) && write_json_atomic(EVIDENCE_PATH, store);
+};
+
+return { validate_policy, load_policy, load_evidence, write_evidence };
 };

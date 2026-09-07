@@ -5,8 +5,8 @@ import { cursor } from "uci";
 const get = host.use("subscriptions.store").get;
 const set = host.use("subscriptions.store").set;
 const update_result = host.use("subscriptions.store").update_result;
-const sha256 = host.use("platform.uci").sha256;
-const subscription_quota = host.use("platform.uci").subscription_quota;
+const sha256 = host.use("platform.storage").sha256;
+const subscription_quota = host.use("platform.subscriptions").subscription_quota;
 const core_service = host.use("platform.files").core_service;
 
 function check(value, message) { if (!value) die(message); };

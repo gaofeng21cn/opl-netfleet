@@ -6,9 +6,9 @@ const controller_timeout_seconds = use("mihomo.latency").controller_timeout_seco
 const complete_from_fresh_history = use("mihomo.latency").complete_from_fresh_history;
 const url_path_segment = use("mihomo.controller").url_path_segment;
 const project_connections = use("mihomo.controller").project_connections;
-const read_json = use("platform.uci").read_json;
-const read_yaml = use("platform.uci").read_yaml;
-const write_json_atomic = use("platform.uci").write_json_atomic;
+const read_json = use("platform.storage").read_json;
+const read_yaml = use("platform.storage").read_yaml;
+const write_json_atomic = use("platform.storage").write_json_atomic;
 import { writefile, unlink } from "fs";
 
 if (url_path_segment("常规 出口") != "%E5%B8%B8%E8%A7%84%20%E5%87%BA%E5%8F%A3" ||

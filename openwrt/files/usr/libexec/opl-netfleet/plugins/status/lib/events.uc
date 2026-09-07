@@ -11,7 +11,7 @@ const core_netfleet_lines = context.use("events.store").core_netfleet_lines;
 const MANIFEST_PATH = context.use("mihomo.backend").MANIFEST_PATH;
 const expected_runtime_groups = context.use("models.activation").expected_runtime_groups;
 const load_policy = context.use("platform.documents").load_policy;
-const read_json = context.use("platform.uci").read_json;
+const read_json = context.use("platform.storage").read_json;
 const provider_display_names = context.use("subscriptions.facts").provider_display_names;
 
 event_display_names = function(policy) {

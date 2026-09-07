@@ -614,8 +614,8 @@ validate = function(policy) {
 		}
 	}
 	validate_checks(policy.checks, errors);
-	if (!is_object(policy.evidence) || policy.evidence.path != "/etc/opl-netfleet/evidence.json") {
-		add_error(errors, "evidence.path must be /etc/opl-netfleet/evidence.json");
+	if (!is_object(policy.evidence) || !is_nonempty_string(policy.evidence.path)) {
+		add_error(errors, "evidence.path must identify the configured evidence store");
 	}
 	if (!is_object(policy.fail_open)) {
 		add_error(errors, "fail_open must be an object");

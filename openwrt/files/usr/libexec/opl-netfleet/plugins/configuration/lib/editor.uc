@@ -2,7 +2,7 @@ import { popen } from "fs";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let load_policy, profile_display_name, has_reference, source_group_names, provider_display_names, resources, projection, load_change, snapshot_file, prepare_snapshot, restore_snapshot, diagnostic, run_owner, cleanup_snapshot, rollback, fail_apply, get, validate, save, apply, command_config_get, command_config_validate, command_config_save, command_config_apply;
+let profile_display_name, has_reference, source_group_names, provider_display_names, resources, projection, load_change, snapshot_file, prepare_snapshot, restore_snapshot, diagnostic, run_owner, cleanup_snapshot, rollback, fail_apply, get, validate, save, apply, command_config_get, command_config_validate, command_config_save, command_config_apply;
 
 const project = context.use("configuration.model").project;
 const apply_request = context.use("configuration.model").apply;
@@ -18,28 +18,23 @@ const MANIFEST_PATH = context.use("mihomo.backend").MANIFEST_PATH;
 const resolve_policy_source = context.use("mihomo.policy-source").resolve;
 const load_policy_source = context.use("mihomo.policy-source").load;
 const is_active = context.use("models.activation").is_active;
-const validate_policy = context.use("models.policy").validate;
+const load_policy = context.use("platform.documents").load_policy;
 const region_catalog = context.use("models.regions").catalog;
 const discover_regions = context.use("models.regions").discover;
 const backend_metadata = context.use("platform.runtime").metadata;
-const read_yaml = context.use("platform.uci").read_yaml;
-const read_json = context.use("platform.uci").read_json;
-const write_json_atomic = context.use("platform.uci").write_json_atomic;
-const sha256 = context.use("platform.uci").sha256;
-const current_profile = context.use("platform.uci").current_profile;
-const shell_quote = context.use("platform.uci").shell_quote;
-const subscription_display_name = context.use("platform.uci").subscription_display_name;
-const subscription_options = context.use("platform.uci").subscription_options;
-const POLICY_PATH = context.use("platform.uci").POLICY_PATH;
+const read_yaml = context.use("platform.storage").read_yaml;
+const read_json = context.use("platform.storage").read_json;
+const write_json_atomic = context.use("platform.storage").write_json_atomic;
+const sha256 = context.use("platform.storage").sha256;
+const current_profile = context.use("platform.profile").current_profile;
+const shell_quote = context.use("platform.process").shell_quote;
+const subscription_display_name = context.use("platform.subscriptions").subscription_display_name;
+const subscription_options = context.use("platform.subscriptions").subscription_options;
+const POLICY_PATH = context.use("platform.paths").POLICY_PATH;
 const load_provider_profiles = context.use("subscriptions.providers").load;
 
 const WORK_DIR = "/tmp/opl-netfleet-config-apply";
 const MAIN_PATH = "/usr/libexec/opl-netfleet/main.uc";
-
-load_policy = function() {
-	const policy = read_json(POLICY_PATH);
-	return validate_policy(policy).ok ? policy : null;
-};
 
 profile_display_name = function(profile) {
 	const prefix = "subscription:";

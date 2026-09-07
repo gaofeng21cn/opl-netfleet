@@ -8,7 +8,7 @@ const fail = context.use("events.output").fail;
 const ok = context.use("events.output").ok;
 const protected_probes = context.use("mihomo.controller").protected_probes;
 const load_policy = context.use("platform.documents").load_policy;
-const POLICY_PATH = context.use("platform.uci").POLICY_PATH;
+const POLICY_PATH = context.use("platform.paths").POLICY_PATH;
 
 require_protected_probes = function(policy, action) {
 	const result = protected_probes(policy);

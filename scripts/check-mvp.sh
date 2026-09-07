@@ -9,6 +9,8 @@ if command -v ucode >/dev/null 2>&1; then
 	rm -f /tmp/opl-netfleet-main.uc
 	ucode "$root_dir/tests/compiler_contract.uc"
 	ucode "$root_dir/tests/selection_contract.uc"
+	ucode "$root_dir/tests/portable_services_contract.uc"
+	ucode "$root_dir/tests/storage_contract.uc"
 	ucode "$root_dir/tests/adapter_contract.uc"
 	ucode "$root_dir/tests/status_contract.uc"
 	ucode "$root_dir/tests/evidence_contract.uc"

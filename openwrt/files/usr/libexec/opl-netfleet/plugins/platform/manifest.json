@@ -11,19 +11,11 @@
       "module": "lib/runtime.uc",
       "requires": {}
     },
-    "platform.uci": {
-      "version": 1,
-      "module": "lib/uci.uc",
-      "requires": {
-        "models.subscriptions": 1,
-        "platform.runtime": 1
-      }
-    },
     "platform.files": {
       "version": 1,
       "module": "lib/files.uc",
       "requires": {
-        "platform.uci": 1
+        "platform.storage": 1
       }
     },
     "platform.service": {
@@ -37,7 +29,53 @@
       "requires": {
         "models.evidence": 1,
         "models.policy": 1,
-        "platform.uci": 1
+        "platform.paths": 1,
+        "platform.storage": 1
+      }
+    },
+    "platform.paths": {
+      "version": 1,
+      "module": "lib/paths.uc",
+      "requires": {}
+    },
+    "platform.process": {
+      "version": 1,
+      "module": "lib/process.uc",
+      "requires": {}
+    },
+    "platform.storage": {
+      "version": 1,
+      "module": "lib/storage.uc",
+      "requires": {
+        "platform.process": 1
+      }
+    },
+    "platform.profile": {
+      "version": 1,
+      "module": "lib/profile.uc",
+      "requires": {
+        "platform.runtime": 1,
+        "platform.process": 1
+      }
+    },
+    "platform.credentials": {
+      "version": 1,
+      "module": "lib/credentials.uc",
+      "requires": {
+        "platform.runtime": 1
+      }
+    },
+    "platform.device": {
+      "version": 1,
+      "module": "lib/device.uc",
+      "requires": {}
+    },
+    "platform.subscriptions": {
+      "version": 1,
+      "module": "lib/subscriptions.uc",
+      "requires": {
+        "platform.runtime": 1,
+        "models.subscriptions": 1
       }
     }
   },

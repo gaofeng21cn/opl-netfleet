@@ -6,9 +6,9 @@ let test_profile, test_runtime, api_json, url_path_segment, proxies, controller_
 
 const RUN_DIR = context.use("platform.runtime").RUN_DIR;
 const API = context.use("platform.runtime").API;
-const shell_quote = context.use("platform.uci").shell_quote;
-const proxy_authentication = context.use("platform.uci").proxy_authentication;
-const api_secret = context.use("platform.uci").api_secret;
+const shell_quote = context.use("platform.process").shell_quote;
+const proxy_authentication = context.use("platform.credentials").proxy_authentication;
+const api_secret = context.use("platform.credentials").api_secret;
 
 test_profile = function(path) {
 	return system(`mihomo -d ${shell_quote(RUN_DIR)} -f ${shell_quote(path)} -t >/dev/null 2>&1`) == 0;

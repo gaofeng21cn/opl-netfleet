@@ -7,7 +7,7 @@ let inspection, dispatch, command_compatibility_get, command_compatibility_ca, c
 const API_VERSION = context.use("models.extensions").API_VERSION;
 const admission = context.use("models.extensions").admission;
 const KIND = context.use("platform.runtime").KIND;
-const shell_quote = context.use("platform.uci").shell_quote;
+const shell_quote = context.use("platform.process").shell_quote;
 
 const OWNER = "/usr/libexec/opl-netfleet-compat/control.py";
 const DECLARATION = "/usr/libexec/opl-netfleet-compat/extension.json";

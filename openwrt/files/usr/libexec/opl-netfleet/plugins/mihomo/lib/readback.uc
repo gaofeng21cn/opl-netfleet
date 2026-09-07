@@ -12,10 +12,10 @@ const test_runtime = context.use("mihomo.controller").test_runtime;
 const is_active = context.use("models.activation").is_active;
 const expected_runtime_groups = context.use("models.activation").expected_runtime_groups;
 const expected_runtime_residue_groups = context.use("models.activation").expected_runtime_residue_groups;
-const sha256 = context.use("platform.uci").sha256;
-const read_yaml = context.use("platform.uci").read_yaml;
-const api_secret = context.use("platform.uci").api_secret;
-const current_profile = context.use("platform.uci").current_profile;
+const sha256 = context.use("platform.storage").sha256;
+const read_yaml = context.use("platform.storage").read_yaml;
+const api_secret = context.use("platform.credentials").api_secret;
+const current_profile = context.use("platform.profile").current_profile;
 
 recovery_runtime_groups = function(profile, manifest) {
 	const recovery = manifest?.recovery_profile;

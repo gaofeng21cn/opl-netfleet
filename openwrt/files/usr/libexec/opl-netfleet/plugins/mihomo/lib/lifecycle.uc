@@ -5,7 +5,9 @@ return function(context) {
 let failure, saved_state, directory, observer_stopped, owns_backend, external_unchanged, resume_failed, drain, resume;
 
 const runtime = context.use("platform.runtime");
-const uci = context.use("platform.uci");
+const storage = context.use("platform.storage");
+const profile = context.use("platform.profile");
+const credentials = context.use("platform.credentials");
 const files = context.use("platform.files");
 const supervisor = context.use("platform.service");
 const backend = context.use("mihomo.backend");
@@ -18,7 +20,7 @@ const ROOT = "/var/run/opl-netfleet-mihomo-handoff";
 const SAVED = `${ROOT}/state.json`;
 
 failure = function(error, result) { return { ok: false, error: error, result: result }; };
-saved_state = function() { return files.private_file(SAVED) ? uci.read_json(SAVED) : null; };
+saved_state = function() { return files.private_file(SAVED) ? storage.read_json(SAVED) : null; };
 directory = function() { return fs.lstat(ROOT) == null ? fs.mkdir(ROOT, 0700) : files.private_directory(ROOT); };
 observer_stopped = function() {
 	const process = fs.popen(`ubus call service list '${sprintf("%J", { name: runtime.SERVICE })}' 2>/dev/null`);
@@ -34,7 +36,7 @@ owns_backend = function(before) { return before.backend == "native-mihomo" || be
 external_unchanged = function(before) {
 	if (backend.running() != before.running) return false;
 	if (!before.running) return true;
-	const state = readback(before.profile, uci.read_json(backend.MANIFEST_PATH));
+	const state = readback(before.profile, storage.read_json(backend.MANIFEST_PATH));
 	return state.mihomo_running && state.mihomo_config_valid && state.state_available && state.runtime_identity_ok;
 };
 
@@ -50,13 +52,13 @@ drain = function(params) {
 	let before = saved_state();
 	if (fs.lstat(SAVED) != null && before == null) return failure("handoff_state_unreadable");
 	if (before == null) {
-		const profile = uci.current_profile();
-		const active = is_active(profile);
+		const current = profile.current_profile();
+		const active = is_active(current);
 		const running = backend.running();
-		const manifest = uci.read_json(backend.MANIFEST_PATH);
+		const manifest = storage.read_json(backend.MANIFEST_PATH);
 		const selections = running && active ? paths.capture_runtime_selections(manifest) : null;
 		if (running && active && selections?.ok != true) return failure("handoff_selection_unavailable");
-		before = { schema: 1, backend: runtime.KIND, profile: profile, enabled: uci.backend_enabled(),
+		before = { schema: 1, backend: runtime.KIND, profile: current, enabled: profile.backend_enabled(),
 			running: running, active: active, supervisor: supervisor.service_state(), selections: selections?.selections ?? null };
 		// Save before stopping owners so retries retain the original resume intent.
 		if (!files.atomic_json(SAVED, before)) return failure("handoff_state_write_failed");
@@ -86,13 +88,13 @@ resume = function(saved) {
 	if (before == null || before.schema != 1 || before.backend != runtime.KIND ||
 		(type(saved) == "object" && sprintf("%J", saved) != sprintf("%J", before)))
 		return failure("handoff_state_incompatible");
-	if (uci.current_profile() != before.profile || uci.backend_enabled() != before.enabled)
+	if (profile.current_profile() != before.profile || profile.backend_enabled() != before.enabled)
 		return failure("handoff_configuration_changed");
 	if (!owns_backend(before)) {
 		if (!external_unchanged(before)) return failure("handoff_external_owner_changed", before);
 	} else if (before.running == true) {
 		if (!backend.restart()) return resume_failed("handoff_owner_restart_failed");
-		const manifest = uci.read_json(backend.MANIFEST_PATH);
+		const manifest = storage.read_json(backend.MANIFEST_PATH);
 		let ready = false;
 		for (let attempt = 0; attempt < 30; attempt++) {
 			const state = readback(before.profile, manifest);
@@ -103,7 +105,7 @@ resume = function(saved) {
 		if (!ready) return resume_failed("handoff_owner_readback_failed");
 		if (before.active == true) {
 			const policy = load_policy();
-			if (policy == null || !paths.restore_runtime_selections(uci.api_secret(), manifest, before.selections, policy))
+			if (policy == null || !paths.restore_runtime_selections(credentials.api_secret(), manifest, before.selections, policy))
 				return resume_failed("handoff_selection_restore_failed");
 		}
 	} else if (backend.cleanup_state()?.ok != true || !observer_stopped()) {

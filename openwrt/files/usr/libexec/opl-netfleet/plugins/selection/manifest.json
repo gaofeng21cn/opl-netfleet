@@ -35,10 +35,12 @@
         "models.ordering": 1,
         "models.selection-view": 1,
         "platform.documents": 1,
-        "platform.uci": 1,
         "recovery.control": 1,
         "selection.round": 1,
-        "selection.algorithm": 1
+        "selection.algorithm": 1,
+        "platform.profile": 1,
+        "platform.credentials": 1,
+        "platform.paths": 1
       }
     },
     "selection.algorithm": {

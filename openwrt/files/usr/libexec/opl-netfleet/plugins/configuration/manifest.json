@@ -29,11 +29,15 @@
         "mihomo.backend": 1,
         "mihomo.policy-source": 1,
         "models.activation": 1,
-        "models.policy": 1,
+        "platform.documents": 1,
         "models.regions": 1,
         "platform.runtime": 1,
-        "platform.uci": 1,
-        "subscriptions.providers": 1
+        "subscriptions.providers": 1,
+        "platform.storage": 1,
+        "platform.profile": 1,
+        "platform.process": 1,
+        "platform.subscriptions": 1,
+        "platform.paths": 1
       }
     },
     "configuration.onboarding": {
@@ -45,10 +49,16 @@
         "mihomo.backend": 1,
         "mihomo.controller": 1,
         "models.activation": 1,
-        "models.policy": 1,
+        "platform.documents": 1,
         "platform.service": 1,
-        "platform.uci": 1,
-        "subscriptions.providers": 1
+        "subscriptions.providers": 1,
+        "platform.storage": 1,
+        "platform.device": 1,
+        "platform.profile": 1,
+        "platform.credentials": 1,
+        "platform.process": 1,
+        "platform.subscriptions": 1,
+        "platform.paths": 1
       }
     }
   },

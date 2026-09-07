@@ -106,11 +106,11 @@ automatic capability 必须形成无环依赖图，并且只有一个不声明 `
 | Subscription owner | `subscriptions.store` 持有原生订阅的私有编辑、验证下载、有效缓存和元数据；`subscriptions.providers` 与 `subscriptions.facts` 提供编译输入和事实投影。Nikki 模式只读发现并编排官方更新，运行中应用统一交给 `refresh.control` |
 | Mihomo | 节点连接、组内健康检查、URLTest delay 和叶子切换 |
 | latency adapter | `mihomo.latency` 按 `checks.provider_healthcheck_timeout_ms` 并发触发 provider 原生 health-check，再对候选组当前代理链按 `checks.latency` 做一次有界 delay，输出标准化 delay 或 `unavailable`；不判断业务资格 |
-| quota adapter | `platform.uci.subscription_quota` 只读所选后端的 subscription metadata，输出 `available|exhausted|unknown` 和可选剩余量 |
+| quota adapter | `platform.subscriptions.subscription_quota` 只读所选后端的 subscription metadata，输出 `available|exhausted|unknown` 和可选剩余量 |
 | qualification/comparator | `selection.algorithm` 纯函数消费标准化测量和 policy，先判资格、再按 delay 和显式 tie-break 排序；`selection.round` 编排单轮测量，`selection.control` 持有手动和自动选择事务 |
 | NetFleet compiler | `compilation.compiler` 执行纯转换，`compilation.control` 读取显式配置和后端缓存、校验并安装 staged Profile。用户可见 Mihomo 组名使用 compiler 的固定中文模板，不是 UI i18n 或 policy 字段 |
 | NetFleet onboarding owner | `configuration.onboarding-model` 从当前 Profile、稳定 subscription cache 和节点名称生成初始 policy 与脱敏预览；`configuration.onboarding` 持有确认后的写入与接管事务，复用编译和激活服务 |
-| NetFleet I/O adapter | `platform.uci` 提供 JSON/YAML、UCI、quota、摘要和 evidence 的共享 I/O；`platform.files` 与 `platform.service` 提供限定范围的私有文件和服务操作，不形成第二配置源 |
+| 平台能力提供者 | 存储、路径、profile、凭据、订阅元数据、设备状态和进程调用分别绑定服务；`platform.files` 与 `platform.service` 提供限定范围的私有文件和服务操作，不形成第二配置源。接口边界见[微内核](microkernel.md#平台能力边界) |
 | Native setup owner | `setup.native` 在空白设备上绑定发现 revision，创建私有订阅与 DNS/controller 配置，验证基础 gateway，再交给共享 onboarding；失败恢复设置前状态 |
 | Backend migration owner | `setup.migration` 将已工作的 Nikki 私有输入投影到原生 namespace，串行交接后执行共享 compile/enable/readback；失败恢复旧后端，不双写、不常驻 |
 | Policy configuration owner | `configuration.editor` 持有 policy 的资源发现、受限编辑和应用事务，复用编译、激活与恢复命令 |

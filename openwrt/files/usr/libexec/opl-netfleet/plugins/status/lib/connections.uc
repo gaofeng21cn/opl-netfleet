@@ -7,7 +7,7 @@ let connections_action, command_connections;
 const fail = context.use("events.output").fail;
 const ok = context.use("events.output").ok;
 const current_connections = context.use("mihomo.controller").connections;
-const api_secret = context.use("platform.uci").api_secret;
+const api_secret = context.use("platform.credentials").api_secret;
 
 connections_action = function() {
 	const secret = api_secret();

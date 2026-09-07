@@ -12,10 +12,10 @@ const RUN_DIR = context.use("platform.runtime").RUN_DIR;
 const SERVICE = context.use("platform.runtime").SERVICE;
 const NFT_TABLE = context.use("platform.runtime").NFT_TABLE;
 const STATE_DIR = context.use("platform.runtime").STATE_DIR;
-const shell_quote = context.use("platform.uci").shell_quote;
-const mkdir = context.use("platform.uci").mkdir;
-const write_text = context.use("platform.uci").write_text;
-const sha256 = context.use("platform.uci").sha256;
+const shell_quote = context.use("platform.process").shell_quote;
+const mkdir = context.use("platform.storage").mkdir;
+const write_text = context.use("platform.storage").write_text;
+const sha256 = context.use("platform.storage").sha256;
 
 const ARTIFACT_DIR = `${ROOT_DIR}/profiles/opl-netfleet`;
 const ARTIFACT_PATH = `${ARTIFACT_DIR}/mvp.json`;

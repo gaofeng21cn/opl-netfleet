@@ -17,11 +17,11 @@ const RUN_DIR = context.use("platform.runtime").RUN_DIR;
 const ROOT_DIR = context.use("platform.runtime").ROOT_DIR;
 const KIND = context.use("platform.runtime").KIND;
 const API = context.use("platform.runtime").API;
-const read_yaml = context.use("platform.uci").read_yaml;
-const read_json = context.use("platform.uci").read_json;
-const api_secret = context.use("platform.uci").api_secret;
-const sha256 = context.use("platform.uci").sha256;
-const q = context.use("platform.uci").shell_quote;
+const read_yaml = context.use("platform.storage").read_yaml;
+const read_json = context.use("platform.storage").read_json;
+const api_secret = context.use("platform.credentials").api_secret;
+const sha256 = context.use("platform.storage").sha256;
+const q = context.use("platform.process").shell_quote;
 
 const extension = {
 	id: "zashboard", label: "Zashboard", api_version: API_VERSION, kind: "resource",

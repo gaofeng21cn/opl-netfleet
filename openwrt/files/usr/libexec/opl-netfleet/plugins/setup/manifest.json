@@ -28,8 +28,10 @@
         "platform.files": 1,
         "platform.runtime": 1,
         "platform.service": 1,
-        "platform.uci": 1,
-        "setup.migration-model": 1
+        "setup.migration-model": 1,
+        "platform.storage": 1,
+        "platform.process": 1,
+        "platform.paths": 1
       }
     },
     "setup.native": {
@@ -39,8 +41,10 @@
         "platform.files": 1,
         "platform.runtime": 1,
         "platform.service": 1,
-        "platform.uci": 1,
-        "setup.native-model": 1
+        "setup.native-model": 1,
+        "platform.storage": 1,
+        "platform.process": 1,
+        "platform.paths": 1
       }
     }
   },

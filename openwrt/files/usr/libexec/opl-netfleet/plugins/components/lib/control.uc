@@ -16,10 +16,10 @@ const KIND = context.use("platform.runtime").KIND;
 const RUN_DIR = context.use("platform.runtime").RUN_DIR;
 const ROOT_DIR = context.use("platform.runtime").ROOT_DIR;
 const SERVICE = context.use("platform.runtime").SERVICE;
-const read_json = context.use("platform.uci").read_json;
-const q = context.use("platform.uci").shell_quote;
-const api_secret = context.use("platform.uci").api_secret;
-const sha256 = context.use("platform.uci").sha256;
+const read_json = context.use("platform.storage").read_json;
+const q = context.use("platform.process").shell_quote;
+const api_secret = context.use("platform.credentials").api_secret;
+const sha256 = context.use("platform.storage").sha256;
 
 const ROOT = "/tmp/opl-netfleet-components";
 const CACHE = `${ROOT}/checked.json`;

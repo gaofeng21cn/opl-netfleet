@@ -60,6 +60,26 @@ return function(context) {
 
 ## 服务绑定
 
+业务插件只声明实际使用的能力，例如读取后端 Profile 时依赖 `platform.profile`，
+访问凭据时依赖 `platform.credentials`，读取 JSON 时依赖 `platform.storage`。存储位置
+通过 `platform.paths` 获取；policy/evidence 的加载校验使用 `platform.documents`。
+接口责任见[平台能力边界](../architecture/microkernel.md#平台能力边界)。
+
+准备跨平台复用时，把算法与流程保留在业务服务，将操作系统调用放入可替换提供者。
+例如调度服务调用 `platform.process.run_owner`，OpenWrt 提供者负责 CLI 路径及锁的
+继承；业务服务不启动第二个后台循环。开发者可以逐项替换提供者，不必重写选择算法。
+本仓 [`portable_services_contract.uc`](../../tests/portable_services_contract.uc) 使用实际
+manifest 和服务工厂，在不加载 UCI/ubus/procd 的环境中验证替代存储、编译、选择及调度：
+
+```sh
+ucode tests/portable_services_contract.uc
+```
+
+这条检查验证共享业务代码及能力接口；平台的文件权限、核心进程、网络接管、锁和软件包
+生命周期仍由各平台的真实运行验收证明。选择、编译、策略模型和调度通过能力接口复用；
+订阅持久管理、后端设置及维护等 OpenWrt 专用服务仍包含 UCI 和本机操作。移植这些服务
+时，应将实际需要的系统操作交给平台提供者，并复用已有业务模型。
+
 首次安装只交付代码。显式 load 会启用插件，并为尚未占用的服务建立绑定；已有提供者
 绑定不会因安装另一个包而被覆盖。默认组合在 `/usr/share/opl-netfleet/system.json` 中
 声明，设备私有覆盖位于 `/etc/opl-netfleet/system.json`，例如：

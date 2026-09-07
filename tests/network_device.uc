@@ -6,9 +6,9 @@ const get = host.use("network.editor").get;
 const validate = host.use("network.editor").validate;
 const apply = host.use("network.editor").apply;
 const atomic_json = host.use("platform.files").atomic_json;
-const read_json = host.use("platform.uci").read_json;
-const sha256 = host.use("platform.uci").sha256;
-const api_secret = host.use("platform.uci").api_secret;
+const read_json = host.use("platform.storage").read_json;
+const sha256 = host.use("platform.storage").sha256;
+const api_secret = host.use("platform.credentials").api_secret;
 const proxies = host.use("mihomo.controller").proxies;
 
 const work = ARGV[0];

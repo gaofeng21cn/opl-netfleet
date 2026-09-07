@@ -172,7 +172,7 @@ ucode -e '
 	import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
 	import { writefile } from "fs";
 	const host = create("/usr/libexec/opl-netfleet");
-	const read_yaml = host.use("platform.uci").read_yaml;
+	const read_yaml = host.use("platform.storage").read_yaml;
 	const source = read_yaml(ARGV[0], true);
 	source.hosts = { "netfleet-probe.test": "192.168.1.2", "www.gstatic.com": "192.168.1.2" };
 	source.dns = { enable: true, listen: "[::]:1053", nameserver: ["udp://127.0.0.1:1054"] };
@@ -267,8 +267,8 @@ test "$(digest /etc/nikki/run/ui/index.html)" = "$(digest /etc/opl-netfleet/nati
 ucode -e '
 	import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
 	const host = create("/usr/libexec/opl-netfleet");
-	const read_yaml = host.use("platform.uci").read_yaml;
-	const read_json = host.use("platform.uci").read_json;
+	const read_yaml = host.use("platform.storage").read_yaml;
+	const read_json = host.use("platform.storage").read_json;
 	for (let section in ["base", "alpha", "beta"]) {
 		const source = read_yaml(`/etc/nikki/subscriptions/${section}.yaml`, true);
 		const imported = read_json(`/etc/opl-netfleet/native/subscriptions/${section}.yaml`);
