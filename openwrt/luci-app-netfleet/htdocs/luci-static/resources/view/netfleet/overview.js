@@ -124,8 +124,8 @@ function delay(value, missing) {
 
 function averageDelay(value, samples) {
 	if (!finite(samples))
-		return '样本未提供';
-	return Number(samples) < 2 ? '样本不足' : delay(value);
+		return '统计暂不可读';
+	return Number(samples) === 0 ? '暂无有效测量' : Number(samples) < 2 ? '仅 1 次测量' : delay(value);
 }
 
 function countPair(available, total) {
@@ -258,7 +258,7 @@ function quota(provider) {
 	if (value.state === 'exhausted')
 		return '已耗尽';
 	if (value.state !== 'available' || !finite(value.remaining_bytes))
-		return '未知';
+		return '机场未返回用量';
 	let amount = Number(value.remaining_bytes);
 	const units = [ 'B', 'KiB', 'MiB', 'GiB', 'TiB' ];
 	let unit = 0;
@@ -273,13 +273,13 @@ function providerExpiry(provider) {
 	if (provider.billing === 'buyout')
 		return '不限时间';
 	if (provider.billing !== 'subscription')
-		return '未提供';
+		return '计费方式未确认';
 	const value = provider.quota && provider.quota.expires_at;
-	return text(value, '未提供').slice(0, 10);
+	return value ? String(value).slice(0, 10) : '机场未返回到期时间';
 }
 
 function sampledAt(value) {
-	return finite(value) && Number(value) > 0 ? new Date(Number(value) * 1000).toLocaleString() : '未提供';
+	return finite(value) && Number(value) > 0 ? new Date(Number(value) * 1000).toLocaleString() : '暂无有效测量';
 }
 
 function executionAt(value) {
@@ -716,7 +716,7 @@ function subscriptionFailed(entry) {
 
 function subscriptionState(entry) {
 	if (!entry)
-		return '未提供';
+		return '订阅信息暂不可读';
 	if (entry.pending_update || entry.last_result === 'pending')
 		return entry.cache_present ? '待更新，沿用上次缓存' : '等待首次更新';
 	if (entry.cache_present !== true)
@@ -727,14 +727,14 @@ function subscriptionState(entry) {
 
 function subscriptionSummary(refresh, subscriptions) {
 	if (!subscriptions.length)
-		return '未提供';
+		return '暂无订阅';
 	const healthy = subscriptions.filter(function(entry) { return !subscriptionFailed(entry); }).length;
 	return String(healthy) + ' / ' + String(finite(refresh.provider_count) ? Number(refresh.provider_count) : subscriptions.length) + ' 正常';
 }
 
 function providerNodes(provider, subscription) {
 	if (provider.node_count_known !== true)
-		return '节点未提供';
+		return '节点清单暂不可读';
 	const loaded = countPair(provider.available_node_count, provider.node_count) + ' 节点';
 	return finite(subscription && subscription.node_count) && Number(subscription.node_count) !== Number(provider.node_count) ?
 		loaded + ' · 订阅 ' + String(Number(subscription.node_count)) + ' 条' : loaded;
@@ -754,11 +754,11 @@ function providersPage(status, controller) {
 	providers.forEach(function(provider) {
 		const subscription = subscriptionForProvider(subscriptions, provider);
 		const details = E('div', { 'class': 'netfleet-provider-detail-grid' }, [
-			E('dl', {}, [ E('dt', {}, '订阅标识'), E('dd', {}, text(subscription && subscription.section, '未提供')) ]),
+			subscription && subscription.section ? E('dl', {}, [ E('dt', {}, '订阅标识'), E('dd', {}, subscription.section) ]) : '',
 			E('dl', {}, [ E('dt', {}, '缓存版本'), E('dd', {}, cacheDigest(subscription)) ]),
 			E('dl', {}, [ E('dt', {}, '最近尝试'), E('dd', {}, executionAt(subscription && subscription.last_attempt)) ]),
 			E('dl', {}, [ E('dt', {}, '订阅更新时间'), E('dd', {}, executionAt(subscription && subscription.last_success)) ]),
-			E('dl', {}, [ E('dt', {}, '最后测量'), E('dd', {}, sampledAt(provider.delay_sampled_at)) ])
+			provider.delay_sampled_at ? E('dl', {}, [ E('dt', {}, '最近有效测量'), E('dd', {}, sampledAt(provider.delay_sampled_at)) ]) : ''
 		]);
 		const detailRow = E('tr', { 'class': 'netfleet-provider-detail-row' }, [ E('td', { 'colspan': 9 }, details) ]);
 		detailRow.hidden = true;
@@ -779,25 +779,26 @@ function providersPage(status, controller) {
 			E('td', {}, availabilityMeasured ? [
 				E('span', {}, countPair(provider.available_region_count, provider.region_count) + ' 地区'),
 				E('small', {}, providerNodes(provider, subscription))
-			] : '未测量'),
+			] : status.active ? '暂不可读' : '未接管')
+		].concat(provider.delay_sample_count === 0 ? [E('td', { 'colspan': 2 }, '暂无有效测量')] : [
 			E('td', {}, delay(provider.last_best_delay_ms ?? provider.best_delay_ms)),
 			E('td', {}, [
 				E('span', {}, averageDelay(provider.average_best_delay_ms, provider.delay_sample_count)),
-				E('small', {}, (finite(provider.delay_sample_count) ? String(Number(provider.delay_sample_count)) : '未提供') + ' 个样本')
-			]),
+				Number(provider.delay_sample_count) >= 2 ? E('small', {}, provider.delay_sample_count + ' 次有效测量') : ''
+			])
+		], [
 			E('td', { 'class': subscriptionFailed(subscription) ? 'is-warning' : '' }, subscriptionState(subscription)),
 			E('td', {}, quota(provider)),
 			E('td', {}, providerExpiry(provider)),
 			E('td', {}, toggle)
-		]));
+		])));
 		rows.push(detailRow);
 	});
 	return [
 		E('div', { 'class': 'cbi-section' }, [
 			E('div', { 'class': 'netfleet-section-heading' }, [
 				E('div', {}, [
-					E('h3', {}, '订阅更新'),
-					E('div', { 'class': 'cbi-section-descr' }, '机场订阅、更新时间和运行质量。')
+					E('h3', {}, '订阅更新')
 				]),
 				E('button', {
 					'class': 'netfleet-inline-link',
@@ -813,7 +814,7 @@ function providersPage(status, controller) {
 			[ '最近结果', refreshResult(refresh.last_result) ]
 			], 'is-five')
 		]),
-		section('机场', availabilityMeasured ? '每行汇总订阅状态和运行质量；平均最优至少汇总 2 个有效样本。' : 'NetFleet 当前未接管，实时可用性未测量；订阅状态、历史延迟、配额和到期时间仍可查看。', [
+		section('机场', availabilityMeasured ? '资源数：当前可用 / 已加载。延迟：历次选优中的有效测量，每轮取最快值。' : status.active ? '控制接口暂不可读，当前资源状态无法确认；以下延迟为历史有效测量。' : 'NetFleet 未接管；以下延迟为历史有效测量。', [
 			simpleTable([ '机场', '定位', '可用资源', '最近最优', '平均最优', '订阅状态', '剩余流量', '到期时间', '详情' ], rows, '设备未提供机场数据', 'netfleet-data-table netfleet-provider-table')
 		])
 	];
@@ -832,16 +833,18 @@ function regionsPage(status) {
 		return E('tr', { 'class': region.selected ? 'cbi-rowstyle-1' : '' }, [
 			E('td', {}, regionName(status, region.id) + (region.selected ? '（当前使用）' : '')),
 			E('td', {}, countPair(region.available_provider_count, region.provider_count)),
-			E('td', {}, countPair(region.available_node_count, region.node_count)),
+			E('td', {}, region.node_count == null ? '节点清单暂不可读' : countPair(region.available_node_count, region.node_count))
+		].concat(region.delay_sample_count === 0 ? [E('td', { 'colspan': 3 }, '暂无有效测量')] : [
 			E('td', {}, delay(region.last_best_delay_ms)),
 			E('td', {}, averageDelay(region.average_best_delay_ms, region.delay_sample_count)),
-			E('td', {}, finite(region.delay_sample_count) ? String(Number(region.delay_sample_count)) : '未提供'),
-			E('td', {}, sampledAt(region.delay_sampled_at)),
+			E('td', {}, [ finite(region.delay_sample_count) ? String(Number(region.delay_sample_count)) + ' 次' : '统计暂不可读',
+				region.delay_sampled_at ? E('small', {}, sampledAt(region.delay_sampled_at)) : '' ])
+		], [
 			E('td', {}, ({ automatic: '自动选优', manual: '手动选择', manual_only: '仅手动' })[region.mode] || text(region.mode, '未知'))
-		]);
+		]));
 	});
-	return [ section('地区', '当前 ' + regions.length + ' 个地区有真实可用路径；历史按稳定地区 ID 持久化，平均最优至少汇总 2 个有效样本。', [
-		simpleTable([ '地区', '可用机场', '节点', '最近最优', '平均最优', '样本', '最后测量', '模式' ], rows, '当前没有真实可用路径的地区', 'netfleet-data-table')
+	return [ section('地区', '当前 ' + regions.length + ' 个地区可用。资源数：当前可用 / 已加载；延迟按每轮最快有效测量累计。', [
+		simpleTable([ '地区', '可用机场', '可用节点', '最近最优', '平均最优', '有效测量', '模式' ], rows, '当前没有真实可用路径的地区', 'netfleet-data-table')
 	]) ];
 }
 

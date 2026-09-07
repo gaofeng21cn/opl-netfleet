@@ -1,4 +1,4 @@
-import { is_proxy_leaf, provider_group_current_leaf } from "./selector.uc";
+import { is_proxy_leaf, is_control_proxy, provider_group_current_leaf } from "./selector.uc";
 import { identity_matches, measurement_identity } from "./evidence.uc";
 import { ordered_capabilities, ordered_regions, region_switch_margin, leaf_switch_margin } from "./policy.uc";
 
@@ -156,6 +156,8 @@ function group_nodes(proxy_state, provider_state, source_name, group_name) {
 			result[member] = provider_members[member];
 		} else if (is_proxy_leaf(proxy_state, member)) {
 			result[member] = proxy_state?.[member]?.alive == true;
+		} else if (is_control_proxy(proxy_state, member)) {
+			continue;
 		} else {
 			return { known: false, members: {} };
 		}

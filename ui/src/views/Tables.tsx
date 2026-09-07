@@ -9,7 +9,7 @@ const billing = (value: string) => ({ subscription: '订阅制', buyout: '买断
 const mode = (value: string) => ({ automatic: '自动选优', manual: '手动选择', manual_only: '仅手动' }[value] || value);
 const sampledAt = (value?: number | null) => value
   ? new Date(value * 1000).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-  : '未提供';
+  : '暂无有效测量';
 const executionAt = (value?: number | null) => value ? sampledAt(value) : '尚未执行';
 const duration = (value?: number | null) => value == null ? '未提供'
   : value % 86400 === 0 ? `${value / 86400} 天`
@@ -37,7 +37,7 @@ const subscriptionFor = (snapshot: StatusSnapshot, provider: Provider) => {
   return subscriptions(snapshot).find((entry) => entry.section === provider.subscription_section);
 };
 const subscriptionState = (entry?: SubscriptionStatus) => {
-  if (!entry) return '未提供';
+  if (!entry) return '订阅信息暂不可读';
   if (entry.pending_update || entry.last_result === 'pending') return entry.cache_present ? '待更新，沿用上次缓存' : '等待首次更新';
   if (!entry.cache_present) return '没有可用缓存';
   return entry.last_result ? subscriptionResult(entry.last_result) : '缓存可用';
@@ -50,7 +50,7 @@ const cacheVersion = (entry?: SubscriptionStatus) => {
   return entry.cache_sha256 ? entry.cache_sha256.slice(0, 12) : '已缓存';
 };
 const providerNodes = (provider: Provider, entry?: SubscriptionStatus) => {
-  if (!provider.node_count_known) return '节点未提供';
+  if (!provider.node_count_known) return '节点清单暂不可读';
   const loaded = `${countPair(provider.available_node_count, provider.node_count)} 节点`;
   return entry?.node_count != null && Number(entry.node_count) !== Number(provider.node_count)
     ? `${loaded} · 订阅 ${entry.node_count} 条`
@@ -58,7 +58,7 @@ const providerNodes = (provider: Provider, entry?: SubscriptionStatus) => {
 };
 const subscriptionSummary = (snapshot: StatusSnapshot) => {
   const entries = subscriptions(snapshot);
-  if (!entries.length) return '未提供';
+  if (!entries.length) return '暂无订阅';
   const healthy = entries.filter((entry) => entry.cache_present && !failedRefreshResults.has(entry.last_result || '')).length;
   return `${healthy} / ${snapshot.subscription_refresh?.provider_count ?? entries.length} 正常`;
 };
@@ -74,7 +74,7 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
   return (
     <>
     {full && <section className="nf-policy-summary">
-      <div className="nf-section-heading"><div><h2>订阅更新</h2><p>机场订阅、更新时间和运行质量。</p></div><SubscriptionsPreview status={snapshot} /></div>
+      <div className="nf-section-heading"><h2>订阅更新</h2><SubscriptionsPreview status={snapshot} /></div>
       <div className="nf-policy-grid is-five">
         <dl><dt>自动更新</dt><dd>{refresh?.enabled ? '已启用' : '已关闭'}</dd></dl>
         <dl><dt>更新周期</dt><dd>{duration(refresh?.interval_seconds)}</dd></dl>
@@ -84,7 +84,7 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
       </div>
     </section>}
     <section className="nf-table-section">
-      <div className="nf-section-heading"><div><h2>机场</h2>{full && <p>{availabilityMeasured ? '每行汇总订阅状态和运行质量；平均最优至少汇总 2 个有效样本。' : 'NetFleet 当前未接管，实时可用性未测量；订阅状态、历史延迟、配额和到期时间仍可查看。'}</p>}</div><ArrowDownUp aria-hidden="true" /></div>
+      <div className="nf-section-heading"><div><h2>机场</h2>{full && <p>{availabilityMeasured ? '资源数：当前可用 / 已加载。延迟：历次选优中的有效测量，每轮取最快值。' : snapshot.active ? '控制接口暂不可读，当前资源状态无法确认；以下延迟为历史有效测量。' : 'NetFleet 未接管；以下延迟为历史有效测量。'}</p>}</div><ArrowDownUp aria-hidden="true" /></div>
       <div className="nf-table-wrap">
         <table className="nf-provider-table">
           <thead><tr><th>机场</th><th>定位</th><th>可用资源</th><th>最近最优</th><th>平均最优</th><th>订阅状态</th><th>剩余流量</th><th>到期时间</th><th><span className="nf-visually-hidden">详情</span></th></tr></thead>
@@ -95,9 +95,11 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
               <tr className={provider.selected ? 'is-selected' : ''}>
                 <td><span className="nf-table-name">{providerName(snapshot, provider.id)}</span>{provider.selected && <small>当前使用</small>}</td>
                 <td>{role(provider.role)} · {billing(provider.billing)}</td>
-                <td><span>{availabilityMeasured ? `${countPair(provider.available_region_count, provider.region_count)} 地区` : '未测量'}</span>{availabilityMeasured && <small>{providerNodes(provider, subscription)}</small>}</td>
-                <td className={delayClass(provider.last_best_delay_ms ?? provider.best_delay_ms, regionMargin)}>{delay(provider.last_best_delay_ms ?? provider.best_delay_ms)}</td>
-                <td><span>{averageDelay(provider.average_best_delay_ms, provider.delay_sample_count)}</span><small>{provider.delay_sample_count ?? '未提供'} 个样本</small></td>
+                <td><span>{availabilityMeasured ? `${countPair(provider.available_region_count, provider.region_count)} 地区` : snapshot.active ? '暂不可读' : '未接管'}</span>{availabilityMeasured && <small>{providerNodes(provider, subscription)}</small>}</td>
+                {provider.delay_sample_count === 0 ? <td colSpan={2} className="nf-muted">暂无有效测量</td> : <>
+                  <td className={delayClass(provider.last_best_delay_ms ?? provider.best_delay_ms, regionMargin)}>{delay(provider.last_best_delay_ms ?? provider.best_delay_ms)}</td>
+                  <td><span>{averageDelay(provider.average_best_delay_ms, provider.delay_sample_count)}</span>{Number(provider.delay_sample_count) >= 2 && <small>{provider.delay_sample_count} 次有效测量</small>}</td>
+                </>}
                 <td className={subscriptionStateClass(subscription)}>{subscriptionState(subscription)}</td>
                 <td>{quota(provider.quota)}</td>
                 <td>{providerExpiry(provider)}</td>
@@ -105,11 +107,11 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
               </tr>
               <tr className="nf-provider-detail-row" hidden={!expanded}>
                 <td colSpan={9}><div className="nf-provider-detail-grid">
-                  <dl><dt>订阅标识</dt><dd>{subscription?.section || '未提供'}</dd></dl>
+                  {subscription?.section && <dl><dt>订阅标识</dt><dd>{subscription.section}</dd></dl>}
                   <dl><dt>缓存版本</dt><dd>{cacheVersion(subscription)}</dd></dl>
                   <dl><dt>最近尝试</dt><dd>{executionAt(subscription?.last_attempt)}</dd></dl>
                   <dl><dt>订阅更新时间</dt><dd>{executionAt(subscription?.last_success)}</dd></dl>
-                  <dl><dt>最后测量</dt><dd>{sampledAt(provider.delay_sampled_at)}</dd></dl>
+                  {provider.delay_sampled_at && <dl><dt>最近有效测量</dt><dd>{sampledAt(provider.delay_sampled_at)}</dd></dl>}
                 </div></td>
               </tr>
             </Fragment>;
@@ -126,17 +128,20 @@ export function RegionTable({ snapshot, full = false }: { snapshot: StatusSnapsh
   const regions = sortRegionsForDisplay(snapshot);
   return (
     <section className="nf-table-section nf-region-table">
-      <div className="nf-section-heading"><div><h2>地区</h2><p>当前 {regions.length} 个地区有真实可用路径；平均最优至少汇总 2 个有效样本。</p></div><ArrowDownUp aria-hidden="true" /></div>
+      <div className="nf-section-heading"><div><h2>地区</h2><p>当前 {regions.length} 个地区可用。资源数：当前可用 / 已加载；延迟按每轮最快有效测量累计。</p></div><ArrowDownUp aria-hidden="true" /></div>
       <div className="nf-table-wrap">
         <table>
-          <thead><tr><th>地区</th><th>可用机场</th><th>节点</th><th>最近最优</th><th>平均最优</th><th>样本</th>{full && <th>最后测量</th>}<th>模式</th></tr></thead>
+          <thead><tr><th>地区</th><th>可用机场</th><th>可用节点</th><th>最近最优</th><th>平均最优</th><th>有效测量</th><th>模式</th></tr></thead>
           <tbody>{regions.map((region) => (
             <tr className={region.selected ? 'is-selected' : ''} key={region.id}>
               <td><span className="nf-table-name">{regionName(snapshot, region.id)}</span>{region.selected && <small>当前使用</small>}</td>
               <td>{countPair(region.available_provider_count, region.provider_count)}</td>
-              <td>{countPair(region.available_node_count, region.node_count)}</td>
-              <td className={delayClass(region.last_best_delay_ms, regionMargin)}>{delay(region.last_best_delay_ms)}</td>
-              <td>{averageDelay(region.average_best_delay_ms, region.delay_sample_count)}</td><td>{region.delay_sample_count ?? '未提供'}</td>{full && <td>{sampledAt(region.delay_sampled_at)}</td>}<td>{mode(region.mode)}</td>
+              <td>{region.node_count == null ? '节点清单暂不可读' : countPair(region.available_node_count, region.node_count)}</td>
+              {region.delay_sample_count === 0 ? <td colSpan={3} className="nf-muted">暂无有效测量</td> : <>
+                <td className={delayClass(region.last_best_delay_ms, regionMargin)}>{delay(region.last_best_delay_ms)}</td>
+                <td>{averageDelay(region.average_best_delay_ms, region.delay_sample_count)}</td>
+                <td>{region.delay_sample_count == null ? '统计暂不可读' : `${region.delay_sample_count} 次`}{full && region.delay_sampled_at && <small>{sampledAt(region.delay_sampled_at)}</small>}</td>
+              </>}<td>{mode(region.mode)}</td>
             </tr>
           ))}</tbody>
         </table>

@@ -320,9 +320,9 @@ function componentsPage(controller) {
 		active || !snapshot || !(snapshot.supported && feed.configured || dashboard && dashboard.managed));
 	if (!controller.liveDataReady) check.setAttribute('title', '等待设备实时状态恢复');
 	else if (active) check.setAttribute('title', '设备正在执行操作');
-	const content = [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h3', {}, '安装与更新'), E('div', { 'class': 'netfleet-inline-actions' }, [
+	const content = [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h3', {}, '已安装组件'), E('div', { 'class': 'netfleet-inline-actions' }, [
 		refresh, check
-	]) ]), operationNode(controller, 'packages') ];
+	]) ]), E('p', { 'class': 'cbi-section-descr' }, '检查更新后选择要更新的组件；不会自动安装，也不会升级其他 OpenWrt 软件。机场订阅请在“机场”页管理。'), operationNode(controller, 'packages') ];
 	if (controller.componentsError) content.push(E('p', { 'class': 'is-warning', 'role': 'alert' }, '组件信息未能确认：' + errorLabel(controller.componentsError.message)));
 	if (!snapshot) {
 		content.push(E('p', { 'class': controller.componentsLoading ? 'spinning' : '' }, controller.componentsLoading ? '正在读取已安装组件…' : '当前设备未提供组件管理接口，请确认 NetFleet 已更新。'));
@@ -357,7 +357,7 @@ function componentsPage(controller) {
 			E('td', {}, current), E('td', {}, available), E('td', { 'class': 'netfleet-component-actions' }, update) ]);
 	});
 	(snapshot.extensions || []).filter(function(extension) { return extension.kind === 'optional'; }).forEach(function(extension) {
-		const state = ({ ready: '接口可用', not_installed: '未安装', incompatible: '接口不兼容', backend_unsupported: '后端不支持', dependency_missing: '缺少依赖', unknown: '状态未确认' })[extension.state];
+		const state = ({ ready: '可配置', not_installed: '未安装', incompatible: '模块版本不兼容', backend_unsupported: '当前后端不支持', dependency_missing: '缺少依赖', unknown: '状态未确认' })[extension.state];
 		const absent = extension.state === 'not_installed' && !extension.available;
 		const dependencies = extension.dependencies || [];
 		const missing = dependencies.filter(function(dependency) { return dependency.available === false; });
@@ -367,12 +367,12 @@ function componentsPage(controller) {
 		if (extension.reason) current.push(E('small', {}, errorLabel(extension.reason)));
 		if (!absent && dependencies.length) current.push(E('details', { 'open': missing.length ? true : null }, [
 			E('summary', { 'class': missing.length ? 'is-warning' : '' }, missing.length ? '缺少 ' + missing.length + ' 项模块依赖' : '运行依赖（' + dependencies.length + '）'),
-			E('small', { 'style': 'overflow-wrap:anywhere' }, extension.package),
-			dependencies.map(function(dependency) { return E('small', { 'class': dependency.available === false ? 'is-warning' : '' },
+			E('small', { 'style': 'overflow-wrap:anywhere' }, extension.package)
+		].concat(dependencies.map(function(dependency) { return E('small', { 'class': dependency.available === false ? 'is-warning' : '' },
 				dependency.id + '：' + (dependency.available == null ? '未确认' : dependency.available ? dependency.installed_version || '已安装' : '缺少')); })
-		]));
+		)));
 		rows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, extension.label), E('small', { 'title': extension.package }, '可选模块') ]),
-			E('td', {}, current), E('td', {}, ''), E('td', { 'class': 'netfleet-component-actions' }, extension.id === 'https-compat' ? button('配置', function() {
+			E('td', {}, current), E('td', {}, '通过 OpenWrt 软件包管理'), E('td', { 'class': 'netfleet-component-actions' }, extension.id === 'https-compat' ? button('配置', function() {
 				controller.currentView = 'config'; controller.configSection = 'compatibility'; controller.redraw();
 			}) : '') ]));
 	});
@@ -393,12 +393,13 @@ function componentsPage(controller) {
 	content.push(E('div', { 'class': 'table cbi-section-table netfleet-component-table' }, E('table', { 'class': 'table' }, [
 		E('thead', {}, E('tr', {}, ['组件', '当前版本与状态', '更新', '操作'].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, rows)
 	])));
-	content.push(E('details', { 'class': 'netfleet-component-details' }, [ E('summary', {}, '更新源与安装详情'), E('dl', { 'class': 'netfleet-component-meta' }, [
+	content.push(E('details', { 'class': 'netfleet-component-details' }, [ E('summary', {}, '技术详情：更新源与安装信息'),
+		E('p', {}, '用于排查安装或更新问题。软件包源决定可获取的版本；日常更新无需修改以下信息。'), E('dl', { 'class': 'netfleet-component-meta' }, [].concat(
 		snapshot.architecture ? [ E('dt', {}, '设备架构'), E('dd', {}, snapshot.architecture) ] : '',
 		feed.url ? [ E('dt', {}, '软件包源'), E('dd', {}, feed.url) ] : '',
 		luci ? [ E('dt', {}, 'LuCI 界面'), E('dd', {}, (luci.installed_version || '未安装') + ' · 随 NetFleet 更新') ] : '',
 		dashboard && dashboard.release_url && dashboard.release_url.startsWith('https://github.com/') ? [ E('dt', {}, '面板发行说明'), E('dd', {}, E('a', { 'href': dashboard.release_url, 'target': '_blank', 'rel': 'noopener' }, 'Zashboard 发行说明 ↗')) ] : ''
-	]) ]));
+	)) ]));
 	const missing = (snapshot.dependencies || []).filter(function(item) { return !item.available; });
 	if (snapshot.supported && (snapshot.dependencies || []).length) content.push(E('details', { 'open': missing.length ? true : null, 'class': 'netfleet-component-details' }, [ E('summary', { 'class': missing.length ? 'is-warning' : '' }, missing.length ? '缺少 ' + missing.length + ' 项运行依赖' : '运行依赖正常'),
 		missing.length ? E('p', {}, '请通过 OpenWrt 软件包管理安装缺少的依赖。') : '',

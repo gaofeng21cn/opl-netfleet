@@ -1369,7 +1369,8 @@ function enable_action(policy, evidence) {
 		const capability = automatic_names[i];
 		const result = automatic_results[capability];
 			next_evidence = selection_snapshot(next_evidence, result.candidates, capability,
-				result.decision, activation_probes, measurement_identity(policy, manifest));
+				result.decision, activation_probes, measurement_identity(policy, manifest),
+				manifest.generated_groups[capability].candidate_groups);
 	}
 	const evidence_recorded = length(automatic_names) > 0 && write_evidence(next_evidence);
 	const event_entries = [];
@@ -2046,7 +2047,8 @@ function automatic_select_action(policy, capability, evidence, trigger, initiato
 		const name = automatic_names[i];
 		const result = results[name];
 		next_evidence = selection_snapshot(next_evidence, result.candidates, name,
-			result.decision, activation_probes, measurement_identity(policy, manifest));
+			result.decision, activation_probes, measurement_identity(policy, manifest),
+			manifest.generated_groups[name].candidate_groups);
 		selections[name] = {
 			decision: result.decision,
 			selected_group: result.decision.group,

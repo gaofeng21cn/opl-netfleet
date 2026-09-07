@@ -257,8 +257,6 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
         )}
       </div>
 
-      {view !== 'components' && <DataSourceBar source={source} statusError={statusError} eventsError={eventsError} />}
-
       {preview && (
         <div className="nf-mobile-preview">
           <span>{preview.label}</span><span>/</span>
@@ -297,15 +295,15 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
       {view === 'events' && <EventsView key={`${source.mode}|${source.target_label}|${preview?.scenario}`} snapshot={visibleEvents} status={status} connections={connections} connectionsLoading={connectionsLoading} connectionsError={connectionsError} error={eventsError} client={client} />}
       {view === 'components' && <>
         <ComponentsView snapshot={components} operation={operations.packages} error={componentsError} operationError={operationError} loading={componentsLoading} onRead={() => void Promise.all([refreshComponents(), refresh()])} />
-        <DataSourceBar source={source} statusError={statusError} eventsError={eventsError} />
       </>}
+      <DataSourceBar source={source} statusError={statusError} eventsError={eventsError} />
 
       {dialog && <ConfirmDialog
         title={{ enable: '启用 NetFleet', select: '重新自动选优', disable: '关闭 NetFleet' }[dialog]}
         description={{
           enable: '将按当前设备策略重新生成待启用配置，并在网络检查和设备状态确认通过后接管网络出口。',
           select: '将按依赖顺序执行一轮有界测速和原子选择，并恢复后台周期选优。',
-          disable: '将优先恢复设备指定的原生配置；只有原生配置无法恢复时，才停止 Nikki 并恢复网络直通。',
+          disable: '将优先恢复设备指定的原生配置；只有原生配置无法恢复时，才停止代理后端并恢复网络直通。',
         }[dialog]}
         confirmLabel={{ enable: '确认启用', select: '开始选优', disable: '确认关闭' }[dialog]}
         danger={dialog === 'disable'}

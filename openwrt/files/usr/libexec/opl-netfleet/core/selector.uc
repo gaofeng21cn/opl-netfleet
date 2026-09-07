@@ -21,6 +21,10 @@ const CONTROL_PROXY_TYPES = {
 	block: true
 };
 
+export function is_control_proxy(proxy_state, value) {
+	return CONTROL_PROXY_TYPES[lc(`${proxy_state?.[value]?.type ?? ""}`)] == true;
+};
+
 // Names are not identities: a subscription may contain a perfectly valid
 // node whose display name happens to be "direct".  Prefer Mihomo's type and
 // group shape when it is available, and reserve built-in DIRECT detection for

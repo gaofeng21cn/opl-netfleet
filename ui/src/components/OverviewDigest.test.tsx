@@ -90,8 +90,8 @@ describe('概览信息层级', () => {
     expect(html).toContain('NetFleet 当前未接管，机场和地区的实时可用性未测量');
     expect(html).toContain('未测量<small> NetFleet 未接管</small>');
     expect(html).not.toContain('不可用机场：');
-    expect(providers).toContain('NetFleet 当前未接管，实时可用性未测量');
-    expect(providers).toContain('<span>未测量</span>');
+    expect(providers).toContain('NetFleet 未接管；以下延迟为历史有效测量');
+    expect(providers).toContain('<span>未接管</span>');
     expect(providers).not.toContain('<td>0 /');
   });
 
@@ -99,7 +99,7 @@ describe('概览信息层级', () => {
     const html = renderToStaticMarkup(<ProviderTable snapshot={fixtureScenarios.healthy.status} full />);
 
     expect(html).toContain('3 / 3 正常');
-    expect(html).toContain('每行汇总订阅状态和运行质量');
+    expect(html).toContain('资源数：当前可用 / 已加载');
     expect(html).toContain('<th>定位</th>');
     expect(html).toContain('<th>可用资源</th>');
     expect(html).toContain('<th>订阅状态</th>');
@@ -134,7 +134,7 @@ describe('概览信息层级', () => {
 
     const html = renderToStaticMarkup(<ProviderTable snapshot={status} full />);
 
-    expect(html).toContain('未提供');
+    expect(html).toContain('订阅信息暂不可读');
     expect(html).not.toContain('aaaaaaaaaaaa');
   });
 
@@ -154,7 +154,7 @@ describe('概览信息层级', () => {
     expect(overview).toContain('5<small> 个当前可用</small>');
     expect(overview).not.toContain('CH 瑞士');
     expect(overview).not.toContain('不可用地区');
-    expect(regions).toContain('当前 5 个地区有真实可用路径');
+    expect(regions).toContain('当前 5 个地区可用');
     expect(regions).not.toContain('CH 瑞士');
   });
 

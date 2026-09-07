@@ -14,7 +14,7 @@
 	"order": 10,
 	"action": {
       "type": "view",
-      "path": "netfleet/overview-v0_5_7"
+			"path": "netfleet/overview-v0_5_8"
     },
     "depends": {
       "acl": [ "luci-app-netfleet" ]

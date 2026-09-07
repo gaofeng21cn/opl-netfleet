@@ -78,7 +78,7 @@ it('projects optional package versions and dependencies without duplicating reso
   expect(html.match(/<strong>Zashboard<\/strong>/g)).toHaveLength(1);
   const row = html.split('<tr>').find(part => part.includes('<strong>HTTPS 兼容</strong>'))!.split('</tr>')[0];
   expect(row).toContain('0.2.0-r1');
-  expect(row).toContain('接口可用');
+  expect(row).toContain('可配置');
   expect(row).not.toContain('已就绪');
   expect(row).toContain('<details>');
   expect(row).not.toContain('<details open');
@@ -121,6 +121,6 @@ it('does not label an available module without a package version as absent', () 
   value.extensions = [extension({ installed_version: null, available: true })];
   const row = render(value).split('<tr>').find(part => part.includes('<strong>HTTPS 兼容</strong>'))!.split('</tr>')[0];
   expect(row).toContain('安装版本未确认');
-  expect(row).toContain('接口可用');
+  expect(row).toContain('可配置');
   expect(row).not.toContain('未安装');
 });

@@ -163,7 +163,7 @@ function legacy_snapshot(candidates, capability, decision, probes) {
 	};
 };
 
-export function selection_snapshot(previous, candidates, capability, decision, probes, identity) {
+export function selection_snapshot(previous, candidates, capability, decision, probes, identity, groups) {
 	// Keep the old four-argument upgrade call data-safe. The next new-owner
 	// round replaces it with the current per-capability schema.
 	if (type(previous) == "array" && type(candidates) == "string" &&
@@ -175,8 +175,11 @@ export function selection_snapshot(previous, candidates, capability, decision, p
 	const capabilities = previous?.schema_version == 3 && same_identity(previous.identity, identity) &&
 		type(previous.capabilities) == "object" ? clone(previous.capabilities) : {};
 	const prior = capabilities[capability];
-	const regions = initial_aggregates(prior?.regions, aggregate_ids(entries, "region_id"));
-	const providers = initial_aggregates(prior?.providers, aggregate_ids(entries, "provider_id"));
+	// Runtime availability is transient; only the compiled catalog owns removal.
+	const regions = initial_aggregates(prior?.regions,
+		groups != null ? aggregate_ids(groups, "region") : aggregate_ids(entries, "region_id"));
+	const providers = initial_aggregates(prior?.providers,
+		groups != null ? aggregate_ids(groups, "provider") : aggregate_ids(entries, "provider_id"));
 	add_aggregate_samples(regions, best_by(entries, "region_id"), sampled_at);
 	add_aggregate_samples(providers, best_by(entries, "provider_id"), sampled_at);
 	capabilities[capability] = {

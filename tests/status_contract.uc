@@ -347,6 +347,26 @@ if (result.build?.version != "0.3.0" ||
 	exit(1);
 }
 
+const placeholder_state = json(sprintf("%J", state));
+placeholder_state.proxies.DIRECT = { type: "Direct", alive: true };
+push(placeholder_state.proxies["常规出口 · 🇯🇵 北方 · Alpha"].all, "DIRECT");
+const placeholder_result = build(policy, manifest, placeholder_state, evidence, {
+	active: true, netfleet_present: true, mihomo_running: true, quotas: {}
+});
+if (find_by_id(placeholder_result.regions, "north")?.node_count != 4 ||
+	find_by_id(placeholder_result.regions, "north")?.available_node_count != 3) {
+	print("control_placeholder_erased_region_inventory\n");
+	exit(1);
+}
+push(placeholder_state.proxies["常规出口 · 🇯🇵 北方 · Alpha"].all, "missing-member");
+const unknown_member_result = build(policy, manifest, placeholder_state, evidence, {
+	active: true, netfleet_present: true, mihomo_running: true, quotas: {}
+});
+if (find_by_id(unknown_member_result.regions, "north")?.node_count != null) {
+	print("unknown_member_count_fabricated\n");
+	exit(1);
+}
+
 const lagging_ancestor_state = json(sprintf("%J", state));
 lagging_ancestor_state.proxies["常规出口"].alive = false;
 lagging_ancestor_state.proxies["常规出口 · 自动选优"].alive = false;

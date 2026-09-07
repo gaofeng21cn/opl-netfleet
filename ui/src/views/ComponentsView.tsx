@@ -8,7 +8,7 @@ const coreVersion = (value: string) => value.replace(/^v/, '').replace(/-r\d+$/,
 const checkedTime = (value: number | null) => value ? `检查于 ${new Date(value * 1000).toLocaleString()}` : '尚未检查更新';
 
 function ExtensionRow({ extension }: { extension: ExtensionComponent }) {
-  const state = { ready: '接口可用', not_installed: '未安装', incompatible: '接口不兼容', backend_unsupported: '后端不支持', dependency_missing: '缺少依赖', unknown: '状态未确认' }[extension.state];
+  const state = { ready: '可配置', not_installed: '未安装', incompatible: '模块版本不兼容', backend_unsupported: '当前后端不支持', dependency_missing: '缺少依赖', unknown: '状态未确认' }[extension.state];
   const absent = extension.state === 'not_installed' && !extension.available;
   const missing = extension.dependencies.filter(dependency => dependency.available === false);
   const warning = extension.state !== 'ready' && extension.state !== 'not_installed';
@@ -25,7 +25,7 @@ function ExtensionRow({ extension }: { extension: ExtensionComponent }) {
         </small>)}
       </details>}
     </td>
-    <td />
+    <td>通过 OpenWrt 软件包管理</td>
     <td className="nf-component-actions">{extension.id === 'https-compat' && <button type="button" disabled title={previewReason}><Settings aria-hidden="true" />配置</button>}</td>
   </tr>;
 }
@@ -58,10 +58,11 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
   const luci = snapshot?.components.find(component => component.id === 'luci');
   const missing = snapshot?.dependencies.filter(item => !item.available) || [];
   return <div className="nf-components">
-    <div className="nf-section-heading"><h2>安装与更新</h2><div className="nf-components-actions">
+    <div className="nf-section-heading"><h2>已安装组件</h2><div className="nf-components-actions">
       <button type="button" onClick={onRead} disabled={loading} title="刷新设备组件状态" aria-label="刷新设备组件状态"><RefreshCw aria-hidden="true" className={loading ? 'is-spinning' : ''} /></button>
       <button type="button" disabled title={previewReason}><RefreshCw aria-hidden="true" />检查更新</button>
     </div></div>
+    <p>检查更新后选择要更新的组件；不会自动安装，也不会升级其他 OpenWrt 软件。机场订阅请在“机场”页管理。</p>
     <OperationProgress operation={operation} error={operationError} />
     {error && <div className="nf-alert" role="alert">{error}</div>}
     {!snapshot ? <p>{loading ? '正在读取已安装组件…' : '当前设备尚未提供组件管理信息。'}</p> : <>
@@ -87,7 +88,8 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
             <td className="nf-component-actions">{canUpdate && <button type="button" disabled title={previewReason}><Download aria-hidden="true" />{mismatch ? '更新软件包' : '更新'}</button>}</td>
           </tr>;
         })}{snapshot.extensions?.filter(extension => extension.kind === 'optional').map(extension => <ExtensionRow key={extension.id} extension={extension} />)}{dashboard && <DashboardRow dashboard={dashboard} />}</tbody></table></div>
-      <details className="nf-component-details"><summary>更新源与安装详情</summary><dl>
+      <details className="nf-component-details"><summary>技术详情：更新源与安装信息</summary>
+        <p>用于排查安装或更新问题。软件包源决定可获取的版本；日常更新无需修改以下信息。</p><dl>
         {snapshot.architecture && <><dt>设备架构</dt><dd>{snapshot.architecture}</dd></>}
         {feed?.url && <><dt>软件包源</dt><dd>{feed.url}</dd></>}
         {luci && <><dt>LuCI 界面</dt><dd>{luci.installed_version || '未安装'} · 随 NetFleet 更新</dd></>}
