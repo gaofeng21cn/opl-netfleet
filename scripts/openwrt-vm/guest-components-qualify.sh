@@ -10,6 +10,7 @@ test -f /tmp/netfleet-setup-vm-authorized
 test -f "$owner"
 mkdir -p "$work"
 cp /etc/apk/repositories.d/opl-netfleet.list "$work/original-feed"
+cp /etc/apk/world "$work/original-world"
 finish() {
 	rc=$?
 	trap - EXIT INT TERM
@@ -134,6 +135,16 @@ core_old=$(jsonfilter -i "$work/fixture.json" -e '@.core_old_version')
 core_bad=$(jsonfilter -i "$work/fixture.json" -e '@.core_bad_version')
 printf '%s\n' "$feed_url/components-fixtures/good/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
 product_packages=$(jsonfilter -i "$work/fixture.json" -e '@.product_packages[*]')
+dependency_packages=
+for name in $product_packages; do
+	if ! grep -Eq "^$name([@<>=~]|$)" "$work/original-world"; then
+		dependency_packages="$dependency_packages $name"
+	fi
+done
+restore_fixture_world() {
+	apk --no-network add $product_packages >>"$work/unpin.log" 2>&1
+	[ -z "$dependency_packages" ] || apk --no-network del $dependency_packages >>"$work/unpin.log" 2>&1
+}
 old_packages=
 for name in $product_packages; do
 	uclient-fetch -q -O "$work/$name-$old.apk" "$feed_url/components-fixtures/good/$name-$old.apk"
@@ -145,7 +156,7 @@ unchanged
 rpc_ready
 stage=installer_product_upgrade
 # Local APK files pin their checksum; a normal feed installation has no pin.
-apk --no-network add $product_packages >"$work/unpin.log" 2>&1
+restore_fixture_world
 for name in $product_packages; do apk list --manifest | grep -Fqx "$name $old"; done
 uclient-fetch -q -O "$work/install-netfleet.sh" "$feed_url/install-netfleet.sh"
 # The isolated proxy only serves local fixtures; system dependencies are installed.
@@ -156,6 +167,7 @@ mv "$work/distfeeds.list" /etc/apk/repositories.d/distfeeds.list
 for name in $product_packages; do apk list --manifest | grep -Fqx "$name $current"; done
 unchanged
 install_fixture $old_packages >>"$work/downgrade.log" 2>&1
+restore_fixture_world
 stage=independent_plugin_update
 printf '%s\n' "$feed_url/components-fixtures/good/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
 printf '%s\n' "$feed_url/components-fixtures/independent/packages.adb" >>/etc/apk/repositories.d/netfleet-component-fixture.list
@@ -166,10 +178,12 @@ uclient-fetch -q -O "$work/independent.apk" \
 install_fixture "$work/independent.apk" >"$work/independent.log" 2>&1
 unchanged
 rpc_ready
+cp /etc/apk/world "$work/update-world"
 stage=component_update
 rpcd_before=$(pidof rpcd)
 request components_update "$current"
 assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
+cmp /etc/apk/world "$work/update-world"
 for name in $product_packages; do
 	expected=$current
 	[ "$name" != opl-netfleet-plugin-dashboard ] || expected=$independent
@@ -184,6 +198,7 @@ request components_update "$bad"
 assert_json "$work/operation-result.json" '@.result.packages.state' failed
 assert_json "$work/operation-result.json" '@.result.packages.error' runtime_verification_failed_rolled_back
 assert_json "$work/operation-result.json" '@.result.packages.recovery' restored
+cmp /etc/apk/world "$work/update-world"
 for name in $product_packages; do
 	expected=$current
 	[ "$name" != opl-netfleet-plugin-dashboard ] || expected=$independent
@@ -223,4 +238,6 @@ apk list --manifest | grep -Fqx "mihomo-meta $core_current"
 [ "$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.core.pid')" = "$core_pid_before" ]
 unchanged
 stage=complete
-printf '%s\n' '{"ok":true,"checks":{"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"installer_complete_product_upgrade":true,"component_preserves_newer_independent_plugin":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"
+# Remove the explicit root introduced by the independent-plugin test; the product still needs it.
+apk --no-network --repositories-file /dev/null del opl-netfleet-plugin-dashboard >"$work/independent-root-remove.log" 2>&1
+printf '%s\n' '{"ok":true,"checks":{"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"installer_complete_product_upgrade":true,"component_preserves_newer_independent_plugin":true,"component_world_preserved":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"

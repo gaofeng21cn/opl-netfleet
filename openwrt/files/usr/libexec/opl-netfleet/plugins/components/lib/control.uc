@@ -2,7 +2,7 @@ import * as fs from "fs";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, feed, newer, available, update_process, progress, get, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, restore_services, upgrade, command;
+let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, restore_world, feed, newer, available, update_process, progress, get, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, restore_services, upgrade, command;
 
 const dashboard_resource = context.use("dashboard.control").resource;
 const operation = context.use("events.operation");
@@ -63,6 +63,31 @@ installed = function() {
 	const result = {};
 	for (let row in rows) if (version_valid(row.version)) result[row.name] = row.version;
 	return result;
+};
+package_world = function() {
+	const text = fs.readfile("/etc/apk/world");
+	if (text == null) fail("package_world_unavailable");
+	const result = {};
+	for (let line in split(text, "\n")) {
+		const constraint = trim(line);
+		if (!length(constraint)) continue;
+		const name = match(constraint, /^([a-z0-9][a-z0-9+_.-]*)([@<>=~]|$)/)?.[1];
+		if (name == null) fail("package_world_invalid");
+		result[name] = constraint;
+	}
+	return result;
+};
+restore_world = function(names, before, work) {
+	// Local APK arguments add checksum-pinned world roots, including dependencies.
+	const unpinned = filter(names, name => before[name] == name);
+	if (length(unpinned) && !run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(unpinned, q))}`, work)) return false;
+	const dependencies = filter(names, name => before[name] == null);
+	if (length(dependencies) && !run_command(`apk --no-network --repositories-file /dev/null del ${join(" ", map(dependencies, q))}`, work)) return false;
+	const after = package_world();
+	for (let name in names) {
+		if (before[name] == null && after[name] != null || before[name] == name && after[name] != name) return false;
+	}
+	return true;
 };
 feed = function() {
 	const lines = split(fs.readfile(REPOSITORY) ?? "", "\n");
@@ -314,7 +339,7 @@ upgrade = function(request, work, candidates) {
 	const unconfigured = fs.lstat("/etc/opl-netfleet/policy.json") == null && !service_running(SERVICE);
 	if (before_status == null && !unconfigured) fail("runtime_readback_failed");
 	const paths = private_paths();
-	const before = { active: before_status?.active ?? false, unconfigured: unconfigured, core: service_running(SERVICE), supervisor: service_running("opl-netfleet"), selections: {}, paths: paths, inputs: input_identity(paths) };
+	const before = { active: before_status?.active ?? false, unconfigured: unconfigured, core: service_running(SERVICE), supervisor: service_running("opl-netfleet"), selections: {}, paths: paths, inputs: input_identity(paths), world: package_world() };
 	if (before.core) {
 		const all = proxies(api_secret(), 2)?.proxies;
 		if (all == null || !probe_ok()) fail("runtime_precondition_failed");
@@ -333,6 +358,7 @@ upgrade = function(request, work, candidates) {
 		if (!stop_services(work)) fail("runtime_stop_failed");
 		install_started = true;
 		if (!run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(next, q))}`, work)) fail("package_install_failed");
+		if (!restore_world(names, before.world, work)) fail("package_world_restore_failed");
 		operation.update("verifying");
 		const after = installed();
 		for (let name in names) if (after?.[name] != candidates[name]) fail("package_identity_mismatch");
@@ -346,6 +372,7 @@ upgrade = function(request, work, candidates) {
 	if (install_started) fs.unlink(UPGRADE_STATE);
 	if (!run_command(`tar -xf ${q(`${work}/private.tar`)} -C /`, work)) fail("rollback_configuration_failed");
 	if (install_started && !run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(old, q))}`, work)) fail("rollback_install_failed");
+	if (install_started && !restore_world(names, before.world, work)) fail("rollback_world_failed");
 	const restored = installed();
 	for (let name in names) if (restored?.[name] != versions[name]) fail("rollback_identity_mismatch");
 	if (!restore_services(before, work)) fail("rollback_runtime_failed");
@@ -376,7 +403,7 @@ try {
 	const reason = error_code(error);
 	if (ARGV[0] == "run") operation.finish(false, reason,
 		match(reason, /_rolled_back$/) ? { rollback: { ok: true } } :
-		match(reason, /^rollback_(stop|configuration|install|identity|runtime)_/) ? { rollback: { ok: false } } : null);
+		match(reason, /^rollback_(stop|configuration|install|identity|runtime|world)_/) ? { rollback: { ok: false } } : null);
 	response = { ok: false, error: reason };
 }
 printf("%J\n", response);

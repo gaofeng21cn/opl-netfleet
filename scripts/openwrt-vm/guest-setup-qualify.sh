@@ -399,5 +399,6 @@ ucode -e 'import { readfile, writefile } from "fs";
 		}
 	}
 	writefile(ARGV[0], sprintf("%J", result));' "$work/qualification.json" \
-	/tmp/netfleet-maintenance-fixture/qualification.json ${feed_url:+/tmp/netfleet-transfer-fixture/qualification.json}
+	/tmp/netfleet-maintenance-fixture/qualification.json ${feed_url:+/tmp/netfleet-transfer-fixture/qualification.json} \
+	${feed_url:+/tmp/netfleet-components-fixture/qualification.json}
 cat "$work/qualification.json"
