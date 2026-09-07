@@ -33,7 +33,7 @@ export function OverviewExitSummary({ snapshot, onOpen }: { snapshot: StatusSnap
         </div>
         {capabilities.map((capability) => (
           <div className="nf-overview-exit-row" role="row" key={capability.id}>
-            <strong role="cell">{capabilityName(capability)}</strong>
+            <strong role="cell"><button type="button" className="nf-name-link" onClick={onOpen}>{capabilityName(capability)}</button></strong>
             <span role="cell">{currentRegion(snapshot, capability.data_path, capability.region_id)}</span>
             <span role="cell">{currentProvider(snapshot, capability.data_path, capability.provider_id)}</span>
             <span className={capability.alive ? 'is-ok' : 'is-warning'} role="cell">{delay(capability.reason?.delay_ms)}</span>

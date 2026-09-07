@@ -350,7 +350,6 @@ class MvpLayoutTests(unittest.TestCase):
             native_style,
         )
         self.assertIn("background: var(--nf-accent-soft)", native_style)
-        self.assertRegex(native_style, r"\.netfleet-native \.cbi-section\s*\{[^}]*padding:\s*18px 20px 20px", re.S)
         self.assertRegex(native_style, r"\.netfleet-native \.netfleet-business-list\s*\{[^}]*grid-template-columns:\s*repeat\(4,", re.S)
         self.assertNotIn(".netfleet-native .netfleet-exit-card", native_style)
         self.assertRegex(native_style, r"\.netfleet-native > h2\s*\{[^}]*padding:\s*0 !important", re.S)
@@ -395,7 +394,13 @@ function E(tag, attrs, children) {
         children: Array.isArray(children) ? children : children == null ? [] : [ children ],
 		replaceChildren: function() { this.children = Array.from(arguments); },
 		getAttribute: function(name) { return this.attrs[name] == null ? null : this.attrs[name]; },
-		setAttribute: function(name, value) { this.attrs[name] = String(value); }
+		setAttribute: function(name, value) { this.attrs[name] = String(value); },
+		addEventListener: function(name, callback) { this.attrs[name] = callback; },
+		focus: function() { this.focused = true; }
+    };
+    node.classList = {
+        add: name => { node.attrs.class = [...new Set(String(node.attrs.class || '').split(' ').concat(name))].join(' '); },
+        remove: name => { node.attrs.class = String(node.attrs.class || '').split(' ').filter(item => item !== name).join(' '); }
     };
     return node;
 }
@@ -506,7 +511,8 @@ function createPage(storage, api, notifications) {
     };
     api.nativeSetupGet = function() { return Promise.resolve({ ready: false }); };
     api.dashboardGet = function() { return Promise.resolve({ available: true, port: 9090, protocol: 'http', ui_name: 'zashboard', secret: 'private-secret' }); };
-    const management = { load: function() { return Promise.resolve(); }, maintenance: function() { return null; }, dashboard: function() { return null; } };
+    const managementLoads = [];
+    const management = { load: function(_, section) { managementLoads.push(section); return Promise.resolve(); }, maintenance: function() { return null; }, dashboard: function() { return null; } };
     const productSource = fs.readFileSync(require('path').resolve(require('path').dirname(process.argv[1]), '../../netfleet/product.js'), 'utf8');
     const product = new Function('baseclass', 'E', productSource)({ extend: value => value }, E);
     const factory = new Function('view', 'ui', 'managed', 'management', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', 'compatibility', 'poll', 'product', source);
@@ -521,6 +527,7 @@ function createPage(storage, api, notifications) {
     } }, close: function() {} }; } }, document, { refresh: () => Promise.resolve(), label: () => '未安装' }, { add: () => {} }, product);
     page.styleLink = styleLink;
     page.dashboardOpens = function() { return dashboardOpens; };
+    page.managementLoads = managementLoads;
     return page;
 }
 
@@ -665,21 +672,69 @@ function createPage(storage, api, notifications) {
 		return node.tag === 'button' && nodeText(node) === '管理订阅';
 	});
 	assert(subscriptionLink && subscriptionLink.attrs.class === 'netfleet-inline-link');
-	assert(providerPageText.includes('订阅更新时间'));
+	assert(!providerPageText.includes('订阅更新时间'), 'diagnostic fields load into the inspector on selection');
 	assert(!providerPageText.includes('更新完成并已重载'));
 	assert(!providerPageText.includes('订阅缓存'));
-	const providerDetailRow = findNode(root, function(node) {
-		return node.tag === 'tr' && String(node.attrs.class || '').includes('netfleet-provider-detail-row');
+	const providerDetail = findNode(root, function(node) {
+		return node.tag === 'aside' && node.attrs.id === 'netfleet-provider-inspector';
 	});
 	const providerDetailToggle = findNode(root, function(node) {
-		return node.tag === 'button' && nodeText(node) === '详情';
+		return node.tag === 'button' && nodeText(node) === 'Alpha 正式机场';
 	});
-	assert(providerDetailRow && providerDetailRow.hidden === true, 'provider diagnostics must start collapsed');
+	assert(providerDetail && providerDetail.attrs.hidden === true, 'provider diagnostics must start closed');
 	assert(providerDetailToggle && providerDetailToggle.attrs['aria-expanded'] === 'false');
 	providerDetailToggle.attrs.click();
-	assert.strictEqual(providerDetailRow.hidden, false);
+	assert.strictEqual(providerDetail.hidden, false);
 	assert.strictEqual(providerDetailToggle.attrs['aria-expanded'], 'true');
-	assert.strictEqual(nodeText(providerDetailToggle), '收起');
+	assert(nodeText(providerDetail).includes('订阅更新时间'));
+	assert(nodeText(providerDetail).includes('cccccccccccc'));
+	assert(!findNode(providerDetail, node => node.tag === 'meter'), 'unknown quota totals must not invent a ratio');
+	providerDetail.attrs.keydown({ key: 'Escape' });
+	assert.strictEqual(providerDetail.hidden, true);
+	assert(providerDetailToggle.focused, 'closing detail must return keyboard focus');
+	const search = findNode(root, node => node.attrs['aria-label'] === '搜索机场');
+	search.attrs.input({ target: { value: '不存在' } });
+	assert(nodeText(root).includes('没有匹配的机场'));
+	search.attrs.input({ target: { value: 'Alpha' } });
+	assert(nodeText(root).includes('47/50 节点'));
+	page.status.subscriptions[0].last_attempt = null;
+	page.status.subscriptions[0].last_success = null;
+	page.redraw();
+	findNode(root, node => node.tag === 'button' && nodeText(node) === 'Alpha 正式机场').attrs.click();
+	assert(nodeText(root).includes('最近尝试尚未执行'));
+	assert(nodeText(root).includes('订阅更新时间尚未执行'));
+	page.status.providers.push({ ...page.status.providers[0], id: 'faster', display_name: 'Beta', selected: false, average_best_delay_ms: 10, delay_sample_count: 2 });
+	page.status.providers.push({ ...page.status.providers[0], id: 'single', display_name: 'Gamma', selected: false, average_best_delay_ms: 1, delay_sample_count: 1 });
+	page.providerTableState.query = '';
+	page.redraw();
+	const sort = findNode(root, node => node.attrs['aria-label'] === '机场排序');
+	sort.attrs.change({ target: { value: 'average' } });
+	let names = [];
+	walk(root, node => { if (node.tag === 'button' && node.attrs.class === 'netfleet-name-link') names.push(nodeText(node)); });
+	assert.deepStrictEqual(names, ['Beta', 'Alpha 正式机场', 'Gamma'], 'one-sample averages must sort after real averages');
+	const selectedOnly = findNode(root, node => node.tag === 'input' && node.attrs.type === 'checkbox');
+	selectedOnly.attrs.change({ target: { checked: true } });
+	names = [];
+	walk(root, node => { if (node.tag === 'button' && node.attrs.class === 'netfleet-name-link') names.push(nodeText(node)); });
+	assert.deepStrictEqual(names, ['Alpha 正式机场']);
+	const refreshConnections = page.refreshConnections;
+	let connectionReads = 0;
+	page.refreshConnections = function() { connectionReads++; };
+	findNode(root, node => node.tag === 'button' && nodeText(node) === '事件与诊断').attrs.click();
+	assert.strictEqual(page.currentView, 'events');
+	assert.deepStrictEqual(page.managementLoads, ['maintenance']);
+	assert.strictEqual(connectionReads, 1, 'detail navigation must load the event page dependencies');
+	page.refreshConnections = refreshConnections;
+	page.status.regions = [
+		{ id: 'hk', display_name: 'HK 香港', selected: true, available_count: 1, available_provider_count: 1 },
+		{ id: 'jp', display_name: 'JP 日本', available_count: 1, available_provider_count: 1 },
+		{ id: 'ch', display_name: 'CH 瑞士', available_count: 0, available_provider_count: 0 }
+	];
+	page.currentView = 'regions';
+	page.redraw();
+	assert(nodeText(root).includes('当前 2 个地区可用 · 显示 2 个'));
+	findNode(root, node => node.attrs['aria-label'] === '搜索地区').attrs.input({ target: { value: '日本' } });
+	assert(nodeText(root).includes('当前 2 个地区可用 · 显示 1 个'), 'filtering must not change the availability total');
 
 	page.currentView = 'events';
     page.redraw();

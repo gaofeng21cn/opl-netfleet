@@ -114,11 +114,11 @@ export function Shell({
               <RefreshCw aria-hidden="true" className={busy ? 'is-spinning' : ''} />
               <span>刷新</span>
             </button>}
-            {!readOnly && <button type="button" onClick={onSelect} disabled={busy || !canSelect} title="重新自动选优">
+            {!readOnly && ['overview', 'exits', 'regions'].includes(view) && <button type="button" onClick={onSelect} disabled={busy || !canSelect} title="重新自动选优">
               <Target aria-hidden="true" />
               <span>重新选优</span>
             </button>}
-            {!readOnly && <button className="is-danger" type="button" onClick={onDisable} disabled={busy || !canDisable} title="关闭 NetFleet">
+            {!readOnly && view === 'overview' && <button className="is-danger" type="button" onClick={onDisable} disabled={busy || !canDisable} title="关闭 NetFleet">
               <Power aria-hidden="true" />
               <span>关闭 NetFleet</span>
             </button>}

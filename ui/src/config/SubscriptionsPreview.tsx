@@ -14,7 +14,7 @@ export function SubscriptionsPreview({ status, onResetDayChange }: { status: Sta
   const [adding, setAdding] = useState(false);
   if (status.runtime.backend?.id !== 'native-mihomo') return <a className="nf-inline-link" href="/cgi-bin/luci/admin/services/nikki/profile" target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" />管理订阅</a>;
   return <>
-    <button type="button" onClick={() => setOpen(true)}>管理订阅</button>
+    <button className="nf-inline-link" type="button" onClick={() => setOpen(true)}>管理订阅</button>
     {open && <div className="nf-managed-backdrop"><section className="nf-managed-dialog" role="dialog" aria-modal="true" aria-label="管理订阅">
       <header><h2>{adding ? '新增订阅' : editing ? '编辑订阅' : '管理订阅'}</h2><button title="关闭" type="button" onClick={() => { setOpen(false); setAdding(false); setEditing(null); }}><X aria-hidden="true" /></button></header>
       <p role="status">地址与 User-Agent 修改后待更新订阅生效；名称与重置日保存即生效。</p>
