@@ -3,10 +3,20 @@ import { describe, expect, it } from 'vitest';
 import { fixtureScenarios } from '../data/fixtures';
 import type { DeviceConfigSnapshot } from '../types';
 import { ConfigView } from './ConfigView';
-import { ProvidersSection, SafetySection } from './ConfigSections';
+import { FoundationSection, ProvidersSection, SafetySection } from './ConfigSections';
 import { configChanges, configSummary, createConfigDraft, validateConfigDraft, validCidr } from './model';
 
 describe('本地配置参考模型', () => {
+  it('策略基础下拉使用设备候选及真实选中值', () => {
+    const status = fixtureScenarios.healthy.status;
+    const draft = createConfigDraft(status);
+    draft.policySourceOptions = [{ kind: 'profile', ref: 'file:custom.json', displayName: '自定义配置' }];
+    draft.policySource = draft.policySourceOptions[0];
+    const html = renderToStaticMarkup(<FoundationSection status={status} draft={draft} onChange={() => undefined} />);
+    expect(html).toContain('<select id="nf-policy-source">');
+    expect(html).toContain('<option value="profile|file:custom.json" selected="">自定义配置</option>');
+    expect(html).not.toContain('name="policy-source"');
+  });
   it('变更预览区分新增、删除、修改以及同数量规则替换', () => {
     const before = createConfigDraft(fixtureScenarios.healthy.status);
     expect(configChanges(before, structuredClone(before))).toEqual([]);

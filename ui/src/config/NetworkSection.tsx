@@ -44,6 +44,7 @@ export function NetworkSection({ client }: { client?: NetFleetClient }) {
     .filter(([key]) => JSON.stringify(draft[key]) !== JSON.stringify(saved[key])).map(([, label]) => label) : [];
   const change = (next: NetworkSettings) => { setDraft(next); setMessage(null); };
   const setDns = (update: Partial<NetworkSettings['dns']>) => draft && change({ ...draft, dns: { ...draft.dns, ...update } });
+  const isDefaultRule = (id: string) => Boolean(saved?.lan.rules.some(rule => rule.id === id && !rule.ipv4.length && !rule.ipv6.length && !rule.mac.length));
 
   return <section className="nf-config-section nf-management">
     <div className="nf-config-section-heading nf-section-heading"><div><h2>网络接入</h2><p>透明代理模式：TProxy</p></div><button type="button" disabled={loading || dirty || !client} onClick={() => void refresh()} title={dirty ? '请先应用本地预览或放弃更改' : '重新读取设备网络配置'}><RefreshCw aria-hidden="true" className={loading ? 'is-spinning' : ''} />重新读取</button></div>
@@ -67,15 +68,23 @@ export function NetworkSection({ client }: { client?: NetFleetClient }) {
         <div className="nf-form-row"><div><label>路由器本机代理</label></div><Toggle label="路由器本机代理" checked={draft.router.enabled} onChange={enabled => change({ ...draft, router: { enabled } })} /></div>
         <div className="nf-form-row"><div><label>接入接口</label></div><div className="nf-region-checks">{Array.from(new Set([...draft.lan.interfaces, ...(data.resources?.interfaces || []).map(item => item.name)])).map(name => <label key={name}><input type="checkbox" checked={draft.lan.interfaces.includes(name)} onChange={event => change({ ...draft, lan: { ...draft.lan, interfaces: event.target.checked ? [...draft.lan.interfaces, name] : draft.lan.interfaces.filter(item => item !== name) } })} />{name}</label>)}</div></div>
       </div></section>
-      <section className="nf-management-subsection"><div className="nf-section-heading"><h3>设备访问规则</h3><button type="button" onClick={() => change({ ...draft, lan: { ...draft.lan, rules: [...draft.lan.rules, { id: `preview-${Date.now()}`, enabled: false, ipv4: [], ipv6: [], mac: [], proxy: true, dns: true }] } })}><Plus aria-hidden="true" />添加设备</button></div>
+      <section className="nf-management-subsection"><div className="nf-section-heading"><h3>设备访问规则</h3><button type="button" onClick={() => {
+        const rules = [...draft.lan.rules];
+        const fallback = rules.findIndex(rule => isDefaultRule(rule.id));
+        rules.splice(fallback < 0 ? rules.length : fallback, 0, { id: `preview-${Date.now()}`, enabled: false, ipv4: [], ipv6: [], mac: [], proxy: true, dns: true });
+        change({ ...draft, lan: { ...draft.lan, rules } });
+      }}><Plus aria-hidden="true" />添加设备</button></div>
         <div className="nf-table-wrap nf-management-table"><table><thead><tr><th>启用</th><th>设备地址</th><th>代理</th><th>DNS 接管</th><th>操作</th></tr></thead><tbody>
           {draft.lan.rules.map((rule, index) => {
+            const defaultRule = isDefaultRule(rule.id);
             const changeRule = (update: Partial<typeof rule>) => change({ ...draft, lan: { ...draft.lan, rules: draft.lan.rules.map((item, at) => at === index ? { ...item, ...update } : item) } });
             return <tr key={rule.id}><td><input type="checkbox" aria-label={`启用设备规则 ${index + 1}`} checked={rule.enabled} onChange={event => changeRule({ enabled: event.target.checked })} /></td><td className="nf-device-addresses">
+              {defaultRule ? <><strong>其余设备（默认规则）</strong><p>匹配未被前面规则覆盖的所有设备，无需填写地址。</p></> : <>
               <label><span>IPv4</span><TextList label={`设备 ${index + 1} IPv4`} values={rule.ipv4} onChange={ipv4 => changeRule({ ipv4 })} /></label>
               <label><span>IPv6</span><TextList label={`设备 ${index + 1} IPv6`} values={rule.ipv6} onChange={ipv6 => changeRule({ ipv6 })} /></label>
               <label><span>MAC</span><TextList label={`设备 ${index + 1} MAC`} values={rule.mac} onChange={mac => changeRule({ mac })} /></label>
-              {!rule.ipv4.length && !rule.ipv6.length && !rule.mac.length && <small>其余设备</small>}
+              {!rule.ipv4.length && !rule.ipv6.length && !rule.mac.length && <small>请填写设备地址；留空并启用会匹配其余所有设备。</small>}
+              </>}
             </td><td><select aria-label={`设备 ${index + 1} 代理`} value={String(rule.proxy)} onChange={event => changeRule({ proxy: event.target.value === 'true' })}><option value="true">代理</option><option value="false">直连</option></select></td><td><input type="checkbox" aria-label={`设备 ${index + 1} DNS 接管`} checked={rule.dns} onChange={event => changeRule({ dns: event.target.checked })} /></td><td><button className="nf-icon-button" type="button" title="移除设备规则" aria-label={`移除设备规则 ${index + 1}`} onClick={() => change({ ...draft, lan: { ...draft.lan, rules: draft.lan.rules.filter((_, at) => at !== index) } })}><Trash2 aria-hidden="true" /></button></td></tr>;
           })}
           {!draft.lan.rules.length && <tr><td colSpan={5}>未设置单独的设备规则，沿用当前局域网接入策略。</td></tr>}

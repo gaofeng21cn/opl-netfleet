@@ -99,6 +99,11 @@ function network(controller) {
 	if (!state.available) return E('div', { 'class': 'alert-message warning' }, [ E('p', {}, state.backend !== 'native-mihomo' ? '网络接入由当前外部后端管理。' : '当前网络配置无法读取（' + (state.reason || '原因未提供') + '）。'), button('重新读取', function() { return load(controller, 'network', true); }) ]);
 	const draft = controller.networkDraft;
 	const locked = disabled(controller);
+	const isDefaultRule = function(rule) {
+		return (state.settings.lan.rules || []).some(function(saved) {
+			return saved.id === rule.id && !saved.ipv4.length && !saved.ipv6.length && !saved.mac.length;
+		});
+	};
 	function policies(key, title) {
 		return E('section', { 'class': 'netfleet-management-section' }, [ E('h4', {}, title), table(['匹配域名', 'DNS 服务器', '操作'], draft.dns[key].map(function(item, index) {
 			return E('tr', {}, [ E('td', {}, input(item.domain, function(value) { item.domain = value; }, 'text', { 'aria-label': '匹配域名' })),
@@ -127,12 +132,16 @@ function network(controller) {
 			E('h4', {}, '设备访问控制'),
 			table(['启用', 'IPv4 / IPv6 / MAC', '代理', 'DNS 接管', '顺序'], draft.lan.rules.map(function(rule, index) {
 				return E('tr', {}, [ E('td', {}, toggle(rule.enabled, function(value) { rule.enabled = value; })),
-					E('td', {}, [ lines(rule.ipv4, function(value) { rule.ipv4 = value; }, 'IPv4 地址或网段'), lines(rule.ipv6, function(value) { rule.ipv6 = value; }, 'IPv6 地址或网段'), lines(rule.mac, function(value) { rule.mac = value; }, 'MAC 地址') ]),
+					E('td', {}, isDefaultRule(rule) ? [ E('strong', {}, '其余设备（默认规则）'), E('p', {}, '匹配未被前面规则覆盖的所有设备，无需填写地址。') ] : [ lines(rule.ipv4, function(value) { rule.ipv4 = value; }, 'IPv4 地址或网段'), lines(rule.ipv6, function(value) { rule.ipv6 = value; }, 'IPv6 地址或网段'), lines(rule.mac, function(value) { rule.mac = value; }, 'MAC 地址'), E('small', {}, '请填写设备地址；留空并启用会匹配其余所有设备。') ]),
 					E('td', {}, toggle(rule.proxy, function(value) { rule.proxy = value; })), E('td', {}, toggle(rule.dns, function(value) { rule.dns = value; })),
 					E('td', { 'class': 'netfleet-inline-actions' }, [ button('↑', function() { draft.lan.rules.splice(index - 1, 0, draft.lan.rules.splice(index, 1)[0]); controller.redraw(); }, index === 0),
 						button('↓', function() { draft.lan.rules.splice(index + 1, 0, draft.lan.rules.splice(index, 1)[0]); controller.redraw(); }, index === draft.lan.rules.length - 1),
 						button('移除', function() { draft.lan.rules.splice(index, 1); controller.redraw(); }, false, true) ]) ]);
-			})), button('添加设备规则', function() { draft.lan.rules.push({ id: 'new_lan_' + Date.now(), enabled: true, ipv4: [], ipv6: [], mac: [], proxy: true, dns: true }); controller.redraw(); }),
+			})), button('添加设备规则', function() {
+				const fallback = draft.lan.rules.findIndex(isDefaultRule);
+				draft.lan.rules.splice(fallback < 0 ? draft.lan.rules.length : fallback, 0, { id: 'new_lan_' + Date.now(), enabled: false, ipv4: [], ipv6: [], mac: [], proxy: true, dns: true });
+				controller.redraw();
+			}),
 			E('h4', {}, '代理监听与认证'),
 			row('混合代理端口', input(draft.listeners.mixed_port, function(value) { draft.listeners.mixed_port = Number(value); }, 'number', { min: 0, max: 65535 })),
 			row('HTTP 代理端口', input(draft.listeners.http_port, function(value) { draft.listeners.http_port = Number(value); }, 'number', { min: 0, max: 65535 })),

@@ -275,6 +275,10 @@ product_version=$(git -C "$repo_dir" show "${source_commit}:openwrt/Makefile" |
 	sed -n 's/^PKG_VERSION:=\([0-9][0-9A-Za-z.+~-]*\)$/\1/p' | head -1)
 [[ "$product_version" =~ ^[0-9][0-9A-Za-z.+~-]*$ ]] ||
 	die "NetFleet product version is unreadable"
+luci_version=$(git -C "$repo_dir" show "${source_commit}:openwrt/luci-app-netfleet/Makefile" |
+	sed -n 's/^PKG_VERSION:=\([0-9][0-9A-Za-z.+~-]*\)$/\1/p' | head -1)
+[[ "$luci_version" =~ ^[0-9][0-9A-Za-z.+~-]*$ ]] ||
+	die "LuCI package version is unreadable"
 
 release_mode=source
 release_format=source
@@ -483,12 +487,12 @@ if [[ "$release_mode" == source ]]; then
 	cp -R "$source_dir/openwrt/files/etc/opl-netfleet/." "$payload_dir/etc/opl-netfleet/"
 	cp -R "$source_dir/openwrt/luci-app-netfleet/htdocs/." "$payload_dir/www/"
 	cp -R "$source_dir/openwrt/luci-app-netfleet/root/." "$payload_dir/"
-	view_version="v${product_version//./_}"
+	view_version="v${luci_version//./_}"
 	sh "$source_dir/openwrt/luci-app-netfleet/stage-assets.sh" \
 		"$payload_dir/www/luci-static/resources" "$view_version"
 	grep -Fq "\"path\": \"netfleet/overview-${view_version}\"" \
 		"$payload_dir/usr/share/luci/menu.d/luci-app-netfleet.json" ||
-		die "LuCI menu view does not match package version: $product_version"
+		die "LuCI menu view does not match package version: $luci_version"
 fi
 
 policy_schema=""

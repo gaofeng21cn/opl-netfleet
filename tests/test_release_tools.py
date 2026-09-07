@@ -140,7 +140,7 @@ class ReleaseToolsTests(unittest.TestCase):
         self.assertIn('PKG_LICENSE:=GPL-3.0-only', runtime)
         self.assertIn('PKG_MAINTAINER:=OPL NetFleet', runtime)
         self.assertIn('PKGARCH:=all', runtime)
-        self.assertIn(f'PKG_VERSION:={version}', luci)
+        self.assertRegex(luci, r'(?m)^PKG_VERSION:=\d+\.\d+\.\d+$')
         self.assertIn('PKGARCH:=all', luci)
         self.assertIn('include $(INCLUDE_DIR)/package.mk', luci)
         self.assertNotIn('feeds/luci/luci.mk', luci)
@@ -178,7 +178,7 @@ class ReleaseToolsTests(unittest.TestCase):
         self.assertIn("'package_arch':package_arch", packager)
         self.assertIn("'build_target_arch':build_target_arch", packager)
         self.assertIn("manifest['feed_bootstrap']={'name':'install-netfleet.sh'", packager)
-        self.assertIn('${package_name}-${artifact_version}-r${release}.apk', packager)
+        self.assertIn('${package_name}-${artifact_version}-r${artifact_release}.apk', packager)
         for path in (ROOT / 'scripts/netfleet-package-build.sh', ROOT / 'openwrt/Makefile', ROOT / 'openwrt/luci-app-netfleet/Makefile'):
             text = path.read_text()
             self.assertNotIn('subscriptions.json', text)

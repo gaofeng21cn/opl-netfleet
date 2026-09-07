@@ -134,6 +134,28 @@ class LuciManagementTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_network_default_rule_is_explicit_and_new_device_precedes_it(self):
+        self.run_js(r"""
+const state = networkState();
+const fallback = { id: 'default', enabled: true, ipv4: [], ipv6: [], mac: [], proxy: true, dns: true };
+state.settings.lan.rules.push(fallback);
+const management = module('management.js', { networkGet: async () => state });
+const owner = controller();
+await management.load(owner, 'network');
+let root = management.network(owner);
+const row = find(root, node => node.tag === 'tr' && text(node).includes('其余设备（默认规则）'));
+assert(row);
+assert.equal(all(row, node => node.tag === 'textarea').length, 0);
+assert.equal(all(row, node => node.attrs.type === 'checkbox')[0].checked, true);
+assert.deepEqual(owner.networkDraft, state.settings, 'rendering must not change the actual default rule');
+fire(button(root, '添加设备规则'));
+assert.equal(owner.networkDraft.lan.rules.at(-1).id, 'default');
+assert.equal(owner.networkDraft.lan.rules.at(-2).enabled, false);
+root = management.network(owner);
+assert.equal(all(root, node => node.attrs['aria-label'] === 'IPv4 地址或网段').length, 2);
+assert(text(root).includes('留空并启用会匹配其余所有设备'));
+""")
+
     def test_network_form_sends_complete_revision_bound_request(self):
         self.run_js(r"""
 const sent = [];

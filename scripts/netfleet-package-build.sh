@@ -47,6 +47,9 @@ git -C "$repo_dir" archive "$commit" openwrt scripts/install-netfleet.sh | tar -
 version=$(awk -F':=' '/^PKG_VERSION[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/Makefile")
 release=$(awk -F':=' '/^PKG_RELEASE[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/Makefile")
 [[ -n "$version" && -n "$release" ]] || die 'package version metadata is missing'
+luci_version=$(awk -F':=' '/^PKG_VERSION[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/luci-app-netfleet/Makefile")
+luci_release=$(awk -F':=' '/^PKG_RELEASE[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/luci-app-netfleet/Makefile")
+[[ -n "$luci_version" && -n "$luci_release" ]] || die 'LuCI package version metadata is missing'
 build_identity=$work/openwrt/files/usr/share/opl-netfleet/build.json
 mkdir -p "$(dirname "$build_identity")"
 python3 - "$build_identity" "$version" "$commit" "$tree" <<'PY'
@@ -112,12 +115,12 @@ cp -R "$work/openwrt/files/etc/opl-netfleet/." "$payload/etc/opl-netfleet/"
 cp "$build_identity" "$payload/usr/share/opl-netfleet/build.json"
 cp -R "$work/openwrt/luci-app-netfleet/htdocs/." "$payload/www/"
 cp -R "$work/openwrt/luci-app-netfleet/root/." "$payload/"
-view_version="v${version//./_}"
+view_version="v${luci_version//./_}"
 sh "$work/openwrt/luci-app-netfleet/stage-assets.sh" \
   "$payload/www/luci-static/resources" "$view_version"
 grep -Fq "\"path\": \"netfleet/overview-${view_version}\"" \
   "$payload/usr/share/luci/menu.d/luci-app-netfleet.json" ||
-  die "LuCI menu view does not match package version: $version"
+  die "LuCI menu view does not match package version: $luci_version"
 find "$payload" -type f -exec chmod 0644 {} +
 chmod 0755 "$payload/usr/libexec/opl-netfleet/main.uc" \
 	"$payload/usr/libexec/opl-netfleet-transfer" \
@@ -160,13 +163,18 @@ PY
 )
 for package_name in "${product_packages[@]}"; do
   artifact_version=$version
+  artifact_release=$release
+  if [[ "$package_name" == luci-app-netfleet ]]; then
+    artifact_version=$luci_version
+    artifact_release=$luci_release
+  fi
   if [[ "$package_name" == opl-netfleet-plugin-* ]]; then
     artifact_version=$(python3 "$work/openwrt/plugin-packages.py" version "${package_name#opl-netfleet-plugin-}")
   fi
   if [[ "$package_format" == apk ]]; then
-    artifact_pattern="${package_name}-${artifact_version}-r${release}.apk"
+    artifact_pattern="${package_name}-${artifact_version}-r${artifact_release}.apk"
   else
-    artifact_pattern="${package_name}_${artifact_version}-r${release}_all.ipk"
+    artifact_pattern="${package_name}_${artifact_version}-r${artifact_release}_all.ipk"
   fi
   package_artifacts=()
   while IFS= read -r file; do package_artifacts+=("$file"); done < <(find "$sdk/bin/packages" -type f -name "$artifact_pattern" -print | sort)

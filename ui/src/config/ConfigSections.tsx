@@ -41,12 +41,15 @@ export function FoundationSection({ draft, status, onChange }: SectionProps) {
         <div className="nf-readonly-field"><Network aria-hidden="true" />{draft.backendDisplayName}{draft.backend === 'nikki-mihomo' && <button type="button" onClick={() => setMigration(true)}>迁移到 NetFleet 原生后端</button>}</div>
       </div>
       {migration && <div className="nf-config-validation" role="status"><p>NetFleet 将接管机场订阅、Mihomo、DNS 和透明代理。设备会检查新后端；失败时恢复旧后端。迁移期间网络可能短暂中断。</p><button type="button" onClick={() => setMigration(false)}>取消</button><button type="button" onClick={() => { onChange({ ...draft, backend: 'native-mihomo', backendDisplayName: 'NetFleet + Mihomo' }); setMigration(false); }}>确认本地预览</button></div>}
-      <fieldset className="nf-form-row">
-        <div><legend>策略基础</legend><p>决定规则和稳定出口组从哪里开始生成。</p></div>
-        <div className="nf-choice-list">
-          {draft.policySourceOptions.map((option) => <label key={`${option.kind}|${option.ref}`}><input type="radio" name="policy-source" checked={draft.policySource.kind === option.kind && draft.policySource.ref === option.ref} onChange={() => onChange({ ...draft, policySource: option })} /><span><strong>{option.displayName}</strong><small>{option.kind === 'bundle' ? '机场无关，适合新安装' : '沿用该配置的规则和策略组'}</small></span></label>)}
-        </div>
-      </fieldset>
+      <div className="nf-form-row">
+        <div><label htmlFor="nf-policy-source">策略基础</label><p>决定规则和稳定出口组从哪里开始生成。</p></div>
+        <select id="nf-policy-source" value={`${draft.policySource.kind}|${draft.policySource.ref}`} onChange={event => {
+          const option = draft.policySourceOptions.find(item => `${item.kind}|${item.ref}` === event.target.value);
+          if (option) onChange({ ...draft, policySource: option });
+        }}>
+          {draft.policySourceOptions.map(option => <option key={`${option.kind}|${option.ref}`} value={`${option.kind}|${option.ref}`}>{option.displayName}</option>)}
+        </select>
+      </div>
       <div className="nf-form-row">
         <div><label htmlFor="nf-recovery-profile">退出与故障恢复</label><p>NetFleet 关闭或启用失败时优先恢复这份原生配置。</p></div>
         <select id="nf-recovery-profile" value={draft.recoveryProfile.ref} onChange={(event) => onChange({ ...draft, recoveryProfile: draft.recoveryProfileOptions.find((item) => item.ref === event.target.value) || draft.recoveryProfile })}>
