@@ -7,13 +7,16 @@ import type { OperationSnapshot } from '../types';
 const operation: OperationSnapshot = { id: 'operation-1', kind: 'subscription', state: 'running', phase: 'downloading', started_at: 100, updated_at: 111, completed: 1, total: 3, subject: 'Alpha' };
 
 describe('operation progress', () => {
-  it('collapses successful package operations but retains failure and recovery detail', () => {
+  it('shows compact dated results for packages and retains failure and recovery detail', () => {
     const completed = { ...operation, kind: 'packages' as const, subject: 'netfleet', state: 'succeeded' as const, finished_at: 120 };
     const html = renderToStaticMarkup(<OperationProgress operation={completed} />);
-    expect(html).toContain('最近更新：NetFleet');
+    expect(html).toContain('组件更新');
+    expect(html).toContain('NetFleet');
+    expect(html).toContain('完成于');
+    expect(html).toContain('耗时 20 秒');
+    expect(html).toContain('关闭组件更新结果');
     expect(html).not.toContain('已耗时');
-    expect(html).not.toContain('个文件');
-    expect(renderToStaticMarkup(<OperationProgress operation={{ ...completed, subject: 'feed' }} />)).toContain('最近检查：软件包源');
+    expect(renderToStaticMarkup(<OperationProgress operation={{ ...completed, subject: 'feed' }} />)).toContain('软件包源检查');
     const failed = renderToStaticMarkup(<OperationProgress operation={{ ...completed, state: 'failed', recovery: 'failed' }} />);
     expect(failed).toContain('执行失败');
     expect(failed).toContain('恢复失败');
@@ -33,7 +36,26 @@ describe('operation progress', () => {
     expect(unknown).not.toContain('执行失败');
     const failed = renderToStaticMarkup(<OperationProgress operation={{ ...operation, state: 'failed', finished_at: 112 }} now={200} />);
     expect(failed).toContain('执行失败');
-    expect(failed).toContain('已耗时 12 秒');
+    expect(failed).toContain('耗时 12 秒');
+  });
+
+  it('never invents a completion time or keeps counting after a terminal record', () => {
+    const missingTime = { ...operation, state: 'interrupted' as const };
+    const early = renderToStaticMarkup(<OperationProgress operation={missingTime} now={200} />);
+    const later = renderToStaticMarkup(<OperationProgress operation={missingTime} now={500} />);
+    expect(early).toBe(later);
+    expect(early).toContain('记录更新于');
+    expect(early).toContain('完成时间未记录');
+    expect(early).not.toContain('耗时');
+    expect(renderToStaticMarkup(<OperationProgress operation={operation} />)).not.toContain('关闭');
+  });
+
+  it('uses the same result contract for selection, without calling outlets files', () => {
+    const html = renderToStaticMarkup(<OperationProgress operation={{ ...operation, kind: 'selection', state: 'succeeded', finished_at: 137 }} />);
+    expect(html).toContain('测速与自动选优');
+    expect(html).toContain('个出口');
+    expect(html).toContain('耗时 37 秒');
+    expect(html).toContain('关闭测速与自动选优结果');
   });
 
   it('does not replace missing live component data with mock versions', () => {

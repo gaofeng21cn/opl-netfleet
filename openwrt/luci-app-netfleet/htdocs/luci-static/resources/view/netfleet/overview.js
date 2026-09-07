@@ -1047,7 +1047,7 @@ return view.extend({
 				if (refresh.error) {
 					self.liveDataReady = false;
 					self.refreshError = refresh.error;
-					ui.addNotification(null, E('p', {}, '后台读取失败，当前继续显示上次成功数据。'), 'error');
+					managed.notify(null, E('p', {}, '后台读取失败，当前继续显示上次成功数据。'), 'error');
 				}
 				else {
 					self.acceptLiveData(refresh.result, refresh.readDurationMs);
@@ -1209,6 +1209,8 @@ return view.extend({
 			if (target === 'events') management.load(self, 'maintenance');
 			self.redraw();
 		});
+		if (this.currentView !== 'components' && this.currentView !== 'config')
+			content.unshift(managed.operationNode(this, 'selection'));
 		if (this.currentView === 'events')
 			content.push(E('div', { 'class': 'netfleet-inline-actions' }, [
 				E('button', { 'class': 'btn cbi-button', 'click': function() { return self.openCompatibility('diagnostics'); } }, 'HTTPS 兼容诊断')
@@ -1241,7 +1243,7 @@ return view.extend({
 
 	openDashboard: function() {
 		if (!dashboardReady(this.status)) {
-			ui.addNotification(null, E('p', {}, dashboardUnavailableReason(this.status)), 'warning');
+			managed.notify(null, E('p', {}, dashboardUnavailableReason(this.status)), 'warning');
 			return Promise.resolve();
 		}
 		if (this.dashboardUrl) {
@@ -1250,7 +1252,7 @@ return view.extend({
 		}
 		const self = this;
 		return this.prepareDashboard().then(function() {
-			ui.addNotification(null, self.dashboardUrl ? E('a', { 'href': self.dashboardUrl, 'target': '_blank', 'rel': 'noopener' }, '打开 Zashboard') : E('p', {}, '无法打开 Zashboard，请检查核心及控制接口状态。'), self.dashboardUrl ? 'info' : 'error');
+			managed.notify(null, self.dashboardUrl ? E('a', { 'href': self.dashboardUrl, 'target': '_blank', 'rel': 'noopener' }, '打开 Zashboard') : E('p', {}, '无法打开 Zashboard，请检查核心及控制接口状态。'), self.dashboardUrl ? 'info' : 'error');
 		});
 	},
 
@@ -1273,7 +1275,7 @@ return view.extend({
 			self.fetchedAt = new Date();
 			self.readDurationMs = Date.now() - started;
 		}).catch(function(error) {
-			ui.addNotification(null, E('p', {}, '首次设置预检失败：' + text(error && error.message, '设备未返回可用结果')), 'error');
+			managed.notify(null, E('p', {}, '首次设置预检失败：' + text(error && error.message, '设备未返回可用结果')), 'error');
 		}).finally(function() {
 			self.busy = false;
 			self.redraw();
@@ -1318,10 +1320,10 @@ return view.extend({
 			});
 		}).then(function() {
 			ui.hideModal();
-			ui.addNotification(null, E('p', {}, 'NetFleet 已接管，运行状态已从设备重新读取。'), 'info');
+			managed.notify(null, E('p', {}, 'NetFleet 已接管，运行状态已从设备重新读取。'), 'info');
 		}).catch(function(error) {
 			ui.hideModal();
-			ui.addNotification(null, E('p', {}, '接管失败：' + text(error && error.message, '设备未返回成功结果')), 'error');
+			managed.notify(null, E('p', {}, '接管失败：' + text(error && error.message, '设备未返回成功结果')), 'error');
 		}).finally(function() {
 			self.busy = false;
 			self.redraw();
@@ -1360,11 +1362,11 @@ return view.extend({
 				return self.refreshConnections();
 		}).then(function() {
 			if (!silent)
-				ui.addNotification(null, E('p', {}, '设备状态已刷新。'), 'info');
+				managed.notify(null, E('p', {}, '设备状态已刷新。'), 'info');
 		}).catch(function(error) {
 			self.liveDataReady = false;
 			self.refreshError = error;
-			ui.addNotification(null, E('p', {}, '读取失败：' + text(error && error.message, '设备未返回可用状态')), 'error');
+			managed.notify(null, E('p', {}, '读取失败：' + text(error && error.message, '设备未返回可用状态')), 'error');
 			if (silent)
 				throw error;
 		}).finally(function() {
@@ -1404,9 +1406,9 @@ return view.extend({
 		return this.currentConfigRequest().then(function(request) {
 			return netfleet.configValidate(request);
 		}).then(function(result) {
-			ui.addNotification(null, E('p', {}, result.change_count ? '配置校验通过，共 ' + String(result.change_count) + ' 项变更。' : '配置校验通过，没有待处理变更。'), 'info');
+			managed.notify(null, E('p', {}, result.change_count ? '配置校验通过，共 ' + String(result.change_count) + ' 项变更。' : '配置校验通过，没有待处理变更。'), 'info');
 		}).catch(function(error) {
-			ui.addNotification(null, E('p', {}, '配置校验失败：' + self.configFailure(error)), 'error');
+			managed.notify(null, E('p', {}, '配置校验失败：' + self.configFailure(error)), 'error');
 		}).finally(function() {
 			self.busy = false;
 			self.redraw();
@@ -1425,7 +1427,7 @@ return view.extend({
 				E('div', { 'class': 'right' }, E('button', { 'class': 'btn', 'click': ui.hideModal }, '关闭'))
 			] : [ E('p', {}, '当前没有待处理变更。'), E('div', { 'class': 'right' }, E('button', { 'class': 'btn', 'click': ui.hideModal }, '关闭')) ]);
 		}).catch(function(error) {
-			ui.addNotification(null, E('p', {}, '无法生成变更摘要：' + self.configFailure(error)), 'error');
+			managed.notify(null, E('p', {}, '无法生成变更摘要：' + self.configFailure(error)), 'error');
 		}).finally(function() {
 			self.busy = false;
 			self.redraw();
@@ -1439,9 +1441,9 @@ return view.extend({
 		return this.currentConfigRequest().then(function(request) { return netfleet.configSave(request); }).then(function(result) {
 			self.config = result.config;
 			self.configDraft = netfleetConfig.clone(result.config);
-			ui.addNotification(null, E('p', {}, '配置已保存；当前网络数据面没有变化。'), 'info');
+			managed.notify(null, E('p', {}, '配置已保存；当前网络数据面没有变化。'), 'info');
 		}).catch(function(error) {
-			ui.addNotification(null, E('p', {}, '保存失败：' + self.configFailure(error)), 'error');
+			managed.notify(null, E('p', {}, '保存失败：' + self.configFailure(error)), 'error');
 		}).finally(function() {
 			self.busy = false;
 			self.redraw();
@@ -1471,7 +1473,7 @@ return view.extend({
 		}).catch(function(error) {
 			self.busy = false;
 			self.redraw();
-			ui.addNotification(null, E('p', {}, '应用前校验失败：' + self.configFailure(error)), 'error');
+			managed.notify(null, E('p', {}, '应用前校验失败：' + self.configFailure(error)), 'error');
 		});
 	},
 
@@ -1483,10 +1485,10 @@ return view.extend({
 			return self.refreshData(true, true);
 		}).then(function() {
 			ui.hideModal();
-			ui.addNotification(null, E('p', {}, '配置已应用，设备运行状态已重新读取。'), 'info');
+			managed.notify(null, E('p', {}, '配置已应用，设备运行状态已重新读取。'), 'info');
 		}).catch(function(error) {
 			ui.hideModal();
-			ui.addNotification(null, E('p', {}, '应用失败：' + self.configFailure(error)), 'error');
+			managed.notify(null, E('p', {}, '应用失败：' + self.configFailure(error)), 'error');
 			self.busy = false;
 			self.redraw();
 		});
@@ -1531,13 +1533,13 @@ return view.extend({
 			return self.refreshData(true);
 		}).then(function() {
 			ui.hideModal();
-				ui.addNotification(null, E('p', {}, ({ enable: 'NetFleet 已启用。', select: '自动选优已完成。', disable: 'NetFleet 已关闭。' })[action]), 'info');
+				managed.notify(null, E('p', {}, ({ enable: 'NetFleet 已启用。', select: '自动选优已完成。', disable: 'NetFleet 已关闭。' })[action]), 'info');
 		}).catch(function(error) {
 			ui.hideModal();
 			if (error && error.netfleetKind === 'request_aborted')
-				ui.addNotification(null, E('p', {}, '浏览器连接已中止，设备端结果尚未确认；请刷新状态并查看事件。'), 'warning');
+				managed.notify(null, E('p', {}, '浏览器连接已中止，设备端结果尚未确认；请刷新状态并查看事件。'), 'warning');
 			else
-				ui.addNotification(null, E('p', {}, '操作失败：' + text(error && error.message, '设备未返回成功结果')), 'error');
+				managed.notify(null, E('p', {}, '操作失败：' + text(error && error.message, '设备未返回成功结果')), 'error');
 			self.busy = false;
 			self.redraw();
 		});

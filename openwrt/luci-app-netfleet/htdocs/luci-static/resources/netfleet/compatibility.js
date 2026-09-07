@@ -2,6 +2,7 @@
 'require baseclass';
 'require ui';
 'require netfleet.api as api';
+'require netfleet.managed as managed';
 
 function reason(value) {
 	return ({ disabled: '已关闭', draining: '停止接管，正在排空', recovering: '健康观察中',
@@ -79,7 +80,7 @@ function executeMutation(controller, method, request, revision) {
 	controller.compatibilityBusy = true;
 	controller.redraw();
 	return api[method](Object.assign({ revision: revision }, request)).catch(function(error) {
-		ui.addNotification(null, E('p', {}, 'HTTPS 兼容操作失败：' + error.message), 'error');
+		managed.notify(null, E('p', {}, 'HTTPS 兼容操作失败：' + error.message), 'error');
 	}).then(async function() {
 		await controller.compatibilityRead;
 		return refresh(controller);
@@ -122,7 +123,7 @@ function edit(controller, collection, item) {
 	rows.push(E('div', { 'class': 'right' }, [ button('取消', function() { ui.hideModal(); }), button('保存', function() {
 		if (controls.some(function(input) { return !input.reportValidity(); })) return;
 		if (collection === 'rules' && !draft.devices.length) {
-			ui.addNotification(null, E('p', {}, '请选择至少一台接入设备'), 'warning'); return;
+			managed.notify(null, E('p', {}, '请选择至少一台接入设备'), 'warning'); return;
 		}
 		const index = config[collection].findIndex(function(value) { return value.id === draft.id; });
 		if (item) config[collection][index] = draft;
@@ -210,7 +211,7 @@ function render(controller) {
 			!config.devices.length ? button('添加接入设备', function() { controller.compatibilityTab = 'devices'; controller.redraw(); edit(controller, 'devices'); }, busy) : '' ],
 		devices: [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h4', {}, '设备与信任'), button('新增设备', function() { edit(controller, 'devices'); }, busy) ]),
 			table([ '设备', '系统信任', '应用', '操作' ], devices, '暂无接入设备'),
-			E('div', { 'class': 'netfleet-inline-add' }, [ button('下载公开 CA', function() { return api.compatibilityCa().then(function(ca) { download('netfleet-ca.pem', ca.pem, 'application/x-pem-file'); }).catch(function(error) { ui.addNotification(null, E('p', {}, error.message), 'error'); }); }, busy || !state.ca_sha256),
+			E('div', { 'class': 'netfleet-inline-add' }, [ button('下载公开 CA', function() { return api.compatibilityCa().then(function(ca) { download('netfleet-ca.pem', ca.pem, 'application/x-pem-file'); }).catch(function(error) { managed.notify(null, E('p', {}, error.message), 'error'); }); }, busy || !state.ca_sha256),
 				state.installed ? E('a', { 'href': '/netfleet/macos-trust.py', 'download': 'netfleet-macos-trust.py' }, 'macOS 接入工具') : '' ]),
 			state.ca_sha256 ? E('details', {}, [ E('summary', {}, 'CA 指纹'), E('code', { 'class': 'netfleet-compat-fingerprint' }, state.ca_sha256) ]) : '' ],
 		diagnostics: diagnostics
