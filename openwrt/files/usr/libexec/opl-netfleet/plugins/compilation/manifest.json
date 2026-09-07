@@ -1,0 +1,56 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "compilation",
+  "label": "Policy compilation",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-compilation",
+  "services": {
+    "compilation.compiler": {
+      "version": 1,
+      "module": "lib/compiler.uc",
+      "requires": {
+        "models.policy": 1
+      }
+    },
+    "compilation.control": {
+      "version": 1,
+      "module": "lib/control.uc",
+      "requires": {
+        "compilation.compiler": 1,
+        "events.output": 1,
+        "mihomo.backend": 1,
+        "mihomo.controller": 1,
+        "mihomo.policy-source": 1,
+        "models.activation": 1,
+        "platform.documents": 1,
+        "platform.uci": 1,
+        "subscriptions.facts": 1,
+        "subscriptions.providers": 1
+      }
+    }
+  },
+  "commands": {
+    "compile": {
+      "service": "compilation.control",
+      "method": "command_compile",
+      "access": "write"
+    },
+    "package-cleanup": {
+      "service": "compilation.control",
+      "method": "command_package_cleanup",
+      "access": "write"
+    },
+    "validate-schema": {
+      "service": "compilation.control",
+      "method": "command_validate_schema",
+      "access": "read"
+    },
+    "validate": {
+      "service": "compilation.control",
+      "method": "command_validate",
+      "access": "read"
+    }
+  },
+  "package_dependencies": []
+}

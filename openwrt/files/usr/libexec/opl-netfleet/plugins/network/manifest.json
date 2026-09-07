@@ -1,0 +1,48 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "network",
+  "label": "Network configuration",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-network",
+  "services": {
+    "network.model": {
+      "version": 1,
+      "module": "lib/model.uc",
+      "requires": {}
+    },
+    "network.editor": {
+      "version": 1,
+      "module": "lib/editor.uc",
+      "requires": {
+        "mihomo.backend": 1,
+        "mihomo.controller": 1,
+        "network.model": 1,
+        "platform.files": 1,
+        "platform.runtime": 1,
+        "platform.service": 1,
+        "platform.uci": 1
+      }
+    }
+  },
+  "commands": {
+    "network-get": {
+      "service": "network.editor",
+      "method": "command_network_get",
+      "access": "read"
+    },
+    "network-validate": {
+      "service": "network.editor",
+      "method": "command_network_validate",
+      "access": "read"
+    },
+    "network-apply": {
+      "service": "network.editor",
+      "method": "command_network_apply",
+      "access": "write"
+    }
+  },
+  "package_dependencies": [
+    "coreutils-timeout"
+  ]
+}

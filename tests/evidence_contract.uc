@@ -1,6 +1,9 @@
 #!/usr/bin/ucode
+import { use, release as release_services } from "./services.uc";
 
-import { selection_snapshot, validate, MEASUREMENT_MODEL } from "../openwrt/files/usr/libexec/opl-netfleet/core/evidence.uc";
+const selection_snapshot = use("models.evidence").selection_snapshot;
+const validate = use("models.evidence").validate;
+const MEASUREMENT_MODEL = use("models.evidence").MEASUREMENT_MODEL;
 
 function candidate(group, region, delay, capability) {
 	return {
@@ -176,3 +179,5 @@ if (migrated.schema_version != 3 || migrated.capabilities.standard?.regions?.nea
 }
 
 print("evidence_contract_ok\n");
+
+release_services();

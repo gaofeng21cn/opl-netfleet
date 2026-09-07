@@ -1,4 +1,10 @@
-import { BACKUP_FORMAT, profile_id, file_path, profile_referenced, validate_backup, redact_line } from "../openwrt/files/usr/libexec/opl-netfleet/core/maintenance.uc";
+import { use, release as release_services } from "./services.uc";
+const BACKUP_FORMAT = use("maintenance.model").BACKUP_FORMAT;
+const profile_id = use("maintenance.model").profile_id;
+const file_path = use("maintenance.model").file_path;
+const profile_referenced = use("maintenance.model").profile_referenced;
+const validate_backup = use("maintenance.model").validate_backup;
+const redact_line = use("maintenance.model").redact_line;
 
 function check(value, label) { if (!value) die(label); };
 for (let name in ["primary.json", "local-profile.yaml", "recovery.yml"]) check(profile_id(name), "accept local stable profile ID");
@@ -52,3 +58,5 @@ check(index(redact_line("fatal token=private123 endpoint=https://example.test/?t
 check(redact_line("listener unavailable", []) == "listener unavailable", "ordinary startup failure retained");
 check(length(redact_line(join("", map([1,2,3], value => sprintf("%2000s", "x"))), [])) == 1024, "diagnostic line bounded");
 print("maintenance_contract_ok\n");
+
+release_services();

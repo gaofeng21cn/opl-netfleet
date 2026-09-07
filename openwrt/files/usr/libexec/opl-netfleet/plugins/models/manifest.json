@@ -1,0 +1,71 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "models",
+  "label": "Product models",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-models",
+  "services": {
+    "models.policy": {
+      "version": 1,
+      "module": "lib/policy.uc",
+      "requires": {}
+    },
+    "models.regions": {
+      "version": 1,
+      "module": "lib/regions.uc",
+      "requires": {}
+    },
+    "models.subscription": {
+      "version": 1,
+      "module": "lib/subscription.uc",
+      "requires": {}
+    },
+    "models.subscriptions": {
+      "version": 1,
+      "module": "lib/subscriptions.uc",
+      "requires": {}
+    },
+    "models.evidence": {
+      "version": 1,
+      "module": "lib/evidence.uc",
+      "requires": {}
+    },
+    "models.activation": {
+      "version": 1,
+      "module": "lib/activation.uc",
+      "requires": {}
+    },
+    "models.status": {
+      "version": 1,
+      "module": "lib/status.uc",
+      "requires": {
+        "models.evidence": 1,
+        "models.policy": 1,
+        "models.selector": 1
+      }
+    },
+    "models.selector": {
+      "version": 1,
+      "module": "lib/selector.uc",
+      "requires": {}
+    },
+    "models.extensions": {
+      "version": 1,
+      "module": "lib/extensions.uc",
+      "requires": {}
+    },
+    "models.selection-view": {
+      "version": 1,
+      "module": "lib/selection-view.uc",
+      "requires": {}
+    },
+    "models.ordering": {
+      "version": 1,
+      "module": "lib/ordering.uc",
+      "requires": {}
+    }
+  },
+  "commands": {},
+  "package_dependencies": []
+}

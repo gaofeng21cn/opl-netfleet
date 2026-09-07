@@ -179,7 +179,7 @@ class DeployOpenWrtTests(unittest.TestCase):
             files = {
                 "usr/libexec/opl-netfleet/main.uc": "candidate-main\n",
                 "usr/libexec/opl-netfleet/supervisor.uc": "candidate-supervisor\n",
-                "usr/libexec/opl-netfleet/output.uc": "candidate-output\n",
+                "usr/libexec/opl-netfleet/kernel/host.uc": "candidate-host\n",
                 "usr/libexec/rpcd/opl-netfleet": "candidate-rpcd\n",
                 "etc/init.d/opl-netfleet": "candidate-init\n",
                 "etc/opl-netfleet/policy.example.json": '{"schema_version":2}\n',
@@ -196,7 +196,13 @@ class DeployOpenWrtTests(unittest.TestCase):
             with (release / "FILES.sha256").open("w") as stream:
                 for path in sorted(item for item in payload.rglob("*") if item.is_file()):
                     stream.write(f"{sha256(path)}  {path.relative_to(payload)}\n")
-            for name in ("opl-netfleet_0.4.3-r1.apk", "luci-app-netfleet_0.4.3-r1.apk"):
+            package_files = {
+                "opl-netfleet": "opl-netfleet_0.4.3-r1.apk",
+                "opl-netfleet-kernel": "opl-netfleet-kernel_0.4.3-r1.apk",
+                "opl-netfleet-plugin-models": "opl-netfleet-plugin-models_0.4.3-r1.apk",
+                "luci-app-netfleet": "luci-app-netfleet_0.4.3-r1.apk",
+            }
+            for name in package_files.values():
                 (release / name).write_text(name + "\n")
             (release / "opl-netfleet-apk.pem").write_text("test-public-key\n")
             (release / "packages.adb").write_bytes(b"test-feed-index\n")
@@ -223,13 +229,10 @@ class DeployOpenWrtTests(unittest.TestCase):
                 "policy_schema": 2,
                 "runtime_payload_sha256": runtime_digest,
                 "files_manifest": {"name": "FILES.sha256", "sha256": sha256(release / "FILES.sha256")},
-                "artifact_files": {
-                    "opl-netfleet": "opl-netfleet_0.4.3-r1.apk",
-                    "luci-app-netfleet": "luci-app-netfleet_0.4.3-r1.apk",
-                },
+                "artifact_files": package_files,
                 "artifacts": [
-                    {"package": "opl-netfleet", "name": "opl-netfleet_0.4.3-r1.apk", "sha256": sha256(release / "opl-netfleet_0.4.3-r1.apk"), "size": (release / "opl-netfleet_0.4.3-r1.apk").stat().st_size},
-                    {"package": "luci-app-netfleet", "name": "luci-app-netfleet_0.4.3-r1.apk", "sha256": sha256(release / "luci-app-netfleet_0.4.3-r1.apk"), "size": (release / "luci-app-netfleet_0.4.3-r1.apk").stat().st_size},
+                    {"package": package, "name": name, "sha256": sha256(release / name), "size": (release / name).stat().st_size}
+                    for package, name in package_files.items()
                 ],
                 "apk_public_key": {"name": "opl-netfleet-apk.pem", "sha256": sha256(release / "opl-netfleet-apk.pem")},
                 "feed_index": {"name": "packages.adb", "sha256": sha256(release / "packages.adb")},
@@ -1003,7 +1006,7 @@ esac
         files = {
             "usr/libexec/opl-netfleet/main.uc": "new-main\n",
             "usr/libexec/opl-netfleet/supervisor.uc": "new-supervisor\n",
-            "usr/libexec/opl-netfleet/output.uc": "new-output\n",
+            "usr/libexec/opl-netfleet/kernel/host.uc": "new-host\n",
             "usr/libexec/rpcd/opl-netfleet": "new-rpcd\n",
             "etc/init.d/opl-netfleet": supervisor_init,
             "etc/opl-netfleet/policy.example.json": '{"schema_version":2,"new":true}\n',
@@ -1159,6 +1162,8 @@ esac
         payload = self.base / "payload"
         package_files = {
             "opl-netfleet": "opl-netfleet_0.4.3-r1.apk",
+            "opl-netfleet-kernel": "opl-netfleet-kernel_0.4.3-r1.apk",
+            "opl-netfleet-plugin-models": "opl-netfleet-plugin-models_0.4.3-r1.apk",
             "luci-app-netfleet": "luci-app-netfleet_0.4.3-r1.apk",
         }
         for name in package_files.values():
@@ -1490,7 +1495,7 @@ esac
 
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
         self.assertEqual(
-            ["opl-netfleet_0.4.3-r1.apk luci-app-netfleet_0.4.3-r1.apk"],
+            ["opl-netfleet_0.4.3-r1.apk opl-netfleet-kernel_0.4.3-r1.apk opl-netfleet-plugin-models_0.4.3-r1.apk luci-app-netfleet_0.4.3-r1.apk"],
             (self.state / "package-actions").read_text().splitlines(),
         )
         self.assertEqual("new-main\n", (self.device / "usr/libexec/opl-netfleet/main.uc").read_text())

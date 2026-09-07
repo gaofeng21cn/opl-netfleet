@@ -1,4 +1,6 @@
-import { validate_request, upstream_candidates } from "../openwrt/files/usr/libexec/opl-netfleet/core/native_setup.uc";
+import { use, release as release_services } from "./services.uc";
+const validate_request = use("setup.native-model").validate_request;
+const upstream_candidates = use("setup.native-model").upstream_candidates;
 
 function check(value, reason) {
 	if (!value) { print(`${reason}\n`); exit(1); }
@@ -30,3 +32,5 @@ check(length(upstream) == 2 && upstream[0] == "198.51.100.53" && upstream[1] == 
 	"only_current_wan_ip_resolvers");
 check(length(upstream_candidates([])) == 0, "no_invented_dns_default");
 print("native_setup_contract passed\n");
+
+release_services();

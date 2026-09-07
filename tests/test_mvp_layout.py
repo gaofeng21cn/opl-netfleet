@@ -15,30 +15,19 @@ class MvpLayoutTests(unittest.TestCase):
         required = (
             RUNTIME / "main.uc",
             RUNTIME / "supervisor.uc",
-            RUNTIME / "output.uc",
-            RUNTIME / "application" / "providers.uc",
-            RUNTIME / "application" / "onboarding.uc",
-            RUNTIME / "application" / "configuration.uc",
-            RUNTIME / "core" / "policy.uc",
-            RUNTIME / "core" / "compiler.uc",
-            RUNTIME / "core" / "selector.uc",
-            RUNTIME / "core" / "evidence.uc",
-            RUNTIME / "core" / "activation.uc",
-            RUNTIME / "core" / "status.uc",
-            RUNTIME / "core" / "events.uc",
-            RUNTIME / "core" / "onboarding.uc",
-            RUNTIME / "core" / "regions.uc",
-            RUNTIME / "adapters" / "uci.uc",
-            RUNTIME / "adapters" / "backend.uc",
-            RUNTIME / "adapters" / "runtime.uc",
-            RUNTIME / "adapters" / "mihomo.uc",
-            RUNTIME / "adapters" / "latency.uc",
-            RUNTIME / "adapters" / "events.uc",
-            RUNTIME / "adapters" / "service.uc",
-            RUNTIME / "adapters" / "policy_source.uc",
+            RUNTIME / "kernel" / "host.uc",
+            RUNTIME / "kernel" / "schema.uc",
+            RUNTIME / "kernel" / "io.uc",
+            RUNTIME / "kernel" / "process.uc",
+            ROOT / "openwrt/files/usr/share/opl-netfleet/system.json",
             ROOT / "openwrt" / "files" / "etc" / "init.d" / "opl-netfleet",
         )
         self.assertTrue(all(path.is_file() for path in required))
+        system = json.loads((ROOT / "openwrt/files/usr/share/opl-netfleet/system.json").read_text())
+        for service, plugin in system["bindings"].items():
+            manifest = json.loads((RUNTIME / "plugins" / plugin / "manifest.json").read_text())
+            self.assertIn(service, manifest["services"])
+            self.assertTrue((RUNTIME / "plugins" / plugin / manifest["services"][service]["module"]).is_file())
 
         package_files = [
             path for path in (ROOT / "openwrt" / "files").rglob("*") if path.is_file()
@@ -57,9 +46,9 @@ class MvpLayoutTests(unittest.TestCase):
         )
 
         makefile = (ROOT / "openwrt" / "Makefile").read_text()
-        self.assertIn("$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/application", makefile)
+        self.assertIn("$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/kernel", makefile)
         self.assertIn(
-            "./files/usr/libexec/opl-netfleet/application/*.uc $(1)/usr/libexec/opl-netfleet/application/",
+            "./files/usr/libexec/opl-netfleet/kernel/*.uc $(1)/usr/libexec/opl-netfleet/kernel/",
             makefile,
         )
 
@@ -99,9 +88,9 @@ class MvpLayoutTests(unittest.TestCase):
 
     def test_runtime_core_has_no_provider_or_business_literals(self):
         forbidden = ("192.168.", "provider.example.invalid")
-        for source in (RUNTIME / "core").glob("*.uc"):
-            if source.name == "onboarding.uc":
-                continue
+        sources = list((RUNTIME / "plugins/models/lib").glob("*.uc"))
+        self.assertTrue(sources)
+        for source in sources:
             text = source.read_text()
             self.assertFalse(any(value in text for value in forbidden), source)
 
@@ -220,10 +209,13 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertIn("yq -M -p yaml -o json", source)
 
     def test_runtime_fail_open_health_and_lock_contract(self):
-        policy = (RUNTIME / "core" / "policy.uc").read_text()
-        main = (RUNTIME / "main.uc").read_text()
-        supervisor = (RUNTIME / "supervisor.uc").read_text()
-        nikki = (RUNTIME / "adapters" / "backend.uc").read_text()
+        policy = (RUNTIME / "plugins/models/lib/policy.uc").read_text()
+        activation = (RUNTIME / "plugins/activation/lib/control.uc").read_text()
+        compilation = (RUNTIME / "plugins/compilation/lib/control.uc").read_text()
+        supervisor = (RUNTIME / "plugins/scheduler/lib/control.uc").read_text()
+        supervisor_entry = (RUNTIME / "supervisor.uc").read_text()
+        host = (RUNTIME / "kernel/host.uc").read_text()
+        nikki = (RUNTIME / "plugins/mihomo/lib/backend.uc").read_text()
         runtime_makefile = (ROOT / "openwrt" / "Makefile").read_text()
         rpcd = (
             ROOT / "openwrt" / "files" / "usr" / "libexec" / "rpcd" / "opl-netfleet"
@@ -252,16 +244,17 @@ class MvpLayoutTests(unittest.TestCase):
 
         self.assertIn("startup_grace_seconds: configured.startup_grace_seconds ?? 120", policy)
         self.assertIn("runtime_grace_seconds: configured.runtime_grace_seconds ?? 45", policy)
-        self.assertIn("automation_config(policy).startup_grace_seconds", main)
+        self.assertIn("automation_config(policy).startup_grace_seconds", activation)
         self.assertIn('"dns_ingress_unavailable"', supervisor)
         self.assertIn("lan_runtime?.dns_ready == true", supervisor)
         self.assertIn('if (run_owner("recover", reason)) unhealthy_since = null', supervisor)
-        self.assertIn("flock -n 9", supervisor)
-        self.assertIn("9>&-", supervisor)
-        self.assertIn("sleep(30000)", supervisor)
-        self.assertIn("sleep(config.poll_interval_seconds * 1000)", supervisor)
+        self.assertIn("network_lock(NETWORK_LOCK, true)", host)
+        self.assertNotIn("flock -n", supervisor)
+        self.assertIn("result(30000)", supervisor)
+        self.assertIn("result(config.poll_interval_seconds * 1000)", supervisor)
+        self.assertIn("sleep(delay)", supervisor_entry)
         self.assertNotIn('system("sleep ', supervisor)
-        self.assertIn("export function lan_runtime_state(dns_probe_url)", nikki)
+        self.assertIn("lan_runtime_state = function(dns_probe_url)", nikki)
         self.assertIn("dns_hijack_rule_present", nikki)
         self.assertIn('nslookup ${shell_quote(hostname)} 127.0.0.1', nikki)
         self.assertIn('(sleep 5; kill "$probe" 2>/dev/null) >/dev/null 2>&1 & watchdog=$!', nikki)
@@ -279,11 +272,12 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertNotIn("exit 1", rpcd)
         self.assertIn('ucode "$$main" package-cleanup', runtime_makefile)
         self.assertNotIn('[ "$$1" = "remove" ]', runtime_makefile)
-        self.assertIn('action == "package-cleanup"', main)
-        self.assertIn('remove_artifact()', main)
-        self.assertIn('"provider_link_cleanup_failed"', main)
-        self.assertIn("load as load_provider_profile_result", main)
-        self.assertNotIn("function load_provider_profiles", main)
+        commands = json.loads((RUNTIME / "plugins/compilation/manifest.json").read_text())["commands"]
+        self.assertEqual("command_package_cleanup", commands["package-cleanup"]["method"])
+        self.assertIn('remove_artifact()', compilation)
+        self.assertIn('"provider_link_cleanup_failed"', compilation)
+        self.assertIn('context.use("subscriptions.providers").load', compilation)
+        self.assertNotIn("function load_provider_profiles", compilation)
         self.assertIn("return removed", nikki)
         for method in ("enable", "refresh", "selectAuto", "configApply", "onboardingApply"):
             self.assertRegex(api, rf"{method}: function\([^)]*\)\s*\{{\s*return withRpcTimeout\(300")

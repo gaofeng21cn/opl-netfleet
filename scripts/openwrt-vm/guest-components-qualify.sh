@@ -3,7 +3,7 @@ set -eu
 umask 077
 feed_url=${1:?}
 work=/tmp/netfleet-components-fixture
-owner=/usr/libexec/opl-netfleet/application/components.uc
+owner=/usr/libexec/opl-netfleet/main.uc
 main=/usr/libexec/opl-netfleet/main.uc
 stage=precondition
 test -f /tmp/netfleet-setup-vm-authorized
@@ -37,8 +37,10 @@ snapshot() {
 	sha256sum /etc/config/netfleet /etc/opl-netfleet/policy.json /etc/opl-netfleet/backend.json \
 		/etc/opl-netfleet/native/subscriptions/setup.yaml /usr/libexec/mihomo >"$1.inputs"
 	if [ -f /etc/opl-netfleet/native/mixin.json ]; then sha256sum /etc/opl-netfleet/native/mixin.json >>"$1.inputs"; fi
-	ucode -e 'import { api_secret } from "/usr/libexec/opl-netfleet/adapters/uci.uc";
-		import { proxies } from "/usr/libexec/opl-netfleet/adapters/mihomo.uc";
+	ucode -e 'import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
+		const host = create("/usr/libexec/opl-netfleet");
+		const api_secret = host.use("platform.uci").api_secret;
+		const proxies = host.use("mihomo.controller").proxies;
 		const values = proxies(api_secret(), 2)?.proxies; if (values == null) exit(1);
 		const selected = {}; for (let name in sort(keys(values))) if (values[name].type == "Selector") selected[name] = values[name].now;
 		printf("%J\n", selected);' >"$1.routes"
@@ -55,7 +57,7 @@ unchanged() {
 wait_operation() {
 	wanted=$1
 	for attempt in $(seq 1 180); do
-		if ! ucode "$owner" operation >"$work/operation-result.json"; then sleep 1; continue; fi
+		if ! ucode "$owner" components-operation >"$work/operation-result.json"; then sleep 1; continue; fi
 		id=$(jsonfilter -i "$work/operation-result.json" -e '@.result.packages.id')
 		state=$(jsonfilter -i "$work/operation-result.json" -e '@.result.packages.state')
 		if [ "$id" = "$wanted" ]; then
@@ -92,7 +94,7 @@ stage=actual_component_readback
 rpc_ready
 ucode /tmp/tests/components_device.uc "$owner" >"$work/contract.log"
 ucode /tmp/tests/extensions_device.uc >>"$work/contract.log"
-ucode "$owner" get >"$work/get-result.json"
+ucode "$owner" components-get >"$work/get-result.json"
 assert_json "$work/get-result.json" '@.result.supported' true
 assert_json "$work/get-result.json" '@.result.backend' native-mihomo
 ucode -e 'import { readfile, popen } from "fs";
@@ -128,19 +130,21 @@ core_current=$(jsonfilter -i "$work/fixture.json" -e '@.core_version')
 core_old=$(jsonfilter -i "$work/fixture.json" -e '@.core_old_version')
 core_bad=$(jsonfilter -i "$work/fixture.json" -e '@.core_bad_version')
 printf '%s\n' "$feed_url/components-fixtures/good/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
-for name in opl-netfleet luci-app-netfleet; do
+product_packages=$(jsonfilter -i "$work/fixture.json" -e '@.product_packages[*]')
+old_packages=
+for name in $product_packages; do
 	uclient-fetch -q -O "$work/$name-$old.apk" "$feed_url/components-fixtures/good/$name-$old.apk"
+	old_packages="$old_packages $work/$name-$old.apk"
 done
 stage=older_real_apk
-install_fixture "$work/opl-netfleet-$old.apk" "$work/luci-app-netfleet-$old.apk" >"$work/downgrade.log" 2>&1
+install_fixture $old_packages >"$work/downgrade.log" 2>&1
 unchanged
 rpc_ready
 stage=component_update
 rpcd_before=$(pidof rpcd)
 request components_update "$current"
 assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
-apk list --manifest | grep -Fqx "opl-netfleet $current"
-apk list --manifest | grep -Fqx "luci-app-netfleet $current"
+for name in $product_packages; do apk list --manifest | grep -Fqx "$name $current"; done
 rpc_ready
 [ "$(pidof rpcd)" != "$rpcd_before" ]
 unchanged
@@ -150,8 +154,7 @@ request components_update "$bad"
 assert_json "$work/operation-result.json" '@.result.packages.state' failed
 assert_json "$work/operation-result.json" '@.result.packages.error' runtime_verification_failed_rolled_back
 assert_json "$work/operation-result.json" '@.result.packages.recovery' restored
-apk list --manifest | grep -Fqx "opl-netfleet $current"
-apk list --manifest | grep -Fqx "luci-app-netfleet $current"
+for name in $product_packages; do apk list --manifest | grep -Fqx "$name $current"; done
 rpc_ready
 unchanged
 stage=core_update

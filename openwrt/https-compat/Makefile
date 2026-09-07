@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet-https-compat
-PKG_VERSION:=0.1.4
+PKG_VERSION:=0.1.5
 PKG_RELEASE:=1
 PKG_LICENSE:=MIT
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)
@@ -12,7 +12,7 @@ define Package/opl-netfleet-https-compat
   SECTION:=net
   CATEGORY:=Network
   TITLE:=NetFleet optional HTTPS compatibility engine
-  DEPENDS:=@aarch64 +opl-netfleet +python3 +libstdcpp +libgcc +libopenssl +ca-bundle +coreutils-timeout
+  DEPENDS:=@aarch64 +opl-netfleet-plugin-https-compat +opl-netfleet-plugin-mihomo +python3 +libstdcpp +libgcc +libopenssl +ca-bundle +coreutils-timeout
   EXTRA_DEPENDS:=python3 (~3.13)
 endef
 

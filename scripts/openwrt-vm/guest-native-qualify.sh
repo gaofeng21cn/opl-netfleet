@@ -7,7 +7,7 @@ tree=${2:?}
 probe_port=${3:?}
 work=/tmp/netfleet-native-fixture
 main=/usr/libexec/opl-netfleet/main.uc
-gateway=/usr/libexec/opl-netfleet/application/native_gateway.uc
+gateway=/usr/libexec/opl-netfleet/main.uc
 lock=/var/lock/opl-netfleet-deploy.lock
 stage=precondition
 fixture_pids=
@@ -66,8 +66,10 @@ ln -s "$work/bin/yq" /usr/bin/yq
 export PATH="$work/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
+cp /tmp/openwrt/files/usr/libexec/opl-netfleet-plugin-package /usr/libexec/
+chmod 0755 /usr/libexec/opl-netfleet-plugin-package
 mkdir -p /usr/share/opl-netfleet /etc/opl-netfleet/native/profiles /etc/opl-netfleet/native/subscriptions
-cp -R /tmp/openwrt/files/usr/share/opl-netfleet/nikki /usr/share/opl-netfleet/
+cp -R /tmp/openwrt/files/usr/share/opl-netfleet/. /usr/share/opl-netfleet/
 cp /tmp/openwrt/files/etc/config/netfleet /etc/config/netfleet
 cp /tmp/openwrt/files/etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet-core
 cp /tmp/openwrt/files/etc/init.d/opl-netfleet /etc/init.d/opl-netfleet
@@ -76,6 +78,7 @@ chmod 0700 /etc/opl-netfleet/native /etc/opl-netfleet/native/profiles /etc/opl-n
 chmod 0600 /etc/config/netfleet
 stage=source_contracts
 for contract in /tmp/tests/*_contract.uc; do ucode "$contract" >>"$work/contracts.log" 2>&1; done
+ucode /tmp/tests/plugin_sdk_service.uc /tmp/examples/plugins/host-info >>"$work/contracts.log" 2>&1
 ucode /tmp/tests/extensions_device.uc /tmp/openwrt/files/usr/libexec/rpcd/opl-netfleet \
 	/tmp/openwrt/luci-app-netfleet/root/usr/share/rpcd/acl.d/luci-app-netfleet.json >>"$work/contracts.log" 2>&1
 printf '{"kind":"native-mihomo"}\n' >/etc/opl-netfleet/backend.json
@@ -243,7 +246,7 @@ assert_clean() {
 }
 wait_ready() {
 	for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-		ucode "$gateway" status >"$work/gateway-result.json"
+		ucode "$gateway" native-gateway-status >"$work/gateway-result.json"
 		if assert_json "$work/gateway-result.json" '@.result.ready' true; then return 0; fi
 		sleep 1
 	done
@@ -298,7 +301,7 @@ stage=runtime_subscription_edit
 ucode /tmp/tests/native_runtime_integration.uc active >"$work/subscriptions-active.log" 2>&1
 stage=owner_conflict
 nft -s list table inet netfleet >"$work/owner.nft"
-if ucode "$gateway" prepare >"$work/conflict-result.json"; then exit 1; fi
+if ucode "$gateway" native-gateway-prepare >"$work/conflict-result.json"; then exit 1; fi
 kill -0 "$core_pid"
 nft -s list table inet netfleet | cmp - "$work/owner.nft"
 for client in lan router; do

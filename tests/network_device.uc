@@ -1,9 +1,15 @@
+import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
+const host = create("/usr/libexec/opl-netfleet");
 import * as fs from "fs";
 import { cursor } from "uci";
-import { get, validate, apply } from "/usr/libexec/opl-netfleet/application/network.uc";
-import { atomic_json } from "/usr/libexec/opl-netfleet/adapters/native.uc";
-import { read_json, sha256, api_secret } from "/usr/libexec/opl-netfleet/adapters/uci.uc";
-import { proxies } from "/usr/libexec/opl-netfleet/adapters/mihomo.uc";
+const get = host.use("network.editor").get;
+const validate = host.use("network.editor").validate;
+const apply = host.use("network.editor").apply;
+const atomic_json = host.use("platform.files").atomic_json;
+const read_json = host.use("platform.uci").read_json;
+const sha256 = host.use("platform.uci").sha256;
+const api_secret = host.use("platform.uci").api_secret;
+const proxies = host.use("mihomo.controller").proxies;
 
 const work = ARGV[0];
 const phase = ARGV[1] ?? "apply";
@@ -91,3 +97,5 @@ if (phase == "apply") {
 	check(result.ok, `restore_original_network_settings:${sprintf("%J", result)}`);
 } else die("unknown_phase");
 print(`network_device ${phase} passed\n`);
+
+host.release();

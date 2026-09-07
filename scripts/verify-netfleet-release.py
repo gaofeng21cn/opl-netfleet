@@ -13,7 +13,8 @@ import sys
 
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
-PACKAGE_NAMES = {"opl-netfleet", "luci-app-netfleet"}
+PACKAGE_NAMES = {"opl-netfleet", "opl-netfleet-kernel", "luci-app-netfleet"}
+PLUGIN_PACKAGE = re.compile(r"^opl-netfleet-plugin-[a-z][a-z0-9-]*$")
 LEGACY_PACKAGE_VERSIONS = {"0.2.0", "0.3.0", "0.3.1", "0.3.2", "0.3.3", "0.4.0"}
 BOOTSTRAP_MINIMUM_VERSION = (0, 4, 5)
 
@@ -90,8 +91,8 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
     require_digest(manifest.get("runtime_payload_sha256"), "runtime payload identity")
 
     artifacts = manifest.get("artifacts")
-    if not isinstance(artifacts, list) or len(artifacts) != 2:
-        fail("release must contain exactly two package artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        fail("release package artifacts are missing")
     seen: set[str] = set()
     artifact_files: dict[str, str] = {}
     for item in artifacts:
@@ -99,7 +100,7 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
             fail("release artifact entry is invalid")
         package = item.get("package")
         name = item.get("name")
-        if package not in PACKAGE_NAMES or package in seen:
+        if not isinstance(package, str) or (package not in PACKAGE_NAMES and not PLUGIN_PACKAGE.fullmatch(package)) or package in seen:
             fail("release artifact package identity is invalid")
         if not isinstance(name, str) or Path(name).name != name or not name.endswith(f".{package_format}"):
             fail("release artifact filename is invalid")
@@ -110,7 +111,7 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
             fail(f"release artifact bytes do not match manifest: {name}")
         seen.add(package)
         artifact_files[package] = name
-    if seen != PACKAGE_NAMES or manifest.get("artifact_files") != artifact_files:
+    if not PACKAGE_NAMES.issubset(seen) or manifest.get("artifact_files") != artifact_files:
         fail("release artifact mapping is invalid")
 
     dependencies = manifest.get("dependency_artifacts", [])

@@ -1,110 +1,177 @@
-# 开发与安装插件
+# 开发、安装与热替换插件
 
-NetFleet 的插件接口让能力以独立 OpenWrt 软件包交付，安装后即被宿主发现，加载、
-卸载和替换插件无需重启核心。脚手架提供可直接运行的 UCode 示例；插件也可以使用
-设备已安装的 Shell、Python 或其他运行时。微内核方向、宿主职责与生命周期合同统一由
-[模块与扩展](../architecture/extensions.md)定义。
+NetFleet 的功能插件与第三方插件采用相同的发现、调用和安装入口。只安装微内核即可
+接入独立插件；`opl-netfleet` 是默认产品组合，不是插件开发的强制依赖。
+服务组合与代码生命周期的完整合同见[微内核](../architecture/microkernel.md)，进程接口见
+[模块与扩展](../architecture/extensions.md)。
 
-## 创建插件
+## 选择插件类型
 
-在开发机准备 Python 3、NetFleet 源码和匹配设备平台的 OpenWrt SDK。设备需要安装支持
-Plugin API v1 的 NetFleet；生成包依赖宿主提供的 `netfleet-plugin-api-v1` 虚拟包，包管理器
-会拒绝不兼容的旧宿主。Python 是开发工具依赖，UCode 示例不要求设备安装 Python。
-SDK 构建在 Linux 的大小写敏感文件系统内完成；macOS 可使用 Linux 容器的独立卷。
+| 类型 | 适合的实现 | 入口 | 示例 |
+| --- | --- | --- | --- |
+| 服务插件 | UCode 功能、可复用服务、业务命令与调度 | `lib/*.uc` 返回服务工厂，声明服务依赖 | [host-info](../../examples/plugins/host-info/manifest.json) |
+| 进程插件 | 独立程序、不同语言运行时、已有外部服务 | 可执行 `control` 接收动作与私有请求文件 | [device-info](../../examples/plugins/device-info/manifest.json) |
+
+服务插件通过具名接口组合能力，适合继续拆分和扩展 NetFleet 自身功能。进程插件保留
+Plugin API v1，可以使用设备已安装的 Shell、Python、UCode 或其他运行时。
+
+开发机需要 Python 3 和 NetFleet 源码；设备需要支持相应接口的 `opl-netfleet-kernel`。
+软件包使用匹配目标平台的 OpenWrt SDK 构建。SDK 需要 Linux 的大小写敏感文件系统，
+macOS 可使用 Linux 容器的独立卷。Python 仅供开发工具使用。
+
+## 创建服务插件
 
 ```sh
-python3 scripts/netfleet-plugin.py scaffold link-health /tmp/link-health --label "Link health"
-python3 scripts/netfleet-plugin.py validate /tmp/link-health
+python3 scripts/netfleet-plugin.py scaffold host-info /tmp/host-info --kind service --label "Host information"
+python3 scripts/netfleet-plugin.py validate /tmp/host-info
 ```
 
-生成目录包含 `manifest.json`、可执行 `control` 和 Apache 2.0 `LICENSE`。脚手架以
-[device-info 示例](../../examples/plugins/device-info/control)为起点，已实现完整生命周期
-和 `inspect` 诊断动作，通过 ubus 读取系统发行版、运行时间、内存和负载。先运行这条链，
-再把诊断逻辑替换为所需能力。插件各自使用 `/var/run/opl-netfleet-plugin-<id>` 保存示例
-加载状态；实际插件可以使用自己拥有的私有目录和服务保存配置及运行状态。
+生成目录包含 `manifest.json`、`lib/reader.uc`、`lib/summary.uc` 和 Apache 2.0 `LICENSE`。
+示例读取本机 `/proc` 中的运行时间、内核版本和系统负载，不修改网络，不依赖其他功能包。
+`host-info.reader` 提供系统读取接口，`host-info.summary` 声明依赖 reader，并向 CLI 提供
+`host-info` 命令。替换示例逻辑时保留这条可运行调用链，再逐步增加所需能力。
 
-插件 ID 使用小写字母、数字和单个连接号，首字符为字母，最多 48 个字符。
-`https-compat` 和 `zashboard` 已属于内置模块。软件包名称必须为
-`opl-netfleet-plugin-<id>`。新增业务动作写入 manifest 的 `actions`，值为 `read` 或
-`write`；`get`、`load`、`unload`、`reload` 已由宿主定义，无需重复声明。
+每个模块返回工厂，工厂接收当前调用的 `context` 并返回服务对象。例如：
 
-`dependencies` 填写运行时的实际 OpenWrt 包名称。额外模块、程序和静态文件放在
-`resources/` 内，打包时保留相对路径和执行权限。发布前将 manifest 的 `version` 与
-软件包版本一同更新。`validate` 检查声明、安装路径、权限和文件类型，不执行插件代码。
+```javascript
+return function(context) {
+    const reader = context.use("host-info.reader");
+    function inspect(argv) {
+        if (length(argv) != 1) return { ok: false, error: "unexpected_arguments" };
+        return reader.snapshot();
+    };
+    return { inspect };
+};
+```
 
-## 实现入口
+`context.use()` 只解析该服务在 `requires` 中声明的接口，并检查所需 major。
+`commands` 将命令绑定到本插件的服务方法；方法接收包括命令名在内的 `argv` 数组，
+返回 `{"ok":true,"result":{...}}` 或 `{"ok":false,"error":"reason"}`，由内核输出。
+普通服务方法可以返回自身业务数据，再由命令方法组织对外结果。
 
-宿主在独立进程中调用 `control <action> <private-request-file>`。第二个参数指向临时
-JSON 文件，例如：
+服务名使用带点号的命名空间，例如 `host-info.reader`；模块路径为 `lib/` 下的 `.uc`
+文件。跨插件调用通过服务接口和声明依赖完成，不导入另一插件的私有源码。`fs` 等系统
+模块可以正常导入；额外运行包写入 `package_dependencies`。服务依赖和软件包依赖分别
+说明调用合同与安装需求，声明外部服务时应同时声明提供者的包依赖。
+
+模块可以拆分为多个文件，额外程序和静态资源可放入 `resources/`。`validate` 检查声明、
+模块文件、相对路径和权限，不执行插件逻辑。公开服务接口不兼容时增加其 major；普通
+实现更新只增加插件 `version`。接口 major 与软件包版本各自表达不同的兼容关系。
+
+## 服务绑定
+
+首次安装只交付代码。显式 load 会启用插件，并为尚未占用的服务建立绑定；已有提供者
+绑定不会因安装另一个包而被覆盖。默认组合在 `/usr/share/opl-netfleet/system.json` 中
+声明，设备私有覆盖位于 `/etc/opl-netfleet/system.json`，例如：
 
 ```json
-{"request":{"api_version":1,"id":"link-health","action":"inspect","params":{}}}
+{
+  "schema": "opl-netfleet-system.v1",
+  "bindings": {
+    "host-info.reader": "host-info",
+    "host-info.summary": "host-info"
+  },
+  "enabled": {"host-info": true}
+}
 ```
 
-成功时标准输出只返回一个 JSON 对象，并以退出码 0 结束；日志写标准错误。业务结果放在
-`result` 中，例如 `{"ok":true,"result":{"uptime_seconds":120}}`。失败返回
-`{"ok":false,"error":"reason"}` 及非零退出码。宿主向调用者返回统一错误分类。
+日常加载由内核维护这些字段。需要替换服务提供者时，新插件应提供相同服务名与兼容的
+接口 major，再针对相关 `bindings` 做结构化配置更新并验证调用。上面是局部覆盖示例，
+已有私有配置需要合并保留。覆盖文件由 root 持有，权限为 `0600`。
 
-`get` 必须读取真实状态并返回布尔 `loaded` 与 `ready`。`load`、`unload` 应可重复调用；
-插件卸载时先停止接收新工作，再释放自身进程、监听、规则及其他资源。`unload` 完成且
-回读 `loaded=false` 后，宿主才会执行 reload 的 load 阶段。对于连接处理插件，加载状态
-不能代替连接排空证据。业务配置变更所需的版本检查、迁移与回滚由插件自己的状态 owner
-实现，版本参数通过 `params` 传入。
+`scheduler` 可以指定服务和方法作为常驻调度入口；具体调度规则归服务插件。单纯增加
+诊断或业务命令无需新增调度入口，也无需安装默认产品的其他功能包。
 
-单次调用应在 30 秒内完成，响应不超过 64 KiB。长时任务交给插件自己的受管服务运行，
-入口返回当前进度；卸载未完成时应返回失败，保留后续继续排空所需状态。插件以设备 root
-权限运行，权限声明用于管理员审阅和接口准入；选择第三方插件来源时采用与其他 OpenWrt
-软件包相同的信任标准。
+## 管理资源生命周期
 
-## 生成与编译软件包
+示例服务仅在调用期间读取系统信息，不持有跨调用资源，因此不需要生命周期方法。
+持有进程、监听、连接或网络规则的服务插件，在 manifest 中同时声明 `lifecycle.drain`
+和 `lifecycle.resume`；两者分别指定本插件的 `service` 与 `method`。
+
+`drain` 先停止接收新工作，再完成必要排空和资源回读，成功时返回
+`{"ok":true,"result":{...}}`。内核保留结果并将其作为参数交给 `resume`，后者恢复原先
+需要恢复的状态并回读结果。两种方法都应支持重试。业务数据迁移、配置版本检查和失败
+恢复由对应插件实现；仅返回退出成功不能代替真实资源已释放。
+
+包替换由内核按依赖关系排空受影响的资源 owner，并等待在途代码调用结束。后续调用
+读取完整的新版本。纯计算、配置和诊断插件更新不会重启 Mihomo；更新实际持有引擎或
+网络资源的插件时，以该插件的生命周期交接结果为准。
+
+## 保留进程入口
+
+不指定 `--kind` 时继续生成进程插件，也可以显式选择：
+
+```sh
+python3 scripts/netfleet-plugin.py scaffold device-info /tmp/device-info --kind process
+python3 scripts/netfleet-plugin.py validate /tmp/device-info
+```
+
+宿主调用 `control <action> <private-request-file>`，请求文件内容例如：
+
+```json
+{"request":{"api_version":1,"id":"device-info","action":"inspect","params":{}}}
+```
+
+标准输出只返回一个 JSON 响应，日志写标准错误。成功使用退出码 0，失败使用非零退出码。
+`get` 返回布尔 `loaded` 和 `ready`；`load/unload` 应可重复执行，`reload` 由宿主完成
+卸载、回读、加载、回读。自定义动作声明在 `actions` 中，值为 `read` 或 `write`。
+
+单次进程调用应在 30 秒内完成，响应不超过 64 KiB。长时工作交给插件自己的受管服务，
+入口返回实际状态。运行依赖填入 `dependencies`，额外文件放在 `resources/` 中。
+安装或升级后使用显式 load 启用进程插件。
+
+## 生成与发布软件包
 
 ```sh
 sdk=/path/to/openwrt-sdk
-python3 scripts/netfleet-plugin.py package-source /tmp/link-health \
-  "$sdk/package/opl-netfleet-plugin-link-health" --license Apache-2.0
+python3 scripts/netfleet-plugin.py package-source /tmp/host-info \
+  "$sdk/package/opl-netfleet-plugin-host-info" --license Apache-2.0
 make -C "$sdk" defconfig
-make -C "$sdk" package/opl-netfleet-plugin-link-health/compile V=s
+make -C "$sdk" package/opl-netfleet-plugin-host-info/compile V=s
 ```
 
-生成器输出标准 OpenWrt `Makefile` 和 `files/`，由 SDK 生成 APK 或 IPK。
-`--license` 必须与插件实际许可证一致；同一软件版本重新打包可增加 `--release`。
-输出目录已存在时生成器会拒绝覆盖，使用新的输出目录或先审阅原目录。
+生成器输出标准 OpenWrt `Makefile` 和 `files/`，由 SDK 生成 APK 或 IPK。服务插件依赖
+`opl-netfleet-kernel` 与声明的 `package_dependencies`；进程插件依赖微内核、API v1
+虚拟包及声明的 `dependencies`。SDK 不强制引入 `opl-netfleet` 默认产品组合。
 
-默认包适用于解释型入口及跨平台资源，使用 `PKGARCH:=all`。需要本地二进制的插件可
-直接扩展生成的标准 Makefile，增加真实 `Build/Compile` 并使用目标架构，随后按 OpenWrt
-SDK 的正常流程构建。插件源码、依赖和生成包的版本应一起进入项目版本管理。
+`--license` 必须与插件实际许可证一致。同一软件版本重新打包可增加 `--release`；输出
+目录已存在时生成器拒绝覆盖。默认包适用于解释型代码，使用 `PKGARCH:=all`；本地
+二进制插件在标准 Makefile 中实现 `Build/Compile`，并使用实际目标架构。
 
-APK 发布使用 SDK 的签名工具。以下命令在构建机执行，私钥只留在构建环境：
+所有插件包的 preinst/postinst/prerm/postrm 都委托
+`/usr/libexec/opl-netfleet-plugin-package <id> <phase>`。该入口由微内核提供，负责排空、
+代码替换准入和恢复。插件包不复制另一套锁、安装器或网络恢复逻辑。
+
+APK 发布前，将构建产物放入自己的 feed 目录，并使用 SDK 工具签名。下面的公钥目录
+需要包含与私钥对应、供使用者核验的公钥：
 
 ```sh
 apk_tool="$sdk/staging_dir/host/bin/apk"
 signing_key=/secure/plugin-signing-private.pem
 feed=/path/to/plugin-feed
-apk_package="$feed/opl-netfleet-plugin-link-health-0.1.0-r1.apk"
+apk_package="$feed/opl-netfleet-plugin-host-info-0.1.0-r1.apk"
 "$apk_tool" adbsign --allow-untrusted --reset-signatures --sign-key "$signing_key" "$apk_package"
 "$apk_tool" mkndx --root "$sdk" --keys-dir /path/to/trusted-public-keys \
   --output "$feed/packages.adb" --sign "$signing_key" "$apk_package"
 "$apk_tool" verify --keys-dir /path/to/trusted-public-keys "$apk_package"
 ```
 
-将构建得到的 APK 放入上述 feed 目录，公钥与 feed 索引一并发布到自己的 HTTPS 包源；
-管理员核对公钥指纹后，将公钥放入设备 `/etc/apk/keys/`，并将包源加入
-`/etc/apk/repositories.d/` 中的 `.list` 文件。IPK 使用目标 OpenWrt 版本的 opkg feed
-索引与签名流程。公钥可信来源与软件包签名验证都属于安装流程，安装时保留签名检查。
+将软件包、公钥和索引发布到自己的 HTTPS 包源。管理员核对公钥指纹后，将公钥放入
+设备 `/etc/apk/keys/`，并将源加入 `/etc/apk/repositories.d/` 的 `.list` 文件。IPK 使用
+对应 OpenWrt 版本的 opkg 索引与签名流程。插件代码以设备管理员权限运行，选用第三方
+来源时采用与其他 OpenWrt 软件包相同的信任标准。
 
-## 安装、加载与更新
+## 独立安装与热替换
 
-以下命令在已获授权的目标设备执行。先确认 package 名称、目标版本和所需依赖，再进行
-具名操作；数据面插件部署前按[准入证据](../architecture/overview.md#准入证据)完成验证。
+以下命令在已获授权的设备执行，设备只需安装微内核及插件声明的依赖：
 
 ```sh
 apk update
-apk add opl-netfleet-plugin-link-health
+apk add opl-netfleet-plugin-host-info
 ucode /usr/libexec/opl-netfleet/main.uc plugins-list
 ```
 
-安装后插件保持未加载。组件页可直接查看并加载、重载或卸载插件；CLI 则先取得当前
-revision，写入私有请求，再调用宿主：
+组件页和 CLI 使用同一加载入口。CLI 先取得当前 revision，再发送私有写请求：
 
 ```sh
 umask 077
@@ -113,52 +180,42 @@ ucode /usr/libexec/opl-netfleet/main.uc plugins-list >"$plugin_work/list.json"
 ucode -e '
 import * as fs from "fs";
 const rows = json(fs.readfile(ARGV[0])).result.plugins;
-const plugin = filter(rows, item => item.id == "link-health")[0];
+const plugin = filter(rows, item => item.id == "host-info")[0];
 if (type(plugin?.revision) != "string") exit(1);
-printf("%J\n", {request: {id: "link-health", action: "load", revision: plugin.revision, confirm: true, params: {}}});
+printf("%J\n", {request: {id: "host-info", action: "load", revision: plugin.revision, confirm: true, params: {}}});
 ' "$plugin_work/list.json" >"$plugin_work/request.json"
 ucode /usr/libexec/opl-netfleet/main.uc plugin-call "$plugin_work/request.json"
-```
-
-成功结果应同时包含 `loaded:true` 和 `ready:true`。随后执行插件自己的诊断动作：
-
-```sh
-ucode -e 'printf("%J\n", {request: {id: "link-health", action: "inspect", params: {}}});' \
-  >"$plugin_work/request.json"
-ucode /usr/libexec/opl-netfleet/main.uc plugin-read "$plugin_work/request.json"
+ucode /usr/libexec/opl-netfleet/main.uc host-info
 rm -rf "$plugin_work"
 ```
 
-重载或卸载时重新取得清单，将请求的 `action` 改为 `reload` 或 `unload`。宿主使用现有
-全局写锁串行调用，插件不能在入口外再持有这把锁并回调宿主。
+load 成功应返回 `loaded:true` 和 `ready:true`，`host-info` 命令应返回当前内核版本、
+运行时间和负载。进程插件使用相同方式 load，再通过 `plugin-read` 调用 get 或其声明的
+读动作；服务插件的命令直接按 manifest 注册名称调用。
+
+发布新版本后执行具名升级：
 
 ```sh
-apk upgrade opl-netfleet-plugin-link-health
-apk del opl-netfleet-plugin-link-health
+apk upgrade opl-netfleet-plugin-host-info
+ucode /usr/libexec/opl-netfleet/main.uc host-info
 ```
 
-上述两条命令分别用于升级和删除，按当前操作选择执行。IPK 设备对应使用 `opkg update`、
-`opkg install <package>`、`opkg upgrade <package>` 和 `opkg remove <package>`。
+已启用的服务插件保留系统绑定，包管理入口完成必要恢复后，下一次调用读取新代码。
+进程插件升级后重新取得 revision 并显式 load。卸载运行中的服务插件前，先确认没有
+已启用插件依赖它，再以新的 revision 发送 `action:"unload"` 请求；删除软件包使用
+`apk del opl-netfleet-plugin-host-info`。IPK 对应使用 `opkg install/upgrade/remove`。
 
-生成包的 preinst/prerm 先进入插件维护状态，再通过 root CLI `plugin-drain` 调用旧版
-unload 并回读 get。宿主在同一把写锁内完成排空与 `replacing` 标记写入，随后拒绝所有
-插件代码执行，包管理器才开始替换或删除旧文件。排空阶段仍可执行 get 和 unload；
-`plugin-drain` 可重复调用且不向浏览器开放。postinst/postrm 完成后清除维护状态，升级
-完成后重新取得 revision 并显式 load，新版入口立即生效。首次安装也经过同一入口，宿主
-在锁内确认旧插件不存在后直接进入 replacing，避免执行尚未完整安装的代码。
+包操作未完成时，先处理其报告的排空、依赖或恢复原因，再重试同一具名操作。保留
+`/var/run/opl-netfleet-plugin-maintenance/<id>` 中的恢复状态，避免清理尚需继续退出或
+恢复的旧文件。涉及设备数据面的插件仍按[设备准入](../architecture/overview.md#准入证据)
+取得真实验收。
 
-若旧插件仍在排空，包操作会等待并输出原因，修复插件的退出条件后会继续。包操作中断后，
-`/var/run/opl-netfleet-plugin-maintenance/<id>` 可能保留；优先重试原包操作完成恢复。
-只有确认没有正在进行的包操作、旧实例已退出且安装文件完整后，才可手动移除对应目录中
-的 `replacing` 标记和空目录，并重新读取清单、显式加载。不要删除仍在工作的插件文件
-来解除等待。
+## 验证插件
 
-## 验证与发布
+发布前在隔离 OpenWrt 中完成独立安装、加载、业务命令、升级、卸载与删除，并覆盖缺失
+依赖、接口 major 不匹配、提供者冲突、在途调用和生命周期失败。服务插件还需验证调用
+实际来自绑定的提供者；包安装成功不能代替业务命令成功。
 
-自有及第三方插件采用同一条验证路径：开发机校验声明并编译包，在隔离 OpenWrt 中完成
-安装、get、load、业务动作、reload、unload、升级与删除。覆盖调用超时、load 失败后的
-退出、重复卸载及旧 revision 请求。设备真实服务、流量或规则由相应插件回读验收。
-
-可运行示例位于 [examples/plugins/device-info](../../examples/plugins/device-info/manifest.json)。
-SDK 自身验证入口为 `python3 -m unittest discover -s tests -p test_plugin_sdk.py`；它证明
-脚手架和包生成行为，实际运行与包管理器验收由 OpenWrt 环境完成。
+SDK 的开发机检查入口为 `python3 -m unittest discover -s tests -p test_plugin_sdk.py`。
+Linux/OpenWrt 上可用 `ucode tests/plugin_sdk_service.uc examples/plugins/host-info` 执行
+示例工厂、依赖组合和真实 `/proc` 读取；最终安装与热替换仍由 OpenWrt 软件包流程验收。

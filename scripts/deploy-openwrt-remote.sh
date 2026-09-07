@@ -206,6 +206,8 @@ service_restore_mode=none
 service_before_enabled=0
 service_before_running=0
 rollback_state=not_needed
+source_plugin_ids=
+source_kernel_locked=0
 source_commit=""
 source_tree=""
 was_active=false
@@ -237,8 +239,11 @@ emit_failure() {
 }
 
 owned_paths='usr/libexec/opl-netfleet
+usr/libexec/opl-netfleet-plugin-package
+usr/libexec/opl-netfleet-transfer
 usr/libexec/rpcd/opl-netfleet
 etc/init.d/opl-netfleet
+etc/init.d/opl-netfleet-core
 etc/opl-netfleet/policy.example.json
 etc/opl-netfleet/policy-sources
 etc/opl-netfleet/rulesets.lock.json
@@ -658,6 +663,28 @@ install_identity() {
 	mv -f "${installed_identity}.tmp" "$installed_identity"
 }
 
+source_maintenance_finish() {
+	[ -n "$source_plugin_ids" ] || return 0
+	maintenance=$(root_path /var/run/opl-netfleet-plugin-maintenance)
+	if [ "$source_kernel_locked" = 1 ]; then
+		rm -f "$maintenance/.kernel" || return 1
+		exec 8>&-
+		source_kernel_locked=0
+	fi
+	resume_ids=; removed_ids=
+	for id in $source_plugin_ids; do
+		if [ -f "$(root_path "/usr/libexec/opl-netfleet/plugins/$id/manifest.json")" ]; then
+			resume_ids="$resume_ids $id"
+		else
+			removed_ids="$removed_ids $id"
+		fi
+	done
+	main=$(root_path /usr/libexec/opl-netfleet/main.uc)
+	[ -z "$removed_ids" ] || run_action "$main" plugin-package-remove "$action_dir/source-plugin-remove.json" $removed_ids || return 1
+	[ -z "$resume_ids" ] || run_action "$main" plugin-package-resume "$action_dir/source-plugin-resume.json" $resume_ids || return 1
+	source_plugin_ids=
+}
+
 install_owned_payload() {
 	payload_mutated=1
 	if [ "$release_mode" = "package" ]; then
@@ -678,6 +705,40 @@ install_owned_payload() {
 	if [ -f "$candidate_menu" ] && [ -f "$installed_menu" ] && cmp -s "$candidate_menu" "$installed_menu"; then
 		luci_menu_changed=false
 	fi
+	# Default composition owns its listed plugins; separately installed plugins
+	# survive a source deployment and remain part of the rollback snapshot.
+	plugin_store=$(root_path /usr/libexec/opl-netfleet/plugins)
+	default_system=$(root_path /usr/share/opl-netfleet/system.json)
+	retained_plugins="$action_dir/retained-plugins"
+	mkdir -p "$retained_plugins" || { error_code=payload_install_failed; return 1; }
+	for plugin_path in "$plugin_store"/*; do
+		[ -d "$plugin_path" ] || continue
+		plugin_id=${plugin_path##*/}
+		case "$plugin_id" in ""|*[!a-z0-9-]*) error_code=plugin_identity_invalid; return 1 ;; esac
+		[ ! -e "$candidate_dir/usr/libexec/opl-netfleet/plugins/$plugin_id" ] || continue
+		default_enabled=$(jsonfilter -i "$default_system" -e "@.enabled[\"$plugin_id\"]" 2>/dev/null || true)
+		[ "$default_enabled" != true ] || continue
+		cp -a "$plugin_path" "$retained_plugins/$plugin_id" || { error_code=payload_install_failed; return 1; }
+	done
+	if [ "$control_plane_repair" != 1 ] && [ -f "$(root_path /usr/libexec/opl-netfleet/kernel/host.uc)" ]; then
+		for package in $(jsonfilter -i "$default_system" -e '@.product_packages[*]'); do
+			case "$package" in opl-netfleet-plugin-*) source_plugin_ids="$source_plugin_ids ${package#opl-netfleet-plugin-}" ;; esac
+		done
+		if [ -n "$source_plugin_ids" ]; then
+			main=$(root_path /usr/libexec/opl-netfleet/main.uc)
+			if ! run_action "$main" plugin-package-drain "$action_dir/source-plugin-drain.json" $source_plugin_ids; then
+				error_code=plugin_drain_unconfirmed
+				return 1
+			fi
+			code_locks=$(root_path /var/lock/opl-netfleet-code)
+			maintenance=$(root_path /var/run/opl-netfleet-plugin-maintenance)
+			mkdir -p "$code_locks" "$maintenance" || return 1
+			exec 8>"$code_locks/.kernel.lock"
+			flock -w 45 8 || { error_code=kernel_calls_draining; return 1; }
+			source_kernel_locked=1
+			printf '%s\n' replacing >"$maintenance/.kernel" || return 1
+		fi
+	fi
 	for rel in $owned_paths; do
 		rm -rf -- "$(root_path "/$rel")"
 	done
@@ -693,6 +754,14 @@ install_owned_payload() {
 			return 1
 		fi
 	done
+	for plugin_path in "$retained_plugins"/*; do
+		[ -d "$plugin_path" ] || continue
+		mkdir -p "$plugin_store" && cp -a "$plugin_path" "$plugin_store/" || { error_code=payload_install_failed; return 1; }
+	done
+	if ! source_maintenance_finish; then
+		error_code=plugin_resume_unconfirmed
+		return 1
+	fi
 	if [ "$luci_menu_changed" = "true" ]; then
 		luci_tmp=$(root_path /tmp)
 		rm -f "$luci_tmp"/luci-indexcache.*
@@ -731,13 +800,11 @@ install_release_packages() {
 		chmod 0644 "${key_target}.tmp.$$" && mv -f "${key_target}.tmp.$$" "$key_target" || { rm -f "${key_target}.tmp.$$"; error_code=package_key_install_failed; return 1; }
 		apk_args="--no-network --repositories-file /dev/null"
 		package_files=""
-		for package_name in opl-netfleet luci-app-netfleet; do
-			package_file=$(jsonfilter -i "$package_manifest" -e "@.artifact_files[\"$package_name\"]" 2>/dev/null || true)
+		for package_file in $(jsonfilter -i "$package_manifest" -e '@.artifacts[*].name'); do
 			[ -n "$package_file" ] && [ -f "$bundle/$package_file" ] || { error_code=package_file_missing; return 1; }
 			package_files="$package_files $bundle/$package_file"
 		done
-		# Install the pair in one apk transaction to avoid a second process,
-		# database lock and dependency-resolution pass.
+		# Install the complete composition in one dependency-resolution transaction.
 		if ! apk $apk_args add $package_files >/dev/null 2>&1; then
 			error_code=package_install_failed
 			return 1
@@ -747,8 +814,7 @@ install_release_packages() {
 	if [ "$release_format" = "ipk" ]; then
 		command -v opkg >/dev/null 2>&1 || { error_code=package_manager_unavailable; return 1; }
 		package_files=""
-		for package_name in opl-netfleet luci-app-netfleet; do
-			package_file=$(jsonfilter -i "$package_manifest" -e "@.artifact_files[\"$package_name\"]" 2>/dev/null || true)
+		for package_file in $(jsonfilter -i "$package_manifest" -e '@.artifacts[*].name'); do
 			[ -n "$package_file" ] && [ -f "$bundle/$package_file" ] || { error_code=package_file_missing; return 1; }
 			package_files="$package_files $bundle/$package_file"
 		done
@@ -1462,6 +1528,13 @@ on_exit() {
 	trap - EXIT
 	if [ "$rc" -ne 0 ]; then
 		set +e
+		if [ -n "$source_plugin_ids" ]; then
+			if ! restore_paths_from_snapshot "$owned_paths" || ! source_maintenance_finish; then
+				rollback_state=restore_failed
+				emit_failure
+				exit "$rc"
+			fi
+		fi
 		if [ "$payload_mutated" = "1" ]; then
 			if [ "$control_plane_repair" = "1" ]; then
 				if restore_control_plane_snapshot; then

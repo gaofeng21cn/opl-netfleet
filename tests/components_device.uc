@@ -1,9 +1,9 @@
 import * as fs from "fs";
 
-const owner = ARGV[0] ?? "/usr/libexec/opl-netfleet/application/components.uc";
+const owner = ARGV[0] ?? "/usr/libexec/opl-netfleet/main.uc";
 function check(value, message) { if (!value) die(message); };
 function call(argument) {
-	const pipe = fs.popen(`ucode '${owner}' ${argument}`);
+	const pipe = fs.popen(`ucode '${owner}' components-${argument}`);
 	check(pipe != null, "component owner starts");
 	let response;
 	try { response = json(pipe.read("all")); } catch (error) { die("component owner returns JSON"); }
@@ -15,7 +15,7 @@ const request = fs.readfile("/tmp/opl-netfleet-components/request.json");
 const marker = fs.readfile("/tmp/opl-netfleet-package-upgrade-state");
 const first = call("get");
 check(first.ok && type(first.result.components) == "array" && length(first.result.components) == 3, "three actual component rows");
-check(call("invalid-fixture-action").error == "unknown_component_action", "unknown action is rejected");
+check(call("invalid-fixture-action").error == "unknown_command", "unknown action is rejected");
 const operations = call("operation");
 check(operations.ok && type(operations.result) == "object", "read-only operation response");
 check(fs.readfile("/tmp/opl-netfleet-components/request.json") == request &&

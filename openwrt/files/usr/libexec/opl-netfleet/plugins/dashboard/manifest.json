@@ -1,0 +1,50 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "dashboard",
+  "label": "Zashboard",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-dashboard",
+  "services": {
+    "dashboard.version": {
+      "version": 1,
+      "module": "lib/version.uc",
+      "requires": {}
+    },
+    "dashboard.control": {
+      "version": 1,
+      "module": "lib/control.uc",
+      "requires": {
+        "dashboard.version": 1,
+        "mihomo.controller": 1,
+        "models.extensions": 1,
+        "platform.files": 1,
+        "platform.runtime": 1,
+        "platform.uci": 1
+      }
+    }
+  },
+  "commands": {
+    "dashboard-get": {
+      "service": "dashboard.control",
+      "method": "command_dashboard_get",
+      "access": "read"
+    },
+    "dashboard-check": {
+      "service": "dashboard.control",
+      "method": "command_dashboard_check",
+      "access": "write"
+    },
+    "dashboard-update": {
+      "service": "dashboard.control",
+      "method": "command_dashboard_update",
+      "access": "write"
+    }
+  },
+  "package_dependencies": [
+    "curl",
+    "ca-bundle",
+    "unzip",
+    "coreutils-timeout"
+  ]
+}

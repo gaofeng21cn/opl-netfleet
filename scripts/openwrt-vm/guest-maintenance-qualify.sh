@@ -3,7 +3,7 @@ set -eu
 umask 077
 work=/tmp/netfleet-maintenance-fixture
 main=/usr/libexec/opl-netfleet/main.uc
-gateway=/usr/libexec/opl-netfleet/application/native_gateway.uc
+gateway=/usr/libexec/opl-netfleet/main.uc
 test -f /tmp/netfleet-setup-vm-authorized
 test "$(jsonfilter -i /etc/opl-netfleet/backend.json -e '@.kind')" = native-mihomo
 test -f /etc/opl-netfleet/policy.json
@@ -28,7 +28,7 @@ supervisor_running=0
 /etc/init.d/opl-netfleet stop
 /etc/init.d/opl-netfleet-core stop
 for attempt in $(seq 1 15); do
-	ucode "$gateway" status >"$work/stopped-result.json"
+	ucode "$gateway" native-gateway-status >"$work/stopped-result.json"
 	[ "$(jsonfilter -i "$work/stopped-result.json" -e '@.result.core_running')" != false ] || break
 	sleep 1
 done
@@ -37,7 +37,7 @@ ucode /tmp/tests/maintenance_device.uc stopped >"$work/stopped.log" 2>&1
 stage=resume
 /etc/init.d/opl-netfleet-core start
 for attempt in $(seq 1 20); do
-	ucode "$gateway" status >"$work/resume-result.json"
+	ucode "$gateway" native-gateway-status >"$work/resume-result.json"
 	[ "$(jsonfilter -i "$work/resume-result.json" -e '@.result.ready')" != true ] || break
 	sleep 1
 done

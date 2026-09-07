@@ -1,6 +1,7 @@
 #!/usr/bin/ucode
+import { use, release as release_services } from "./services.uc";
 
-import { discover } from "../openwrt/files/usr/libexec/opl-netfleet/core/onboarding.uc";
+const discover = use("configuration.onboarding-model").discover;
 
 function base_input() {
 	return {
@@ -94,3 +95,5 @@ if (sprintf("%J", discover(base_input()).revision_input) != sprintf("%J", discov
 }
 
 print("onboarding_contract_ok\n");
+
+release_services();

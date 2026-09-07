@@ -1,4 +1,9 @@
-import { project, public_settings, validate_request, runtime_profile, error_code } from "../openwrt/files/usr/libexec/opl-netfleet/core/network.uc";
+import { use, release as release_services } from "./services.uc";
+const project = use("network.model").project;
+const public_settings = use("network.model").public_settings;
+const validate_request = use("network.model").validate_request;
+const runtime_profile = use("network.model").runtime_profile;
+const error_code = use("network.model").error_code;
 
 function check(value, reason) { if (!value) { print(`${reason}\n`); exit(1); } };
 function clone(value) { return json(sprintf("%J", value)); };
@@ -71,3 +76,5 @@ print("network_contract passed\n");
 const omitted = clone(profile);
 delete omitted.dns["default-nameserver"];
 check(runtime_profile(omitted, project(omitted, sections)).dns["default-nameserver"] == null, "omitted_bootstrap_not_replaced_by_invalid_empty_list");
+
+release_services();

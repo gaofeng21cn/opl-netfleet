@@ -1,6 +1,20 @@
-import { KIND, UCI_PACKAGE, ROOT_DIR, RUN_DIR, SERVICE, NFT_TABLE, STATE_DIR, LOG_PATH, metadata } from "../openwrt/files/usr/libexec/opl-netfleet/adapters/runtime.uc";
-import { resolve_profile, provider_runtime_path, ARTIFACT_PATH, MANIFEST_PATH, PROFILE_ENTRY_PATH, COMPILED_PROFILE } from "../openwrt/files/usr/libexec/opl-netfleet/adapters/backend.uc";
-import { resolve as resolve_policy_source } from "../openwrt/files/usr/libexec/opl-netfleet/adapters/policy_source.uc";
+import { use, release as release_services } from "./services.uc";
+const KIND = use("platform.runtime").KIND;
+const UCI_PACKAGE = use("platform.runtime").UCI_PACKAGE;
+const ROOT_DIR = use("platform.runtime").ROOT_DIR;
+const RUN_DIR = use("platform.runtime").RUN_DIR;
+const SERVICE = use("platform.runtime").SERVICE;
+const NFT_TABLE = use("platform.runtime").NFT_TABLE;
+const STATE_DIR = use("platform.runtime").STATE_DIR;
+const LOG_PATH = use("platform.runtime").LOG_PATH;
+const metadata = use("platform.runtime").metadata;
+const resolve_profile = use("mihomo.backend").resolve_profile;
+const provider_runtime_path = use("mihomo.backend").provider_runtime_path;
+const ARTIFACT_PATH = use("mihomo.backend").ARTIFACT_PATH;
+const MANIFEST_PATH = use("mihomo.backend").MANIFEST_PATH;
+const PROFILE_ENTRY_PATH = use("mihomo.backend").PROFILE_ENTRY_PATH;
+const COMPILED_PROFILE = use("mihomo.backend").COMPILED_PROFILE;
+const resolve_policy_source = use("mihomo.policy-source").resolve;
 
 function check(value, reason) {
 	if (!value) { print(`${reason}\n`); exit(1); }
@@ -30,3 +44,5 @@ check(ARTIFACT_PATH == `${root}/profiles/opl-netfleet/mvp.json` &&
 for (let ref in ["file:../escape", "file:/tmp/escape", "subscription:../alpha", "subscription:alpha/child", "other:alpha"])
 	check(resolve_profile(ref) == null, "profile_boundary_not_enforced");
 print(`backend_contract ${kind} passed\n`);
+
+release_services();

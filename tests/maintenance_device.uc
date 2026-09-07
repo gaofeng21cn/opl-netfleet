@@ -1,7 +1,18 @@
+import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
+const host = create("/usr/libexec/opl-netfleet");
 import * as fs from "fs";
 import { cursor } from "uci";
-import { get, profile_get, profile_save, profile_delete, backup_export, backup_restore, core_action, diagnostics } from "/usr/libexec/opl-netfleet/application/maintenance.uc";
-import { sha256, current_profile, shell_quote as q } from "/usr/libexec/opl-netfleet/adapters/uci.uc";
+const get = host.use("maintenance.editor").get;
+const profile_get = host.use("maintenance.editor").profile_get;
+const profile_save = host.use("maintenance.editor").profile_save;
+const profile_delete = host.use("maintenance.editor").profile_delete;
+const backup_export = host.use("maintenance.editor").backup_export;
+const backup_restore = host.use("maintenance.editor").backup_restore;
+const core_action = host.use("maintenance.editor").core_action;
+const diagnostics = host.use("maintenance.editor").diagnostics;
+const sha256 = host.use("platform.uci").sha256;
+const current_profile = host.use("platform.uci").current_profile;
+const q = host.use("platform.uci").shell_quote;
 
 function check(value, label) { if (!value) die(label); };
 const work = "/tmp/netfleet-maintenance-fixture";
@@ -92,3 +103,5 @@ check(fs.chmod(packaged_baseline, baseline_mode), "baseline mode restored");
 fs.unlink(envelope);
 lock.close();
 print("maintenance_device_ok\n");
+
+host.release();

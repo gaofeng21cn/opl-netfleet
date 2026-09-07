@@ -1,10 +1,15 @@
 import * as fs from "fs";
-import * as extensions from "/usr/libexec/opl-netfleet/application/extensions.uc";
-import * as compatibility from "/usr/libexec/opl-netfleet/application/compatibility.uc";
-import * as dashboard from "/usr/libexec/opl-netfleet/application/dashboard.uc";
-import { descriptor_error } from "/usr/libexec/opl-netfleet/core/extensions.uc";
+import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
+const host = create("/usr/libexec/opl-netfleet");
+const compatibility = host.use("https-compat.control");
+const dashboard = host.use("dashboard.control");
+const descriptor_error = host.use("models.extensions").descriptor_error;
 
 function check(value, message) { if (!value) die(message); };
+function dispatch(command, envelope) {
+	const entry = host.command(command);
+	return entry == null ? null : host.call(entry.service, entry.method, [command, envelope]);
+};
 const rpc_path = ARGV[0] ?? "/usr/libexec/rpcd/opl-netfleet";
 const acl_path = ARGV[1] ?? "/usr/share/rpcd/acl.d/luci-app-netfleet.json";
 const rpc = fs.popen(`sh '${rpc_path}' list`);
@@ -14,6 +19,7 @@ const acl = json(fs.readfile(acl_path));
 for (let definition in [compatibility.extension, dashboard.extension]) {
 	check(descriptor_error(definition) == null, "shipped module descriptor validates");
 	for (let command, entry in definition.commands) {
+		check(host.command(command) != null, "adapter command registered by installed service manifest");
 		const method = replace(command, "-", "_");
 		check(methods[method] != null, "declared command exists in real RPC list");
 		let permitted = false;
@@ -21,15 +27,19 @@ for (let definition in [compatibility.extension, dashboard.extension]) {
 		check(permitted, "declared access matches installed RPC ACL");
 	}
 }
-const rows = extensions.inventory({}, { zashboard: { available: true, installed_version: "v1.0.0" } });
-check(length(rows) == 2 && rows[1].installed_version == "v1.0.0", "inventory reuses resource owner projection");
-check(extensions.dispatch("compatibility-private-backup") == null && extensions.dispatch("compatibility-tick") == null,
+const rows = host.inventory(null);
+for (let id, enabled in host.system.enabled) if (enabled)
+	check(length(filter(rows, row => row.id == id && row.runtime == "service")) == 1, "configured service plugin appears once in inventory");
+const components = host.use("components.control").get();
+check(components.dashboard.installed_version == dashboard.resource().installed_version, "components reuses resource owner version");
+check(dispatch("compatibility-private-backup") == null && dispatch("compatibility-tick") == null,
 	"private operations not exposed by registry");
 check(compatibility.dispatch("run").error == "extension_action_not_allowed", "adapter cannot bypass allowlist");
 check(dashboard.dispatch("unknown").error == "extension_action_not_allowed", "resource adapter rejects unknown method");
 if (!compatibility.inspection().available) {
-	check(extensions.dispatch("compatibility-get").result.installed == false, "absent optional component readable through real registry");
-	check(extensions.dispatch("compatibility-enable", "/unused").ok == false, "absent optional component cannot activate");
+	check(dispatch("compatibility-get").result.installed == false, "absent optional component readable through real registry");
+	check(dispatch("compatibility-enable", "/unused").ok == false, "absent optional component cannot activate");
 }
-check(extensions.dispatch("dashboard-get").ok == true, "resource caller reaches existing owner");
+check(dispatch("dashboard-get").ok == true, "resource caller reaches existing owner");
+host.release();
 print("extensions_device_ok\n");

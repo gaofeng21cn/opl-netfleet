@@ -1,0 +1,50 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "platform",
+  "label": "OpenWrt platform",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-platform",
+  "services": {
+    "platform.runtime": {
+      "version": 1,
+      "module": "lib/runtime.uc",
+      "requires": {}
+    },
+    "platform.uci": {
+      "version": 1,
+      "module": "lib/uci.uc",
+      "requires": {
+        "models.subscriptions": 1,
+        "platform.runtime": 1
+      }
+    },
+    "platform.files": {
+      "version": 1,
+      "module": "lib/files.uc",
+      "requires": {
+        "platform.uci": 1
+      }
+    },
+    "platform.service": {
+      "version": 1,
+      "module": "lib/service.uc",
+      "requires": {}
+    },
+    "platform.documents": {
+      "version": 1,
+      "module": "lib/documents.uc",
+      "requires": {
+        "models.evidence": 1,
+        "models.policy": 1,
+        "platform.uci": 1
+      }
+    }
+  },
+  "commands": {},
+  "package_dependencies": [
+    "ucode-mod-uci",
+    "yq",
+    "ip-full"
+  ]
+}

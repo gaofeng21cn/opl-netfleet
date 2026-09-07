@@ -1,7 +1,8 @@
 #!/usr/bin/ucode
+import { use, release as release_services } from "./services.uc";
 
-import { build } from "../openwrt/files/usr/libexec/opl-netfleet/core/status.uc";
-import { MEASUREMENT_MODEL } from "../openwrt/files/usr/libexec/opl-netfleet/core/evidence.uc";
+const build = use("models.status").build;
+const MEASUREMENT_MODEL = use("models.evidence").MEASUREMENT_MODEL;
 
 const policy = {
 	main: { enabled: true },
@@ -552,3 +553,5 @@ if (stale_owner_result.actions?.can_disable != true ||
 }
 
 print("status_contract_ok\n");
+
+release_services();

@@ -1,9 +1,15 @@
 #!/usr/bin/ucode
+import { use, release as release_services } from "./services.uc";
 
-import {
-	enabled_sections, referenced_sections, quota_config, cache_accepted, evaluate_entry, summarize,
-	public_results, unavailable_results, project
-} from "../openwrt/files/usr/libexec/opl-netfleet/core/subscription.uc";
+const enabled_sections = use("models.subscription").enabled_sections;
+const referenced_sections = use("models.subscription").referenced_sections;
+const quota_config = use("models.subscription").quota_config;
+const cache_accepted = use("models.subscription").cache_accepted;
+const evaluate_entry = use("models.subscription").evaluate_entry;
+const summarize = use("models.subscription").summarize;
+const public_results = use("models.subscription").public_results;
+const unavailable_results = use("models.subscription").unavailable_results;
+const project = use("models.subscription").project;
 
 const policy = {
 	providers: {
@@ -220,3 +226,5 @@ if (unavailable.last_result != "upstream_unavailable" ||
 }
 
 print("subscription_contract_ok\n");
+
+release_services();

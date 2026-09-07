@@ -71,8 +71,9 @@ def build(candidate, output):
                 shutil.copy2(archive, output / kind / archive.name)
         (output / "old").mkdir()
         core_versions = {}
-        for name in ("opl-netfleet", "luci-app-netfleet", "mihomo-meta"):
-            archive = next(candidate.glob(f"{name}-*.apk"))
+        artifacts = {item["package"]: item["name"] for item in manifest["artifacts"] + manifest["dependency_artifacts"]}
+        for name, filename in artifacts.items():
+            archive = candidate / filename
             metadata = json.loads(run("adbdump", "--format", "json", archive))
             package_version = metadata["info"]["version"]
             base, release = package_version.rsplit("-r", 1)
@@ -105,7 +106,7 @@ def build(candidate, output):
 
             package(prior, "good")
             shutil.copy2(output / "good" / f"{name}-{prior}.apk", output / "old")
-            if name == "opl-netfleet":
+            if name == "opl-netfleet-plugin-mihomo":
                 init = root / "etc/init.d/opl-netfleet-core"
                 source = init.read_text()
                 if source.count("start_service() {\n") != 1:
@@ -123,6 +124,7 @@ def build(candidate, output):
     (output / "fixture.json").write_text(json.dumps({
         "schema_version": 1, "version": version, "old_version": old_version, "bad_version": bad_version,
         "source_commit": manifest["source_commit"], "source_tree": manifest["source_tree"],
+        "product_packages": sorted(manifest["artifact_files"]),
         **core_versions,
     }, sort_keys=True) + "\n")
 

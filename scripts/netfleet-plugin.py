@@ -12,14 +12,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE = ROOT / "examples/plugins/device-info"
-FIELDS = {"schema", "id", "label", "version", "api_version", "package",
-          "dependencies", "backends", "permissions", "actions"}
-RESERVED = {"https-compat", "zashboard"}
+SERVICE_EXAMPLE = ROOT / "examples/plugins/host-info"
+COMMON_FIELDS = {"schema", "id", "label", "version", "api_version", "package"}
+PROCESS_FIELDS = COMMON_FIELDS | {"dependencies", "backends", "permissions", "actions"}
+SERVICE_FIELDS = COMMON_FIELDS | {"services", "commands"}
 LIFECYCLE = {"get", "load", "unload", "reload"}
 
 
 def valid_id(value):
-    return (isinstance(value, str) and len(value) <= 48 and value not in RESERVED
+    return (isinstance(value, str) and len(value) <= 48
             and re.fullmatch(r"[a-z][a-z0-9]*(-[a-z0-9]+)*", value) is not None)
 
 
@@ -32,35 +33,9 @@ def unique_object(pairs):
     return result
 
 
-def validate(source):
-    if source.is_symlink() or not source.is_dir():
-        raise ValueError("plugin source must be a regular directory")
-    files = []
-    for path in sorted(source.rglob("*")):
-        relative = path.relative_to(source)
-        info = path.lstat()
-        if any(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", part) is None
-               for part in relative.parts):
-            raise ValueError(f"unsupported payload path: {relative}")
-        if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
-            raise ValueError(f"payload must not contain links or special files: {relative}")
-        if info.st_mode & 0o022:
-            raise ValueError(f"payload must not be writable by group or others: {relative}")
-        if relative.parts[0] not in {"manifest.json", "control", "LICENSE", "resources"}:
-            raise ValueError(f"put additional payload under resources/: {relative}")
-        if stat.S_ISREG(info.st_mode):
-            files.append(relative)
-    manifest_path, control = source / "manifest.json", source / "control"
-    if not manifest_path.is_file() or manifest_path.stat().st_size > 16384:
-        raise ValueError("manifest.json must be a regular file of at most 16384 bytes")
-    if (not control.is_file() or not control.stat().st_mode & 0o111
-            or control.stat().st_size > 1048576):
-        raise ValueError("control must be executable and at most 1048576 bytes")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
-    if not isinstance(manifest, dict) or set(manifest) != FIELDS:
-        raise ValueError("manifest must contain exactly the API v1 fields")
-    if manifest["schema"] != "opl-netfleet-plugin.v1" or not valid_id(manifest["id"]):
-        raise ValueError("invalid plugin schema or id")
+def validate_identity(manifest):
+    if not valid_id(manifest["id"]):
+        raise ValueError("invalid plugin id")
     if type(manifest["api_version"]) is not int or manifest["api_version"] != 1:
         raise ValueError("this SDK supports api_version 1")
     if (not isinstance(manifest["label"], str) or not 1 <= len(manifest["label"]) <= 120
@@ -71,13 +46,23 @@ def validate(source):
         raise ValueError("invalid package version")
     if manifest["package"] != f"opl-netfleet-plugin-{manifest['id']}":
         raise ValueError("package must be opl-netfleet-plugin-<id>")
+
+
+def validate_package_names(value, field):
+    if (not isinstance(value, list) or any(not isinstance(name, str) for name in value)
+            or len(set(value)) != len(value)):
+        raise ValueError(f"{field} must be an array of unique package names")
+    if any(re.fullmatch(r"[a-z][a-z0-9+-]*", name) is None for name in value):
+        raise ValueError(f"invalid package name in {field}")
+
+
+def validate_process(manifest):
     for key in ("dependencies", "backends", "permissions"):
         if not isinstance(manifest[key], list) or any(not isinstance(value, str) for value in manifest[key]):
             raise ValueError(f"{key} must be an array of strings")
         if len(set(manifest[key])) != len(manifest[key]):
             raise ValueError(f"{key} must not contain duplicates")
-    if any(re.fullmatch(r"[a-z][a-z0-9+-]*", name) is None for name in manifest["dependencies"]):
-        raise ValueError("invalid dependency package name")
+    validate_package_names(manifest["dependencies"], "dependencies")
     if not manifest["backends"] or set(manifest["backends"]) - {"native-mihomo", "nikki-mihomo"}:
         raise ValueError("unsupported backend")
     if set(manifest["permissions"]) - {"diagnostics", "network", "resources"}:
@@ -87,6 +72,93 @@ def validate(source):
             not valid_id(name) or name in LIFECYCLE or access not in ("read", "write")
             for name, access in actions.items()):
         raise ValueError("invalid custom action or access; lifecycle actions are implicit")
+
+
+def valid_service(value):
+    return (isinstance(value, str) and len(value) <= 128
+            and re.fullmatch(r"[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+", value) is not None)
+
+
+def validate_method(value, fields):
+    return (isinstance(value, dict) and set(value) == fields
+            and valid_service(value.get("service")) and isinstance(value.get("method"), str)
+            and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", value["method"]) is not None)
+
+
+def validate_service(manifest, source):
+    validate_package_names(manifest.get("package_dependencies", []), "package_dependencies")
+    services, commands = manifest["services"], manifest["commands"]
+    if not isinstance(services, dict) or not services:
+        raise ValueError("services must declare at least one service")
+    for name, service in services.items():
+        if (not valid_service(name) or not isinstance(service, dict)
+                or set(service) != {"version", "module", "requires"}
+                or type(service["version"]) is not int or service["version"] < 1):
+            raise ValueError(f"invalid service declaration: {name}")
+        module = service["module"]
+        if (not isinstance(module, str)
+                or re.fullmatch(r"lib/[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*\.uc", module) is None
+                or not (source / module).is_file()):
+            raise ValueError(f"service module must name an installed relative UCode file: {name}")
+        requires = service["requires"]
+        if not isinstance(requires, dict) or any(
+                not valid_service(dependency) or type(major) is not int or major < 1
+                for dependency, major in requires.items()):
+            raise ValueError(f"invalid required service interface: {name}")
+    if not isinstance(commands, dict) or any(
+            not valid_id(name) or not validate_method(command, {"service", "method", "access"})
+            or command["service"] not in services
+            or command["access"] not in ("read", "write")
+            for name, command in commands.items()):
+        raise ValueError("invalid service command")
+    if "lifecycle" in manifest:
+        lifecycle = manifest["lifecycle"]
+        if not isinstance(lifecycle, dict) or set(lifecycle) != {"drain", "resume"} or any(
+                not validate_method(method, {"service", "method"}) or method["service"] not in services
+                for method in lifecycle.values()):
+            raise ValueError("lifecycle must declare local drain and resume methods")
+
+
+def validate(source):
+    if source.is_symlink() or not source.is_dir():
+        raise ValueError("plugin source must be a regular directory")
+    manifest_path = source / "manifest.json"
+    if (manifest_path.is_symlink() or not manifest_path.is_file()
+            or manifest_path.stat().st_size > 16384):
+        raise ValueError("manifest.json must be a regular file of at most 16384 bytes")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    if not isinstance(manifest, dict):
+        raise ValueError("manifest must be an object")
+    service_plugin = manifest.get("schema") == "opl-netfleet-service-plugin.v1"
+    if service_plugin:
+        if not SERVICE_FIELDS <= set(manifest) or set(manifest) - SERVICE_FIELDS - {"package_dependencies", "lifecycle"}:
+            raise ValueError("manifest must contain the service API v1 fields")
+    elif manifest.get("schema") != "opl-netfleet-plugin.v1" or set(manifest) != PROCESS_FIELDS:
+        raise ValueError("manifest must contain the process API v1 fields")
+    validate_identity(manifest)
+    files = []
+    for path in sorted(source.rglob("*")):
+        relative = path.relative_to(source)
+        info = path.lstat()
+        if any(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", part) is None for part in relative.parts):
+            raise ValueError(f"unsupported payload path: {relative}")
+        if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
+            raise ValueError(f"payload must not contain links or special files: {relative}")
+        if info.st_mode & 0o022:
+            raise ValueError(f"payload must not be writable by group or others: {relative}")
+        if not service_plugin and relative.parts[0] not in {"manifest.json", "control", "LICENSE", "resources"}:
+            raise ValueError(f"put additional payload under resources/: {relative}")
+        if stat.S_ISREG(info.st_mode):
+            if info.st_size > 1048576 or len(files) >= 512:
+                raise ValueError("plugin payload exceeds the runtime file limits")
+            files.append(relative)
+    if service_plugin:
+        validate_service(manifest, source)
+    else:
+        control = source / "control"
+        if (not control.is_file() or not control.stat().st_mode & 0o111 or control.stat().st_size > 1048576):
+            raise ValueError("control must be executable and at most 1048576 bytes")
+        validate_process(manifest)
     return manifest, files
 
 
@@ -106,68 +178,47 @@ def create_directory(destination, populate):
             shutil.rmtree(temporary)
 
 
-def scaffold(plugin_id, destination, label):
-    if not valid_id(plugin_id):
-        raise ValueError("invalid or reserved plugin id")
-    manifest, _ = validate(EXAMPLE)
+def scaffold(plugin_id, destination, label, kind="process"):
+    if not valid_id(plugin_id) or kind not in ("process", "service"):
+        raise ValueError("invalid plugin id or kind")
+    example = SERVICE_EXAMPLE if kind == "service" else EXAMPLE
+    manifest, files = validate(example)
     manifest.update(id=plugin_id, label=label or plugin_id,
                     package=f"opl-netfleet-plugin-{plugin_id}")
+    if kind == "service":
+        manifest["services"] = {
+            name.replace("host-info.", f"{plugin_id}.", 1): {
+                **service, "requires": {name.replace("host-info.", f"{plugin_id}.", 1): major
+                                        for name, major in service["requires"].items()}}
+            for name, service in manifest["services"].items()}
+        manifest["commands"] = {plugin_id: {"service": f"{plugin_id}.summary", "method": "inspect", "access": "read"}}
 
     def populate(target):
         (target / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        control = (EXAMPLE / "control").read_text(encoding="utf-8")
-        (target / "control").write_text(control.replace('const ID = "device-info";', f'const ID = "{plugin_id}";'), encoding="utf-8")
-        (target / "control").chmod(0o755)
+        for relative in files:
+            if str(relative) in {"manifest.json", "LICENSE"}:
+                continue
+            output = target / relative
+            output.parent.mkdir(parents=True, exist_ok=True)
+            content = (example / relative).read_text(encoding="utf-8")
+            content = content.replace('const ID = "device-info";', f'const ID = "{plugin_id}";')
+            content = content.replace('context.use("host-info.reader")', f'context.use("{plugin_id}.reader")')
+            output.write_text(content, encoding="utf-8")
+            output.chmod(0o755 if (example / relative).stat().st_mode & 0o111 else 0o644)
         shutil.copyfile(ROOT / "LICENSE", target / "LICENSE")
         validate(target)
 
     create_directory(destination, populate)
-    return {"id": plugin_id, "source": str(destination), "actions": manifest["actions"]}
+    return {"id": plugin_id, "kind": kind, "source": str(destination),
+            **({"services": manifest["services"], "commands": manifest["commands"]} if kind == "service"
+               else {"actions": manifest["actions"]})}
 
 
-DRAIN_HOOK = r'''#!/bin/sh
-[ -n "${IPKG_INSTROOT}" ] && exit 0
-id=@ID@
-main=/usr/libexec/opl-netfleet/main.uc
-# Keep new calls out until the package manager has finished replacing files.
-until ucode -e '
-import * as fs from "fs";
-const root = "/var/run/opl-netfleet-plugin-maintenance";
-for (let path in [root, `${root}/${ARGV[0]}`]) {
-    if (fs.lstat(path) == null && !fs.mkdir(path, 0700)) exit(1);
-    const info = fs.lstat(path);
-    if (info?.type != "directory" || info.uid != 0 || (info.mode & 022)) exit(1);
-}
-' "$id"; do
-    printf '%s\n' "$id: waiting for a safe package maintenance directory" >&2
-    sleep 2
-done
-umask 077
-until work=$(mktemp -d /tmp/opl-netfleet-plugin-package.XXXXXX); do sleep 2; done
-trap 'rm -rf "$work"' EXIT
-drain() {
-    ucode "$main" plugins-list >"$work/list.json" || return 1
-    ucode -e '
-import * as fs from "fs";
-const list = json(fs.readfile(ARGV[0]));
-const row = filter(list?.result?.plugins ?? [], item => item.id == ARGV[2])[0];
-const revision = row == null ? "absent" : row.revision;
-if (list?.ok != true || type(revision) != "string") exit(1);
-printf("%J\n", { request: { id: ARGV[2], action: "unload", revision: revision, confirm: true, params: {} } });
-' "$work/list.json" "$work/request.json" "$id" >"$work/request.json" || return 1
-    ucode "$main" plugin-drain "$work/request.json" >"$work/call.json" || return 1
-    ucode -e '
-import * as fs from "fs";
-const result = json(fs.readfile(ARGV[0]));
-exit(result?.ok == true && result?.result?.loaded == false && result?.result?.state == "replacing" ? 0 : 1);
-' "$work/call.json"
-}
-if ! drain; then
-    printf '%s\n' "$id: waiting for unload/readback; old plugin files must remain available" >&2
-    # APK may ignore a failing hook, so do not return until exit is confirmed.
-    until drain; do sleep 2; done
-fi
-exit 0
+def package_hook(plugin_id, phase):
+    return f'''#!/bin/sh
+[ -n "$${{IPKG_INSTROOT}}" ] && exit 0
+[ "$$1" != upgrade ] || export PKG_UPGRADE=1
+exec /usr/libexec/opl-netfleet-plugin-package {plugin_id} {phase}
 '''
 
 
@@ -177,16 +228,12 @@ def makefile(manifest, license_id, release):
     if release < 1:
         raise ValueError("--release must be positive")
     plugin_id, package = manifest["id"], manifest["package"]
-    dependencies = " ".join("+" + name for name in dict.fromkeys(
-        ["opl-netfleet", "netfleet-plugin-api-v1", *manifest["dependencies"]]))
-    hook = DRAIN_HOOK.replace("@ID@", plugin_id).replace("$", "$$")
-    clear = f'''#!/bin/sh
-[ -n "$${{IPKG_INSTROOT}}" ] && exit 0
-rm -f /var/run/opl-netfleet-plugin-maintenance/{plugin_id}/replacing
-rmdir /var/run/opl-netfleet-plugin-maintenance/{plugin_id} 2>/dev/null || true
-exit 0
-'''
-    postrm = clear.replace('rm -f ', '[ "$${PKG_UPGRADE:-0}" = 1 ] && exit 0\n[ "$$1" = upgrade ] && exit 0\nrm -f ')
+    requirements = ["opl-netfleet-kernel"]
+    if manifest["schema"] == "opl-netfleet-service-plugin.v1":
+        requirements.extend(manifest.get("package_dependencies", []))
+    else:
+        requirements.extend(["netfleet-plugin-api-v1", *manifest["dependencies"]])
+    dependencies = " ".join("+" + name for name in dict.fromkeys(requirements))
     return f'''include $(TOPDIR)/rules.mk
 
 PKG_NAME:={package}
@@ -212,16 +259,16 @@ define Build/Compile
 endef
 
 define Package/{package}/preinst
-{hook}endef
+{package_hook(plugin_id, "preinst")}endef
 
 define Package/{package}/prerm
-{hook}endef
+{package_hook(plugin_id, "prerm")}endef
 
 define Package/{package}/postinst
-{clear}endef
+{package_hook(plugin_id, "postinst")}endef
 
 define Package/{package}/postrm
-{postrm}endef
+{package_hook(plugin_id, "postrm")}endef
 
 define Package/{package}/install
 \t$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/plugins/{plugin_id}
@@ -259,6 +306,7 @@ def main():
     create.add_argument("id")
     create.add_argument("destination", type=Path)
     create.add_argument("--label")
+    create.add_argument("--kind", choices=("process", "service"), default="process")
     check = commands.add_parser("validate", help="validate the manifest and installable payload")
     check.add_argument("source", type=Path)
     package = commands.add_parser("package-source", help="generate standard OpenWrt package source")
@@ -269,7 +317,7 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "scaffold":
-            result = scaffold(args.id, args.destination, args.label)
+            result = scaffold(args.id, args.destination, args.label, args.kind)
         elif args.command == "validate":
             manifest, files = validate(args.source)
             result = {"id": manifest["id"], "api_version": manifest["api_version"], "files": [str(path) for path in files]}

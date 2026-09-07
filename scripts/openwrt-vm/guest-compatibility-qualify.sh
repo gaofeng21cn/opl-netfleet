@@ -35,10 +35,12 @@ else
  ln -s "$vendor" /usr/lib/opl-netfleet-compat/vendor
  cp -R /tmp/openwrt/https-compat/files/. /
  cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
+cp /tmp/openwrt/files/usr/libexec/opl-netfleet-plugin-package /usr/libexec/
+chmod 0755 /usr/libexec/opl-netfleet-plugin-package
  cp /tmp/openwrt/files/etc/config/netfleet /etc/config/netfleet
  cp /tmp/openwrt/files/etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet-core
  mkdir -p /usr/share/opl-netfleet
- cp -R /tmp/openwrt/files/usr/share/opl-netfleet/nikki /usr/share/opl-netfleet/
+ cp -R /tmp/openwrt/files/usr/share/opl-netfleet/. /usr/share/opl-netfleet/
  gzip -dc /tmp/mihomo-linux-arm64-v1.19.30.gz >/tmp/compat-mihomo
  ln -s /tmp/compat-mihomo /usr/bin/mihomo
  ln -s /tmp/yq_linux_arm64-v4.53.6 /usr/bin/yq

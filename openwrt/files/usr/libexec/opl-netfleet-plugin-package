@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+[ -z "${IPKG_INSTROOT:-}" ] || exit 0
+id=${1:?plugin id required}
+phase=${2:?package phase required}
+main=/usr/libexec/opl-netfleet/main.uc
+case "$phase" in
+	ready) exec ucode "$main" plugin-package-ready "$id" ;;
+	preinst|prerm) action=plugin-package-drain ;;
+	postinst) action=plugin-package-resume ;;
+	postrm)
+		[ "${PKG_UPGRADE:-0}" != 1 ] || exit 0
+		[ "${3:-}" != upgrade ] || exit 0
+		action=plugin-package-remove ;;
+	*) exit 2 ;;
+esac
+# APK may continue after a failed pre-hook. Keep old files present until the
+# owner has stopped and all calls using this plugin generation have completed.
+while ! ucode "$main" "$action" "$id"; do
+	case "$phase" in postinst|postrm) exit 1 ;; esac
+	printf '%s\n' "$id: waiting for plugin drain and owner readback" >&2
+	sleep 2
+done

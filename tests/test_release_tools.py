@@ -26,6 +26,8 @@ def sha256(path: Path) -> str:
 def write_release(directory: Path, commit: str, tree: str, version: str = '0.4.5') -> None:
     packages = {
         'opl-netfleet': f'opl-netfleet-{version}-r1.apk',
+        'opl-netfleet-kernel': f'opl-netfleet-kernel-{version}-r1.apk',
+        'opl-netfleet-plugin-models': f'opl-netfleet-plugin-models-{version}-r1.apk',
         'luci-app-netfleet': f'luci-app-netfleet-{version}-r1.apk',
     }
     artifacts = []
@@ -176,7 +178,7 @@ class ReleaseToolsTests(unittest.TestCase):
         self.assertIn("'package_arch':package_arch", packager)
         self.assertIn("'build_target_arch':build_target_arch", packager)
         self.assertIn("manifest['feed_bootstrap']={'name':'install-netfleet.sh'", packager)
-        self.assertIn('opl-netfleet-${version}-r${release}.apk', packager)
+        self.assertIn('${package_name}-${artifact_version}-r${release}.apk', packager)
         for path in (ROOT / 'scripts/netfleet-package-build.sh', ROOT / 'openwrt/Makefile', ROOT / 'openwrt/luci-app-netfleet/Makefile'):
             text = path.read_text()
             self.assertNotIn('subscriptions.json', text)
@@ -248,7 +250,7 @@ class ReleaseToolsTests(unittest.TestCase):
                                                 '--apk', str(apk_tool), '--sign-key', str(release / 'opl-netfleet-apk.pem'),
                                                 '--output', str(feed)], text=True, capture_output=True)
                         self.assertEqual(built.returncode, 0, built.stderr)
-                        self.assertEqual(len(list(feed.glob('*.apk'))), 3)
+                        self.assertEqual(len(list(feed.glob('*.apk'))), 5)
                         self.assertIn(core.name, (feed / 'packages.adb').read_text())
 
     def test_release_verifier_accepts_exact_source_and_public_readback(self):
@@ -275,7 +277,7 @@ class ReleaseToolsTests(unittest.TestCase):
         receipt = json.loads(result.stdout)
         self.assertTrue(receipt['ok'])
         self.assertTrue(receipt['matches_expected_directory'])
-        self.assertEqual(7, receipt['file_count'])
+        self.assertEqual(9, receipt['file_count'])
 
     def test_release_verifier_rejects_source_identity_drift(self):
         with tempfile.TemporaryDirectory() as directory:

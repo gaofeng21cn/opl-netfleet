@@ -1,6 +1,9 @@
 #!/usr/bin/ucode
+import { use, release as release_services } from "./services.uc";
 
-import { append, validate, EVENT_LIMIT } from "../openwrt/files/usr/libexec/opl-netfleet/core/events.uc";
+const append = use("events.model").append;
+const validate = use("events.model").validate;
+const EVENT_LIMIT = use("events.model").EVENT_LIMIT;
 
 const additions = [];
 for (let i = 0; i < EVENT_LIMIT + 10; i++) {
@@ -39,3 +42,5 @@ if (!validate(store).ok || length(store.events) != EVENT_LIMIT || store.events[0
 }
 
 print("events_contract_ok\n");
+
+release_services();

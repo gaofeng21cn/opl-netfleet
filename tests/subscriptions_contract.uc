@@ -1,4 +1,11 @@
-import { valid_id, valid_url, desired_source, userinfo, referenced, public_source, source_identity_input } from "../openwrt/files/usr/libexec/opl-netfleet/core/subscriptions.uc";
+import { use, release as release_services } from "./services.uc";
+const valid_id = use("models.subscriptions").valid_id;
+const valid_url = use("models.subscriptions").valid_url;
+const desired_source = use("models.subscriptions").desired_source;
+const userinfo = use("models.subscriptions").userinfo;
+const referenced = use("models.subscriptions").referenced;
+const public_source = use("models.subscriptions").public_source;
+const source_identity_input = use("models.subscriptions").source_identity_input;
 
 function check(value, label) { if (!value) die(label); };
 const source = { id: "Provider_1", name: "Example", url: "https://example.test/sub?token=private", user_agent: "clash.meta", info_url: "", prefer: "remote" };
@@ -55,3 +62,5 @@ check(current.cache_current && !current.pending_update && !current.using_previou
 	"accepted new URL with identical bytes is current");
 check(public_source(source, { present: false }).pending_update, "new source needs explicit refresh");
 print("subscriptions_contract_ok\n");
+
+release_services();

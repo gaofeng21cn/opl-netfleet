@@ -116,6 +116,10 @@ ln "$bin/mihomo" "$bin/netfleet-test-reserve"
 ln /tmp/yq_linux_arm64-v4.53.6 "$bin/yq"
 chmod 0755 "$bin/mihomo" "$bin/netfleet-test-primary" "$bin/netfleet-test-reserve" "$bin/yq"
 cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
+cp /tmp/openwrt/files/usr/libexec/opl-netfleet-plugin-package /usr/libexec/
+chmod 0755 /usr/libexec/opl-netfleet-plugin-package
+mkdir -p /usr/share/opl-netfleet
+cp -R /tmp/openwrt/files/usr/share/opl-netfleet/. /usr/share/opl-netfleet/
 cp /tmp/openwrt/files/etc/init.d/opl-netfleet /etc/init.d/opl-netfleet
 cp /tmp/openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json \
 	/etc/opl-netfleet/policy-sources/base-v1.json
@@ -523,7 +527,7 @@ done
 run_timed onboarding_disable run_locked /var/lock/opl-netfleet-deploy.lock ucode "$main" disable vm
 [ "$(uci -q get nikki.config.profile)" = subscription:base ]
 assert_controller onboarding_after_disable
-ucode -e 'import { remove_artifact } from "/usr/libexec/opl-netfleet/adapters/backend.uc"; exit(remove_artifact() ? 0 : 1)'
+ucode -e 'import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc"; const host = create("/usr/libexec/opl-netfleet"); exit(host.use("mihomo.backend").remove_artifact() ? 0 : 1)'
 rm -f /etc/opl-netfleet/policy.json /etc/opl-netfleet/evidence.json
 cp "$work/manual-policy.json" /etc/opl-netfleet/policy.json
 
@@ -544,7 +548,7 @@ stage=connections_readback
 run_timed connections ucode "$main" connections
 [ "$(jsonfilter -i "$work/connections.json" -e '@.result.count')" -ge 0 ]
 ! grep -Eq '"(id|sourceIP|source_ip|process|upload|download)"[[:space:]]*:' "$work/connections.json"
-projected_port=$(ucode -e 'import { project_connections } from "/usr/libexec/opl-netfleet/adapters/mihomo.uc"; print(project_connections({ connections: [{ metadata: { destinationIP: "198.51.100.1", destinationPort: "443" } }] }, 1).connections[0].destination_port)')
+projected_port=$(ucode -e 'import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc"; const host = create("/usr/libexec/opl-netfleet"); print(host.use("mihomo.controller").project_connections({ connections: [{ metadata: { destinationIP: "198.51.100.1", destinationPort: "443" } }] }, 1).connections[0].destination_port)')
 [ "$projected_port" = 443 ]
 
 stage=config_inactive
@@ -610,7 +614,9 @@ automatic_group=$(jsonfilter -i /etc/nikki/profiles/opl-netfleet/mvp.manifest.js
 [ -n "$automatic_group" ]
 latest_history_time() {
 	ucode -e '
-		import { proxies } from "/usr/libexec/opl-netfleet/adapters/mihomo.uc";
+		import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
+		const host = create("/usr/libexec/opl-netfleet");
+		const proxies = host.use("mihomo.controller").proxies;
 		const state = proxies("netfleet-vm-fixture", 2);
 		const history = state?.proxies?.[ARGV[0]]?.history ?? [];
 		print(length(history) > 0 ? history[length(history) - 1].time : "");
@@ -619,7 +625,9 @@ latest_history_time() {
 direct_history_before=$(latest_history_time DIRECT)
 guard_history_before=$(latest_history_time "$direct_guard")
 ucode -e '
-	import { measure } from "/usr/libexec/opl-netfleet/adapters/latency.uc";
+	import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
+	const host = create("/usr/libexec/opl-netfleet");
+	const measure = host.use("mihomo.latency").measure;
 	const group = ARGV[0];
 	const guard = ARGV[1];
 	const result = measure("netfleet-vm-fixture", group, {

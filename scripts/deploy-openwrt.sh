@@ -344,7 +344,10 @@ for field in ("files_manifest",):
         raise SystemExit(f"deploy-openwrt: package manifest missing {field}")
     required.append(value)
 artifacts = manifest.get("artifacts")
-if not isinstance(artifacts, list) or len(artifacts) != 2 or {item.get("package") for item in artifacts if isinstance(item, dict)} != {"opl-netfleet", "luci-app-netfleet"}:
+package_names = [item.get("package") for item in artifacts if isinstance(item, dict)] if isinstance(artifacts, list) else []
+if (len(package_names) != len(artifacts or []) or len(set(package_names)) != len(package_names)
+    or not {"opl-netfleet", "opl-netfleet-kernel", "luci-app-netfleet"}.issubset(package_names)
+    or any(not isinstance(name, str) or not re.fullmatch(r"(?:opl-netfleet(?:-kernel|-plugin-[a-z][a-z0-9-]*)?|luci-app-netfleet)", name) for name in package_names)):
     raise SystemExit("deploy-openwrt: package artifact set is invalid")
 artifact_files = manifest.get("artifact_files")
 if not isinstance(artifact_files, dict) or artifact_files != {item["package"]: item["name"] for item in artifacts}:
@@ -440,7 +443,8 @@ fi
 required=(
 	"openwrt/files/usr/libexec/opl-netfleet/main.uc"
 	"openwrt/files/usr/libexec/opl-netfleet/supervisor.uc"
-	"openwrt/files/usr/libexec/opl-netfleet/output.uc"
+	"openwrt/files/usr/libexec/opl-netfleet/kernel/host.uc"
+	"openwrt/files/usr/libexec/opl-netfleet-plugin-package"
 	"openwrt/files/usr/libexec/opl-netfleet-transfer"
 	"openwrt/files/usr/libexec/rpcd/opl-netfleet"
 	"openwrt/files/etc/init.d/opl-netfleet"
@@ -467,10 +471,15 @@ if [[ "$release_mode" == source ]]; then
 		"$payload_dir/usr/share/luci" "$payload_dir/usr/share/rpcd"
 	cp -R "$source_dir/openwrt/files/usr/libexec/opl-netfleet" "$payload_dir/usr/libexec/"
 	cp "$source_dir/openwrt/files/usr/libexec/opl-netfleet-transfer" "$payload_dir/usr/libexec/"
+	cp "$source_dir/openwrt/files/usr/libexec/opl-netfleet-plugin-package" "$payload_dir/usr/libexec/"
 	cp "$source_dir/openwrt/files/usr/libexec/rpcd/opl-netfleet" \
 		"$payload_dir/usr/libexec/rpcd/opl-netfleet"
 	cp "$source_dir/openwrt/files/etc/init.d/opl-netfleet" \
 		"$payload_dir/etc/init.d/opl-netfleet"
+	cp "$source_dir/openwrt/files/etc/init.d/opl-netfleet-core" "$payload_dir/etc/init.d/opl-netfleet-core"
+	mkdir -p "$payload_dir/usr/share/opl-netfleet"
+	cp -R "$source_dir/openwrt/files/usr/share/opl-netfleet/." "$payload_dir/usr/share/opl-netfleet/"
+	cp "$source_dir/openwrt/files/etc/config/netfleet" "$payload_dir/usr/share/opl-netfleet/netfleet.config"
 	cp -R "$source_dir/openwrt/files/etc/opl-netfleet/." "$payload_dir/etc/opl-netfleet/"
 	cp -R "$source_dir/openwrt/luci-app-netfleet/htdocs/." "$payload_dir/www/"
 	cp -R "$source_dir/openwrt/luci-app-netfleet/root/." "$payload_dir/"
@@ -487,9 +496,10 @@ if [[ "$release_mode" == source ]]; then
 	find "$payload_dir" -type f -exec chmod 0644 {} +
 	chmod 0755 "$payload_dir/usr/libexec/opl-netfleet/main.uc" \
 		"$payload_dir/usr/libexec/opl-netfleet-transfer" \
+		"$payload_dir/usr/libexec/opl-netfleet-plugin-package" \
 		"$payload_dir/usr/libexec/opl-netfleet/supervisor.uc" \
 		"$payload_dir/usr/libexec/rpcd/opl-netfleet" \
-		"$payload_dir/etc/init.d/opl-netfleet"
+		"$payload_dir/etc/init.d/opl-netfleet" "$payload_dir/etc/init.d/opl-netfleet-core"
 	if command -v xattr >/dev/null 2>&1; then
 		xattr -cr "$payload_dir" >/dev/null 2>&1 || die "cannot sanitize temporary payload metadata"
 	fi
@@ -532,8 +542,8 @@ if [[ "$release_mode" == package ]]; then
 	done < <(python3 - "$packages_dir/manifest.json" <<'PY'
 import json, sys
 value=json.load(open(sys.argv[1]))
-for name in ('opl-netfleet', 'luci-app-netfleet'):
-    print(value['artifact_files'][name])
+for name in value['artifact_files'].values():
+    print(name)
 key=value.get('apk_public_key')
 if key:
     print(key['name'])

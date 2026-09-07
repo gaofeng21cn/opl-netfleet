@@ -1,0 +1,45 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "events",
+  "label": "Events and operations",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-events",
+  "services": {
+    "events.model": {
+      "version": 1,
+      "module": "lib/model.uc",
+      "requires": {}
+    },
+    "events.store": {
+      "version": 1,
+      "module": "lib/store.uc",
+      "requires": {
+        "platform.runtime": 1,
+        "platform.uci": 1
+      }
+    },
+    "events.operation": {
+      "version": 1,
+      "module": "lib/operation.uc",
+      "requires": {}
+    },
+    "events.output": {
+      "version": 1,
+      "module": "lib/output.uc",
+      "requires": {
+        "events.operation": 1
+      }
+    },
+    "events.record": {
+      "version": 1,
+      "module": "lib/record.uc",
+      "requires": {
+        "events.model": 1,
+        "events.store": 1
+      }
+    }
+  },
+  "commands": {},
+  "package_dependencies": []
+}

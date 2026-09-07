@@ -1,4 +1,8 @@
-import { migrate_object, migrate_sections, profile_path, public_plan } from "../openwrt/files/usr/libexec/opl-netfleet/core/backend_migration.uc";
+import { use, release as release_services } from "./services.uc";
+const migrate_object = use("setup.migration-model").migrate_object;
+const migrate_sections = use("setup.migration-model").migrate_sections;
+const profile_path = use("setup.migration-model").profile_path;
+const public_plan = use("setup.migration-model").public_plan;
 
 function check(value, label) { if (!value) die(label); };
 const old = "/etc/nikki";
@@ -52,3 +56,5 @@ const exposed = sprintf("%J", public_plan({ ready: true, revision: "digest", sec
 for (let private_value in ["secret-is-private", "private-name", "private=token", "private.example", "192.0.2.1"])
 	check(index(exposed, private_value) < 0, "migration preview redaction");
 print("backend_migration_contract_ok\n");
+
+release_services();

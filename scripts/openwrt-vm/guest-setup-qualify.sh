@@ -9,7 +9,7 @@ feed_url=${4:-}
 work=/tmp/netfleet-setup-fixture
 candidate=$work/feed
 main=/usr/libexec/opl-netfleet/main.uc
-gateway=/usr/libexec/opl-netfleet/application/native_gateway.uc
+gateway=/usr/libexec/opl-netfleet/main.uc
 lock=/var/lock/opl-netfleet-deploy.lock
 stage=precondition
 helper_pids=
@@ -106,7 +106,7 @@ unconfigured() {
 	! /etc/init.d/opl-netfleet-core enabled
 	! /etc/init.d/opl-netfleet enabled
 	! /etc/init.d/opl-netfleet running
-	ucode "$gateway" status >"$work/clean-result.json"
+	ucode "$gateway" native-gateway-status >"$work/clean-result.json"
 	assert_json "$work/clean-result.json" '@.result.clean' true
 	assert_json "$work/clean-result.json" '@.result.core_running' false
 }
@@ -150,8 +150,10 @@ else
 	chmod 0755 "$work/bin/yq"
 	ln -s "$work/bin/yq" /usr/bin/yq
 	cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
+cp /tmp/openwrt/files/usr/libexec/opl-netfleet-plugin-package /usr/libexec/
+chmod 0755 /usr/libexec/opl-netfleet-plugin-package
 	mkdir -p /usr/share/opl-netfleet /etc/opl-netfleet/policy-sources
-	cp -R /tmp/openwrt/files/usr/share/opl-netfleet/nikki /usr/share/opl-netfleet/
+	cp -R /tmp/openwrt/files/usr/share/opl-netfleet/. /usr/share/opl-netfleet/
 	cp /tmp/openwrt/files/etc/config/netfleet /usr/share/opl-netfleet/netfleet.config
 	cp /tmp/openwrt/files/etc/opl-netfleet/policy.example.json /etc/opl-netfleet/policy.example.json
 	cp /tmp/openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json /etc/opl-netfleet/policy-sources/base-v1.json
@@ -275,7 +277,7 @@ assert_json /etc/opl-netfleet/backend.json '@.kind' native-mihomo
 [ "$(uci -q get netfleet.mixin.outbound_interface)" = wan ]
 [ "$(uci -q get netfleet.netfleet_dns_0.nameserver)" = 198.18.1.2 ]
 /etc/init.d/opl-netfleet-core enabled
-ucode "$gateway" status >"$work/gateway-ready-result.json"
+ucode "$gateway" native-gateway-status >"$work/gateway-ready-result.json"
 assert_json "$work/gateway-ready-result.json" '@.result.ready' true
 run_main onboarding-get >"$work/onboarding-get-result.json"
 assert_json "$work/onboarding-get-result.json" '@.result.ready' true
@@ -317,7 +319,7 @@ if [ -n "$feed_url" ]; then
 	/etc/init.d/opl-netfleet enabled
 	/etc/init.d/opl-netfleet running
 	/etc/init.d/opl-netfleet-core enabled
-	ucode "$gateway" status >"$work/upgraded-gateway-result.json"
+	ucode "$gateway" native-gateway-status >"$work/upgraded-gateway-result.json"
 	assert_json "$work/upgraded-gateway-result.json" '@.result.ready' true
 	run_main probe >"$work/upgraded-probe-result.json"
 	assert_json "$work/upgraded-probe-result.json" '@.ok' true
@@ -342,12 +344,12 @@ stage=disable_and_cleanup
 run_main disable >"$work/disable-result.json"
 assert_json "$work/disable-result.json" '@.ok' true
 [ "$(uci -q get netfleet.config.profile)" = subscription:setup ]
-ucode "$gateway" status >"$work/recovery-result.json"
+ucode "$gateway" native-gateway-status >"$work/recovery-result.json"
 assert_json "$work/recovery-result.json" '@.result.ready' true
 /etc/init.d/opl-netfleet stop
 /etc/init.d/opl-netfleet-core stop
 for attempt in $(seq 1 10); do
-	ucode "$gateway" status >"$work/stopped-result.json"
+	ucode "$gateway" native-gateway-status >"$work/stopped-result.json"
 	[ "$(jsonfilter -i "$work/stopped-result.json" -e '@.result.core_running')" != false ] || break
 	sleep 1
 done

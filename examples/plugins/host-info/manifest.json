@@ -1,0 +1,24 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "host-info",
+  "label": "Host information",
+  "version": "0.1.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-host-info",
+  "package_dependencies": [],
+  "services": {
+    "host-info.reader": {
+      "version": 1,
+      "module": "lib/reader.uc",
+      "requires": {}
+    },
+    "host-info.summary": {
+      "version": 1,
+      "module": "lib/summary.uc",
+      "requires": {"host-info.reader": 1}
+    }
+  },
+  "commands": {
+    "host-info": {"service": "host-info.summary", "method": "inspect", "access": "read"}
+  }
+}

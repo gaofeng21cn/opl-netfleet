@@ -1,5 +1,5 @@
 import * as fs from "fs";
-import { shell_quote as q } from "/usr/libexec/opl-netfleet/adapters/uci.uc";
+import { shell_quote as q } from "/usr/libexec/opl-netfleet/kernel/io.uc";
 function check(value, message) { if (!value) die(message); };
 check(fs.stat("/tmp/netfleet-native-vm-authorized") != null, "isolated VM authorization required");
 const root = "/usr/libexec/opl-netfleet/plugins/device-info";

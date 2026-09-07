@@ -75,6 +75,7 @@ for package_name in opl-netfleet luci-app-netfleet mihomo-meta; do
 done
 mkdir -p "$sdk/package/opl-netfleet"
 cp -R "$work/openwrt/Makefile" "$sdk/package/opl-netfleet/"
+cp "$work/openwrt/plugin-packages.py" "$sdk/package/opl-netfleet/"
 cp -R "$work/openwrt/files" "$sdk/package/opl-netfleet/"
 mkdir -p "$sdk/package/luci-app-netfleet"
 cp -R "$work/openwrt/luci-app-netfleet/." "$sdk/package/luci-app-netfleet/"
@@ -101,6 +102,7 @@ mkdir -p "$payload/usr/libexec" "$payload/usr/libexec/rpcd" \
   "$payload/usr/share/luci" "$payload/usr/share/rpcd" "$payload/usr/share/opl-netfleet"
 cp -R "$work/openwrt/files/usr/libexec/opl-netfleet" "$payload/usr/libexec/"
 cp "$work/openwrt/files/usr/libexec/opl-netfleet-transfer" "$payload/usr/libexec/"
+cp "$work/openwrt/files/usr/libexec/opl-netfleet-plugin-package" "$payload/usr/libexec/"
 cp "$work/openwrt/files/usr/libexec/rpcd/opl-netfleet" "$payload/usr/libexec/rpcd/opl-netfleet"
 cp "$work/openwrt/files/etc/init.d/opl-netfleet" "$payload/etc/init.d/opl-netfleet"
 cp "$work/openwrt/files/etc/init.d/opl-netfleet-core" "$payload/etc/init.d/opl-netfleet-core"
@@ -119,6 +121,7 @@ grep -Fq "\"path\": \"netfleet/overview-${view_version}\"" \
 find "$payload" -type f -exec chmod 0644 {} +
 chmod 0755 "$payload/usr/libexec/opl-netfleet/main.uc" \
 	"$payload/usr/libexec/opl-netfleet-transfer" \
+	"$payload/usr/libexec/opl-netfleet-plugin-package" \
   "$payload/usr/libexec/opl-netfleet/supervisor.uc" \
   "$payload/usr/libexec/rpcd/opl-netfleet" "$payload/etc/init.d/opl-netfleet" "$payload/etc/init.d/opl-netfleet-core"
 files_manifest=$output/FILES.sha256
@@ -143,13 +146,33 @@ runtime_payload_sha256=$(sha256sum "$runtime_files_manifest" 2>/dev/null | awk '
 policy_schema=$(sed -n 's/^[[:space:]]*"schema_version"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$payload/etc/opl-netfleet/policy.example.json" | head -1)
 [[ "$policy_schema" =~ ^[0-9]+$ ]] || die 'policy schema is unreadable'
 artifacts=()
-if [[ "$package_format" == apk ]]; then
-  artifact_patterns=(-name "opl-netfleet-${version}-r${release}.apk" -o -name "luci-app-netfleet-${version}-r${release}.apk")
-else
-  artifact_patterns=(-name "opl-netfleet_${version}-r${release}_all.ipk" -o -name "luci-app-netfleet_${version}-r${release}_all.ipk")
-fi
-while IFS= read -r file; do artifacts+=("$file"); done < <(find "$sdk/bin/packages" -type f \( "${artifact_patterns[@]}" \) -print 2>/dev/null | sort)
-[[ ${#artifacts[@]} -eq 2 ]] || die "expected exactly two package artifacts, found ${#artifacts[@]}"
+product_packages=(opl-netfleet opl-netfleet-kernel luci-app-netfleet)
+while IFS= read -r package_name; do product_packages+=("$package_name"); done < <(
+  python3 - "$work/openwrt/files/usr/libexec/opl-netfleet/plugins" <<'PY'
+import json, sys
+from pathlib import Path
+for path in sorted(Path(sys.argv[1]).glob('*/manifest.json')):
+    manifest = json.loads(path.read_text())
+    if manifest['schema'] != 'opl-netfleet-service-plugin.v1':
+        raise SystemExit(f'unsupported built-in plugin manifest: {path}')
+    print(manifest['package'])
+PY
+)
+for package_name in "${product_packages[@]}"; do
+  artifact_version=$version
+  if [[ "$package_name" == opl-netfleet-plugin-* ]]; then
+    artifact_version=$(python3 "$work/openwrt/plugin-packages.py" version "${package_name#opl-netfleet-plugin-}")
+  fi
+  if [[ "$package_format" == apk ]]; then
+    artifact_pattern="${package_name}-${artifact_version}-r${release}.apk"
+  else
+    artifact_pattern="${package_name}_${artifact_version}-r${release}_all.ipk"
+  fi
+  package_artifacts=()
+  while IFS= read -r file; do package_artifacts+=("$file"); done < <(find "$sdk/bin/packages" -type f -name "$artifact_pattern" -print | sort)
+  [[ ${#package_artifacts[@]} -eq 1 ]] || die "expected exactly one $package_name artifact, found ${#package_artifacts[@]}"
+  artifacts+=("${package_artifacts[0]}")
+done
 if [[ "$package_format" == apk ]]; then
   core_pattern="mihomo-meta-${core_version}-r1.apk"
 else
@@ -185,7 +208,7 @@ if [[ "$package_format" == apk ]]; then
   artifacts=("${signed_artifacts[@]}")
 fi
 python3 - "$output" "$commit" "$tree" "$version" "$release" "$package_format" "$package_arch" "$build_target_arch" "$policy_schema" "$public_key" "$runtime_payload_sha256" "$files_sha256" "$bootstrap_sha256" "$core_lock" "${artifacts[@]}" <<'PY'
-import hashlib, json, sys
+import hashlib, json, re, sys
 from pathlib import Path
 output, commit, tree, version, release, package_format, package_arch, build_target_arch, policy_schema, public_key, runtime_payload_sha256, files_sha256, bootstrap_sha256, core_lock, *artifacts = sys.argv[1:]
 items=[]
@@ -194,12 +217,17 @@ core_source=json.loads(Path(core_lock).read_text())
 for source in artifacts:
     data=Path(source).read_bytes(); name=Path(source).name
     target=Path(output)/name; target.write_bytes(data); target.chmod(0o600)
-    package_name='mihomo-meta' if name.startswith(('mihomo-meta_', 'mihomo-meta-')) else ('luci-app-netfleet' if name.startswith(('luci-app-netfleet_', 'luci-app-netfleet-')) else 'opl-netfleet')
+    pattern = r'(.+)-(\d+\.\d+\.\d+)-r(\d+)\.apk' if package_format == 'apk' else r'(.+)_(\d+\.\d+\.\d+)-r(\d+)_[A-Za-z0-9_]+\.ipk'
+    identity = re.fullmatch(pattern, name)
+    if identity is None:
+        raise SystemExit(f'unrecognized package artifact: {name}')
+    package_name, artifact_version, artifact_release = identity.groups()
     item={'package':package_name,'name':name,'sha256':hashlib.sha256(data).hexdigest(),'size':len(data)}
     if package_name == 'mihomo-meta':
         item.update({'package_arch':build_target_arch, 'version':core_source['version'], 'upstream':core_source})
         dependencies.append(item)
     else:
+        item.update({'version': artifact_version, 'release': artifact_release})
         items.append(item)
 manifest={'schema':'opl-netfleet-package-manifest.v2','source_commit':commit,'source_tree':tree,'package_version':version,'package_release':release,'package_format':package_format,'package_arch':package_arch,'build_target_arch':build_target_arch,'policy_schema':int(policy_schema),'runtime_payload_sha256':runtime_payload_sha256,'files_manifest':{'name':'FILES.sha256','sha256':files_sha256},'artifacts':items}
 manifest['artifact_files']={item['package']: item['name'] for item in items}

@@ -6,6 +6,7 @@ STOP=04
 
 start_service() {
 	[ ! -e /tmp/opl-netfleet-package-upgrade-state ] || [ "${NETFLEET_PACKAGE_RESTORE:-0}" = 1 ] || return 0
+	/usr/libexec/opl-netfleet-plugin-package scheduler ready >/dev/null || return 0
 	# Package installation must not start automation before onboarding has
 	# produced an owner-approved policy.
 	[ -s /etc/opl-netfleet/policy.json ] || return 0

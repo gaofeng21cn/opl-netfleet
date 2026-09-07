@@ -28,7 +28,7 @@ EFFECTIVE = RUN / "effective.json"
 TRUST = BASE / "trust.json"
 CA = BASE / "ca"
 SERVICE = "/etc/init.d/opl-netfleet-compat"
-OWNER = "/usr/libexec/opl-netfleet/application/native_gateway.uc"
+OWNER = "/usr/libexec/opl-netfleet/main.uc"
 DEFAULT = {"schema": 1, "enabled": False, "devices": [], "rules": []}
 
 
@@ -124,7 +124,7 @@ def engine_health(probe=False):
 
 
 def snapshot():
-    result = subprocess.run(["ucode", OWNER, "compatibility-snapshot"], capture_output=True, text=True, timeout=1)
+    result = subprocess.run(["ucode", OWNER, "native-gateway-compatibility-snapshot"], capture_output=True, text=True, timeout=1)
     if result.returncode:
         raise ValueError("native_gateway_unavailable")
     return json.loads(result.stdout)["result"]

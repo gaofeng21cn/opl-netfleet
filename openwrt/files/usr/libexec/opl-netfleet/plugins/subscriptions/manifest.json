@@ -1,0 +1,64 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "subscriptions",
+  "label": "Subscriptions",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-subscriptions",
+  "services": {
+    "subscriptions.providers": {
+      "version": 1,
+      "module": "lib/providers.uc",
+      "requires": {
+        "mihomo.backend": 1,
+        "platform.uci": 1
+      }
+    },
+    "subscriptions.store": {
+      "version": 1,
+      "module": "lib/store.uc",
+      "requires": {
+        "models.subscription": 1,
+        "models.subscriptions": 1,
+        "platform.files": 1,
+        "platform.runtime": 1,
+        "platform.uci": 1
+      }
+    },
+    "subscriptions.facts": {
+      "version": 1,
+      "module": "lib/facts.uc",
+      "requires": {
+        "events.model": 1,
+        "events.output": 1,
+        "events.store": 1,
+        "mihomo.backend": 1,
+        "models.policy": 1,
+        "models.subscription": 1,
+        "platform.uci": 1,
+        "subscriptions.providers": 1
+      }
+    }
+  },
+  "commands": {
+    "subscriptions-get": {
+      "service": "subscriptions.store",
+      "method": "command_subscriptions_get",
+      "access": "read"
+    },
+    "subscriptions-set": {
+      "service": "subscriptions.store",
+      "method": "command_subscriptions_set",
+      "access": "write"
+    },
+    "subscriptions-update-result": {
+      "service": "subscriptions.store",
+      "method": "command_subscriptions_update_result",
+      "access": "write"
+    }
+  },
+  "package_dependencies": [
+    "curl",
+    "ca-bundle"
+  ]
+}

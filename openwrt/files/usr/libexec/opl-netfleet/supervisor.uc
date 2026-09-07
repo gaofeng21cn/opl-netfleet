@@ -1,103 +1,23 @@
 #!/usr/bin/ucode
 
-import { read_json, current_profile, backend_enabled, api_secret, shell_quote, POLICY_PATH } from "./adapters/uci.uc";
-import { running, lan_runtime_state } from "./adapters/backend.uc";
-import { controller_ready } from "./adapters/mihomo.uc";
-import { validate, automation, guard_probe_url } from "./core/policy.uc";
-import { is_active } from "./core/activation.uc";
-import { pending as pending_recovery } from "./adapters/recovery.uc";
+import * as fs from 'fs';
 
-const MAIN = "/usr/libexec/opl-netfleet/main.uc";
-const LOCK = "/var/lock/opl-netfleet-deploy.lock";
-
-function settings() {
-	const policy = read_json(POLICY_PATH);
-	if (policy == null || !validate(policy).ok) return null;
-	return {
-		policy: policy,
-		automation: automation(policy),
-		dns_probe_url: guard_probe_url(policy)
-	};
-};
-
-function runtime_controller_ready() {
-	const secret = api_secret();
-	return type(secret) == "string" && length(secret) > 0 && controller_ready(secret, 2);
-};
-
-function run_owner(action, detail) {
-	const suffix = detail == null ? "" : ` ${shell_quote(detail)}`;
-	const command = `(flock -n 9 || exit 75; ` +
-		`ucode ${shell_quote(MAIN)} ${action}${suffix} 9>&- >/dev/null 2>&1) ` +
-		`9>${shell_quote(LOCK)}`;
-	return system(command) == 0;
-};
-
-let unhealthy_since = null;
-let next_selection_at = null;
-let next_refresh_at = null;
-let was_runtime_ready = false;
-
-for (;;) {
-	const settings_value = settings();
-	const now = int(time());
-	if (settings_value == null || settings_value.policy.main.enabled != true) {
-		unhealthy_since = null;
-		next_selection_at = null;
-		next_refresh_at = null;
-		was_runtime_ready = false;
-		sleep(30000);
-		continue;
-	}
-	const config = settings_value.automation;
-	if (next_selection_at == null) next_selection_at = now + config.selection_interval_seconds;
-	if (config.subscription_refresh_enabled == true && next_refresh_at == null) {
-		next_refresh_at = now + config.subscription_refresh_interval_seconds;
-	}
-	if (config.subscription_refresh_enabled != true) {
-		next_refresh_at = null;
-	} else if (now >= next_refresh_at && run_owner("refresh", "scheduled")) {
-		next_refresh_at = now + config.subscription_refresh_interval_seconds;
-		// A changed active subscription already executes the same automatic round.
-		// Move the independent selection deadline forward after a completed refresh.
-		next_selection_at = now + config.selection_interval_seconds;
-	}
-
-	const owned = is_active(current_profile());
-	const recovery = pending_recovery(settings_value.policy);
-	if (!owned && recovery != null && now >= recovery.retry_at) {
-		run_owner("resume", "supervisor");
-		sleep(config.poll_interval_seconds * 1000);
-		continue;
-	}
-	const runtime_ready = owned && backend_enabled() == true && running() && runtime_controller_ready();
-	const lan_runtime = runtime_ready ? lan_runtime_state(settings_value.dns_probe_url) : null;
-	const healthy = runtime_ready && lan_runtime?.transparent_proxy_ready == true &&
-		lan_runtime?.dns_ready == true;
-	// A restart can leave the generated guard on DIRECT until the first selector
-	// round completes. Re-run selection as soon as the data plane becomes ready,
-	// instead of waiting for the normal 30-minute interval.
-	if (healthy && !was_runtime_ready) next_selection_at = now;
-	was_runtime_ready = healthy;
-	if (!owned) {
-		unhealthy_since = null;
-	} else if (healthy) {
-		unhealthy_since = null;
-		if (config.enabled == true && now >= next_selection_at) {
-			run_owner("maintain", "scheduled");
-			next_selection_at = now + config.selection_interval_seconds;
+const root = sourcepath(0, true), states = {};
+while (true) {
+	let lease, delay = 5000;
+	try {
+		let ready = true;
+		if (root == '/usr/libexec/opl-netfleet') {
+			const directory = '/var/lock/opl-netfleet-code';
+			if (fs.lstat(directory) == null) fs.mkdir(directory, 0700);
+			const info = fs.lstat(directory), path = `${directory}/.kernel.lock`, file = fs.lstat(path);
+			if (info?.type != 'directory' || info.uid != 0 || (info.mode & 022) ||
+				(file != null && (file.type != 'file' || file.uid != 0 || (file.mode & 022)))) die('plugin_kernel_lock_unsafe');
+			lease = fs.open(path, 'ae', 0600);
+			ready = lease != null && lease.lock('sn') && fs.lstat('/var/run/opl-netfleet-plugin-maintenance/.kernel') == null;
 		}
-	} else {
-		if (unhealthy_since == null) unhealthy_since = now;
-		if (now - unhealthy_since >= config.runtime_grace_seconds) {
-			let reason = "runtime_unavailable";
-			if (runtime_ready && lan_runtime?.transparent_proxy_ready == false) {
-				reason = "lan_ingress_unavailable";
-			} else if (runtime_ready && lan_runtime?.dns_ready == false) {
-				reason = "dns_ingress_unavailable";
-			}
-			if (run_owner("recover", reason)) unhealthy_since = null;
-		}
-	}
-	sleep(config.poll_interval_seconds * 1000);
+		if (ready) delay = loadstring(sprintf('import { tick } from %J; return tick;', `${root}/kernel/host.uc`))()(root, states);
+	} catch (error) { warn(`NetFleet supervisor: ${error.message}\n`); }
+	lease?.close();
+	sleep(delay);
 }

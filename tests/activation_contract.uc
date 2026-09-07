@@ -1,6 +1,12 @@
 #!/usr/bin/ucode
+import { use, release as release_services } from "./services.uc";
 
-import { recovery_owner, recovery_profile, passthrough_outcome, preferred_runtime_ready, expected_runtime_groups, expected_runtime_residue_groups } from "../openwrt/files/usr/libexec/opl-netfleet/core/activation.uc";
+const recovery_owner = use("models.activation").recovery_owner;
+const recovery_profile = use("models.activation").recovery_profile;
+const passthrough_outcome = use("models.activation").passthrough_outcome;
+const preferred_runtime_ready = use("models.activation").preferred_runtime_ready;
+const expected_runtime_groups = use("models.activation").expected_runtime_groups;
+const expected_runtime_residue_groups = use("models.activation").expected_runtime_residue_groups;
 
 const digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const manifest = {
@@ -122,3 +128,5 @@ if (!result.ok || result.business_ok != null) {
 }
 
 print("activation_contract_ok\n");
+
+release_services();

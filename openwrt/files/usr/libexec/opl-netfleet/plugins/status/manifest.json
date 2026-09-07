@@ -1,0 +1,70 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "status",
+  "label": "Status and connections",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-status",
+  "services": {
+    "status.control": {
+      "version": 1,
+      "module": "lib/control.uc",
+      "requires": {
+        "events.output": 1,
+        "mihomo.backend": 1,
+        "mihomo.controller": 1,
+        "mihomo.readback": 1,
+        "models.activation": 1,
+        "models.policy": 1,
+        "models.status": 1,
+        "platform.documents": 1,
+        "platform.runtime": 1,
+        "platform.service": 1,
+        "platform.uci": 1,
+        "recovery.state": 1,
+        "subscriptions.facts": 1
+      }
+    },
+    "status.events": {
+      "version": 1,
+      "module": "lib/events.uc",
+      "requires": {
+        "events.model": 1,
+        "events.output": 1,
+        "events.store": 1,
+        "mihomo.backend": 1,
+        "models.activation": 1,
+        "platform.documents": 1,
+        "platform.uci": 1,
+        "subscriptions.facts": 1
+      }
+    },
+    "status.connections": {
+      "version": 1,
+      "module": "lib/connections.uc",
+      "requires": {
+        "events.output": 1,
+        "mihomo.controller": 1,
+        "platform.uci": 1
+      }
+    }
+  },
+  "commands": {
+    "status": {
+      "service": "status.control",
+      "method": "command_status",
+      "access": "read"
+    },
+    "events": {
+      "service": "status.events",
+      "method": "command_events",
+      "access": "read"
+    },
+    "connections": {
+      "service": "status.connections",
+      "method": "command_connections",
+      "access": "read"
+    }
+  },
+  "package_dependencies": []
+}

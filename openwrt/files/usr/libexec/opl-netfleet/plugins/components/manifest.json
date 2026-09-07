@@ -1,0 +1,53 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "components",
+  "label": "Components and updates",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-components",
+  "services": {
+    "components.control": {
+      "version": 1,
+      "module": "lib/control.uc",
+      "requires": {
+        "dashboard.control": 1,
+        "events.operation": 1,
+        "mihomo.controller": 1,
+        "platform.files": 1,
+        "platform.runtime": 1,
+        "platform.uci": 1
+      }
+    }
+  },
+  "commands": {
+    "components-get": {
+      "service": "components.control",
+      "method": "command",
+      "access": "read"
+    },
+    "components-operation": {
+      "service": "components.control",
+      "method": "command",
+      "access": "read"
+    },
+    "components-check": {
+      "service": "components.control",
+      "method": "command",
+      "access": "write"
+    },
+    "components-update": {
+      "service": "components.control",
+      "method": "command",
+      "access": "write"
+    },
+    "components-run": {
+      "service": "components.control",
+      "method": "command",
+      "access": "write"
+    }
+  },
+  "package_dependencies": [
+    "curl",
+    "ca-bundle"
+  ]
+}

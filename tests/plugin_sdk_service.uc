@@ -1,0 +1,20 @@
+function check(value, message) { if (!value) die(message); };
+const root = ARGV[0] ?? "examples/plugins/host-info";
+const reader_factory = loadfile(`${root}/lib/reader.uc`)();
+check(type(reader_factory) == "function", "reader module must return a factory");
+const reader = reader_factory({ use: () => die("reader has no declared dependencies") });
+const summary_factory = loadfile(`${root}/lib/summary.uc`)();
+check(type(summary_factory) == "function", "summary module must return a factory");
+let resolved = [];
+const summary = summary_factory({ use: name => {
+	check(name == "host-info.reader", "summary must use its declared reader");
+	push(resolved, name);
+	return reader;
+} });
+check(length(resolved) == 1, "summary resolves its reader through context");
+const response = summary.inspect(["host-info"]);
+check(response?.ok == true && response.result.uptime_seconds >= 0, "reader returns real uptime");
+check(type(response.result.kernel) == "string" && length(response.result.kernel), "reader returns kernel release");
+check(length(response.result.load_average) == 3, "reader returns three load averages");
+check(summary.inspect(["host-info", "unexpected"]).ok == false, "command rejects unsupported arguments");
+print("plugin_sdk_service_ok\n");

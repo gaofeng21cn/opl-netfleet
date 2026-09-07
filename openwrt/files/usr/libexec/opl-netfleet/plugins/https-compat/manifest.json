@@ -1,0 +1,52 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "https-compat",
+  "label": "HTTPS compatibility",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-https-compat",
+  "services": {
+    "https-compat.control": {
+      "version": 1,
+      "module": "lib/control.uc",
+      "requires": {
+        "models.extensions": 1,
+        "platform.runtime": 1,
+        "platform.uci": 1
+      }
+    }
+  },
+  "commands": {
+    "compatibility-get": {
+      "service": "https-compat.control",
+      "method": "command_compatibility_get",
+      "access": "read"
+    },
+    "compatibility-ca": {
+      "service": "https-compat.control",
+      "method": "command_compatibility_ca",
+      "access": "read"
+    },
+    "compatibility-apply": {
+      "service": "https-compat.control",
+      "method": "command_compatibility_apply",
+      "access": "write"
+    },
+    "compatibility-enable": {
+      "service": "https-compat.control",
+      "method": "command_compatibility_enable",
+      "access": "write"
+    },
+    "compatibility-disable": {
+      "service": "https-compat.control",
+      "method": "command_compatibility_disable",
+      "access": "write"
+    },
+    "compatibility-probe": {
+      "service": "https-compat.control",
+      "method": "command_compatibility_probe",
+      "access": "write"
+    }
+  },
+  "package_dependencies": []
+}

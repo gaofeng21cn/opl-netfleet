@@ -1,6 +1,10 @@
 #!/usr/bin/ucode
+import { use, release as release_services } from "./services.uc";
 
-import { project, validate_request, apply, changes } from "../openwrt/files/usr/libexec/opl-netfleet/core/config.uc";
+const project = use("configuration.model").project;
+const validate_request = use("configuration.model").validate_request;
+const apply = use("configuration.model").apply;
+const changes = use("configuration.model").changes;
 
 const policy = {
 	schema_version: 2,
@@ -239,3 +243,5 @@ if (length(filter(computed_changes, item => item.scope == "provider" && item.id 
 }
 
 print("config_contract_ok\n");
+
+release_services();

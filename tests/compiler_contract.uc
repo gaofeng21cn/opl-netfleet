@@ -1,7 +1,8 @@
 #!/usr/bin/ucode
+import { use, release as release_services } from "./services.uc";
 
-import { compile } from "../openwrt/files/usr/libexec/opl-netfleet/core/compiler.uc";
-import { validate } from "../openwrt/files/usr/libexec/opl-netfleet/core/policy.uc";
+const compile = use("compilation.compiler").compile;
+const validate = use("models.policy").validate;
 
 const profile = {
 	dns: {
@@ -484,3 +485,5 @@ if (validate(cache_override_policy).ok) {
 }
 
 print("multi_capability_compiler_ok\n");
+
+release_services();

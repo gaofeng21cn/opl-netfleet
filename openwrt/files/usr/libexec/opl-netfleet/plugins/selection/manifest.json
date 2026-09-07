@@ -1,0 +1,65 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "selection",
+  "label": "Automatic selection",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-selection",
+  "services": {
+    "selection.round": {
+      "version": 1,
+      "module": "lib/round.uc",
+      "requires": {
+        "mihomo.controller": 1,
+        "mihomo.latency": 1,
+        "mihomo.paths": 1,
+        "models.selector": 1,
+        "models.status": 1,
+        "subscriptions.facts": 1,
+        "selection.algorithm": 1
+      }
+    },
+    "selection.control": {
+      "version": 1,
+      "module": "lib/control.uc",
+      "requires": {
+        "events.operation": 1,
+        "events.output": 1,
+        "events.record": 1,
+        "mihomo.artifacts": 1,
+        "mihomo.controller": 1,
+        "mihomo.latency": 1,
+        "mihomo.paths": 1,
+        "models.activation": 1,
+        "models.evidence": 1,
+        "models.ordering": 1,
+        "models.selection-view": 1,
+        "platform.documents": 1,
+        "platform.uci": 1,
+        "recovery.control": 1,
+        "selection.round": 1,
+        "selection.algorithm": 1
+      }
+    },
+    "selection.algorithm": {
+      "version": 1,
+      "module": "lib/algorithm.uc",
+      "requires": {
+        "models.policy": 1
+      }
+    }
+  },
+  "commands": {
+    "select": {
+      "service": "selection.control",
+      "method": "command_select",
+      "access": "write"
+    },
+    "maintain": {
+      "service": "selection.control",
+      "method": "command_maintain",
+      "access": "write"
+    }
+  },
+  "package_dependencies": []
+}

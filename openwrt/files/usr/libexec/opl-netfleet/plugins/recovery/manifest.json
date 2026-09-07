@@ -1,0 +1,55 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "recovery",
+  "label": "Fail-open recovery",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-recovery",
+  "services": {
+    "recovery.state": {
+      "version": 1,
+      "module": "lib/state.uc",
+      "requires": {
+        "models.activation": 1,
+        "platform.files": 1,
+        "platform.runtime": 1,
+        "platform.uci": 1
+      }
+    },
+    "recovery.control": {
+      "version": 1,
+      "module": "lib/control.uc",
+      "requires": {
+        "events.output": 1,
+        "mihomo.backend": 1,
+        "mihomo.controller": 1,
+        "mihomo.paths": 1,
+        "mihomo.probes": 1,
+        "mihomo.readback": 1,
+        "models.activation": 1,
+        "platform.documents": 1,
+        "platform.uci": 1,
+        "recovery.state": 1,
+        "subscriptions.facts": 1
+      }
+    }
+  },
+  "commands": {
+    "prepare-recovery": {
+      "service": "recovery.control",
+      "method": "command_prepare_recovery",
+      "access": "write"
+    },
+    "restore-recovery": {
+      "service": "recovery.control",
+      "method": "command_restore_recovery",
+      "access": "write"
+    },
+    "recover": {
+      "service": "recovery.control",
+      "method": "command_recover",
+      "access": "write"
+    }
+  },
+  "package_dependencies": []
+}

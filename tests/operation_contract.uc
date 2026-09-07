@@ -1,6 +1,10 @@
+import { use, release as release_services } from "./services.uc";
 import * as fs from "fs";
-import { begin, update, finish, get } from "../openwrt/files/usr/libexec/opl-netfleet/application/operation.uc";
-import { ok } from "../openwrt/files/usr/libexec/opl-netfleet/output.uc";
+const begin = use("events.operation").begin;
+const update = use("events.operation").update;
+const finish = use("events.operation").finish;
+const get = use("events.operation").get;
+const ok = use("events.output").ok;
 
 function check(value, message) { if (!value) die(message); };
 const path = "/tmp/opl-netfleet-operation-subscription.json";
@@ -86,3 +90,5 @@ if (previous == null) fs.unlink(path); else fs.writefile(path, previous);
 if (previous_packages == null) fs.unlink(package_path); else fs.writefile(package_path, previous_packages);
 if (previous_selection == null) fs.unlink(selection_path); else fs.writefile(selection_path, previous_selection);
 print("operation_contract_ok\n");
+
+release_services();

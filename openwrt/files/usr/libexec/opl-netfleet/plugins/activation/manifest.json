@@ -1,0 +1,55 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "activation",
+  "label": "Activation",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-activation",
+  "services": {
+    "activation.control": {
+      "version": 1,
+      "module": "lib/control.uc",
+      "requires": {
+        "compilation.control": 1,
+        "events.output": 1,
+        "events.record": 1,
+        "mihomo.artifacts": 1,
+        "mihomo.backend": 1,
+        "mihomo.controller": 1,
+        "mihomo.latency": 1,
+        "mihomo.paths": 1,
+        "mihomo.policy-source": 1,
+        "mihomo.probes": 1,
+        "mihomo.readback": 1,
+        "models.activation": 1,
+        "models.evidence": 1,
+        "models.ordering": 1,
+        "models.policy": 1,
+        "platform.documents": 1,
+        "platform.uci": 1,
+        "recovery.control": 1,
+        "recovery.state": 1,
+        "selection.round": 1,
+        "subscriptions.facts": 1
+      }
+    }
+  },
+  "commands": {
+    "enable": {
+      "service": "activation.control",
+      "method": "command_enable",
+      "access": "write"
+    },
+    "disable": {
+      "service": "activation.control",
+      "method": "command_disable",
+      "access": "write"
+    },
+    "resume": {
+      "service": "activation.control",
+      "method": "command_resume",
+      "access": "write"
+    }
+  },
+  "package_dependencies": []
+}

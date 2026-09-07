@@ -1,13 +1,14 @@
 import * as fs from "fs";
 
-const path = ARGV[0] ?? replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet/application/components.uc");
+const path = ARGV[0] ?? replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet/plugins/components/lib/control.uc");
 const source = fs.readfile(path);
-const start = index(source, "function restore_services(");
-const end = index(source, "function upgrade(", start);
+const start = index(source, "restore_services = function(");
+const end = index(source, "upgrade = function(", start);
 if (start < 0 || end < 0) die("recovery implementation unavailable");
 const implementation = substr(source, start, end - start);
 const harness = `
 let now = 0, sets = 0, starts = 0, chosen = "old", broken = false, changed = false;
+let restore_services;
 const SERVICE = "test-core", MAIN = "test-main", KIND = "native-mihomo";
 function time() { return now; }
 function system(command) { now++; return 0; }

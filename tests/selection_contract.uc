@@ -1,6 +1,10 @@
 #!/usr/bin/ucode
+import { use, release as release_services } from "./services.uc";
 
-import { choose_automatic, provider_group_current_leaf, provider_group_leaf, provider_round_summary } from "../openwrt/files/usr/libexec/opl-netfleet/core/selector.uc";
+const choose_automatic = use("selection.algorithm").choose_automatic;
+const provider_group_current_leaf = use("models.selector").provider_group_current_leaf;
+const provider_group_leaf = use("models.selector").provider_group_leaf;
+const provider_round_summary = use("models.selector").provider_round_summary;
 
 const policy = {
 	capabilities: {
@@ -232,3 +236,5 @@ if (!result.ok || result.region_id != "near" || result.reason != "followed_capab
 }
 
 print("selection_contract_ok\n");
+
+release_services();

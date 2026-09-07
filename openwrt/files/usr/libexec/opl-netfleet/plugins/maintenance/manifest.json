@@ -1,0 +1,75 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "maintenance",
+  "label": "Profiles and maintenance",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-maintenance",
+  "services": {
+    "maintenance.model": {
+      "version": 1,
+      "module": "lib/model.uc",
+      "requires": {}
+    },
+    "maintenance.editor": {
+      "version": 1,
+      "module": "lib/editor.uc",
+      "requires": {
+        "maintenance.model": 1,
+        "mihomo.backend": 1,
+        "mihomo.controller": 1,
+        "models.policy": 1,
+        "platform.files": 1,
+        "platform.runtime": 1,
+        "platform.service": 1,
+        "platform.uci": 1,
+        "subscriptions.providers": 1
+      }
+    }
+  },
+  "commands": {
+    "maintenance-get": {
+      "service": "maintenance.editor",
+      "method": "command_maintenance_get",
+      "access": "read"
+    },
+    "profile-get": {
+      "service": "maintenance.editor",
+      "method": "command_profile_get",
+      "access": "read"
+    },
+    "profile-save": {
+      "service": "maintenance.editor",
+      "method": "command_profile_save",
+      "access": "write"
+    },
+    "profile-delete": {
+      "service": "maintenance.editor",
+      "method": "command_profile_delete",
+      "access": "write"
+    },
+    "backup-export": {
+      "service": "maintenance.editor",
+      "method": "command_backup_export",
+      "access": "read"
+    },
+    "backup-restore": {
+      "service": "maintenance.editor",
+      "method": "command_backup_restore",
+      "access": "write"
+    },
+    "core-action": {
+      "service": "maintenance.editor",
+      "method": "command_core_action",
+      "access": "write"
+    },
+    "diagnostics-get": {
+      "service": "maintenance.editor",
+      "method": "command_diagnostics_get",
+      "access": "read"
+    }
+  },
+  "package_dependencies": [
+    "coreutils-timeout"
+  ]
+}

@@ -1,8 +1,13 @@
+import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
+const host = create("/usr/libexec/opl-netfleet");
 import * as fs from "fs";
 import { cursor } from "uci";
-import { get, set, update_result } from "/usr/libexec/opl-netfleet/application/subscriptions.uc";
-import { sha256, subscription_quota } from "/usr/libexec/opl-netfleet/adapters/uci.uc";
-import { core_service } from "/usr/libexec/opl-netfleet/adapters/native.uc";
+const get = host.use("subscriptions.store").get;
+const set = host.use("subscriptions.store").set;
+const update_result = host.use("subscriptions.store").update_result;
+const sha256 = host.use("platform.uci").sha256;
+const subscription_quota = host.use("platform.uci").subscription_quota;
+const core_service = host.use("platform.files").core_service;
 
 function check(value, message) { if (!value) die(message); };
 const work = "/tmp/netfleet-native-fixture";
@@ -85,3 +90,5 @@ check(length(get().result.sources) == 1, "single configured provider remains");
 fs.unlink(input);
 lock.close();
 print("native_runtime_subscriptions_ok\n");
+
+host.release();

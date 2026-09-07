@@ -1,7 +1,6 @@
 #!/bin/sh
 
 main=/usr/libexec/opl-netfleet/main.uc
-components=/usr/libexec/opl-netfleet/application/components.uc
 lock=/var/lock/opl-netfleet-deploy.lock
 
 lock_mutation() {
@@ -88,7 +87,7 @@ component_update() {
 	case "$component" in netfleet|mihomo) ;; *) printf '%s\n' '{"ok":false,"error":"invalid_component_request"}'; exit 0 ;; esac
 	case "$version" in ""|-*|*[!A-Za-z0-9._+~:-]*) printf '%s\n' '{"ok":false,"error":"invalid_component_request"}'; exit 0 ;; esac
 	lock_mutation
-	respond_owner ucode "$components" update "$component" "$version" 9>&-
+	respond_owner ucode "$main" components-update "$component" "$version" 9>&-
 }
 
 case "$1" in
@@ -125,11 +124,11 @@ case "$1" in
 				respond_owner ucode "$main" dashboard-check 9>&-
 				;;
 			dashboard_update) management_argument dashboard-update version 1 ;;
-			components_get) respond_owner ucode "$components" get ;;
-			operation_get) respond_owner ucode "$components" operation ;;
+			components_get) respond_owner ucode "$main" components-get ;;
+			operation_get) respond_owner ucode "$main" components-operation ;;
 			components_check)
 				lock_mutation
-				respond_owner ucode "$components" check 9>&-
+				respond_owner ucode "$main" components-check 9>&-
 				;;
 			components_update) component_update ;;
 			subscriptions_refresh)

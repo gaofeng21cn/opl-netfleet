@@ -1,5 +1,6 @@
 import pathlib
 import subprocess
+import tempfile
 import unittest
 
 
@@ -16,10 +17,26 @@ class NativeLifecycleTest(unittest.TestCase):
             'procd_kill() { echo "kill:$1"; }',
             body,
         ])
-        return subprocess.run(
-            ["sh", "-c", script, "test", str(INIT)],
-            check=False, text=True, capture_output=True,
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            package = root / "plugin-package"
+            package.write_text('#!/bin/sh\nexit "${PLUGIN_READY_EXIT:-0}"\n')
+            package.chmod(0o755)
+            source = root / "init"
+            source.write_text(INIT.read_text().replace("/usr/libexec/opl-netfleet-plugin-package", str(package)))
+            return subprocess.run(
+                ["sh", "-c", script, "test", str(source)],
+                check=False, text=True, capture_output=True,
+            )
+
+    def test_plugin_maintenance_prevents_starting_core_resources(self):
+        result = self.run_init('''
+export PLUGIN_READY_EXIT=1
+gateway_action() { echo unexpected-prepare; }
+start_service
+''')
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
 
     def test_reconcile_shares_service_lock_and_propagates_failure(self):
         result = self.run_init('''
@@ -27,7 +44,7 @@ ucode() { echo "gateway:$2"; return 7; }
 reconcile
 ''')
         self.assertEqual(result.returncode, 7)
-        self.assertEqual(result.stdout.splitlines(), ["lock", "gateway:reconcile"])
+        self.assertEqual(result.stdout.splitlines(), ["lock", "gateway:native-gateway-reconcile"])
 
     def test_running_checks_core_not_lifecycle_observer(self):
         result = self.run_init('''
@@ -39,11 +56,11 @@ service_running
 
     def test_failed_attach_cleans_before_core_stop(self):
         result = self.run_init('''
-ucode() { echo "gateway:$2" >&2; [ "$2" != attach ]; }
+ucode() { echo "gateway:$2" >&2; [ "$2" != native-gateway-attach ]; }
 service_started
 ''')
         self.assertEqual(result.returncode, 1)
-        self.assertEqual(result.stderr.splitlines(), ["gateway:attach", "gateway:cleanup"])
+        self.assertEqual(result.stderr.splitlines(), ["gateway:native-gateway-attach", "gateway:native-gateway-cleanup"])
         self.assertEqual(result.stdout.splitlines(), ["kill:opl-netfleet-core"])
 
     def test_normal_stop_uses_same_cleanup_owner(self):
@@ -53,7 +70,7 @@ stop_service
 service_stopped
 ''')
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stderr.splitlines(), ["gateway:cleanup", "gateway:cleanup"])
+        self.assertEqual(result.stderr.splitlines(), ["gateway:native-gateway-cleanup", "gateway:native-gateway-cleanup"])
 
     def test_core_and_notification_observer_have_distinct_instances(self):
         result = self.run_init('''
@@ -76,7 +93,7 @@ start_service
             "command /usr/bin/mihomo -d /etc/opl-netfleet/native/run -f /etc/opl-netfleet/native/run/config.yaml",
             "respawn 3600 5 5",
             "instance:lifecycle",
-            "command /usr/bin/ucode /usr/libexec/opl-netfleet/application/native_gateway.uc watch",
+            "command /usr/bin/ucode /usr/libexec/opl-netfleet/main.uc native-gateway-watch",
             "respawn 3600 1 0",
         ])
 

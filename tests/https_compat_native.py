@@ -238,11 +238,11 @@ class Native(Kernel):
             self.assertLess(time.monotonic(), deadline, self.owner.call("get"))
             await asyncio.sleep(1)
         self.assertTrue((await self.request())["h2"])
-        owner = "/usr/libexec/opl-netfleet/application/native_gateway.uc"
+        owner = "/usr/libexec/opl-netfleet/main.uc"
         for selector in ("user", "group"):
             self.command("uci", "add_list", f"netfleet.@router_access_control[0].{selector}=root")
             try:
-                snapshot = json.loads(subprocess.check_output(["ucode", owner, "compatibility-snapshot"]))
+                snapshot = json.loads(subprocess.check_output(["ucode", owner, "native-gateway-compatibility-snapshot"]))
                 self.assertTrue(snapshot["result"]["custom_lan_access"], "matching engine identity must reject admission")
             finally:
                 self.command("uci", "del_list", f"netfleet.@router_access_control[0].{selector}=root")

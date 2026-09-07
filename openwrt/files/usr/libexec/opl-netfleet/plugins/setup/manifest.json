@@ -1,0 +1,70 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "setup",
+  "label": "Setup and migration",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-setup",
+  "services": {
+    "setup.migration-model": {
+      "version": 1,
+      "module": "lib/migration-model.uc",
+      "requires": {}
+    },
+    "setup.native-model": {
+      "version": 1,
+      "module": "lib/native-model.uc",
+      "requires": {
+        "models.subscriptions": 1
+      }
+    },
+    "setup.migration": {
+      "version": 1,
+      "module": "lib/migration.uc",
+      "requires": {
+        "mihomo.backend": 1,
+        "mihomo.policy-source": 1,
+        "models.policy": 1,
+        "platform.files": 1,
+        "platform.runtime": 1,
+        "platform.service": 1,
+        "platform.uci": 1,
+        "setup.migration-model": 1
+      }
+    },
+    "setup.native": {
+      "version": 1,
+      "module": "lib/native.uc",
+      "requires": {
+        "platform.files": 1,
+        "platform.runtime": 1,
+        "platform.service": 1,
+        "platform.uci": 1,
+        "setup.native-model": 1
+      }
+    }
+  },
+  "commands": {
+    "migration-get": {
+      "service": "setup.migration",
+      "method": "command_migration_get",
+      "access": "read"
+    },
+    "migration-apply": {
+      "service": "setup.migration",
+      "method": "command_migration_apply",
+      "access": "write"
+    },
+    "native-setup-get": {
+      "service": "setup.native",
+      "method": "command_native_setup_get",
+      "access": "read"
+    },
+    "native-setup-apply": {
+      "service": "setup.native",
+      "method": "command_native_setup_apply",
+      "access": "write"
+    }
+  },
+  "package_dependencies": []
+}

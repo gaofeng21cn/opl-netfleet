@@ -1,0 +1,45 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "refresh",
+  "label": "Subscription refresh",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-refresh",
+  "services": {
+    "refresh.control": {
+      "version": 1,
+      "module": "lib/control.uc",
+      "requires": {
+        "compilation.control": 1,
+        "events.operation": 1,
+        "events.output": 1,
+        "events.record": 1,
+        "mihomo.backend": 1,
+        "mihomo.controller": 1,
+        "mihomo.paths": 1,
+        "mihomo.readback": 1,
+        "models.activation": 1,
+        "models.policy": 1,
+        "models.subscription": 1,
+        "platform.documents": 1,
+        "platform.runtime": 1,
+        "platform.uci": 1,
+        "recovery.control": 1,
+        "subscriptions.store": 1
+      }
+    }
+  },
+  "commands": {
+    "refresh": {
+      "service": "refresh.control",
+      "method": "command_refresh",
+      "access": "write"
+    },
+    "subscriptions-refresh": {
+      "service": "refresh.control",
+      "method": "command_subscriptions_refresh",
+      "access": "write"
+    }
+  },
+  "package_dependencies": []
+}

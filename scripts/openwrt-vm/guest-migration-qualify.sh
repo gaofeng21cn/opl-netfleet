@@ -8,7 +8,7 @@ probe_port=${3:?}
 work=/tmp/netfleet-migration-fixture
 previous=/tmp/netfleet-runtime-fixture
 main=/usr/libexec/opl-netfleet/main.uc
-gateway=/usr/libexec/opl-netfleet/application/native_gateway.uc
+gateway=/usr/libexec/opl-netfleet/main.uc
 lock=/var/lock/opl-netfleet-deploy.lock
 policy=/etc/opl-netfleet/policy.json
 bundle=/etc/opl-netfleet/policy-sources/base-v1.json
@@ -88,8 +88,10 @@ for executable in mihomo yq; do
 	test -x "/usr/bin/$executable"
 done
 cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
+cp /tmp/openwrt/files/usr/libexec/opl-netfleet-plugin-package /usr/libexec/
+chmod 0755 /usr/libexec/opl-netfleet-plugin-package
 mkdir -p /usr/share/opl-netfleet
-cp -R /tmp/openwrt/files/usr/share/opl-netfleet/nikki /usr/share/opl-netfleet/
+cp -R /tmp/openwrt/files/usr/share/opl-netfleet/. /usr/share/opl-netfleet/
 cp /tmp/openwrt/files/etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet-core
 cp /tmp/openwrt/files/etc/init.d/opl-netfleet /etc/init.d/opl-netfleet
 chmod 0755 "$main" /usr/libexec/opl-netfleet/supervisor.uc /etc/init.d/opl-netfleet /etc/init.d/opl-netfleet-core
@@ -167,8 +169,10 @@ cat >/etc/nikki/mixin.yaml <<'EOF'
 {"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"192.168.1.2"},"dns":{"nameserver":["udp://127.0.0.1:1054"]}}
 EOF
 ucode -e '
-	import { read_yaml } from "/usr/libexec/opl-netfleet/adapters/uci.uc";
+	import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
 	import { writefile } from "fs";
+	const host = create("/usr/libexec/opl-netfleet");
+	const read_yaml = host.use("platform.uci").read_yaml;
 	const source = read_yaml(ARGV[0], true);
 	source.hosts = { "netfleet-probe.test": "192.168.1.2", "www.gstatic.com": "192.168.1.2" };
 	source.dns = { enable: true, listen: "[::]:1053", nameserver: ["udp://127.0.0.1:1054"] };
@@ -224,7 +228,7 @@ test ! -e /etc/opl-netfleet/native
 /etc/init.d/nikki enabled
 run_main probe >"$work/rollback-probe-result.json"
 assert_json "$work/rollback-probe-result.json" '@.ok' true
-ucode "$gateway" status >"$work/rollback-gateway-result.json"
+ucode "$gateway" native-gateway-status >"$work/rollback-gateway-result.json"
 assert_json "$work/rollback-gateway-result.json" '@.result.core_running' false
 assert_json "$work/rollback-gateway-result.json" '@.result.clean' true
 cp -p "$work/bundle.accepted.json" "$bundle"
@@ -253,7 +257,7 @@ run_main status >"$work/native-status-result.json"
 assert_json "$work/native-status-result.json" '@.result.active' true
 assert_json "$work/native-status-result.json" '@.result.runtime.backend.id' native-mihomo
 assert_json "$work/native-status-result.json" '@.result.runtime.netfleet_present' true
-ucode "$gateway" status >"$work/native-gateway-result.json"
+ucode "$gateway" native-gateway-status >"$work/native-gateway-result.json"
 assert_json "$work/native-gateway-result.json" '@.result.ready' true
 run_main select standard auto vm >"$work/native-select-result.json"
 assert_json "$work/native-select-result.json" '@.ok' true
@@ -261,7 +265,10 @@ run_main probe >"$work/native-probe-result.json"
 assert_json "$work/native-probe-result.json" '@.ok' true
 test "$(digest /etc/nikki/run/ui/index.html)" = "$(digest /etc/opl-netfleet/native/run/ui/index.html)"
 ucode -e '
-	import { read_yaml, read_json } from "/usr/libexec/opl-netfleet/adapters/uci.uc";
+	import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
+	const host = create("/usr/libexec/opl-netfleet");
+	const read_yaml = host.use("platform.uci").read_yaml;
+	const read_json = host.use("platform.uci").read_json;
 	for (let section in ["base", "alpha", "beta"]) {
 		const source = read_yaml(`/etc/nikki/subscriptions/${section}.yaml`, true);
 		const imported = read_json(`/etc/opl-netfleet/native/subscriptions/${section}.yaml`);

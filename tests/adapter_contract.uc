@@ -1,8 +1,14 @@
 #!/usr/bin/ucode
+import { use, release as release_services } from "./services.uc";
 
-import { measure, controller_timeout_seconds, complete_from_fresh_history } from "../openwrt/files/usr/libexec/opl-netfleet/adapters/latency.uc";
-import { url_path_segment, project_connections } from "../openwrt/files/usr/libexec/opl-netfleet/adapters/mihomo.uc";
-import { read_json, read_yaml, write_json_atomic } from "../openwrt/files/usr/libexec/opl-netfleet/adapters/uci.uc";
+const measure = use("mihomo.latency").measure;
+const controller_timeout_seconds = use("mihomo.latency").controller_timeout_seconds;
+const complete_from_fresh_history = use("mihomo.latency").complete_from_fresh_history;
+const url_path_segment = use("mihomo.controller").url_path_segment;
+const project_connections = use("mihomo.controller").project_connections;
+const read_json = use("platform.uci").read_json;
+const read_yaml = use("platform.uci").read_yaml;
+const write_json_atomic = use("platform.uci").write_json_atomic;
 import { writefile, unlink } from "fs";
 
 if (url_path_segment("常规 出口") != "%E5%B8%B8%E8%A7%84%20%E5%87%BA%E5%8F%A3" ||
@@ -112,3 +118,5 @@ if (read_yaml(read_path, true) != null) { print("malformed_yaml_accepted\n"); ex
 unlink(read_path);
 
 print("adapter_contract_ok\n");
+
+release_services();

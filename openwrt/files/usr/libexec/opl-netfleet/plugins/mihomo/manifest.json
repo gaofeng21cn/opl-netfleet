@@ -1,0 +1,180 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "mihomo",
+  "label": "Mihomo backend",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-mihomo",
+  "services": {
+    "mihomo.backend": {
+      "version": 1,
+      "module": "lib/backend.uc",
+      "requires": {
+        "platform.runtime": 1,
+        "platform.uci": 1
+      }
+    },
+    "mihomo.controller": {
+      "version": 1,
+      "module": "lib/controller.uc",
+      "requires": {
+        "platform.runtime": 1,
+        "platform.uci": 1
+      }
+    },
+    "mihomo.latency": {
+      "version": 1,
+      "module": "lib/latency.uc",
+      "requires": {
+        "mihomo.controller": 1,
+        "platform.runtime": 1,
+        "platform.uci": 1
+      }
+    },
+    "mihomo.policy-source": {
+      "version": 1,
+      "module": "lib/policy-source.uc",
+      "requires": {
+        "mihomo.backend": 1,
+        "platform.uci": 1
+      }
+    },
+    "mihomo.gateway": {
+      "version": 1,
+      "module": "lib/gateway.uc",
+      "requires": {
+        "platform.files": 1,
+        "platform.uci": 1
+      }
+    },
+    "mihomo.artifacts": {
+      "version": 1,
+      "module": "lib/artifacts.uc",
+      "requires": {
+        "events.output": 1,
+        "mihomo.backend": 1,
+        "platform.uci": 1
+      }
+    },
+    "mihomo.readback": {
+      "version": 1,
+      "module": "lib/readback.uc",
+      "requires": {
+        "mihomo.backend": 1,
+        "mihomo.controller": 1,
+        "models.activation": 1,
+        "platform.uci": 1
+      }
+    },
+    "mihomo.probes": {
+      "version": 1,
+      "module": "lib/probes.uc",
+      "requires": {
+        "events.output": 1,
+        "mihomo.controller": 1,
+        "platform.documents": 1,
+        "platform.uci": 1
+      }
+    },
+    "mihomo.paths": {
+      "version": 1,
+      "module": "lib/paths.uc",
+      "requires": {
+        "mihomo.controller": 1,
+        "mihomo.latency": 1,
+        "mihomo.probes": 1,
+        "models.activation": 1,
+        "models.ordering": 1,
+        "models.policy": 1,
+        "models.selector": 1,
+        "models.status": 1,
+        "platform.uci": 1
+      }
+    },
+    "mihomo.lifecycle": {
+      "version": 1,
+      "module": "lib/lifecycle.uc",
+      "requires": {
+        "platform.runtime": 1,
+        "platform.uci": 1,
+        "platform.files": 1,
+        "platform.service": 1,
+        "platform.documents": 1,
+        "mihomo.backend": 1,
+        "mihomo.controller": 1,
+        "mihomo.readback": 1,
+        "mihomo.paths": 1,
+        "models.activation": 1
+      }
+    }
+  },
+  "commands": {
+    "probe": {
+      "service": "mihomo.probes",
+      "method": "command_probe",
+      "access": "read"
+    },
+    "native-gateway-prepare": {
+      "service": "mihomo.gateway",
+      "method": "command",
+      "access": "write"
+    },
+    "native-gateway-preview": {
+      "service": "mihomo.gateway",
+      "method": "command",
+      "access": "read"
+    },
+    "native-gateway-attach": {
+      "service": "mihomo.gateway",
+      "method": "command",
+      "access": "write"
+    },
+    "native-gateway-cleanup": {
+      "service": "mihomo.gateway",
+      "method": "command",
+      "access": "write"
+    },
+    "native-gateway-reconcile": {
+      "service": "mihomo.gateway",
+      "method": "command",
+      "access": "write"
+    },
+    "native-gateway-watch": {
+      "service": "mihomo.gateway",
+      "method": "command",
+      "access": "write"
+    },
+    "native-gateway-status": {
+      "service": "mihomo.gateway",
+      "method": "command",
+      "access": "read"
+    },
+    "native-gateway-compatibility-snapshot": {
+      "service": "mihomo.gateway",
+      "method": "command",
+      "access": "read"
+    }
+  },
+  "package_dependencies": [
+    "mihomo",
+    "ucode-mod-ubus",
+    "ucode-mod-uloop",
+    "curl",
+    "ca-bundle",
+    "coreutils-timeout",
+    "ip-full",
+    "nftables-json",
+    "kmod-nft-socket",
+    "kmod-nft-tproxy"
+  ],
+  "lifecycle": {
+    "drain": {
+      "service": "mihomo.lifecycle",
+      "method": "drain"
+    },
+    "resume": {
+      "service": "mihomo.lifecycle",
+      "method": "resume"
+    }
+  }
+}

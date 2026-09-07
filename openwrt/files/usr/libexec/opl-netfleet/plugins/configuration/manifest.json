@@ -1,0 +1,88 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "configuration",
+  "label": "Policy configuration",
+  "version": "0.7.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-configuration",
+  "services": {
+    "configuration.model": {
+      "version": 1,
+      "module": "lib/model.uc",
+      "requires": {
+        "models.policy": 1
+      }
+    },
+    "configuration.onboarding-model": {
+      "version": 1,
+      "module": "lib/onboarding-model.uc",
+      "requires": {
+        "models.regions": 1
+      }
+    },
+    "configuration.editor": {
+      "version": 1,
+      "module": "lib/editor.uc",
+      "requires": {
+        "configuration.model": 1,
+        "events.output": 1,
+        "mihomo.backend": 1,
+        "mihomo.policy-source": 1,
+        "models.activation": 1,
+        "models.policy": 1,
+        "models.regions": 1,
+        "platform.runtime": 1,
+        "platform.uci": 1,
+        "subscriptions.providers": 1
+      }
+    },
+    "configuration.onboarding": {
+      "version": 1,
+      "module": "lib/onboarding.uc",
+      "requires": {
+        "configuration.onboarding-model": 1,
+        "events.output": 1,
+        "mihomo.backend": 1,
+        "mihomo.controller": 1,
+        "models.activation": 1,
+        "models.policy": 1,
+        "platform.service": 1,
+        "platform.uci": 1,
+        "subscriptions.providers": 1
+      }
+    }
+  },
+  "commands": {
+    "config-get": {
+      "service": "configuration.editor",
+      "method": "command_config_get",
+      "access": "read"
+    },
+    "config-validate": {
+      "service": "configuration.editor",
+      "method": "command_config_validate",
+      "access": "read"
+    },
+    "config-save": {
+      "service": "configuration.editor",
+      "method": "command_config_save",
+      "access": "write"
+    },
+    "config-apply": {
+      "service": "configuration.editor",
+      "method": "command_config_apply",
+      "access": "write"
+    },
+    "onboarding-get": {
+      "service": "configuration.onboarding",
+      "method": "command_onboarding_get",
+      "access": "read"
+    },
+    "onboarding-apply": {
+      "service": "configuration.onboarding",
+      "method": "command_onboarding_apply",
+      "access": "write"
+    }
+  },
+  "package_dependencies": []
+}

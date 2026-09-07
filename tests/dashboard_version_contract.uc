@@ -1,5 +1,7 @@
+import { use, release as release_services } from "./services.uc";
 import * as fs from "fs";
-import { script_version, bundled_version } from "../openwrt/files/usr/libexec/opl-netfleet/adapters/dashboard_version.uc";
+const script_version = use("dashboard.version").script_version;
+const bundled_version = use("dashboard.version").bundled_version;
 
 function check(value, label) { if (!value) die(label); };
 const release = "https://api.github.com/repos/Zephyruso/zashboard/releases/latest";
@@ -51,3 +53,5 @@ fs.rmdir(`${work}/assets`);
 fs.unlink(entry);
 fs.rmdir(work);
 print("dashboard_version_contract_ok\n");
+
+release_services();
