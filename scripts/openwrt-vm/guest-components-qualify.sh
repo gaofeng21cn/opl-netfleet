@@ -14,6 +14,9 @@ finish() {
 	rc=$?
 	trap - EXIT INT TERM
 	cp "$work/original-feed" /etc/apk/repositories.d/opl-netfleet.list
+	if [ -f "$work/distfeeds.list" ]; then
+		mv "$work/distfeeds.list" /etc/apk/repositories.d/distfeeds.list
+	fi
 	rm -f /etc/apk/repositories.d/netfleet-component-fixture.list
 	rm -f /root/netfleet-component-space-fixture
 	if [ "$rc" -ne 0 ]; then
@@ -142,8 +145,11 @@ unchanged
 rpc_ready
 stage=installer_product_upgrade
 uclient-fetch -q -O "$work/install-netfleet.sh" "$feed_url/install-netfleet.sh"
+# The isolated proxy only serves local fixtures; system dependencies are installed.
+mv /etc/apk/repositories.d/distfeeds.list "$work/distfeeds.list"
 NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 \
 	sh "$work/install-netfleet.sh" >"$work/installer-upgrade.log" 2>&1
+mv "$work/distfeeds.list" /etc/apk/repositories.d/distfeeds.list
 for name in $product_packages; do apk list --manifest | grep -Fqx "$name $current"; done
 unchanged
 install_fixture $old_packages >>"$work/downgrade.log" 2>&1
