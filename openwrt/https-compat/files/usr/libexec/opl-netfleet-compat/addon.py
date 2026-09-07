@@ -1,5 +1,6 @@
 import asyncio
 from collections import Counter, deque
+import errno
 import hashlib
 import json
 import os
@@ -31,6 +32,7 @@ class Compatibility:
         self.clients = {}
         self.failures = deque(maxlen=100)
         self.failed_tls_clients = set()
+        self.connection_errors = {}
         self.observed = {}
 
     def load(self, loader):
@@ -122,6 +124,8 @@ class Compatibility:
         flow.metadata["netfleet_rule"] = rule["id"]
         self.active[flow.id] = flow.client_conn.id
         flow.metadata["netfleet_websocket"] = websocket
+        # Inbound validation can reject a request before its headers hook runs.
+        flow.metadata["netfleet_client_invalid"] = flow.error is not None
 
     def tls_start_server(self, data):
         protocols = self.protocols.get(data.context.client.id)
@@ -132,12 +136,26 @@ class Compatibility:
                 data.ssl_conn.set_alpn_protos(list(protocols))
 
     def server_connect(self, data):
+        self.connection_errors.pop(data.client.id, None)
         internal = self.probe and data.client.peername[0] in ("127.0.0.1", "::1") and data.server.address[1] == TLS_PORT
         if ctx.options.netfleet_preserve_source_port and not internal:
             # An unavailable source port must fail the connection, never silently change its route.
             # asyncio resolves a None local host as loopback, not a wildcard bind.
             bind = ctx.options.connect_addr or ("::" if ":" in data.server.address[0] else "0.0.0.0")
             data.server.sockname = (bind, data.client.peername[1])
+
+    def server_connect_error(self, data):
+        message = str(data.server.error or "").lower()
+        reason = ("client_cancelled" if message == "connection cancelled" else
+                  "source_port_unavailable" if "address already in use" in message or f"[errno {errno.EADDRINUSE}]" in message else
+                  "upstream_bind_failed" if "error while attempting to bind" in message else
+                  "upstream_dns_failed" if any(text in message for text in
+                      ("name or service not known", "name resolution", "nodename nor servname")) else
+                  "upstream_connection_refused" if "refused" in message or f"[errno {errno.ECONNREFUSED}]" in message else
+                  "upstream_unreachable" if "unreachable" in message or any(f"[errno {code}]" in message for code in (errno.ENETUNREACH, errno.EHOSTUNREACH)) else
+                  "upstream_timeout" if "timed out" in message or "timeout" in message else
+                  "upstream_connect_failed")
+        self.connection_errors[data.client.id] = reason
 
     def tls_established_server(self, data):
         if self.protocols.get(data.context.client.id) == (b"h2",) and data.conn.alpn != b"h2":
@@ -193,11 +211,16 @@ class Compatibility:
         if identity:
             # The error hook may precede the connection-state transition.
             message = str(flow.error.msg if flow.error else "").lower()
-            cancelled = not flow.client_conn.connected or message.startswith(("client disconnected", "client closed"))
+            connection_error = self.connection_errors.pop(flow.client_conn.id, None)
+            cancelled = (not flow.client_conn.connected or message == "connection cancelled"
+                         or message.startswith(("client disconnected", "client closed")))
             reason = ("client_cancelled" if cancelled else
+                      "client_request_invalid" if flow.metadata.get("netfleet_client_invalid") else
+                      connection_error if connection_error else
                       "upstream_timeout" if "timed out" in message or "timeout" in message else
                       "upstream_connection_reset" if "reset" in message else "upstream_transport_failed")
-            if not cancelled and flow.client_conn.id not in self.failed_tls_clients:
+            connection_only = reason in ("client_cancelled", "client_request_invalid", "source_port_unavailable")
+            if not connection_only and flow.client_conn.id not in self.failed_tls_clients:
                 protocol = flow.server_conn.alpn.decode("ascii") if flow.server_conn.alpn else None
                 self.record_failure(identity, reason, protocol, flow.response.status_code if flow.response else None)
             self.results[identity] = {**self.results.get(identity, {}), "at": int(time.time()),
@@ -212,6 +235,7 @@ class Compatibility:
     def client_disconnected(self, client):
         self.clients.pop(client.id, None)
         self.failed_tls_clients.discard(client.id)
+        self.connection_errors.pop(client.id, None)
         self.selected.pop(client.id, None)
         self.protocols.pop(client.id, None)
         for identity in [key for key, value in self.active.items() if value == client.id]:
