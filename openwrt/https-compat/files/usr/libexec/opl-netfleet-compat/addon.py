@@ -169,7 +169,9 @@ class Compatibility:
         rule = self.selected.get(data.context.client.id)
         if rule and data.context.client.id not in self.failed_tls_clients:
             self.results[rule["id"]] = {"at": int(time.time()), "event": time.monotonic_ns(), "transport_error": True, "reason": reason}
-            self.record_failure(rule["id"], reason)
+            # A client's trust or handshake failure does not establish an upstream outage.
+            if reason != "client_tls_failed":
+                self.record_failure(rule["id"], reason)
             self.failed_tls_clients.add(data.context.client.id)
 
     def record_failure(self, identity, reason, protocol=None, status=None):

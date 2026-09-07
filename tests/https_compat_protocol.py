@@ -283,6 +283,20 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
             writer.close()
             await writer.wait_closed()
 
+    async def test_client_tls_rejections_do_not_count_as_upstream_outages(self):
+        async with httpx.AsyncClient(proxy=f"http://127.0.0.1:{self.proxy_port}",
+                                     http2=False, timeout=5, trust_env=False) as untrusted:
+            for _ in range(4):
+                with self.assertRaises(httpx.ConnectError):
+                    await untrusted.get(self.url + "/untrusted-client")
+        self.assertEqual(self.received, [])
+        health = await self.health()
+        self.assertEqual(health["rules"]["test"]["reason"], "client_tls_failed")
+        self.assertEqual(health["failure_events"], [])
+        response = await self.client.get(self.url + "/trusted-client")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["x-upstream-protocol"], "2")
+
     async def test_invalid_upstream_certificate_is_rejected(self):
         # The server has already loaded its certificate; change only the proxy's trust anchor.
         await asyncio.sleep(0.05)
