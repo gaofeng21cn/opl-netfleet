@@ -139,6 +139,7 @@ function resultNode(controller, kind, identity, title, details, warning, attrs) 
 	attrs = Object.assign({ 'class': 'netfleet-operation is-result' + (warning ? ' is-warning' : ''), 'role': 'status' }, attrs);
 	if (dismissedResult(controller, kind, identity)) return E('div', Object.assign(attrs, { 'hidden': true }));
 	const close = E('button', { 'type': 'button', 'class': 'netfleet-result-close', 'title': '关闭此条结果', 'aria-label': '关闭' + title + '结果', 'click': function() {
+		if (typeof close.closest === 'function' && close.closest('#modal_overlay')) ui.hideModal();
 		dismissedResult(controller, kind, identity, true);
 		updateOperationNodes(controller);
 		controller.redraw();
