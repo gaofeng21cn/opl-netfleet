@@ -14,7 +14,7 @@
 <p align="center">
   <a href="https://github.com/gaofeng21cn/opl-netfleet/actions"><img src="https://img.shields.io/github/actions/workflow/status/gaofeng21cn/opl-netfleet/netfleet-release.yml?label=checks" alt="Checks" /></a>
   <a href="https://github.com/gaofeng21cn/opl-netfleet/releases/latest"><img src="https://img.shields.io/github/v/release/gaofeng21cn/opl-netfleet" alt="最新版本" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="GPL-3.0 许可证" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="Apache-2.0 许可证" /></a>
 </p>
 
 NetFleet 为 OpenWrt 设备提供多机场网络管理。它可以增强已有 Nikki + Mihomo，也可以通过原生后端直接管理 Mihomo。不同订阅中的节点按机场、地区和用途组织，根据实时连接质量选择出口，并在路径变化时切换。
@@ -189,4 +189,4 @@ NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
 
 ## 许可证
 
-包含 Nikki 派生模块的组合分发遵循 [GNU GPL 3.0](./LICENSE)。原有 NetFleet 文件的 Apache-2.0 声明继续保留，许可正文见 [Apache-2.0](openwrt/files/usr/share/opl-netfleet/LICENSE.Apache-2.0)；复用的 Nikki 模块保留其 GPL-3.0 许可证、版权、固定上游版本和[修改说明](openwrt/files/usr/share/opl-netfleet/nikki/NOTICE)。第三方原始声明不因组合分发而移除。
+OPL NetFleet 默认采用 [Apache License 2.0](./LICENSE)，另有明确许可声明的文件除外。LuCI 等文件保留其 MIT 声明。包含 Nikki 派生模块的组合分发仍须遵循 [GNU GPL 3.0](openwrt/files/usr/share/opl-netfleet/nikki/LICENSE)。原有 NetFleet 文件的 Apache-2.0 声明继续保留，许可正文见 [Apache-2.0](openwrt/files/usr/share/opl-netfleet/LICENSE.Apache-2.0)；复用的 Nikki 模块保留其 GPL-3.0 许可证、版权、固定上游版本和[修改说明](openwrt/files/usr/share/opl-netfleet/nikki/NOTICE)。第三方原始声明不因组合分发而移除。
