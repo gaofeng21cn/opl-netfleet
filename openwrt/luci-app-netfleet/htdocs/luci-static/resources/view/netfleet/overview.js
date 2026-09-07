@@ -577,7 +577,7 @@ function overviewDigest(status, events, navigate) {
 	if (!availabilityMeasured)
 		result.push(E('p', { 'class': 'netfleet-overview-empty' }, 'NetFleet 当前未接管，机场和地区的实时可用性未测量。'));
 	if (attention.length) {
-		result.push(E('div', { 'class': 'alert-message warning netfleet-overview-attention' }, [
+		result.push(E('div', { 'class': 'netfleet-overview-attention', 'role': 'note', 'aria-label': '需要关注' }, [
 			E('strong', {}, '需要关注'),
 			E('ul', {}, attention.map(function(item) { return E('li', {}, item); }))
 		]));
