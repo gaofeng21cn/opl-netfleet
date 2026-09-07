@@ -142,12 +142,13 @@ tar -cf "$work/runtime-source.tar" -C "$workspace" \
 	openwrt/Makefile \
 	openwrt/https-compat \
 	openwrt/files/usr/libexec/opl-netfleet \
+	openwrt/files/usr/libexec/opl-netfleet-plugin-package \
 	openwrt/files/usr/libexec/rpcd/opl-netfleet \
 	openwrt/luci-app-netfleet/root/usr/share/rpcd/acl.d/luci-app-netfleet.json \
 	openwrt/files/etc/init.d/opl-netfleet \
 	openwrt/files/etc/init.d/opl-netfleet-core \
 	openwrt/files/etc/config/netfleet \
-	openwrt/files/usr/share/opl-netfleet/nikki \
+	openwrt/files/usr/share/opl-netfleet \
 	openwrt/files/etc/opl-netfleet/policy.example.json \
 	openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json \
 	openwrt/files/etc/opl-netfleet/rulesets.lock.json examples/plugins tests

@@ -5,10 +5,24 @@
 'require netfleet.api as api';
 
 function errorLabel(code) {
+	if (typeof code === 'string' && code.indexOf(':') >= 0) {
+		const separator = code.indexOf(':');
+		return errorLabel(code.slice(0, separator)) + '：' + code.slice(separator + 1);
+	}
 	if (code === 'plugin_load_failed_rolled_back') return '插件加载失败，已恢复未加载状态';
 	if (typeof code === 'string' && code.endsWith('_rolled_back')) return errorLabel(code.slice(0, -12)) + '；已恢复更新前版本和运行状态';
 	return ({
-		plugin_package_maintenance: '插件正在安装或维护，暂时只可查看状态和退出',
+		plugin_package_maintenance: '插件正在安装或维护',
+		plugin_kernel_maintenance: '内核正在更新，请稍后重试',
+		plugin_disabled: '插件未启用',
+		plugin_required_by: '其他已启用插件仍依赖此插件',
+		plugin_binding_conflict: '服务已绑定其他插件',
+		plugin_service_unbound: '服务尚未绑定提供者',
+		plugin_service_missing: '插件未提供所需服务',
+		plugin_service_incompatible: '服务接口版本不兼容',
+		plugin_dependency_cycle: '插件存在循环依赖',
+		plugin_code_busy: '插件仍有调用正在执行',
+		plugin_calls_draining: '插件仍有调用正在结束',
 		plugin_package_replacing: '插件文件正在替换，请在包操作完成后重试',
 		plugin_api_incompatible: '插件接口版本与当前 NetFleet 不兼容',
 		plugin_backend_unsupported: '插件不适用于当前后端',
@@ -323,7 +337,7 @@ function pluginDialog(controller, plugin) {
 			if (actions.indexOf(action) >= 0) values = JSON.parse(params.value);
 			if (!values || typeof values !== 'object' || Array.isArray(values)) throw new Error('参数必须是 JSON 对象');
 		} catch (error) { status.textContent = error.message; return; }
-		const writing = ['load', 'reload', 'unload'].indexOf(action) >= 0 || plugin.actions[action] === 'write';
+		const writing = ['load', 'reload', 'unload'].indexOf(action) >= 0 || (plugin.actions || {})[action] === 'write';
 		const execute = function() {
 			busy(true);
 			const request = { id: plugin.id, action: action, revision: revision, confirm: writing, params: values };
@@ -476,8 +490,8 @@ function componentsPage(controller) {
 			E('td', {}, current), E('td', {}, available), E('td', { 'class': 'netfleet-component-actions' }, update) ]);
 	});
 	(snapshot.extensions || []).filter(function(extension) { return extension.kind === 'plugin'; }).forEach(function(plugin) {
-		rows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, plugin.label), E('small', {}, '动态插件') ]),
-			E('td', {}, [ E('strong', {}, plugin.installed_version || plugin.version || '未知版本'), E('small', {}, plugin.reason ? errorLabel(plugin.reason) : '可按需加载') ]),
+		rows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, plugin.label), E('small', {}, plugin.runtime === 'service' ? '功能插件 · ' + Object.keys(plugin.services || {}).length + ' 个服务' : '进程插件') ]),
+			E('td', {}, [ E('strong', {}, plugin.installed_version || plugin.version || '未知版本'), E('small', {}, plugin.reason ? errorLabel(plugin.reason) : plugin.enabled === true ? '已启用' : '可按需加载') ]),
 			E('td', {}, plugin.package || ''), E('td', { 'class': 'netfleet-component-actions' },
 				plugin.revision ? button('管理', function() { pluginDialog(controller, plugin); }, active) : '') ]));
 	});

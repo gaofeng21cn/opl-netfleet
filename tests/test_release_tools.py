@@ -595,7 +595,7 @@ if name in ('opl-netfleet', 'opl-netfleet-core'):
 elif name == 'ucode':
     if args[0] == '-e':
         print(state['backend'])
-    elif 'native_gateway.uc' in args[0]:
+    elif args[1] == 'native-gateway-status':
         running = state['opl-netfleet-core']['running']
         print(json.dumps({'ok': True, 'result': {
             'core_running': running, 'ready': running and not state.get('not_ready'),
@@ -608,7 +608,7 @@ elif name == 'ucode':
     else:
         code = 1
 elif name == 'jsonfilter':
-    value = json.load(sys.stdin)
+    value = json.loads(Path(args[args.index('-i') + 1]).read_text()) if '-i' in args else json.load(sys.stdin)
     for key in args[args.index('-e') + 1].removeprefix('@.').split('.'):
         value = value[key]
     print(str(value).lower() if isinstance(value, bool) else value)
@@ -633,6 +633,8 @@ sys.exit(code)
 
     def update_state(self, **changes):
         self.state.write_text(json.dumps({**self.read_state(), **changes}))
+        if 'backend' in changes:
+            (self.root / 'etc/opl-netfleet/backend.json').write_text(json.dumps({'kind': changes['backend']}))
 
     def hook(self, name, **environment):
         source = (ROOT / 'openwrt/Makefile').read_text()
