@@ -14,6 +14,7 @@ lock=/var/lock/opl-netfleet-deploy.lock
 stage=precondition
 helper_pids=
 package_checks=
+legacy_checks=
 
 test -f /tmp/netfleet-setup-vm-authorized
 test ! -e /etc/init.d/nikki
@@ -84,6 +85,158 @@ package_identity() {
 direct_probe() {
 	curl -fsS --noproxy '*' --connect-timeout 2 --max-time 8 \
 		--cacert /tmp/local-probe.crt "https://192.168.1.2:$probe_port/generate_204"
+}
+package_transaction() {
+	(
+		exec 9>"$lock"
+		flock 9
+		apk --no-network "$@" 9>&-
+	) >>"$work/packages.log" 2>&1
+}
+native_snapshot() {
+	sha256sum /etc/config/netfleet /etc/opl-netfleet/backend.json /etc/opl-netfleet/policy.json \
+		/etc/opl-netfleet/native/subscriptions/setup.yaml \
+		/etc/opl-netfleet/native/profiles/OPL-NetFleet.json \
+		/etc/opl-netfleet/native/profiles/opl-netfleet/mvp.manifest.json >"$work/$1.inputs"
+	secret=$(uci -q get netfleet.mixin.api_secret)
+	curl -fsS --noproxy '*' --max-time 5 -H "Authorization: Bearer $secret" \
+		http://127.0.0.1:9090/proxies >"$work/$1.proxies"
+	ucode -e 'import { readfile } from "fs";
+		const proxies = json(readfile(ARGV[0])).proxies;
+		const result = {}; for (let name in sort(keys(proxies)))
+			if (proxies[name].type == "Selector") result[name] = proxies[name].now;
+		printf("%J\n", result);' "$work/$1.proxies" >"$work/$1.routes"
+}
+native_restored() {
+	/etc/init.d/opl-netfleet enabled
+	/etc/init.d/opl-netfleet running
+	/etc/init.d/opl-netfleet-core enabled
+	run_main status >"$work/legacy-status-result.json"
+	assert_json "$work/legacy-status-result.json" '@.result.active' true
+	run_main probe >"$work/legacy-probe-result.json"
+	assert_json "$work/legacy-probe-result.json" '@.result.ok' true
+	curl -fsS --socks5-hostname 127.0.0.1:7890 --max-time 10 https://www.gstatic.com/generate_204
+	direct_probe
+	native_snapshot legacy-after
+	cmp "$work/legacy-before.inputs" "$work/legacy-after.inputs"
+	cmp "$work/legacy-before.routes" "$work/legacy-after.routes"
+}
+legacy_native_migration() {
+	uclient-fetch -q -O "$work/legacy-fixture.json" "$feed_url/components-fixtures/fixture.json"
+	[ -n "$(jsonfilter -i "$work/legacy-fixture.json" -e '@.legacy.key_sha256')" ] || return 0
+	stage=legacy_native_prepare
+	uclient-fetch -q -O /etc/apk/keys/netfleet-legacy-fixture.pem \
+		"$feed_url/components-fixtures/legacy/baseline.pem"
+	[ "$(digest /etc/apk/keys/netfleet-legacy-fixture.pem)" = \
+		"$(jsonfilter -i "$work/legacy-fixture.json" -e '@.legacy.key_sha256')" ]
+	ucode -e 'import { readfile } from "fs";
+		for (let artifact in json(readfile(ARGV[0])).legacy.artifacts)
+			printf("%s %s %s %s\n", artifact.sha256, artifact.name, artifact.package, artifact.version);' \
+		"$work/legacy-fixture.json" >"$work/legacy-files.txt"
+	legacy_packages=
+	while read -r expected filename name version; do
+		case "$filename" in */*|*..*|"") exit 1 ;; esac
+		uclient-fetch -q -O "$candidate/$filename" "$feed_url/components-fixtures/legacy/$filename"
+		[ "$(digest "$candidate/$filename")" = "$expected" ]
+		legacy_packages="$legacy_packages $candidate/$filename"
+	done <"$work/legacy-files.txt"
+	ucode -e 'import { readfile } from "fs";
+		for (let artifact in json(readfile(ARGV[0])).artifacts)
+			printf("%s %s\n", artifact.package, artifact.name);' \
+		"$candidate/manifest.json" >"$work/current-files.txt"
+	current_packages=
+	product_packages=
+	while read -r name filename; do
+		uclient-fetch -q -O "$candidate/$filename" "$feed_url/$filename"
+		current_packages="$current_packages $candidate/$filename"
+		product_packages="$product_packages $name"
+	done <"$work/current-files.txt"
+	# Fetch and retain the old product's dependencies before taking it offline.
+	(
+		exec 9>"$lock"
+		flock 9
+		apk --timeout 300 add mihomo-meta yq unzip 9>&-
+	) >>"$work/packages.log" 2>&1
+	tar -czf "$work/legacy-private.tar.gz" -C / etc/config/netfleet etc/opl-netfleet
+	stage=legacy_native_baseline_install
+	package_transaction del $product_packages
+	[ ! -e "$main" ]
+	direct_probe
+	package_transaction add $legacy_packages
+	tar -xzf "$work/legacy-private.tar.gz" -C /
+	stage=legacy_native_baseline_activate
+	/etc/init.d/opl-netfleet-core enable
+	/etc/init.d/opl-netfleet-core start
+	run_main disable >"$work/legacy-disable-result.json"
+	run_main compile >"$work/legacy-compile-result.json"
+	run_main enable >"$work/legacy-enable-result.json"
+	/etc/init.d/opl-netfleet enable
+	/etc/init.d/opl-netfleet start
+	/etc/init.d/opl-netfleet-core enable
+	[ -f /usr/libexec/opl-netfleet/application/native_gateway.uc ]
+	[ ! -e /usr/libexec/opl-netfleet/kernel/host.uc ]
+	assert_json /usr/share/opl-netfleet/build.json '@.source_commit' \
+		"$(jsonfilter -i "$work/legacy-fixture.json" -e '@.legacy.build.source_commit')"
+	native_snapshot legacy-before
+	native_restored
+	tar -czf "$work/legacy-private.tar.gz" -C / etc/config/netfleet etc/opl-netfleet
+
+	stage=legacy_native_failed_upgrade
+	uclient-fetch -q -O /etc/apk/keys/netfleet-component-fixture.pem \
+		"$feed_url/components-fixtures/component-fixture.pem"
+	bad_version=$(jsonfilter -i "$work/legacy-fixture.json" -e '@.package_versions["opl-netfleet-plugin-mihomo"].bad')
+	bad_file=opl-netfleet-plugin-mihomo-$bad_version.apk
+	uclient-fetch -q -O "$candidate/$bad_file" "$feed_url/components-fixtures/bad/$bad_file"
+	failed_packages=
+	while read -r name filename; do
+		[ "$name" != opl-netfleet-plugin-mihomo ] || filename=$bad_file
+		failed_packages="$failed_packages $candidate/$filename"
+	done <"$work/current-files.txt"
+	package_transaction add $failed_packages || true
+	apk list --manifest | grep -Fqx "opl-netfleet-plugin-mihomo $bad_version"
+	ucode "$gateway" native-gateway-status >"$work/legacy-failed-gateway-result.json"
+	assert_json "$work/legacy-failed-gateway-result.json" '@.result.ready' false
+	assert_json "$work/legacy-failed-gateway-result.json" '@.result.clean' true
+	[ -s /tmp/opl-netfleet-package-upgrade-state ]
+	direct_probe
+
+	stage=legacy_native_formal_package_rollback
+	# Old pre-upgrade hooks import removed monolith modules. Run normal remove
+	# and install hooks, then restore the private snapshot with the old owner.
+	package_transaction del $product_packages
+	[ ! -e "$main" ]
+	[ -z "$(pidof mihomo 2>/dev/null || true)" ]
+	! nft list table inet netfleet >/dev/null 2>&1
+	direct_probe
+	package_transaction add $legacy_packages
+	tar -xzf "$work/legacy-private.tar.gz" -C /
+	/etc/init.d/opl-netfleet-core enable
+	/etc/init.d/opl-netfleet-core start
+	/etc/init.d/opl-netfleet enable
+	/etc/init.d/opl-netfleet start
+	assert_json /usr/share/opl-netfleet/build.json '@.source_commit' \
+		"$(jsonfilter -i "$work/legacy-fixture.json" -e '@.legacy.build.source_commit')"
+	while read -r expected filename name version; do
+		apk list --manifest | grep -Fqx "$name $version"
+	done <"$work/legacy-files.txt"
+	[ ! -e /usr/libexec/opl-netfleet/kernel/host.uc ]
+	[ ! -e /tmp/opl-netfleet-package-upgrade-state ]
+	native_restored
+	rm -f /tmp/opl-netfleet-microkernel-migration
+
+	stage=legacy_native_successful_upgrade
+	package_transaction add $current_packages
+	package_identity
+	native_restored
+	[ ! -e /usr/libexec/opl-netfleet/adapters/runtime.uc ]
+	[ -f /usr/libexec/opl-netfleet/adapters/openwrt.uc ]
+	[ ! -e /tmp/opl-netfleet-package-upgrade-state ]
+	[ ! -e /tmp/opl-netfleet-microkernel-migration ]
+	# Restore the installer's dependency roots after using explicit local APKs.
+	package_transaction add opl-netfleet luci-app-netfleet
+	dependency_packages=$(printf '%s\n' "$product_packages" | tr ' ' '\n' | grep -vE '^(|opl-netfleet|luci-app-netfleet)$')
+	package_transaction del $dependency_packages mihomo-meta yq unzip
+	legacy_checks=',"legacy_native_upgrade":true,"legacy_native_failed_upgrade_direct_usable":true,"legacy_native_formal_package_rollback":true,"legacy_native_private_state_and_routes_restored":true'
 }
 setup_request() {
 	ucode -e '
@@ -302,13 +455,16 @@ curl -fsS --socks5-hostname 127.0.0.1:7890 --max-time 10 https://www.gstatic.com
 direct_probe
 
 if [ -n "$feed_url" ]; then
+	legacy_native_migration
 	stage=native_package_upgrade
 	profile_before=$(uci -q get netfleet.config.profile)
 	config_before=$(digest /etc/config/netfleet)
 	cache_before=$(digest /etc/opl-netfleet/native/subscriptions/setup.yaml)
 	policy_before=$(digest /etc/opl-netfleet/policy.json)
 	core_before=$(digest /usr/libexec/mihomo)
-	apk --timeout 300 fix --reinstall opl-netfleet luci-app-netfleet >>"$work/packages.log" 2>&1
+	if [ -z "$legacy_checks" ]; then
+		apk --timeout 300 fix --reinstall opl-netfleet luci-app-netfleet >>"$work/packages.log" 2>&1
+	fi
 	[ ! -e /tmp/opl-netfleet-package-upgrade-state ]
 	[ "$(uci -q get netfleet.config.profile)" = "$profile_before" ]
 	[ "$(digest /etc/config/netfleet)" = "$config_before" ]
@@ -387,7 +543,7 @@ fi
 
 stage=complete
 printf '{"schema_version":1,"ok":true,"source_commit":"%s","source_tree":"%s","scope":"native-mihomo-first-install","production_ready":false,"checks":{"nikki_absent":true,"real_netifd_upstream":true,"get_read_only":true,"failed_download_rollback":true,"failed_setup_direct_usable":true,"native_setup":true,"gateway_ready":true,"shared_onboarding":true,"shared_probe":true,"proxy_traffic":true,"disable_restores_subscription":true,"stop_cleans_dataplane":true,"direct_after_stop":true,"foreign_nft_unchanged":true%s}}\n' \
-	"$source_commit" "$source_tree" "$package_checks" >"$work/qualification.json"
+	"$source_commit" "$source_tree" "$package_checks$legacy_checks" >"$work/qualification.json"
 ucode -e 'import { readfile, writefile } from "fs";
 	const result = json(readfile(ARGV[0]));
 	for (let path in slice(ARGV, 1)) {

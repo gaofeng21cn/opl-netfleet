@@ -51,7 +51,12 @@ class InstalledIdentity(unittest.TestCase):
             command("ip", "link", "set", peer, "netns", namespace)
             command("ip", "link", "set", interface, "address", "02:00:00:00:00:fe")
             command("ip", "-n", namespace, "link", "set", peer, "address", MAC)
-            command("ip", "link", "set", interface, "up")
+            for setting in ("forwarding", "accept_ra", "autoconf"):
+                command("sysctl", "-w", "net.ipv6.conf." + interface + "." + setting + "=0")
+            command("ubus", "call", "network", "add_dynamic", json.dumps({
+                "name": interface, "proto": "none", "device": interface,
+                "auto": True, "defaultroute": False, "peerdns": False, "delegate": False}))
+            self.addCleanup(command, "ubus", "call", "network.interface." + interface, "remove")
             command("ip", "-n", namespace, "link", "set", peer, "up")
             command("ip", "-6", "addr", "add", "fe80::fe/64", "dev", interface, "nodad")
             command("ip", "-n", namespace, "-6", "addr", "add", "fe80::1/64", "dev", peer, "nodad")
@@ -63,6 +68,19 @@ class InstalledIdentity(unittest.TestCase):
                                 capture_output=True, timeout=5)
             candidate("2001:db8::2")
             before_routes = command("ip", "-6", "-j", "route", "show", "table", "main")
+            # An observation attachment must not become a router or accept a new upstream.
+            command("ip", "netns", "exec", namespace, "python3", "-c",
+                    "from scapy.layers.inet6 import IPv6, ICMPv6ND_RA, ICMPv6NDOptPrefixInfo; "
+                    "from scapy.layers.l2 import Ether; from scapy.sendrecv import sendp; "
+                    "sendp(Ether(src='" + MAC + "', dst='33:33:00:00:00:01')/"
+                    "IPv6(src='fe80::1',dst='ff02::1',hlim=255)/ICMPv6ND_RA(routerlifetime=900)/"
+                    "ICMPv6NDOptPrefixInfo(prefix='2001:db8:dead::',prefixlen=64,L=1,A=1),"
+                    "iface='" + peer + "',verbose=False)")
+            observed = json.loads(command("ip", "-j", "addr", "show", "dev", interface))[0]
+            self.assertFalse(any(row.get("scope") == "global" for row in observed["addr_info"]))
+            for setting in ("forwarding", "accept_ra", "autoconf"):
+                self.assertEqual(command("sysctl", "-n", "net.ipv6.conf." + interface + "." + setting).strip(), "0")
+            self.assertEqual(command("ip", "-6", "-j", "route", "show", "table", "main"), before_routes)
             config = {"enabled": True, "source": "local", "interfaces": [interface]}
             source("configure", {"config_revision": loaded["config_revision"], "config": config})
             synced = source("sync")

@@ -316,7 +316,7 @@ function render(controller) {
 			!config.devices.length ? button('添加接入设备', function() { controller.compatibilityTab = 'devices'; controller.redraw(); edit(controller, 'devices'); }, busy) : '' ],
 		devices: [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h4', {}, '设备与信任'), button('新增设备', function() { edit(controller, 'devices'); }, busy) ]),
 			E('div', { 'class': 'netfleet-section-heading' }, [ E('span', {}, '地址来源'),
-				E('div', { 'role': 'status' }, controller.identitySource ? [ E('strong', {}, controller.identitySource.config.source === 'unifi' ? 'UniFi 控制器' : '本地直连邻居'),
+				E('div', { 'role': 'status' }, controller.identitySource ? [ E('strong', {}, controller.identitySource.config.source === 'unifi' ? 'UniFi 控制器' : 'NetFleet 本机网络'),
 					E('small', {}, sourceReason(controller.identitySource.reason)),
 					(controller.identitySource.devices || []).some(item => !item.addresses.length) ? E('small', {}, (controller.identitySource.devices || []).filter(item => !item.addresses.length).length + ' 台设备无可用地址') : '',
 					controller.identitySource.last_success ? E('small', {}, '最近同步 ' + new Date(controller.identitySource.last_success * 1000).toLocaleString()) : '' ] : '设备地址插件未安装或不可读取'),

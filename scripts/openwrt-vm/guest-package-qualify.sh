@@ -585,9 +585,11 @@ if [ "$(jsonfilter -i "$fixture/lifecycle-fixture.json" -e '@.legacy.key_sha256'
 	package_transaction $current_packages
 	lifecycle_restored legacy-before
 	/etc/init.d/opl-netfleet enabled >/dev/null 2>&1
-	for directory in application domain adapters platform; do
+	for directory in application domain platform; do
 		[ ! -e "/usr/libexec/opl-netfleet/$directory" ]
 	done
+	[ -f /usr/libexec/opl-netfleet/adapters/openwrt.uc ]
+	[ ! -e /usr/libexec/opl-netfleet/adapters/runtime.uc ]
 	while read -r package_name package_version; do
 		"$real_apk" list --manifest | grep -Fqx "$package_name $package_version"
 	done <"$fixture/product-packages.txt"
