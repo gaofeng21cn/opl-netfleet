@@ -1630,6 +1630,7 @@
 .netfleet-native .netfleet-profile-editor { width: 100%; min-height: 320px; max-height: 60vh; box-sizing: border-box; resize: vertical; font-family: monospace; line-height: 1.6; }
 .netfleet-native .netfleet-core-log { max-height: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; padding: 16px; }
 .netfleet-native .netfleet-compatibility { min-width: 0; }
+.netfleet-native .netfleet-config-row[hidden] { display: none; }
 .netfleet-native .netfleet-compatibility .netfleet-section-heading { flex-wrap: wrap; gap: 12px; }
 .netfleet-native .netfleet-compatibility > .netfleet-config-row { grid-template-columns: minmax(180px, 1fr) minmax(160px, 1fr) 40px; padding: 16px 0; }
 .netfleet-native .netfleet-compatibility small { display: block; margin-top: 4px; color: var(--nf-muted); }

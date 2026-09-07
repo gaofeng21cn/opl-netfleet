@@ -312,7 +312,7 @@ function render(controller) {
 			table([ '启用', '目标', '设备', '策略', '状态', '操作' ], rules, config.devices.length ? '暂无目标规则' : '尚无接入设备'),
 			!config.devices.length ? button('添加接入设备', function() { controller.compatibilityTab = 'devices'; controller.redraw(); edit(controller, 'devices'); }, busy) : '' ],
 		devices: [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h4', {}, '设备与信任'), button('新增设备', function() { edit(controller, 'devices'); }, busy) ]),
-			E('div', { 'class': 'netfleet-config-row' }, [ E('span', {}, '地址来源'),
+			E('div', { 'class': 'netfleet-section-heading' }, [ E('span', {}, '地址来源'),
 				E('div', { 'role': 'status' }, controller.identitySource ? [ E('strong', {}, controller.identitySource.config.source === 'unifi' ? 'UniFi 控制器' : '本地直连邻居'),
 					E('small', {}, sourceReason(controller.identitySource.reason)),
 					(controller.identitySource.devices || []).some(item => !item.addresses.length) ? E('small', {}, (controller.identitySource.devices || []).filter(item => !item.addresses.length).length + ' 台设备无可用地址') : '',
