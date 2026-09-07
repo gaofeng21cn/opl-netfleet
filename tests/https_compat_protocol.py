@@ -176,9 +176,11 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
                               "headers": dict(scope["headers"]), "body": bytes(body)})
         status = int(scope["path"].split("/")[-1]) if scope["path"].startswith("/status/") else 200
         await send({"type": "http.response.start", "status": status,
-                    "headers": [(b"content-type", b"text/event-stream" if scope["path"] == "/sse" else b"application/json"),
+                    "headers": [(b"content-type", b"text/event-stream" if scope["path"] in ("/sse", "/sse-error") else b"application/json"),
                                 (b"x-upstream-protocol", scope["http_version"].encode()), (b"retry-after", b"7")]})
-        if scope["path"] == "/sse":
+        if scope["path"] == "/sse-error":
+            await send({"type": "http.response.body", "body": b'event: response.failed\ndata: {"error":{"code":"server_error","message":"Our servers are currently overloaded. Please try again later."}}\n\n'})
+        elif scope["path"] == "/sse":
             await send({"type": "http.response.body", "body": b"data: first\n\n", "more_body": True})
             await self.finish_sse.wait()
             await send({"type": "http.response.body", "body": b"data: done\n\n"})
@@ -222,6 +224,15 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.health())["active_requests"], 0)
         self.assertEqual((await self.health())["rules"]["test"]["upstream_protocol"], "h2")
         self.assertEqual((await self.health())["failure_events"], [])
+
+    async def test_application_stream_error_is_forwarded_without_transport_failure(self):
+        response = await self.client.get(self.url + "/sse-error")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"event: response.failed", response.content)
+        self.assertIn(b"Our servers are currently overloaded.", response.content)
+        health = await self.health()
+        self.assertEqual(health["failure_events"], [])
+        self.assertFalse(health["rules"]["test"]["transport_error"])
 
     async def test_websocket_uses_h1(self):
         reader, writer = await asyncio.open_connection("127.0.0.1", self.proxy_port)

@@ -34,6 +34,8 @@ class Controller(unittest.TestCase):
     def test_lifecycle(self):
         if not Path("/tmp/netfleet-compat-vm-authorized").exists():
             self.skipTest("disposable VM required")
+        # Source-only VM fixtures have no installer to select the native backend.
+        Path("/etc/opl-netfleet/backend.json").write_text('{"kind":"native-mihomo"}')
         initial = self.call("get")
         self.assertFalse(initial["requested"])
         config = {"schema": 1, "enabled": False, "devices": [{"id": "test", "name": "Test", "addresses": ["192.0.2.2"]}],
