@@ -33,7 +33,7 @@ apply 接受绑定 revision 的明确确认和一份私有订阅输入，完成�
 编辑表单显示当前真实地址和 User-Agent；未提交的字段由 owner 保留。来源修改不立即重启或下载，
 运行继续使用上次可用缓存，`pending_update/cache_current/using_previous_cache` 明确区分待更新
 与已接受缓存；只有显式更新成功后新来源才生效。`subscriptions_refresh` 只接受稳定来源 ID，
-未被启用 policy 引用的来源只下载并校验缓存，不重启；使用中的来源复用完整 refresh 事务，
+未被 policy、恢复配置或当前 Profile 引用的来源只下载并校验缓存，不重启；使用中的来源复用完整 refresh 事务，
 只下载指定来源；全局更新才遍历相关机场。LuCI 每项更新先确认，成功后重读订阅和配置资源选项。
 删除仍被 policy、当前 Profile 或运行配置引用的订阅必须拒绝。Nikki 模式继续打开 Nikki
 原有订阅管理，不能同时写两份来源配置。
@@ -108,7 +108,7 @@ gateway 的准备、附加或清理动作，不建立第二条核心生命周期
 
 原生 LuCI 是当前第一个真实公开 caller，除上述接入与管理接口外提供：
 
-- `status`：一次读取 policy、manifest、最近一次 evidence、服务状态、package 自有 build identity（source 部署时回退部署器原子持久化身份），以及 Mihomo `/proxies` 和 `/providers/proxies` 各一次；安装身份只投影经过格式校验的 NetFleet 版本、source commit 和 source tree，供用户确认当前设备字节并用于静态资源缓存失效，不参与运行决策；`apk upgrade` 后 package identity 必须优先于可能仍属于上一次声明式部署的 `installed.json`，避免状态页继续报告旧代码；当前已承载流量的 capability 以健康的生成 URLTest 组、组内当前成员和 manifest 绑定 source 中唯一的真实代理身份投影当前叶子，`/providers/proxies` 的节点 `alive` 只补充下一轮候选与机场/地区库存健康，不能用可能滞后的单节点健康位推翻当前组和独立 protected probes 已证明的实际路径；机场节点库存按 manifest 绑定的 source 从 `/providers/proxies` 读取、按节点名去重并独立投影 `available_node_count/node_count/node_count_known`，不能把跨 capability 的地区候选组 `available_count/candidate_count` 标成节点；同一读取还经第一阶段 SubscriptionOwner 投影顶层 `subscriptions`：每个已启用订阅只返回 `section`/`ref`、`display_name`、`cache_present`、`cache_sha256`、原始 `node_count`、`quota`、`last_attempt`、`last_success` 和 `last_result`，用于解释订阅条目与 Mihomo 已加载节点的差异；`last_success` 优先取最近一次 NetFleet 成功刷新事件，尚无事件时回退到设备上当前后端订阅缓存的实际修改时间，不使用测量时间或摘要推断；机场投影通过 `subscription_section` 明确引用对应条目，UI 不按显示名猜测绑定；不得返回 URL、token、节点名称或订阅正文；该读取不测速、不探测、不修改 selector；
+- `status`：一次读取 policy、manifest、最近一次 evidence、服务状态、package 自有 build identity（source 部署时回退部署器原子持久化身份），以及 Mihomo `/proxies` 和 `/providers/proxies` 各一次；安装身份只投影经过格式校验的 NetFleet 版本、source commit 和 source tree，供用户确认当前设备字节并用于静态资源缓存失效，不参与运行决策；`apk upgrade` 后 package identity 必须优先于可能仍属于上一次声明式部署的 `installed.json`，避免状态页继续报告旧代码；当前已承载流量的 capability 以健康的生成 URLTest 组、组内当前成员和 manifest 绑定 source 中唯一的真实代理身份投影当前叶子，`/providers/proxies` 的节点 `alive` 只补充下一轮候选与机场/地区库存健康，不能用可能滞后的单节点健康位推翻当前组和独立 protected probes 已证明的实际路径；机场节点库存按 manifest 绑定的 source 从 `/providers/proxies` 读取、按节点名去重并独立投影 `available_node_count/node_count/node_count_known`，不能把跨 capability 的地区候选组 `available_count/candidate_count` 标成节点；同一读取还经 SubscriptionOwner 投影顶层 `subscriptions`：每个已启用订阅只返回 `section`/`ref`、`display_name`、`cache_present`、`cache_sha256`、原始 `node_count`、`quota`、`last_attempt`、`last_success` 和 `last_result`，用于解释订阅条目与 Mihomo 已加载节点的差异；`last_success` 优先取最近一次 NetFleet 成功刷新事件，尚无事件时回退到设备上当前后端订阅缓存的实际修改时间，不使用测量时间或摘要推断；机场投影通过 `subscription_section` 明确引用对应条目，UI 不按显示名猜测绑定；不得返回 URL、token、节点名称或订阅正文；该读取不测速、不探测、不修改 selector；
 - `events`：读取有界 NetFleet 决策事件和当前后端 core log 中最近的 `NETFLEET-` 行，字段为 `core_lines/core_lines_persistent`；不轮询、不修改 owner；
 - `probe`：执行与设备 owner CLI 相同的一轮有界保护探测并返回真实结果；只读网络状态，不刷新订阅、不测速选优、不修改 selector、Profile 或服务；
 - `enable`：在同一个 target-local mutation lock 内依次调用现有 `compile -> enable` owner；不接受浏览器上传的 policy、Profile 或候选；
@@ -116,9 +116,13 @@ gateway 的准备、附加或清理动作，不建立第二条核心生命周期
 - `refresh`：不接受 URL、section 或订阅内容，只调用同一个 policy-driven refresh owner；来源凭据修改由独立 subscriptions_set 完成，浏览器不解析订阅内容；
 - `disable`：调用与 CLI 相同的 native Profile owner/runtime 恢复并独立返回 `business_ok`；只有 runtime 无法恢复时才转入官方 cleanup passthrough，并返回 `safe`、`persistent`、`business_ok`。
 
+## 浏览器宿主与读取边界
+
 UI 有两个明确宿主。`ui/` 的 React/Vite 应用只用于本机快速参考开发，可注入 target-private 实时只读 client 或使用脱敏 fixture client；生产设备只部署原生 LuCI `view.extend`/`E()` 页面，不动态加载、挂载或打包 React。两端共享[UI 设计合同](../design/ui.md)定义的七页信息架构，Zashboard 在工具区提供独立外链；配置页把网络接入和配置文件与备份作为独立管理分区，不混入 policy 草稿的应用按钮。首次设置向导复用适用的字段组件，不重复提供完整维护工具。两端共享显示语义和交互合同，不共享组件实现或 bundle，也不要求像素一致。React 定稿只决定信息与交互参考，LuCI 原生 source 才是设备页面的部署 owner。UI 设计合同负责视觉语言、主题映射、排版和组件规则，不拥有产品对象、状态或动作合同。
 
 实时只读桥接的目标只从本机环境变量取得，只允许固定读取 `status`、`events`、`config_get`、`connections`、`components_get`、`operation_get`、`network_get`、`maintenance_get` 和 `diagnostics_get`，浏览器不持有 SSH 凭据，也不能通过该桥接调用任何 mutation；桥接结果必须显示目标、连接状态、最后读取时间和读取耗时。组件、网络配置、文件清单和核心日志按需独立读取，不并入常规网络快照。网络投影隐藏解析 URL 的凭据和私有路径，不返回认证密码；文件清单不包含正文或备份。`connections` 只在用户打开或刷新“事件与诊断”时从 Mihomo 当前 `/connections` 读取最多 50 条活动连接，投影目标 host/IP、目标端口、网络、命中规则、规则载荷和实际代理链；不得返回 source IP、进程、连接 ID、流量计数或其他不必要字段，也不得写入事件 owner、fixture 或浏览器展示缓存。该诊断使用 Mihomo 已执行的真实首条命中结果，不在 NetFleet 或浏览器中重做规则匹配。事件页以 NetFleet 持久化选路事件为主，活动连接只在默认折叠的辅助区显示；瞬时连接快照不能累计或外推为规则组触发频数，除非未来真实 owner 提供可去重、可定义生命周期的持久计数。fixture 仅用于离线、异常和边界场景，可在内存中模拟命令后的投影变化；它必须遵守当前接口形状且不得包含订阅、完整节点清单、设备地址或其他私有 target 数据，不是运行事实，也不能被生产 LuCI 页面读取。
+
+### Dashboard 打开与资源版本
 
 NetFleet LuCI 在页面标题的工具区提供独立的“Zashboard”外链，不作为内部标签页，以 `dashboard_get` 返回的
 可用性、controller 端口、协议、可选 UI 名称和 secret 打开独立完整的 Zashboard。
@@ -145,11 +149,15 @@ URL 构造，不得进入 NetFleet status、日志、展示缓存或文档。Zas
 编排、启停和恢复 owner。两种后端都保持独立完整页面，不嵌入或复制控制器。长期定位见
 [设计白皮书](../product/whitepaper.md)和 [Zashboard 决策](../decisions/0005-zashboard-observation-surface.md)。
 
+### 展示缓存与操作授权
+
 两个宿主首次加载都各读取一次 `status` 和 `events`，空闲零轮询，用户刷新时才重新读取；`connections` 不随页面首次加载或后台缓存刷新读取。supervisor 的后台周期不改变浏览器请求数。LuCI 可以把最近一次成功读取的 `status`、去除核心原始日志后的 `events`、读取时间和耗时保存为带 schema 版本的浏览器只读展示缓存；再次打开页面时先显示缓存并立即在后台各读取一次 `status` 和 `events`，成功后原地替换并更新缓存，失败时保留缓存且明确显示旧数据年龄和刷新失败。展示缓存不得包含 `connections`，不是运行事实 owner，不参与编译、排序、候选资格、回滚、探测、mutation precondition 或按钮授权；缓存启动和实时刷新失败状态下，除重新读取外的 mutation 控件必须禁用。没有有效缓存的首次加载仍等待实时 RPC，缓存损坏或 schema 不匹配时直接忽略且不阻断实时读取。
 
 LuCI 的启用、单次选优、立即更新订阅、关闭和配置应用都必须二次确认，mutation 完成后重新读取 owner 投影。这些网络操作由 rpcd 调用 one-shot UCode owner；软件包更新由下述一次性后台事务执行。React 的实时设备桥接始终只读；React 配置页、向导、保存、校验和应用按钮只能改变浏览器内的本地预览草稿，必须持续标明“不会写入设备”，不得转发任何配置或 mutation 到 SSH bridge。浏览器不解析订阅、不实现编译、排序、候选资格、回滚或探测逻辑；生产按钮是否可用来自实时 owner 投影，浏览器缓存只能延续显示，不能延续操作授权。事件 owner 仍返回有界事件窗口，LuCI 的“选路事件”在这个窗口内按最新优先每 20 条一页展示，刷新后回到最新一页；分页不触发额外设备读取。所有 LuCI mutation、supervisor 和设备部署使用同一个短生命周期 lock，不能形成并行 writer。
 
 概览的“最近决策”只从 `enable|select|disable` 事件中选取最新记录，同秒按 owner 写入顺序取最后一条；`refresh` 是订阅操作摘要，不覆盖选路决策。事件列表对订阅更新显示实际变化数、失败数和更新结果，延迟标为“不适用”。只有明确的 `native_restored` 恢复事件才能显示“已恢复原生配置”；缺少路由字段只代表未记录，不能推断回退。退出直通按实际恢复原因显示“已恢复网络直通”，不显示测量缺失；订阅触发的选优标为“订阅更新后选优”。
+
+## 组件与操作进度
 
 `components_get.extensions` 由 `components.control` 使用内核清单投影插件安装版本、
 代码 revision、服务声明、启用状态、接口 major 和依赖；`runtime` 区分 `service` 与 `process`。
@@ -177,6 +185,8 @@ Release 并缓存候选，`dashboard_update` 接受用户确认的版本，绑�
 终态结果可在浏览器会话内关闭；此显示偏好不修改 operation owner，不取消执行或隐藏当前
 运行故障。完成时间使用设备 `finished_at`，缺失时不得把当前读取时间当作完成时间。
 
+## 首次设置与策略配置接口
+
 未配置设备额外暴露 `onboarding_get / onboarding_apply`。`onboarding_get` 只读当前后端
 Profile、稳定 subscription cache 和节点地区，返回脱敏预览、阻断原因及绑定发现 revision；
 不得返回订阅 URL、token 或节点正文。`onboarding_apply` 必须携带同一 revision 和显式确认，
@@ -190,20 +200,11 @@ policy，复用编译和激活服务、启动 supervisor 并回读。已有有�
 
 policy 配置 owner 不接受 raw policy、订阅 URL/token、节点正文、DNS/nft 命令、浏览器生成的 Profile、自定义 provider cache 路径、自定义地区正则或 quota metadata 映射。订阅凭据单独提交给 subscriptions owner，不混入 policy；原生 DNS、代理范围和监听设置通过独立 network owner 的受限结构编辑。配置文件通过 maintenance owner 校验，不能借文件导入建立另一条配置应用链。OpenWrt flow-offload、WAN/LAN 地址和任意防火墙参数不属于这些管理表单。
 
-## LuCI 显示层合同
+## 请求时限与显示分工
 
-每月流量重置日归 SubscriptionOwner 的订阅元信息：原生订阅 `quota_reset_day` 为可选 1–31 的整数，显式 `null` 清空、省略保留已有值；认证订阅管理可读写，状态只投影 quota 的 `reset_day` 与 `reset_day_source: manual`。当前标准 `Subscription-Userinfo` 没有可靠月重置日，不能从到期日、URL 或机场名称推算。该字段不进入 policy、下载身份或测速统计身份，保存不下载、不重编译、不重载；订阅刷新保留手工值。它只作套餐参考，不按日期清零用量、解除耗尽或改变可用性；月末日期的实际结算以机场为准。买断制不显示月重置日，未设置不作告警。
+LuCI 同步 mutation 与 rpcd/uhttpd execution timeout 使用 300 秒有界预算，覆盖启动收敛、测速、owner readback 和必要回滚；成功路径不会等待到上限。package post-install 和 deployment owner 都只在 rpcd 或 uhttpd 当前上限低于 300 秒时提升到 300，保留更高值并重启、回读 RPC surface，deployment owner 还必须把 `/etc/config/rpcd` 和 `/etc/config/uhttpd` 原字节纳入同一部署回滚。不得通过后台 worker、第二选择器或伪造提前成功规避这个 owner 事务。
 
-状态中的机场正式名称由 UCI 引用的当前后端 subscription section 的 `name` 提供；section 没有名称时才回退到稳定 section ID。恢复配置的用户显示名由 status owner 通过同一 target-local 后端 metadata 解析并投影为 `recovery_profile_display_name`；无法取得可靠名称时返回 `null`，UI 显示“当前原生配置”，不得从 `subscription:`/`file:` 引用或 provider 计费属性猜名称。capability 的可见 Mihomo 组名来自 policy `display_name`；地区可见名称由可选 `flag` 与 `display_name` 组合，缺失时回退到稳定 region ID，共享 UI 再把任意一对 regional-indicator 字符通用转换为 ASCII 两位地区代码，统一显示为“地区代码 + 中文名称”，不能依赖 emoji 字体或为单个地区写特例。这些显示名只用于编译的用户表面和 status/UI projection，不参与 provider、地区或节点选择，也不能成为算法分支。内部对象仍用稳定 ID，provider/region 内部组一律 hidden。NetFleet inactive 时，status 另从当前后端 owner 和一次 controller `/proxies` 读取每个绑定策略来源组的原生实际链；LuCI 显示“当前原生出口”，capability 只标注为“下次启用配置”。原生组缺失、controller 不可用和网络直通必须分别显示，不能统一降级成“未知”。
+事件与显示聚合见[显示证据](evidence.md)，生成拓扑见[编译合同](runtime-and-recovery.md#compiler)。
 
-地区目录与当前地区规划是两层对象。policy 的 `regions` 与 `provider_regions` 只定义稳定地区 ID、显示名、Provider filter 映射和 capability 许可；status 完整投影目录供 owner 关联运行状态和历史，目录项本身不代表当前必须可用。当前地区规划只包含同一次设备状态中 `available_count > 0` 且 `available_provider_count > 0` 的地区：它既是地区页的可操作列表，也是首页地区数量、最近最优和平均最优的统计边界。`available_count` 表示真实候选路径数量；`available_node_count` 只是后端库存诊断，可能未知，不能作为地区可用性的门槛。机场和地区的实时可用数只有在 NetFleet 已接管、生成配置存在且 Mihomo 控制面可读时才具有故障语义；NetFleet 未接管或控制面不可读时，UI 必须显示“未测量”，不得把 status 中用于占位的零值解释为机场或地区下线。没有真实可用路径的目录项不进入当前规划、不作为首页分母，也不触发“不可用地区”警告；只有当前正在使用的地区失去真实路径时才作为运行异常提示。不能用“至少两个节点”或“至少两个机场”等数量门槛排除合法的小众地区，一条真实可用的 Provider/节点路径即可进入当前规划。
-
-机场表的“可用地区”是去重后的 provider-region 数量，地区表的“可用机场”是去重后的 region-provider 数量；机场的“节点”是 manifest 绑定 source 在 `/providers/proxies` 中的 Mihomo 已加载库存，按节点名去重并使用 `alive` 统计可用数，不因地区识别或 capability 许可排除小众节点；当 SubscriptionOwner 读取的原始订阅条目数与已加载数不同，机场同一单元格补充“订阅 N 条”，不能把未被 Mihomo 接受的条目计作可用节点。地区的“节点”以 `/proxies` 当前 group 的成员关系为边界，并用同一 source 补充 file-provider 叶子身份和健康状态。按 Mihomo 类型确认的直连、拒绝等控制面终端是已知的非节点，排除后不影响其他候选组计数；不得按节点显示名猜测类型。缺失成员列表或不能解析的嵌套组仍是未知，显示“节点清单暂不可读”，不能伪造零值。没有真实可用叶子的地区不能凭历史 evidence 占位。
-
-机场表和地区表都显示 evidence 中的“最近最优”“平均最优”、有效样本数与最近有效测量时间。没有有效样本时合并延迟空态为“暂无有效测量”，仅有一次时显示“仅 1 次测量”，达到两次后才显示真实平均，即使与最近值相同也不改写。机场值是一轮内该机场全部合格地区候选的最小有效 delay，地区值是一轮内该地区全部合格机场候选的最小有效 delay。历史保留范围来自 manifest 的当前候选目录，不来自某轮成功解析的运行候选；临时失效或本轮未取得叶子不清空历史、不增加样本，也不把旧测量时间刷新为本轮时间。删除目录对象时裁剪，改变延迟测量口径时重置。UI 明确区分库存健康和有效测量历史，旧延迟不冒充本轮成功。
-
-机场详情把 SubscriptionOwner 的 `last_success` 标为“订阅更新时间”，把 `last_attempt` 标为“最近尝试”；没有 NetFleet 刷新事件时，“最近尝试”显示“尚未执行”，“订阅更新时间”显示当前后端订阅缓存的实际修改时间，缓存也不存在才显示“尚未执行”，不得拿最后测量或 cache digest 猜更新时间。订阅制机场从同一次 target-local 后端 metadata 读取 `expire` 并投影为 quota `expires_at`；缺失显示“机场未返回到期时间”，买断制显示“不限时间”，不得从节点名称或订阅 URL 猜测。地区展示顺序固定为当前选中项、最近最优 delay 升序、平均最优 delay 升序、可用节点数降序、可用机场数降序、显示名；机场表继续按当前选中项、可用地区数、最近最优 delay 和显示名排序。两者都只是展示顺序，不改变运行时 comparator 或 selector。
-
-配置模式来自 policy：`automatic` 能力允许“自动选优 / 地区 / DIRECT”，`manual` 能力只允许地区和 DIRECT，地区级 `manual_only` 不进入自动池。运行模式来自 Mihomo 可见 selector 的当前成员：选择“自动选优”时 supervisor 定期重排；选择地区或 DIRECT 时显示“手动保持”并暂停后台选择。LuCI 配置页按 [UI 设计合同](../design/ui.md#页面骨架)组织结构化草稿与独立管理分区；首次设置按“环境与恢复 / 机场 / 地区 / 出口 / 运行与安全”推进，不把 raw policy 字段逐项暴露。顶部“NetFleet 已启用”只表示生成 Profile 是当前 owner；能力卡标题不重复显示状态，摘要中的“策略”是唯一模式投影，说明块使用“选优规则”。compiler 根据 Policy Source 中每个 `policy` 业务组的首选成员，把默认行为投影为 `capability` 或 `direct`；status 优先读取该 manifest 投影，兼容旧 manifest 时只允许从 Mihomo 当前组的有序成员回读，不按组名猜测。出口页分别显示“默认走此出口”和“默认直连、可临时切换”，不再把 entry 与 policy binding 混成“接管的原始策略组”。用户可见的“运行时网络退路”只按 status 从 manifest 返回的 role stages 投影为“当前优选 → 主用机场 → 备用机场 → 直连”，没有 reserve stage 时明确显示“备用机场（未配置）”。机场的 `primary|reserve` role 与 `subscription|buyout` 计费是独立事实，UI 不得用买断属性推断备用角色。
-
-“退出与故障恢复”是独立区块：优先恢复 `recovery_profile_display_name` 对应的原生配置；只有该恢复失败时，最终退路才是停止当前代理后端并恢复网络直通。这是条件关系，不能与运行时网络退路合并，也不能用一条连续箭头暗示每次都会执行两步。用户可见文案使用“直连 / 网络直通 / 原生配置”，不暴露 `DIRECT`、`passthrough`、`RecoveryProfileRef` 等内部标识。界面中的门槛、周期和说明必须直接读取 status 返回的 policy 值，不能在前端写死 capability、地区、机场或阈值。机场表和地区表的延迟着色使用 `status.selection.region_switch_margin_ms` 作为展示分界，缺失或非数字时不加警告色；该分界只服务展示，不冒充 comparator。UI 不得按 capability id 是否包含 `ai` 或其他子串选择图标或文案，跟随能力的说明必须读取该能力的 `prefer_region_from` 显示名。
+字段的用户解释、库存计数、空态和展示排序由[状态呈现](ui-state.md)维护；
+历史聚合由[显示证据](evidence.md)维护。

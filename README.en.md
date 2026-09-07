@@ -122,30 +122,7 @@ Read the [product whitepaper](docs/product/whitepaper.md) for the full rationale
 and the [architecture overview](docs/architecture/overview.md) for current
 implementation behavior.
 
-## Current Features
-
-This overview follows the current source and LuCI interfaces. See the chosen
-release for supported platforms and qualification coverage.
-
-| Capability | Available scope |
-| --- | --- |
-| Setup and migration | First-run wizard, native Mihomo setup, Nikki migration preflight and rollback |
-| Subscriptions and providers | Native subscription management and individual refresh, usage and cache status, primary/reserve roles, region scope |
-| Business exits and selection | Capabilities such as `standard` and `ai-compatible`, domain-suffix and IPv4/IPv6 CIDR rules, current measurements and switching reasons |
-| Network integration | Native IPv4/IPv6 TCP/UDP TProxy, LAN/router DNS, upstreams and domain overrides, device rules, listeners, and authentication |
-| Automation and recovery | Scheduled subscription refresh and recompilation, automatic selection, protected probes, layered Fail-Open, recovery profiles |
-| Configuration and maintenance | Native profile import, download, and controlled editing; private backup/restore; core restart/reload and sanitized logs |
-| Diagnostics and extensions | Provider/region/node status, events, separate Zashboard, optional HTTPS compatibility |
-| Components and delivery | Installed versions and dependencies, scoped component updates, Zashboard asset updates, APK/IPK packages, signed APK feed, Fleet deployment |
-
-NetFleet keeps stable operational summaries on its Events and Diagnostics page.
-The **Zashboard** entry opens the full dashboard in a new tab using the
-selected backend's controller and resources. Both backends use the same entry
-and Zashboard's secret-bearing connection URL. These temporary credentials must
-not enter NetFleet logs or display caches.
-
-Network, profile, and resource management belong to the native backend; Nikki
-mode retains Nikki's ownership of the corresponding resources.
+See the chosen release for supported platforms and optional packages.
 
 ## Installation
 

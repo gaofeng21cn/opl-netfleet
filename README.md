@@ -78,24 +78,7 @@ UCode 运行服务在 OpenWrt 本地执行，Mihomo 负责连接和组内节点�
 
 完整设计理念见[产品白皮书](docs/product/whitepaper.md)，当前实现与运行行为见[架构总览](docs/architecture/overview.md)。
 
-## 当前功能
-
-以下对应当前源码与 LuCI 入口；发布平台和验收范围见所选 Release。
-
-| 能力 | 当前可用范围 |
-| --- | --- |
-| 接入与迁移 | 首次设置向导、原生 Mihomo 接入、Nikki 迁移预检与失败恢复 |
-| 订阅与机场 | 原生订阅增删改和单项刷新、用量与缓存状态、主用/备用角色、地区范围 |
-| 业务出口与选优 | `standard`、`ai-compatible` 等能力，域名后缀和 IPv4/IPv6 CIDR 规则，实时测量与切换原因 |
-| 网络接入 | 原生 IPv4/IPv6 TCP/UDP TProxy、LAN/本机 DNS、上游与域名覆盖、设备规则、监听和认证 |
-| 自动运行与恢复 | 周期订阅刷新与重编译、自动选优、保护探针、分层 Fail-Open、恢复配置 |
-| 配置与维护 | 原生 Profile 导入、下载和受控编辑，私有配置备份恢复，核心重启/重载和脱敏日志 |
-| 诊断与扩展 | 机场/地区/节点状态、事件、独立 Zashboard、可选 HTTPS 兼容模块 |
-| 组件与交付 | 安装版本与依赖、受限组件更新、Zashboard 资源更新、APK/IPK 包、签名 APK feed、Fleet 部署 |
-
-NetFleet 的事件与诊断页保留日常排查摘要；“Zashboard”在新标签页打开完整页面。两种后端共用独立入口，读取当前 controller 和资源状态。连接参数沿用 Zashboard 的带密钥 URL 方式，不写入 NetFleet 日志或展示缓存。
-
-网络接入、配置文件和资源更新由原生后端管理；Nikki 模式仍由 Nikki 负责对应资源。
+安装支持的平台与可选包范围见所选 Release。
 
 ## 安装
 

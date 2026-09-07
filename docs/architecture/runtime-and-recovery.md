@@ -96,7 +96,7 @@ RecoveryProfileRef
         -> cleanup / passthrough only if recovery fails
 ```
 
-仓库只在这条链的第一个真实 caller 出现时增加相应文件。不得先建立通用 framework、第二下载器、兼容层或空 facade。
+新增运行机制必须服务于这条真实调用链；开发准入规则见[AGENTS.md](../../AGENTS.md)。
 
 ## Compiler
 
@@ -120,9 +120,7 @@ Provider/地区候选组使用 `checks.latency` 的 Mihomo 原生 `url-test` 负
 
 内置 bundle 的业务分类只引用同一上游 commit 的锁定 MRS，不维护第二份按域名手抄的服务清单。Mihomo 按规则数组首条命中，因此顺序固定为：Tailscale/管理链路直连、target-local `routing_rules`、私网 domain/IP、AI、Netflix、YouTube、Telegram、社交媒体、Steam/Xbox/PlayStation/Nintendo、Microsoft/Apple/Google、国内媒体、CN domain/IP、`geolocation-!cn`、`MATCH`。更具体业务必须在更宽泛的厂商、CN 或非 CN 分类之前；IP 规则使用 `no-resolve`，避免为了匹配规则额外解析。没有当前真实分类规则的“下载”等分组不得存在；需要临时改路的现有业务组统一由 compiler 展开为自动出口、共享地区出口和 DIRECT 的排列组合。
 
-`/etc/opl-netfleet/evidence.json` 是唯一 display evidence owner，并位于 OpenWrt 持久 overlay；不得放在指向 `/tmp` 的 `/var` 下。每次成功的 enable、显式或定期 `select auto` 按 capability 覆盖保存本轮有界候选结果，并分别维护固定空间的机场和地区 delay 聚合；每个机场或地区在一轮内只记其最小有效 delay，全局机场表和地区表都只投影根 automatic capability。聚合身份只绑定实际延迟测量口径（测量模型、URL、期望状态与 timeout），不绑定完整 artifact、Policy Source 或 policy：代码、显示文案、Fail-Open、自动周期、设备重启或其他不改变延迟可比性的更新不得清空历史。机场、地区或 capability 拓扑变化时，当前轮按稳定 ID 保留仍存在对象的聚合、移除已不存在对象并从单样本建立新增对象；测量口径变化才整体重置。旧 identity 在精确匹配当前 artifact/policy 时允许一次无损升级到新口径；部署 owner 首次升级时把仍存在的旧 `/var/lib/opl-netfleet/evidence.json` 原子迁入持久 owner，成功后删除旧路径，失败回滚恢复原字节。该聚合只用于 status/LuCI 展示，selector 永远只读当前轮，不得读取平均值或历史值。evidence 缺失、损坏或写入失败必须被忽略，不能阻断 enable、select、disable 或原生恢复。LuCI 同步 mutation 与 rpcd/uhttpd execution timeout 使用 300 秒有界预算，覆盖启动收敛、测速、owner readback 和必要回滚；成功路径不会等待到上限。package post-install 和 deployment owner 都只在 rpcd 或 uhttpd 当前上限低于 300 秒时提升到 300，保留更高值并重启、回读 RPC surface，deployment owner 还必须把 `/etc/config/rpcd` 和 `/etc/config/uhttpd` 原字节纳入同一部署回滚。不得通过后台 worker、第二选择器或伪造提前成功规避这个 owner 事务。
-
-`/var/lib/opl-netfleet/events.json` 是固定上限的持久化 owner 事件，不是 operation history 或选择输入。它记录 one-shot owner 已实际完成的 enable、select、disable 和 subscription refresh；refresh 事件只保存执行时间、聚合结果、机场总数/变化数/失败数、是否重载、调用来源，以及每个稳定 section 的 `result`/`digest`，不保存 URL、token、节点、cache 内容或完整配置。写入失败不改变数据面结果。调用来源只允许 owner 已知的 `luci|cli|deployer|supervisor`，未知入口如实记录 `unknown`，不能据进程或时间猜测。Mihomo 自主 health-check/fallback 继续写所选后端管理的 core log，NetFleet 日志页只读展示其中与 `NETFLEET-` 相关的最近行，并明确受所选后端日志清理策略约束；NetFleet 不为捕捉每次叶子变化增加常驻监听器。
+显示证据的持久化和可比性见[显示证据](evidence.md)；它不参与编译或选择。
 
 手动和自动模式都生成 Provider 级 URLTest 组；自动模式的 Provider 级组只包含已授权地区映射，作为数据面机场回退，另生成 Provider/地区 URLTest 候选组供一次 `select auto` 比较。编译仍只引用已接受的订阅 cache，不复制订阅，也不允许未映射节点通过机场回退绕过 automatic 资格。
 
@@ -153,9 +151,9 @@ Provider/地区候选组使用 `checks.latency` 的 Mihomo 原生 `url-test` 负
 - enable 后先给所选后端与 Mihomo 一个有界的 owner-readiness grace，确认 capability group 已发布且包含目标成员后只写一次 selector，再等待所选 provider/地区组出现真实叶子并回读 owner 状态和所有 target-local protected probes；所有 `automatic` capability 的可见 selector 必须最终精确回读为其“自动选优”成员，实际数据路径必须是优选或自动 fallback，不能把 `manual DIRECT` 当作启用成功；选定路径后只对该候选组执行一次 Mihomo 原生路径健康确认，刷新组级健康状态，不再并行遍历全部可见分支，结果不参与候选排名或延迟统计。未使用分支或祖先组在重启收敛期暂时报告 `alive=false`，不能推翻已绑定真实叶子、实际链和事务探针的成功 readback；grace 内只等待启动和 provider 收敛，不重试 selector 或健康确认；超时仍恢复原 Profile；
 - enable、select 或其异常处理在 active artifact 上失败时，先把全部 active capability guard 切到 DIRECT 并逐一回读，再只执行一次保护探针，随后恢复 Recovery Profile。原生 owner/runtime 恢复成功就停止 mutation，并把保护探针结果独立返回，不能因为远端业务探针失败而关闭一个健康的原生 owner；runtime 恢复失败时才调用所选后端 stop/cleanup 进入 passthrough，绝不重新启用已失败的 NetFleet Profile；
 - disable 先恢复 RecoveryProfileRef 并验证原生 owner/runtime；恢复成功即完成关闭，`business_ok` 单独返回。只有原生 runtime 无法恢复时才调用所选后端 stop/cleanup；`safe && persistent` 即可完成 passthrough，两项前提任一无法证明时拒绝卸载；
-- refresh 是唯一运行应用 writer：更新范围由启用 provider、Profile 型 Policy Source、
-  Recovery Profile 和当前 subscription Profile 的真实引用去重形成。指定来源已被任一对象
-  引用时仍必须进入同一事务；只有真正未使用的新来源才允许单独下载。
+- refresh 是唯一运行应用 writer：全局更新范围由启用 provider、Profile 型 Policy Source、
+  Recovery Profile 和当前 subscription Profile 的真实引用去重形成。单项更新只下载指定
+  来源；来源已被任一对象引用时仍进入同一运行应用事务，真正未使用的来源只下载并校验缓存。
 - Nikki 模式调用官方 updater；原生模式调用 subscription owner，保存原 cache 与
   `netfleet` UCI 元数据。上游不可用不开始更新；单来源失败保留其 LKG，不能擦除其他有效来源。
   全部内容摘要不变时只提交成功时间、quota 和来源接受身份，不 compile、restart 或修改 selector。
@@ -178,20 +176,7 @@ Provider/地区候选组使用 `checks.latency` 的 Mihomo 原生 `url-test` 负
 
 网络 mutation 必须使用 fresh precondition digest。是否需要分离的 `plan -> apply` 公开接口由第一条真实远程 caller 决定；不得为了没有 caller 的协议预先维护 worker、Host、schema 或 operation history。
 
-### Canonical 部署事务
-
-本节描述现有面向 Nikki 的 Fleet deployment bundle 安装入口；原生首次设置与后端迁移
-使用上文设备端事务，不能把该四文件 bundle 或 host 部署器作为原生独立安装的前置条件。
-
-开发、虚拟机资格验证和设备写入是三个独立阶段。开发 worktree 只产生经验证并吸收到远端 canonical `main` 的 source；QEMU 启动官方 OpenWrt 镜像，验证真实 BusyBox、`/var -> /tmp`、ubus/rpcd/procd、隔离安装和失败回滚后，才为该精确 commit/tree 生成一次 qualification receipt；设备部署只接受一个显式 Git ref，解析并冻结其 commit/tree，从 Git object 构建 bundle，不读取 checkout 的 dirty 或未提交字节。bundle 包含逐文件 SHA-256 和 source identity，目标端只用一次性前台进程执行，不增加 daemon、queue 或 operation history。VM receipt 只证明通用 OpenWrt 控制面和回滚合同，不证明机场、真实 DNS/TPROXY、硬件驱动或业务路径。
-
-目标端部署 owner 使用独立短生命周期 `flock`。默认模式只允许 native/inactive target 安装并停在 staged；发现 target 正由 NetFleet 管理时不做 mutation，要求调用者明确选择后续动作。`--leave-disabled` 才授权将已有 active owner 恢复到 Recovery Profile 后安装并停在 staged；`--activate` 才授权完成 data-plane 切换，而且 host 必须验证 qualification receipt 的 `qualified=true`、source commit/tree 与本次 bundle 精确一致。receipt 缺失、过期或不匹配时在 SSH 前失败。不带 deployment bundle 时只升级已有设备安装；提供 bundle 时是完整声明式安装。deployment bundle 目录必须同时包含 `policy.json`、`subscriptions.json`、`nikki-mixin.yaml` 和 `platform.json`，缺一即在传输前失败。当前 CLI 参数名仍为 `--instance`，它只指定这个四文件 bundle，不代表 OPL Instance 的位置或配置 owner。`subscriptions.json` 只声明稳定命名 section、显示名、HTTPS URL 和可选 UA/info URL；Recovery Profile 和 provider 必须引用这些稳定 section，`kind=profile` 的 Policy Source 同样必须引用已声明 section，`kind=bundle` 则必须解析到随包安装且通过摘要校验的稳定 JSON 基线。任何对象都不能引用设备随机生成的 `cfg...` 或 UCI 数组序号。
-
-安装器先用当前签名软件源补齐缺失的 Nikki/Mihomo/UCode/`yq` 等依赖；只安装缺失包，不执行 whole-system upgrade 或绕过签名。包管理器、架构或软件源不支持时，在数据面 mutation 前返回结构化不兼容结果。随后校验全部 bundle SHA、policy/platform schema、订阅 section 唯一性、HTTPS 来源、Policy Source、Recovery Profile 引用和 mixin YAML。公共 ruleset lock 固定上游 commit、HTTPS URL、`domain|ipcidr` MRS 格式、大小、SHA-256 与许可证；目标端在任何 device mutation 前下载到 `/tmp` staged 并逐项验真。Nikki runtime 可用时下载必须使用 controller 回读的 loopback mixed proxy 并复用其 UCI 认证，避免把路由器本机 root 流量误当成透明代理流量；没有可用 runtime 时才显式无代理直连。两条路径都不把下载的 MRS 数据提交或打进 source/package，也不追随 mutable `latest`。下载、TLS 或身份不符时零写入失败。之后才保存 `/etc/config/nikki`、`/etc/config/firewall`、mixin、相关 subscription cache、已安装 MRS 及全部 NetFleet state 的单槽 snapshot。已有 active owner 必须先通过 status/probe再 disable；全新设备不虚构旧 owner 门禁。
-
-该 Nikki 部署入口的原生配置准备阶段由部署 owner 创建稳定 UCI section，并逐个调用 Nikki 官方 `update_subscription`；缓存下载、metadata 和格式验证仍由 Nikki 负责，Nikki 模式的增强 runtime 不另行下载订阅或更新规则集。payload 必须先解压到 `/tmp` 隔离目录，只能从该目录逐项复制 owner 白名单，任何 tar 都不得直接解压到 `/`。随后原子安装 payload、mixin、`platform.json` 映射的 UCI 和 `0600` policy；锁定 MRS 必须原子安装到 Mihomo home 内的专用 `/etc/nikki/run/rulesets` 目录，使 Nikki 启动前校验、procd runtime、LuCI restart 和系统启动共享同一读取边界。平台值固定为 TCP/UDP TProxy、TUN off、redir-host、fake-IP cache off、LAN 可达 controller、API secret required、LAN listener enabled、sniffer 不改写目标、软/硬 flow offload off，其他值仍由显式 platform 字段决定。controller 监听 IPv4 任意地址以兼容 Nikki 官方 Dashboard 从当前 LuCI 主机名直连 `/ui/` 的实现；`allow_lan` 必须开启，否则 Mihomo 会把 TProxy listener 绑定到 loopback，nft 虽能标记 LAN 包却无法把公网目标包交给 `7892`。OpenWrt LAN zone 允许访问，WAN zone 必须拒绝输入；controller 由 API secret 保护，显式代理认证继续由 target-local Nikki 配置负责。Nikki 继续从 UCI 生成 effective Profile、nft 与策略路由，部署器不手写这些运行面。发生原生输入变化时，完成 Recovery Profile owner/protected-probe readback 后执行 `compile -> staged readback`；只有 qualified `--activate` 才继续 `enable -> owner/status/probe/parity readback`。RPC loader 不属于数据面 owner：readiness 必须同时验证本机 ubus、`luci` 与 `opl-netfleet` 完整方法表，以及使用临时最小权限 session 调用 `luci.getFeatures` 的 HTTP `/ubus` bridge。只有本机 surface 缺失或 timeout 不合格时才允许一次官方 `rpcd restart`；本机 surface 正常而 HTTP bridge 失效时只允许一次 `uhttpd restart`，随后重新验证 HTTP RPC，且两者都不得触碰 Nikki/NetFleet 数据面。snapshot 恢复触发 rpcd reload 后也必须 best-effort 恢复 uhttpd bridge。同一 source/instance/active 身份重放不得刷新订阅或重启数据面。仅 LuCI owner 字节变化时，显式 `--presentation-only` 不要求新的 QEMU receipt；但 bundle 的非 LuCI runtime 摘要、target installed identity、实际 runtime 文件、policy、订阅、mixin、platform、MRS 与 rpcd timeout 必须全部匹配，且 active owner/status/probe 已通过，部署器才可短暂停止 supervisor 并在不 disable/compile/enable 数据面的情况下替换 owner payload。任一前提不满足必须在 snapshot 和 owner 字节写入前拒绝，不能自动降级为普通激活；完成后仍须 validate、status、probe 和 installed parity，失败按原 control-plane snapshot 恢复。
-
-订阅、mixin、Policy Source、Recovery Profile 或 NetFleet 任一步失败，部署器先撤销新 active，再从隔离目录逐项恢复 snapshot 中的 Nikki 配置、mixin、cache、原 Profile 和 NetFleet 字节；原设备没有 Profile 时回到 Nikki 官方 stop/passthrough。原 Profile 的回滚成功必须同时证明 ubus 可用、Nikki running、Profile 身份一致和 Mihomo 存活，不能把字节恢复冒充运行恢复；子动作失败原因必须进入脱敏回执。无法安全撤销 active 时拒绝以旧 bytes 覆盖正在运行的 artifact并精确报告 `needs_local_recovery`，且不得自行重启设备。成功前补齐的签名依赖包可以保持安装，但不能自动启用未验收的数据面。部署器不解释机场逻辑、不生成 policy、不自写 DNS/nft/路由清理；运行期 Fail-Open 仍归 activation/Nikki owner。
+部署器的输入、资格与目标端事务见[Fleet 部署事务](../operations/deployment.md)。
 
 ## Fail-Open
 
@@ -214,7 +199,7 @@ Mihomo 仍运行时，代理组自行沿该链路选择，`DIRECT` 是明确的�
 | 当前地区仍可用但替代地区 proxy-path delay 优势小于 `selection.region_switch_margin_ms`（默认 150） | 保持当前地区 |
 | 当前地区无合格叶子，或替代地区 proxy-path delay 至少快该门槛 | 选择最快合格地区 |
 | Provider 明确 quota exhausted | 下一次 enable、显式或定期 automatic 轮次中排除；不建立独立 quota 轮询。若耗尽造成当前优选链实际失败，Mihomo fallback 先用其余合格 primary，全部失败后才进入 reserve，最后进入 DIRECT |
-| 当前地区所有 primary 失败 | 仅在原型证明的拓扑内选择其他 primary 地区 |
+| 当前地区所有 primary 失败 | 在 manifest 已声明的 primary provider tier 内使用其他健康路径 |
 | 全部 primary 失败 | 选择 reserve |
 | preferred 地区链失败 | Mihomo 原生 fallback 先使用精确列出的 primary provider tier，再使用 reserve provider tier，最后使用 DIRECT；NetFleet 进程和 UI 不参与 |
 | preferred 仍通过速度 URL，但 path/guard protected probe 失败 | Mihomo 按 `path_probe_id` 切换 provider；`guard_probe_id` 仍失败时进入 DIRECT；定期重排仍按自己的周期运行，不由这次业务失败创建第二轮 |

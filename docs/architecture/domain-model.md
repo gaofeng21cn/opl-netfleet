@@ -37,6 +37,8 @@ mtime，成功时间与额度可以更新。缓存正文摘要与已接受来源
 `cache_current`，不能仅凭文件存在声称新来源就绪。更新、重编译、恢复用户模式和失败
 回滚由 `refresh.control` 负责，详见[运行事务](runtime-and-recovery.md#activation)。
 
+每月流量重置日归 SubscriptionOwner 的订阅元信息：原生订阅 `quota_reset_day` 为可选 1–31 的整数，显式 `null` 清空、省略保留已有值；认证订阅管理可读写，状态只投影 quota 的 `reset_day` 与 `reset_day_source: manual`。当前标准 `Subscription-Userinfo` 没有可靠月重置日，不能从到期日、URL 或机场名称推算。该字段不进入 policy、下载身份或测速统计身份，保存不下载、不重编译、不重载；订阅刷新保留手工值。它只作套餐参考，不按日期清零用量、解除耗尽或改变可用性；月末日期的实际结算以机场为准。买断制不显示月重置日，未设置不作告警。
+
 ## 产品定位
 
 NetFleet 是由微内核组合功能插件的设备端网络管理平台。默认产品提供跨机场、跨地区的
@@ -78,9 +80,8 @@ automatic capability 必须形成无环依赖图，并且只有一个不声明 `
 
 模块与策略只通过 policy 组合：全局开关不改变 capability 配置；capability 开关不改变 provider/region 资源；`manual|automatic` 决定可见选择面是否包含自动入口及是否参与周期轮次，不改变资源事实；provider `role` 只决定运行期主用/备用层级；`region_switch_margin_ms` 和 `leaf_switch_margin_ms` 可由 capability 覆盖全局默认。机场角色、计费类型、地区授权、测速合同和保护探针各自保留在独立分区，engine 不按 capability、机场或地区名称分支。
 
-共享接管流程从所选后端已经运行并验证的原始 Profile 开始；安装 NetFleet 后由首次设置读取当前 Profile、稳定命名 subscription cache、原始策略组和真实节点名称，生成不含 URL/token/节点正文的接管预览。发现器只把 cache 中实际存在可用节点的已知地区写入初始 policy，所有机场默认属于主用层，不从名称、计费属性或顺序猜测备用角色。发现器优先绑定原 Profile 的 `MATCH` 目标组；无法唯一识别入口组、没有有效订阅 cache、当前 Profile 不是可恢复原生 Profile 或当前 backend owner 不健康时拒绝接管。用户一次确认后，`configuration.onboarding` 原子编排 `policy 写入 -> compile -> enable -> supervisor enable/start -> owner readback`；任一步失败都恢复原 Profile 并删除本次生成的 policy/artifact。之后由所选后端与 Mihomo 继续负责数据面。高级用户仍可在 LuCI 调整 provider role、地区和 capability；Fleet 运维也可继续通过 deployment bundle 提供精确声明。
-
-自动选优在 enable 初次决定、用户明确触发和 `automation.selection_interval_seconds` 到期时执行同一个有界候选轮次；不并发重入，不为后台另建算法或证据。当前地区仍有合格叶子时，只有最快替代地区比当前代表叶子的 Mihomo proxy-path delay 至少快 `selection.region_switch_margin_ms`（默认 150）才切换；当前地区无合格叶子时不受该门槛限制。`checks.latency` 只负责速度排序，`fail_open.probes` 负责事务提交和运行期 fallback 资格，quota 只作同速 tie-break；三者不能互相代换。
+首次设置、编译、启用、退出与 supervisor 的完整顺序由[运行与恢复](runtime-and-recovery.md)维护；
+候选测量、地区门槛与同轮能力组合由[选择合同](selection.md)维护。
 
 ## 硬下限
 
@@ -143,30 +144,9 @@ RecoveryProfileRef
 
 解耦规则如下：Policy Source 只提供编译输入；Recovery Profile 只负责原生恢复；binding 只负责把策略来源中的精确组名接到 capability；capability 只负责开关、资格、地区范围和选择参数；region/provider 是 capability 可复用的网络资源；provider 只引用所选后端的 subscription section；measurement adapters 只负责采样；qualification/comparator 只处理标准化结果；compiler 只做一次性转换，并拥有生成 Profile 的用户可见组名模板。`main.uc` 只引导内核，命令由 manifest 路由到对应功能服务；配置、订阅、编译、激活、选择和恢复各自持有事务，复用同一设备 mutation lock。UI/transport 只投影和转发。非 owner 模块不得维护第二份可刷新的订阅事实、私自改写 DNS/nft/路由或从 runtime snapshot 反向修改配置；订阅和 gateway 各自在其限定写集内执行已授权事务。若设备不能消费 `type:file` provider source，compile 必须失败并保持 Recovery Profile，不得引入第二下载器或节点副本。新的功能插件通过声明服务依赖组合现有 owner，不能借插件边界复制订阅事实、恢复路径或后台循环。
 
-### 解耦审查结论
-
-| 边界 | 结论 | 必须保留的证明 |
-| --- | --- | --- |
-| PolicySource -> Binding | 这是有意的窄耦合：NetFleet 必须知道用户要增强哪个真实组，但不能猜名称 | 策略来源身份/组清单 digest；组不存在或变化时 compile 拒绝 |
-| RecoveryProfile -> Activation | 已与正常编译输入解耦；只供 enable 前置、rollback、disable 和 recover 使用 | 独立 ref/digest；原生 owner/runtime readback |
-| Binding -> Capability | 已解耦；binding 只声明 `entry|policy` 和 capability，不知道 provider、节点或地区 | 每个启用 capability 恰有一个 `entry`；`policy` 组只复用 capability 用户选择面；disabled binding 保持原组不变 |
-| Capability -> Region/Provider | 需要保持单向：capability 定资格，region 定范围，provider 定订阅来源和角色 | 不产生第二套 ProviderPolicy；未知资格不进入候选 |
-| Measurement -> Qualification | 必须保持单向：测量只产出事实，资格规则解释事实 | proxy-path delay、业务 status、quota 三种结果不能互相代换 |
-| Qualification -> Comparator | 必须保持单向：先过滤，再排序 | comparator 不读取 URL、UCI、订阅原文或 runtime 文本 |
-| Compiler -> Activation | 通过 staged artifact + manifest 解耦；不能共享可变缓存 | enable 前检查输入身份，readback 用 manifest 对账 |
-| Compiler -> 用户可见组名 | 当前由 compiler 用固定中文模板拼接 Mihomo 组名（自动选优 / 主用机场 / 备用机场 / 当前优选 / 代理路径）；`display_name`、`flag` 和所选后端 metadata 只填充可变部分 | 组名变化改 compiler；UI 不得再实现一套拓扑命名；不为 i18n 增加组名配置 |
-| 功能插件实现边界 | `main.uc` 引导通用内核，manifest 将命令绑定到功能服务；服务通过 `context.use` 消费已声明依赖，模型服务与事务服务分别演进 | 服务和包依赖无环；每项可变状态保留唯一 owner；插件交接不复制恢复路径 |
-| Activation -> Runtime backend/Mihomo | 是运行平台适配边界，共享业务算法不直接实现网络接管 | Nikki 模式调用官方生命周期；原生 gateway 复用上游 mixin/nft 并持有有界清理，均做 effective/runtime readback |
-| Runtime selection -> history | 选择器不得依赖历史；evidence 只作有界展示输入 | 调度服务只复用当前轮次，不读取历史、LKG 或排名；代码 generation 只约束加载一致性 |
-| UI/RPC -> owner | 只读投影/命令转发，不能成为事实源；门槛和延迟着色读 `status.selection` | 无订阅解析、无客户端候选排序或资格判定、无隐式 mutation；展示排序只影响表格，不得写死 150，不得按 capability id 子串猜测图标或文案 |
-
 ### YAML 适配边界
 
 NetFleet 自有 policy、platform、ruleset lock、evidence、manifest 和 artifact 均使用 JSON，避免设备版 YAML 工具参与核心对象解析。Mihomo 的外部 Profile 仍是 YAML，因此 adapter 只允许用 `yq -M -p yaml -o json` 做一次只读转换；禁止原地编辑、复杂表达式或把 YAML 转换变成第二配置源。Mihomo 可直接校验 JSON artifact，因此不保留 JSON -> YAML 转换。yq 不可执行或不支持该最小转换时，compile 直接失败且不改变当前 Profile、DNS、nft 或路由。
-
-产品对象和 artifact 边界通过服务合同连接：`compilation.control` 经 staged manifest 交给 `activation.control`，`selection.algorithm` 不读 I/O，UI 不拥有事实，策略输入身份与恢复目标身份也各自绑定。机场无关 `PolicySource(kind=bundle)` 和只读已有 Profile 共用相同编译与激活服务。插件包按功能分发，可以包含多个具名服务；平台 I/O、纯模型和事务分别复用，选择算法更新不要求把平台模型一同替换。运行时必须继续证明：Policy Source 变化不会静默套用旧 binding；Recovery Profile 变化不会复用旧 manifest；订阅 cache 刷新不会生成第二份节点事实；supervisor 消失时数据面保持、由 `procd` 重启宿主，用户仍能调用关闭 owner 恢复原始配置。代码热替换还须保持在途调用与资源交接一致，详见[微内核合同](microkernel.md#热替换与资源)。
-
-纯 Mihomo 拓扑能完成节点/provider/DIRECT 数据面 fallback，但不能在 Mihomo 永久退出、后端的有限 respawn 已耗尽后完成网络清理，也不能按用户要求定期执行跨地区 comparator。`procd` 因此持有一个 supervisor 宿主，由 `scheduler.control` 实现调度规则；宿主只跨轮保留插件返回的定时状态，每轮读取当前代码。自动恢复意图仍由 `recovery.state` 持久化，调度插件不复制健康算法、排名或网络 mutation owner。
 
 ## 最小对象
 
@@ -182,7 +162,7 @@ NetFleet 自有 policy、platform、ruleset lock、evidence、manifest 和 artif
 
 ### ProviderRef
 
-一个稳定 ID 指向所选后端的 subscription section，并声明计费类型 `subscription` 或 `buyout`。故障层级 `primary` 或 `reserve` 与计费类型分开；故障层级只决定明确的 fallback 顺序，不是正常速度排序的权重。计费类型只影响同速 tie-break，不得压过真实 delay。剩余流量和到期状态只从所选后端的 subscription metadata 读取，不写回 policy。selection/compiler 不识别机场品牌、不下载订阅，也不保存 URL、token 或节点副本；私有输入由唯一订阅 owner 持有。
+一个稳定 ID 指向所选后端的 subscription section，并声明计费类型 `subscription` 或 `buyout`。故障层级 `primary` 或 `reserve` 与计费类型分开；故障层级只决定明确的 fallback 顺序，不是正常速度排序的权重。计费类型不参与 comparator；同速 tie-break 读取已知剩余量与稳定身份，详见[选择合同](selection.md)。剩余流量和到期状态只从所选后端的 subscription metadata 读取，不写回 policy。selection/compiler 不识别机场品牌、不下载订阅，也不保存 URL、token 或节点副本；私有输入由唯一订阅 owner 持有。
 
 ### Binding
 
@@ -199,7 +179,7 @@ capability 是通用的 policy 对象，包含稳定 ID、`enabled`、`manual|au
 
 ### RegionPolicy
 
-地区和 provider-region mapping 是 capability-neutral 网络资源；capability 通过允许/排除地区复用它们。地区只标为 `automatic` 或 `manual_only`，并可用纯展示的 `display_order` 固定策略组与配置页中的地区顺序；它不持有 capability 或基础组引用。`display_order` 同值或缺失时按稳定 ID 排序，不能影响选路。unknown 地区不得进入 automatic；AI 的 unknown 地区不得进入未来任何 automatic 候选。
+地区和 provider-region mapping 是 capability-neutral 网络资源；capability 通过允许/排除地区复用它们。地区只标为 `automatic` 或 `manual_only`，并可用纯展示的 `display_order` 固定策略组与配置页中的地区顺序；它不持有 capability 或基础组引用。`display_order` 同值或缺失时按稳定 ID 排序，不能影响选路。未声明或未获授权地区不得进入 automatic。
 
 ### 配置解耦合同
 
@@ -220,7 +200,7 @@ target-local 配置只保留下列 owner 分区：
 - `evidence`：唯一固定路径，仅保存有界显示证据；
 - `fail_open`：protected probe 列表，以及 path/guard probe ID、timeout、interval 和失败次数组成的 Mihomo fallback healthcheck。
 
-不创建 `ProviderBinding` 与 `ProviderPolicy` 两套存储，不提交订阅 URL、token、节点、resolver 或完整配置。跨设备安装所需的订阅凭据、target-local `routing_rules`、provider bootstrap DNS mixin 和 `platform.json` 属于用户私有 OPL Instance 所生成的 deployment bundle；只有稳定 section ID 被 policy 引用。mixin 只保留确有设备证据的 provider 入口 DNS 例外，不能重新拥有规则、策略组或全局平台值；platform 不是 engine 配置，也不能成为算法分支。未知组、未知能力、歧义引用、未知地区和 AI 香港候选必须在 compile 阶段拒绝或排除。provider source、生成文件和运行快照留在设备私有 state，Git 只保存脱敏合同、机场无关规则与真正被 caller 消费的实现。
+不创建 `ProviderBinding` 与 `ProviderPolicy` 两套存储，不提交订阅 URL、token、节点、resolver 或完整配置。跨设备安装所需的订阅凭据、target-local `routing_rules`、provider bootstrap DNS mixin 和 `platform.json` 属于用户私有 OPL Instance 所生成的 deployment bundle；只有稳定 section ID 被 policy 引用。mixin 只保留确有设备证据的 provider 入口 DNS 例外，不能重新拥有规则、策略组或全局平台值；platform 不是 engine 配置，也不能成为算法分支。未知组、未知能力、歧义引用和未授权地区必须在 compile 阶段拒绝或排除；地区排除由 capability 配置决定。provider source、生成文件和运行快照留在设备私有 state，Git 只保存脱敏合同、机场无关规则与真正被 caller 消费的实现。
 
 设备配置 owner 可以通过结构化 LuCI 请求增删上述 policy 中的 provider、region、capability、binding 和 `routing_rules`，但只能引用设备已经存在的稳定 subscription、共享地区目录及当前 Policy Source 已存在的策略组。provider ID 使用 subscription section；自动发现与高级编辑共用同一个地区目录和 filter owner，浏览器不能创建正则或节点副本。该能力只把单设备的 policy 结构从 private renderer 迁入 target-local owner，不改变订阅 owner、mixin、platform 或 Mihomo 的责任。
 
