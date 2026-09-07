@@ -53,7 +53,7 @@ finish() {
 			jsonfilter -i "$work/enable.json" -e '@.detail.automatic.provider_state_available' >&2 || true
 		fi
 		for log in "$work"/package-manager.log "$work"/helper-primary.log "$work"/helper-reserve.log \
-			"$work"/mihomo.log "$work"/*.stderr "$work"/*.txt; do
+			"$work"/mihomo.log "$work"/supervisor.log "$work"/*.stderr "$work"/*.txt; do
 			[ ! -f "$log" ] || { echo "--- $log" >&2; cat "$log" >&2; }
 		done
 	fi
@@ -798,12 +798,25 @@ stage=supervisor_lan_ingress_passthrough
 run_timed ingress_compile run_locked /var/lock/opl-netfleet-deploy.lock ucode "$main" compile
 run_timed ingress_reenable run_locked /var/lock/opl-netfleet-deploy.lock ucode "$main" enable vm
 [ "$(jsonfilter -i "$work/ingress_reenable.json" -e '@.result.readback.runtime_identity_ok')" = true ]
-flock /var/lock/opl-netfleet-deploy.lock sh -c 'sleep 38' &
+flock /var/lock/opl-netfleet-deploy.lock sh -c 'printf ready >"$1"; sleep 38' sh "$work/recovery-lock-held" &
 recovery_lock_pid=$!
+for attempt in $(seq 1 5); do
+	[ ! -s "$work/recovery-lock-held" ] || break
+	sleep 1
+done
+[ -s "$work/recovery-lock-held" ]
 uci set nikki.mixin.allow_lan=0
 uci commit nikki
+if flock -n /var/lock/opl-netfleet-deploy.lock true; then exit 1; fi
+wait "$recovery_lock_pid"
+# Health sampling starts after mutation admission, followed by the configured
+# grace period, another poll and owner cleanup. The held-lock time is separate.
+runtime_grace=$(jsonfilter -i "$work/native-status.json" -e '@.result.selection.automation.runtime_grace_seconds')
+poll_interval=$(jsonfilter -i "$work/native-status.json" -e '@.result.selection.automation.poll_interval_seconds')
+[ "$runtime_grace" -ge 0 ] && [ "$poll_interval" -gt 0 ]
+recovery_wait=$((runtime_grace + 2 * poll_interval + 15))
 ingress_passthrough=false
-for attempt in $(seq 1 50); do
+for attempt in $(seq 1 "$recovery_wait"); do
 	if [ "$(uci -q get nikki.config.enabled)" = 0 ] &&
 		[ "$(uci -q get nikki.config.profile)" = subscription:base ] &&
 		! /etc/init.d/nikki running >/dev/null 2>&1 &&
@@ -813,7 +826,6 @@ for attempt in $(seq 1 50); do
 	fi
 	sleep 1
 done
-wait "$recovery_lock_pid"
 [ "$ingress_passthrough" = true ]
 ucode "$main" status >"$work/ingress-status.json"
 [ "$(jsonfilter -i "$work/ingress-status.json" -e '@.result.runtime.passthrough_ready')" = true ]
