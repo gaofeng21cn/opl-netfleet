@@ -14,7 +14,7 @@
 <p align="center">
   <a href="https://github.com/gaofeng21cn/opl-netfleet/actions"><img src="https://img.shields.io/github/actions/workflow/status/gaofeng21cn/opl-netfleet/netfleet-release.yml?label=checks" alt="Checks" /></a>
   <a href="https://github.com/gaofeng21cn/opl-netfleet/releases/latest"><img src="https://img.shields.io/github/v/release/gaofeng21cn/opl-netfleet" alt="Latest release" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="GPL-3.0 license" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="Apache-2.0 license" /></a>
 </p>
 
 NetFleet provides multi-provider network management on OpenWrt, either alongside
@@ -276,8 +276,11 @@ NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
 - [Product whitepaper](docs/product/whitepaper.md)
 - [Development and device-operation rules](AGENTS.md)
 
-The combined distribution containing Nikki-derived modules is distributed under
-[GNU GPL 3.0](./LICENSE). Original NetFleet files retain their Apache-2.0 notices;
+OPL NetFleet is licensed under [Apache License 2.0](./LICENSE) by default,
+except for files with explicit alternative license notices. LuCI and other
+MIT-licensed files retain their notices.
+The combined distribution containing Nikki-derived modules remains subject to
+[GNU GPL 3.0](openwrt/files/usr/share/opl-netfleet/nikki/LICENSE). Original NetFleet files retain their Apache-2.0 notices;
 the license text remains in [LICENSE.Apache-2.0](openwrt/files/usr/share/opl-netfleet/LICENSE.Apache-2.0).
 Imported Nikki modules retain their GPL-3.0 license, copyright, pinned upstream
 revision, and [modification notice](openwrt/files/usr/share/opl-netfleet/nikki/NOTICE).
