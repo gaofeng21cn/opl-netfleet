@@ -5,6 +5,8 @@ import copy
 import hashlib
 import json
 import tempfile
+import os
+import subprocess
 from unittest.mock import patch, AsyncMock
 from contextlib import ExitStack
 import time
@@ -17,6 +19,36 @@ import control
 
 
 class Decisions(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "linux" and os.geteuid() == 0, "requires Linux root fdinfo")
+    def test_only_actual_ancestor_lock_can_be_inherited(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "mutation.lock"
+            code = """import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import control
+control.MUTATION_LOCK = Path(sys.argv[2])
+with control.mutation_lock(): print('acquired')
+"""
+            child = [sys.executable, "-c", code, str(Path(control.__file__).parent), str(path)]
+            with patch.object(control, "MUTATION_LOCK", path), control.mutation_lock():
+                result = subprocess.run(child, capture_output=True, text=True, timeout=3)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), "acquired")
+            holder = subprocess.Popen([sys.executable, "-c", """import fcntl, sys
+with open(sys.argv[1], 'a') as file:
+    fcntl.flock(file, fcntl.LOCK_EX)
+    print('locked', flush=True)
+    sys.stdin.read(1)
+""", str(path)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(holder.stdout.readline().strip(), "locked")
+                result = subprocess.run(child, capture_output=True, text=True, timeout=3)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("mutation_busy", result.stderr)
+            finally:
+                holder.communicate("\n", timeout=3)
+
     def test_health_rechecks_full_chain_after_socket_timeout(self):
         health = {"service": "netfleet-https-compat", "ready": True,
                   "processing_chain": True, "transparent_chain": True}
