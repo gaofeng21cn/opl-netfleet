@@ -267,7 +267,7 @@ class OpenWrtVmTests(unittest.TestCase):
         self.assertNotIn('add --force-broken-world', package_source)
         self.assertNotIn('add --allow-untrusted', package_source)
         self.assertIn('installed_manifest=$("$real_apk" list --manifest)', package_source)
-        self.assertIn('"$real_apk" info -e opl-netfleet luci-app-netfleet', package_source)
+        self.assertIn('"$real_apk" info -e "$package_name"', package_source)
         self.assertNotIn('apk info -v opl-netfleet', package_source)
         self.assertIn('ubus -v list opl-netfleet', package_source)
         self.assertNotIn('ubus -S -v list opl-netfleet', package_source)

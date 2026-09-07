@@ -70,7 +70,7 @@ files_sha=$(jsonfilter -i "$candidate/manifest.json" -e '@.files_manifest.sha256
 [ "$(sha256sum "$candidate/FILES.sha256" | awk '{print $1}')" = "$files_sha" ]
 
 # Source deployments predate package ownership and exercise APK's protected
-# /etc path migration. The runtime post-install must promote only these package
+# /etc path migration. The configuration plugin must promote only these package
 # baselines while leaving the user policy outside its write set.
 printf '{"legacy":true}\n' >/etc/opl-netfleet/policy.example.json
 printf '{"legacy":true}\n' >/etc/opl-netfleet/policy-sources/base-v1.json
@@ -128,14 +128,19 @@ version=$(jsonfilter -i "$candidate/manifest.json" -e '@.package_version')
 release=$(jsonfilter -i "$candidate/manifest.json" -e '@.package_release')
 installed_manifest=$("$real_apk" list --manifest)
 printf '%s\n' "$installed_manifest" >"$fixture/package-manifest.after"
-"$real_apk" info -e opl-netfleet luci-app-netfleet >"$fixture/package-info.after" 2>&1
 printf '%s\n' "$installed_manifest" >>"$fixture/package-manager.log"
-printf '%s\n' "$installed_manifest" | grep -Fqx "opl-netfleet $version-r$release"
-printf '%s\n' "$installed_manifest" | grep -Fqx "luci-app-netfleet $version-r$release"
-for package_name in opl-netfleet luci-app-netfleet; do
+ucode -e '
+	import { readfile } from "fs";
+	for (let artifact in json(readfile(ARGV[0])).artifacts)
+		printf("%s %s-r%s\n", artifact.package, artifact.version, artifact.release);
+' "$candidate/manifest.json" >"$fixture/product-packages.txt"
+: >"$fixture/package-info.after"
+while read -r package_name package_version; do
+	"$real_apk" info -e "$package_name" >>"$fixture/package-info.after" 2>&1
+	printf '%s\n' "$installed_manifest" | grep -Fqx "$package_name $package_version"
 	"$real_apk" list --installed "$package_name" |
-		grep -Eq "^${package_name}-${version}-r${release}[[:space:]]+noarch([[:space:]]|$)"
-done
+		grep -Eq "^${package_name}-${package_version}[[:space:]]+noarch([[:space:]]|$)"
+done <"$fixture/product-packages.txt"
 [ ! -e /etc/opl-netfleet/policy.example.json.apk-new ]
 [ ! -e /etc/opl-netfleet/policy-sources/base-v1.json.apk-new ]
 [ ! -e /etc/opl-netfleet/rulesets.lock.json.apk-new ]
@@ -145,8 +150,22 @@ uhttpd_timeout=$(uci -q get 'uhttpd.main.script_timeout')
 [ "$uhttpd_timeout" -ge 300 ]
 
 stage=package_contents
-"$real_apk" info -L opl-netfleet | grep -Fqx 'usr/libexec/opl-netfleet/main.uc'
+"$real_apk" info -L opl-netfleet-kernel | grep -Fqx 'usr/libexec/opl-netfleet/main.uc'
+"$real_apk" info -L opl-netfleet-kernel | grep -Fqx 'usr/libexec/opl-netfleet/kernel/host.uc'
 "$real_apk" info -L opl-netfleet | grep -Fqx 'usr/share/opl-netfleet/build.json'
+"$real_apk" info -L opl-netfleet | grep -Fqx 'usr/share/opl-netfleet/system.json'
+while read -r package_name package_version; do
+	case "$package_name" in
+		opl-netfleet-plugin-*)
+			plugin_id=${package_name#opl-netfleet-plugin-}
+			"$real_apk" info -L "$package_name" |
+				grep -Fqx "usr/libexec/opl-netfleet/plugins/$plugin_id/manifest.json"
+			;;
+	esac
+done <"$fixture/product-packages.txt"
+[ ! -d /usr/libexec/opl-netfleet/application ]
+[ ! -d /usr/libexec/opl-netfleet/domain ]
+[ ! -d /usr/libexec/opl-netfleet/platform ]
 build_identity=/usr/share/opl-netfleet/build.json
 [ "$(jsonfilter -i "$build_identity" -e '@.schema')" = opl-netfleet-package-build.v1 ]
 [ "$(jsonfilter -i "$build_identity" -e '@.version')" = "$version" ]

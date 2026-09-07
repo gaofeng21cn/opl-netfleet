@@ -30,8 +30,9 @@ function checked_system(value) {
 };
 function system_profile(root, options) {
 	if (options.system != null) return checked_system(clone(options.system));
+	if (fs.lstat(`${root}/system.json`) != null) return checked_system(read_json(`${root}/system.json`));
 	const adjacent = `${root}/../../share/opl-netfleet/system.json`;
-	const default_path = fs.lstat(`${root}/system.json`) != null ? `${root}/system.json` : fs.lstat(adjacent) != null ? adjacent : DEFAULT_SYSTEM;
+	const default_path = fs.lstat(adjacent) != null ? adjacent : DEFAULT_SYSTEM;
 	let profile = read_json(default_path) ??
 		{ schema: 'opl-netfleet-system.v1', bindings: {}, enabled: {} };
 	profile = checked_system(profile);

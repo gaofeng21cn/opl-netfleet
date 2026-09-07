@@ -532,7 +532,7 @@ const managed = module('managed.js', {
   componentsGet: async () => owner.components,
 });
 let page = managed.components(owner);
-assert(text(page).includes('动态插件'));
+assert.equal(all(page, node => node.tag === 'tr' && text(node).includes(plugin.package)).length, 1);
 assert.equal(calls.length, 0, 'inventory must not execute plugin');
 fire(button(page, '管理'));
 await tick();
@@ -558,6 +558,40 @@ const before = calls.length;
 fire(button(modal.content, '执行'));
 assert.equal(calls.length, before, 'invalid params never dispatched');
 assert(text(modal.content).includes('JSON 对象'));
+
+const service = { id: 'metrics', label: '运行指标', kind: 'plugin', runtime: 'service', version: '1.0.0',
+  revision: 'service-r1', package: 'opl-netfleet-plugin-metrics', services: { 'metrics.snapshot': 1 } };
+assert(!Object.hasOwn(service, 'actions'));
+owner.components.extensions = [service];
+const serviceCalls = [];
+const serviceManaged = module('managed.js', {
+  pluginRead: async request => { serviceCalls.push(['read', request]); return { loaded: true, ready: true, revision: 'service-r2' }; },
+  pluginCall: async request => { serviceCalls.push(['write', request]); return { loaded: true, ready: true, revision: 'service-r3' }; },
+  componentsGet: async () => owner.components,
+});
+page = serviceManaged.components(owner);
+assert.equal(serviceCalls.length, 0, 'service inventory must not execute plugin');
+fire(button(page, '管理'));
+await tick();
+assert.deepEqual(serviceCalls, [['read', {
+  id: 'metrics', action: 'get', revision: 'service-r1', confirm: false, params: {},
+}]]);
+assert(!find(modal.content, node => node.tag === 'select'), 'a service without actions has no action selector');
+assert(!find(modal.content, node => node.tag === 'textarea'), 'a service without actions has no parameter input');
+fire(button(modal.content, '重新加载'));
+assert.equal(serviceCalls.length, 1, 'service reload waits for confirmation');
+fire(button(modal.content, '确认'));
+await tick();
+assert.deepEqual(serviceCalls[1], ['write', {
+  id: 'metrics', action: 'reload', revision: 'service-r2', confirm: true, params: {},
+}]);
+assert.deepEqual(JSON.parse(text(find(modal.content, node => node.tag === 'pre'))), {
+  loaded: true, ready: true, revision: 'service-r3',
+});
+fire(find(modal.content, node => node.tag === 'button' && node.attrs.title === '刷新状态'));
+await tick();
+assert.equal(serviceCalls.at(-1)[1].action, 'get');
+assert.equal(serviceCalls.at(-1)[1].revision, 'service-r3', 'read after reload uses the current service identity');
 """)
 
     def test_unmanaged_compatibility_preserves_revision_bound_disable(self):
