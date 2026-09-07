@@ -138,7 +138,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
   }, [refreshComponents, view, preview?.scenario]);
 
   useEffect(() => {
-    if (view !== 'providers' && view !== 'components') return;
+    if (view === 'config') return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     let active = false;
@@ -148,7 +148,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
         if (cancelled) return;
         setOperations(next);
         setOperationError(null);
-        active = operationRunning(next.subscription) || operationRunning(next.packages);
+        active = operationRunning(next.subscription) || operationRunning(next.selection) || operationRunning(next.packages);
       } catch (reason) {
         if (!cancelled) setOperationError(reason instanceof Error ? reason.message : '操作进度读取失败');
       }
@@ -267,6 +267,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
       )}
 
       {error && <div className="nf-alert" role="alert"><AlertCircle aria-hidden="true" /><span>{error}</span></div>}
+      {view !== 'components' && view !== 'config' && <OperationProgress operation={operations.selection || null} scope={`${source.mode}|${source.target_label}`} subjectLabel={status.capabilities.find(item => item.id === operations.selection?.subject)?.display_name} error={operations.selection ? operationError : null} />}
 
       {view === 'overview' && <>
         <StatusStrip snapshot={status} />
@@ -281,7 +282,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
         <PolicySummary snapshot={status} />
         <RecoverySection snapshot={status} />
       </>}
-      {view === 'providers' && <><OperationProgress operation={operations.subscription} error={operationError} /><ProviderTable snapshot={status} full /></>}
+      {view === 'providers' && <><OperationProgress operation={operations.subscription} error={operationError} scope={`${source.mode}|${source.target_label}`} /><ProviderTable snapshot={status} full /></>}
       {view === 'regions' && <RegionTable snapshot={status} full />}
       {view === 'config' && configState && <ConfigView
         key={configKey}
@@ -294,7 +295,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
       />}
       {view === 'events' && <EventsView key={`${source.mode}|${source.target_label}|${preview?.scenario}`} snapshot={visibleEvents} status={status} connections={connections} connectionsLoading={connectionsLoading} connectionsError={connectionsError} error={eventsError} client={client} />}
       {view === 'components' && <>
-        <ComponentsView snapshot={components} operation={operations.packages} error={componentsError} operationError={operationError} loading={componentsLoading} onRead={() => void Promise.all([refreshComponents(), refresh()])} />
+        <ComponentsView snapshot={components} operation={operations.packages} error={componentsError} operationError={operationError} loading={componentsLoading} scope={`${source.mode}|${source.target_label}`} onRead={() => void Promise.all([refreshComponents(), refresh()])} />
       </>}
       <DataSourceBar source={source} statusError={statusError} eventsError={eventsError} />
 

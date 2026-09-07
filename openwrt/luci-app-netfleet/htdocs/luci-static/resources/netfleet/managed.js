@@ -118,35 +118,70 @@ const PHASE_LABELS = {
 
 function isRunning(operation) { return operation && ['queued', 'running'].includes(operation.state); }
 
+function resultTime(value, label) {
+	return value > 0 ? (label || '完成于') + ' ' + new Date(value * 1000).toLocaleString() : '';
+}
+
+function dismissedResult(controller, kind, identity, dismiss) {
+	const key = 'netfleet:result:v1:' + kind;
+	const records = controller.dismissedResults || (controller.dismissedResults = {});
+	if (!Object.prototype.hasOwnProperty.call(records, key)) {
+		try { records[key] = sessionStorage.getItem(key); } catch (_) { records[key] = null; }
+	}
+	if (dismiss) {
+		records[key] = identity;
+		try { sessionStorage.setItem(key, identity); } catch (_) { /* Display preferences remain usable without storage. */ }
+	}
+	return records[key] === identity;
+}
+
+function resultNode(controller, kind, identity, title, details, warning, attrs) {
+	attrs = Object.assign({ 'class': 'netfleet-operation is-result' + (warning ? ' is-warning' : ''), 'role': 'status' }, attrs);
+	if (dismissedResult(controller, kind, identity)) return E('div', Object.assign(attrs, { 'hidden': true }));
+	const close = E('button', { 'type': 'button', 'class': 'netfleet-result-close', 'title': '关闭此条结果', 'aria-label': '关闭' + title + '结果', 'click': function() {
+		if (typeof close.closest === 'function' && close.closest('#modal_overlay')) ui.hideModal();
+		dismissedResult(controller, kind, identity, true);
+		updateOperationNodes(controller);
+		controller.redraw();
+	} }, '×');
+	return E('div', attrs, [ E('div', { 'class': 'netfleet-result-body' }, [ E('strong', {}, title), E('div', { 'class': 'netfleet-operation-detail' }, details) ]), close ]);
+}
+
+function notify(title, content, severity) {
+	return ui.addNotification(title, E('div', {}, [content, E('small', { 'class': 'netfleet-notification-time' }, resultTime(Date.now() / 1000, '收到反馈'))]), severity);
+}
+
 function operationNode(controller, kind) {
 	const operation = controller.operations && controller.operations[kind];
 	const pending = kind === 'subscription' && controller.subscriptionRequest || kind === 'selection' && controller.selectionRequest;
 	const disconnected = controller.operationError && (pending || isRunning(operation));
 	const attrs = { 'class': 'netfleet-operation', 'data-netfleet-operation': kind, 'role': 'status', 'aria-live': 'polite' };
 	if (!operation && !pending) return E('div', Object.assign(attrs, { 'hidden': true }));
-	if (kind === 'packages' && operation.state === 'succeeded' && !operation.error && !operation.recovery) {
-		const subject = ({ netfleet: 'NetFleet', mihomo: 'Mihomo', feed: '软件包源' })[operation.subject] || '组件';
-		return E('div', Object.assign(attrs, { 'class': 'netfleet-operation-summary' }),
-			(operation.subject === 'feed' ? '最近检查：' : '最近更新：') + subject + ' · 已完成' +
-			(operation.finished_at ? ' · ' + new Date(operation.finished_at * 1000).toLocaleString() : ''));
-	}
-	const active = pending || isRunning(operation);
+	const active = operation ? isRunning(operation) : pending;
 	const state = disconnected ? '连接中断，执行结果尚未确认' : !operation ? '等待设备接收' :
 		({ queued: '已提交，等待设备执行', running: PHASE_LABELS[operation.phase] || '处理中', succeeded: '已完成', failed: '执行失败', interrupted: '执行已中断，结果尚未确认' })[operation.state] || '等待设备确认';
 	const started = operation && operation.started_at || (kind === 'selection' ? controller.selectionStartedAt : controller.subscriptionStartedAt);
-	const elapsed = started ? Math.max(0, Math.floor((operation && operation.finished_at || Date.now() / 1000) - started)) : 0;
+	const end = active ? Date.now() / 1000 : operation && operation.finished_at;
+	const elapsed = started && end >= started ? Math.floor(end - started) : null;
 	const details = [ E('strong', { 'class': active && !disconnected ? 'spinning' : '' }, state) ];
-	if (operation && operation.subject) details.push(E('span', {}, kind === 'packages' ? ({ feed: '更新源', netfleet: 'NetFleet', mihomo: 'Mihomo' })[operation.subject] || String(operation.subject) : String(operation.subject)));
+	if (operation && operation.subject) {
+		const capability = kind === 'selection' && controller.status && (controller.status.capabilities || []).find(function(item) { return item.id === operation.subject; });
+		details.push(E('span', {}, kind === 'packages' ? ({ feed: '更新源', netfleet: 'NetFleet', mihomo: 'Mihomo' })[operation.subject] || String(operation.subject) : capability && capability.display_name || String(operation.subject)));
+	}
 	if (operation && Number(operation.total) > 0) {
 		const label = kind === 'subscription' ? '已处理 ' : kind === 'selection' ? '已完成 ' : '已完成 ';
 		const unit = kind === 'subscription' ? ' 个机场' : kind === 'selection' ? ' 个出口' : ' 个文件';
 		details.push(E('span', {}, label + Number(operation.completed || 0) + ' / ' + Number(operation.total) + unit));
 	}
-	details.push(E('span', {}, '已耗时 ' + (elapsed < 60 ? elapsed + ' 秒' : Math.floor(elapsed / 60) + ' 分 ' + elapsed % 60 + ' 秒')));
+	if (!active) details.push(E('span', {}, operation.finished_at ? resultTime(operation.finished_at) : operation.updated_at ? resultTime(operation.updated_at, '记录更新于') + '（完成时间未记录）' : '完成时间未记录'));
+	if (elapsed != null) details.push(E('span', {}, (active ? '已耗时 ' : '耗时 ') + (elapsed < 60 ? elapsed + ' 秒' : Math.floor(elapsed / 60) + ' 分 ' + elapsed % 60 + ' 秒')));
 	if (operation && operation.error) details.push(E('span', { 'class': 'is-warning' }, errorLabel(operation.error)));
 	if (operation && operation.recovery) details.push(E('span', {}, ({ restored: '已恢复更新前状态', failed: '恢复失败', direct: '已恢复网络直通' })[operation.recovery] || '恢复结果尚未确认'));
+	const title = kind === 'subscription' ? '机场订阅更新' : kind === 'selection' ? '测速与自动选优' : operation && operation.subject === 'feed' ? '软件包源检查' : '组件更新';
+	if (!active) return resultNode(controller, kind, JSON.stringify([operation.id, operation.started_at, operation.state, operation.finished_at, operation.recovery]), title, details,
+		['failed', 'interrupted'].includes(operation.state), { 'data-netfleet-operation': kind });
 	return E('div', Object.assign(attrs, { 'class': attrs.class + (disconnected || operation && ['failed', 'interrupted'].includes(operation.state) ? ' is-warning' : '') }), [
-		E('div', { 'class': 'netfleet-operation-title' }, kind === 'subscription' ? '机场订阅更新' : kind === 'selection' ? '测速与自动选优' : '组件与更新'),
+		E('div', { 'class': 'netfleet-operation-title' }, title),
 		E('div', { 'class': 'netfleet-operation-detail' }, details)
 	]);
 }
@@ -208,7 +243,7 @@ function runSelection(controller, request) {
 		return controller.refreshData(true).then(function() { return result; });
 	}).catch(function(error) {
 		const uncertain = error && (error.netfleetKind === 'request_aborted' || /timeout|XHR|network/i.test(error.message || ''));
-		ui.addNotification(null, E('p', {}, uncertain ? '连接中断，设备可能仍在测速；结果尚未确认。' : failure(error)), uncertain ? 'warning' : 'error');
+		notify(null, E('p', {}, uncertain ? '连接中断，设备可能仍在测速；结果尚未确认。' : failure(error)), uncertain ? 'warning' : 'error');
 	}).finally(function() {
 		controller.selectionRequest = false;
 		controller.busy = false;
@@ -231,7 +266,7 @@ function runSubscription(controller, request) {
 		return controller.onboarding ? controller.refreshOnboarding().then(function() { return result; }) : controller.refreshData(true, true).then(function() { return result; });
 	}).catch(function(error) {
 		const uncertain = error && (error.netfleetKind === 'request_aborted' || /timeout|XHR|network/i.test(error.message || ''));
-		ui.addNotification(null, E('p', {}, uncertain ? '连接中断，设备可能仍在更新；结果尚未确认。' : failure(error)), uncertain ? 'warning' : 'error');
+		notify(null, E('p', {}, uncertain ? '连接中断，设备可能仍在更新；结果尚未确认。' : failure(error)), uncertain ? 'warning' : 'error');
 	}).finally(function() {
 		controller.subscriptionRequest = false;
 		controller.busy = false;
@@ -270,6 +305,7 @@ function componentsLocked(controller) {
 
 function dashboardFailure(controller, error) {
 	controller.dashboardError = error;
+	controller.dashboardResultAt = Date.now() / 1000;
 	if (error.detail && error.detail.id === 'zashboard') controller.components.dashboard = error.detail;
 }
 
@@ -283,6 +319,7 @@ function checkUpdates(controller) {
 	// The two sources share the device mutation lock, so finish the bounded resource check first.
 	const dashboard = snapshot.dashboard && snapshot.dashboard.managed ? api.dashboardCheck().then(function(result) {
 		controller.components.dashboard = result;
+		controller.dashboardResultAt = Date.now() / 1000;
 	}).catch(function(error) { dashboardFailure(controller, error); }) : Promise.resolve();
 	return dashboard.then(function() {
 		controller.componentsChecking = false;
@@ -298,6 +335,7 @@ function updateDashboard(controller, version) {
 	controller.redraw();
 	return api.dashboardUpdate(version).then(function(result) {
 		controller.components.dashboard = result;
+		controller.dashboardResultAt = Date.now() / 1000;
 	}).catch(function(error) { dashboardFailure(controller, error); }).finally(function() { controller.dashboardBusy = false; controller.redraw(); });
 }
 
@@ -322,19 +360,33 @@ function componentsPage(controller) {
 	else if (active) check.setAttribute('title', '设备正在执行操作');
 	const content = [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h3', {}, '已安装组件'), E('div', { 'class': 'netfleet-inline-actions' }, [
 		refresh, check
-	]) ]), E('p', { 'class': 'cbi-section-descr' }, '检查更新后选择要更新的组件；不会自动安装，也不会升级其他 OpenWrt 软件。机场订阅请在“机场”页管理。'), operationNode(controller, 'packages') ];
+	]) ]), operationNode(controller, 'packages') ];
 	if (controller.componentsError) content.push(E('p', { 'class': 'is-warning', 'role': 'alert' }, '组件信息未能确认：' + errorLabel(controller.componentsError.message)));
 	if (!snapshot) {
 		content.push(E('p', { 'class': controller.componentsLoading ? 'spinning' : '' }, controller.componentsLoading ? '正在读取已安装组件…' : '当前设备未提供组件管理接口，请确认 NetFleet 已更新。'));
 		return E('section', { 'class': 'cbi-section netfleet-components' }, content);
 	}
-	const sourceStates = [ E('span', { 'class': feed.error ? 'is-warning' : '' }, !snapshot.supported ? '软件包：当前安装方式不支持包管理' :
-		!feed.configured ? '软件包：未配置更新源' : feed.error ? '软件包检查失败：' + errorLabel(feed.error) : '软件包：' + (feed.checked_at ? '检查于 ' + new Date(feed.checked_at * 1000).toLocaleString() : '尚未检查更新')) ];
-	if (dashboard) sourceStates.push(E('span', { 'class': controller.dashboardError || dashboard.error ? 'is-warning' : '' },
-		!dashboard.managed ? errorLabel(dashboard.reason || 'dashboard_managed_externally') : controller.dashboardError || dashboard.error ?
-		(controller.dashboardError && controller.dashboardAction === 'update' ? '面板更新失败：' : '面板检查失败：') +
-		(controller.dashboardError && controller.dashboardError.detail && controller.dashboardError.detail.rollback ? failure(controller.dashboardError) : errorLabel(controller.dashboardError && controller.dashboardError.message || dashboard.error)) :
-		'面板：' + (controller.componentsChecking ? '正在检查更新…' : controller.dashboardBusy ? '正在更新资源…' : dashboard.checked_at ? '检查于 ' + new Date(dashboard.checked_at * 1000).toLocaleString() : '尚未检查更新')));
+	const packageOperation = controller.operations && controller.operations.packages;
+	const packageFailed = packageOperation && ['failed', 'interrupted'].includes(packageOperation.state);
+	const sameFeedFailure = packageFailed && packageOperation.error === feed.error && (!feed.checked_at || feed.checked_at >= packageOperation.started_at && feed.checked_at <= packageOperation.finished_at);
+	if (feed.error && !sameFeedFailure && !isRunning(packageOperation)) content.push(resultNode(controller, 'feed', String(feed.checked_at || 0), '软件包源检查', [
+		E('span', {}, errorLabel(feed.error)), E('span', {}, resultTime(feed.checked_at, '检查于') || '检查时间未记录')
+	], true));
+	const dashboardError = controller.dashboardError || dashboard && dashboard.error;
+	if (dashboard && dashboard.managed && !controller.dashboardBusy && !controller.componentsChecking && (dashboardError || controller.dashboardResultAt)) {
+		const recordedCheck = controller.dashboardAction !== 'update' && dashboard.checked_at && (!controller.dashboardError || dashboard.error);
+		const time = recordedCheck ? dashboard.checked_at : controller.dashboardResultAt;
+		content.push(resultNode(controller, 'dashboard', JSON.stringify([time, controller.dashboardAction || 'check', Boolean(dashboardError)]),
+			controller.dashboardAction === 'update' ? '面板更新' : '面板检查', [
+				E('span', {}, dashboardError ? (controller.dashboardError ? failure(controller.dashboardError) : errorLabel(dashboard.error)) : '已完成'),
+				E('span', {}, resultTime(time, recordedCheck ? '检查于' : '收到结果') || '检查时间未记录')
+			], Boolean(dashboardError)));
+	}
+	const sourceStates = [ E('span', {}, !snapshot.supported ? '软件包：当前安装方式不支持包管理' :
+		!feed.configured ? '软件包：未配置更新源' : '软件包：' + (feed.error ? '上次检查失败 · ' : '') + (resultTime(feed.checked_at, '检查于') || (feed.error ? '检查时间未记录' : '尚未检查更新'))) ];
+	if (dashboard) sourceStates.push(E('span', {}, !dashboard.managed ? errorLabel(dashboard.reason || 'dashboard_managed_externally') :
+		'面板：' + (controller.componentsChecking ? '正在检查更新…' : controller.dashboardBusy ? '正在更新资源…' :
+		(dashboardError ? '上次' + (controller.dashboardAction === 'update' ? '更新' : '检查') + '失败 · ' : '') + (resultTime(controller.dashboardResultAt || dashboard.checked_at, '最近结果') || (dashboardError ? '检查时间未记录' : '尚未检查更新')))));
 	content.push(E('div', { 'class': 'netfleet-component-checks', 'role': 'status' }, sourceStates));
 	const luci = snapshot.components.find(function(item) { return item.id === 'luci'; });
 	const rows = snapshot.components.filter(function(item) { return item.id !== 'luci'; }).map(function(component) {
@@ -394,7 +446,10 @@ function componentsPage(controller) {
 		E('thead', {}, E('tr', {}, ['组件', '当前版本与状态', '更新', '操作'].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, rows)
 	])));
 	content.push(E('details', { 'class': 'netfleet-component-details' }, [ E('summary', {}, '技术详情：更新源与安装信息'),
-		E('p', {}, '用于排查安装或更新问题。软件包源决定可获取的版本；日常更新无需修改以下信息。'), E('dl', { 'class': 'netfleet-component-meta' }, [].concat(
+		feed.error ? E('p', {}, '软件包源最近错误：' + errorLabel(feed.error)) : '',
+		packageFailed ? E('p', {}, '最近组件操作：' + errorLabel(packageOperation.error) + (packageOperation.recovery ? '；' + ({ restored: '已恢复更新前状态', failed: '恢复失败', direct: '已恢复网络直通' })[packageOperation.recovery] : '')) : '',
+		dashboardError ? E('p', {}, '面板最近错误：' + (controller.dashboardError ? failure(controller.dashboardError) : errorLabel(dashboard.error))) : '',
+		E('dl', { 'class': 'netfleet-component-meta' }, [].concat(
 		snapshot.architecture ? [ E('dt', {}, '设备架构'), E('dd', {}, snapshot.architecture) ] : '',
 		feed.url ? [ E('dt', {}, '软件包源'), E('dd', {}, feed.url) ] : '',
 		luci ? [ E('dt', {}, 'LuCI 界面'), E('dd', {}, (luci.installed_version || '未安装') + ' · 随 NetFleet 更新') ] : '',
@@ -485,7 +540,7 @@ function showSubscriptions(controller, refresh) {
 									controller.subscriptionsChanged = true;
 									showSubscriptions(controller);
 								}).catch(function(error) {
-									ui.addNotification(null, E('p', {}, failure(error)), 'error'); showSubscriptions(controller);
+									notify(null, E('p', {}, failure(error)), 'error'); showSubscriptions(controller);
 								});
 							}, false, true) ]) ]);
 					}, false, true) ]) ]);
@@ -522,9 +577,9 @@ function migration(controller) {
 			controller.busy = true;
 			ui.showModal('迁移到 NetFleet 原生后端', [ E('p', { 'class': 'spinning' }, '正在迁移并等待设备回读…') ]);
 			api.migrationApply({ revision: state.revision, confirmed: true, backend: 'native-mihomo' }).then(function() { return controller.refreshData(true, true); }).then(function() {
-				ui.hideModal(); ui.addNotification(null, E('p', {}, '迁移已完成，运行状态已从设备重新读取。'), 'info');
+				ui.hideModal(); notify(null, E('p', {}, '迁移已完成，运行状态已从设备重新读取。'), 'info');
 			}).catch(function(error) {
-				ui.hideModal(); ui.addNotification(null, E('p', {}, '迁移未确认成功：' + failure(error)), 'error');
+				ui.hideModal(); notify(null, E('p', {}, '迁移未确认成功：' + failure(error)), 'error');
 			}).finally(function() { controller.busy = false; controller.redraw(); });
 		}, !state.ready) ]));
 		ui.showModal('迁移到 NetFleet 原生后端', controls);
@@ -557,5 +612,5 @@ function nativeSetup(controller) {
 	}).catch(function(error) { ui.showModal('首次接入失败', [ E('p', {}, failure(error)), button('关闭', ui.hideModal) ]); });
 }
 
-return baseclass.extend({ preloadSubscriptions: loadSubscriptions, subscriptions: showSubscriptions, migration: migration, nativeSetup: nativeSetup,
+return baseclass.extend({ notify: notify, preloadSubscriptions: loadSubscriptions, subscriptions: showSubscriptions, migration: migration, nativeSetup: nativeSetup,
 	operationNode: operationNode, readOperations: readOperations, runSubscription: runSubscription, runSelection: runSelection, components: componentsPage, loadComponents: loadComponents });

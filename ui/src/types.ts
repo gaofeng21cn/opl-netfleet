@@ -293,7 +293,7 @@ export interface NetFleetClient {
 
 export interface OperationSnapshot {
   id: string;
-  kind: 'subscription' | 'packages';
+  kind: 'subscription' | 'selection' | 'packages';
   state: 'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted';
   recovery?: 'restored' | 'failed' | 'direct' | null;
   phase: string;
@@ -308,6 +308,7 @@ export interface OperationSnapshot {
 
 export interface OperationsSnapshot {
   subscription: OperationSnapshot | null;
+  selection?: OperationSnapshot | null;
   packages: OperationSnapshot | null;
 }
 

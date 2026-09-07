@@ -394,7 +394,14 @@
 .nf-components td > small { margin-top: 6px; font-size: 13px; color: var(--nf-muted); }
 .nf-component-actions > * { margin: 0 8px 8px 0; }
 .nf-component-checks { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 12px 0; font-size: 13px; color: var(--nf-muted); }
-.nf-operation-summary { margin: 12px 0; font-size: 13px; color: var(--nf-muted); }
+.nf-operation.is-result { display: flex; align-items: flex-start; gap: 16px; padding: 12px 16px; }
+.nf-result-body { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: baseline; }
+.nf-result-body > strong { flex-shrink: 0; }
+.nf-result-body .nf-operation-detail { gap: 6px 18px; overflow-wrap: anywhere; }
+.nf-operation .nf-result-close { flex: 0 0 32px; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; margin: -3px -4px -3px 0; border: 0; background: transparent; color: var(--nf-muted); }
+.nf-operation .nf-result-close:hover { background: var(--nf-accent-soft); color: var(--nf-text); }
+.nf-result-close svg { width: 18px; height: 18px; }
+.nf-app .nf-operation.is-warning { border-left-color: var(--nf-amber); color: var(--nf-text) !important; }
 .nf-components-actions, .nf-operation-detail { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 22px; }
 .nf-components button { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 6px 11px; border: 1px solid var(--nf-border); border-radius: 4px; color: var(--nf-text); background: #fff; font: inherit; font-size: 13px; cursor: pointer; }
 .nf-components button:disabled { opacity: .5; cursor: not-allowed; }

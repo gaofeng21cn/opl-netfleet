@@ -2,6 +2,7 @@
 'require baseclass';
 'require ui';
 'require netfleet.api as api';
+'require netfleet.managed as managed';
 
 function reason(value) {
 	return ({ disabled: '已关闭', draining: '停止接管，正在排空', recovering: '健康观察中',
@@ -74,7 +75,7 @@ function executeMutation(controller, method, request, revision) {
 	controller.compatibilityBusy = true;
 	controller.redraw();
 	return api[method](Object.assign({ revision: revision }, request)).catch(function(error) {
-		ui.addNotification(null, E('p', {}, 'HTTPS 兼容操作失败：' + error.message), 'error');
+		managed.notify(null, E('p', {}, 'HTTPS 兼容操作失败：' + error.message), 'error');
 	}).then(function() { return refresh(controller); }).finally(function() { controller.compatibilityBusy = false; controller.redraw(); });
 }
 
@@ -181,7 +182,7 @@ function render(controller) {
 		E('h4', {}, '目标规则'), table([ '启用', '目标', '设备', '策略', '最近结果', '操作' ], rules), button('新增规则', function() { edit(controller, 'rules'); }, busy),
 		E('h4', {}, '设备与信任'), table([ '设备', '系统信任', '实际调用', '操作' ], devices),
 		E('div', { 'class': 'netfleet-inline-add' }, [ button('新增设备', function() { edit(controller, 'devices'); }, busy),
-			button('下载公开 CA', function() { return api.compatibilityCa().then(function(ca) { download('netfleet-ca.pem', ca.pem, 'application/x-pem-file'); }).catch(function(error) { ui.addNotification(null, E('p', {}, error.message), 'error'); }); }, busy || !state.ca_sha256),
+			button('下载公开 CA', function() { return api.compatibilityCa().then(function(ca) { download('netfleet-ca.pem', ca.pem, 'application/x-pem-file'); }).catch(function(error) { managed.notify(null, E('p', {}, error.message), 'error'); }); }, busy || !state.ca_sha256),
 			state.installed ? E('a', { 'href': '/netfleet/macos-trust.py', 'download': 'netfleet-macos-trust.py' }, 'macOS 接入工具') : '' ]),
 		E('small', {}, state.ca_sha256 ? 'CA SHA-256：' + state.ca_sha256 : ''),
 		E('h4', {}, '兼容事件'), table([ '时间', '接管', '原因' ], state.events.slice().reverse().map(function(event) {

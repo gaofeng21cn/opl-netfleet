@@ -3,6 +3,7 @@
 'require baseclass';
 'require ui';
 'require netfleet.api as api';
+'require netfleet.managed as managed';
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function disabled(controller) { return controller.busy || !controller.liveDataReady; }
@@ -46,7 +47,7 @@ function errorText(error) {
 	if (error && error.detail && error.detail.rollback) message += error.detail.rollback.ok ? '；已恢复操作前状态' : '；恢复尚未确认，请检查设备状态';
 	return message;
 }
-function notice(error) { ui.addNotification(null, E('p', {}, errorText(error)), 'error'); }
+function notice(error) { managed.notify(null, E('p', {}, errorText(error)), 'error'); }
 function confirm(title, description, action) {
 	ui.showModal(title, [ E('p', {}, description), E('div', { 'class': 'right' }, [ button('取消', ui.hideModal), ' ', button('确认', function() { ui.hideModal(); return action(); }) ]) ]);
 }
@@ -57,7 +58,7 @@ function run(controller, title, request, refresh) {
 	ui.showModal(title, [ E('p', { 'class': 'spinning', 'role': 'status' }, '正在执行并确认设备状态…') ]);
 	return Promise.resolve().then(request).then(function(result) {
 		ui.hideModal();
-		ui.addNotification(null, E('p', {}, title + '已完成'), 'info');
+		managed.notify(null, E('p', {}, title + '已完成'), 'info');
 		return refresh ? Promise.resolve(refresh(result)).then(function() { return result; }) : result;
 	}).catch(function(error) { ui.hideModal(); notice(error); }).finally(function() { controller.busy = false; controller.redraw(); });
 }

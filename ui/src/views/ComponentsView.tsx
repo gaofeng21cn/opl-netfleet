@@ -2,10 +2,11 @@ import { Download, ExternalLink, RefreshCw, Settings } from 'lucide-react';
 import type { ComponentsSnapshot, DashboardComponent, ExtensionComponent, OperationSnapshot } from '../types';
 import { OperationProgress } from '../components/OperationProgress';
 import { componentError } from '../lib/componentError';
+import { ResultNotice, resultTime } from '../components/ResultNotice';
 
 const previewReason = '本机预览只读，请在设备 LuCI 中操作';
 const coreVersion = (value: string) => value.replace(/^v/, '').replace(/-r\d+$/, '');
-const checkedTime = (value: number | null) => value ? `检查于 ${new Date(value * 1000).toLocaleString()}` : '尚未检查更新';
+const checkedTime = (value: number | null, failed?: string | null) => value ? `检查于 ${new Date(value * 1000).toLocaleString()}` : failed ? '检查时间未记录' : '尚未检查更新';
 
 function ExtensionRow({ extension }: { extension: ExtensionComponent }) {
   const state = { ready: '可配置', not_installed: '未安装', incompatible: '模块版本不兼容', backend_unsupported: '当前后端不支持', dependency_missing: '缺少依赖', unknown: '状态未确认' }[extension.state];
@@ -45,7 +46,8 @@ function DashboardRow({ dashboard }: { dashboard: DashboardComponent }) {
   </tr>;
 }
 
-export function ComponentsView({ snapshot, operation, error, operationError, loading, onRead }: {
+export function ComponentsView({ snapshot, operation, error, operationError, loading, onRead, scope = '' }: {
+  scope?: string;
   snapshot: ComponentsSnapshot | null;
   operation: OperationSnapshot | null;
   error: string | null;
@@ -57,18 +59,25 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
   const dashboard = snapshot?.dashboard;
   const luci = snapshot?.components.find(component => component.id === 'luci');
   const missing = snapshot?.dependencies.filter(item => !item.available) || [];
+  const packageFailed = operation && ['failed', 'interrupted'].includes(operation.state);
+  const sameFeedFailure = packageFailed && operation.error === feed?.error && (!feed?.checked_at || feed.checked_at >= operation.started_at && feed.checked_at <= (operation.finished_at || 0));
   return <div className="nf-components">
     <div className="nf-section-heading"><h2>已安装组件</h2><div className="nf-components-actions">
       <button type="button" onClick={onRead} disabled={loading} title="刷新设备组件状态" aria-label="刷新设备组件状态"><RefreshCw aria-hidden="true" className={loading ? 'is-spinning' : ''} /></button>
       <button type="button" disabled title={previewReason}><RefreshCw aria-hidden="true" />检查更新</button>
     </div></div>
-    <p>检查更新后选择要更新的组件；不会自动安装，也不会升级其他 OpenWrt 软件。机场订阅请在“机场”页管理。</p>
-    <OperationProgress operation={operation} error={operationError} />
+    <OperationProgress operation={operation} error={operationError} scope={scope} />
     {error && <div className="nf-alert" role="alert">{error}</div>}
     {!snapshot ? <p>{loading ? '正在读取已安装组件…' : '当前设备尚未提供组件管理信息。'}</p> : <>
+      {feed?.error && !sameFeedFailure && (!operation || !['running', 'queued'].includes(operation.state)) && <ResultNotice scope={scope} slot="feed" identity={String(feed.checked_at || 0)} title="软件包源检查" warning>
+        <span>{componentError(feed.error)}</span><span>{resultTime(feed.checked_at, '检查于') || '检查时间未记录'}</span>
+      </ResultNotice>}
+      {dashboard?.managed && dashboard.error && <ResultNotice scope={scope} slot="dashboard" identity={String(dashboard.checked_at || 0)} title="面板检查" warning>
+        <span>{componentError(dashboard.error)}</span><span>{resultTime(dashboard.checked_at, '检查于') || '检查时间未记录'}</span>
+      </ResultNotice>}
       <div className="nf-component-checks" role="status">
-        <span className={feed?.error ? 'is-warning' : ''}>{!snapshot.supported ? '软件包：当前安装方式不支持包管理' : !feed?.configured ? '软件包：未配置更新源' : feed.error ? `软件包检查失败：${componentError(feed.error)}` : `软件包：${checkedTime(feed.checked_at)}`}</span>
-        {dashboard && <span className={dashboard.error ? 'is-warning' : ''}>{!dashboard.managed ? componentError(dashboard.reason || 'dashboard_managed_externally') : dashboard.error ? `面板检查失败：${componentError(dashboard.error)}` : `面板：${checkedTime(dashboard.checked_at)}`}</span>}
+        <span>{!snapshot.supported ? '软件包：当前安装方式不支持包管理' : !feed?.configured ? '软件包：未配置更新源' : `软件包：${feed.error ? '上次检查失败 · ' : ''}${checkedTime(feed.checked_at, feed.error)}`}</span>
+        {dashboard && <span>{!dashboard.managed ? componentError(dashboard.reason || 'dashboard_managed_externally') : `面板：${dashboard.error ? '上次检查失败 · ' : ''}${checkedTime(dashboard.checked_at, dashboard.error)}`}</span>}
       </div>
       <div className="nf-table-wrap"><table><thead><tr>{['组件', '当前版本与状态', '更新', '操作'].map(label => <th key={label}>{label}</th>)}</tr></thead>
         <tbody>{snapshot.components.filter(component => component.id !== 'luci').map(component => {
@@ -89,7 +98,10 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
           </tr>;
         })}{snapshot.extensions?.filter(extension => extension.kind === 'optional').map(extension => <ExtensionRow key={extension.id} extension={extension} />)}{dashboard && <DashboardRow dashboard={dashboard} />}</tbody></table></div>
       <details className="nf-component-details"><summary>技术详情：更新源与安装信息</summary>
-        <p>用于排查安装或更新问题。软件包源决定可获取的版本；日常更新无需修改以下信息。</p><dl>
+        {feed?.error && <p>软件包源最近错误：{componentError(feed.error)}</p>}
+        {packageFailed && <p>最近组件操作：{componentError(operation.error || 'component_operation_failed')}{operation.recovery && `；${{ restored: '已恢复更新前状态', failed: '恢复失败', direct: '已恢复网络直通' }[operation.recovery]}`}</p>}
+        {dashboard?.error && <p>面板最近错误：{componentError(dashboard.error)}</p>}
+        <dl>
         {snapshot.architecture && <><dt>设备架构</dt><dd>{snapshot.architecture}</dd></>}
         {feed?.url && <><dt>软件包源</dt><dd>{feed.url}</dd></>}
         {luci && <><dt>LuCI 界面</dt><dd>{luci.installed_version || '未安装'} · 随 NetFleet 更新</dd></>}
