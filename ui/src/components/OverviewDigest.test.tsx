@@ -5,6 +5,18 @@ import { OverviewDigest } from './OverviewDigest';
 import { OverviewExitSummary } from './OverviewExitSummary';
 import { ProviderTable, RegionTable } from '../views/Tables';
 
+it('月重置日与剩余流量一起显示，买断和未设置不制造空态', () => {
+  const status = structuredClone(fixtureScenarios.healthy.status);
+  for (const provider of status.providers) provider.quota = { state: 'exhausted', reset_day: 15, reset_day_source: 'manual' };
+  status.providers[0].billing = 'subscription';
+  status.providers[1].billing = 'buyout';
+  status.providers[2].quota = { state: 'unknown' };
+  const html = renderToStaticMarkup(<ProviderTable snapshot={status} full />);
+  expect(html.match(/每月 15 日重置/g)).toHaveLength(1);
+  expect(html).toContain('已耗尽');
+  expect(html).toContain('手动设置');
+});
+
 describe('概览信息层级', () => {
   it('出口摘要只显示态势，不复制出口页诊断内容', () => {
     const html = renderToStaticMarkup(

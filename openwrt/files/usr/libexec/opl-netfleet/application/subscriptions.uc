@@ -143,6 +143,8 @@ export function set(path) {
 		}
 		for (let key in ["name", "url", "user_agent", "info_url", "prefer"])
 			uci.set("netfleet", id, key, desired.source[key]);
+		if (desired.source.quota_reset_day == null) uci.delete("netfleet", id, "quota_reset_day");
+		else uci.set("netfleet", id, "quota_reset_day", `${desired.source.quota_reset_day}`);
 		if (desired.source_changed || existing == null) {
 			uci.delete("netfleet", id, "last_attempt");
 			uci.delete("netfleet", id, "last_error");

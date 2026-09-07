@@ -788,7 +788,8 @@ function providersPage(status, controller) {
 			])
 		], [
 			E('td', { 'class': subscriptionFailed(subscription) ? 'is-warning' : '' }, subscriptionState(subscription)),
-			E('td', {}, quota(provider)),
+			E('td', {}, [ quota(provider), provider.billing === 'subscription' && provider.quota && managed.quotaResetLabel(provider.quota.reset_day) ?
+				E('small', { 'title': '手动设置，仅供套餐参考；实际结算以机场为准' }, managed.quotaResetLabel(provider.quota.reset_day)) : '' ]),
 			E('td', {}, providerExpiry(provider)),
 			E('td', {}, toggle)
 		])));

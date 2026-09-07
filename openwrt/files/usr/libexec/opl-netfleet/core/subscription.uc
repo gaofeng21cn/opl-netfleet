@@ -169,6 +169,10 @@ function section_refresh_state(events) {
 
 function public_quota(quota) {
 	const result = { state: quota?.state ?? "unknown" };
+	if (type(quota?.reset_day) == "int" && quota.reset_day >= 1 && quota.reset_day <= 31 && quota.reset_day_source == "manual") {
+		result.reset_day = quota.reset_day;
+		result.reset_day_source = "manual";
+	}
 	if (type(quota?.remaining_bytes) == "int" && quota.remaining_bytes > 0) {
 		result.remaining_bytes = quota.remaining_bytes;
 	}

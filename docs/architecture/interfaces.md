@@ -168,6 +168,8 @@ policy 配置 owner 不接受 raw policy、订阅 URL/token、节点正文、DNS
 
 ## LuCI 显示层合同
 
+每月流量重置日归 SubscriptionOwner 的订阅元信息：原生订阅 `quota_reset_day` 为可选 1–31 的整数，显式 `null` 清空、省略保留已有值；认证订阅管理可读写，状态只投影 quota 的 `reset_day` 与 `reset_day_source: manual`。当前标准 `Subscription-Userinfo` 没有可靠月重置日，不能从到期日、URL 或机场名称推算。该字段不进入 policy、下载身份或测速统计身份，保存不下载、不重编译、不重载；订阅刷新保留手工值。它只作套餐参考，不按日期清零用量、解除耗尽或改变可用性；月末日期的实际结算以机场为准。买断制不显示月重置日，未设置不作告警。
+
 状态中的机场正式名称由 UCI 引用的当前后端 subscription section 的 `name` 提供；section 没有名称时才回退到稳定 section ID。恢复配置的用户显示名由 status owner 通过同一 target-local 后端 metadata 解析并投影为 `recovery_profile_display_name`；无法取得可靠名称时返回 `null`，UI 显示“当前原生配置”，不得从 `subscription:`/`file:` 引用或 provider 计费属性猜名称。capability 的可见 Mihomo 组名来自 policy `display_name`；地区可见名称由可选 `flag` 与 `display_name` 组合，缺失时回退到稳定 region ID，共享 UI 再把任意一对 regional-indicator 字符通用转换为 ASCII 两位地区代码，统一显示为“地区代码 + 中文名称”，不能依赖 emoji 字体或为单个地区写特例。这些显示名只用于编译的用户表面和 status/UI projection，不参与 provider、地区或节点选择，也不能成为算法分支。内部对象仍用稳定 ID，provider/region 内部组一律 hidden。NetFleet inactive 时，status 另从当前后端 owner 和一次 controller `/proxies` 读取每个绑定策略来源组的原生实际链；LuCI 显示“当前原生出口”，capability 只标注为“下次启用配置”。原生组缺失、controller 不可用和网络直通必须分别显示，不能统一降级成“未知”。
 
 地区目录与当前地区规划是两层对象。policy 的 `regions` 与 `provider_regions` 只定义稳定地区 ID、显示名、Provider filter 映射和 capability 许可；status 完整投影目录供 owner 关联运行状态和历史，目录项本身不代表当前必须可用。当前地区规划只包含同一次设备状态中 `available_count > 0` 且 `available_provider_count > 0` 的地区：它既是地区页的可操作列表，也是首页地区数量、最近最优和平均最优的统计边界。`available_count` 表示真实候选路径数量；`available_node_count` 只是后端库存诊断，可能未知，不能作为地区可用性的门槛。机场和地区的实时可用数只有在 NetFleet 已接管、生成配置存在且 Mihomo 控制面可读时才具有故障语义；NetFleet 未接管或控制面不可读时，UI 必须显示“未测量”，不得把 status 中用于占位的零值解释为机场或地区下线。没有真实可用路径的目录项不进入当前规划、不作为首页分母，也不触发“不可用地区”警告；只有当前正在使用的地区失去真实路径时才作为运行异常提示。不能用“至少两个节点”或“至少两个机场”等数量门槛排除合法的小众地区，一条真实可用的 Provider/节点路径即可进入当前规划。

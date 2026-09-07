@@ -34,6 +34,7 @@ function errorLabel(code) {
 		subscription_revision_changed: '订阅已被其他操作修改，请重新读取后保存',
 		invalid_subscription_id: '订阅标识只能包含英文字母、数字和下划线',
 		invalid_subscription_url: '订阅地址必须是有效的 HTTP 或 HTTPS 地址',
+		invalid_quota_reset_day: '流量重置日必须为每月 1 至 31 日，或留空',
 		subscription_referenced_by_policy: '订阅仍被机场策略引用，请先调整配置',
 		subscription_selected_as_profile: '订阅仍是当前运行配置，不能删除',
 		subscription_referenced_by_runtime: '运行配置仍使用该订阅，不能删除',
@@ -469,6 +470,10 @@ function userAgentControl(value) {
 	});
 }
 
+function quotaResetLabel(day) {
+	return Number.isInteger(day) && day >= 1 && day <= 31 ? '每月 ' + day + ' 日重置' : '';
+}
+
 function editSource(controller, state, existing) {
 	const values = {};
 	const fields = [
@@ -485,6 +490,12 @@ function editSource(controller, state, existing) {
 	});
 	const userAgent = userAgentControl(existing && existing.user_agent);
 	controls.splice(3, 0, E('div', { 'class': 'netfleet-source-row' }, [ E('label', { 'for': 'netfleet-source-user-agent' }, 'User-Agent'), userAgent.render() ]));
+	const resetDay = E('select', { 'class': 'cbi-input-select', 'id': 'netfleet-source-reset-day' },
+		[ E('option', { 'value': '' }, '未设置') ].concat(Array.from({ length: 31 }, function(_, index) {
+			const day = index + 1;
+			return E('option', { 'value': String(day), 'selected': existing && existing.quota_reset_day === day ? true : null }, '每月 ' + day + ' 日');
+		})));
+	controls.push(E('div', { 'class': 'netfleet-source-row' }, [ E('label', { 'for': 'netfleet-source-reset-day' }, '每月流量重置日'), resetDay ]));
 	const errorBox = E('p', { 'class': 'is-warning', 'role': 'alert' });
 	const save = button('保存订阅', function() {
 		if (fields.some(function(field) { return field[4] && !values[field[0]].value.trim(); }) || !/^[A-Za-z0-9_]+$/.test(values.id.value.trim())) {
@@ -492,7 +503,8 @@ function editSource(controller, state, existing) {
 			return;
 		}
 		const source = { id: values.id.value.trim(), name: values.name.value.trim(),
-			url: values.url.value.trim(), user_agent: (userAgent.getValue() || 'clash.meta').trim(), info_url: values.info_url.value.trim() };
+			url: values.url.value.trim(), user_agent: (userAgent.getValue() || 'clash.meta').trim(), info_url: values.info_url.value.trim(),
+			quota_reset_day: resetDay.value === '' ? null : Number(resetDay.value) };
 		save.disabled = true;
 		api.subscriptionsSet({ revision: state.revision, source: source }).then(function(saved) {
 			controller.subscriptionState = saved && Array.isArray(saved.sources) ? saved : null;
@@ -522,6 +534,7 @@ function showSubscriptions(controller, refresh) {
 		}
 		const rows = (state.sources || []).map(function(source) {
 			return E('tr', {}, [ E('td', {}, source.name || source.id), E('td', {}, source.node_count == null ? '未提供' : String(source.node_count)),
+				E('td', { 'title': '手动设置，仅供套餐参考；实际结算以机场为准' }, quotaResetLabel(source.quota_reset_day) || '未设置'),
 				E('td', {}, source.has_url ? '已保存' : '未配置'),
 				E('td', {}, source.pending_update ? (source.using_previous_cache ? '待更新，继续使用上次可用缓存' : '待更新订阅后生效') : source.cache_current ? '已生效' : '尚未更新'),
 				E('td', {}, [ button('编辑', function() { editSource(controller, state, source); }), ' ',
@@ -546,8 +559,8 @@ function showSubscriptions(controller, refresh) {
 					}, false, true) ]) ]);
 		});
 		ui.showModal('管理订阅', [
-			E('p', {}, '来源修改保存后，待更新订阅才生效；当前运行继续使用上次可用缓存。'),
-			E('table', { 'class': 'table' }, [ E('thead', {}, E('tr', {}, [ '名称', '节点', '订阅地址', '状态', '操作' ].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, rows) ]),
+			E('p', {}, '地址与 User-Agent 修改后待更新订阅生效；名称与重置日保存即生效。'),
+			E('table', { 'class': 'table' }, [ E('thead', {}, E('tr', {}, [ '名称', '节点', '流量重置日', '订阅地址', '状态', '操作' ].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, rows) ]),
 			E('div', { 'class': 'right' }, [ button('刷新列表', function() { return showSubscriptions(controller, true); }), ' ', button('新增订阅', function() { editSource(controller, state, null); }), ' ', button('关闭', function() {
 				ui.hideModal();
 				if (controller.subscriptionsChanged) {
@@ -612,5 +625,5 @@ function nativeSetup(controller) {
 	}).catch(function(error) { ui.showModal('首次接入失败', [ E('p', {}, failure(error)), button('关闭', ui.hideModal) ]); });
 }
 
-return baseclass.extend({ notify: notify, preloadSubscriptions: loadSubscriptions, subscriptions: showSubscriptions, migration: migration, nativeSetup: nativeSetup,
+return baseclass.extend({ quotaResetLabel: quotaResetLabel, notify: notify, preloadSubscriptions: loadSubscriptions, subscriptions: showSubscriptions, migration: migration, nativeSetup: nativeSetup,
 	operationNode: operationNode, readOperations: readOperations, runSubscription: runSubscription, runSelection: runSelection, components: componentsPage, loadComponents: loadComponents });
