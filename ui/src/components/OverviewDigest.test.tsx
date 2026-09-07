@@ -3,7 +3,17 @@ import { describe, expect, it } from 'vitest';
 import { fixtureScenarios } from '../data/fixtures';
 import { OverviewDigest } from './OverviewDigest';
 import { OverviewExitSummary } from './OverviewExitSummary';
-import { ProviderTable, RegionTable } from '../views/Tables';
+import { ProviderTable, QuotaMeter, RegionTable } from '../views/Tables';
+
+it('流量条只接受可靠的总量和剩余流量', () => {
+  const provider = structuredClone(fixtureScenarios.healthy.status.providers[0]);
+  provider.quota = { state: 'available', total_bytes: 100, remaining_bytes: 36 };
+  expect(renderToStaticMarkup(<QuotaMeter provider={provider} />)).toContain('value="36"');
+  for (const quota of [{ total_bytes: 0, remaining_bytes: 0 }, { total_bytes: 100, remaining_bytes: 101 }, { total_bytes: 100 }, { remaining_bytes: 36 }]) {
+    provider.quota = { state: 'available', ...quota };
+    expect(renderToStaticMarkup(<QuotaMeter provider={provider} />)).toBe('');
+  }
+});
 
 it('月重置日与剩余流量一起显示，买断和未设置不制造空态', () => {
   const status = structuredClone(fixtureScenarios.healthy.status);
@@ -119,8 +129,10 @@ describe('概览信息层级', () => {
     expect(html).not.toContain('18/20 节点');
     expect(html).toContain('缓存已更新');
     expect(html).not.toContain('更新完成并已重载</td>');
-    expect(html).toContain('缓存版本');
-    expect(html).toContain('hidden=""');
+    expect(html).not.toContain('缓存版本');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('搜索机场');
+    expect(html).toContain('机场排序');
     expect(html).not.toContain('<h2>订阅缓存</h2>');
     expect(html).toContain('管理订阅');
     expect(html).toContain('/cgi-bin/luci/admin/services/nikki/profile');
@@ -135,8 +147,8 @@ describe('概览信息层级', () => {
     const html = renderToStaticMarkup(<ProviderTable snapshot={status} full />);
 
     expect(html).toContain('<dt>最近执行</dt><dd>尚未执行</dd>');
-    expect(html).toContain('<dt>最近尝试</dt><dd>尚未执行</dd>');
-    expect(html).toContain('<dt>订阅更新时间</dt><dd>尚未执行</dd>');
+    expect(html).not.toContain('<dt>最近尝试</dt>');
+    expect(html).not.toContain('<dt>订阅更新时间</dt>');
   });
 
   it('机场与订阅只通过明确绑定聚合，不按显示名猜测', () => {
