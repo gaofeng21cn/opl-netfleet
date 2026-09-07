@@ -83,7 +83,7 @@ it('projects optional package versions and dependencies without duplicating reso
   expect(row).toContain('<details>');
   expect(row).not.toContain('<details open');
   expect(row).toContain('mitmproxy：12.2.3');
-  expect(row).toContain('配置');
+  expect(row).toContain('管理');
   expect(row).not.toContain('>93<');
   expect(row).not.toContain('更新');
   expect(row).not.toContain('候选版本');

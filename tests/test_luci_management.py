@@ -34,6 +34,7 @@ function E(tag, attrs, children) {
     parent(node.children);
     node.remove = () => {};
     node.click = () => node.attrs.click && node.attrs.click({ target: node });
+    node.reportValidity = () => !node.attrs.required || !!node.value;
     return node;
 }
 function all(root, predicate) {
@@ -65,6 +66,8 @@ const storage = new Proxy({}, { get() { throw new Error('secret storage access i
 global.localStorage = storage;
 global.sessionStorage = storage;
 global.document = { body: { appendChild() {} }, querySelectorAll() { return []; } };
+global.L = { url: value => '/cgi-bin/luci/' + value };
+global.crypto = require('node:crypto').webcrypto;
 const baseclass = { extend: value => value };
 function module(name, api) {
     return new Function('baseclass', 'ui', 'api', 'E', fs.readFileSync(path.join(resources, name), 'utf8'))(baseclass, ui, api, E);
@@ -412,10 +415,11 @@ assert(!text(row).includes('已就绪'));
 assert(!find(row, node => node.tag === 'details').open);
 assert(text(row).includes('mitmproxy：12.2.3'));
 assert(!text(row).includes('93'));
-assert.deepEqual(all(row, node => node.tag === 'button').map(text), ['配置']);
-fire(button(row, '配置'));
-assert.equal(owner.currentView, 'config');
-assert.equal(owner.configSection, 'compatibility');
+assert.deepEqual(all(row, node => node.tag === 'button').map(text), ['管理']);
+let opened = 0;
+owner.openCompatibility = () => { opened++; };
+fire(button(row, '管理'));
+assert.equal(opened, 1);
 owner.components.extensions[0] = { ...extension, installed_version: null, state: 'not_installed', available: false, reason: 'extension_component_not_installed',
   dependencies: [{ id: 'mitmproxy', available: false, installed_version: null }] };
 root = managed.components(owner);
@@ -472,14 +476,16 @@ const compatibility = module('compatibility.js', api);
 let root = compatibility.render(owner);
 assert(text(root).includes('模块接口与当前 NetFleet 不兼容'));
 assert(text(root).includes('兼容引擎未就绪'));
-for (const name of ['连接验证', '人工恢复', '新增规则', '新增设备']) assert(button(root, name).disabled, name);
-for (const name of ['刷新状态', '导出诊断']) assert(!button(root, name).disabled, name);
+assert(button(root, '新增规则').disabled);
+await fire(button(root, '诊断'));
+root = compatibility.render(owner);
+assert(button(root, '连接验证').disabled);
+assert(!button(root, '导出诊断').disabled);
+assert(!button(root, '恢复模块'));
 const toggle = find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox');
 assert(toggle.checked);
 assert(!toggle.disabled, 'an incompatible installed module must remain stoppable');
 const stopping = fire(toggle, 'change', { checked: false });
-assert(text(modal.content).includes('停止接管新连接'));
-await fire(button(modal.content, '确认'));
 await stopping;
 assert.deepEqual(disabled, [{ revision: 'compat-r1' }]);
 assert.equal(reads, 1);
@@ -487,7 +493,7 @@ root = compatibility.render(owner);
 assert(find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox').disabled);
 assert(text(root).includes('仍有 2 条连接'));
 assert(!button(root, '导出诊断').disabled);
-await fire(button(root, '刷新状态'));
+await fire(find(root, node => node.attrs['aria-label'] === '刷新兼容状态'));
 assert.equal(reads, 2);
 """)
 
@@ -501,7 +507,8 @@ const api = { compatibilityEnable: async () => { enables++; }, compatibilityAppl
   compatibilityGet: async () => clone(owner.compatibility) };
 const compatibility = module('compatibility.js', api);
 let root = compatibility.render(owner);
-assert(!button(root, '新增规则').disabled, 'absence of managed must preserve the existing contract');
+assert(button(root, '新增规则').disabled, 'a rule requires a device');
+assert(!button(root, '添加接入设备').disabled, 'absence of managed must preserve the existing contract');
 let toggle = find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox');
 assert(!toggle.disabled);
 const enabling = fire(toggle, 'change', { checked: true });
@@ -511,11 +518,12 @@ await enabling;
 assert.equal(enables, 0, 'a newly blocked module must not enable from an old confirmation');
 owner.compatibility.managed = true;
 root = compatibility.render(owner);
-fire(button(root, '新增规则'));
-const saving = fire(button(modal.content, '保存'));
+fire(button(root, '添加接入设备'));
+const fields = all(modal.content, node => node.tag === 'input');
+fire(fields[0], 'input', { value: 'Test Mac' });
+fire(fields[1], 'input', { value: '192.0.2.10' });
 owner.compatibility.managed = false;
-await fire(button(modal.content, '确认'));
-await saving;
+await fire(button(modal.content, '保存'));
 assert.equal(applies, 0, 'an open edit must not bypass a refreshed capability denial');
 owner.compatibility.installed = false;
 owner.compatibility.requested = true;
@@ -523,7 +531,7 @@ owner.compatibility.reason = 'extension_component_not_installed';
 root = compatibility.render(owner);
 toggle = find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox');
 assert(toggle.disabled, 'an absent owner cannot receive disable');
-assert(!button(root, '刷新状态').disabled);
+assert(!find(root, node => node.attrs['aria-label'] === '刷新兼容状态').disabled);
 assert(text(root).includes('未安装可选模块'));
 assert(!text(root).includes('extension_component_not_installed'));
 """)

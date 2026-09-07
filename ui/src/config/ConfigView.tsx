@@ -13,7 +13,6 @@ import {
   sectionMeta,
 } from './ConfigSections';
 import { SetupWizard } from './SetupWizard';
-import { CompatibilityPreview } from './CompatibilityPreview';
 import type { NetFleetClient, StatusSnapshot } from '../types';
 import { NetworkSection } from './NetworkSection';
 import { FilesSection } from './FilesSection';
@@ -34,7 +33,7 @@ export function ConfigView({ draft, savedDraft, status, client, onChange, onSave
   const [validation, setValidation] = useState<string[] | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [visited, setVisited] = useState({ network: false, files: false });
-  const separateManagement = section === 'network' || section === 'files' || section === 'compatibility';
+  const separateManagement = section === 'network' || section === 'files';
   const dirty = JSON.stringify(draft) !== JSON.stringify(savedDraft);
   const summary = configSummary(draft);
 
@@ -66,7 +65,6 @@ export function ConfigView({ draft, savedDraft, status, client, onChange, onSave
     routing: <RoutingSection {...sectionProps} />,
     automation: <AutomationSection {...sectionProps} />,
     safety: <SafetySection {...sectionProps} />,
-    compatibility: <CompatibilityPreview />,
     network: null,
     files: null,
   }[section];

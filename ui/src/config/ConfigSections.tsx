@@ -242,6 +242,5 @@ export const sectionMeta = [
   { id: 'routing' as const, label: '业务规则', icon: Route },
   { id: 'automation' as const, label: '自动运行', icon: RefreshCw },
   { id: 'safety' as const, label: '安全与恢复', icon: ShieldCheck },
-  { id: 'compatibility' as const, label: 'HTTPS 兼容', icon: ShieldCheck },
   { id: 'files' as const, label: '配置文件与备份', icon: Files },
 ];

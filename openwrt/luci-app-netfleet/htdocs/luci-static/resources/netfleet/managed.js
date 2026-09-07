@@ -372,8 +372,8 @@ function componentsPage(controller) {
 				dependency.id + '：' + (dependency.available == null ? '未确认' : dependency.available ? dependency.installed_version || '已安装' : '缺少')); })
 		)));
 		rows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, extension.label), E('small', { 'title': extension.package }, '可选模块') ]),
-			E('td', {}, current), E('td', {}, '通过 OpenWrt 软件包管理'), E('td', { 'class': 'netfleet-component-actions' }, extension.id === 'https-compat' ? button('配置', function() {
-				controller.currentView = 'config'; controller.configSection = 'compatibility'; controller.redraw();
+			E('td', {}, current), E('td', {}, '通过 OpenWrt 软件包管理'), E('td', { 'class': 'netfleet-component-actions' }, extension.id === 'https-compat' ? button('管理', function() {
+				controller.openCompatibility();
 			}) : '') ]));
 	});
 	if (dashboard) {

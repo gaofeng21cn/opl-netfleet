@@ -3,7 +3,6 @@
 'use strict';
 'require baseclass';
 'require ui';
-'require netfleet.compatibility as compatibility';
 'require netfleet.management as management';
 
 const SECTIONS = [
@@ -15,7 +14,6 @@ const SECTIONS = [
 	[ 'routing', '业务规则' ],
 	[ 'automation', '自动运行' ],
 	[ 'safety', '安全与恢复' ],
-	[ 'compatibility', 'HTTPS 兼容' ],
 	[ 'files', '配置文件与备份' ]
 ];
 
@@ -461,8 +459,7 @@ function content(controller) {
 		capabilities: capabilities,
 		routing: routing,
 		automation: automation,
-		safety: safety,
-		compatibility: compatibility.render
+		safety: safety
 	})[controller.configSection](controller);
 }
 
@@ -499,9 +496,9 @@ function render(controller) {
 	const changed = dirty(controller);
 	const active = controller.configDraft.active === true;
 	const canApply = changed || controller.config.pending_apply === true || !active;
-	const independent = ['network', 'files', 'compatibility'].includes(controller.configSection);
+	const independent = ['network', 'files'].includes(controller.configSection);
 	return E('div', { 'class': 'netfleet-config-page' }, [
-		controller.configSection === 'compatibility' ? '' : E('div', { 'class': 'netfleet-config-intro' }, [
+		E('div', { 'class': 'netfleet-config-intro' }, [
 			E('div', {}, [ E('strong', {}, '设备配置'), E('span', {}, active ? '当前已接管，应用会执行受保护切换。' : '当前未接管，可先保存配置或直接应用。') ]),
 			E('button', { 'class': 'btn cbi-button', 'click': function() { controller.showConfigWizard(0); } }, '首次设置向导')
 		]),

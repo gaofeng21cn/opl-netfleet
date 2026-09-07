@@ -575,3 +575,20 @@
 .nf-managed-dialog header, .nf-managed-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
 .nf-managed-dialog footer { justify-content: flex-end; margin-top: 20px; margin-bottom: 0; }
 .nf-managed-dialog svg { width: 18px; height: 18px; }
+.nf-compatibility { min-width: 0; }
+.nf-compatibility .nf-section-heading { flex-wrap: wrap; gap: 12px; }
+.nf-compatibility h3 { font-size: 16px; }
+.nf-compatibility small { display: block; margin-top: 4px; color: var(--nf-muted); }
+.nf-compatibility button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 7px 10px; border: 1px solid var(--nf-border); border-radius: 4px; background: white; font: inherit; font-size: 13px; }
+.nf-compatibility button:disabled { color: var(--nf-muted); cursor: default; opacity: .65; }
+.nf-compatibility button svg { width: 16px; height: 16px; flex-shrink: 0; }
+.nf-compatibility > .nf-form-row { grid-template-columns: minmax(180px, 1fr) minmax(160px, 1fr) 40px; padding: 16px 0; }
+.nf-compatibility > .nf-form-row label { display: flex; align-items: center; gap: 8px; }
+.nf-compat-tabs { display: flex; border-bottom: 1px solid var(--nf-border); margin: 8px 0 18px; }
+.nf-compat-tabs button { min-height: 44px; padding: 8px 18px; border: 0; border-radius: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--nf-muted); cursor: pointer; }
+.nf-compat-tabs button.is-active { color: var(--nf-accent); border-bottom-color: var(--nf-accent); }
+@media (max-width: 760px) {
+  .nf-compatibility > .nf-form-row { grid-template-columns: minmax(0, 1fr) 40px; gap: 12px; }
+  .nf-compatibility > .nf-form-row > label { grid-column: 1 / -1; }
+  .nf-compat-tabs button { flex: 1; padding: 8px; }
+}

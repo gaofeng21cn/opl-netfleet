@@ -1593,3 +1593,20 @@
 .netfleet-native .netfleet-list-input { width: 100%; min-width: 180px; resize: vertical; font: inherit; line-height: 1.5; }
 .netfleet-native .netfleet-profile-editor { width: 100%; min-height: 320px; max-height: 60vh; box-sizing: border-box; resize: vertical; font-family: monospace; line-height: 1.6; }
 .netfleet-native .netfleet-core-log { max-height: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; padding: 16px; }
+.netfleet-native .netfleet-compatibility { min-width: 0; }
+.netfleet-native .netfleet-compatibility .netfleet-section-heading { flex-wrap: wrap; gap: 12px; }
+.netfleet-native .netfleet-compatibility > .netfleet-config-row { grid-template-columns: minmax(180px, 1fr) minmax(160px, 1fr) 40px; padding: 16px 0; }
+.netfleet-native .netfleet-compatibility small { display: block; margin-top: 4px; color: var(--nf-muted); }
+.netfleet-native .netfleet-compatibility td { overflow-wrap: anywhere; vertical-align: top; }
+.netfleet-native .netfleet-compatibility td .cbi-button { margin: 0 6px 6px 0; }
+.netfleet-native .netfleet-compatibility details { margin: 10px 0; }
+.netfleet-native .netfleet-compatibility summary { cursor: pointer; }
+.netfleet-native .netfleet-compat-tabs { display: flex; border-bottom: 1px solid var(--nf-border); margin: 8px 0 18px; }
+.netfleet-native .netfleet-compat-tabs button { min-height: 44px; padding: 8px 18px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--nf-muted); font: inherit; cursor: pointer; }
+.netfleet-native .netfleet-compat-tabs button.is-active { color: var(--nf-accent); border-bottom-color: var(--nf-accent); }
+.netfleet-native .netfleet-compat-fingerprint { display: block; overflow-wrap: anywhere; margin: 10px 0; }
+@media (max-width: 760px) {
+	.netfleet-native .netfleet-compatibility > .netfleet-config-row { grid-template-columns: minmax(0, 1fr) 40px; gap: 12px; }
+	.netfleet-native .netfleet-compatibility > .netfleet-config-row > label { grid-column: 1 / -1; }
+	.netfleet-native .netfleet-compat-tabs button { flex: 1; padding: 8px; }
+}

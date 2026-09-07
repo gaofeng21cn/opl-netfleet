@@ -234,6 +234,20 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["failure_events"], [])
         self.assertFalse(health["rules"]["test"]["transport_error"])
 
+    async def test_streamed_responses_reuse_connections_without_buffering(self):
+        self.finish_sse.set()
+        for path in ("/download", "/sse", "/status/503", "/download"):
+            response = await self.client.get(self.url + path)
+            self.assertEqual(response.headers["transfer-encoding"], "chunked")
+            self.assertNotIn("content-length", response.headers)
+        self.assertEqual(len({request["source_port"] for request in self.received}), 1)
+        self.assertEqual((await self.health())["active_connections"], 1)
+        for method, path in (("HEAD", "/download"), ("GET", "/status/204"), ("GET", "/status/304")):
+            response = await self.client.request(method, self.url + path)
+            self.assertNotIn("transfer-encoding", response.headers)
+            self.assertEqual(response.content, b"")
+        self.assertEqual((await self.client.get(self.url + "/download")).status_code, 200)
+
     async def test_websocket_uses_h1(self):
         reader, writer = await asyncio.open_connection("127.0.0.1", self.proxy_port)
         try:
