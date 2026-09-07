@@ -118,6 +118,7 @@ automatic capability 必须形成无环依赖图，并且只有一个不声明 `
 | NetFleet supervisor | 只在 policy 允许时调度既有 automatic 轮次，并在 active runtime 连续失联超过 grace 后调用既有 recovery owner；不判断候选、不保存排名、不清理 DNS/nft/路由 |
 | canonical deploy owner | 为 Fleet/可重复运维从精确 Git commit/tree 和私有 deployment bundle 完成兼容性预检、依赖补齐、Nikki 原生基线准备、NetFleet 安装/恢复和 installed parity；它不是独立插件首次设置的前置条件 |
 | NetFleet UI | owner 状态的只读投影和有限命令，不拥有配置或算法；门槛、周期、着色和说明只读 status 投影 |
+| Extension registry | 按[模块合同](extensions.md)将 HTTPS 兼容和 Zashboard 的既有动作连接到各自适配器，投影依赖与接口状态；不持有配置、生命周期、网络状态或新锁 |
 
 依赖只能向下流动，不能由投影反向写入事实：
 

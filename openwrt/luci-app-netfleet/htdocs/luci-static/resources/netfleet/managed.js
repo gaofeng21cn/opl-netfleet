@@ -7,6 +7,14 @@
 function errorLabel(code) {
 	if (typeof code === 'string' && code.endsWith('_rolled_back')) return errorLabel(code.slice(0, -12)) + '；已恢复更新前版本和运行状态';
 	return ({
+		extension_component_not_installed: '未安装可选模块',
+		extension_api_incompatible: '模块接口与当前 NetFleet 不兼容',
+		extension_dependency_missing: '模块运行依赖缺失',
+		extension_manifest_missing: '模块接口声明缺失',
+		extension_manifest_invalid: '模块接口声明无效',
+		extension_backend_unsupported: '当前后端不支持此模块',
+		extension_owner_unavailable: '模块状态暂不可读取',
+		extension_package_unknown: '模块安装版本尚未确认',
 		dashboard_managed_externally: '面板由 Nikki 管理',
 		dashboard_path_unmanaged: '当前面板目录未由 NetFleet 管理',
 		dashboard_unpacker_unavailable: '缺少面板解压组件，请安装 unzip',
@@ -347,6 +355,25 @@ function componentsPage(controller) {
 		const available = component.available_version && !feed.error ? [ hasUpdate ? '候选版本 ' + component.available_version : '当前更新源暂无新版' ] : [];
 		return E('tr', {}, [ E('td', {}, [ E('strong', {}, component.label), E('small', {}, component.id === 'netfleet' ? '包含 LuCI 管理界面' : '代理核心') ]),
 			E('td', {}, current), E('td', {}, available), E('td', { 'class': 'netfleet-component-actions' }, update) ]);
+	});
+	(snapshot.extensions || []).filter(function(extension) { return extension.kind === 'optional'; }).forEach(function(extension) {
+		const state = ({ ready: '接口可用', not_installed: '未安装', incompatible: '接口不兼容', backend_unsupported: '后端不支持', dependency_missing: '缺少依赖', unknown: '状态未确认' })[extension.state];
+		const absent = extension.state === 'not_installed' && !extension.available;
+		const dependencies = extension.dependencies || [];
+		const missing = dependencies.filter(function(dependency) { return dependency.available === false; });
+		const warning = extension.state !== 'ready' && extension.state !== 'not_installed';
+		const current = [ E('strong', {}, extension.installed_version || (absent ? '未安装' : '安装版本未确认')) ];
+		if (extension.state !== 'not_installed') current.push(E('small', { 'class': warning ? 'is-warning' : '' }, state));
+		if (extension.reason) current.push(E('small', {}, errorLabel(extension.reason)));
+		if (!absent && dependencies.length) current.push(E('details', { 'open': missing.length ? true : null }, [
+			E('summary', { 'class': missing.length ? 'is-warning' : '' }, missing.length ? '缺少 ' + missing.length + ' 项模块依赖' : '运行依赖（' + dependencies.length + '）'),
+			dependencies.map(function(dependency) { return E('small', { 'class': dependency.available === false ? 'is-warning' : '' },
+				dependency.id + '：' + (dependency.available == null ? '未确认' : dependency.available ? dependency.installed_version || '已安装' : '缺少')); })
+		]));
+		rows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, extension.label), E('small', {}, '可选模块 · ' + extension.package) ]),
+			E('td', {}, current), E('td', {}, ''), E('td', { 'class': 'netfleet-component-actions' }, extension.id === 'https-compat' ? button('配置', function() {
+				controller.currentView = 'config'; controller.configSection = 'compatibility'; controller.redraw();
+			}) : '') ]));
 	});
 	if (dashboard) {
 		const controls = [];

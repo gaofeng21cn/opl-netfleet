@@ -6,6 +6,14 @@
 function reason(value) {
 	return ({ disabled: '已关闭', draining: '停止接管，正在排空', recovering: '健康观察中',
 		rules_recovering: '规则恢复中', component_not_installed: '未安装可选组件',
+		extension_component_not_installed: '未安装可选模块',
+		extension_api_incompatible: '模块接口与当前 NetFleet 不兼容',
+		extension_dependency_missing: '模块运行依赖缺失',
+		extension_manifest_missing: '模块接口声明缺失',
+		extension_manifest_invalid: '模块接口声明无效',
+		extension_backend_unsupported: '当前后端不支持此模块',
+		extension_owner_unavailable: '模块状态暂不可读取',
+		extension_package_unknown: '模块安装版本尚未确认',
 		ca_not_ready: 'CA 未就绪，当前旁路',
 		lease_expired: '接管许可已到期', maintenance: '组件维护中，当前旁路', no_verified_targets: '没有已验证的接入目标',
 		manual_recovery_required: '故障频繁，等待人工恢复', processing_chain_failed: '本地处理链异常',
@@ -35,6 +43,7 @@ function refresh(controller) {
 }
 
 function mutate(controller, method, request, revision) {
+	if (mutationBlocked(controller, method)) return Promise.resolve();
 	const expected = revision === undefined ? controller.compatibility.revision : revision;
 	if (method === 'compatibilityProbe' && !request.operation)
 		return executeMutation(controller, method, request, expected);
@@ -49,8 +58,14 @@ function mutate(controller, method, request, revision) {
 	});
 }
 
+function mutationBlocked(controller, method) {
+	const state = controller.compatibility;
+	return controller.compatibilityBusy || !state || !state.installed || !!controller.compatibilityError ||
+		state.managed === false && method !== 'compatibilityDisable';
+}
+
 function executeMutation(controller, method, request, revision) {
-	if (controller.compatibilityBusy) return Promise.resolve();
+	if (mutationBlocked(controller, method)) return Promise.resolve();
 	controller.compatibilityBusy = true;
 	controller.redraw();
 	return api[method](Object.assign({ revision: revision }, request)).catch(function(error) {
@@ -59,6 +74,7 @@ function executeMutation(controller, method, request, revision) {
 }
 
 function edit(controller, collection, item) {
+	if (mutationBlocked(controller, 'compatibilityApply')) return;
 	const state = controller.compatibility;
 	const config = JSON.parse(JSON.stringify(state.config));
 	const draft = item ? JSON.parse(JSON.stringify(item)) : collection === 'rules'
@@ -106,7 +122,8 @@ function download(name, value, type) {
 function render(controller) {
 	const state = controller.compatibility;
 	if (!state) return E('section', {}, [ E('h3', {}, 'HTTPS 兼容'), E('p', {}, controller.compatibilityError ? '状态读取失败' : '正在读取'), button('刷新', function() { return refresh(controller); }) ]);
-	const busy = controller.compatibilityBusy || !state.installed || !!controller.compatibilityError;
+	const busy = mutationBlocked(controller, 'compatibilityApply');
+	const toggleBusy = mutationBlocked(controller, state.requested ? 'compatibilityDisable' : 'compatibilityEnable');
 	function applyConfig(callback) {
 		const config = JSON.parse(JSON.stringify(state.config)); callback(config);
 		return mutate(controller, 'compatibilityApply', { config: config }, state.revision);
@@ -142,15 +159,16 @@ function render(controller) {
 	});
 	function table(headers, rows) { return E('div', { 'class': 'table netfleet-config-table' }, E('table', {}, [ E('thead', {}, E('tr', {}, headers.map(function(title) { return E('th', {}, title); }))), E('tbody', {}, rows) ])); }
 	return E('section', {}, [ E('h3', {}, 'HTTPS 兼容'),
-		E('div', { 'class': 'netfleet-config-row' }, [ E('label', { 'class': 'netfleet-check' }, [ E('input', { 'type': 'checkbox', 'checked': state.requested ? '' : null, 'disabled': busy ? '' : null,
+		E('div', { 'class': 'netfleet-config-row' }, [ E('label', { 'class': 'netfleet-check' }, [ E('input', { 'type': 'checkbox', 'checked': state.requested ? '' : null, 'disabled': toggleBusy ? '' : null,
 			'change': function(event) { return mutate(controller, event.target.checked ? 'compatibilityEnable' : 'compatibilityDisable', {}); } }), '开启' ]),
-			E('div', { 'role': 'status' }, [ E('strong', {}, label(state)), E('small', {}, reason(state.reason)) ]) ]),
+			E('div', { 'role': 'status' }, [ E('strong', {}, label(state)), E('small', {}, reason(state.reason)),
+				state.managed === false && state.management_reason && state.management_reason !== state.reason ? E('small', { 'class': 'is-warning' }, reason(state.management_reason)) : '' ]) ]),
 		controller.compatibilityError ? E('p', { 'class': 'alert-message warning' }, '状态读取失败，操作已停用') : '',
 		E('div', { 'class': 'netfleet-inline-add' }, [ button('刷新状态', function() { return refresh(controller); }),
 			button('连接验证', function() { return mutate(controller, 'compatibilityProbe', {}); }, busy),
 			button('人工恢复', function() { return mutate(controller, 'compatibilityProbe', { operation: 'recover' }); }, busy || !state.requested),
 			button('导出诊断', function() { download('netfleet-compatibility-diagnostic.json', JSON.stringify({ requested: state.requested, intercepting: state.intercepting,
-				reason: state.reason, active_connections: state.active_connections, recovery: state.recovery,
+				reason: state.reason, managed: state.managed, management_reason: state.management_reason, active_connections: state.active_connections, recovery: state.recovery,
 				events: state.events, results: Object.values(state.rules) }, null, 2)); }) ]),
 		E('h4', {}, '目标规则'), table([ '启用', '目标', '设备', '策略', '最近结果', '操作' ], rules), button('新增规则', function() { edit(controller, 'rules'); }, busy),
 		E('h4', {}, '设备与信任'), table([ '设备', '系统信任', '实际调用', '操作' ], devices),

@@ -26,6 +26,7 @@ if command -v ucode >/dev/null 2>&1; then
 	ucode "$root_dir/tests/maintenance_contract.uc"
 	ucode "$root_dir/tests/dashboard_version_contract.uc"
 	ucode "$root_dir/tests/components_recovery_contract.uc" "$runtime_dir/application/components.uc"
+	ucode "$root_dir/tests/extensions_contract.uc"
 else
 	printf '%s\n' 'ucode unavailable; run this gate on OpenWrt or provide UCODE in CI.' >&2
 	exit 2

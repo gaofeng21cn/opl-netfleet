@@ -91,6 +91,7 @@ rpc_ready() {
 stage=actual_component_readback
 rpc_ready
 ucode /tmp/tests/components_device.uc "$owner" >"$work/contract.log"
+ucode /tmp/tests/extensions_device.uc >>"$work/contract.log"
 ucode "$owner" get >"$work/get-result.json"
 assert_json "$work/get-result.json" '@.result.supported' true
 assert_json "$work/get-result.json" '@.result.backend' native-mihomo

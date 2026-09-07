@@ -7,6 +7,7 @@ import { KIND, RUN_DIR, ROOT_DIR, SERVICE } from "../adapters/runtime.uc";
 import { proxies, select, controller_version } from "../adapters/mihomo.uc";
 import * as operation from "./operation.uc";
 import { resource as dashboard_resource } from "./dashboard.uc";
+import { inventory as extension_inventory } from "./extensions.uc";
 
 const ROOT = "/tmp/opl-netfleet-components";
 const CACHE = `${ROOT}/checked.json`;
@@ -92,9 +93,10 @@ function get() {
 			update_available: managed && newer(candidate, current), managed: managed,
 			reason: !managed ? (item[0] == "mihomo" ? "core_managed_externally" : "package_not_installed") : null });
 	}
+	const dashboard = dashboard_resource();
 	return { supported: versions != null, backend: KIND, architecture: capture("apk --print-arch"),
 		feed: { configured: url != null, url: url, checked_at: cache?.checked_at, error: cache?.error }, components: rows,
-		dashboard: dashboard_resource(),
+		dashboard: dashboard, extensions: extension_inventory(versions, { zashboard: dashboard }),
 		dependencies: map(DEPENDENCIES, name => ({ id: name, label: name, installed_version: versions?.[name], available: versions?.[name] != null })) };
 };
 function start(action, component, version) {

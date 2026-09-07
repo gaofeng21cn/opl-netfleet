@@ -63,6 +63,9 @@ export class MockNetFleetClient implements NetFleetClient {
         { id: 'mihomo', label: 'Mihomo', installed_version: '1.19.30-r1', running_version: 'v1.19.30', available_version: null, update_available: false, managed: true, reason: null },
       ],
       dependencies: [{ id: 'ucode', label: 'ucode', installed_version: null, available: true }, { id: 'yq', label: 'yq', installed_version: null, available: true }],
+      extensions: [{ id: 'https-compat', label: 'HTTPS 兼容', kind: 'optional', package: 'opl-netfleet-https-compat',
+        installed_version: '0.1.0-r1', api_version: 1, compatible: true, available: true, state: 'ready', reason: null,
+        dependencies: [{ id: 'python3', available: true, installed_version: '3.13.7-r1' }], ui: ['settings', 'components', 'diagnostics'] }],
       dashboard: { id: 'zashboard', label: 'Zashboard', installed_version: null, available_version: null, available: true, managed: true, update_available: false, checked_at: null, error: null, reason: null, release_url: null },
     };
   }

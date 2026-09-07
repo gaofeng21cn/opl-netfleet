@@ -126,6 +126,11 @@ LuCI 的启用、单次选优、立即更新订阅、关闭和配置应用都必
 
 概览的“最近决策”只从 `enable|select|disable` 事件中选取最新记录，同秒按 owner 写入顺序取最后一条；`refresh` 是订阅操作摘要，不覆盖选路决策。事件列表对订阅更新显示实际变化数、失败数和更新结果，延迟标为“不适用”。只有明确的 `native_restored` 恢复事件才能显示“已恢复原生配置”；缺少路由字段只代表未记录，不能推断回退。退出直通按实际恢复原因显示“已恢复网络直通”，不显示测量缺失；订阅触发的选优标为“订阅更新后选优”。
 
+`components_get.extensions` 按[模块合同](extensions.md)投影模块安装版本、接口 major、
+依赖与后端适用性。它不表示运行健康，不触发网络检查或启动引擎；Zashboard 的资源状态
+仍复用同一 `dashboard` 读取，避免重复探测。HTTPS `get` 额外投影 `managed` 和
+`management_reason`，不兼容时禁止新接管和编辑，保留关闭与排空。
+
 RPC 是调用设备 owner 的薄适配器，不维护第二份网络状态。`components_get` 只读已安装组件、
 实际运行核心版本、关键依赖、最近一次 Feed 检查及独立的 `dashboard` 资源状态；`components_check` 与 `components_update`
 分别启动显式版本检查及固定组件、固定版本的后台更新。更新流程见[软件包合同](packaging.md)。

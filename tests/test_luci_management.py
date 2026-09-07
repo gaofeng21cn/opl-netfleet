@@ -384,6 +384,141 @@ owner.liveDataReady = false;
 assert(button(managed.components(owner), '检查更新').disabled);
 """)
 
+    def test_optional_component_inventory_is_local_readonly_and_deduplicated(self):
+        self.run_js(r"""
+const owner = controller();
+const extension = { id: 'https-compat', label: 'HTTPS 兼容', kind: 'optional', package: 'opl-netfleet-https-compat',
+  installed_version: '0.2.0-r1', api_version: 93, compatible: true, available: true, state: 'ready', reason: null,
+  dependencies: [{ id: 'mitmproxy', available: true, installed_version: '12.2.3' }], ui: ['config:compatibility'] };
+owner.components = { supported: true, feed: { configured: false }, components: [], dependencies: [{ id: 'curl', label: 'curl', available: true }],
+  extensions: [clone(extension), { ...extension, id: 'zashboard', label: 'Zashboard', kind: 'resource' }], dashboard: { available: true, managed: true } };
+const managed = module('managed.js', {});
+let root = managed.components(owner);
+assert.equal(all(root, node => node.tag === 'tbody')[0].children.length, 2);
+assert.equal(all(root, node => node.tag === 'strong' && text(node) === 'Zashboard').length, 1);
+let row = find(root, node => node.tag === 'tr' && text(node).includes('HTTPS 兼容'));
+assert(text(row).includes('0.2.0-r1'));
+assert(text(row).includes('接口可用'));
+assert(!text(row).includes('已就绪'));
+assert(!find(row, node => node.tag === 'details').open);
+assert(text(row).includes('mitmproxy：12.2.3'));
+assert(!text(row).includes('93'));
+assert.deepEqual(all(row, node => node.tag === 'button').map(text), ['配置']);
+fire(button(row, '配置'));
+assert.equal(owner.currentView, 'config');
+assert.equal(owner.configSection, 'compatibility');
+owner.components.extensions[0] = { ...extension, installed_version: null, state: 'not_installed', available: false, reason: 'extension_component_not_installed',
+  dependencies: [{ id: 'mitmproxy', available: false, installed_version: null }] };
+root = managed.components(owner);
+row = find(root, node => node.tag === 'tr' && text(node).includes('HTTPS 兼容'));
+assert(text(row).includes('未安装'));
+assert(text(row).includes('未安装可选模块'));
+assert(!text(row).includes('extension_component_not_installed'));
+assert(!text(row).includes('mitmproxy'));
+assert(!find(row, node => node.tag === 'details'));
+assert.equal(all(row, node => node.attrs.class === 'is-warning').length, 0);
+assert.equal(all(root, node => node.attrs.role === 'alert').length, 0);
+assert(text(root).includes('运行依赖正常'));
+owner.components.extensions[0] = { ...extension, installed_version: null, available: true };
+row = find(managed.components(owner), node => node.tag === 'tr' && text(node).includes('HTTPS 兼容'));
+assert(text(row).includes('安装版本未确认'));
+assert(!text(row).includes('未安装'));
+for (const [state, code, message] of [
+  ['incompatible', 'extension_api_incompatible', '模块接口与当前 NetFleet 不兼容'],
+  ['dependency_missing', 'extension_dependency_missing', '模块运行依赖缺失'],
+  ['unknown', 'extension_manifest_missing', '模块接口声明缺失'],
+  ['unknown', 'extension_manifest_invalid', '模块接口声明无效'],
+  ['unknown', 'extension_owner_unavailable', '模块状态暂不可读取'],
+  ['unknown', 'extension_package_unknown', '模块安装版本尚未确认'],
+  ['backend_unsupported', 'extension_backend_unsupported', '当前后端不支持此模块']
+]) {
+  owner.components.extensions[0] = { ...extension, state, reason: code, available: false,
+    dependencies: [{ id: 'mitmproxy', available: false, installed_version: null }, { id: 'openssl', available: null, installed_version: null }] };
+  root = managed.components(owner);
+  row = find(root, node => node.tag === 'tr' && text(node).includes('HTTPS 兼容'));
+  assert(text(row).includes(message));
+  assert(text(row).includes('mitmproxy：缺少'));
+  assert(text(row).includes('openssl：未确认'));
+  assert(find(row, node => node.tag === 'details').open);
+  assert.equal(all(root, node => node.attrs.role === 'alert').length, 0);
+}
+""")
+
+    def test_unmanaged_compatibility_preserves_revision_bound_disable(self):
+        self.run_js(r"""
+const owner = controller();
+const state = { installed: true, managed: false, requested: true, intercepting: false, active_connections: 2, revision: 'compat-r1',
+  reason: 'engine_unavailable', management_reason: 'extension_api_incompatible', config: { rules: [], devices: [] }, rules: {}, trust: {}, events: [] };
+owner.compatibility = clone(state);
+let reads = 0;
+const disabled = [];
+const api = {
+  compatibilityGet: async () => { reads++; return { ...state, requested: false, revision: 'compat-r2' }; },
+  compatibilityDisable: async request => { disabled.push(request); },
+  compatibilityEnable: async () => { throw new Error('unmanaged module must not enable'); },
+  compatibilityProbe: async () => { throw new Error('unmanaged module must not probe'); },
+  compatibilityApply: async () => { throw new Error('unmanaged module must not apply'); },
+};
+const compatibility = module('compatibility.js', api);
+let root = compatibility.render(owner);
+assert(text(root).includes('模块接口与当前 NetFleet 不兼容'));
+assert(text(root).includes('兼容引擎未就绪'));
+for (const name of ['连接验证', '人工恢复', '新增规则', '新增设备']) assert(button(root, name).disabled, name);
+for (const name of ['刷新状态', '导出诊断']) assert(!button(root, name).disabled, name);
+const toggle = find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox');
+assert(toggle.checked);
+assert(!toggle.disabled, 'an incompatible installed module must remain stoppable');
+const stopping = fire(toggle, 'change', { checked: false });
+assert(text(modal.content).includes('停止接管新连接'));
+await fire(button(modal.content, '确认'));
+await stopping;
+assert.deepEqual(disabled, [{ revision: 'compat-r1' }]);
+assert.equal(reads, 1);
+root = compatibility.render(owner);
+assert(find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox').disabled);
+assert(text(root).includes('仍有 2 条连接'));
+assert(!button(root, '导出诊断').disabled);
+await fire(button(root, '刷新状态'));
+assert.equal(reads, 2);
+""")
+
+    def test_compatibility_keeps_legacy_capabilities_and_rechecks_confirmation(self):
+        self.run_js(r"""
+const owner = controller();
+owner.compatibility = { installed: true, requested: false, intercepting: false, active_connections: 0, revision: 'compat-r1',
+  reason: 'disabled', config: { rules: [], devices: [] }, rules: {}, trust: {}, events: [] };
+let enables = 0, applies = 0;
+const api = { compatibilityEnable: async () => { enables++; }, compatibilityApply: async () => { applies++; },
+  compatibilityGet: async () => clone(owner.compatibility) };
+const compatibility = module('compatibility.js', api);
+let root = compatibility.render(owner);
+assert(!button(root, '新增规则').disabled, 'absence of managed must preserve the existing contract');
+let toggle = find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox');
+assert(!toggle.disabled);
+const enabling = fire(toggle, 'change', { checked: true });
+owner.compatibility.managed = false;
+await fire(button(modal.content, '确认'));
+await enabling;
+assert.equal(enables, 0, 'a newly blocked module must not enable from an old confirmation');
+owner.compatibility.managed = true;
+root = compatibility.render(owner);
+fire(button(root, '新增规则'));
+const saving = fire(button(modal.content, '保存'));
+owner.compatibility.managed = false;
+await fire(button(modal.content, '确认'));
+await saving;
+assert.equal(applies, 0, 'an open edit must not bypass a refreshed capability denial');
+owner.compatibility.installed = false;
+owner.compatibility.requested = true;
+owner.compatibility.reason = 'extension_component_not_installed';
+root = compatibility.render(owner);
+toggle = find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox');
+assert(toggle.disabled, 'an absent owner cannot receive disable');
+assert(!button(root, '刷新状态').disabled);
+assert(text(root).includes('未安装可选模块'));
+assert(!text(root).includes('extension_component_not_installed'));
+""")
+
 
 if __name__ == "__main__":
     unittest.main()

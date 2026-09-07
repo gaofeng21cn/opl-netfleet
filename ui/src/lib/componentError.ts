@@ -1,4 +1,12 @@
 const labels: Record<string, string> = {
+  extension_component_not_installed: '未安装可选模块',
+  extension_api_incompatible: '模块接口与当前 NetFleet 不兼容',
+  extension_dependency_missing: '模块运行依赖缺失',
+  extension_manifest_missing: '模块接口声明缺失',
+  extension_manifest_invalid: '模块接口声明无效',
+  extension_backend_unsupported: '当前后端不支持此模块',
+  extension_owner_unavailable: '模块状态暂不可读取',
+  extension_package_unknown: '模块安装版本尚未确认',
   dashboard_managed_externally: '面板由 Nikki 管理',
   dashboard_path_unmanaged: '当前面板目录未由 NetFleet 管理',
   dashboard_unpacker_unavailable: '缺少面板解压组件，请安装 unzip',

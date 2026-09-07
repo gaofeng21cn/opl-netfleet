@@ -1,11 +1,33 @@
-import { Download, ExternalLink, RefreshCw } from 'lucide-react';
-import type { ComponentsSnapshot, DashboardComponent, OperationSnapshot } from '../types';
+import { Download, ExternalLink, RefreshCw, Settings } from 'lucide-react';
+import type { ComponentsSnapshot, DashboardComponent, ExtensionComponent, OperationSnapshot } from '../types';
 import { OperationProgress } from '../components/OperationProgress';
 import { componentError } from '../lib/componentError';
 
 const previewReason = '本机预览只读，请在设备 LuCI 中操作';
 const coreVersion = (value: string) => value.replace(/^v/, '').replace(/-r\d+$/, '');
 const checkedTime = (value: number | null) => value ? `检查于 ${new Date(value * 1000).toLocaleString()}` : '尚未检查更新';
+
+function ExtensionRow({ extension }: { extension: ExtensionComponent }) {
+  const state = { ready: '接口可用', not_installed: '未安装', incompatible: '接口不兼容', backend_unsupported: '后端不支持', dependency_missing: '缺少依赖', unknown: '状态未确认' }[extension.state];
+  const absent = extension.state === 'not_installed' && !extension.available;
+  const missing = extension.dependencies.filter(dependency => dependency.available === false);
+  const warning = extension.state !== 'ready' && extension.state !== 'not_installed';
+  return <tr>
+    <td><strong>{extension.label}</strong><small>可选模块 · {extension.package}</small></td>
+    <td><strong>{extension.installed_version || (absent ? '未安装' : '安装版本未确认')}</strong>
+      {extension.state !== 'not_installed' && <small className={warning ? 'is-warning' : ''}>{state}</small>}
+      {extension.reason && <small>{componentError(extension.reason)}</small>}
+      {!absent && extension.dependencies.length > 0 && <details open={missing.length > 0 || undefined}>
+        <summary className={missing.length ? 'is-warning' : ''}>{missing.length ? `缺少 ${missing.length} 项模块依赖` : `运行依赖（${extension.dependencies.length}）`}</summary>
+        {extension.dependencies.map(dependency => <small key={dependency.id} className={dependency.available === false ? 'is-warning' : ''}>
+          {dependency.id}：{dependency.available === null ? '未确认' : dependency.available ? dependency.installed_version || '已安装' : '缺少'}
+        </small>)}
+      </details>}
+    </td>
+    <td />
+    <td className="nf-component-actions">{extension.id === 'https-compat' && <button type="button" disabled title={previewReason}><Settings aria-hidden="true" />配置</button>}</td>
+  </tr>;
+}
 
 function DashboardRow({ dashboard }: { dashboard: DashboardComponent }) {
   return <tr>
@@ -63,7 +85,7 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
             <td>{component.available_version && !feed?.error ? hasUpdate ? `候选版本 ${component.available_version}` : '当前更新源暂无新版' : null}</td>
             <td className="nf-component-actions">{canUpdate && <button type="button" disabled title={previewReason}><Download aria-hidden="true" />{mismatch ? '更新软件包' : '更新'}</button>}</td>
           </tr>;
-        })}{dashboard && <DashboardRow dashboard={dashboard} />}</tbody></table></div>
+        })}{snapshot.extensions?.filter(extension => extension.kind === 'optional').map(extension => <ExtensionRow key={extension.id} extension={extension} />)}{dashboard && <DashboardRow dashboard={dashboard} />}</tbody></table></div>
       <details className="nf-component-details"><summary>更新源与安装详情</summary><dl>
         {snapshot.architecture && <><dt>设备架构</dt><dd>{snapshot.architecture}</dd></>}
         {feed?.url && <><dt>软件包源</dt><dd>{feed.url}</dd></>}

@@ -75,6 +75,8 @@ chmod 0700 /etc/opl-netfleet/native /etc/opl-netfleet/native/profiles /etc/opl-n
 chmod 0600 /etc/config/netfleet
 stage=source_contracts
 for contract in /tmp/tests/*_contract.uc; do ucode "$contract" >>"$work/contracts.log" 2>&1; done
+ucode /tmp/tests/extensions_device.uc /tmp/openwrt/files/usr/libexec/rpcd/opl-netfleet \
+	/tmp/openwrt/luci-app-netfleet/root/usr/share/rpcd/acl.d/luci-app-netfleet.json >>"$work/contracts.log" 2>&1
 printf '{"kind":"native-mihomo"}\n' >/etc/opl-netfleet/backend.json
 ucode /tmp/tests/backend_contract.uc native-mihomo >>"$work/contracts.log" 2>&1
 cat /tmp/local-probe.crt >>/etc/ssl/certs/ca-certificates.crt

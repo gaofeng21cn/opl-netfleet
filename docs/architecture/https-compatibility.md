@@ -44,7 +44,9 @@ OpenWrt SDK、依赖目录、APK 签名私钥、输出目录和源码 ref。依�
 构建。组件包安装验证与基础 NetFleet qualification 分开，二者都不能替代网络验收。
 
 `compatibility_get/apply/enable/disable/probe/ca` 经 rpcd、`main.uc` 和专属 controller
-到达唯一实现。所有 mutation 使用当前 revision；revision 同时绑定配置和信任记录。
+到达唯一实现，管理动作通过[Extension API v1](extensions.md)注册与准入。独立包的
+`extension.json` 声明接口 major；组件状态从安装记录和该声明投影，不启动兼容引擎。
+所有 mutation 使用当前 revision；revision 同时绑定配置和信任记录。
 `probe` 的 `trust_record`、`trust_revoke`、`recover` 操作分别记录接入工具证明、撤销
 设备接管和人工解除故障锁定。`ca` 只返回公开 PEM 及 SHA-256，不接受任意文件路径。
 

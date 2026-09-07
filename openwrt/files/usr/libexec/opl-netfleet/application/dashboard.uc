@@ -5,6 +5,29 @@ import { read_yaml, read_json, api_secret, sha256, shell_quote as q } from "../a
 import { private_file, private_directory, atomic_json } from "../adapters/native.uc";
 import { controller_version } from "../adapters/mihomo.uc";
 import { bundled_version } from "../adapters/dashboard_version.uc";
+import { API_VERSION } from "../core/extensions.uc";
+
+export const extension = {
+	id: "zashboard", label: "Zashboard", api_version: API_VERSION, kind: "resource",
+	package: "opl-netfleet", dependencies: ["curl", "ca-bundle", "unzip"],
+	permission_class: "dashboard_resources", ui: ["components", "dashboard"],
+	commands: {
+		"dashboard-get": { method: "get", access: "read", backends: ["native-mihomo", "nikki-mihomo"] },
+		"dashboard-check": { method: "check", access: "write", backends: ["native-mihomo"] },
+		"dashboard-update": { method: "update", access: "write", backends: ["native-mihomo"] }
+	}
+};
+
+export function inspection(state) {
+	return { available: state?.available ?? false, installed_version: state?.installed_version ?? null, api_version: API_VERSION, error: null };
+};
+
+export function dispatch(action, argument) {
+	if (action == "get") return get();
+	if (action == "check") return check();
+	if (action == "update") return update(argument);
+	return { ok: false, error: "extension_action_not_allowed" };
+};
 
 const CACHE_DIR = "/tmp/opl-netfleet-dashboard";
 const CACHE = `${CACHE_DIR}/checked.json`;
