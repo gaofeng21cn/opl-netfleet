@@ -132,9 +132,10 @@ def build(output, sdk):
         host = scratch / "host"
         host.mkdir()
         receipt["host"] = pack("netfleet-plugin-vm-host", "1.0.0-r1", host,
-                               provides=("netfleet-plugin-api-v1=1", "opl-netfleet-kernel=0.8.0", "ucode-mod-fs=1"))
+                               provides=("netfleet-plugin-api-v1=1", "opl-netfleet-kernel=0.8.0"))
         receipt["old_host"] = pack("netfleet-plugin-vm-old-host", "1.0.0-r1", host,
-                                   provides=("netfleet-plugin-api-v1=1", "opl-netfleet-kernel=0.7.0", "ucode-mod-fs=1"))
+                                   provides=("netfleet-plugin-api-v1=1", "opl-netfleet-kernel=0.7.0"))
+        solver_fs = pack("netfleet-plugin-solver-fs", "1.0.0-r1", host, provides=("ucode-mod-fs=1",))
         for identity in ("device-info", "workspace-note"):
             receipt["plugins"][identity] = {}
             for version in ("0.1.0", "0.1.1"):
@@ -151,7 +152,8 @@ def build(output, sdk):
                            check=True, capture_output=True, text=True)
             solved = subprocess.run([
                 str(apk), "--root", str(sandbox), "--arch", "noarch", "--initdb", "--no-network",
-                "--no-scripts", "--allow-untrusted", "--simulate", "add", str(output / receipt[label]["name"]), str(note),
+                "--no-scripts", "--allow-untrusted", "--simulate", "add", str(output / receipt[label]["name"]),
+                str(output / solver_fs["name"]), str(note),
             ], capture_output=True, text=True)
             if (solved.returncode == 0) != permitted:
                 raise ValueError(f"APK kernel compatibility result unexpected: {label}: {solved.stderr}")
@@ -159,6 +161,7 @@ def build(output, sdk):
                 raise ValueError(f"APK rejected old host for an unrelated dependency: {solved.stderr}")
         receipt["host_compatibility"] = {"minimum_kernel": "0.8.0", "old_kernel_rejected": True,
                                          "current_kernel_accepted": True}
+        (output / solver_fs["name"]).unlink()
     (output / "fixture.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
     return receipt
 

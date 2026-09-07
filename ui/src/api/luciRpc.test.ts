@@ -14,8 +14,12 @@ it('dispatches reads and mutations without depending on a visible-tab animation 
   await expect(api.subscriptionsGet()).resolves.toEqual({ available: true });
   await expect(api.status()).resolves.toEqual({ available: true });
   await api.subscriptionsSet({ revision: 'r1', source: { id: 'alpha', name: 'Alpha' } });
+  await api.pluginsList();
+  await api.pluginRead({ id: 'example', action: 'get' });
+  await api.pluginCall({ id: 'example', action: 'set', confirm: true, revision: 'r1' });
   expect(declarations.every(options => options.nobatch === true)).toBe(true);
-  expect(dispatch).toHaveBeenCalledTimes(4);
+  expect(declarations.filter(options => ['plugins_list', 'plugin_read', 'plugin_call'].includes(options.method)).every(options => options.object === 'opl-netfleet.plugins')).toBe(true);
+  expect(dispatch).toHaveBeenCalledTimes(7);
 });
 
 it('keeps the kernel transport limited to generic plugin RPC methods', async () => {

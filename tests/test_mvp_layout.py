@@ -78,7 +78,10 @@ class MvpLayoutTests(unittest.TestCase):
                     "-f", str(harness), f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", "all",
                 ], cwd=source, capture_output=True, text=True, check=True)
             public = stage / "www/luci-static/resources/netfleet"
-            self.assertEqual({"api.js", "plugin-host.js"}, {path.name for path in public.glob("*.js")})
+            package_version = re.search(r"^PKG_VERSION:=(\S+)$", (LUCI / "Makefile").read_text(), re.M).group(1)
+            shell_modules = public / f"v{package_version.replace('.', '_')}"
+            self.assertEqual({"api.js", "plugin-host.js"}, {path.name for path in shell_modules.glob("*.js")})
+            self.assertEqual([], list(public.glob("*.js")))
             product = RUNTIME / "plugins/product-ui/resources"
             revision = PAYLOAD.payload_revision(product.parent)
             installed_product = public / "plugins/product-ui" / revision / "resources"

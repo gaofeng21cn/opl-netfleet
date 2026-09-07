@@ -30,7 +30,8 @@ it('mounts the packaged product page through its actual ESM and LuCI module adap
     };
     const methods = { onboarding_get: 'onboardingGet', native_setup_get: 'nativeSetupGet', subscriptions_get: 'subscriptionsGet', operation_get: 'operationGet', config_get: 'configGet', dashboard_get: 'dashboardGet' };
     const rpc = { declare({ method }) { return async (...params) => ({ ok: true, result: await api[methods[method]](...params) }); } };
-    globalThis.L = { env: { rpctimeout: 20 }, require: async name => ({ baseclass, ui, poll, rpc, fs: {}, request: {}, 'netfleet.api': {} })[name] };
+    const modules = { baseclass, ui, poll, rpc, fs: {}, request: {} };
+    globalThis.L = { env: { rpctimeout: 20 }, require: async name => { assert.ok(Object.hasOwn(modules, name), 'product requires only standard LuCI modules'); return modules[name]; } };
     globalThis.fetch = async url => ({ ok: true, text: () => readFile(new URL(url), 'utf8') });
     const scope = createScope(undefined, error => { throw error; });
     const container = E('section');

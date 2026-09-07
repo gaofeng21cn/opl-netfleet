@@ -4,7 +4,7 @@ const reads = new Set(['status', 'events', 'connections', 'pluginsList', 'plugin
 
 export async function mountPage(context, pageId) {
   const resourceUrl = name => new URL(name, import.meta.url).href;
-  const [baseclass, ui, poll, rpc, fs, request, pluginApi] = await Promise.all(['baseclass', 'ui', 'poll', 'rpc', 'fs', 'request', 'netfleet.api'].map(name => L.require(name)));
+  const [baseclass, ui, poll, rpc, fs, request] = await Promise.all(['baseclass', 'ui', 'poll', 'rpc', 'fs', 'request'].map(name => L.require(name)));
   if (context.signal.aborted) return;
   const guard = transport => new Proxy(transport, { get(target, name) {
     if (typeof target[name] !== 'function') return target[name];
@@ -21,7 +21,7 @@ export async function mountPage(context, pageId) {
     return response.text();
   }));
   if (context.signal.aborted) return;
-  const bindings = { baseclass, ui, poll, rpc, fs, request, pluginApi, resourceUrl };
+  const bindings = { baseclass, ui, poll, rpc, fs, request, resourceUrl };
   // These installed LuCI modules share one revision and one page scope.
   for (let index = 0; index < names.length; index++) {
     const exported = new Function(...Object.keys(bindings), sources[index])(...Object.values(bindings));
