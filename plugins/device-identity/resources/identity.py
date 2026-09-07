@@ -6,6 +6,7 @@ import http.client
 from http.cookies import SimpleCookie
 import ipaddress
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -205,6 +206,7 @@ def ip_command(*args):
 
 def local(config, now):
     devices = {}
+    observed_at = time.monotonic()
     neighbours = ip_command("neigh", "show")[:1024]
     for row in neighbours:
         if row.get("dev") not in config["interfaces"] or not set(row.get("state", [])) & {"REACHABLE", "DELAY", "PROBE"}:
@@ -244,6 +246,18 @@ def local(config, now):
     selected = (candidates[cursor:] + candidates[:cursor])[:64]
     confirmed = observe(links, selected)
     atomic(RUN / "cursor.json", cursor + len(selected))
+    for item in devices.values():
+        item["address_expires"] = {ip: observed_at + TTL for ip in item["addresses"]}
+    for old in previous:
+        for ip in old["addresses"]:
+            expiry = old.get("address_expires", {}).get(ip, current["monotonic"] + old["ttl"])
+            if ip in selected or not observed_at < expiry <= observed_at + TTL:
+                continue
+            item = devices.setdefault(old["mac"], {"mac": old["mac"], "name": old["name"], "addresses": [],
+                                                   "ttl": TTL, "reason": None, "address_expires": {}})
+            if ip not in item["addresses"]:
+                item["addresses"].append(ip)
+                item["address_expires"][ip] = expiry
     ownership = {}
     for ip, identity in confirmed:
         ownership.setdefault(ip, set()).add(identity)
@@ -252,10 +266,13 @@ def local(config, now):
         item["addresses"] = [ip for ip in item["addresses"] if ip not in selected]
     for ip, identities in ownership.items():
         for identity in identities:
-            item = devices.setdefault(identity, {"mac": identity, "name": identity, "addresses": [], "ttl": TTL, "reason": None})
+            item = devices.setdefault(identity, {"mac": identity, "name": identity, "addresses": [], "ttl": TTL,
+                                                  "reason": None, "address_expires": {}})
             item["addresses"].append(ip)
+            item["address_expires"][ip] = observed_at + TTL
     for item in devices.values():
         item["addresses"] = sorted(set(item["addresses"]))
+        item["address_expires"] = {ip: item["address_expires"][ip] for ip in item["addresses"]}
     return list(devices.values())
 
 
@@ -290,12 +307,17 @@ def status(config):
     loaded = read(BASE / "loaded.json", False) is True
     cache = read(RUN / "cache.json", {})
     same = cache.get("revision") == revision(config)
-    age = time.monotonic() - cache.get("monotonic", -TTL)
+    now = time.monotonic()
+    age = now - cache.get("monotonic", -TTL)
     fresh = loaded and config["enabled"] and same and 0 <= age < TTL
-    devices = [{**row, "addresses": row["addresses"] if fresh and age < row["ttl"] else [],
-                "expires_in": max(0, int(row["ttl"] - age)) if fresh else 0,
-                "reason": row["reason"] if fresh and age < row["ttl"] else "address_evidence_expired"}
-               for row in cache.get("devices", [])] if same else []
+    devices = []
+    for row in cache.get("devices", []) if same else []:
+        remaining = {ip: expiry - now for ip in row["addresses"]
+                     if (expiry := row.get("address_expires", {}).get(ip, cache["monotonic"] + row["ttl"])) > now}
+        devices.append({**{key: value for key, value in row.items() if key != "address_expires"},
+                        "addresses": sorted(remaining) if fresh else [],
+                        "expires_in": max(0, math.ceil(min(remaining.values(), default=0))) if fresh else 0,
+                        "reason": row["reason"] if fresh and (remaining or row["reason"]) else "address_evidence_expired"})
     error = read(RUN / "attempt.json", {})
     error = error if error.get("revision") == revision(config) else {}
     reason = "source_disabled" if not loaded or not config["enabled"] else error.get("reason") or (None if fresh else "address_evidence_expired")

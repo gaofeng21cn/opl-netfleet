@@ -180,6 +180,44 @@ class Source(unittest.TestCase):
         with patch.object(identity.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, xml)):
             self.assertEqual(identity.connection_addresses(), ["2001:db8::2"])
 
+    def test_sample_rotation_keeps_original_address_expiry(self):
+        config = {"source": "local", "enabled": True, "interfaces": ["observe0"]}
+        self.save(config)
+        link = {"ifname": "observe0", "flags": ["UP"], "address": "02:00:00:00:00:fe",
+                "addr_info": [{"family": "inet6", "scope": "link", "local": "fe80::fe"}]}
+        candidates = [f"2001:db8::{i:x}" for i in range(1, 100)]
+        watched = sorted(candidates)[0]
+        with patch.object(identity, "ip_command", side_effect=lambda *args: [] if args[0] == "neigh" else [link]), \
+                patch.object(identity, "connection_addresses", return_value=candidates):
+            with patch.object(identity.time, "monotonic", return_value=1000), \
+                    patch.object(identity, "observe", return_value=[(watched, MAC)]):
+                first = identity.sync(config, force=True)
+            self.assertEqual(first["devices"][0]["expires_in"], 120)
+            # Keep the watched address outside this batch; no new proof may extend its TTL.
+            identity.atomic(identity.RUN / "cursor.json", 1)
+            with patch.object(identity.time, "monotonic", return_value=1030), \
+                    patch.object(identity, "observe", return_value=[]):
+                later = identity.sync(config, force=True)
+            self.assertEqual(later["devices"][0]["addresses"], [watched])
+            self.assertEqual(later["devices"][0]["expires_in"], 90)
+            with patch.object(identity.time, "monotonic", return_value=1121):
+                self.assertEqual(identity.status(config)["devices"][0]["addresses"], [])
+
+    def test_mixed_address_expiry_does_not_withdraw_the_whole_device(self):
+        config = {"source": "local", "enabled": True, "interfaces": ["observe0"]}
+        self.save(config)
+        identity.atomic(identity.RUN / "cache.json", {"revision": identity.revision(config), "monotonic": 1000,
+            "devices": [{"mac": MAC, "name": "Mac", "ttl": 120, "reason": None,
+                         "addresses": [NEW, "2001:db8::2"], "address_expires": {NEW: 1030.5, "2001:db8::2": 1120}}]})
+        with patch.object(identity.time, "monotonic", return_value=1030):
+            current = identity.status(config)["devices"][0]
+            self.assertEqual(current["expires_in"], 1)
+            self.assertEqual(len(current["addresses"]), 2)
+        with patch.object(identity.time, "monotonic", return_value=1031):
+            current = identity.status(config)["devices"][0]
+            self.assertEqual(current["addresses"], ["2001:db8::2"])
+            self.assertEqual(current["expires_in"], 89)
+
     def test_neighbor_reply_validation(self):
         from scapy.layers.inet6 import IPv6, ICMPv6ND_NA, ICMPv6NDOptDstLLAddr
         from scapy.layers.l2 import Ether
