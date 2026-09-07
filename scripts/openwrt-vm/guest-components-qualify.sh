@@ -140,11 +140,32 @@ stage=older_real_apk
 install_fixture $old_packages >"$work/downgrade.log" 2>&1
 unchanged
 rpc_ready
+stage=installer_product_upgrade
+uclient-fetch -q -O "$work/install-netfleet.sh" "$feed_url/install-netfleet.sh"
+NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 \
+	sh "$work/install-netfleet.sh" >"$work/installer-upgrade.log" 2>&1
+for name in $product_packages; do apk list --manifest | grep -Fqx "$name $current"; done
+unchanged
+install_fixture $old_packages >>"$work/downgrade.log" 2>&1
+stage=independent_plugin_update
+printf '%s\n' "$feed_url/components-fixtures/good/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
+printf '%s\n' "$feed_url/components-fixtures/independent/packages.adb" >>/etc/apk/repositories.d/netfleet-component-fixture.list
+apk --timeout 30 --repositories-file /etc/apk/repositories.d/netfleet-component-fixture.list update >>"$work/rollback-feed.log" 2>&1
+independent=$(jsonfilter -i "$work/fixture.json" -e '@.package_versions["opl-netfleet-plugin-dashboard"].independent')
+uclient-fetch -q -O "$work/independent.apk" \
+	"$feed_url/components-fixtures/independent/opl-netfleet-plugin-dashboard-$independent.apk"
+install_fixture "$work/independent.apk" >"$work/independent.log" 2>&1
+unchanged
+rpc_ready
 stage=component_update
 rpcd_before=$(pidof rpcd)
 request components_update "$current"
 assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
-for name in $product_packages; do apk list --manifest | grep -Fqx "$name $current"; done
+for name in $product_packages; do
+	expected=$current
+	[ "$name" != opl-netfleet-plugin-dashboard ] || expected=$independent
+	apk list --manifest | grep -Fqx "$name $expected"
+done
 rpc_ready
 [ "$(pidof rpcd)" != "$rpcd_before" ]
 unchanged
@@ -154,7 +175,11 @@ request components_update "$bad"
 assert_json "$work/operation-result.json" '@.result.packages.state' failed
 assert_json "$work/operation-result.json" '@.result.packages.error' runtime_verification_failed_rolled_back
 assert_json "$work/operation-result.json" '@.result.packages.recovery' restored
-for name in $product_packages; do apk list --manifest | grep -Fqx "$name $current"; done
+for name in $product_packages; do
+	expected=$current
+	[ "$name" != opl-netfleet-plugin-dashboard ] || expected=$independent
+	apk list --manifest | grep -Fqx "$name $expected"
+done
 rpc_ready
 unchanged
 stage=core_update
@@ -189,4 +214,4 @@ apk list --manifest | grep -Fqx "mihomo-meta $core_current"
 [ "$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.core.pid')" = "$core_pid_before" ]
 unchanged
 stage=complete
-printf '%s\n' '{"ok":true,"checks":{"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"
+printf '%s\n' '{"ok":true,"checks":{"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"installer_complete_product_upgrade":true,"component_preserves_newer_independent_plugin":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"

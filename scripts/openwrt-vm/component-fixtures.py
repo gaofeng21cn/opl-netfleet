@@ -71,6 +71,7 @@ def build(candidate, output, baseline=None):
             for archive in candidate.glob("*.apk"):
                 shutil.copy2(archive, output / kind / archive.name)
         (output / "old").mkdir()
+        (output / "independent").mkdir()
         core_versions = {}
         package_versions = {}
         legacy = None
@@ -110,6 +111,10 @@ def build(candidate, output, baseline=None):
 
             package(prior, "good")
             shutil.copy2(output / "good" / f"{name}-{prior}.apk", output / "old")
+            if name == "opl-netfleet-plugin-dashboard":
+                independent_version = f"{base}-r{int(release) + 2}"
+                package_versions[name]["independent"] = independent_version
+                package(independent_version, "independent")
             if name == "opl-netfleet-plugin-mihomo":
                 init = root / "etc/init.d/opl-netfleet-core"
                 source = init.read_text()
@@ -122,7 +127,7 @@ def build(candidate, output, baseline=None):
                 core.write_text("#!/bin/sh\nexit 1\n")
                 core.chmod(0o755)
             package(following, "bad-core" if name == "mihomo-meta" else "bad")
-        for kind in ("old", "good", "bad", "bad-core"):
+        for kind in ("old", "good", "bad", "bad-core", "independent"):
             run("--allow-untrusted", "mkndx", "--output", output / kind / "packages.adb",
                 "--sign", private_key, *sorted((output / kind).glob("*.apk")))
         if baseline is not None:

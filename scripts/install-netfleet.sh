@@ -12,6 +12,7 @@ die() {
 command -v apk >/dev/null 2>&1 || die 'OpenWrt APK package manager is required'
 
 command -v uci >/dev/null 2>&1 || die 'OpenWrt UCI is required'
+command -v jsonfilter >/dev/null 2>&1 || die 'OpenWrt jsonfilter is required'
 
 feed_base=${NETFLEET_FEED_BASE:-https://github.com/gaofeng21cn/opl-netfleet/releases/latest/download}
 feed_base=${feed_base%/}
@@ -67,10 +68,26 @@ mv -f "$key_staged" "$key_target"
 mv -f "$repository_staged" "$repository_file"
 
 apk --timeout 300 update
+# Read the candidate product composition so newly added plugins are included too.
+apk --no-network query --from none -X "$feed_base/packages.adb" \
+	--format json --fields depends opl-netfleet >"$work/product.json"
+dependencies=$(jsonfilter -i "$work/product.json" -e '@[*].depends[*]')
+set -- opl-netfleet luci-app-netfleet
+set -f
+for dependency in $dependencies; do
+	name=${dependency%%[\<\>\=\~]*}
+	case "$name" in
+		opl-netfleet-kernel|opl-netfleet-plugin-*)
+			case "$name" in *[!a-z0-9-]*) die 'invalid product package name' ;; esac
+			set -- "$@" "$name"
+			;;
+	esac
+done
+[ "$#" -gt 2 ] || die 'product package dependencies are missing'
 if ! apk info -e opl-netfleet >/dev/null 2>&1 || ! apk info -e luci-app-netfleet >/dev/null 2>&1; then
 	apk --timeout 300 add opl-netfleet luci-app-netfleet
 fi
-# Named upgrades keep already-satisfied dependencies at their installed versions.
-apk --timeout 300 upgrade opl-netfleet luci-app-netfleet
+# Named upgrades leave satisfied system dependencies and newer plugins installed.
+apk --timeout 300 upgrade "$@"
 
 printf 'NetFleet packages installed from %s; open LuCI to review and confirm first takeover.\n' "$feed_base"

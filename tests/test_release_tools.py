@@ -394,7 +394,7 @@ class ReleaseToolsTests(unittest.TestCase):
             self.assertNotEqual(0, result.returncode)
             self.assertIn('feed bootstrap', result.stderr)
 
-    def test_feed_bootstrap_configures_feed_and_installs_both_packages_once(self):
+    def test_feed_bootstrap_upgrades_complete_product_without_system_dependencies(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             feed = root / 'feed'
@@ -406,6 +406,10 @@ class ReleaseToolsTests(unittest.TestCase):
             (feed / 'opl-netfleet-apk.pem').write_text(
                 '-----BEGIN PUBLIC KEY-----\nfixture\n-----END PUBLIC KEY-----\n'
             )
+            (feed / 'product.json').write_text(json.dumps([{'depends': [
+                'libc', 'opl-netfleet-kernel', 'opl-netfleet-plugin-dashboard>=0.7.0',
+                'opl-netfleet-plugin-selection', 'mihomo', 'yq',
+            ]}]))
             fetcher = bin_dir / 'uclient-fetch'
             fetcher.write_text(
                 '#!/bin/sh\n'
@@ -423,11 +427,20 @@ class ReleaseToolsTests(unittest.TestCase):
                 '  case " $NETFLEET_INSTALLED " in *" $3 "*) exit 0 ;; *) exit 1 ;; esac\n'
                 'fi\n'
                 'printf "%s\\n" "$*" >>"$NETFLEET_APK_LOG"\n'
+                'case " $* " in *" query "*) cat "$NETFLEET_FIXTURE_FEED/product.json" ;; esac\n'
             )
             apk.chmod(0o755)
             uci = bin_dir / 'uci'
             uci.write_text('#!/bin/sh\nprintf "%s\\n" "subscription:fixture"\n')
             uci.chmod(0o755)
+            jsonfilter = bin_dir / 'jsonfilter'
+            jsonfilter.write_text(
+                '#!/usr/bin/env python3\nimport json, sys\n'
+                'with open(sys.argv[2]) as source:\n'
+                '    for row in json.load(source):\n'
+                '        print("\\n".join(row["depends"]))\n'
+            )
+            jsonfilter.chmod(0o755)
             log = root / 'apk.log'
             env = {
                     **os.environ,
@@ -447,10 +460,13 @@ class ReleaseToolsTests(unittest.TestCase):
                         text=True, capture_output=True, check=False,
                     )
                     self.assertEqual(0, result.returncode, result.stderr)
-                    expected = ['--timeout 300 update']
+                    expected = ['--timeout 300 update',
+                                '--no-network query --from none -X https://fixture.invalid/release/packages.adb '
+                                '--format json --fields depends opl-netfleet']
                     if installed != 'opl-netfleet luci-app-netfleet':
                         expected.append('--timeout 300 add opl-netfleet luci-app-netfleet')
-                    expected.append('--timeout 300 upgrade opl-netfleet luci-app-netfleet')
+                    expected.append('--timeout 300 upgrade opl-netfleet luci-app-netfleet '
+                                    'opl-netfleet-kernel opl-netfleet-plugin-dashboard opl-netfleet-plugin-selection')
                     self.assertEqual(expected, log.read_text().splitlines())
             self.assertEqual((feed / 'opl-netfleet-apk.pem').read_bytes(), (keys / 'opl-netfleet-apk.pem').read_bytes())
             self.assertEqual('https://fixture.invalid/release/packages.adb\n', repository.read_text())
@@ -476,6 +492,9 @@ class ReleaseToolsTests(unittest.TestCase):
             uci = bin_dir / 'uci'
             uci.write_text('#!/bin/sh\nprintf "%s\\n" "subscription:fixture"\n')
             uci.chmod(0o755)
+            jsonfilter = bin_dir / 'jsonfilter'
+            jsonfilter.write_text('#!/bin/sh\nexit 1\n')
+            jsonfilter.chmod(0o755)
             log = root / 'apk.log'
             result = subprocess.run(
                 [str(INSTALLER)],

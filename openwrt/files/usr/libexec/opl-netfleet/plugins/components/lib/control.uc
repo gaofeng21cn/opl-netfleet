@@ -293,7 +293,8 @@ upgrade = function(request, work, candidates) {
 		if (rollback == null) fail("rollback_package_unavailable");
 		push(old, rollback);
 		operation.update("downloading", { completed: length(old) + length(next) });
-		const candidate = archive(name, candidates[name], nextdir, work, null, request.feed);
+		const candidate = candidates[name] == versions[name] ? rollback :
+			archive(name, candidates[name], nextdir, work, null, request.feed);
 		if (candidate == null) fail("candidate_download_failed");
 		push(next, candidate);
 		operation.update("downloading", { completed: length(old) + length(next) });
