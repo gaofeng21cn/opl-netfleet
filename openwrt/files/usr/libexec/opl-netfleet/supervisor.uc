@@ -16,7 +16,8 @@ while (true) {
 			lease = fs.open(path, 'ae', 0600);
 			ready = lease != null && lease.lock('sn') && fs.lstat('/var/run/opl-netfleet-plugin-maintenance/.kernel') == null;
 		}
-		if (ready) delay = loadstring(sprintf('import { tick } from %J; return tick;', `${root}/kernel/host.uc`))()(root, states);
+		if (ready) delay = loadstring(sprintf('import { tick } from %J; import { create } from %J; return (root, states) => tick(root, states, { adapter: create(root) });',
+			`${root}/kernel/host.uc`, `${root}/adapters/openwrt.uc`))()(root, states);
 	} catch (error) { warn(`NetFleet supervisor: ${error.message}\n`); }
 	lease?.close();
 	sleep(delay);

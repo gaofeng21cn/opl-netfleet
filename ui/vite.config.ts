@@ -134,11 +134,35 @@ function privateFixturePlugin(path?: string): Plugin {
   };
 }
 
+function pluginBrowserFixture(): Plugin {
+  return {
+    name: 'netfleet-plugin-browser-fixture',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use('/luci-static/resources/netfleet/plugins', async (request, response, next) => {
+        const path = new URL(request.url || '/', 'http://localhost').pathname;
+        const note = /^\/workspace-note\/revision-[12]\/resources\/(page\.js|style\.css)$/.exec(path);
+        const graph = /^\/module-probe\/(revision-[12])\/resources\/(page\.js|helper\.js)$/.exec(path);
+        if (!note && !graph) return next();
+        const file = note ? new URL(`../examples/plugins/workspace-note/resources/${note[1]}`, import.meta.url)
+          : new URL(`./src/plugins/fixtures/${graph![1]}/${graph![2]}`, import.meta.url);
+        try {
+          const body = await readFile(file);
+          response.setHeader('Content-Type', path.endsWith('.css') ? 'text/css' : 'text/javascript');
+          response.setHeader('Cache-Control', 'no-store');
+          response.end(body);
+        } catch { response.statusCode = 404; response.end(); }
+      });
+    },
+  };
+}
+
 export default defineConfig(({ command }) => {
   return {
     plugins: [react(),
       liveBridgePlugin(process.env.NETFLEET_UI_TARGET, process.env.NETFLEET_UI_TARGET_LABEL || '设备'),
       privateFixturePlugin(process.env.NETFLEET_UI_FIXTURE),
+      pluginBrowserFixture(),
     ],
     define: {
       'process.env.NODE_ENV': JSON.stringify(command === 'build' ? 'production' : 'development'),

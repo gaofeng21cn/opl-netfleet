@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: Apache-2.0 */
 
 'use strict';
 'require baseclass';
@@ -519,8 +519,8 @@ function render(controller) {
 				E('button', { 'class': 'btn cbi-button', 'disabled': !changed || controller.busy || null, 'click': function() { controller.discardConfig(); } }, '放弃更改'),
 				E('button', { 'class': 'btn cbi-button', 'disabled': controller.busy || null, 'click': function() { controller.validateConfig(); } }, '校验配置'),
 				E('button', { 'class': 'btn cbi-button', 'disabled': controller.busy || null, 'click': function() { controller.previewConfigChanges(); } }, '查看变更'),
-				E('button', { 'class': 'btn cbi-button', 'disabled': !changed || active || controller.busy || null, 'title': active ? '已接管时请直接使用“应用配置”' : '', 'click': function() { controller.saveConfig(); } }, '保存配置'),
-				E('button', { 'class': 'btn cbi-button cbi-button-action', 'disabled': !canApply || controller.busy || !controller.liveDataReady || null, 'click': function() { controller.confirmConfigApply(); } }, '应用配置')
+				E('button', { 'class': 'btn cbi-button', 'disabled': !changed || active || controller.busy || controller.context?.readOnly || null, 'title': active ? '已接管时请直接使用“应用配置”' : '', 'click': function() { controller.saveConfig(); } }, '保存配置'),
+				E('button', { 'class': 'btn cbi-button cbi-button-action', 'disabled': !canApply || controller.busy || !controller.liveDataReady || controller.context?.readOnly || null, 'click': function() { controller.confirmConfigApply(); } }, '应用配置')
 			])
 		])
 	]);

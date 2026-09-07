@@ -6,10 +6,13 @@ Fleet 安装的前置检查、快照和回滚顺序统一由[部署事务](../op
 
 ## 软件包组合
 
-`opl-netfleet-kernel` 安装通用入口、服务解析与插件生命周期内核，提供
-`netfleet-plugin-api-v1`。`opl-netfleet-plugin-*` 分别安装功能插件的 manifest、实现和
+`opl-netfleet-kernel` 安装通用入口、服务解析、插件生命周期内核、OpenWrt 宿主适配器及
+`opl-netfleet.plugins` 通用管理 RPC，提供 `netfleet-plugin-api-v1`。
+`opl-netfleet-plugin-*` 分别安装功能插件的 manifest、实现和
 该功能拥有的资源、配置基线或系统入口。`opl-netfleet` 是默认产品聚合包，安装
-`system.json` 与构建身份，依赖完整默认功能集合；`luci-app-netfleet` 提供管理界面。
+`system.json` 与构建身份，依赖完整默认功能集合；`luci-app-netfleet` 提供插件页面宿主，
+只依赖内核及必要的 LuCI 运行环境。默认产品的七个业务页面归
+`opl-netfleet-plugin-product-ui` 所有；独立插件的界面不要求安装默认网络产品。
 进程插件与 UCode 服务插件使用相同的 `/usr/libexec/opl-netfleet/plugins/<id>/` 安装空间，
 服务组合合同见[微内核与功能插件](microkernel.md)。
 
@@ -17,6 +20,17 @@ Fleet 安装的前置检查、快照和回滚顺序统一由[部署事务](../op
 `package_dependencies` 声明功能实际使用的 OpenWrt 系统包；构建前检查缺失服务、接口版本和
 包依赖环。内核不依赖 Mihomo、订阅、选路或其他业务组件。默认系统配置的
 `product_packages` 列出产品维护集合，管理员独立安装的第三方插件不加入该集合。
+
+算法包 `opl-netfleet-plugin-selection-algorithm` 与选择控制器分开，独立安装算法不会
+拉入控制器与后端依赖。`platform-storage`、`platform-openwrt` 与 `platform` 分别承载
+存储文档、OpenWrt 配置和运行管理能力；安装依赖沿实际服务调用关系解析。
+
+声明 UI 的插件把公开资源安装到
+`/www/luci-static/resources/netfleet/plugins/<id>/<revision>/resources/`。revision 从
+完整安装 payload 计算，与内核清单一致；包生成器和外部 SDK 共用同一计算与资源投影入口。
+页面入口、静态 import 子模块、样式与其他相对资源处在同一版本目录，不依赖仅给入口
+追加查询参数实现更新。资源源码同时保留在插件私有安装目录，以便身份校验；运行时配置
+和凭据不放进公开资源。软件包管理器随该版本拥有和删除其公开投影。
 
 ## 版本化分发
 
@@ -105,7 +119,7 @@ Nikki 退出事务；有 Nikki 时仍执行原有恢复与卸载检查。`/etc/o
 来源、缓存与 stage 属于用户私有输入，不进入 package，卸载不删除这些数据。
 
 官方 SDK 解压后尚未生成 `.config`。发布准备入口只执行 `defconfig` 并回读目标 package
-架构，不下载或扫描 feeds。原生 LuCI package 仅包含仓库内固定的静态页面、菜单和 ACL，
+架构，不下载或扫描 feeds。LuCI package 仅包含插件宿主、传输适配、菜单和 ACL，
 使用标准 OpenWrt `package.mk` 显式安装这些文件，不依赖 `luci.mk` 或 LuCI host build
 dependencies。准备完成的 SDK 才能交给 package builder，因此首次发布不承担无关 feed
 clone 和 package index 成本。

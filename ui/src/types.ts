@@ -278,6 +278,9 @@ export interface ConnectionsSnapshot {
 }
 
 export interface NetFleetClient {
+  pluginsList?(): Promise<import('../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/plugin-host.js').PluginsSnapshot>;
+  pluginRead?(request: import('../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/plugin-host.js').PluginRequest): Promise<unknown>;
+  pluginCall?(request: import('../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/plugin-host.js').PluginRequest): Promise<unknown>;
   read?(): Promise<ClientReadResult>;
   status(): Promise<StatusSnapshot>;
   events(): Promise<EventsSnapshot>;

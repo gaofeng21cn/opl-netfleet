@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: Apache-2.0 */
 'use strict';
 'require baseclass';
 'require ui';
@@ -7,7 +7,7 @@
 'require netfleet.product as product';
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
-function disabled(controller) { return controller.busy || !controller.liveDataReady; }
+function disabled(controller) { return controller.busy || !controller.liveDataReady || controller.context?.readOnly; }
 function button(label, click, inactive, danger) {
 	return E('button', { 'class': 'btn cbi-button' + (danger ? ' cbi-button-negative' : ''), 'type': 'button', 'disabled': inactive || null, 'click': click }, label);
 }

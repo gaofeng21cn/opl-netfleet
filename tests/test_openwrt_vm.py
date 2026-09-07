@@ -2,6 +2,7 @@ from pathlib import Path
 import ast
 import http.client
 import http.server
+import importlib.util
 import json
 import os
 import re
@@ -26,6 +27,32 @@ RECOVERY = ROOT / "scripts" / "recover-openwrt-local.sh"
 
 
 class OpenWrtVmTests(unittest.TestCase):
+    def test_signed_plugin_fixtures_stage_real_sdk_payload_and_upgrade_hooks(self):
+        spec = importlib.util.spec_from_file_location("netfleet_plugin_fixtures", ROOT / "scripts/openwrt-vm/plugin-fixtures.py")
+        fixtures = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fixtures)
+        with tempfile.TemporaryDirectory(prefix="netfleet-fixture-stage-") as temporary:
+            root = Path(temporary)
+            for identity in ("device-info", "workspace-note"):
+                before = fixtures.stage_plugin(ROOT / "examples/plugins" / identity, root / f"{identity}-before", "0.1.0")
+                after = fixtures.stage_plugin(ROOT / "examples/plugins" / identity, root / f"{identity}-after", "0.1.1")
+                self.assertNotEqual(before["revision"], after["revision"])
+                self.assertIn("opl-netfleet-kernel", before["dependencies"])
+                for kind in ("pre-install", "post-install", "pre-deinstall", "post-deinstall", "pre-upgrade", "post-upgrade"):
+                    hook = before["scripts"][kind].read_text()
+                    self.assertIn(f"/usr/libexec/opl-netfleet-plugin-package {identity}", hook)
+                    if kind.endswith("upgrade"):
+                        self.assertIn("export PKG_UPGRADE=1", hook)
+                if identity == "workspace-note":
+                    for staged in (before, after):
+                        runtime = staged["payload"] / "usr/libexec/opl-netfleet/plugins/workspace-note"
+                        public = staged["payload"] / "www/luci-static/resources/netfleet/plugins/workspace-note"
+                        self.assertEqual((runtime / "resources/page.js").read_bytes(),
+                                         (public / staged["revision"] / "resources/page.js").read_bytes())
+                        self.assertFalse((public / "resources").exists())
+                    self.assertEqual((ROOT / "examples/plugins/workspace-note/lib/document.uc").read_bytes(),
+                                     (before["payload"] / "usr/libexec/opl-netfleet/plugins/workspace-note/lib/document.uc").read_bytes())
+
     def test_probe_serves_mihomo_head_and_business_get(self):
         snippet = RUNNER.read_text().split('python3 - "$work/local-probe-server.crt"', 1)[1]
         snippet = snippet.split("<<'PY' &\n", 1)[1].split('\nPY\n', 1)[0]

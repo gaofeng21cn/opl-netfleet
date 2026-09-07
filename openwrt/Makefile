@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet
-PKG_VERSION:=0.7.0
+PKG_VERSION:=0.8.0
 PKG_RELEASE:=1
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=OPL NetFleet
@@ -26,11 +26,13 @@ define Package/opl-netfleet-kernel
 endef
 
 define Package/opl-netfleet-kernel/install
-	$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/kernel $(1)/usr/share/opl-netfleet $(1)/etc/opl-netfleet
+	$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/kernel $(1)/usr/libexec/opl-netfleet/adapters $(1)/usr/libexec/rpcd $(1)/usr/share/opl-netfleet $(1)/etc/opl-netfleet
 	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet/main.uc $(1)/usr/libexec/opl-netfleet/main.uc
 	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet/supervisor.uc $(1)/usr/libexec/opl-netfleet/supervisor.uc
 	$(INSTALL_DATA) ./files/usr/libexec/opl-netfleet/kernel/*.uc $(1)/usr/libexec/opl-netfleet/kernel/
+	$(INSTALL_DATA) ./files/usr/libexec/opl-netfleet/adapters/*.uc $(1)/usr/libexec/opl-netfleet/adapters/
 	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet-plugin-package $(1)/usr/libexec/opl-netfleet-plugin-package
+	$(INSTALL_BIN) ./files/usr/libexec/rpcd/opl-netfleet.plugins $(1)/usr/libexec/rpcd/opl-netfleet.plugins
 	$(INSTALL_DATA) ./files/usr/share/opl-netfleet/LICENSE.Apache-2.0 $(1)/usr/share/opl-netfleet/LICENSE.Apache-2.0
 endef
 
@@ -320,7 +322,7 @@ fi
 exit 0
 endef
 
-define PluginFiles/platform
+define PluginFiles/platform-openwrt
 	$(INSTALL_DIR) $(1)/usr/share/opl-netfleet
 	$(INSTALL_DATA) ./files/etc/config/netfleet $(1)/usr/share/opl-netfleet/netfleet.config
 endef
@@ -368,6 +370,7 @@ endef
 define Package/opl-netfleet-plugin-$(1)/install
 	$$(INSTALL_DIR) $$(1)/usr/libexec/opl-netfleet/plugins/$(1)
 	$$(CP) ./files/usr/libexec/opl-netfleet/plugins/$(1)/. $$(1)/usr/libexec/opl-netfleet/plugins/$(1)/
+	python3 ./plugin_payload.py project ./files/usr/libexec/opl-netfleet/plugins/$(1) $$(1)/www
 $(call PluginFiles/$(1),$$(1))
 endef
 

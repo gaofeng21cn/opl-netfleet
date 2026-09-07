@@ -1,0 +1,46 @@
+.netfleet-workspace-note {
+  display: grid;
+  gap: 18px;
+  width: 100%;
+  max-width: 760px;
+  color: inherit;
+  font: inherit;
+  letter-spacing: 0;
+}
+.netfleet-workspace-note .note-toolbar,
+.netfleet-workspace-note .note-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.netfleet-workspace-note h2 { margin: 0; font-size: 20px; font-weight: 600; }
+.netfleet-workspace-note .note-toolbar { justify-content: space-between; }
+.netfleet-workspace-note label { display: grid; gap: 6px; font-size: 14px; }
+.netfleet-workspace-note input,
+.netfleet-workspace-note textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #92999f;
+  border-radius: 4px;
+  padding: 10px 12px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+}
+.netfleet-workspace-note textarea { resize: vertical; min-height: 180px; }
+.netfleet-workspace-note button {
+  box-sizing: border-box;
+  border: 1px solid #92999f;
+  border-radius: 4px;
+  padding: 8px 14px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.netfleet-workspace-note [data-refresh] { width: 36px; height: 36px; padding: 0; font-size: 22px; }
+.netfleet-workspace-note button:disabled { cursor: default; opacity: 0.5; }
+.netfleet-workspace-note :focus-visible { outline: 2px solid #14845b; outline-offset: 3px; }
+.netfleet-workspace-note output { min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+.netfleet-workspace-note .note-actions { align-items: start; }

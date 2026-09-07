@@ -1,16 +1,171 @@
 from pathlib import Path
+import hashlib
+import importlib.util
 import json
 import re
+import shutil
 import subprocess
+import tempfile
 import unittest
 
 
 ROOT = Path(__file__).parents[1]
 RUNTIME = ROOT / "openwrt" / "files" / "usr" / "libexec" / "opl-netfleet"
 LUCI = ROOT / "openwrt" / "luci-app-netfleet"
+PAYLOAD_SPEC = importlib.util.spec_from_file_location("netfleet_payload", ROOT / "openwrt/plugin_payload.py")
+PAYLOAD = importlib.util.module_from_spec(PAYLOAD_SPEC)
+PAYLOAD_SPEC.loader.exec_module(PAYLOAD)
 
 
 class MvpLayoutTests(unittest.TestCase):
+    def test_payload_revision_matches_runtime_directory_order_and_content(self):
+        with tempfile.TemporaryDirectory(prefix="netfleet-payload-revision-") as temporary:
+            root = Path(temporary)
+            (root / "a").mkdir()
+            (root / "a/leaf.txt").write_bytes(b"nested\n")
+            (root / "a.txt").write_bytes(b"sibling\n")
+            (root / "manifest.json").write_bytes(b'{}\n')
+            identities = b"".join(
+                f"{hashlib.sha256(content).hexdigest()}  {name}\n".encode("ascii")
+                for name, content in (("a/leaf.txt", b"nested\n"), ("a.txt", b"sibling\n"),
+                                      ("manifest.json", b'{}\n'))
+            )
+            revision = PAYLOAD.payload_revision(root)
+            self.assertEqual(hashlib.sha256(identities).hexdigest(), revision)
+            (root / "a.txt").chmod(0o755)
+            self.assertEqual(revision, PAYLOAD.payload_revision(root))
+            (root / "a/leaf.txt").write_bytes(b"updated\n")
+            self.assertNotEqual(revision, PAYLOAD.payload_revision(root))
+            (root / "a/link").symlink_to(root / "a.txt")
+            with self.assertRaises(ValueError):
+                PAYLOAD.payload_revision(root)
+
+    def test_luci_shell_and_product_ui_install_as_separate_packages(self):
+        with tempfile.TemporaryDirectory(prefix="netfleet-ui-layout-") as temporary:
+            root = Path(temporary)
+            (root / "include").mkdir()
+            (root / "rules.mk").touch()
+            (root / "include/package.mk").touch()
+            stage = root / "stage"
+            for source, package in ((ROOT / "openwrt", "opl-netfleet-plugin-product-ui"),
+                                    (LUCI, "luci-app-netfleet")):
+                harness = root / f"{package}.mk"
+                harness.write_text(
+                    "INSTALL_DIR:=mkdir -p\nINSTALL_DATA:=install -m 0644\nCP:=cp -R\n"
+                    "all:\n\t$(call Package/" + package + "/install," + str(stage) + ")\n")
+                subprocess.run([
+                    "make", "--no-print-directory", "-f", str(source / "Makefile"),
+                    "-f", str(harness), f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", "all",
+                ], cwd=source, capture_output=True, text=True, check=True)
+            public = stage / "www/luci-static/resources/netfleet"
+            self.assertEqual({"api.js", "plugin-host.js"}, {path.name for path in public.glob("*.js")})
+            product = RUNTIME / "plugins/product-ui/resources"
+            revision = PAYLOAD.payload_revision(product.parent)
+            installed_product = public / "plugins/product-ui" / revision / "resources"
+            self.assertEqual({path.relative_to(product): path.read_bytes()
+                              for path in product.rglob("*") if path.is_file()},
+                             {path.relative_to(installed_product): path.read_bytes()
+                              for path in installed_product.rglob("*") if path.is_file()})
+            self.assertFalse((public / "plugins/product-ui/resources").exists())
+            menu = json.loads((stage / "usr/share/luci/menu.d/luci-app-netfleet.json").read_text())
+            view = menu["admin/services/netfleet/overview"]["action"]["path"]
+            self.assertTrue((stage / f"www/luci-static/resources/view/{view}.js").is_file())
+            self.assertFalse((stage / "www/luci-static/resources/view/netfleet/overview.js").exists())
+
+    def test_kernel_package_installs_host_adapters(self):
+        with tempfile.TemporaryDirectory(prefix="netfleet-kernel-layout-") as temporary:
+            root = Path(temporary)
+            (root / "include").mkdir()
+            (root / "rules.mk").touch()
+            (root / "include/package.mk").touch()
+            harness = root / "install.mk"
+            harness.write_text(
+                "INSTALL_DIR:=mkdir -p\nINSTALL_BIN:=install -m 0755\nINSTALL_DATA:=install -m 0644\n"
+                "all:\n\t$(call Package/opl-netfleet-kernel/install," + str(root / "stage") + ")\n")
+            subprocess.run([
+                "make", "--no-print-directory", "-f", str(ROOT / "openwrt/Makefile"),
+                "-f", str(harness), f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", "all",
+            ], cwd=ROOT / "openwrt", capture_output=True, text=True, check=True)
+            installed = root / "stage/usr/libexec/opl-netfleet/adapters"
+            expected = {path.name: path.read_bytes() for path in (RUNTIME / "adapters").glob("*.uc")}
+            self.assertIn("openwrt.uc", expected)
+            self.assertEqual(expected, {path.name: path.read_bytes() for path in installed.glob("*.uc")})
+            self.assertEqual((ROOT / "openwrt/files/usr/libexec/rpcd/opl-netfleet.plugins").read_bytes(),
+                             (root / "stage/usr/libexec/rpcd/opl-netfleet.plugins").read_bytes())
+
+    def test_default_composition_preserves_lightweight_algorithm_installation(self):
+        script = ROOT / "openwrt/plugin-packages.py"
+        spec = importlib.util.spec_from_file_location("netfleet_package_composition", script)
+        package_composition = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(package_composition)
+        plugins, services, graph = package_composition.composition()
+
+        def closure(identity):
+            result = {identity}
+            for required in graph[identity]:
+                result.update(closure(required))
+            return result
+
+        algorithm = services["selection.algorithm"][0]
+        self.assertEqual({"selection-algorithm", "models"}, closure(algorithm))
+        self.assertFalse(any(plugins[name]["package_dependencies"] for name in closure(algorithm)))
+        self.assertIn(algorithm, graph["selection"])
+        self.assertEqual("platform-openwrt", services["platform.profile"][0])
+        self.assertEqual("platform-storage", services["platform.storage"][0])
+        self.assertFalse(plugins["platform"]["package_dependencies"])
+        self.assertNotIn("platform-openwrt", closure("platform-storage"))
+
+        system = json.loads(subprocess.check_output(["python3", str(script), "system"], text=True))
+        checked_in = json.loads((ROOT / "openwrt/files/usr/share/opl-netfleet/system.json").read_text())
+        self.assertEqual(checked_in, system)
+        self.assertEqual(set(plugins), set(system["enabled"]))
+        self.assertEqual({"opl-netfleet-kernel", *(plugin["package"] for plugin in plugins.values())},
+                         set(system["product_packages"]))
+
+    def test_default_package_installs_only_public_plugin_resources_to_web_root(self):
+        with tempfile.TemporaryDirectory(prefix="netfleet-package-layout-") as temporary:
+            root = Path(temporary)
+            (root / "include").mkdir()
+            (root / "rules.mk").touch()
+            (root / "include/package.mk").touch()
+            for name in ("Makefile", "plugin-packages.py", "plugin_payload.py"):
+                shutil.copyfile(ROOT / "openwrt" / name, root / name)
+            plugin = root / "files/usr/libexec/opl-netfleet/plugins/layout-test"
+            (plugin / "lib").mkdir(parents=True)
+            (plugin / "config").mkdir()
+            (plugin / "resources/nested").mkdir(parents=True)
+            (plugin / "manifest.json").write_text(json.dumps({
+                "schema": "opl-netfleet-service-plugin.v1", "id": "layout-test",
+                "package": "opl-netfleet-plugin-layout-test", "version": "1.0.0",
+                "label": "Package layout fixture", "api_version": 1,
+                "services": {"layout-test.reader": {
+                    "version": 1, "module": "lib/private.uc", "requires": {},
+                }}, "commands": {}, "package_dependencies": [],
+            }))
+            (plugin / "lib/private.uc").write_text("return function(context) { return {}; };\n")
+            (plugin / "config/private.json").write_text('{"private":true}\n')
+            (plugin / "resources/page.js").write_text('export default {};\n')
+            (plugin / "resources/nested/page.css").write_text('body { color: black; }\n')
+            harness = root / "install.mk"
+            harness.write_text(
+                "INSTALL_DIR:=mkdir -p\nCP:=cp -R\n"
+                "all:\n\t$(call Package/opl-netfleet-plugin-layout-test/install," + str(root / "stage") + ")\n")
+            subprocess.run([
+                "make", "--no-print-directory", "-f", str(root / "Makefile"),
+                "-f", str(harness), f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", "all",
+            ], cwd=root, capture_output=True, text=True, check=True)
+            runtime = root / "stage/usr/libexec/opl-netfleet/plugins/layout-test"
+            plugin_public = root / "stage/www/luci-static/resources/netfleet/plugins/layout-test"
+            public = plugin_public / PAYLOAD.payload_revision(runtime)
+            self.assertTrue((runtime / "lib/private.uc").is_file())
+            self.assertTrue((runtime / "config/private.json").is_file())
+            self.assertEqual({Path("resources/page.js"), Path("resources/nested/page.css")}, {
+                path.relative_to(public) for path in public.rglob("*") if path.is_file()
+            })
+            self.assertEqual((plugin / "resources/page.js").read_bytes(),
+                             (public / "resources/page.js").read_bytes())
+            self.assertFalse((plugin_public / "resources").exists())
+
     def test_required_runtime_surfaces_exist_without_a_second_worker(self):
         required = (
             RUNTIME / "main.uc",
@@ -220,27 +375,8 @@ class MvpLayoutTests(unittest.TestCase):
         rpcd = (
             ROOT / "openwrt" / "files" / "usr" / "libexec" / "rpcd" / "opl-netfleet"
         ).read_text()
-        api = (
-            ROOT
-            / "openwrt"
-            / "luci-app-netfleet"
-            / "htdocs"
-            / "luci-static"
-            / "resources"
-            / "netfleet"
-            / "api.js"
-        ).read_text()
-        overview = (
-            ROOT
-            / "openwrt"
-            / "luci-app-netfleet"
-            / "htdocs"
-            / "luci-static"
-            / "resources"
-            / "view"
-            / "netfleet"
-            / "overview.js"
-        ).read_text()
+        api = (RUNTIME / "plugins/product-ui/resources/api.js").read_text()
+        overview = (RUNTIME / "plugins/product-ui/resources/product-pages.js").read_text()
 
         self.assertIn("startup_grace_seconds: configured.startup_grace_seconds ?? 120", policy)
         self.assertIn("runtime_grace_seconds: configured.runtime_grace_seconds ?? 45", policy)
@@ -248,7 +384,7 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertIn('"dns_ingress_unavailable"', supervisor)
         self.assertIn("lan_runtime?.dns_ready == true", supervisor)
         self.assertIn('if (run_owner("recover", reason)) unhealthy_since = null', supervisor)
-        self.assertIn("network_lock(NETWORK_LOCK, true)", host)
+        self.assertIn("options.adapter.network_lock(options.network_lock, true)", host)
         self.assertNotIn("flock -n", supervisor)
         self.assertIn("result(30000)", supervisor)
         self.assertIn("result(config.poll_interval_seconds * 1000)", supervisor)
@@ -300,16 +436,7 @@ class MvpLayoutTests(unittest.TestCase):
                 / "overview.js"
             ).is_file()
         )
-        self.assertTrue(
-            (
-                LUCI
-                / "htdocs"
-                / "luci-static"
-                / "resources"
-                / "netfleet"
-                / "config.js"
-            ).is_file()
-        )
+        self.assertTrue((RUNTIME / "plugins/product-ui/resources/config.js").is_file())
         package_makefiles = (ROOT / "openwrt" / "Makefile").read_text() + (
             LUCI / "Makefile"
         ).read_text()
@@ -335,9 +462,7 @@ class MvpLayoutTests(unittest.TestCase):
             acl["luci-app-netfleet"]["read"]["ubus"]["opl-netfleet"],
         )
 
-        native_style = (
-            LUCI / "htdocs" / "luci-static" / "resources" / "netfleet" / "native.css"
-        ).read_text()
+        native_style = (RUNTIME / "plugins/product-ui/resources/native.css").read_text()
         pagination_rule = re.search(
             r"\.netfleet-native\s+\.netfleet-event-pagination\s*\{([^}]*)\}",
             native_style,
@@ -373,19 +498,11 @@ class MvpLayoutTests(unittest.TestCase):
         )
 
     def test_native_luci_uses_display_cache_then_revalidates_once(self):
-        overview = (
-            LUCI
-            / "htdocs"
-            / "luci-static"
-            / "resources"
-            / "view"
-            / "netfleet"
-            / "overview.js"
-        )
+        overview = RUNTIME / "plugins/product-ui/resources/product-pages.js"
         harness = r"""
 const assert = require('assert');
 const fs = require('fs');
-const source = fs.readFileSync(process.argv[1], 'utf8');
+const source = fs.readFileSync(process.argv[1], 'utf8').split('return baseclass.extend({\n\tmount:')[0] + '\nreturn productController;';
 
 function E(tag, attrs, children) {
     const node = {
@@ -513,9 +630,9 @@ function createPage(storage, api, notifications) {
     api.dashboardGet = function() { return Promise.resolve({ available: true, port: 9090, protocol: 'http', ui_name: 'zashboard', secret: 'private-secret' }); };
     const managementLoads = [];
     const management = { load: function(_, section) { managementLoads.push(section); return Promise.resolve(); }, maintenance: function() { return null; }, dashboard: function() { return null; } };
-    const productSource = fs.readFileSync(require('path').resolve(require('path').dirname(process.argv[1]), '../../netfleet/product.js'), 'utf8');
+    const productSource = fs.readFileSync(require('path').resolve(require('path').dirname(process.argv[1]), 'product.js'), 'utf8');
     const product = new Function('baseclass', 'E', productSource)({ extend: value => value }, E);
-    const factory = new Function('view', 'ui', 'managed', 'management', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', 'compatibility', 'poll', 'product', source);
+    const factory = new Function('view', 'ui', 'managed', 'management', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', 'compatibility', 'poll', 'product', 'resourceUrl', source);
     const page = factory(view, ui, managed, management, api, netfleetConfig, E, {
         resource: function(value) { return value; },
         url: function(value) { return '/cgi-bin/luci/' + value; }
@@ -524,7 +641,10 @@ function createPage(storage, api, notifications) {
         assert.strictEqual(parsed.hostname, 'router.example');
         assert.strictEqual(parsed.pathname, '/ui/zashboard/');
         assert.strictEqual(parsed.searchParams.get('secret'), 'private-secret');
-    } }, close: function() {} }; } }, document, { refresh: () => Promise.resolve(), label: () => '未安装' }, { add: () => {} }, product);
+    } }, close: function() {} }; } }, document, { refresh: () => Promise.resolve(), label: () => '未安装' }, { add: () => {} }, product, name => 'resources/' + name + '?v=revision-1');
+    page.pageId = 'overview';
+    page.navigated = null;
+    page.context = { signal: new AbortController().signal, navigate(id) { page.navigated = id; } };
     page.styleLink = styleLink;
     page.dashboardOpens = function() { return dashboardOpens; };
     page.managementLoads = managementLoads;
@@ -565,7 +685,7 @@ function createPage(storage, api, notifications) {
     assert.strictEqual(initialResolved, true, 'cached load must not wait for RPC');
     const root = page.render(await initialPromise);
     assert(nodeText(root.children[0]).includes('NetFleet v0.3.0 · aaaaaaa'));
-    assert.strictEqual(page.styleLink.attrs.href, 'netfleet/native.css');
+    assert.strictEqual(page.styleLink.attrs.href, 'resources/native.css?v=revision-1');
     assert.strictEqual(page.liveDataReady, false);
     assert(nodeText(root).includes('缓存数据，正在更新'));
     assert(nodeText(root).includes('NetFleet 当前未接管，机场和地区的实时可用性未测量'));
@@ -594,9 +714,7 @@ function createPage(storage, api, notifications) {
     assert.strictEqual(dashboardUrl.pathname, '/ui/zashboard/');
     assert.strictEqual(dashboardUrl.hash, '#/setup', 'saved backend credentials must not bypass the new connection');
     const tabs = findNode(root, function(node) { return node.tag === 'ul' && node.attrs.class === 'cbi-tabmenu'; });
-    assert.strictEqual(tabs.children.length, 7);
-    assert(nodeText(tabs.children[5]).includes('组件与更新'));
-    assert(!nodeText(tabs).includes('Zashboard'), 'external tool must not be an internal tab');
+    assert.strictEqual(tabs, null, 'plugin pages delegate navigation to the shell');
     assert.strictEqual(dashboardUrl.searchParams.get('secret'), 'private-secret');
     assert.strictEqual(runtimeEntry.attrs.target, '_blank');
     assert.strictEqual(runtimeEntry.attrs.rel, 'noopener');
@@ -630,7 +748,7 @@ function createPage(storage, api, notifications) {
     page.status.regions = [ { id: 'hk', display_name: '🇭🇰 香港' } ];
     page.currentView = 'exits';
     page.redraw();
-    const runningMetrics = findNode(root.children[2], function(node) {
+    const runningMetrics = findNode(root.children[1], function(node) {
         return node.tag === 'div' && String(node.attrs.class || '').includes('netfleet-metrics is-five');
     });
     assert(runningMetrics && runningMetrics.children.length === 5, 'running metrics must use the balanced five-item layout');
@@ -639,8 +757,8 @@ function createPage(storage, api, notifications) {
     assert(nodeText(root).includes('Netflix'));
 	assert(nodeText(root).includes('Steam'));
 	assert(!nodeText(root).includes('接管的原始策略组'));
-	assert(String(root.children[3].attrs.class).includes('netfleet-source'), 'data source must follow page content');
-	assert(String(root.children[4].attrs.class).includes('cbi-page-actions'), 'actions must follow data source');
+	assert(String(root.children[2].attrs.class).includes('netfleet-source'), 'data source must follow page content');
+	assert(String(root.children[3].attrs.class).includes('cbi-page-actions'), 'actions must follow data source');
 
 	page.status.providers = [ {
 		id: 'primary', display_name: 'Alpha 正式机场', subscription_section: 'primary', selected: true,
@@ -661,14 +779,14 @@ function createPage(storage, api, notifications) {
 	} ];
 	page.currentView = 'providers';
 	page.redraw();
-	const providerPageText = nodeText(root.children[2]);
+	const providerPageText = nodeText(root.children[1]);
 	assert(providerPageText.includes('1 / 1 正常'));
 	assert(providerPageText.includes('资源数：当前可用 / 已加载'));
 	assert(providerPageText.includes('47/50 节点 · 订阅 52 条'));
 	assert(!providerPageText.includes('3/4 节点'));
 	assert(providerPageText.includes('缓存已更新'));
 	assert(providerPageText.includes('管理订阅'));
-	const subscriptionLink = findNode(root.children[2], function(node) {
+	const subscriptionLink = findNode(root.children[1], function(node) {
 		return node.tag === 'button' && nodeText(node) === '管理订阅';
 	});
 	assert(subscriptionLink && subscriptionLink.attrs.class === 'netfleet-inline-link');
@@ -721,9 +839,8 @@ function createPage(storage, api, notifications) {
 	let connectionReads = 0;
 	page.refreshConnections = function() { connectionReads++; };
 	findNode(root, node => node.tag === 'button' && nodeText(node) === '事件与诊断').attrs.click();
-	assert.strictEqual(page.currentView, 'events');
-	assert.deepStrictEqual(page.managementLoads, ['maintenance']);
-	assert.strictEqual(connectionReads, 1, 'detail navigation must load the event page dependencies');
+	assert.strictEqual(page.navigated, 'events');
+	assert.strictEqual(connectionReads, 0, 'new plugin page owns its own reads');
 	page.refreshConnections = refreshConnections;
 	page.status.regions = [
 		{ id: 'hk', display_name: 'HK 香港', selected: true, available_count: 1, available_provider_count: 1 },
@@ -738,15 +855,15 @@ function createPage(storage, api, notifications) {
 
 	page.currentView = 'events';
     page.redraw();
-    const eventPageText = nodeText(root.children[2]);
+    const eventPageText = nodeText(root.children[1]);
     assert(eventPageText.indexOf('选路事件') < eventPageText.indexOf('诊断状态'));
     assert(eventPageText.indexOf('诊断状态') < eventPageText.indexOf('当前活动连接'));
     assert(!eventPageText.includes('当前规则命中链'));
-    const diagnosticMetrics = findNode(root.children[2], function(node) {
+    const diagnosticMetrics = findNode(root.children[1], function(node) {
         return node.tag === 'div' && String(node.attrs.class || '') === 'netfleet-metrics';
     });
     assert(diagnosticMetrics && diagnosticMetrics.children.length === 4, 'diagnostic metrics must contain only four live states');
-    const diagnosticNote = findNode(root.children[2], function(node) {
+    const diagnosticNote = findNode(root.children[1], function(node) {
         return node.tag === 'div' && String(node.attrs.class || '').includes('netfleet-diagnostic-note');
     });
     assert(diagnosticNote && nodeText(diagnosticNote).includes('原始日志：临时窗口'));
@@ -802,14 +919,7 @@ function createPage(storage, api, notifications) {
         self.assertEqual(0, result.returncode, result.stderr)
 
     def test_native_luci_config_renders_real_regions_and_owner_actions(self):
-        config_module = (
-            LUCI
-            / "htdocs"
-            / "luci-static"
-            / "resources"
-            / "netfleet"
-            / "config.js"
-        )
+        config_module = RUNTIME / "plugins/product-ui/resources/config.js"
         harness = r"""
 const assert = require('assert');
 const fs = require('fs');

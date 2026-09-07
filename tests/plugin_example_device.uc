@@ -9,7 +9,7 @@ for (let name in ["manifest.json", "control", "LICENSE"]) {
 	fs.chmod(`${root}/${name}`, name == "control" ? 0755 : 0644);
 }
 const request = "/tmp/netfleet-plugin-example-request.json";
-const rpc = "/tmp/openwrt/files/usr/libexec/rpcd/opl-netfleet";
+const rpc = "/tmp/openwrt/files/usr/libexec/rpcd/opl-netfleet.plugins";
 function call(method, action, revision) {
 	fs.writefile(request, sprintf("%J", { request: { id: "device-info", action: action, revision: revision, confirm: true } }));
 	fs.chmod(request, 0600);

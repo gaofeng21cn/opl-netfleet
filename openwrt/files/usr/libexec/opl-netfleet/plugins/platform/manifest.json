@@ -1,8 +1,8 @@
 {
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "platform",
-  "label": "OpenWrt platform",
-  "version": "0.7.0",
+  "label": "Platform runtime and process",
+  "version": "0.8.0",
   "api_version": 1,
   "package": "opl-netfleet-plugin-platform",
   "services": {
@@ -11,27 +11,10 @@
       "module": "lib/runtime.uc",
       "requires": {}
     },
-    "platform.files": {
-      "version": 1,
-      "module": "lib/files.uc",
-      "requires": {
-        "platform.storage": 1
-      }
-    },
     "platform.service": {
       "version": 1,
       "module": "lib/service.uc",
       "requires": {}
-    },
-    "platform.documents": {
-      "version": 1,
-      "module": "lib/documents.uc",
-      "requires": {
-        "models.evidence": 1,
-        "models.policy": 1,
-        "platform.paths": 1,
-        "platform.storage": 1
-      }
     },
     "platform.paths": {
       "version": 1,
@@ -42,47 +25,8 @@
       "version": 1,
       "module": "lib/process.uc",
       "requires": {}
-    },
-    "platform.storage": {
-      "version": 1,
-      "module": "lib/storage.uc",
-      "requires": {
-        "platform.process": 1
-      }
-    },
-    "platform.profile": {
-      "version": 1,
-      "module": "lib/profile.uc",
-      "requires": {
-        "platform.runtime": 1,
-        "platform.process": 1
-      }
-    },
-    "platform.credentials": {
-      "version": 1,
-      "module": "lib/credentials.uc",
-      "requires": {
-        "platform.runtime": 1
-      }
-    },
-    "platform.device": {
-      "version": 1,
-      "module": "lib/device.uc",
-      "requires": {}
-    },
-    "platform.subscriptions": {
-      "version": 1,
-      "module": "lib/subscriptions.uc",
-      "requires": {
-        "platform.runtime": 1,
-        "models.subscriptions": 1
-      }
     }
   },
   "commands": {},
-  "package_dependencies": [
-    "ucode-mod-uci",
-    "yq",
-    "ip-full"
-  ]
+  "package_dependencies": []
 }

@@ -7,9 +7,9 @@ import { EventsView } from '../views/EventsView';
 import { eventDelay, eventResult, latestDecision } from './format';
 import type { DecisionEvent, EventsSnapshot } from '../types';
 
-const nativeSource = readFileSync(new URL('../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/view/netfleet/overview.js', import.meta.url), 'utf8');
-const native = new Function('E', nativeSource.replace('return view.extend({',
-  'return { latestDecision, eventResult, eventDelay, overviewDigest, eventsPage };\nview.extend({'))(
+const nativeSource = readFileSync(new URL('../../../openwrt/files/usr/libexec/opl-netfleet/plugins/product-ui/resources/product-pages.js', import.meta.url), 'utf8');
+const native = new Function('E', nativeSource.split('const productController = {')[0] +
+  'return { latestDecision, eventResult, eventDelay, overviewDigest, eventsPage };')(
   (tag: string, attrs: object, children: unknown) => ({ tag, attrs, children }),
 );
 const status = fixtureScenarios.healthy.status;

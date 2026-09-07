@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "selection",
   "label": "Automatic selection",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "api_version": 1,
   "package": "opl-netfleet-plugin-selection",
   "services": {
@@ -41,13 +41,6 @@
         "platform.profile": 1,
         "platform.credentials": 1,
         "platform.paths": 1
-      }
-    },
-    "selection.algorithm": {
-      "version": 1,
-      "module": "lib/algorithm.uc",
-      "requires": {
-        "models.policy": 1
       }
     }
   },

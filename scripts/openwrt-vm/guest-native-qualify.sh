@@ -68,6 +68,9 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
 cp /tmp/openwrt/files/usr/libexec/opl-netfleet-plugin-package /usr/libexec/
 chmod 0755 /usr/libexec/opl-netfleet-plugin-package
+mkdir -p /usr/libexec/rpcd
+cp /tmp/openwrt/files/usr/libexec/rpcd/opl-netfleet.plugins /usr/libexec/rpcd/opl-netfleet.plugins
+chmod 0755 /usr/libexec/rpcd/opl-netfleet.plugins
 mkdir -p /usr/share/opl-netfleet /etc/opl-netfleet/native/profiles /etc/opl-netfleet/native/subscriptions
 cp -R /tmp/openwrt/files/usr/share/opl-netfleet/. /usr/share/opl-netfleet/
 cp /tmp/openwrt/files/etc/config/netfleet /etc/config/netfleet

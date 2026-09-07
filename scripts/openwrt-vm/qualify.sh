@@ -141,10 +141,12 @@ fetch_asset "$mihomo_name" "$mihomo_sha" "$mihomo_url"
 fetch_asset "$yq_name" "$yq_sha" "$yq_url"
 tar -cf "$work/runtime-source.tar" -C "$workspace" \
 	openwrt/Makefile \
+	openwrt/plugin_payload.py \
 	openwrt/https-compat \
 	openwrt/files/usr/libexec/opl-netfleet \
 	openwrt/files/usr/libexec/opl-netfleet-plugin-package \
 	openwrt/files/usr/libexec/rpcd/opl-netfleet \
+	openwrt/files/usr/libexec/rpcd/opl-netfleet.plugins \
 	openwrt/luci-app-netfleet/root/usr/share/rpcd/acl.d/luci-app-netfleet.json \
 	openwrt/files/etc/init.d/opl-netfleet \
 	openwrt/files/etc/init.d/opl-netfleet-core \

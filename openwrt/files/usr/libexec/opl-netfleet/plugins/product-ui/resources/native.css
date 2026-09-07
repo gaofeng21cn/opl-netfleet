@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 .netfleet-native {
 	--nf-accent: var(--primary, var(--primary-color-high, #5e72e4));
 	--nf-accent-soft: var(--primary-color-low, rgba(94, 114, 228, 0.10));

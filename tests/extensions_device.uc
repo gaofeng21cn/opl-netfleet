@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
-const host = create("/usr/libexec/opl-netfleet");
+import { create as create_adapter } from "/usr/libexec/opl-netfleet/adapters/openwrt.uc";
+const host = create("/usr/libexec/opl-netfleet", { adapter: create_adapter() });
 const compatibility = host.use("https-compat.control");
 const dashboard = host.use("dashboard.control");
 const descriptor_error = host.use("models.extensions").descriptor_error;

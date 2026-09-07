@@ -170,8 +170,9 @@ cat >/etc/nikki/mixin.yaml <<'EOF'
 EOF
 ucode -e '
 	import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
+	import { create as create_adapter } from "/usr/libexec/opl-netfleet/adapters/openwrt.uc";
 	import { writefile } from "fs";
-	const host = create("/usr/libexec/opl-netfleet");
+	const host = create("/usr/libexec/opl-netfleet", { adapter: create_adapter() });
 	const read_yaml = host.use("platform.storage").read_yaml;
 	const source = read_yaml(ARGV[0], true);
 	source.hosts = { "netfleet-probe.test": "192.168.1.2", "www.gstatic.com": "192.168.1.2" };
@@ -266,7 +267,8 @@ assert_json "$work/native-probe-result.json" '@.ok' true
 test "$(digest /etc/nikki/run/ui/index.html)" = "$(digest /etc/opl-netfleet/native/run/ui/index.html)"
 ucode -e '
 	import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
-	const host = create("/usr/libexec/opl-netfleet");
+	import { create as create_adapter } from "/usr/libexec/opl-netfleet/adapters/openwrt.uc";
+	const host = create("/usr/libexec/opl-netfleet", { adapter: create_adapter() });
 	const read_yaml = host.use("platform.storage").read_yaml;
 	const read_json = host.use("platform.storage").read_json;
 	for (let section in ["base", "alpha", "beta"]) {

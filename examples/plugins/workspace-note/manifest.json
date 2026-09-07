@@ -1,0 +1,25 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "workspace-note",
+  "label": "Workspace note",
+  "version": "0.1.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-workspace-note",
+  "package_dependencies": ["ucode-mod-fs"],
+  "services": {
+    "workspace-note.document": {
+      "version": 1,
+      "module": "lib/document.uc",
+      "requires": {}
+    }
+  },
+  "commands": {
+    "workspace-note": {"service": "workspace-note.document", "method": "inspect", "access": "read"}
+  },
+  "actions": {
+    "config-get": {"service": "workspace-note.document", "method": "read", "access": "read"},
+    "config-set": {"service": "workspace-note.document", "method": "save", "access": "write"}
+  },
+  "configuration": {"read": "config-get", "write": "config-set"},
+  "ui": [{"id": "note", "title": "Workspace note", "module": "resources/page.js"}]
+}

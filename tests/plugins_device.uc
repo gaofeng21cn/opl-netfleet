@@ -1,12 +1,13 @@
 import * as fs from "fs";
 import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
+import { create as create_adapter } from "/usr/libexec/opl-netfleet/adapters/openwrt.uc";
 
 function check(value, message) { if (!value) die(message); };
 check(fs.stat("/tmp/netfleet-native-vm-authorized") != null, "isolated VM authorization required");
 const root = "/usr/libexec/opl-netfleet/plugins", id = "vm-test", directory = `${root}/${id}`;
 const request = "/tmp/netfleet-plugin-test-request.json", state = "/tmp/netfleet-plugin-test-loaded";
 function inventory() {
-	const host = create("/usr/libexec/opl-netfleet");
+	const host = create("/usr/libexec/opl-netfleet", { adapter: create_adapter() });
 	const rows = host.inventory(null);
 	host.release();
 	return rows;

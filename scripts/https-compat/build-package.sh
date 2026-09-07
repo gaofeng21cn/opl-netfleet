@@ -34,6 +34,7 @@ cp -R "$work/openwrt/https-compat" "$sdk/package/$package"
 mkdir -p "$sdk/package/opl-netfleet"
 cp "$work/openwrt/Makefile" "$sdk/package/opl-netfleet/"
 cp "$work/openwrt/plugin-packages.py" "$sdk/package/opl-netfleet/"
+cp "$work/openwrt/plugin_payload.py" "$sdk/package/opl-netfleet/"
 cp -R "$work/openwrt/files" "$sdk/package/opl-netfleet/"
 cp -R "$work/openwrt/mihomo-meta" "$sdk/package/mihomo-meta"
 (cd "$sdk" && ./scripts/feeds install -p base openssl ca-bundle)

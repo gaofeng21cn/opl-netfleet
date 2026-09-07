@@ -1,0 +1,19 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "selection-algorithm",
+  "label": "Selection algorithms",
+  "version": "0.8.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-selection-algorithm",
+  "services": {
+    "selection.algorithm": {
+      "version": 1,
+      "module": "lib/algorithm.uc",
+      "requires": {
+        "models.policy": 1
+      }
+    }
+  },
+  "commands": {},
+  "package_dependencies": []
+}

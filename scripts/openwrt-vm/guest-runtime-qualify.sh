@@ -533,7 +533,7 @@ done
 run_timed onboarding_disable run_locked /var/lock/opl-netfleet-deploy.lock ucode "$main" disable vm
 [ "$(uci -q get nikki.config.profile)" = subscription:base ]
 assert_controller onboarding_after_disable
-ucode -e 'import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc"; const host = create("/usr/libexec/opl-netfleet"); exit(host.use("mihomo.backend").remove_artifact() ? 0 : 1)'
+ucode -e 'import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc"; import { create as create_adapter } from "/usr/libexec/opl-netfleet/adapters/openwrt.uc"; const host = create("/usr/libexec/opl-netfleet", { adapter: create_adapter() }); exit(host.use("mihomo.backend").remove_artifact() ? 0 : 1)'
 rm -f /etc/opl-netfleet/policy.json /etc/opl-netfleet/evidence.json
 cp "$work/manual-policy.json" /etc/opl-netfleet/policy.json
 
@@ -554,7 +554,7 @@ stage=connections_readback
 run_timed connections ucode "$main" connections
 [ "$(jsonfilter -i "$work/connections.json" -e '@.result.count')" -ge 0 ]
 ! grep -Eq '"(id|sourceIP|source_ip|process|upload|download)"[[:space:]]*:' "$work/connections.json"
-projected_port=$(ucode -e 'import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc"; const host = create("/usr/libexec/opl-netfleet"); print(host.use("mihomo.controller").project_connections({ connections: [{ metadata: { destinationIP: "198.51.100.1", destinationPort: "443" } }] }, 1).connections[0].destination_port)')
+projected_port=$(ucode -e 'import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc"; import { create as create_adapter } from "/usr/libexec/opl-netfleet/adapters/openwrt.uc"; const host = create("/usr/libexec/opl-netfleet", { adapter: create_adapter() }); print(host.use("mihomo.controller").project_connections({ connections: [{ metadata: { destinationIP: "198.51.100.1", destinationPort: "443" } }] }, 1).connections[0].destination_port)')
 [ "$projected_port" = 443 ]
 
 stage=config_inactive
@@ -621,7 +621,8 @@ automatic_group=$(jsonfilter -i /etc/nikki/profiles/opl-netfleet/mvp.manifest.js
 latest_history_time() {
 	ucode -e '
 		import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
-		const host = create("/usr/libexec/opl-netfleet");
+		import { create as create_adapter } from "/usr/libexec/opl-netfleet/adapters/openwrt.uc";
+		const host = create("/usr/libexec/opl-netfleet", { adapter: create_adapter() });
 		const proxies = host.use("mihomo.controller").proxies;
 		const state = proxies("netfleet-vm-fixture", 2);
 		const history = state?.proxies?.[ARGV[0]]?.history ?? [];
@@ -632,7 +633,8 @@ direct_history_before=$(latest_history_time DIRECT)
 guard_history_before=$(latest_history_time "$direct_guard")
 ucode -e '
 	import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
-	const host = create("/usr/libexec/opl-netfleet");
+	import { create as create_adapter } from "/usr/libexec/opl-netfleet/adapters/openwrt.uc";
+	const host = create("/usr/libexec/opl-netfleet", { adapter: create_adapter() });
 	const measure = host.use("mihomo.latency").measure;
 	const group = ARGV[0];
 	const guard = ARGV[1];

@@ -4,7 +4,7 @@ import { diagnose, targetHost } from './diagnosis';
 import { fixtureScenarios } from '../data/fixtures';
 import type { ConnectionsSnapshot } from '../types';
 
-const code = readFileSync(new URL('../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/product.js', import.meta.url), 'utf8');
+const code = readFileSync(new URL('../../../openwrt/files/usr/libexec/opl-netfleet/plugins/product-ui/resources/product.js', import.meta.url), 'utf8');
 const native = new Function('baseclass', code)({ extend: (value: unknown) => value });
 const status = structuredClone(fixtureScenarios.healthy.status);
 const connections: ConnectionsSnapshot = { count: 4, truncated: true, read_at: 100,

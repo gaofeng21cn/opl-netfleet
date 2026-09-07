@@ -135,11 +135,13 @@ source_dir=$work_dir/source
 mkdir -p "$source_dir"
 git -C "$repo_dir" archive "$source_commit" \
 	openwrt/Makefile \
+	openwrt/plugin_payload.py \
 	openwrt/mihomo-meta/source.json \
 	openwrt/https-compat \
 	openwrt/files/usr/libexec/opl-netfleet \
 	openwrt/files/usr/libexec/opl-netfleet-plugin-package \
 	openwrt/files/usr/libexec/rpcd/opl-netfleet \
+	openwrt/files/usr/libexec/rpcd/opl-netfleet.plugins \
 	openwrt/luci-app-netfleet/root/usr/share/rpcd/acl.d/luci-app-netfleet.json \
 	openwrt/files/etc/init.d/opl-netfleet \
 	openwrt/files/etc/init.d/opl-netfleet-core \

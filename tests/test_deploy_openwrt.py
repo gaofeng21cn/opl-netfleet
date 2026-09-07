@@ -809,6 +809,12 @@ class DeployOpenWrtTests(unittest.TestCase):
                 print("'luci' @fixture")
                 print('\t"getFeatures":{}')
                 sys.exit(0)
+            if args == ["-v", "list", "opl-netfleet.plugins"]:
+                if not (state / "rpcd-registered").exists():
+                    sys.exit(1)
+                for method in ("plugins_list", "plugin_read", "plugin_call"):
+                    print(f'\t"{method}":{{}}')
+                sys.exit(0)
             if args != ["-v", "list", "opl-netfleet"]:
                 sys.exit(1)
             root = Path(os.environ["OPL_NETFLEET_DEPLOY_ROOT"])
@@ -1347,10 +1353,13 @@ esac
             f"{plugin_path}/retired-feature/manifest.json": '{"id":"retired-feature","version":"1.0.0"}\n',
             f"{plugin_path}/third-party/manifest.json": '{"id":"third-party","version":"2.0.0"}\n',
             f"{plugin_path}/third-party/worker.uc": "third-party-code\n",
+            "www/luci-static/resources/netfleet/plugins/third-party/revision-1/resources/page.js": "export const version = 1;\n",
+            "www/luci-static/resources/netfleet/plugins/third-party/revision-1/resources/lib/helper.js": "export const label = 'helper';\n",
             "etc/opl-netfleet/system.json": '{"enabled":{"third-party":true}}\n',
             "var/lib/opl-netfleet/plugins/third-party/state.json": '{"value":42}\n',
         }
         candidate = {
+            "usr/libexec/rpcd/opl-netfleet.plugins": "#!/bin/sh\nexit 0\n",
             system_path: json.dumps({
                 "enabled": {"models": True},
                 "product_packages": ["opl-netfleet-plugin-models"],
@@ -1362,6 +1371,8 @@ esac
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(content)
+                if relative == "usr/libexec/rpcd/opl-netfleet.plugins":
+                    path.chmod(0o755)
         paths = sorted(item for item in payload.rglob("*") if item.is_file())
         lines = [f"{sha256(path)}  {path.relative_to(payload)}\n" for path in paths]
         (self.bundle / "FILES.sha256").write_text("".join(lines))

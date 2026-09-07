@@ -7,6 +7,9 @@ runtime_dir=$root_dir/openwrt/files/usr/libexec/opl-netfleet
 if command -v ucode >/dev/null 2>&1; then
 	ucode -c -s -o /tmp/opl-netfleet-main.uc "$runtime_dir/main.uc"
 	rm -f /tmp/opl-netfleet-main.uc
+	ucode "$root_dir/tests/scope_contract.uc"
+	ucode "$root_dir/tests/host_adapter_contract.uc"
+	ucode "$root_dir/tests/composition_contract.uc"
 	ucode "$root_dir/tests/compiler_contract.uc"
 	ucode "$root_dir/tests/selection_contract.uc"
 	ucode "$root_dir/tests/portable_services_contract.uc"

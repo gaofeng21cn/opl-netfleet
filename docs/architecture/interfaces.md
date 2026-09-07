@@ -1,15 +1,19 @@
 # 公开接口与 UI
 
-本文是 NetFleet 当前 RPC、状态投影、React 本地参考面、原生 LuCI 页面和浏览器缓存边界的
+本文是 NetFleet 当前 RPC、状态投影、插件页面宿主、React 本地参考面和浏览器缓存边界的
 权威合同。视觉语言由 [UI 设计合同](../design/ui.md)负责，服务绑定与命令路由由
 [微内核合同](microkernel.md)负责。
 
 ## 原生接入与管理
 
-功能服务插件和进程插件统一使用 `plugins_list`、`plugin_read`、`plugin_call`。清单只发现安装文件，读取和写入
-分别授权；请求为 `{request:{id,action,revision?,confirm?,params?}}`，写入必须携带当前
-revision 和明确确认。组件页管理已安装插件的加载、重载、退出，以及进程插件声明的自定义动作。
-服务插件的业务动作由 manifest 命令绑定到对应服务方法，沿用现有 CLI/RPC 名称。
+功能服务插件和进程插件统一使用内核自带 `opl-netfleet.plugins` ubus 对象的
+`plugins_list`、`plugin_read`、`plugin_call`。清单只发现安装文件，读取和写入分别授权；
+请求为 `{request:{id,action,instance?,revision?,confirm?,params?}}`，写入必须携带当前
+revision 和明确确认。组件页管理已安装插件的加载、重载、退出及声明的自定义动作。
+服务插件的 `actions` 将业务动作绑定到本插件服务方法，进程插件由 `control` 执行动作。
+`configuration` 引用自身配置动作，`ui` 贡献页面；清单按已配置实例投影这些声明，
+浏览器不能提交模块路径或即时绑定。默认产品既有业务 RPC 继续由功能插件在
+`opl-netfleet` 对象提供，通用插件管理不依赖该业务对象。
 状态与私有配置由插件持有；进程插件回读 loaded/ready，服务插件回读启用状态与绑定依赖是否可用。
 包管理器专用 `plugin-drain` 与 `plugin-package-*` 不暴露给 RPC。
 接口及安装切换合同见[模块与扩展](extensions.md)和[微内核合同](microkernel.md)。
@@ -106,7 +110,7 @@ gateway 的准备、附加或清理动作，不建立第二条核心生命周期
 内部 `subscriptions-update-result` 命令更新尚未进入运行应用事务的来源；运行中被引用的
 订阅仍须经 `refresh.control`，不能借内部入口绕过刷新恢复合同。
 
-原生 LuCI 是当前第一个真实公开 caller，除上述接入与管理接口外提供：
+LuCI 的默认产品界面插件是这些业务接口的公开 caller，除上述接入与管理接口外提供：
 
 - `status`：一次读取 policy、manifest、最近一次 evidence、服务状态、package 自有 build identity（source 部署时回退部署器原子持久化身份），以及 Mihomo `/proxies` 和 `/providers/proxies` 各一次；安装身份只投影经过格式校验的 NetFleet 版本、source commit 和 source tree，供用户确认当前设备字节并用于静态资源缓存失效，不参与运行决策；`apk upgrade` 后 package identity 必须优先于可能仍属于上一次声明式部署的 `installed.json`，避免状态页继续报告旧代码；当前已承载流量的 capability 以健康的生成 URLTest 组、组内当前成员和 manifest 绑定 source 中唯一的真实代理身份投影当前叶子，`/providers/proxies` 的节点 `alive` 只补充下一轮候选与机场/地区库存健康，不能用可能滞后的单节点健康位推翻当前组和独立 protected probes 已证明的实际路径；机场节点库存按 manifest 绑定的 source 从 `/providers/proxies` 读取、按节点名去重并独立投影 `available_node_count/node_count/node_count_known`，不能把跨 capability 的地区候选组 `available_count/candidate_count` 标成节点；同一读取还经 SubscriptionOwner 投影顶层 `subscriptions`：每个已启用订阅只返回 `section`/`ref`、`display_name`、`cache_present`、`cache_sha256`、原始 `node_count`、`quota`、`last_attempt`、`last_success` 和 `last_result`，用于解释订阅条目与 Mihomo 已加载节点的差异；`last_success` 优先取最近一次 NetFleet 成功刷新事件，尚无事件时回退到设备上当前后端订阅缓存的实际修改时间，不使用测量时间或摘要推断；机场投影通过 `subscription_section` 明确引用对应条目，UI 不按显示名猜测绑定；不得返回 URL、token、节点名称或订阅正文；该读取不测速、不探测、不修改 selector；
 - `events`：读取有界 NetFleet 决策事件和当前后端 core log 中最近的 `NETFLEET-` 行，字段为 `core_lines/core_lines_persistent`；不轮询、不修改 owner；
@@ -118,7 +122,26 @@ gateway 的准备、附加或清理动作，不建立第二条核心生命周期
 
 ## 浏览器宿主与读取边界
 
-UI 有两个明确宿主。`ui/` 的 React/Vite 应用只用于本机快速参考开发，可注入 target-private 实时只读 client 或使用脱敏 fixture client；生产设备只部署原生 LuCI `view.extend`/`E()` 页面，不动态加载、挂载或打包 React。两端共享[UI 设计合同](../design/ui.md)定义的七页信息架构，Zashboard 在工具区提供独立外链；配置页把网络接入和配置文件与备份作为独立管理分区，不混入 policy 草稿的应用按钮。首次设置向导复用适用的字段组件，不重复提供完整维护工具。两端共享显示语义和交互合同，不共享组件实现或 bundle，也不要求像素一致。React 定稿只决定信息与交互参考，LuCI 原生 source 才是设备页面的部署 owner。UI 设计合同负责视觉语言、主题映射、排版和组件规则，不拥有产品对象、状态或动作合同。
+LuCI 入口是插件页面壳，通过共享 `plugin-host.js` 从安装清单组合导航，加载插件的
+`mount(context)`，并在切页、更新和卸载时关闭旧作用域。React/Vite 的
+`PluginApplication` 使用同一宿主模块；注入具备插件 API 的 client 时按清单加载页面。
+`ui/` 同时保留本机实时只读和脱敏 fixture 参考开发入口，这些参考组件不作为设备部署产物。
+
+默认设备的概览、出口、机场、地区、配置、组件与更新、事件与诊断由 `product-ui` 插件
+贡献，页面源码和静态资源随该插件分发。其实现复用原生 LuCI 组件，生产宿主不强制第三方
+采用某个界面框架。Zashboard 在产品工具区提供独立外链；配置页把网络接入和配置文件
+与备份作为独立管理分区，不混入 policy 草稿的应用按钮。首次设置向导复用适用字段组件。
+视觉语言、主题与组件规则由[UI 设计合同](../design/ui.md)负责。
+
+页面 context 提供当前挂载节点、绑定插件和实例的读写 API、配置动作、动态 `readOnly`、
+AbortSignal 和资源作用域。宿主校验每次写请求的当前权限，并绑定代码 revision；页面
+声明不能绕过 RPC ACL。`navigate` 接受当前插件内的页面 ID 或清单中存在的全局页面
+身份。具名实例的页面分别显示实例名，动作携带同一 instance。清单读取失败时保留已有
+显示、标明错误并暂停写入；没有页面或加载失败时提供对应空态或重试入口。
+
+LuCI 壳与 React 插件宿主每五秒读取插件清单，以发现安装、启停和 revision 变化；离开
+宿主时撤销该读取。清单发现只读安装元数据，不执行业务状态读取、网络探测或插件代码。
+插件页面的业务请求仍由各页面管理，清单刷新不触发默认产品的 status 轮询。
 
 实时只读桥接的目标只从本机环境变量取得，只允许固定读取 `status`、`events`、`config_get`、`connections`、`components_get`、`operation_get`、`network_get`、`maintenance_get` 和 `diagnostics_get`，浏览器不持有 SSH 凭据，也不能通过该桥接调用任何 mutation；桥接结果必须显示目标、连接状态、最后读取时间和读取耗时。组件、网络配置、文件清单和核心日志按需独立读取，不并入常规网络快照。网络投影隐藏解析 URL 的凭据和私有路径，不返回认证密码；文件清单不包含正文或备份。`connections` 只在用户打开或刷新“事件与诊断”时从 Mihomo 当前 `/connections` 读取最多 50 条活动连接，投影目标 host/IP、目标端口、网络、命中规则、规则载荷和实际代理链；不得返回 source IP、进程、连接 ID、流量计数或其他不必要字段，也不得写入事件 owner、fixture 或浏览器展示缓存。该诊断使用 Mihomo 已执行的真实首条命中结果，不在 NetFleet 或浏览器中重做规则匹配。事件页以 NetFleet 持久化选路事件为主，活动连接只在默认折叠的辅助区显示；瞬时连接快照不能累计或外推为规则组触发频数，除非未来真实 owner 提供可去重、可定义生命周期的持久计数。fixture 仅用于离线、异常和边界场景，可在内存中模拟命令后的投影变化；它必须遵守当前接口形状且不得包含订阅、完整节点清单、设备地址或其他私有 target 数据，不是运行事实，也不能被生产 LuCI 页面读取。
 
@@ -139,9 +162,11 @@ NetFleet LuCI 在页面标题的工具区提供独立的“Zashboard”外链，
 状态页的 DNS 就绪取自监听和转发规则，不在页面读取中执行 DNS 网络探针；运行 owner、
 supervisor 与显式 probe 的保护探测保持不变。
 
-LuCI 发布入口及其全部 NetFleet JavaScript 依赖使用同一版本命名空间。软件包与源码部署
-共用资源生成器，重写模块间依赖，避免新版入口加载浏览器缓存的旧模块。不能只给入口
-加版本号，也不能依赖用户清理缓存恢复升级后的正常使用。
+LuCI 宿主与传输适配使用包版本命名空间；插件页面资源位于
+`/luci-static/resources/netfleet/plugins/<id>/<revision>/resources/`。入口、静态 import
+子模块和样式使用同一 revision 目录中的相对资源，完整模块图随版本改变 URL。软件包与
+源码部署共用投影入口，revision 与内核安装清单一致；不依赖只给入口增加查询参数或用户
+清理缓存。文件布局与版本归属见[软件包合同](packaging.md#软件包组合)。
 
 NetFleet 沿用 Nikki/Zashboard 的带凭据新标签页连接方式，controller secret 只用于本次
 URL 构造，不得进入 NetFleet status、日志、展示缓存或文档。Zashboard 保留上游完整功能；
@@ -151,7 +176,17 @@ URL 构造，不得进入 NetFleet status、日志、展示缓存或文档。Zas
 
 ### 展示缓存与操作授权
 
-两个宿主首次加载都各读取一次 `status` 和 `events`，空闲零轮询，用户刷新时才重新读取；`connections` 不随页面首次加载或后台缓存刷新读取。supervisor 的后台周期不改变浏览器请求数。LuCI 可以把最近一次成功读取的 `status`、去除核心原始日志后的 `events`、读取时间和耗时保存为带 schema 版本的浏览器只读展示缓存；再次打开页面时先显示缓存并立即在后台各读取一次 `status` 和 `events`，成功后原地替换并更新缓存，失败时保留缓存且明确显示旧数据年龄和刷新失败。展示缓存不得包含 `connections`，不是运行事实 owner，不参与编译、排序、候选资格、回滚、探测、mutation precondition 或按钮授权；缓存启动和实时刷新失败状态下，除重新读取外的 mutation 控件必须禁用。没有有效缓存的首次加载仍等待实时 RPC，缓存损坏或 schema 不匹配时直接忽略且不阻断实时读取。
+已配置的默认业务页面首次挂载各读取一次 `status` 和 `events`，后续按页面进入、用户
+刷新和操作完成读取，不建立全局 status 定时轮询。插件清单的五秒发现周期、运行中操作
+的进度读取与业务状态读取分别管理；supervisor 周期不触发浏览器业务请求。
+`connections` 不随页面首次加载或展示缓存刷新读取。
+
+产品界面可以把最近一次成功读取的 `status`、去除核心原始日志后的 `events`、读取时间
+和耗时保存为带 schema 版本的浏览器只读展示缓存。再次打开页面时先显示缓存，同时
+读取当前 status/events；成功后原地替换，失败时保留缓存并显示旧数据年龄和刷新失败。
+展示缓存不包含 connections，不参与编译、排序、候选资格、回滚、探测、mutation
+前置校验或按钮授权。缓存启动和实时刷新失败时禁用 mutation；损坏或 schema 不匹配
+的缓存直接忽略，无有效缓存时等待实时读取。缓存不持有插件清单、可执行代码或私有配置。
 
 LuCI 的启用、单次选优、立即更新订阅、关闭和配置应用都必须二次确认，mutation 完成后重新读取 owner 投影。这些网络操作由 rpcd 调用 one-shot UCode owner；软件包更新由下述一次性后台事务执行。React 的实时设备桥接始终只读；React 配置页、向导、保存、校验和应用按钮只能改变浏览器内的本地预览草稿，必须持续标明“不会写入设备”，不得转发任何配置或 mutation 到 SSH bridge。浏览器不解析订阅、不实现编译、排序、候选资格、回滚或探测逻辑；生产按钮是否可用来自实时 owner 投影，浏览器缓存只能延续显示，不能延续操作授权。事件 owner 仍返回有界事件窗口，LuCI 的“选路事件”在这个窗口内按最新优先每 20 条一页展示，刷新后回到最新一页；分页不触发额外设备读取。所有 LuCI mutation、supervisor 和设备部署使用同一个短生命周期 lock，不能形成并行 writer。
 
@@ -160,7 +195,7 @@ LuCI 的启用、单次选优、立即更新订阅、关闭和配置应用都必
 ## 组件与操作进度
 
 `components_get.extensions` 由 `components.control` 使用内核清单投影插件安装版本、
-代码 revision、服务声明、启用状态、接口 major 和依赖；`runtime` 区分 `service` 与 `process`。
+代码 revision、服务与页面声明、实例、启用状态、接口 major 和依赖；`runtime` 区分 `service` 与 `process`。
 它不表示运行健康，不触发网络检查或启动引擎；Zashboard 的资源状态
 仍复用同一 `dashboard` 读取，避免重复探测。HTTPS `get` 额外投影 `managed` 和
 `management_reason`，不兼容时禁止新接管和编辑，保留关闭与排空。

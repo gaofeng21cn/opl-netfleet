@@ -451,13 +451,15 @@ required=(
 	"openwrt/files/usr/libexec/opl-netfleet-plugin-package"
 	"openwrt/files/usr/libexec/opl-netfleet-transfer"
 	"openwrt/files/usr/libexec/rpcd/opl-netfleet"
+	"openwrt/files/usr/libexec/rpcd/opl-netfleet.plugins"
 	"openwrt/files/etc/init.d/opl-netfleet"
 	"openwrt/files/etc/opl-netfleet/policy.example.json"
 	"openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json"
 	"openwrt/files/etc/opl-netfleet/rulesets.lock.json"
 	"openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/api.js"
-	"openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/config.js"
-	"openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/native.css"
+	"openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/plugin-host.js"
+	"openwrt/files/usr/libexec/opl-netfleet/adapters/openwrt.uc"
+	"openwrt/files/usr/libexec/opl-netfleet/plugins/product-ui/resources/native.css"
 	"openwrt/luci-app-netfleet/htdocs/luci-static/resources/view/netfleet/overview.js"
 	"openwrt/luci-app-netfleet/root/usr/share/luci/menu.d/luci-app-netfleet.json"
 	"openwrt/luci-app-netfleet/root/usr/share/rpcd/acl.d/luci-app-netfleet.json"
@@ -478,6 +480,8 @@ if [[ "$release_mode" == source ]]; then
 	cp "$source_dir/openwrt/files/usr/libexec/opl-netfleet-plugin-package" "$payload_dir/usr/libexec/"
 	cp "$source_dir/openwrt/files/usr/libexec/rpcd/opl-netfleet" \
 		"$payload_dir/usr/libexec/rpcd/opl-netfleet"
+	cp "$source_dir/openwrt/files/usr/libexec/rpcd/opl-netfleet.plugins" \
+		"$payload_dir/usr/libexec/rpcd/opl-netfleet.plugins"
 	cp "$source_dir/openwrt/files/etc/init.d/opl-netfleet" \
 		"$payload_dir/etc/init.d/opl-netfleet"
 	cp "$source_dir/openwrt/files/etc/init.d/opl-netfleet-core" "$payload_dir/etc/init.d/opl-netfleet-core"
@@ -486,7 +490,11 @@ if [[ "$release_mode" == source ]]; then
 	cp "$source_dir/openwrt/files/etc/config/netfleet" "$payload_dir/usr/share/opl-netfleet/netfleet.config"
 	cp -R "$source_dir/openwrt/files/etc/opl-netfleet/." "$payload_dir/etc/opl-netfleet/"
 	cp -R "$source_dir/openwrt/luci-app-netfleet/htdocs/." "$payload_dir/www/"
+	find "$payload_dir/www" -type f -name '*.d.ts' -delete
 	cp -R "$source_dir/openwrt/luci-app-netfleet/root/." "$payload_dir/"
+	for plugin in "$source_dir/openwrt/files/usr/libexec/opl-netfleet/plugins/"*; do
+		python3 "$source_dir/openwrt/plugin_payload.py" project "$plugin" "$payload_dir/www"
+	done
 	view_version="v${luci_version//./_}"
 	sh "$source_dir/openwrt/luci-app-netfleet/stage-assets.sh" \
 		"$payload_dir/www/luci-static/resources" "$view_version"
@@ -503,6 +511,7 @@ if [[ "$release_mode" == source ]]; then
 		"$payload_dir/usr/libexec/opl-netfleet-plugin-package" \
 		"$payload_dir/usr/libexec/opl-netfleet/supervisor.uc" \
 		"$payload_dir/usr/libexec/rpcd/opl-netfleet" \
+		"$payload_dir/usr/libexec/rpcd/opl-netfleet.plugins" \
 		"$payload_dir/etc/init.d/opl-netfleet" "$payload_dir/etc/init.d/opl-netfleet-core"
 	if command -v xattr >/dev/null 2>&1; then
 		xattr -cr "$payload_dir" >/dev/null 2>&1 || die "cannot sanitize temporary payload metadata"

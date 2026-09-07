@@ -12,8 +12,9 @@ mkdir "$work/bin"
 export NETFLEET_DASHBOARD_TEST_WORK="$work"
 export NETFLEET_DASHBOARD_TEST_CURL="$(command -v curl)"
 ui=$(ucode -e 'import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
+ import { create as create_adapter } from "/usr/libexec/opl-netfleet/adapters/openwrt.uc";
  import { cursor } from "uci";
- const host = create("/usr/libexec/opl-netfleet");
+ const host = create("/usr/libexec/opl-netfleet", { adapter: create_adapter() });
  const read_yaml = host.use("platform.storage").read_yaml;
  const RUN_DIR = host.use("platform.runtime").RUN_DIR;
  const path = read_yaml(`${RUN_DIR}/config.yaml`, true)?.["external-ui"] ?? cursor().get("netfleet", "mixin", "ui_path");
@@ -77,7 +78,8 @@ chmod 0755 "$work/bin/curl"
 PATH="$work/bin:$PATH" flock /var/lock/opl-netfleet-deploy.lock ucode - "$work" <<'UCODE'
 import * as fs from "fs";
 import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
-const host = create("/usr/libexec/opl-netfleet");
+import { create as create_adapter } from "/usr/libexec/opl-netfleet/adapters/openwrt.uc";
+const host = create("/usr/libexec/opl-netfleet", { adapter: create_adapter() });
 const resource = host.use("dashboard.control").resource;
 const check = host.use("dashboard.control").check;
 const update = host.use("dashboard.control").update;

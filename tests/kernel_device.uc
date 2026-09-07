@@ -8,6 +8,8 @@ check(fs.stat('/proc/self')?.uid == 0, 'kernel device tests require Linux root')
 const source = fs.realpath(`${sourcepath(0, true)}/../openwrt/files/usr/libexec/opl-netfleet/kernel/host.uc`) ??
 	'/usr/libexec/opl-netfleet/kernel/host.uc';
 check(fs.stat(source)?.type == 'file', 'kernel host source exists');
+const adapter_source = replace(source, /kernel\/host\.uc$/, 'adapters/openwrt.uc');
+check(fs.stat(adapter_source)?.type == 'file', 'OpenWrt host adapter source exists');
 const root = fs.mkdtemp('/tmp/netfleet-kernel-device.XXXXXX');
 check(root != null, 'private test root created');
 let lease, network;
@@ -27,13 +29,14 @@ for (let name in ['plugins', 'locks', 'maintenance', 'state']) directory(`${root
 const profile = { schema: 'opl-netfleet-system.v1', bindings: {}, enabled: {} };
 const runner = `${root}/runner.uc`, override = `${root}/override.json`;
 write(runner, sprintf('import { run } from %J;\n', source) +
+	sprintf('import { create as create_adapter } from %J;\n', adapter_source) +
 	"import * as fs from 'fs';\n" + sprintf('const root = %J;\n', root) +
 	"let profile = json(fs.readfile(root + '/profile.json'));\n" +
 	"const settings = fs.lstat(root + '/options.json') == null ? {} : json(fs.readfile(root + '/options.json'));\n" +
 	"const override = settings.override_path ?? root + '/override.json';\n" +
 	"const overlay = fs.lstat(override) == null ? null : json(fs.readfile(override));\n" +
 	"if (overlay != null) profile = { ...profile, ...overlay, bindings: { ...profile.bindings, ...overlay.bindings }, enabled: { ...profile.enabled, ...overlay.enabled } };\n" +
-	"run(ARGV, root, { system: profile, override_path: override, lock_root: root + '/locks', maintenance_root: root + '/maintenance', network_lock: root + '/network.lock' });\n");
+	"run(ARGV, root, { adapter: create_adapter(), system: profile, override_path: override, lock_root: root + '/locks', maintenance_root: root + '/maintenance', network_lock: root + '/network.lock' });\n");
 
 function plugin(id, requires, resource, enabled, service) {
 	service = service ?? `${id}.control`;

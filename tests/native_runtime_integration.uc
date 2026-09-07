@@ -1,5 +1,6 @@
 import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
-const host = create("/usr/libexec/opl-netfleet");
+import { create as create_adapter } from "/usr/libexec/opl-netfleet/adapters/openwrt.uc";
+const host = create("/usr/libexec/opl-netfleet", { adapter: create_adapter() });
 import * as fs from "fs";
 import { cursor } from "uci";
 const get = host.use("subscriptions.store").get;

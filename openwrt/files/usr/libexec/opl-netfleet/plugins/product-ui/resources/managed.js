@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: Apache-2.0 */
 'use strict';
 'require baseclass';
 'require ui';
@@ -225,6 +225,7 @@ function updateOperationNodes(controller) {
 }
 
 function readOperations(controller) {
+	if (controller.context && controller.context.signal.aborted) return Promise.resolve();
 	if (controller.operationRead) return controller.operationRead;
 	clearTimeout(controller.operationTimer);
 	controller.operationRead = api.operationGet().then(function(snapshot) {
@@ -254,7 +255,7 @@ function readOperations(controller) {
 		updateOperationNodes(controller);
 		const snapshot = controller.operations || {};
 		const running = controller.subscriptionRequest || controller.selectionRequest || isRunning(snapshot.subscription) || isRunning(snapshot.selection) || isRunning(snapshot.packages);
-		if (running)
+		if (running && !(controller.context && controller.context.signal.aborted))
 			controller.operationTimer = setTimeout(function() { if (!controller.root || controller.root.isConnected !== false) readOperations(controller); }, 1000);
 	});
 	return controller.operationRead;
@@ -388,7 +389,7 @@ function startPackageOperation(controller, component) {
 }
 
 function componentsLocked(controller) {
-	return controller.busy || !controller.liveDataReady || controller.componentsStarting || controller.componentsChecking ||
+	return controller.busy || !controller.liveDataReady || controller.context?.readOnly || controller.componentsStarting || controller.componentsChecking ||
 		controller.dashboardBusy || isRunning(controller.operations && controller.operations.packages);
 }
 

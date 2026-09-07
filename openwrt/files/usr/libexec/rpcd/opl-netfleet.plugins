@@ -1,0 +1,36 @@
+#!/bin/sh
+
+main=/usr/libexec/opl-netfleet/main.uc
+
+respond() {
+	output=$("$@")
+	status=$?
+	if [ -n "$output" ]; then printf '%s\n' "$output";
+	else printf '{"ok":false,"error":"owner_no_response","exit_code":%s}\n' "$status"; fi
+}
+
+case "$1" in
+	list)
+		printf '%s\n' '{"plugins_list":{},"plugin_read":{"request":"Table"},"plugin_call":{"request":"Table"}}'
+		;;
+	call)
+		case "$2" in
+			plugins_list) respond ucode "$main" plugins-list ;;
+			plugin_read|plugin_call)
+				payload=$(head -c 65537)
+				if [ "${#payload}" -gt 65536 ]; then
+					printf '%s\n' '{"ok":false,"error":"plugin_request_too_large"}'
+					exit 0
+				fi
+				umask 077
+				temporary=$(mktemp /tmp/opl-netfleet-plugin-request.XXXXXX) || exit 1
+				trap 'rm -f "$temporary"' EXIT INT TERM
+				printf '%s' "$payload" >"$temporary" || exit 1
+				case "$2" in plugin_read) action=plugin-read ;; *) action=plugin-call ;; esac
+				respond ucode "$main" "$action" "$temporary"
+				;;
+			*) printf '%s\n' '{"ok":false,"error":"unknown_plugin_rpc"}' ;;
+		esac
+		;;
+	*) printf '%s\n' '{"ok":false,"error":"invalid_rpcd_invocation"}' ;;
+esac

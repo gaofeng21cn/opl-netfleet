@@ -16,6 +16,9 @@ if (root == '/usr/libexec/opl-netfleet') {
 	}
 }
 // Load the replaceable kernel only after pinning its complete file generation.
-try { loadstring(sprintf('import { run } from %J; return run;', `${root}/kernel/host.uc`))()(ARGV, root); }
+try {
+	loadstring(sprintf('import { run } from %J; import { create } from %J; return (argv, root) => run(argv, root, { adapter: create(root) });',
+		`${root}/kernel/host.uc`, `${root}/adapters/openwrt.uc`))()(ARGV, root);
+}
 catch (error) { lease?.close(); printf('%J\n', { ok: false, error: error.message }); exit(1); }
 lease?.close();

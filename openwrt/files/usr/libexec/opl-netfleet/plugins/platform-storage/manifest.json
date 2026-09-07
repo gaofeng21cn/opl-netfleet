@@ -1,0 +1,36 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "platform-storage",
+  "label": "Platform files and documents",
+  "version": "0.8.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-platform-storage",
+  "services": {
+    "platform.files": {
+      "version": 1,
+      "module": "lib/files.uc",
+      "requires": {
+        "platform.storage": 1
+      }
+    },
+    "platform.documents": {
+      "version": 1,
+      "module": "lib/documents.uc",
+      "requires": {
+        "models.evidence": 1,
+        "models.policy": 1,
+        "platform.paths": 1,
+        "platform.storage": 1
+      }
+    },
+    "platform.storage": {
+      "version": 1,
+      "module": "lib/storage.uc",
+      "requires": {
+        "platform.process": 1
+      }
+    }
+  },
+  "commands": {},
+  "package_dependencies": ["yq"]
+}

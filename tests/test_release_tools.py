@@ -69,10 +69,9 @@ def write_release(directory: Path, commit: str, tree: str, version: str = '0.4.5
     (directory / 'manifest.json').write_text(json.dumps(manifest, sort_keys=True) + '\n')
 
 class ReleaseToolsTests(unittest.TestCase):
-    def test_luci_release_dependencies_cannot_reuse_previous_module_urls(self):
+    def test_luci_release_versions_shell_and_keeps_plugin_transport_available(self):
         package = ROOT / 'openwrt/luci-app-netfleet'
         with tempfile.TemporaryDirectory() as directory:
-            namespaces = []
             for version in ('v0_5_1', 'v0_5_2'):
                 resources = Path(directory) / version
                 shutil.copytree(package / 'htdocs/luci-static/resources', resources)
@@ -87,17 +86,12 @@ class ReleaseToolsTests(unittest.TestCase):
                     visited.add(module)
                     self.assertTrue(module.is_file(), str(module))
                     for dependency in re.findall(r"'require (netfleet\.[\w.]+)(?: as \w+)?';", module.read_text()):
-                        self.assertTrue(dependency.startswith(f'netfleet.{version}.'), dependency)
                         pending.append(resources / (dependency.replace('.', '/') + '.js'))
-                self.assertEqual(set((resources / f'netfleet/{version}').glob('*.js')) | {view}, visited)
+                self.assertEqual({resources / 'netfleet/api.js', view}, visited)
+                self.assertTrue((resources / 'netfleet/plugin-host.js').is_file())
                 self.assertFalse((resources / 'netfleet/managed.js').exists())
-                stylesheet = resources / f'netfleet/{version}/native.css'
-                self.assertEqual(stylesheet.read_bytes(), (package / 'htdocs/luci-static/resources/netfleet/native.css').read_bytes())
-                self.assertIn(f"L.resource('netfleet/{version}/native.css')", view.read_text())
                 self.assertFalse((resources / 'netfleet/native.css').exists())
-                visited.add(stylesheet)
-                namespaces.append({str(path.relative_to(resources)) for path in visited})
-            self.assertFalse(namespaces[0] & namespaces[1])
+                self.assertFalse((resources / 'view/netfleet/overview.js').exists())
 
     def test_sdk_preparer_generates_build_configuration_without_feeds(self):
         with tempfile.TemporaryDirectory() as directory:

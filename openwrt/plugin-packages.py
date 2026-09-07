@@ -62,13 +62,17 @@ def composition():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("ids", "dependencies", "version", "system"))
+    parser.add_argument("command", choices=("ids", "dependencies", "version", "revision", "system"))
     parser.add_argument("plugin", nargs="?")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     plugins, services, graph = composition()
     if args.command == "ids":
         print(" ".join(plugins))
+    elif args.command == "revision":
+        from plugin_payload import payload_revision
+
+        print(payload_revision(PLUGIN_ROOT / args.plugin))
     elif args.command in ("dependencies", "version"):
         manifest = plugins[args.plugin]
         if args.command == "version":

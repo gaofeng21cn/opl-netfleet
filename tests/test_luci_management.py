@@ -7,13 +7,15 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-RESOURCES = ROOT / "openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet"
+RESOURCES = ROOT / "openwrt/files/usr/libexec/opl-netfleet/plugins/product-ui/resources"
+SHELL_RESOURCES = ROOT / "openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet"
 
 HARNESS = r"""
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const resources = process.argv[1];
+const shellResources = process.argv[2];
 const clone = value => JSON.parse(JSON.stringify(value));
 function text(value) {
     if (Array.isArray(value)) return value.map(text).join('');
@@ -119,17 +121,16 @@ class LuciManagementTests(unittest.TestCase):
             for source, destination in installs:
                 target = resources / destination
                 target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(RESOURCES.parent / source, target)
+                shutil.copyfile(SHELL_RESOURCES.parent / source, target)
             result = subprocess.run(["sh", str(ROOT / "openwrt/luci-app-netfleet/stage-assets.sh"), str(resources), "vtest"], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             for script in resources.rglob("*.js"):
                 for dependency in re.findall(r"require (netfleet\.[A-Za-z0-9_.]+)", script.read_text()):
-                    self.assertTrue(dependency.startswith("netfleet.vtest."), dependency)
                     self.assertTrue((resources / (dependency.replace(".", "/") + ".js")).is_file(), dependency)
 
     def run_js(self, source):
         result = subprocess.run(
-            ["node", "-e", HARNESS + "\n(async () => {\n" + source + "\n})().catch(error => { console.error(error.stack || error); process.exit(1); });", str(RESOURCES)],
+            ["node", "-e", HARNESS + "\n(async () => {\n" + source + "\n})().catch(error => { console.error(error.stack || error); process.exit(1); });", str(RESOURCES), str(SHELL_RESOURCES)],
             text=True, capture_output=True, check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)

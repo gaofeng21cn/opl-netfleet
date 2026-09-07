@@ -630,6 +630,10 @@
 .nf-brand { position: absolute; top: 0; left: 20px; z-index: 21; height: 58px; padding: 0; border: 0; font-size: 18px; }
 .nf-sidebar-foot { display: none; }
 .nf-nav { display: flex; gap: 2px; margin: 0 auto; padding: 0; position: relative; top: 58px; width: min(1440px, calc(100% - 48px)); border-bottom: 1px solid var(--nf-border); }
+.nf-nav { overflow-x: auto; }
+.nf-nav button { flex-shrink: 0; }
+.nf-plugin-page { min-width: 0; overflow-wrap: anywhere; }
+.nf-plugin-mobile-nav { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(70px, 1fr); overflow-x: auto; }
 .nf-nav button { height: 44px; padding: 0 16px; border-radius: 0; font-size: 15px; gap: 8px; }
 .nf-nav button svg { display: none; }
 .nf-nav button.is-active { background: transparent; box-shadow: inset 0 -3px var(--nf-accent); }

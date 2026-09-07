@@ -1,0 +1,40 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "platform-openwrt",
+  "label": "OpenWrt configuration and device",
+  "version": "0.8.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-platform-openwrt",
+  "services": {
+    "platform.profile": {
+      "version": 1,
+      "module": "lib/profile.uc",
+      "requires": {
+        "platform.runtime": 1,
+        "platform.process": 1
+      }
+    },
+    "platform.credentials": {
+      "version": 1,
+      "module": "lib/credentials.uc",
+      "requires": {
+        "platform.runtime": 1
+      }
+    },
+    "platform.device": {
+      "version": 1,
+      "module": "lib/device.uc",
+      "requires": {}
+    },
+    "platform.subscriptions": {
+      "version": 1,
+      "module": "lib/subscriptions.uc",
+      "requires": {
+        "platform.runtime": 1,
+        "models.subscriptions": 1
+      }
+    }
+  },
+  "commands": {},
+  "package_dependencies": ["ucode-mod-uci", "ip-full"]
+}

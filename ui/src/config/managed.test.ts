@@ -28,7 +28,7 @@ function harness(active = false) {
     render() { return this.input; }
     getValue() { return this.input.value; }
   } };
-  const source = readFileSync(new URL('../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/managed.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../../openwrt/files/usr/libexec/opl-netfleet/plugins/product-ui/resources/managed.js', import.meta.url), 'utf8');
   const managed = new Function('baseclass', 'ui', 'api', 'E', 'L', source)({ extend: (value: unknown) => value }, ui, api, E, { url: (path: string) => path });
   const controller: Record<string, any> = { status: { active }, refreshData: vi.fn(async () => ({})), redraw: vi.fn() };
   return { managed, api, ui, controller, nodes: () => all(modal), button: (name: string) => all(modal).find((node) => node.tag === 'button' && label(node) === name)! };

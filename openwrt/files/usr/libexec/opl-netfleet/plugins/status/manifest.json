@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "status",
   "label": "Status and connections",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "api_version": 1,
   "package": "opl-netfleet-plugin-status",
   "services": {

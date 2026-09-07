@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-netfleet
-PKG_VERSION:=0.7.2
+PKG_VERSION:=0.8.0
 PKG_RELEASE:=1
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=OPL NetFleet
@@ -14,7 +14,7 @@ define Package/luci-app-netfleet
   SECTION:=luci
   CATEGORY:=LuCI
   TITLE:=OPL NetFleet status and recovery interface
-  DEPENDS:=+luci-base +opl-netfleet
+  DEPENDS:=+luci-base +opl-netfleet-kernel
   PKGARCH:=all
 endef
 
@@ -31,12 +31,7 @@ define Package/luci-app-netfleet/install
 	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
 	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/api.js $(1)/www/luci-static/resources/netfleet/api.js
-	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/config.js $(1)/www/luci-static/resources/netfleet/config.js
-	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/compatibility.js $(1)/www/luci-static/resources/netfleet/compatibility.js
-	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/managed.js $(1)/www/luci-static/resources/netfleet/managed.js
-	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/management.js $(1)/www/luci-static/resources/netfleet/management.js
-	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/product.js $(1)/www/luci-static/resources/netfleet/product.js
-	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/native.css $(1)/www/luci-static/resources/netfleet/native.css
+	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/plugin-host.js $(1)/www/luci-static/resources/netfleet/plugin-host.js
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/view/netfleet/overview.js $(1)/www/luci-static/resources/view/netfleet/overview.js
 	sh ./stage-assets.sh $(1)/www/luci-static/resources $(NETFLEET_VIEW_VERSION)
 	$(INSTALL_DATA) ./root/usr/share/luci/menu.d/luci-app-netfleet.json $(1)/usr/share/luci/menu.d/luci-app-netfleet.json

@@ -242,6 +242,7 @@ owned_paths='usr/libexec/opl-netfleet
 usr/libexec/opl-netfleet-plugin-package
 usr/libexec/opl-netfleet-transfer
 usr/libexec/rpcd/opl-netfleet
+usr/libexec/rpcd/opl-netfleet.plugins
 etc/init.d/opl-netfleet
 etc/init.d/opl-netfleet-core
 etc/opl-netfleet/policy.example.json
@@ -424,6 +425,13 @@ rpcd_surface_ready() {
 	for method in status events connections probe config_get config_validate config_save config_apply enable select_auto refresh disable; do
 		printf '%s\n' "$methods" | grep -q "\"$method\":" || return 1
 	done
+	if [ -f "$(root_path /usr/libexec/rpcd/opl-netfleet.plugins)" ]; then
+		[ -x "$(root_path /usr/libexec/rpcd/opl-netfleet.plugins)" ] || return 1
+		methods=$(ubus -v list opl-netfleet.plugins 2>/dev/null || true)
+		for method in plugins_list plugin_read plugin_call; do
+			printf '%s\n' "$methods" | grep -q "\"$method\":" || return 1
+		done
+	fi
 }
 
 rpcd_timeout_ready() {
@@ -710,7 +718,9 @@ install_owned_payload() {
 	plugin_store=$(root_path /usr/libexec/opl-netfleet/plugins)
 	default_system=$(root_path /usr/share/opl-netfleet/system.json)
 	retained_plugins="$action_dir/retained-plugins"
-	mkdir -p "$retained_plugins" || { error_code=payload_install_failed; return 1; }
+	plugin_web_store=$(root_path /www/luci-static/resources/netfleet/plugins)
+	retained_web="$action_dir/retained-plugin-web"
+	mkdir -p "$retained_plugins" "$retained_web" || { error_code=payload_install_failed; return 1; }
 	for plugin_path in "$plugin_store"/*; do
 		[ -d "$plugin_path" ] || continue
 		plugin_id=${plugin_path##*/}
@@ -719,6 +729,9 @@ install_owned_payload() {
 		default_enabled=$(jsonfilter -i "$default_system" -e "@.enabled[\"$plugin_id\"]" 2>/dev/null || true)
 		[ "$default_enabled" != true ] || continue
 		cp -a "$plugin_path" "$retained_plugins/$plugin_id" || { error_code=payload_install_failed; return 1; }
+		if [ -d "$plugin_web_store/$plugin_id" ]; then
+			cp -a "$plugin_web_store/$plugin_id" "$retained_web/$plugin_id" || { error_code=payload_install_failed; return 1; }
+		fi
 	done
 	if [ "$control_plane_repair" != 1 ] && [ -f "$(root_path /usr/libexec/opl-netfleet/kernel/host.uc)" ]; then
 		for package in $(jsonfilter -i "$default_system" -e '@.product_packages[*]'); do
@@ -757,6 +770,10 @@ install_owned_payload() {
 	for plugin_path in "$retained_plugins"/*; do
 		[ -d "$plugin_path" ] || continue
 		mkdir -p "$plugin_store" && cp -a "$plugin_path" "$plugin_store/" || { error_code=payload_install_failed; return 1; }
+	done
+	for plugin_path in "$retained_web"/*; do
+		[ -d "$plugin_path" ] || continue
+		mkdir -p "$plugin_web_store" && cp -a "$plugin_path" "$plugin_web_store/" || { error_code=payload_install_failed; return 1; }
 	done
 	if ! source_maintenance_finish; then
 		error_code=plugin_resume_unconfirmed

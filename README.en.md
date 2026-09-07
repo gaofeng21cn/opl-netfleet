@@ -34,7 +34,7 @@ runtime logic.
 - **Independent proxy management.** Native mode covers subscriptions, profiles, DNS, transparent proxying, core maintenance, and backup/restore.
 - **Multiple providers in one place.** View regions, nodes, latency, and usage; assign primary and reserve roles to provide alternatives when individual paths fail.
 - **Automatic exits for each purpose.** Standard traffic and region-constrained services can use distinct capabilities, with visible selections and switching reasons.
-- **Composable feature plugins.** First-party and third-party plugins use the same development interfaces and support independent installation, updates, and hot replacement. The component inventory shows installation, dependencies, and API compatibility.
+- **Composable feature plugins.** Services, business actions, configuration, and pages use one plugin protocol with independent installation, updates, and hot replacement. First-party and third-party developers share the same interfaces and tools.
 - **Controlled changes and recovery.** Installation, configuration generation, and takeover are separate. Failed changes restore the previous configuration; disabling returns to an independent recovery profile.
 - **Reproducible device configuration.** Fleet deploys an explicit version, validates and compiles on the device, and reads back the result.
 
@@ -70,19 +70,26 @@ Each round uses current measurements and a switch margin, keeping the active
 path stable during small latency fluctuations. History helps explain what the
 device has seen; the current choice follows the latest healthy measurements.
 
-### Microkernel And Plugin Hot Replacement
+### Microkernel, Plugin Composition, And Hot Updates
 
-NetFleet organizes its product functionality into **19 feature plugins and 69
-services**. The kernel handles discovery, service binding, dependency resolution,
-call admission, and code lifecycle. Subscriptions, selection, compilation,
-recovery, backends, and scheduling all run through composed services. System
-configuration explicitly selects service providers; feature packages can be
-developed, installed, and updated independently.
+NetFleet organizes business logic, platform capabilities, and interfaces into
+feature plugins. The kernel handles discovery, service binding, dependency
+resolution, call admission, and resource lifecycle. Subscriptions, selection,
+compilation, recovery, backends, and scheduling run through composed services.
+A plugin can contribute services, CLI commands, browser actions, configuration,
+and pages. The host discovers installed contributions without changes to its RPC
+or navigation tables.
 
-Reusable business services access storage, backend configuration, credentials, and process
-operations through separate capability services. OpenWrt providers implement the
-platform details, while selection logic and control flows, policy validation, and
-scheduling can be reused through service bindings. See the
+System configuration selects service providers and supports named instances with
+local bindings and configuration. One plugin can serve multiple distinct
+compositions. Service and page scopes own listeners, connections, and cleanup
+callbacks, releasing their resources when a call ends, a page closes, or a plugin
+unloads.
+
+The selection algorithm has its own package. Separate platform plugins provide
+storage, OpenWrt configuration, and runtime management; the kernel also receives
+system operations through an injected host adapter. Business services can be
+reused through capability bindings. See the
 [platform capability boundary](docs/architecture/microkernel.md#平台能力边界).
 
 There are two development paths. **UCode service plugins** compose capabilities
@@ -96,14 +103,17 @@ Each call uses current plugin code. Updates wait for in-flight calls to finish,
 and new calls use the new version. Updating a plugin outside Mihomo's resource
 dependency graph, such as the selection algorithm, does not restart Mihomo.
 Resource plugins run their drain and resume lifecycle when their code or
-dependencies change.
+dependencies change. The browser discovers changes to the plugin inventory,
+disposes the old page, and loads the current version. Pages, imported modules,
+and styles share a resource directory bound to the same code revision.
 
 | Feature plugin | Purpose | Delivery and runtime behavior |
 | --- | --- | --- |
 | **Default network functions** | Subscriptions, compilation, selection, activation, recovery, configuration, and scheduling | `opl-netfleet` composes the default product; each feature plugin has its own package |
+| **Product interface** | Overview, exits, providers, regions, configuration, components, and diagnostics | `product-ui` contributes seven pages; the LuCI shell handles discovery, navigation, and page lifecycle |
 | **HTTPS compatibility** | HTTP/1.1-to-HTTP/2 compatibility for selected devices and destinations | A management plugin connects the optional converter package; explicit onboarding after device trust in a private CA, with bypass to the original route on failure |
 | **Zashboard** | Live Mihomo connections, traffic, rule matches, and proxy groups | A separate Dashboard plugin manages the entry and resources; dashboard assets can be updated without restarting Mihomo |
-| **Developer examples** | Device information and diagnostics | `host-info` demonstrates service dependencies; `device-info` demonstrates process plugins and lifecycle |
+| **Developer examples** | Independent services, saved configuration, and interactive pages | `workspace-note` is a complete external plugin; `host-info` and `device-info` demonstrate minimal service composition and process entry points |
 
 First-party and third-party developers use the same scaffolding, manifest
 validation, OpenWrt packaging, and signed distribution workflow. Start with the
@@ -198,7 +208,7 @@ Use the component page to update the complete product. Individual feature
 plugins can also be updated directly from the configured feed, for example:
 
 ```sh
-apk update && apk upgrade opl-netfleet-plugin-selection
+apk update && apk upgrade opl-netfleet-plugin-selection-algorithm
 ```
 
 Upgrades retain policy, subscription caches, and system service bindings. Package
@@ -277,15 +287,17 @@ to separately authorized replicas. See [Canary promotion and recovery](docs/oper
 
 ## Development
 
-Create and validate a service plugin:
+Create a complete plugin with a service, configuration actions, and a page:
 
 ```bash
-python3 scripts/netfleet-plugin.py scaffold my-plugin /tmp/my-plugin --kind service
+python3 scripts/netfleet-plugin.py scaffold my-plugin /tmp/my-plugin --kind service --template complete
 python3 scripts/netfleet-plugin.py validate /tmp/my-plugin
 ```
 
-Use `--kind process` to create a process plugin. Both templates, service
-composition examples, SDK packaging, and signed installation are covered in
+The generated directory can be developed, packaged, and distributed from an
+independent repository. Omit `--template complete` for the minimal service
+template, or use `--kind process` for a process plugin. The complete `workspace-note`
+example, instance configuration, SDK packaging, and signed installation are covered in
 [Plugin development and installation](docs/development/plugins.md).
 
 Fast source and contract checks:
@@ -300,8 +312,9 @@ Full fake-device deployment matrix:
 scripts/check-full.sh
 ```
 
-The React/Vite surface is a quick local reference for information hierarchy and
-interaction. Native LuCI remains the device surface:
+The local React/Vite app supports the same page plugin host and retains live
+read-only and offline reference development entry points. On devices, the LuCI
+shell loads pages contributed by installed plugins:
 
 ```bash
 cd ui

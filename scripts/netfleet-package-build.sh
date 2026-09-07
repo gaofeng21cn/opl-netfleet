@@ -79,6 +79,7 @@ done
 mkdir -p "$sdk/package/opl-netfleet"
 cp -R "$work/openwrt/Makefile" "$sdk/package/opl-netfleet/"
 cp "$work/openwrt/plugin-packages.py" "$sdk/package/opl-netfleet/"
+cp "$work/openwrt/plugin_payload.py" "$sdk/package/opl-netfleet/"
 cp -R "$work/openwrt/files" "$sdk/package/opl-netfleet/"
 mkdir -p "$sdk/package/luci-app-netfleet"
 cp -R "$work/openwrt/luci-app-netfleet/." "$sdk/package/luci-app-netfleet/"
@@ -107,6 +108,7 @@ cp -R "$work/openwrt/files/usr/libexec/opl-netfleet" "$payload/usr/libexec/"
 cp "$work/openwrt/files/usr/libexec/opl-netfleet-transfer" "$payload/usr/libexec/"
 cp "$work/openwrt/files/usr/libexec/opl-netfleet-plugin-package" "$payload/usr/libexec/"
 cp "$work/openwrt/files/usr/libexec/rpcd/opl-netfleet" "$payload/usr/libexec/rpcd/opl-netfleet"
+cp "$work/openwrt/files/usr/libexec/rpcd/opl-netfleet.plugins" "$payload/usr/libexec/rpcd/opl-netfleet.plugins"
 cp "$work/openwrt/files/etc/init.d/opl-netfleet" "$payload/etc/init.d/opl-netfleet"
 cp "$work/openwrt/files/etc/init.d/opl-netfleet-core" "$payload/etc/init.d/opl-netfleet-core"
 cp -R "$work/openwrt/files/usr/share/opl-netfleet/." "$payload/usr/share/opl-netfleet/"
@@ -114,6 +116,10 @@ cp "$work/openwrt/files/etc/config/netfleet" "$payload/usr/share/opl-netfleet/ne
 cp -R "$work/openwrt/files/etc/opl-netfleet/." "$payload/etc/opl-netfleet/"
 cp "$build_identity" "$payload/usr/share/opl-netfleet/build.json"
 cp -R "$work/openwrt/luci-app-netfleet/htdocs/." "$payload/www/"
+find "$payload/www" -type f -name '*.d.ts' -delete
+for plugin_dir in "$work/openwrt/files/usr/libexec/opl-netfleet/plugins/"*; do
+  python3 "$work/openwrt/plugin_payload.py" project "$plugin_dir" "$payload/www"
+done
 cp -R "$work/openwrt/luci-app-netfleet/root/." "$payload/"
 view_version="v${luci_version//./_}"
 sh "$work/openwrt/luci-app-netfleet/stage-assets.sh" \
@@ -126,7 +132,8 @@ chmod 0755 "$payload/usr/libexec/opl-netfleet/main.uc" \
 	"$payload/usr/libexec/opl-netfleet-transfer" \
 	"$payload/usr/libexec/opl-netfleet-plugin-package" \
   "$payload/usr/libexec/opl-netfleet/supervisor.uc" \
-  "$payload/usr/libexec/rpcd/opl-netfleet" "$payload/etc/init.d/opl-netfleet" "$payload/etc/init.d/opl-netfleet-core"
+  "$payload/usr/libexec/rpcd/opl-netfleet" "$payload/usr/libexec/rpcd/opl-netfleet.plugins" \
+  "$payload/etc/init.d/opl-netfleet" "$payload/etc/init.d/opl-netfleet-core"
 files_manifest=$output/FILES.sha256
 : >"$files_manifest"
 while IFS= read -r path; do

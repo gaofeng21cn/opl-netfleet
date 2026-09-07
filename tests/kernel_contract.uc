@@ -1,6 +1,7 @@
 #!/usr/bin/ucode
 import * as fs from 'fs';
 import { create } from '../openwrt/files/usr/libexec/opl-netfleet/kernel/host.uc';
+import { create as create_adapter } from '../openwrt/files/usr/libexec/opl-netfleet/adapters/openwrt.uc';
 
 let assertions = 0;
 function check(value, message) { if (!value) die(message); assertions++; };
@@ -22,7 +23,7 @@ function plugin(id, service, requires, source) {
 	write(`${root}/plugins/${id}/lib/main.uc`, source);
 	profile.enabled[id] = true; profile.bindings[service] = id;
 };
-function host(system) { return create(root, { trusted_owner: fs.stat(root).uid, system: system ?? profile,
+function host(system) { return create(root, { adapter: create_adapter(), trusted_owner: fs.stat(root).uid, system: system ?? profile,
 	lock_root: `${root}/locks`, maintenance_root: `${root}/maintenance` }); };
 function cleanup() {
 	for (let path in reverse(paths)) { if (fs.lstat(path)?.type == 'directory') fs.rmdir(path); else fs.unlink(path); }

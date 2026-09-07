@@ -15,6 +15,7 @@ import { createConfigDraft, type ConfigDraft } from './config/model';
 import { EventsView } from './views/EventsView';
 import { ComponentsView } from './views/ComponentsView';
 import { ProviderTable, RegionTable } from './views/Tables';
+import { PluginApplication, type PluginClient } from './plugins/PluginApplication';
 import type { ComponentsSnapshot, ConnectionsSnapshot, DataSourceInfo, DeviceConfigSnapshot, EventsSnapshot, NetFleetClient, OperationsSnapshot, PreviewControls, StatusSnapshot, ViewId } from './types';
 import './styles.css';
 
@@ -29,6 +30,11 @@ interface AppProps {
 }
 
 export function App({ client, initialStatus, initialEvents, preview, fallbackSource }: AppProps) {
+  if (client.pluginsList && client.pluginRead && client.pluginCall) return <PluginApplication client={client as NetFleetClient & PluginClient} readOnly={fallbackSource?.read_only || Boolean(preview)} />;
+  return <ProductPreview client={client} initialStatus={initialStatus} initialEvents={initialEvents} preview={preview} fallbackSource={fallbackSource} />;
+}
+
+function ProductPreview({ client, initialStatus, initialEvents, preview, fallbackSource }: AppProps) {
   const [view, setView] = useState<ViewId>('overview');
   const [status, setStatus] = useState<StatusSnapshot | null>(initialStatus || null);
   const [events, setEvents] = useState<EventsSnapshot | null>(initialEvents || null);
