@@ -21,7 +21,7 @@ define Package/opl-netfleet-kernel
   PROVIDES:=netfleet-plugin-api-v1
   REPLACES:=opl-netfleet
   DEPENDS:=+ucode +ucode-mod-fs +flock +coreutils-timeout
-  $(if $(CONFIG_USE_APK),EXTRA_DEPENDS:=!opl-netfleet-https-compat (<0.1.7),CONFLICTS:=opl-netfleet-https-compat (<0.1.7))
+  $(if $(CONFIG_USE_APK),EXTRA_DEPENDS:=!opl-netfleet-https-compat (<0.1.8),CONFLICTS:=opl-netfleet-https-compat (<0.1.8))
   PKGARCH:=all
 endef
 
