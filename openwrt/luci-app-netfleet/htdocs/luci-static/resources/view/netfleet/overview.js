@@ -411,7 +411,7 @@ function statusSummary(status) {
 	const supervisor = status.runtime.supervisor || {};
 	const lanRuntime = status.runtime.lan_runtime || {};
 	const items = [
-		[ 'NetFleet', status.active ? '已启用' : status.runtime.netfleet_present ? '待清理' : '已关闭' ],
+		[ 'NetFleet', status.recovery ? '降级恢复中' : status.active ? '已启用' : status.runtime.netfleet_present ? '待清理' : '已关闭' ],
 		[ 'Mihomo', status.runtime.mihomo_running ? '运行中' : '未运行' ],
 		[ 'LAN 透明代理', lanRuntime.transparent_proxy_ready ? '可用' : status.active ? '不可用' : '未接管' ],
 		[ 'DNS 接管', lanRuntime.dns_ready ? '可用' : status.active ? '不可用' : '未接管' ],

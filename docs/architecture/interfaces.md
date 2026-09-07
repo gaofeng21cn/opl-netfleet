@@ -69,6 +69,8 @@ LuCI 通过 `fs.exec_direct` 调用白名单 `opl-netfleet-transfer`，经 `cgi-
 
 ## 当前运行接口
 
+`status.recovery` 只投影 activation owner 的自动降级恢复请求；存在请求时允许用户执行 disable 取消恢复，界面显示“降级恢复中”。`active` 仍只表示当前实际接管状态，恢复原因与重试时间不能由界面自行推断。
+
 `status.runtime.backend` 返回当前后端的 `id/display_name`，`backend_enabled` 表示其服务
 启用状态；配置投影的 `backend` 来自同一 owner。UI 不保留 Nikki 专用状态字段别名，
 恢复文案使用实际后端名称，不能把“NetFleet 原生后端运行”描述成 Nikki 运行。

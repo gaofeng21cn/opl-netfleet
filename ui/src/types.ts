@@ -153,6 +153,7 @@ export interface DeviceConfigSnapshot {
 
 export interface StatusSnapshot {
   active: boolean;
+  recovery?: { reason: string; requested_at: number; retry_at: number } | null;
   policy_enabled: boolean;
   profile?: string | null;
   policy_source?: { kind: 'bundle' | 'profile'; ref: string } | null;

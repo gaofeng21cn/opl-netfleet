@@ -264,7 +264,7 @@ export function apply(envelope_path) {
 	const snapshot = { files: [], profile: cursor().get("nikki", "config", "profile"),
 		nikki_running: found.nikki_running, nikki_enabled: found.nikki_enabled,
 		supervisor: found.supervisor, native_directory_existed: fs.lstat(BASE) != null };
-	for (let path in ["/etc/config/nikki", CONFIG, MARKER, POLICY_PATH, EVIDENCE_PATH, "/var/lib/opl-netfleet/events.json"]) {
+	for (let path in ["/etc/config/nikki", CONFIG, MARKER, POLICY_PATH, EVIDENCE_PATH, "/var/lib/opl-netfleet/events.json", "/etc/opl-netfleet/recovery.json"]) {
 		const saved = save_file(path, work, `snapshot-${length(snapshot.files)}`);
 		if (saved == null) { remove_work(work); return fail("snapshot_failed"); }
 		push(snapshot.files, saved);

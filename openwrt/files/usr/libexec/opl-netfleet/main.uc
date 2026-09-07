@@ -27,6 +27,7 @@ import { get as maintenance_get, profile_get, profile_save, profile_delete, back
 import { get as native_setup_get, apply as native_setup_apply } from "./application/native_setup.uc";
 import { dispatch as extension_dispatch } from "./application/extensions.uc";
 import { begin as operation_begin, update as operation_update } from "./application/operation.uc";
+import { pending as pending_recovery, request as request_recovery, clear as clear_recovery, defer as defer_recovery } from "./adapters/recovery.uc";
 
 const REFRESH_DIR = "/tmp/opl-netfleet-subscription-refresh";
 const MAIN_PATH = "/usr/libexec/opl-netfleet/main.uc";
@@ -991,6 +992,7 @@ function activate_all_direct_fallbacks(secret, manifest, policy) {
 };
 
 function restore_recovery_with_probes(policy, reason) {
+	const intent_recorded = !is_active(current_profile()) || request_recovery(policy, reason);
 	const manifest = read_json(MANIFEST_PATH);
 	const secret = api_secret();
 	let direct = null;
@@ -1003,6 +1005,7 @@ function restore_recovery_with_probes(policy, reason) {
 	}
 	const recovery = recover_fail_open(policy, current_profile(), reason);
 	recovery.direct = direct;
+	recovery.intent_recorded = intent_recorded;
 	return recovery;
 };
 
@@ -1381,6 +1384,7 @@ function enable_action(policy, evidence) {
 	}
 	const events_recorded = record_events(event_entries);
 	const sole_selection = length(capability_names) == 1 ? selections[capability_names[0]] : null;
+	if (!clear_recovery()) fail("enable", "recovery_state_write_failed");
 	ok("enable", {
 		readback: readback,
 		capabilities: selections,
@@ -1530,6 +1534,7 @@ function status_action(policy, evidence) {
 		build: installed_build(),
 		backend: backend_metadata(),
 		active: is_active(profile),
+		recovery: pending_recovery(policy),
 		profile: profile,
 		profile_display_name: profile_display_name(profile),
 		recovery_profile_display_name: profile_display_name(policy.recovery_profile.ref),
@@ -2178,10 +2183,12 @@ function recover_action(policy) {
 		return;
 	}
 	if (reason == "lan_ingress_unavailable" || reason == "dns_ingress_unavailable") {
+		const intent_recorded = request_recovery(policy, reason);
 		// Recovery Profiles inherit Nikki's global LAN/listener platform values.
 		// Switching Profile cannot repair this failure and would preserve the same
 		// black hole, so ask Nikki to remove interception and persist passthrough.
 		const passthrough = enter_passthrough(policy, reason, true);
+		passthrough.intent_recorded = intent_recorded;
 		if (!passthrough.ok) fail("recover", "fail_open_recovery_failed", passthrough);
 		ok("recover", passthrough);
 		return;
@@ -2189,6 +2196,29 @@ function recover_action(policy) {
 	const recovery = restore_recovery_with_probes(policy, reason);
 	if (!recovery.ok) fail("recover", "fail_open_recovery_failed", recovery);
 	ok("recover", recovery);
+};
+
+function resume_action(policy, evidence) {
+	const pending = pending_recovery(policy);
+	if (pending == null || is_active(current_profile()) || int(time()) < pending.retry_at) {
+		ok("resume", { state: "unchanged" });
+		return;
+	}
+	// Persist the deadline before mutation so a supervisor restart cannot cause
+	// an immediate restart loop after a failed activation.
+	if (!defer_recovery(policy)) fail("resume", "recovery_state_write_failed");
+	if (!upstream_ready()) fail("resume", "upstream_unavailable");
+	if (backend_enabled() != true || !running() || !controller_ready(api_secret(), 2)) {
+		if (!set_backend_enabled(true)) fail("resume", "backend_enable_failed");
+		const restored = restore_profile_with_probes(policy.recovery_profile.ref, policy);
+		if (!restored.runtime_ok) {
+			const recovery = enter_passthrough(policy, "resume_runtime_unavailable", true);
+			fail("resume", "recovery_runtime_unavailable", recovery);
+		}
+	}
+	const compiled = compile_result(policy, false);
+	if (!compiled.ok) fail("resume", compiled.error, compiled.detail);
+	enable_action(policy, evidence);
 };
 
 function guarded_mutation(action, policy, callback) {
@@ -2298,6 +2328,7 @@ function disable_without_policy(action_name) {
 };
 
 const action = ARGV[0] ?? "";
+if (action == "disable" && !clear_recovery()) fail(action, "recovery_state_write_failed");
 const extension_result = extension_dispatch(action, ARGV[1]);
 if (extension_result != null) {
 	printf("%J\n", extension_result);
@@ -2425,6 +2456,8 @@ if (action == "status") {
 	refresh_action(policy);
 } else if (action == "recover") {
 	guarded_mutation("recover", policy, () => recover_action(policy));
+} else if (action == "resume") {
+	guarded_mutation("resume", policy, () => resume_action(policy, evidence));
 } else {
 	fail("usage", "unknown_action", "onboarding-get|onboarding-apply|package-cleanup|status|events|connections|probe|validate-schema|validate|compile|enable|disable|select|refresh|maintain|recover");
 };
