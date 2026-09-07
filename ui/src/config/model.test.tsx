@@ -4,9 +4,24 @@ import { fixtureScenarios } from '../data/fixtures';
 import type { DeviceConfigSnapshot } from '../types';
 import { ConfigView } from './ConfigView';
 import { ProvidersSection, SafetySection } from './ConfigSections';
-import { configSummary, createConfigDraft, validateConfigDraft, validCidr } from './model';
+import { configChanges, configSummary, createConfigDraft, validateConfigDraft, validCidr } from './model';
 
 describe('本地配置参考模型', () => {
+  it('变更预览区分新增、删除、修改以及同数量规则替换', () => {
+    const before = createConfigDraft(fixtureScenarios.healthy.status);
+    expect(configChanges(before, structuredClone(before))).toEqual([]);
+    before.routingRules = [{ kind: 'domain_suffix', value: 'old.example', target: 'direct' }];
+    const after = structuredClone(before);
+    const removed = after.providers.pop()!;
+    after.providers[0].role = 'reserve';
+    after.regions.push({ id: 'new', displayName: '新地区', mode: 'manual_only' });
+    after.automation.subscriptionRefreshEnabled = !before.automation.subscriptionRefreshEnabled;
+    after.routingRules[0].value = 'new.example';
+    expect(configChanges(before, after)).toEqual(expect.arrayContaining([
+      `移除机场：${removed.displayName}`, `修改机场：${before.providers[0].displayName}`, '新增地区：新地区',
+      '自动运行周期已修改', '业务规则已修改：1 条 → 1 条',
+    ]));
+  });
   it('原生后端投影保留真实后端身份，不再提供 Nikki 订阅入口', () => {
     const status = structuredClone(fixtureScenarios.nativeInactive.status);
     const draft = createConfigDraft(status);

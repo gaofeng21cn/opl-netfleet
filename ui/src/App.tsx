@@ -249,7 +249,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
       onOpenDashboard={() => setError('本机参考界面只展示入口；设备版会在新标签页打开完整 Zashboard。')}
     >
       <div className="nf-page-heading">
-        <div><h1>{title}</h1>{view !== 'overview' && view !== 'components' && <p>{view === 'config' ? '使用当前设备状态设计配置流程；所有更改仅用于本地预览。' : '所有状态来自同一次设备状态读取。'}</p>}</div>
+        <div><h1>{title}</h1>{view === 'config' && <p>使用当前设备状态设计配置流程；所有更改仅用于本地预览。</p>}</div>
         {!source.read_only && status.actions?.can_enable && (
           <button className="nf-button-primary" type="button" onClick={() => setDialog('enable')} disabled={busy}>
             <Power aria-hidden="true" />启用 NetFleet
@@ -293,7 +293,7 @@ export function App({ client, initialStatus, initialEvents, preview, fallbackSou
         onChange={(next) => setConfigState({ ...configState, draft: next })}
         onSave={(next) => setConfigState({ ...configState, draft: next, saved: next })}
       />}
-      {view === 'events' && <EventsView key={`${source.mode}|${source.target_label}|${preview?.scenario}`} snapshot={visibleEvents} status={status} connections={connections} connectionsLoading={connectionsLoading} connectionsError={connectionsError} error={eventsError} client={client} />}
+      {view === 'events' && <EventsView key={`${source.mode}|${source.target_label}|${preview?.scenario}`} snapshot={visibleEvents} status={status} connections={connections} connectionsLoading={connectionsLoading || busy} connectionsError={connectionsError} error={eventsError} client={client} stale={Boolean(statusError) || source.connected === false} refresh={() => void Promise.all([refresh(), refreshConnections()])} />}
       {view === 'components' && <>
         <ComponentsView snapshot={components} operation={operations.packages} error={componentsError} operationError={operationError} loading={componentsLoading} scope={`${source.mode}|${source.target_label}`} onRead={() => void Promise.all([refreshComponents(), refresh()])} />
       </>}

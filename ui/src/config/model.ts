@@ -72,6 +72,25 @@ export interface ConfigDraft {
   };
 }
 
+export function configChanges(before: ConfigDraft, after: ConfigDraft): string[] {
+  const result: string[] = [];
+  const different = (left: unknown, right: unknown) => JSON.stringify(left) !== JSON.stringify(right);
+  for (const [key, label] of [['policySource', '策略基础'], ['recoveryProfile', '退出与故障恢复'], ['automation', '自动运行周期'], ['safety', '安全与探针']] as const) {
+    if (different(before[key], after[key])) result.push(`${label}已修改`);
+  }
+  for (const [key, label] of [['providers', '机场'], ['regions', '地区'], ['capabilities', '出口']] as const) {
+    const previous = new Map(before[key].map(item => [item.id, item]));
+    const next = new Map(after[key].map(item => [item.id, item]));
+    for (const [id, item] of previous) if (!next.has(id)) result.push(`移除${label}：${item.displayName}`);
+    for (const [id, item] of next) {
+      if (!previous.has(id)) result.push(`新增${label}：${item.displayName}`);
+      else if (different(previous.get(id), item)) result.push(`修改${label}：${item.displayName}`);
+    }
+  }
+  if (different(before.routingRules, after.routingRules)) result.push(`业务规则已修改：${before.routingRules.length} 条 → ${after.routingRules.length} 条`);
+  return result;
+}
+
 const providerRole = (value: string): ProviderDraft['role'] => value === 'reserve' ? 'reserve' : 'primary';
 const providerBilling = (value: string): ProviderDraft['billing'] => value === 'buyout' ? 'buyout' : 'subscription';
 const regionMode = (value: string): RegionDraft['mode'] => value === 'manual_only' ? 'manual_only' : 'automatic';

@@ -4,6 +4,7 @@
 'require ui';
 'require netfleet.api as api';
 'require netfleet.managed as managed';
+'require netfleet.product as product';
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function disabled(controller) { return controller.busy || !controller.liveDataReady; }
@@ -26,6 +27,7 @@ function toggle(value, onchange, label) {
 }
 function time(value) { return value ? new Date(value * 1000).toLocaleString() : '未提供'; }
 function errorText(error) {
+	if (error && error.netfleetKind === 'request_aborted') return '请求已中断，设备执行结果尚未确认；请重新读取状态，不要重复执行。';
 	const code = String(error && error.message || error || 'operation_failed');
 	const known = {
 		mutation_busy: '设备正在执行其他操作，请稍后重试', network_revision_conflict: '网络配置已变化，请重新读取后修改',
@@ -58,8 +60,13 @@ function run(controller, title, request, refresh) {
 	ui.showModal(title, [ E('p', { 'class': 'spinning', 'role': 'status' }, '正在执行并确认设备状态…') ]);
 	return Promise.resolve().then(request).then(function(result) {
 		ui.hideModal();
-		managed.notify(null, E('p', {}, title + '已完成'), 'info');
-		return refresh ? Promise.resolve(refresh(result)).then(function() { return result; }) : result;
+		const completed = product.resultText(title, result);
+		if (!refresh) { managed.notify(null, E('p', {}, completed), 'info'); return result; }
+		return Promise.resolve().then(function() { return refresh(result); }).then(function() {
+			const readFailed = controller.refreshError;
+			managed.notify(null, E('p', {}, completed + (readFailed ? '；状态读取失败，请重新读取，不要重复执行。' : '；设备状态已重新读取。')), readFailed ? 'warning' : 'info');
+			return result;
+		}, function() { managed.notify(null, E('p', {}, completed + '；状态读取失败，请重新读取，不要重复执行。'), 'warning'); return result; });
 	}).catch(function(error) { ui.hideModal(); notice(error); }).finally(function() { controller.busy = false; controller.redraw(); });
 }
 function load(controller, kind, force) {
@@ -140,9 +147,16 @@ function network(controller) {
 		E('div', { 'class': 'netfleet-config-actions' }, [ E('span', {}, controller.networkResult || ''), E('div', {}, [
 			button('放弃更改', function() { return load(controller, 'network', true); }, locked),
 			button('校验配置', function() { return api.networkValidate({ revision: state.revision, settings: clone(draft) }).then(function() { controller.networkResult = '校验通过'; controller.redraw(); }).catch(notice); }, locked),
-			button('应用网络配置', function() { confirm('应用网络配置', '将保存并重新加载网络接入配置，期间连接可能短暂中断。失败时恢复操作前配置。', function() {
-				return run(controller, '应用网络配置', function() { return api.networkApply({ revision: state.revision, settings: clone(draft) }); }, function() { return load(controller, 'network', true).then(function() { return controller.refreshData(true, true); }); });
-			}); }, locked)
+			button('应用网络配置', function() {
+				const changes = product.networkChanges(state.settings, draft);
+				if (!changes.length) { controller.networkResult = '草稿与上次读取一致，无需应用。'; controller.redraw(); return; }
+				const request = { revision: state.revision, settings: clone(draft) };
+				ui.showModal('应用网络配置', [ E('p', {}, '将改变：' + changes.join('、') + '。'),
+					E('p', {}, state.running ? '会重启当前核心并重新接管网络，已有连接可能中断。失败时尝试恢复操作前配置，并报告恢复结果。' : '只保存配置，不启动核心或接管网络。'),
+					E('div', { 'class': 'right' }, [ button('取消', ui.hideModal), ' ', button('确认应用', function() {
+						ui.hideModal(); return run(controller, '应用网络配置', function() { return api.networkApply(request); }, function() { return load(controller, 'network', true).then(function(network) { if (!network) throw new Error('network_read_failed'); return controller.refreshData(true, true); }); });
+					}) ]) ]);
+			}, locked)
 		]) ])
 	]);
 }

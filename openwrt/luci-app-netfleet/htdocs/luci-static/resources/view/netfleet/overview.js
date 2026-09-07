@@ -8,6 +8,7 @@
 'require netfleet.api as netfleet';
 'require netfleet.config as netfleetConfig';
 'require netfleet.compatibility as compatibility';
+'require netfleet.product as product';
 'require poll';
 
 const NAVIGATION = [
@@ -934,7 +935,7 @@ function eventsPage(status, events, connections, connectionsLoading, connections
 			E('td', {}, finite(connection.destination_port) || typeof connection.destination_port === 'string' ? String(connection.destination_port) : '未提供'),
 			E('td', {}, text(connection.network, '未提供').toUpperCase()),
 			E('td', {}, rule),
-			E('td', {}, (connection.chains || []).join(' → ') || 'DIRECT')
+			E('td', {}, (connection.chains || []).map(function(item) { return item === 'DIRECT' ? '直连' : regionalDisplayName(item); }).join(' → ') || '未记录链路')
 		]);
 	});
 	const connectionDescription = connectionsError
@@ -1210,6 +1211,8 @@ return view.extend({
 			if (target === 'events') management.load(self, 'maintenance');
 			self.redraw();
 		});
+		if (this.currentView === 'events')
+			content.splice(1, 0, product.diagnosis(this, regionalDisplayName));
 		if (this.currentView !== 'components' && this.currentView !== 'config')
 			content.unshift(managed.operationNode(this, 'selection'));
 		if (this.currentView === 'events')
@@ -1442,7 +1445,7 @@ return view.extend({
 		return this.currentConfigRequest().then(function(request) { return netfleet.configSave(request); }).then(function(result) {
 			self.config = result.config;
 			self.configDraft = netfleetConfig.clone(result.config);
-			managed.notify(null, E('p', {}, '配置已保存；当前网络数据面没有变化。'), 'info');
+			managed.notify(null, E('p', {}, product.resultText('保存配置', result)), 'info');
 		}).catch(function(error) {
 			managed.notify(null, E('p', {}, '保存失败：' + self.configFailure(error)), 'error');
 		}).finally(function() {
@@ -1464,7 +1467,7 @@ return view.extend({
 				E('ul', { 'class': 'netfleet-change-list' }, preview.result.changes.map(function(change) { return E('li', {}, netfleetConfig.changeText(change, self)); })) :
 				E('p', {}, '没有新的草稿变更；将应用已保存配置并重新读取运行状态。');
 			ui.showModal('应用 NetFleet 配置', [
-				E('p', {}, '设备将先保存旧配置和运行字节，再复用现有退出、编译和启用流程完成切换；任何一步失败都会恢复上一份配置。'),
+				E('p', {}, '应用会重新生成运行配置并切换网络出口，已有连接可能中断。设备会保留旧配置；失败时尝试恢复，并报告恢复结果。配置未变化且已生效时不重载。'),
 				changeSummary,
 				E('div', { 'class': 'right' }, [
 					E('button', { 'class': 'btn', 'click': ui.hideModal }, '取消'), ' ',
@@ -1482,17 +1485,16 @@ return view.extend({
 		const self = this;
 		this.busy = true;
 		ui.showModal('应用 NetFleet 配置', [ E('p', { 'class': 'spinning' }, '正在切换并等待设备回读…') ]);
-		return netfleet.configApply(request).then(function() {
-			return self.refreshData(true, true);
-		}).then(function() {
+		return netfleet.configApply(request).then(function(result) {
 			ui.hideModal();
-			managed.notify(null, E('p', {}, '配置已应用，设备运行状态已重新读取。'), 'info');
+			const completed = product.resultText('应用配置', result);
+			return self.refreshData(true, true).then(function() {
+				managed.notify(null, E('p', {}, completed + (self.refreshError ? '；状态读取失败，请重新读取，不要重复应用。' : '；设备运行状态已重新读取。')), self.refreshError ? 'warning' : 'info');
+			}, function() { managed.notify(null, E('p', {}, completed + '；状态读取失败，请重新读取，不要重复应用。'), 'warning'); });
 		}).catch(function(error) {
 			ui.hideModal();
 			managed.notify(null, E('p', {}, '应用失败：' + self.configFailure(error)), 'error');
-			self.busy = false;
-			self.redraw();
-		});
+		}).finally(function() { self.busy = false; self.redraw(); });
 	},
 
 	showConfigWizard: function(step) {
@@ -1505,7 +1507,7 @@ return view.extend({
 		const copy = {
 			enable: [ '启用 NetFleet', '将按当前设备策略生成运行配置，并在网络检查和设备状态确认通过后接管网络出口。', '确认启用' ],
 			select: [ '重新自动选优', '将按依赖顺序执行一轮有界测速和原子选择，并恢复后台周期选优。', '开始选优' ],
-			refresh: [ '立即更新机场订阅', '将逐个更新机场订阅；失败的机场继续使用旧缓存，发生变化时才重载并重新选优。', '开始更新' ],
+			refresh: [ '立即更新机场订阅', '将更新当前配置相关的机场；内容未变化时不重载。使用中的内容变化后会重启核心并重新选优，已有连接可能中断；失败的机场保留旧缓存。', '开始更新' ],
 			disable: [ '关闭 NetFleet', '将优先恢复原生配置；只有原生配置无法恢复时，才停止 ' + backendName(this.status) + ' 并恢复网络直通。', '确认关闭' ]
 			}[action];
 		ui.showModal(copy[0], [

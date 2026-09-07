@@ -40,6 +40,8 @@ export function NetworkSection({ client }: { client?: NetFleetClient }) {
     setMessage(null);
   }, [data]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  const changes = draft && saved ? ([['dns', 'DNS 解析'], ['lan', '局域网接入与设备规则'], ['router', '路由器本机代理'], ['listeners', '代理监听与认证']] as const)
+    .filter(([key]) => JSON.stringify(draft[key]) !== JSON.stringify(saved[key])).map(([, label]) => label) : [];
   const change = (next: NetworkSettings) => { setDraft(next); setMessage(null); };
   const setDns = (update: Partial<NetworkSettings['dns']>) => draft && change({ ...draft, dns: { ...draft.dns, ...update } });
 
@@ -84,6 +86,7 @@ export function NetworkSection({ client }: { client?: NetFleetClient }) {
         <div className="nf-form-row"><div><label>代理认证</label></div><Toggle label="代理认证" checked={draft.listeners.authentication_enabled} onChange={authentication_enabled => change({ ...draft, listeners: { ...draft.listeners, authentication_enabled } })} /></div>
         <div className="nf-form-row"><div><label>认证账户</label><p>密码仅在已登录的设备页面维护。</p></div><div>{draft.listeners.credentials.length ? draft.listeners.credentials.map(item => <div className="nf-credential-summary" key={item.id}><strong>{item.username}</strong><span>{item.password_configured ? '密码已配置' : '未设置密码'}</span></div>) : <span>未配置账户</span>}</div></div>
       </div></section>
+      {changes.length > 0 && <div className="nf-config-review"><strong>变更范围：{changes.join('、')}</strong><p>本地预览不写入设备。设备端应用这些变更时，若核心正在运行，会重新接管网络，已有连接可能中断。</p></div>}
       <div className="nf-management-actions"><span>{dirty ? '有尚未应用的本地草稿' : '本地草稿与读取结果一致'}</span><div><button type="button" disabled={!dirty} onClick={() => { setDraft(saved ? structuredClone(saved) : null); setMessage(null); }}><RotateCcw aria-hidden="true" />放弃更改</button><button type="button" disabled={!dirty} onClick={() => { setSaved(structuredClone(draft)); setMessage('本地网络草稿已应用；设备配置和网络状态没有改变。'); }}><Save aria-hidden="true" />应用本地预览</button></div></div>
       {message && <div className="nf-config-message" role="status"><Check aria-hidden="true" />{message}</div>}
     </>}
