@@ -26,7 +26,7 @@ define Package/opl-netfleet-kernel
 endef
 
 define Package/opl-netfleet-kernel/install
-	$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/kernel $(1)/usr/share/opl-netfleet
+	$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/kernel $(1)/usr/share/opl-netfleet $(1)/etc/opl-netfleet
 	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet/main.uc $(1)/usr/libexec/opl-netfleet/main.uc
 	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet/supervisor.uc $(1)/usr/libexec/opl-netfleet/supervisor.uc
 	$(INSTALL_DATA) ./files/usr/libexec/opl-netfleet/kernel/*.uc $(1)/usr/libexec/opl-netfleet/kernel/
