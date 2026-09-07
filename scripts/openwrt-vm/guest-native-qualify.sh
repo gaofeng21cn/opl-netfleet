@@ -62,6 +62,7 @@ ln -s "$work/bin/mihomo" /usr/bin/mihomo
 ln "$work/bin/mihomo" "$work/bin/nf-proxy-fixture"
 cp /tmp/yq_linux_arm64-v4.53.6 "$work/bin/yq"
 chmod 0755 "$work/bin/yq"
+ln -s "$work/bin/yq" /usr/bin/yq
 export PATH="$work/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
@@ -373,6 +374,14 @@ test "$recovered" = 1
 cp "$work/recovery-policy.json" /etc/opl-netfleet/policy.json
 ucode "$main" probe >"$work/resumed-probe-result.json"
 assert_json "$work/resumed-probe-result.json" '@.ok' true
+stage=events_without_logd
+/etc/init.d/log stop
+if ubus -t 1 list log >/dev/null 2>&1; then exit 1; fi
+events_started=$(date +%s)
+ucode "$main" events >"$work/events-without-logd-result.json"
+test "$(( $(date +%s) - events_started ))" -lt 5
+assert_json "$work/events-without-logd-result.json" '@.ok' true
+/etc/init.d/log start
 stage=shared_disable
 run_main disable vm >"$work/disable-result.json"
 assert_json "$work/disable-result.json" '@.result.state' native_profile
