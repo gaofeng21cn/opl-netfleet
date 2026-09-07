@@ -180,7 +180,8 @@ else:
         packages = list(Path("/tmp/compat-runtime").glob("opl-netfleet-https-compat-*.apk"))
         if packages:
             held = await self.request(hold=True)
-            upgrade = await asyncio.create_subprocess_exec("apk", "add", "--force-reinstall", str(packages[0]),
+            upgrade = await asyncio.create_subprocess_exec("flock", "/var/lock/opl-netfleet-deploy.lock",
+                "apk", "add", "--force-reinstall", str(packages[0]),
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             try:
                 await asyncio.sleep(32)

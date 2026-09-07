@@ -1,10 +1,12 @@
 #!/usr/bin/python3
 import fcntl
 import asyncio
+from contextlib import contextmanager
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
@@ -30,6 +32,45 @@ CA = BASE / "ca"
 SERVICE = "/etc/init.d/opl-netfleet-compat"
 OWNER = "/usr/libexec/opl-netfleet/main.uc"
 DEFAULT = {"schema": 1, "enabled": False, "devices": [], "rules": []}
+MUTATION_LOCK = Path("/var/lock/opl-netfleet-deploy.lock")
+
+
+def ancestor_holds_lock(path):
+    target = path.stat()
+    parent = os.getppid()
+    visited = set()
+    for _ in range(64):
+        if not parent or parent in visited:
+            return False
+        visited.add(parent)
+        process = Path(f"/proc/{parent}")
+        try:
+            if process.stat().st_uid != 0:
+                return False
+            for info in (process / "fdinfo").iterdir():
+                try:
+                    descriptor = (process / "fd" / info.name).stat()
+                    if ((descriptor.st_dev, descriptor.st_ino) == (target.st_dev, target.st_ino)
+                            and re.search(r"lock:.*FLOCK\s+ADVISORY\s+WRITE\s", info.read_text())):
+                        return True
+                except OSError:
+                    continue
+            match = re.search(r"\nPPid:\s*(\d+)", (process / "status").read_text())
+            parent = int(match[1]) if match else 0
+        except OSError:
+            return False
+    return False
+
+
+@contextmanager
+def mutation_lock():
+    with MUTATION_LOCK.open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            if not ancestor_holds_lock(MUTATION_LOCK):
+                raise ValueError("mutation_busy") from None
+        yield
 
 
 def read(path, fallback=None):
@@ -459,11 +500,7 @@ def main():
         return status()
     if action == "ca":
         return {"pem": (CA / "mitmproxy-ca-cert.pem").read_text(), "sha256": ca_fingerprint()}
-    with Path("/var/lock/opl-netfleet-deploy.lock").open("a") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise ValueError("mutation_busy")
+    with mutation_lock():
         RUN.mkdir(parents=True, exist_ok=True, mode=0o700)
         if action == "tick":
             tick()
