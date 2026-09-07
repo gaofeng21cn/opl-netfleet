@@ -126,6 +126,59 @@ bootstrap_sha=$(jsonfilter -i "$candidate/manifest.json" -e '@.feed_bootstrap.sh
 files_sha=$(jsonfilter -i "$candidate/manifest.json" -e '@.files_manifest.sha256')
 [ "$(sha256sum "$candidate/FILES.sha256" | awk '{print $1}')" = "$files_sha" ]
 
+stage=kernel_only_install
+real_apk=$(command -v apk)
+[ -x "$real_apk" ]
+PATH="$fixture/bin:$PATH"
+export PATH
+: >"$fixture/package-manager.log"
+printf 'apk_command=%s\n' "$real_apk" >>"$fixture/package-manager.log"
+"$real_apk" list --manifest >"$fixture/package-manifest.before"
+! "$real_apk" info -e opl-netfleet-kernel >/dev/null 2>&1
+[ -z "$(pidof mihomo || true)" ]
+saved_runtime=$fixture/kernel-only-source
+mkdir -p "$saved_runtime"
+mv /usr/libexec/opl-netfleet "$saved_runtime/runtime"
+mv /usr/share/opl-netfleet "$saved_runtime/shared"
+mv /etc/opl-netfleet "$saved_runtime/configuration"
+mv /usr/libexec/opl-netfleet-plugin-package "$saved_runtime/package-helper"
+[ ! -e /etc/opl-netfleet ]
+kernel_apk=$(jsonfilter -i "$candidate/manifest.json" -e '@.artifact_files["opl-netfleet-kernel"]')
+uclient-fetch -q -O "$candidate/$kernel_apk" "$feed_url/$kernel_apk"
+uclient-fetch -q -O /etc/apk/keys/opl-netfleet-apk.pem "$feed_url/opl-netfleet-apk.pem"
+[ "$(sha256sum /etc/apk/keys/opl-netfleet-apk.pem | awk '{print $1}')" = \
+	"$(jsonfilter -i "$candidate/manifest.json" -e '@.apk_public_key.sha256')" ]
+owner_locked "$real_apk" --timeout 300 add "$candidate/$kernel_apk" >>"$fixture/package-manager.log" 2>&1
+[ -d /etc/opl-netfleet ]
+[ ! -e /usr/share/opl-netfleet/system.json ]
+stage=kernel_only_service_lifecycle
+mkdir -p /usr/libexec/opl-netfleet/plugins
+cp -R /tmp/examples/plugins/host-info /usr/libexec/opl-netfleet/plugins/host-info
+for plugin_action in load reload unload; do
+	ucode "$main" plugins-list >"$fixture/lifecycle-kernel-inventory.json"
+	plugin_revision=$(jsonfilter -i "$fixture/lifecycle-kernel-inventory.json" -e '@.result.plugins[0].revision')
+	[ "$(jsonfilter -i "$fixture/lifecycle-kernel-inventory.json" -e '@.result.plugins[0].id')" = host-info ]
+	[ -n "$plugin_revision" ]
+	printf '{"request":{"id":"host-info","action":"%s","confirm":true,"revision":"%s"}}\n' \
+		"$plugin_action" "$plugin_revision" >"$fixture/kernel-only-request.json"
+	ucode "$main" plugin-call "$fixture/kernel-only-request.json" >"$fixture/lifecycle-kernel-$plugin_action.json"
+	[ "$(jsonfilter -i "$fixture/lifecycle-kernel-$plugin_action.json" -e '@.ok')" = true ]
+	[ -f /etc/opl-netfleet/system.json ]
+	if [ "$plugin_action" != unload ]; then
+		ucode "$main" host-info >"$fixture/lifecycle-kernel-feature.json"
+		[ "$(jsonfilter -i "$fixture/lifecycle-kernel-feature.json" -e '@.ok')" = true ]
+	fi
+done
+if ucode "$main" host-info >"$fixture/lifecycle-kernel-unloaded.json"; then exit 1; fi
+"$real_apk" del opl-netfleet-kernel >>"$fixture/package-manager.log" 2>&1
+[ ! -e "$main" ]
+rm -rf /usr/libexec/opl-netfleet /usr/share/opl-netfleet /etc/opl-netfleet
+mv "$saved_runtime/runtime" /usr/libexec/opl-netfleet
+mv "$saved_runtime/shared" /usr/share/opl-netfleet
+mv "$saved_runtime/configuration" /etc/opl-netfleet
+mv "$saved_runtime/package-helper" /usr/libexec/opl-netfleet-plugin-package
+rmdir "$saved_runtime"
+
 # Source deployments predate package ownership and exercise APK's protected
 # /etc path migration. The configuration plugin must promote only these package
 # baselines while leaving the user policy outside its write set.
@@ -138,13 +191,6 @@ if [ -e /etc/opl-netfleet/policy.json ]; then
 fi
 
 stage=install
-real_apk=$(command -v apk)
-[ -x "$real_apk" ]
-PATH="$fixture/bin:$PATH"
-export PATH
-: >"$fixture/package-manager.log"
-printf 'apk_command=%s\n' "$real_apk" >>"$fixture/package-manager.log"
-"$real_apk" list --manifest >"$fixture/package-manifest.before"
 # Require the feed to satisfy the real core dependency on first installation.
 [ -z "$(pidof mihomo || true)" ]
 rm -f /usr/bin/mihomo
@@ -546,5 +592,5 @@ if [ "$(jsonfilter -i "$fixture/lifecycle-fixture.json" -e '@.legacy.key_sha256'
 fi
 
 stage=complete
-printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_release":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","lifecycle":{"legacy_monolith_upgrade":%s,"legacy_source_commit":"%s","legacy_source_tree":"%s"},"checks":{"manifest":true,"signing_key":true,"feed_bootstrap":true,"feed_install":true,"feed_install_inactive":true,"feed_upgrade_transaction":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"probe_rpc":true,"independent_plugin_upgrade":true,"independent_plugin_keeps_owners_running":true,"kernel_upgrade":true,"lifecycle_restores_routes_and_private_inputs":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
+printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_release":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","lifecycle":{"legacy_monolith_upgrade":%s,"legacy_source_commit":"%s","legacy_source_tree":"%s"},"checks":{"manifest":true,"signing_key":true,"kernel_only_package_install":true,"kernel_only_service_lifecycle":true,"feed_bootstrap":true,"feed_install":true,"feed_install_inactive":true,"feed_upgrade_transaction":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"probe_rpc":true,"independent_plugin_upgrade":true,"independent_plugin_keeps_owners_running":true,"kernel_upgrade":true,"lifecycle_restores_routes_and_private_inputs":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
 	"$source_commit" "$source_tree" "$manifest_sha" "$version" "$release" "$legacy_upgraded" "$legacy_source_commit" "$legacy_source_tree"

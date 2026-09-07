@@ -410,6 +410,15 @@ done
 exec /usr/libexec/opl-netfleet-plugin-package configuration postinst
 endef
 
+define Package/opl-netfleet-plugin-mihomo/postrm
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+/usr/libexec/opl-netfleet-plugin-package mihomo postrm || exit 1
+[ "$${PKG_UPGRADE:-0}" != 1 ] && [ "$${1:-}" != upgrade ] || exit 0
+rm -f /var/run/opl-netfleet-mihomo-handoff/state.json || exit 1
+[ ! -d /var/run/opl-netfleet-mihomo-handoff ] || rmdir /var/run/opl-netfleet-mihomo-handoff
+endef
+
 $(eval $(call BuildPackage,opl-netfleet-kernel))
 $(foreach plugin,$(NETFLEET_PLUGINS),$(eval $(call BuildPackage,opl-netfleet-plugin-$(plugin))))
 $(eval $(call BuildPackage,opl-netfleet))

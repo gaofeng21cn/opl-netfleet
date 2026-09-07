@@ -2,7 +2,7 @@ import * as fs from "fs";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let failure, saved_state, directory, observer_stopped, resume_failed, drain, resume;
+let failure, saved_state, directory, observer_stopped, owns_backend, external_unchanged, resume_failed, drain, resume;
 
 const runtime = context.use("platform.runtime");
 const uci = context.use("platform.uci");
@@ -28,6 +28,14 @@ observer_stopped = function() {
 	for (let instance in values(services?.[runtime.SERVICE]?.instances ?? {}))
 		if (instance.running == true) return false;
 	return true;
+};
+
+owns_backend = function(before) { return before.backend == "native-mihomo" || before.active == true; };
+external_unchanged = function(before) {
+	if (backend.running() != before.running) return false;
+	if (!before.running) return true;
+	const state = readback(before.profile, uci.read_json(backend.MANIFEST_PATH));
+	return state.mihomo_running && state.mihomo_config_valid && state.state_available && state.runtime_identity_ok;
 };
 
 resume_failed = function(error) {
@@ -57,6 +65,8 @@ drain = function(params) {
 	if (before.supervisor?.installed == true &&
 		!supervisor.set_service_state({ ...before.supervisor, running: false }).ok)
 		return failure("handoff_supervisor_stop_failed", before);
+	if (!owns_backend(before))
+		return external_unchanged(before) ? { ok: true, result: before } : failure("handoff_external_owner_changed", before);
 	// The observer can outlive a stopped core. Stop the whole owner service.
 	system(`/etc/init.d/${runtime.SERVICE} stop >/dev/null 2>&1`);
 	let cleanup = null;
@@ -78,7 +88,9 @@ resume = function(saved) {
 		return failure("handoff_state_incompatible");
 	if (uci.current_profile() != before.profile || uci.backend_enabled() != before.enabled)
 		return failure("handoff_configuration_changed");
-	if (before.running == true) {
+	if (!owns_backend(before)) {
+		if (!external_unchanged(before)) return failure("handoff_external_owner_changed", before);
+	} else if (before.running == true) {
 		if (!backend.restart()) return resume_failed("handoff_owner_restart_failed");
 		const manifest = uci.read_json(backend.MANIFEST_PATH);
 		let ready = false;

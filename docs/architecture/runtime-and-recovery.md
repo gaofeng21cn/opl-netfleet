@@ -47,6 +47,8 @@ procd 直接持有 Mihomo 子进程，并提供有限 respawn。gateway 通过�
 supervisor 状态，再退出核心及生命周期实例并回读清理；恢复时验证同一配置身份，
 恢复原运行状态与选择。交接失败保留恢复所需状态，由[微内核维护流程](microkernel.md#热替换与资源)
 控制后续代码替换，不能在 owner 尚未退出时删除其实现。
+Nikki 已运行独立原生 Profile 时，交接只暂停 NetFleet supervisor 并回读 Nikki 身份，
+不停止或重启 Nikki；永久卸载在退出完成后删除本插件的临时交接记录。
 
 网络表单、配置备份恢复和显式核心维护同样进入上述运行 owner，不直接写生成的
 nft/路由对象。network owner 先校验候选配置，再保存旧声明和运行选择，调用原生服务
