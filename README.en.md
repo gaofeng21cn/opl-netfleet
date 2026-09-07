@@ -69,26 +69,34 @@ Each round uses current measurements and a switch margin, keeping the active
 path stable during small latency fluctuations. History helps explain what the
 device has seen; the current choice follows the latest healthy measurements.
 
-### Modular Extensions With Clear Responsibilities
+### Microkernel Direction And Plugin Hot Loading
 
-NetFleet implements **Extension API v1**. The core owns compilation, selection,
-activation, and recovery; the backend handles network integration; modules
-declare their API version, dependencies, permissions, lifecycle, and UI entry
-points. Shared CLI/RPC routing and module-owned private configuration let new
-capabilities evolve around a stable core.
+NetFleet is evolving toward a microkernel and service composition: the kernel
+coordinates discovery, dependencies, permissions, and lifecycle, while plugins
+compose functionality. Subscriptions, selection, configuration compilation, and
+recovery policies can progressively become plugins, with dependencies and system
+configuration ensuring required capabilities are ready.
+
+**Extension API v1** now supports independent process plugins. Installed plugins
+are discovered automatically; loading, reloading, exiting, and upgrading them
+does not require restarting NetFleet or Mihomo. Plugins may use UCode, Shell,
+Python, or another runtime available on the device, with a shared manifest,
+CLI/RPC interface, and component management page. Built-in modules and independent
+plugins share the management surface.
 
 | Integrated module | Purpose | Delivery and runtime scope |
 | --- | --- | --- |
 | **HTTPS compatibility** | HTTP/1.1-to-HTTP/2 compatibility for selected devices and destinations | Optional native-backend package, disabled after installation; requires device trust in a private CA and explicit onboarding, with bypass to the original route on failure |
 | **Zashboard** | Live Mihomo connections, traffic, rule matches, and proxy groups | Management adapter ships with the core; dashboard assets remain separate and can be updated by the native backend without restarting Mihomo |
+| **Device information example** | OpenWrt release, uptime, memory, and load | Complete developer template and independent APK/IPK, covering load, diagnostics, reload, and exit |
 
-Modules have explicit dependency, configuration, and failure-exit boundaries,
-while basic routing and recovery remain independent. **Evolving toward plugin
-hot loading** is a design direction: allow more capabilities to join, update,
-and leave on demand while preserving basic connectivity. The existing interfaces
-and lifecycle responsibilities provide a starting point. See the
-[product whitepaper](docs/product/whitepaper.md) for the design direction and
-[Modules and extensions](docs/architecture/extensions.md) for current integration.
+Plugins own their configuration, resources, and runtime state. Updates exit the
+old implementation before loading the new version. First-party and third-party
+developers use the same scaffolding, manifest validation, OpenWrt packaging, and
+signed distribution workflow. Start with the [plugin development and installation
+guide](docs/development/plugins.md); see the [product whitepaper](docs/product/whitepaper.md)
+for the design direction and [Modules and extensions](docs/architecture/extensions.md)
+for current integration and lifecycle behavior.
 
 ### Local Execution And Recovery First
 
@@ -305,6 +313,7 @@ NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
 - [Architecture overview](docs/architecture/overview.md)
 - [Independent device management](docs/architecture/management.md)
 - [Modules and extensions](docs/architecture/extensions.md)
+- [Plugin development and installation](docs/development/plugins.md)
 - [HTTPS compatibility](docs/architecture/https-compatibility.md)
 - [UI design](docs/design/ui.md)
 - [Product whitepaper](docs/product/whitepaper.md)

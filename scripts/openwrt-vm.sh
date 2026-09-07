@@ -17,6 +17,7 @@ Options:
   --diagnostic <lane>  Run native, setup, migration, runtime, package, or compatibility diagnostics
   --compat-runtime <dir>  Isolated musl dependency payload for compatibility diagnostics
   --compat-package <dir>  Signed optional APK candidate; requires --packages
+  --plugin-packages <dir>  Signed plugin test packages for the native diagnostic lane
   --output <path>   Qualification receipt path outside the repository
   -h, --help        Show this help
 EOF
@@ -33,6 +34,7 @@ packages=""
 diagnostic=all
 compat_runtime=""
 compat_package=""
+plugin_packages=""
 while (($#)); do
 	case "$1" in
 		--ref)
@@ -66,6 +68,11 @@ while (($#)); do
 			compat_package=$(cd "$2" && pwd)
 			shift 2
 			;;
+		--plugin-packages)
+			(($# >= 2)) || die "--plugin-packages requires a directory"
+			plugin_packages=$(cd "$2" && pwd)
+			shift 2
+			;;
 		-h|--help)
 			usage
 			exit 0
@@ -78,6 +85,7 @@ done
 [[ "$diagnostic" != compatibility || -d "$compat_runtime/vendor/mitmproxy" || -f "$compat_package/compat-manifest.json" ]] || die "compatibility diagnostic requires --compat-runtime or --compat-package"
 [[ -z "$compat_package" || "$diagnostic" == compatibility && -n "$packages" ]] || die "--compat-package requires compatibility diagnostic and --packages"
 [[ "$diagnostic" == compatibility || -z "$compat_runtime" ]] || die "compatibility payload is diagnostic-only"
+[[ -z "$plugin_packages" || "$diagnostic" == native ]] || die "plugin packages require the native diagnostic lane"
 [[ "$diagnostic" != package || -n "$packages" ]] || die "package diagnostic requires --packages"
 [[ "$diagnostic" == all || "$diagnostic" == package || "$diagnostic" == setup || "$diagnostic" == compatibility || -z "$packages" ]] || die "this diagnostic does not accept --packages"
 [[ "$source_ref" != -* ]] || die "source ref cannot begin with '-'"
@@ -141,7 +149,7 @@ git -C "$repo_dir" archive "$source_commit" \
 	scripts/deploy-openwrt-remote.sh \
 	scripts/openwrt-vm \
 	scripts/install-netfleet.sh \
-	scripts/verify-netfleet-release.py tests |
+	scripts/verify-netfleet-release.py examples/plugins tests |
 	tar -C "$source_dir" -xf -
 
 package_archive=""
@@ -178,6 +186,7 @@ NETFLEET_QEMU_VERSION=$qemu_version \
 	NETFLEET_VM_LANE=$diagnostic \
 	NETFLEET_COMPAT_RUNTIME="$compat_runtime" \
 	NETFLEET_COMPAT_PACKAGE="$compat_package" \
+	NETFLEET_PLUGIN_PACKAGES="$plugin_packages" \
 	NETFLEET_PACKAGE_ARCHIVE="$package_archive" \
 	NETFLEET_PACKAGE_MANIFEST_SHA256="$package_manifest_sha" \
 	sh "$source_dir/scripts/openwrt-vm/qualify.sh"

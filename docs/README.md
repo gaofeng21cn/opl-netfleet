@@ -8,6 +8,7 @@
 - [`architecture/`](architecture/overview.md)：当前产品对象、选择、运行、接口和打包合同。
 - [`design/ui.md`](design/ui.md)：React 参考面与原生 LuCI 的视觉和交互设计合同。
 - [`operations/canary-promotion.md`](operations/canary-promotion.md)：通用 canary 推广与恢复流程。
+- [`development/plugins.md`](development/plugins.md)：插件接口、开发模板、软件包构建、安装与热加载。
 
 ## 目标与理由
 

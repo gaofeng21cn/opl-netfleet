@@ -5,8 +5,24 @@
 'require netfleet.api as api';
 
 function errorLabel(code) {
+	if (code === 'plugin_load_failed_rolled_back') return '插件加载失败，已恢复未加载状态';
 	if (typeof code === 'string' && code.endsWith('_rolled_back')) return errorLabel(code.slice(0, -12)) + '；已恢复更新前版本和运行状态';
 	return ({
+		plugin_package_maintenance: '插件正在安装或维护，暂时只可查看状态和退出',
+		plugin_package_replacing: '插件文件正在替换，请在包操作完成后重试',
+		plugin_api_incompatible: '插件接口版本与当前 NetFleet 不兼容',
+		plugin_backend_unsupported: '插件不适用于当前后端',
+		plugin_dependency_missing: '插件运行依赖缺失',
+		plugin_not_loaded: '请先加载插件',
+		plugin_manifest_invalid: '插件声明无效',
+		plugin_files_unsafe: '插件文件权限或入口无效',
+		plugin_confirmation_or_revision_required: '插件版本已变化，请重新读取后确认',
+		plugin_load_failed: '插件加载失败',
+		plugin_unload_unconfirmed: '插件退出尚未确认，请检查插件状态',
+		plugin_rollback_unconfirmed: '插件恢复尚未确认，请检查插件状态',
+		plugin_timeout: '插件响应超时',
+		plugin_response_invalid: '插件返回内容无效',
+		plugin_action_failed: '插件操作失败',
 		extension_component_not_installed: '未安装可选模块',
 		extension_api_incompatible: '模块接口与当前 NetFleet 不兼容',
 		extension_dependency_missing: '模块运行依赖缺失',
@@ -284,6 +300,56 @@ function loadComponents(controller) {
 	return controller.componentsRead;
 }
 
+function pluginDialog(controller, plugin) {
+	const output = E('pre', { 'style': 'max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere' }, '');
+	const status = E('p', {}, '正在读取');
+	const actions = Object.keys(plugin.actions || {});
+	const selector = E('select', { 'class': 'cbi-input-select' }, actions.map(function(action) { return E('option', { 'value': action }, action); }));
+	const params = E('textarea', { 'class': 'cbi-input-textarea', 'rows': 4, 'aria-label': '插件参数 JSON', 'style': 'width:100%;box-sizing:border-box' }, '{}');
+	let revision = plugin.revision;
+	let pending = false;
+	const controls = [];
+	function busy(value) { pending = value; controls.forEach(function(control) { control.disabled = value; }); }
+	function show(result) {
+		revision = result.revision || revision;
+		status.textContent = result.loaded === true ? (result.ready === true ? '已加载，就绪' : '已加载，未就绪') : result.loaded === false ? '未加载' : '操作完成';
+		output.textContent = JSON.stringify(result, null, 2);
+	}
+	function run(action) {
+		if (pending) return;
+		let values = {};
+		try {
+			if (actions.indexOf(action) >= 0) values = JSON.parse(params.value);
+			if (!values || typeof values !== 'object' || Array.isArray(values)) throw new Error('参数必须是 JSON 对象');
+		} catch (error) { status.textContent = error.message; return; }
+		const writing = ['load', 'reload', 'unload'].indexOf(action) >= 0 || plugin.actions[action] === 'write';
+		const execute = function() {
+			busy(true);
+			const request = { id: plugin.id, action: action, revision: revision, confirm: writing, params: values };
+			return (writing ? api.pluginCall(request) : api.pluginRead(request)).then(show).catch(function(error) {
+				status.textContent = errorLabel(error.message || String(error));
+			}).finally(function() { busy(false); if (writing) loadComponents(controller); });
+		};
+		if (!writing) return execute();
+		ui.showModal('确认插件操作', [ E('p', {}, plugin.label + ' · ' + action),
+			E('div', { 'class': 'right' }, [ button('取消', function() { pluginDialog(controller, plugin); }), ' ',
+				button('确认', function() { open(); execute(); }) ]) ]);
+	}
+
+	controls.push(button('加载', function() { run('load'); }), button('重新加载', function() { run('reload'); }),
+		button('退出', function() { run('unload'); }), button('↻', function() { run('get'); }));
+	controls[3].setAttribute('title', '刷新状态');
+	const children = [status, E('div', { 'class': 'cbi-page-actions' }, controls), output];
+	if (actions.length) {
+		const execute = button('执行', function() { run(selector.value); });
+		controls.push(execute);
+		children.push(E('label', {}, '插件动作'), selector, E('label', {}, '参数（JSON）'), params, execute);
+	}
+	children.push(E('div', { 'class': 'right' }, button('关闭', ui.hideModal)));
+	function open() { ui.showModal(plugin.label, children); }
+	open(); run('get');
+}
+
 function startPackageOperation(controller, component) {
 	if (componentsLocked(controller)) return Promise.resolve();
 	controller.componentsError = null;
@@ -407,6 +473,12 @@ function componentsPage(controller) {
 		const available = component.available_version && !feed.error ? [ hasUpdate ? '候选版本 ' + component.available_version : '当前更新源暂无新版' ] : [];
 		return E('tr', {}, [ E('td', {}, [ E('strong', {}, component.label), E('small', {}, component.id === 'netfleet' ? '包含 LuCI 管理界面' : '代理核心') ]),
 			E('td', {}, current), E('td', {}, available), E('td', { 'class': 'netfleet-component-actions' }, update) ]);
+	});
+	(snapshot.extensions || []).filter(function(extension) { return extension.kind === 'plugin'; }).forEach(function(plugin) {
+		rows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, plugin.label), E('small', {}, '动态插件') ]),
+			E('td', {}, [ E('strong', {}, plugin.installed_version || plugin.version || '未知版本'), E('small', {}, plugin.reason ? errorLabel(plugin.reason) : '可按需加载') ]),
+			E('td', {}, plugin.package || ''), E('td', { 'class': 'netfleet-component-actions' },
+				plugin.revision ? button('管理', function() { pluginDialog(controller, plugin); }, active) : '') ]));
 	});
 	(snapshot.extensions || []).filter(function(extension) { return extension.kind === 'optional'; }).forEach(function(extension) {
 		const state = ({ ready: '可配置', not_installed: '未安装', incompatible: '模块版本不兼容', backend_unsupported: '当前后端不支持', dependency_missing: '缺少依赖', unknown: '状态未确认' })[extension.state];

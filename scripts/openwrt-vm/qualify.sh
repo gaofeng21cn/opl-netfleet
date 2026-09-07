@@ -150,7 +150,7 @@ tar -cf "$work/runtime-source.tar" -C "$workspace" \
 	openwrt/files/usr/share/opl-netfleet/nikki \
 	openwrt/files/etc/opl-netfleet/policy.example.json \
 	openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json \
-	openwrt/files/etc/opl-netfleet/rulesets.lock.json tests
+	openwrt/files/etc/opl-netfleet/rulesets.lock.json examples/plugins tests
 openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
 	-keyout "$work/local-probe-ca.key" -out "$work/local-probe.crt" \
 	-subj '/CN=NetFleet QEMU Test CA' \
@@ -456,6 +456,15 @@ actual_transfer=$(ssh $ssh_common root@127.0.0.1 \
 	exit 1
 }
 ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf /tmp/runtime-source.tar && rm -f /tmp/runtime-source.tar'
+if [ -n "${NETFLEET_PLUGIN_PACKAGES:-}" ]; then
+	[ "$lane_mode" = native ] || exit 1
+	tar -cf "$work/plugin-packages.tar" -C "$NETFLEET_PLUGIN_PACKAGES" .
+	tar -cf - -C "$work" plugin-packages.tar | ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf -'
+	expected_plugin_sha=$(sha256_file "$work/plugin-packages.tar")
+	actual_plugin_sha=$(ssh $ssh_common root@127.0.0.1 "sha256sum /tmp/plugin-packages.tar | cut -d ' ' -f 1")
+	[ "$expected_plugin_sha" = "$actual_plugin_sha" ] || exit 1
+	ssh $ssh_common root@127.0.0.1 'mkdir -p /tmp/netfleet-plugin-packages && tar -C /tmp/netfleet-plugin-packages -xf /tmp/plugin-packages.tar'
+fi
 transfer_elapsed_ms=$((transfer_elapsed_ms + $(now_ms) - transfer_started_ms))
 }
 run_guest() {

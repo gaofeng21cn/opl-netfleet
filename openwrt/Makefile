@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet
-PKG_VERSION:=0.5.8
+PKG_VERSION:=0.6.0
 PKG_RELEASE:=1
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=OPL NetFleet
@@ -9,6 +9,7 @@ PKG_MAINTAINER:=OPL NetFleet
 include $(INCLUDE_DIR)/package.mk
 
 define Package/opl-netfleet
+  PROVIDES:=netfleet-plugin-api-v1
   SECTION:=net
   CATEGORY:=Network
   TITLE:=OPL NetFleet network enhancement

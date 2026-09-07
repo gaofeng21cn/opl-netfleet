@@ -5,6 +5,12 @@
 
 ## 原生接入与管理
 
+动态插件使用 `plugins_list`、`plugin_read`、`plugin_call`。清单只发现安装文件，读取和写入
+分别授权；请求为 `{request:{id,action,revision?,confirm?,params?}}`，写入必须携带当前
+revision 和明确确认。组件页管理已安装插件的加载、重载、退出和声明的自定义动作。
+状态与私有配置由插件持有，宿主执行生命周期并回读 loaded/ready；包管理器专用
+`plugin-drain` 不暴露给 RPC。接口及安装切换合同见[模块与扩展](extensions.md)。
+
 原生后端的可选 [HTTPS 兼容模块](https-compatibility.md) 使用独立的
 `compatibility_get/apply/enable/disable/probe/ca` 动作。rpcd 和 UCode 入口将请求交给
 组件 controller；该 controller 复用现有 mutation lock，不运行全局配置应用。

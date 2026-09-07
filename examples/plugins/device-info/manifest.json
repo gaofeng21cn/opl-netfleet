@@ -1,0 +1,12 @@
+{
+  "schema": "opl-netfleet-plugin.v1",
+  "id": "device-info",
+  "label": "Device information",
+  "version": "0.1.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-device-info",
+  "dependencies": ["ucode", "ucode-mod-fs", "ucode-mod-ubus"],
+  "backends": ["native-mihomo", "nikki-mihomo"],
+  "permissions": ["diagnostics"],
+  "actions": {"inspect": "read"}
+}

@@ -79,7 +79,6 @@ ucode /tmp/tests/extensions_device.uc /tmp/openwrt/files/usr/libexec/rpcd/opl-ne
 	/tmp/openwrt/luci-app-netfleet/root/usr/share/rpcd/acl.d/luci-app-netfleet.json >>"$work/contracts.log" 2>&1
 printf '{"kind":"native-mihomo"}\n' >/etc/opl-netfleet/backend.json
 ucode /tmp/tests/backend_contract.uc native-mihomo >>"$work/contracts.log" 2>&1
-ucode /tmp/tests/plugins_device.uc >>"$work/contracts.log" 2>&1
 cat /tmp/local-probe.crt >>/etc/ssl/certs/ca-certificates.crt
 printf '192.168.1.2 netfleet-probe.test www.gstatic.com\n' >>/etc/hosts
 
@@ -274,6 +273,13 @@ ucode "$main" status >"$work/status-result.json"
 assert_json "$work/status-result.json" '@.result.active' true
 test ! -e /etc/init.d/nikki
 stage=network_management
+plugin_core_pid=$(pidof mihomo)
+ucode /tmp/tests/plugins_device.uc >>"$work/contracts.log" 2>&1
+ucode /tmp/tests/plugin_example_device.uc >>"$work/contracts.log" 2>&1
+if [ -d /tmp/netfleet-plugin-packages ]; then
+	sh /tmp/tests/plugin_package_device.sh >"$work/plugin-packages.json" 2>"$work/plugin-packages.log"
+fi
+test "$(pidof mihomo)" = "$plugin_core_pid"
 sh /tmp/guest-network-management-qualify.sh "$work/network-management" >"$work/network-management.json" 2>"$work/network-management.stderr"
 assert_json "$work/network-management.json" '@.ok' true
 stage=dashboard_management
@@ -393,4 +399,6 @@ ucode -e 'import { readfile } from "fs";
 		for (let passed in values(detail.checks)) if (passed != true) exit(1);
 	}' "$work/network-management.json" "$work/dashboard-management.json"
 stage=complete
-printf '{"ok":true,"scope":"native-mihomo-runtime","production_ready":false,"source_commit":"%s","source_tree":"%s","checks":{"source_contracts":true,"native_subscription_crud":true,"subscription_download":true,"subscription_failed_cache_retained":true,"subscription_identity_isolation":true,"subscription_private_storage":true,"subscription_active_edit_guard":true,"subscription_same_content_mtime":true,"no_nikki":true,"shared_compile":true,"shared_enable":true,"shared_select":true,"shared_refresh":true,"shared_disable":true,"procd_owner":true,"controller":true,"owner_conflict_zero_mutation":true,"ipv4_negative_control":true,"ipv6_negative_control":true,"lan_ipv4_tcp":true,"lan_ipv4_udp":true,"lan_ipv6_tcp":true,"lan_ipv6_udp":true,"router_ipv4_tcp":true,"router_ipv4_udp":true,"router_ipv6_tcp":true,"router_ipv6_udp":true,"lan_ipv4_dns_tcp_udp":true,"lan_ipv6_dns_tcp_udp":true,"router_ipv4_dns_tcp_udp":true,"router_ipv6_dns_tcp_udp":true,"normal_stop_cleanup":true,"repeated_stop":true,"crash_recovery_or_cleanup":true,"direct_after_stop":true,"direct_after_crash":true,"invalid_config_no_interception":true,"foreign_rules_preserved":true}}\n' "$commit" "$tree"
+plugin_package_receipt=null
+[ ! -f "$work/plugin-packages.json" ] || plugin_package_receipt=$(cat "$work/plugin-packages.json")
+printf '{"ok":true,"scope":"native-mihomo-runtime","production_ready":false,"source_commit":"%s","source_tree":"%s","plugin_package_receipt":%s,"checks":{"plugin_hot_loading":true,"plugin_core_pid_unchanged":true,"source_contracts":true,"native_subscription_crud":true,"subscription_download":true,"subscription_failed_cache_retained":true,"subscription_identity_isolation":true,"subscription_private_storage":true,"subscription_active_edit_guard":true,"subscription_same_content_mtime":true,"no_nikki":true,"shared_compile":true,"shared_enable":true,"shared_select":true,"shared_refresh":true,"shared_disable":true,"procd_owner":true,"controller":true,"owner_conflict_zero_mutation":true,"ipv4_negative_control":true,"ipv6_negative_control":true,"lan_ipv4_tcp":true,"lan_ipv4_udp":true,"lan_ipv6_tcp":true,"lan_ipv6_udp":true,"router_ipv4_tcp":true,"router_ipv4_udp":true,"router_ipv6_tcp":true,"router_ipv6_udp":true,"lan_ipv4_dns_tcp_udp":true,"lan_ipv6_dns_tcp_udp":true,"router_ipv4_dns_tcp_udp":true,"router_ipv6_dns_tcp_udp":true,"normal_stop_cleanup":true,"repeated_stop":true,"crash_recovery_or_cleanup":true,"direct_after_stop":true,"direct_after_crash":true,"invalid_config_no_interception":true,"foreign_rules_preserved":true}}\n' "$commit" "$tree" "$plugin_package_receipt"

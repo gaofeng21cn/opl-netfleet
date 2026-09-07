@@ -515,6 +515,47 @@ for (const [state, code, message] of [
 }
 """)
 
+    def test_dynamic_plugin_management_uses_current_identity_and_confirmation(self):
+        self.run_js(r"""
+const calls = [];
+const plugin = { id: 'device-info', label: '设备信息', kind: 'plugin', version: '1.0.0', revision: 'r1',
+  package: 'opl-netfleet-plugin-device-info', actions: { inspect: 'read', reset: 'write' } };
+const owner = controller();
+owner.components = { supported: true, feed: {}, components: [], dependencies: [], extensions: [plugin] };
+const managed = module('managed.js', {
+  pluginRead: async request => { calls.push(['read', request]); return { loaded: false, ready: true, revision: 'r2' }; },
+  pluginCall: async request => { calls.push(['write', request]); return { loaded: true, ready: true, revision: 'r2' }; },
+  componentsGet: async () => owner.components,
+});
+let page = managed.components(owner);
+assert(text(page).includes('动态插件'));
+assert.equal(calls.length, 0, 'inventory must not execute plugin');
+fire(button(page, '管理'));
+await tick();
+assert.equal(calls[0][1].action, 'get');
+fire(button(modal.content, '加载'));
+assert.equal(modal.title, '确认插件操作');
+assert.equal(calls.length, 1, 'write waits for confirmation');
+fire(button(modal.content, '确认'));
+await tick();
+assert.equal(calls[1][0], 'write');
+assert.equal(calls[1][1].revision, 'r2', 'uses current owner identity');
+assert.equal(calls[1][1].confirm, true);
+assert(text(modal.content).includes('已加载，就绪'));
+const select = find(modal.content, node => node.tag === 'select');
+select.value = 'inspect';
+fire(button(modal.content, '执行'));
+await tick();
+assert.equal(calls.at(-1)[0], 'read');
+assert.equal(calls.at(-1)[1].action, 'inspect');
+const params = find(modal.content, node => node.tag === 'textarea');
+params.value = '[]';
+const before = calls.length;
+fire(button(modal.content, '执行'));
+assert.equal(calls.length, before, 'invalid params never dispatched');
+assert(text(modal.content).includes('JSON 对象'));
+""")
+
     def test_unmanaged_compatibility_preserves_revision_bound_disable(self):
         self.run_js(r"""
 const owner = controller();

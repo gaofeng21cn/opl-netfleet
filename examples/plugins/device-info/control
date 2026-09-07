@@ -1,0 +1,59 @@
+#!/usr/bin/ucode
+import * as fs from "fs";
+import * as ubus from "ubus";
+
+const ID = "device-info";
+const STATE = `/var/run/opl-netfleet-plugin-${ID}`;
+
+function loaded() {
+	const info = fs.lstat(STATE);
+	return info?.type == "file" && info.uid == 0 && (info.mode & 077) == 0;
+};
+
+function inspect() {
+	const bus = ubus.connect();
+	if (bus == null) return { ok: false, error: "system_bus_unavailable" };
+	let board, info, failed = false;
+	try {
+		board = bus.call("system", "board", {});
+		info = bus.call("system", "info", {});
+	} catch (error) { failed = true; }
+	bus.disconnect();
+	if (failed || type(board?.release) != "object" || type(info?.uptime) != "int")
+		return { ok: false, error: "system_information_unavailable" };
+	return { ok: true, result: { release: board.release, kernel: board.kernel,
+		model: board.model, uptime_seconds: info.uptime, memory: info.memory, load: info.load } };
+};
+
+function dispatch() {
+	const input = json(fs.readfile(ARGV[1]))?.request;
+	if (input?.id != ID || input.api_version != 1 || input.action != ARGV[0])
+		return { ok: false, error: "request_invalid" };
+	if (input.action == "get") return { ok: true, result: { loaded: loaded(), ready: loaded() } };
+	if (input.action == "unload") {
+		if (fs.lstat(STATE) != null && !fs.unlink(STATE)) return { ok: false, error: "unload_failed" };
+		return { ok: true, result: { loaded: false, ready: false } };
+	}
+	if (input.action == "load") {
+		const observed = inspect();
+		if (!observed.ok) return observed;
+		if (loaded()) return { ok: true, result: { loaded: true, ready: true } };
+		if (fs.lstat(STATE) != null) return { ok: false, error: "state_unsafe" };
+		const file = fs.open(STATE, "wx", 0600);
+		if (file == null) return { ok: false, error: "state_unavailable" };
+		file.write("loaded\n");
+		file.close();
+		return { ok: true, result: { loaded: loaded(), ready: loaded() } };
+	}
+	if (input.action == "inspect") {
+		if (!loaded()) return { ok: false, error: "plugin_not_loaded" };
+		return inspect();
+	}
+	return { ok: false, error: "action_unknown" };
+};
+
+let response;
+try { response = dispatch(); }
+catch (error) { response = { ok: false, error: "plugin_request_failed" }; }
+printf("%J\n", response);
+exit(response.ok ? 0 : 1);

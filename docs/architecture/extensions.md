@@ -78,7 +78,7 @@ unload、回读、load、回读。`get` 返回 `loaded` 与 `ready`；unload 必
 
 `plugins-list` 只读取安装文件；`plugin-read` 只调用 get 或声明为 read 的动作；
 `plugin-call` 执行生命周期或声明为 write 的动作。写请求需要确认及清单返回的 revision，
-宿主在共享 mutation lock 内重新读取身份并验证。revision 绑定 manifest 和入口字节，
+宿主在共享 mutation lock 内重新读取身份并验证；锁不传递给插件进程。revision 绑定 manifest 和入口字节，
 插件自己的业务状态 revision 通过 params 交给其状态 owner 校验。RPC 的 read/write ACL
 分别授权，插件声明不能扩大现有 ACL。所有插件请求和响应有大小上限、执行有时间上限，
 失败不会把插件代码导入核心进程。list 不启动插件、不执行探测。
@@ -90,8 +90,10 @@ root 持有、不可由其他用户写入，拒绝符号链接入口、越界标
 安装、升级与卸载使用标准 APK/IPK。软件包钩子在替换或删除旧代码前调用旧插件 unload
 并确认排空；APK 不保证根据钩子失败阻止操作，所以钩子在未确认退出时持续等待，不返回
 假成功。用户可先显式卸载运行实例，再操作软件包。升级后显式 load，新代码即时生效；
-包钩子在 `/var/run/opl-netfleet-plugin-maintenance/<id>` 建立维护标记，替换结束后清除；
-维护期间只允许 get/unload，避免旧代码排空后又被重新加载。中断留下的标记需完成包
+包钩子在 `/var/run/opl-netfleet-plugin-maintenance/<id>` 建立维护标记，并调用仅 root CLI
+可用的 `plugin-drain`。宿主在同一锁内完成 unload/get 回读并写入 `replacing` 标记；排空
+期间只允许 get/unload，进入 replacing 后禁止全部插件执行，直到包后置钩子清除标记，
+避免替换字节期间调用插件。plugin-drain 重试在 replacing 阶段幂等成功。中断留下的标记需完成包
 恢复并检查文件后再清除。插件状态保留在自身私有目录，状态迁移及回滚由插件负责。
 涉及数据面的插件仍需 QEMU 和
 独立授权设备验收；基础宿主通过并不等于所有第三方插件均可安全接管网络。

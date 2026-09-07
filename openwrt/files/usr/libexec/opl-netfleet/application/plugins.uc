@@ -18,6 +18,7 @@ function maintenance(id) {
 	if (fs.lstat(MAINTENANCE) == null) return false;
 	return !trusted(MAINTENANCE, "directory") || fs.lstat(`${MAINTENANCE}/${id}`) != null;
 };
+function replacing(id) { return fs.lstat(`${MAINTENANCE}/${id}/replacing`) != null; };
 function inspect(id) {
 	if (!valid_id(id)) return fail("plugin_id_invalid");
 	const directory = `${ROOT}/${id}`, manifest_path = `${directory}/manifest.json`, entry = `${directory}/control`;
@@ -51,19 +52,23 @@ export function inventory(versions) {
 };
 
 function execute(found, action, params, work) {
-	const request = `${work}/request.json`, output = `${work}/response.json`;
+	const request = `${work}/request.json`, status_path = `${work}/exit`;
 	let result = fail("plugin_no_response");
 	try {
 		if (!write_private(request, sprintf("%J", { request: { api_version: API_VERSION, id: found.manifest.id, action: action, params: params ?? {} } })))
 			return fail("plugin_request_unavailable");
-		// File-size and time limits bound a faulty plugin without loading it into the owner process.
-		const status = system(`(umask 077; ulimit -f 128; timeout -k 2 30 ${q(found.entry)} ${q(action)} ${q(request)} >${q(output)} 2>/dev/null)`);
-		const info = fs.lstat(output);
+		// Limit the response pipe, not the plugin's own files or child processes.
+		const command = `{ ${q(found.entry)} ${q(action)} ${q(request)} 2>/dev/null; printf '%s' "$?" >${q(status_path)}; } | head -c ${LIMIT + 1}`;
+		const pipe = fs.popen(`timeout -k 2 30 sh -c ${q(command)} 2>/dev/null`);
+		if (pipe == null) return fail("plugin_no_response");
+		const content = pipe.read("all");
+		const status = pipe.close();
 		if (status == 124 || status == 137) return fail("plugin_timeout");
-		if (info?.type != "file" || info.size > LIMIT) return fail("plugin_response_invalid");
-		const response = read_json(output);
+		if (type(content) != "string" || length(content) > LIMIT) return fail("plugin_response_invalid");
+		let response;
+		try { response = json(content); } catch (error) { return fail("plugin_response_invalid"); }
 		if (type(response) != "object" || type(response.ok) != "bool") return fail("plugin_response_invalid");
-		if (status != 0 || response.ok != true) return fail("plugin_action_failed");
+		if (status != 0 || trim(fs.readfile(status_path) ?? "") != "0" || response.ok != true) return fail("plugin_action_failed");
 		if (type(response.result) != "object") return fail("plugin_response_invalid");
 		if (action == "get" && (type(response.result.loaded) != "bool" || type(response.result.ready) != "bool")) return fail("plugin_status_invalid");
 		result = { ok: true, result: response.result };
@@ -76,7 +81,7 @@ function invoke(found, action, params) {
 	if (work == null) return fail("plugin_request_unavailable");
 	if (!fs.chmod(work, 0700)) { fs.rmdir(work); return fail("plugin_request_unavailable"); }
 	const result = execute(found, action, params, work);
-	fs.unlink(`${work}/request.json`); fs.unlink(`${work}/response.json`); fs.rmdir(work);
+	fs.unlink(`${work}/request.json`); fs.unlink(`${work}/exit`); fs.rmdir(work);
 	return result;
 };
 
@@ -97,11 +102,18 @@ function lifecycle(found, action, params) {
 	return { ok: false, error: rollback.ok && restored.ok && restored.result.loaded == false ? "plugin_load_failed_rolled_back" : "plugin_rollback_unconfirmed" };
 };
 
-function request(path, access) {
+function request(path, access, drain) {
 	if (!private_file(path) || fs.lstat(path).size > LIMIT) return fail("plugin_private_request_required");
 	const input = read_json(path)?.request;
 	if (type(input) != "object" || !valid_id(input.id) || type(input.action) != "string" ||
 		(input.params != null && type(input.params) != "object")) return fail("plugin_request_invalid");
+	if (drain && (input.action != "unload" || input.confirm != true || !trusted(MAINTENANCE, "directory") ||
+		!trusted(`${MAINTENANCE}/${input.id}`, "directory"))) return fail("plugin_package_maintenance_required");
+	if (replacing(input.id)) return drain ? { ok: true, result: { id: input.id, loaded: false, ready: false, state: "replacing" } } : fail("plugin_package_replacing");
+	if (drain && input.revision == "absent" && fs.lstat(`${ROOT}/${input.id}/manifest.json`) == null && fs.lstat(`${ROOT}/${input.id}/control`) == null) {
+		if (!write_private(`${MAINTENANCE}/${input.id}/replacing`, '{"revision":"absent"}')) return fail("plugin_package_marker_failed");
+		return { ok: true, result: { id: input.id, loaded: false, ready: false, state: "replacing" } };
+	}
 	const found = inspect(input.id);
 	if (!found.ok) return found;
 	if (action_access(found.manifest, input.action) != access) return fail("plugin_action_not_allowed");
@@ -119,17 +131,21 @@ function request(path, access) {
 		if (!state.ok || !state.result.loaded || !state.result.ready) return fail("plugin_not_loaded");
 	}
 	const result = lifecycle(found, input.action, input.params);
+	if (drain && result.ok) {
+		if (!write_private(`${MAINTENANCE}/${input.id}/replacing`, sprintf("%J", { revision: found.revision }))) return fail("plugin_package_marker_failed");
+		return { ok: true, result: { id: input.id, loaded: false, ready: false, state: "replacing" } };
+	}
 	return result.ok ? { ok: true, result: { ...result.result, id: input.id, revision: found.revision } } : result;
 };
 
 export function dispatch(action, path) {
 	if (action == "plugins-list") return { ok: true, result: { plugins: inventory(null) } };
-	if (index(["plugin-read", "plugin-call"], action) < 0) return null;
+	if (index(["plugin-read", "plugin-call", "plugin-drain"], action) < 0) return null;
 	// All entry points, including root CLI, serialize writes with the existing network owner.
-	const lock = fs.open(LOCK, "a", 0600);
-	if (lock == null || !lock.lock(action == "plugin-call" ? "xn" : "sn")) { lock?.close(); return fail("mutation_busy"); }
+	const lock = fs.open(LOCK, "ae", 0600);
+	if (lock == null || !lock.lock(action == "plugin-read" ? "sn" : "xn")) { lock?.close(); return fail("mutation_busy"); }
 	let result;
-	try { result = request(path, action == "plugin-call" ? "write" : "read"); }
+	try { result = request(path, action == "plugin-read" ? "read" : "write", action == "plugin-drain"); }
 	catch (error) { result = fail("plugin_execution_failed"); }
 	lock.close();
 	return result;

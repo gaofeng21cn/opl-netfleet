@@ -53,16 +53,19 @@ NetFleet 把“访问需求”和“具体节点”分开管理。规则只需�
 
 每一轮都使用最新测量结果，并设置切换门槛，避免线路在细小延迟波动中来回跳动。历史数据用于帮助用户理解运行情况，当前选择始终以当轮可用性和实时测量为准。
 
-### 插件化扩展，职责明确
+### 微内核方向与插件热加载
 
-NetFleet 已实现 **Extension API v1**：核心统一管理编译、选优、激活与恢复；后端负责所选环境的网络接入；扩展模块声明自己的接口版本、依赖、权限、生命周期和界面入口。模块通过统一 CLI/RPC 接入，各自维护私有配置，让新能力能够围绕稳定核心独立演进。
+NetFleet 以微内核和服务组合为演进方向：内核集中处理发现、依赖、权限与生命周期等机制，功能通过插件组合。订阅、选路、配置编译和恢复策略都可以沿这一方向逐步拆分，必需能力由依赖和系统配置保证就绪。
+
+当前 **Extension API v1** 已支持独立进程插件：安装后自动发现，加载、重载、退出及升级无需重启 NetFleet 或 Mihomo。插件可以采用 UCode、Shell、Python 等设备支持的语言，使用统一声明、CLI/RPC 和组件页入口。现有内置模块与独立插件共用管理面。
 
 | 已接入模块 | 作用 | 交付与运行边界 |
 | --- | --- | --- |
 | **HTTPS 兼容** | 为指定设备和目标提供 HTTP/1.1 到 HTTP/2 的兼容转换 | 原生后端独立可选包，安装后默认关闭；需要设备信任私有 CA 和显式接入，故障时旁路回原选路 |
 | **Zashboard** | 查看 Mihomo 实时连接、流量、规则命中和代理组 | 管理适配器随核心包交付，面板资源独立；原生后端可单独更新资源，无需重启 Mihomo |
+| **设备信息示例插件** | 读取 OpenWrt 发行版、运行时间、内存与负载 | 完整开发模板，独立 APK/IPK，覆盖加载、诊断、重载和退出 |
 
-模块拥有清晰的依赖、配置和故障退出边界，基础选路与恢复保持独立。**面向插件热加载演进**是扩展体系的设计方向：让更多能力按需接入、更新和退出，同时保持基础网络连续可用。现有接口和生命周期分工为这一方向提供起点；具体设计理念见[产品白皮书](docs/product/whitepaper.md)，当前模块接入方式见[模块与扩展](docs/architecture/extensions.md)。
+插件拥有自己的配置、资源和运行状态，更新时先退出旧实现，再加载新版本。自有和第三方开发者使用同一套脚手架、声明校验、OpenWrt 软件包和签名分发流程。可直接从[插件开发与安装指南](docs/development/plugins.md)开始；设计理念见[产品白皮书](docs/product/whitepaper.md)，当前接入与生命周期见[模块与扩展](docs/architecture/extensions.md)。
 
 ### 设备本地运行，恢复优先
 
@@ -204,6 +207,7 @@ NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
 - [架构总览](docs/architecture/overview.md)
 - [设备独立管理](docs/architecture/management.md)
 - [模块与扩展](docs/architecture/extensions.md)
+- [插件开发与安装](docs/development/plugins.md)
 - [HTTPS 兼容模块](docs/architecture/https-compatibility.md)
 - [UI 设计](docs/design/ui.md)
 - [产品白皮书](docs/product/whitepaper.md)
