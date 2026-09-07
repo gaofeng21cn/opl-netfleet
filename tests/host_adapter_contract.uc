@@ -1,6 +1,6 @@
 #!/usr/bin/ucode
 import * as fs from 'fs';
-import { create, run, tick } from '../openwrt/files/usr/libexec/opl-netfleet/kernel/host.uc';
+import { create, execute, run, tick } from '../openwrt/files/usr/libexec/opl-netfleet/kernel/host.uc';
 import { invoke, lifecycle } from '../openwrt/files/usr/libexec/opl-netfleet/kernel/process.uc';
 import { trusted, atomic_json, shell_quote as q } from '../openwrt/files/usr/libexec/opl-netfleet/kernel/io.uc';
 import { create as create_openwrt } from '../openwrt/files/usr/libexec/opl-netfleet/adapters/openwrt.uc';
@@ -65,8 +65,9 @@ try {
 		check(fs.mkdir(`${root}/${directory}`, 0700), `mkdir ${directory}`);
 	write(`${root}/plugins/scheduler/manifest.json`, { schema: 'opl-netfleet-service-plugin.v1', id: 'scheduler', label: 'Scheduler',
 		version: '1.0.0', api_version: 1, package: 'opl-netfleet-plugin-scheduler',
-		services: { 'scheduler.tick': { version: 1, module: 'lib/main.uc', requires: {} } }, commands: {} });
-	write(`${root}/plugins/scheduler/lib/main.uc`, 'return function(ctx) { return { tick: state => ({ delay_ms: 321, state: { count: (state.count ?? 0) + 1 } }) }; };');
+		services: { 'scheduler.tick': { version: 1, module: 'lib/main.uc', requires: {} } },
+		commands: { 'scheduler-inspect': { service: 'scheduler.tick', method: 'inspect', access: 'read' } } });
+	write(`${root}/plugins/scheduler/lib/main.uc`, 'return function(ctx) { return { inspect: () => ({ ok: true }), tick: state => ({ delay_ms: 321, state: { count: (state.count ?? 0) + 1 } }) }; };');
 	write(`${root}/plugins/process/manifest.json`, { schema: 'opl-netfleet-plugin.v1', id: 'process', label: 'Process',
 		version: '1.0.0', api_version: 1, package: 'opl-netfleet-plugin-process', dependencies: ['fixture-package'],
 		backends: [], permissions: ['diagnostics'], actions: { inspect: 'read' } });
@@ -86,6 +87,20 @@ try {
 		'scheduler uses injected network lock and releases it');
 	check(tick(root, states, { adapter: adapter }) == 321 && states.scheduler.count == 2,
 		'scheduler preserves plugin state through adapter-backed calls');
+	const exclusive = fs.open(`${root}/locks/scheduler.lock`, 'ae', 0600);
+	check(exclusive != null && exclusive.lock('xn'), 'simulate installed code being replaced');
+	try {
+		check(execute(['scheduler-inspect'], root, { adapter }).error == 'plugin_code_busy:scheduler',
+			'installed service cannot enter during exclusive code replacement');
+		const snapshot_adapter = { ...adapter, paths: { ...adapter.paths, installed_root: `${root}/installed` } };
+		check(execute(['scheduler-inspect'], root, { adapter: snapshot_adapter }).ok == true,
+			'private updater snapshot does not acquire installed code leases after option normalization');
+		check(execute(['scheduler-inspect'], root, { adapter: snapshot_adapter, lock_root: `${root}/locks` }).error == 'plugin_code_busy:scheduler',
+			'explicit snapshot code locks remain effective through dispatch');
+		check(tick(root, {}, { adapter: snapshot_adapter }) == 321,
+			'snapshot scheduler keeps default code locks separate from installed code');
+	} catch (error) { exclusive.close(); die(error.message); }
+	exclusive.close();
 
 	const request = `${root}/request.json`;
 	write(request, { request: { id: 'process', action: 'load', revision: revision, confirm: true } });

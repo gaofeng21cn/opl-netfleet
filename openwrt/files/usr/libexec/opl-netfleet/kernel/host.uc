@@ -23,6 +23,7 @@ function host_options(options) {
 	return { ...options, trusted_owner: options.trusted_owner ?? adapter.trusted_owner,
 		override_path: options.override_path ?? adapter.paths.override,
 		network_lock: options.network_lock ?? adapter.paths.network_lock,
+		lock_root_explicit: options.lock_root_explicit ?? (options.lock_root != null),
 		lock_root: options.lock_root ?? adapter.paths.code_locks,
 		maintenance_root: options.maintenance_root ?? adapter.paths.maintenance,
 	};
@@ -105,7 +106,6 @@ function inspect(root, id, owner, adapter) {
 };
 
 export function create(root, options) {
-	const explicit_locks = options?.lock_root != null;
 	options = host_options(options);
 	root = fs.realpath(root) ?? root;
 	const adapter = options.adapter, all_system = system_profile(root, options);
@@ -149,7 +149,7 @@ export function create(root, options) {
 		delete visiting[name]; complete[name] = true; plugins[item.id] = true;
 	};
 	function acquire(plugins) {
-		if (options.code_locks == false || (root != adapter.paths.installed_root && !explicit_locks)) return;
+		if (options.code_locks == false || (root != adapter.paths.installed_root && !options.lock_root_explicit)) return;
 		if (!mkdir_private(lock_root, owner)) raise('plugin_code_lock_unsafe');
 		for (let id in sort(keys(plugins))) {
 			if (leases[id] != null) continue;
