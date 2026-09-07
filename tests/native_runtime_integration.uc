@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import { cursor } from "uci";
 import { get, set, update_result } from "/usr/libexec/opl-netfleet/application/subscriptions.uc";
-import { sha256 } from "/usr/libexec/opl-netfleet/adapters/uci.uc";
+import { sha256, subscription_quota } from "/usr/libexec/opl-netfleet/adapters/uci.uc";
 import { core_service } from "/usr/libexec/opl-netfleet/adapters/native.uc";
 
 function check(value, message) { if (!value) die(message); };
@@ -18,6 +18,13 @@ function request(source, revision, deleted) {
 if (ARGV[0] == "active") {
 	const old = sha256(cached);
 	const pid = core_service().service.instances.core.pid;
+	const policy_digest = sha256("/etc/opl-netfleet/policy.json");
+	const evidence_digest = sha256("/etc/opl-netfleet/evidence.json");
+	check(request({ id: "fixture", quota_reset_day: 15 }).ok, "active metadata edit accepted");
+	check(get().result.sources[0].quota_reset_day == 15 && !get().result.sources[0].pending_update, "metadata save is immediate and does not require refresh");
+	check(sha256(cached) == old && core_service().service.instances.core.pid == pid &&
+		sha256("/etc/opl-netfleet/policy.json") == policy_digest && sha256("/etc/opl-netfleet/evidence.json") == evidence_digest,
+		"reset day preserves cache, running core, policy and measurement identity");
 	const next_url = cursor().get("netfleet", "fixture", "url") + "&revision=active";
 	check(request({ id: "fixture", name: "Active edit", url: next_url }).ok, "active source edit accepted");
 	check(sha256(cached) == old, "active edit preserves running cache");
@@ -30,7 +37,7 @@ if (ARGV[0] == "active") {
 const port = ARGV[0];
 check(get().result.managed_by == "netfleet", "native source ownership");
 const url = `https://192.168.1.2:${port}/native-subscriptions/valid?token=vm-only-credential`;
-const created = request({ id: "fixture", name: "VM subscription", url: url });
+const created = request({ id: "fixture", name: "VM subscription", url: url, quota_reset_day: 15 });
 check(created.ok, sprintf("%J", created));
 check(created.result.sources[0].url == url && created.result.sources[0].user_agent == "clash.meta" &&
 	created.result.sources[0].info_url == "", "authenticated editor receives current source fields");
@@ -39,6 +46,12 @@ const first = update_result("fixture");
 check(first.ok && first.changed, sprintf("%J", first));
 check(get().result.sources[0].cache_present && get().result.sources[0].cache_current && get().result.sources[0].node_count > 0, "download recorded");
 check(get().result.sources[0].quota.used == "3072 B" && get().result.sources[0].quota.expire == null, "quota and unlimited expiry projection");
+check(get().result.sources[0].quota_reset_day == 15 && cursor().get("netfleet", "fixture", "quota_reset_day") == "15", "refresh preserves persisted manual reset day");
+check(subscription_quota("fixture", {}).reset_day == 15 && subscription_quota("fixture", {}).reset_day_source == "manual", "status reads device-local reference and provenance");
+const config_before_invalid = sha256("/etc/config/netfleet");
+check(request({ id: "fixture", quota_reset_day: 32 }).error == "invalid_quota_reset_day" && sha256("/etc/config/netfleet") == config_before_invalid, "invalid date does not mutate UCI");
+check(request({ id: "fixture", quota_reset_day: null }).ok && get().result.sources[0].quota_reset_day == null && subscription_quota("fixture", {}).reset_day == null, "clear persists and disappears from status");
+check(request({ id: "fixture", quota_reset_day: 31 }).ok, "restore monthly reset reference");
 check((fs.stat(cached).mode & 0777) == 0600 && (fs.stat("/etc/config/netfleet").mode & 0777) == 0600, "private files");
 const original_digest = sha256(cached);
 const original_mtime = fs.stat(cached).mtime;
@@ -54,6 +67,7 @@ const success_at = get().result.sources[0].last_success;
 check(request({ id: "fixture", url: `https://192.168.1.2:${port}/native-subscriptions/missing?token=vm-only-credential` }).ok, "unavailable source edit");
 const failed = update_result("fixture");
 check(!failed.ok && sha256(cached) == original_digest, "download failure retains prior cache");
+check(get().result.sources[0].quota_reset_day == 31, "failed refresh retains manual date");
 check(get().result.sources[0].last_success == success_at, "failure retains success time");
 check(get().result.sources[0].pending_update && get().result.sources[0].using_previous_cache, "failed replacement remains pending");
 check(request({ id: "fixture", url: url }).ok, "restore source URL");

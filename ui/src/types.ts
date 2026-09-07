@@ -5,6 +5,8 @@ export interface Quota {
   remaining_bytes?: number | null;
   total_bytes?: number | null;
   expires_at?: string | null;
+  reset_day?: number | null;
+  reset_day_source?: 'manual' | null;
 }
 
 export interface FailOpenStage {

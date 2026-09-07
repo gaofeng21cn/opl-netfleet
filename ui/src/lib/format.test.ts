@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { fixtureScenarios } from '../data/fixtures';
-import { averageDelay, capabilityRoute, countPair, delay, delayClass, displayEventName, eventReason, failOpenOrder, providerExpiry, quota, reasonText, recoveryPreferredLabel, regionName, regionalDisplayName, sortProvidersForDisplay, sortRegionsForDisplay, sourceFreshness, sourceTargetLabel } from './format';
+import { averageDelay, capabilityRoute, countPair, delay, delayClass, displayEventName, eventReason, failOpenOrder, providerExpiry, quota, quotaResetLabel, reasonText, recoveryPreferredLabel, regionName, regionalDisplayName, sortProvidersForDisplay, sortRegionsForDisplay, sourceFreshness, sourceTargetLabel } from './format';
+
+it('只显示有效月重置参考日，不猜测未知日期', () => {
+  expect(quotaResetLabel(1)).toBe('每月 1 日重置');
+  expect(quotaResetLabel(31)).toBe('每月 31 日重置');
+  for (const day of [null, undefined, 0, 32, 1.5, NaN]) expect(quotaResetLabel(day)).toBe('');
+});
 
 describe('运行时网络退路', () => {
   it('按运行角色显示完整退路，不使用计费属性推断角色', () => {

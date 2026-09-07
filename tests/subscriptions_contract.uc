@@ -11,6 +11,17 @@ check(desired({}, null).ok, "create subscription");
 check(desired({ url: "" }, source).source.url == source.url, "blank URL preserves private credential");
 check(!desired({ url: "" }, null).ok, "new subscription requires URL");
 check(desired({ name: "Renamed" }, source).source_changed == false, "display edit retains cache identity");
+for (let day in [1, 15, 31]) {
+	const saved = desired({ quota_reset_day: day }, source);
+	check(saved.ok && saved.source.quota_reset_day == day && !saved.source_changed, "valid monthly reset day is metadata only");
+	check(sprintf("%J", source_identity_input(saved.source)) == sprintf("%J", source_identity_input(source)), "reset day does not alter cache identity");
+}
+for (let day in [0, 32, -1, 1.5, "13", "", true, []])
+	check(desired({ quota_reset_day: day }, source).error == "invalid_quota_reset_day", "reject invalid monthly reset day");
+check(desired({ quota_reset_day: null }, { ...source, quota_reset_day: "15" }).source.quota_reset_day == null, "explicit clear removes manual date");
+check(desired({}, { ...source, quota_reset_day: "15" }).source.quota_reset_day == 15, "unrelated edits retain persisted UCI date");
+check(public_source({ ...source, quota_reset_day: "15" }, {}).quota_reset_day == 15, "editor reads normalized date");
+check(public_source({ ...source, quota_reset_day: "32" }, {}).quota_reset_day == null, "malformed stored date remains unset");
 check(desired({ url: "https://example.test/new" }, source).source_changed, "URL edit changes desired source identity");
 check(desired({ info_url: "https://example.test/quota" }, source).source_changed, "quota source edits also await refresh");
 check(sprintf("%J", source_identity_input(source)) == sprintf("%J", source_identity_input({ ...source, name: "Renamed" })),

@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react';
 import { ArrowDownUp, ChevronDown } from 'lucide-react';
 import { SubscriptionsPreview } from '../config/SubscriptionsPreview';
-import { averageDelay, countPair, delay, delayClass, providerExpiry, providerName, quota, regionName, sortProvidersForDisplay, sortRegionsForDisplay } from '../lib/format';
+import { averageDelay, countPair, delay, delayClass, providerExpiry, providerName, quota, quotaResetLabel, regionName, sortProvidersForDisplay, sortRegionsForDisplay } from '../lib/format';
 import type { Provider, StatusSnapshot, SubscriptionStatus } from '../types';
 
 const role = (value: string) => value === 'reserve' ? '备用' : '主用';
@@ -65,6 +65,7 @@ const subscriptionSummary = (snapshot: StatusSnapshot) => {
 
 export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnapshot; full?: boolean }) {
   const [expandedProviderId, setExpandedProviderId] = useState<string | null>(null);
+  const [resetDayDrafts, setResetDayDrafts] = useState<Record<string, number | null>>({});
   const regionMargin = snapshot.selection?.region_switch_margin_ms;
   const availabilityMeasured = Boolean(
     snapshot.active && snapshot.runtime.netfleet_present && snapshot.runtime.controller_available,
@@ -74,7 +75,7 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
   return (
     <>
     {full && <section className="nf-policy-summary">
-      <div className="nf-section-heading"><h2>订阅更新</h2><SubscriptionsPreview status={snapshot} /></div>
+      <div className="nf-section-heading"><h2>订阅更新</h2><SubscriptionsPreview status={snapshot} onResetDayChange={(id, day) => setResetDayDrafts((items) => ({ ...items, [id]: day }))} /></div>
       <div className="nf-policy-grid is-five">
         <dl><dt>自动更新</dt><dd>{refresh?.enabled ? '已启用' : '已关闭'}</dd></dl>
         <dl><dt>更新周期</dt><dd>{duration(refresh?.interval_seconds)}</dd></dl>
@@ -90,6 +91,8 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
           <thead><tr><th>机场</th><th>定位</th><th>可用资源</th><th>最近最优</th><th>平均最优</th><th>订阅状态</th><th>剩余流量</th><th>到期时间</th><th><span className="nf-visually-hidden">详情</span></th></tr></thead>
           <tbody>{providers.map((provider) => {
             const subscription = subscriptionFor(snapshot, provider);
+            const section = provider.subscription_section || '';
+            const resetDay = section in resetDayDrafts ? resetDayDrafts[section] : provider.quota?.reset_day;
             const expanded = expandedProviderId === provider.id;
             return <Fragment key={provider.id}>
               <tr className={provider.selected ? 'is-selected' : ''}>
@@ -101,7 +104,7 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
                   <td><span>{averageDelay(provider.average_best_delay_ms, provider.delay_sample_count)}</span>{Number(provider.delay_sample_count) >= 2 && <small>{provider.delay_sample_count} 次有效测量</small>}</td>
                 </>}
                 <td className={subscriptionStateClass(subscription)}>{subscriptionState(subscription)}</td>
-                <td>{quota(provider.quota)}</td>
+                <td>{quota(provider.quota)}{provider.billing === 'subscription' && quotaResetLabel(resetDay) && <small title="手动设置，仅供套餐参考；实际结算以机场为准">{quotaResetLabel(resetDay)}{section in resetDayDrafts && '（本地草稿）'}</small>}</td>
                 <td>{providerExpiry(provider)}</td>
                 <td><button className="nf-icon-button nf-provider-detail-toggle" type="button" title={`${expanded ? '收起' : '查看'}${providerName(snapshot, provider.id)}详情`} aria-expanded={expanded} onClick={() => setExpandedProviderId(expanded ? null : provider.id)}><ChevronDown aria-hidden="true" /><span className="nf-visually-hidden">{expanded ? '收起' : '查看'}详情</span></button></td>
               </tr>
