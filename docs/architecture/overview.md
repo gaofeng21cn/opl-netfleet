@@ -8,7 +8,8 @@
 
 ## 当前产品边界
 
-NetFleet 是 OpenWrt 上的多机场网络增强插件，当前源码有 `nikki-mihomo` 与
+NetFleet 是 OpenWrt 上的模块化代理与网络管理工具，围绕多机场组织、业务出口、自动选优
+和安全恢复提供独立管理能力。当前源码有 `nikki-mihomo` 与
 `native-mihomo` 两条明确选择的后端路径。两者共用 Policy、编译、选优、证据、刷新与
 恢复事务；Mihomo 始终拥有节点连接、组内健康检查和 URLTest。
 

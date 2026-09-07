@@ -8,8 +8,8 @@
 
 <h1 align="center">OPL NetFleet</h1>
 
-<p align="center"><strong>A network enhancement plugin for OpenWrt</strong></p>
-<p align="center">Multi-provider integration · layered selection · smooth switching · automatic recovery</p>
+<p align="center"><strong>Modular proxy and network management for OpenWrt</strong></p>
+<p align="center">Independent Mihomo management · multi-provider selection · extensible modules · failure recovery</p>
 
 <p align="center">
   <a href="https://github.com/gaofeng21cn/opl-netfleet/actions"><img src="https://img.shields.io/github/actions/workflow/status/gaofeng21cn/opl-netfleet/netfleet-release.yml?label=checks" alt="Checks" /></a>
@@ -17,27 +17,41 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="Apache-2.0 license" /></a>
 </p>
 
-NetFleet provides multi-provider network management on OpenWrt, either alongside
-an existing Nikki + Mihomo installation or through its native Mihomo backend.
-It organizes nodes by provider, region, and purpose,
-chooses an appropriate exit from current measurements, and switches paths as
-network conditions change.
+NetFleet brings subscriptions, traffic rules, automatic routing, DNS, transparent
+proxying, and maintenance into one LuCI interface. Native mode manages Mihomo
+directly and supports first-time setup on OpenWrt without a running Nikki service.
+Existing Nikki users can keep their environment or migrate to NetFleet's native backend.
 
-You continue to use LuCI to view status, adjust preferences, and turn the
-enhancement off. NetFleet keeps a native profile available as the recovery
-destination, so a failed takeover can return the device to a familiar working
-configuration.
+It organizes connectivity around providers, regions, and business exits, using
+current measurements to choose paths and primary, reserve, and direct tiers to
+handle failures. The core coordinates policy and recovery, while modules add
+protocol compatibility and a live dashboard. Single-device setup and declarative
+Fleet deployment share the same runtime logic.
 
 ## What You Get
 
-- **One view for multiple providers.** See providers, regions, nodes, latency, and subscription usage together.
-- **A clear path to a better exit.** NetFleet compares regions, provider tiers, and individual nodes in that order.
-- **Purpose-based exits.** Standard traffic and services with region requirements can use separate capabilities, or share a region when conditions allow.
-- **Primary and reserve tiers.** Normal traffic prefers primary providers, then reserve providers, and finally `DIRECT`.
-- **Continuous health checks.** Scheduled refreshes update subscriptions, measurements, transparent proxy, and DNS state.
-- **Controlled activation.** Setup, candidate generation, and live takeover are separate steps with visible state and a native recovery profile.
+- **Independent proxy management.** Native mode covers subscriptions, profiles, DNS, transparent proxying, core maintenance, and backup/restore.
+- **Multiple providers in one place.** View regions, nodes, latency, and usage; assign primary and reserve roles to provide alternatives when individual paths fail.
+- **Automatic exits for each purpose.** Standard traffic and region-constrained services can use distinct capabilities, with visible selections and switching reasons.
+- **Capabilities on demand.** HTTPS compatibility is an optional package, and Zashboard supplies the full live dashboard. The component inventory shows installation, dependencies, and API compatibility.
+- **Controlled changes and recovery.** Installation, configuration generation, and takeover are separate. Failed changes restore the previous configuration; disabling returns to an independent recovery profile.
+- **Reproducible device configuration.** Fleet deploys an explicit version, validates and compiles on the device, and reads back the result.
 
-## Design Approach
+## Two Ways To Connect
+
+| Mode | Best suited for | Management responsibilities |
+| --- | --- | --- |
+| **NetFleet + Mihomo (native)** | New installations or unified NetFleet management | NetFleet manages subscriptions, profiles, core services, DNS, and transparent proxying, without running Nikki services |
+| **Nikki + Mihomo** | Working Nikki installations adding multi-provider selection and recovery | Nikki retains subscription and data-plane management; NetFleet supplies shared policy, selection, and recovery transactions |
+
+The backends are explicitly selected and mutually exclusive, with migration
+preflight checks and rollback. Native mode reuses pinned Nikki configuration
+projections and nft templates, preserving their upstream attribution and licenses.
+Current network integration uses TProxy.
+
+## Design Highlights
+
+### Declarative Policy And Layered Selection
 
 NetFleet separates what a user needs from the node that happens to provide it.
 Rules select stable capabilities such as standard connectivity or a
@@ -55,11 +69,38 @@ Each round uses current measurements and a switch margin, keeping the active
 path stable during small latency fluctuations. History helps explain what the
 device has seen; the current choice follows the latest healthy measurements.
 
-Mihomo owns connections and node health; NetFleet owns the shared policy,
-cross-provider selection, and recovery transactions. Nikki mode retains Nikki's
-subscription and data-plane lifecycle. Native mode manages these resources in
-an independent namespace, reusing pinned Nikki configuration projections and
-nft templates rather than adding another node selector or parallel controller.
+### Modular Extensions With Clear Responsibilities
+
+NetFleet implements **Extension API v1**. The core owns compilation, selection,
+activation, and recovery; the backend handles network integration; modules
+declare their API version, dependencies, permissions, lifecycle, and UI entry
+points. Shared CLI/RPC routing and module-owned private configuration let new
+capabilities evolve around a stable core.
+
+| Integrated module | Purpose | Delivery and runtime scope |
+| --- | --- | --- |
+| **HTTPS compatibility** | HTTP/1.1-to-HTTP/2 compatibility for selected devices and destinations | Optional native-backend package, disabled after installation; requires device trust in a private CA and explicit onboarding, with bypass to the original route on failure |
+| **Zashboard** | Live Mihomo connections, traffic, rule matches, and proxy groups | Management adapter ships with the core; dashboard assets remain separate and can be updated by the native backend without restarting Mihomo |
+
+Modules have explicit dependency, configuration, and failure-exit boundaries,
+while basic routing and recovery remain independent. **Evolving toward plugin
+hot loading** is a design direction: allow more capabilities to join, update,
+and leave on demand while preserving basic connectivity. The existing interfaces
+and lifecycle responsibilities provide a starting point. See the
+[product whitepaper](docs/product/whitepaper.md) for the design direction and
+[Modules and extensions](docs/architecture/extensions.md) for current integration.
+
+### Local Execution And Recovery First
+
+The UCode runtime runs on OpenWrt, Mihomo handles connections and health checks
+within node groups, and LuCI presents state and submits scoped operations.
+Runtime and recovery work without an open browser, cloud controller, or Node.js host.
+
+Configuration is validated and staged before explicit activation and runtime
+checks. Disabling or recovering first returns to an independently usable
+Recovery Profile. If that fails, the selected backend cleans up its own network
+takeover and restores direct connectivity. Optional modules handle their own
+failure exits, while the core retains one shared recovery path.
 
 Read the [product whitepaper](docs/product/whitepaper.md) for the full rationale
 and the [architecture overview](docs/architecture/overview.md) for current
@@ -67,27 +108,20 @@ implementation behavior.
 
 ## Current Features
 
-The current source provides native LuCI pages and a device-side runtime with the
-following interfaces. Source availability does not establish that a particular
-release asset or device has passed qualification; check the release's source
-identity and supported backend before installation.
+This overview follows the current source and LuCI interfaces. Check the chosen
+release's backend, architecture, and optional-package coverage before installing;
+source availability alone does not establish qualification for every release or device.
 
-- first-run discovery of the selected backend's profile, provider caches, regions, and entry group;
-- explicit native Mihomo setup on an unconfigured device and transactional migration from a working Nikki installation;
-- native subscription creation, editing, deletion, and individual refresh without exposing saved credentials in public status;
-- primary/reserve provider roles and region scope settings;
-- automatic region selection for `standard` and `ai-compatible` capabilities;
-- provider, region, and node health checks;
-- protected probes, layered Fail-Open, and native profile recovery;
-- provider, region, node, subscription, event, and connection diagnostics;
-- a separate full Zashboard for live Mihomo connections, traffic, rule matches, and proxy groups;
-- scheduled subscription refresh, configuration compilation, and automatic selection;
-- native IPv4/IPv6 TCP and UDP transparent proxying, plus LAN and router-local DNS handling;
-- native network settings for DNS upstreams and domain overrides, LAN/router proxy scope, device rules, listeners, and authentication;
-- domain-suffix and IPv4/IPv6 CIDR rules targeting an exit capability or direct connectivity;
-- local profile import, download, controlled editing, and backup/restore of NetFleet's private configuration;
-- core restart, reload, sanitized startup logs, and separate Zashboard resource version checks and updates;
-- OpenWrt APK/IPK packages, signed APK feeds, and Fleet declarative deployment.
+| Capability | Available scope |
+| --- | --- |
+| Setup and migration | First-run wizard, native Mihomo setup, Nikki migration preflight and rollback |
+| Subscriptions and providers | Native subscription management and individual refresh, usage and cache status, primary/reserve roles, region scope |
+| Business exits and selection | Capabilities such as `standard` and `ai-compatible`, domain-suffix and IPv4/IPv6 CIDR rules, current measurements and switching reasons |
+| Network integration | Native IPv4/IPv6 TCP/UDP TProxy, LAN/router DNS, upstreams and domain overrides, device rules, listeners, and authentication |
+| Automation and recovery | Scheduled subscription refresh and recompilation, automatic selection, protected probes, layered Fail-Open, recovery profiles |
+| Configuration and maintenance | Native profile import, download, and controlled editing; private backup/restore; core restart/reload and sanitized logs |
+| Diagnostics and extensions | Provider/region/node status, events, separate Zashboard, optional HTTPS compatibility |
+| Components and delivery | Installed versions and dependencies, scoped component updates, Zashboard asset updates, APK/IPK packages, signed APK feed, Fleet deployment |
 
 NetFleet keeps stable operational summaries on its Events and Diagnostics page.
 The **Zashboard** entry opens the full dashboard in a new tab using the
@@ -95,10 +129,7 @@ selected backend's controller and resources. Both backends use the same entry
 and Zashboard's secret-bearing connection URL. These temporary credentials must
 not enter NetFleet logs or display caches.
 
-Native network integration currently supports TProxy. Mihomo also supports TUN
-and Redirect, but NetFleet has not adapted and qualified their OpenWrt takeover,
-cleanup, and failure recovery, so the UI does not expose a mode switch. Native
-network, profile, and resource management belong to the native backend; Nikki
+Network, profile, and resource management belong to the native backend; Nikki
 mode retains Nikki's ownership of the corresponding resources.
 
 ## Installation
@@ -109,8 +140,8 @@ The target device should have:
 
 - a working OpenWrt package manager;
 - Mihomo and the OpenWrt dependencies required by the selected package;
-- for Nikki mode: a working Nikki installation, an independently usable native profile, and at least one valid subscription cache;
-- for native setup: a package containing native-backend support, working upstream DNS, and a valid subscription, without another proxy core occupying the network.
+- for native setup: a package containing native-backend support, working upstream DNS, and a valid subscription, without another proxy core occupying the network;
+- for Nikki mode: a working Nikki installation, an independently usable native profile, and at least one valid subscription cache.
 
 On OpenWrt 25.12, use the one-time installer to add the signed feed and install
 both packages:
@@ -123,9 +154,9 @@ This command installs only the APK key, repository, and program files. It does
 not write policy, subscriptions, or Nikki mixins, and it does not take over the
 network automatically.
 
-Open **Services -> NetFleet** in LuCI. A working Nikki installation enters
-discovery directly. An unconfigured device first uses **Set Up Mihomo**, with
-explicit confirmation before subscription download and network takeover. The
+Open **Services -> NetFleet** in LuCI. An unconfigured device first uses
+**Set Up Mihomo**, with explicit confirmation before subscription download and
+network takeover. A working Nikki installation enters discovery directly. The
 shared first-run setup then:
 
 1. discover the native profile, provider caches, regions, and the `MATCH` entry group;
@@ -156,9 +187,10 @@ failures restore the previous packages and runtime. Unattended and system-wide
 upgrades are not enabled by default.
 
 The separate Zashboard section checks and updates official static resources
-without restarting Mihomo or changing its connection credentials. An unknown
-installed version is shown as unrecorded rather than inferred from file times;
-available versions appear after an explicit check. Package, core, and dashboard
+without restarting Mihomo or changing its connection credentials. Installed
+versions come from valid installation records or local asset inspection and are
+shown as unknown when unidentifiable. Available versions appear after an explicit
+check. Package, core, and dashboard
 updates require separate confirmation and are not silently bundled together.
 
 After the first installation, OpenWrt can upgrade directly from the configured
@@ -272,6 +304,8 @@ NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
 - [Documentation index](docs/README.md)
 - [Architecture overview](docs/architecture/overview.md)
 - [Independent device management](docs/architecture/management.md)
+- [Modules and extensions](docs/architecture/extensions.md)
+- [HTTPS compatibility](docs/architecture/https-compatibility.md)
 - [UI design](docs/design/ui.md)
 - [Product whitepaper](docs/product/whitepaper.md)
 - [Development and device-operation rules](AGENTS.md)
