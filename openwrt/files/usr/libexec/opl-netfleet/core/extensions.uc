@@ -52,13 +52,14 @@ export function component(definition, observed, versions, backend) {
 	const backend_supported = length(filter(values(definition.commands), value =>
 		value.access == "write" && value.method != "disable" && index(value.backends, backend) >= 0)) > 0;
 	const compatible = observed.api_version == API_VERSION && observed.error == null;
+	const package_unknown = versions == null || definition.kind == "optional" && versions[definition.package] == null;
 	const state = !observed.available ? "not_installed" : !compatible ? "incompatible" :
-		!backend_supported ? "backend_unsupported" : missing ? "dependency_missing" : versions == null ? "unknown" : "ready";
+		!backend_supported ? "backend_unsupported" : missing ? "dependency_missing" : package_unknown ? "unknown" : "ready";
 	return { id: definition.id, label: definition.label, kind: definition.kind, package: definition.package,
 		installed_version: definition.kind == "resource" ? observed.installed_version : versions?.[definition.package] ?? null,
 		api_version: observed.api_version, required_api_version: API_VERSION, compatible: compatible,
 		available: observed.available, state: state, dependencies: dependencies,
 		reason: !observed.available ? "extension_component_not_installed" : observed.error ?? (!compatible ? "extension_api_incompatible" :
-			!backend_supported ? "extension_backend_unsupported" : missing ? "extension_dependency_missing" : null),
+			!backend_supported ? "extension_backend_unsupported" : missing ? "extension_dependency_missing" : package_unknown ? "extension_package_unknown" : null),
 		ui: definition.ui, permission_class: definition.permission_class };
 };

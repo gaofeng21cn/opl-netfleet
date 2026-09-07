@@ -28,6 +28,7 @@ const row = component(module, present, packages, "native-mihomo");
 check(row.state == "ready" && row.installed_version == "2.0-r1" && row.dependencies[0].available, "installation and interface reflect actual inputs");
 check(component(module, present, {}, "native-mihomo").state == "dependency_missing", "missing dependency distinct from API mismatch");
 check(component(module, present, null, "native-mihomo").state == "unknown", "unreadable package DB is not missing dependency");
+check(component(module, present, { "fixture-engine": "1.0-r1" }, "native-mihomo").state == "unknown", "unmanaged owner bytes do not prove package installation");
 check(component(module, present, packages, "nikki-mihomo").state == "backend_unsupported", "wrong backend displayed distinctly");
 check(component(module, { ...present, api_version: 2 }, packages, "native-mihomo").state == "incompatible", "ABI drift displayed distinctly");
 check(component(module, { available: false }, packages, "native-mihomo").state == "not_installed", "stale package metadata cannot prove owner exists");
