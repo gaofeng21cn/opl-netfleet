@@ -38,7 +38,13 @@ def validate(config):
             raise ValueError("invalid_device")
         ids.add(identity)
         entries = device.get("addresses")
-        if not isinstance(entries, list) or not entries:
+        binding = device.get("identity")
+        if binding is not None and (not isinstance(binding, dict) or set(binding) != {"binding", "mac"}
+                or not isinstance(binding.get("binding"), str) or not re.fullmatch(r"[a-f0-9]{64}", binding["binding"])
+                or not isinstance(binding.get("mac"), str) or not re.fullmatch(r"[a-f0-9]{2}(?::[a-f0-9]{2}){5}", binding["mac"])
+                or int(binding["mac"][:2], 16) & 1 or binding["mac"] == "00:00:00:00:00:00"):
+            raise ValueError("invalid_device_identity")
+        if not isinstance(entries, list) or not entries and binding is None:
             raise ValueError("device_address_required")
         if not all(isinstance(address, str) for address in entries):
             raise ValueError("invalid_device_address")
@@ -46,7 +52,11 @@ def validate(config):
         if len(set(parsed)) != len(parsed) or addresses.intersection(parsed):
             raise ValueError("duplicate_device_address")
         addresses.update(parsed)
-        normalized_devices.append({"id": identity, "name": device["name"], "addresses": parsed})
+        normalized_devices.append({"id": identity, "name": device["name"], "addresses": parsed,
+                                   **({"identity": binding} if binding else {})})
+    bound = [tuple(sorted(device["identity"].items())) for device in normalized_devices if "identity" in device]
+    if len(set(bound)) != len(bound):
+        raise ValueError("duplicate_device_identity")
     rule_ids = set()
     for rule in rules:
         if not isinstance(rule, dict):

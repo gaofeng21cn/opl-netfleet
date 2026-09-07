@@ -7,6 +7,7 @@
 
 - [`architecture/`](architecture/overview.md)：当前产品对象、选择、运行、接口、状态呈现、显示证据和打包合同。
 - [`architecture/microkernel.md`](architecture/microkernel.md)：功能服务组合、依赖绑定、插件热替换与资源交接。
+- [`architecture/device-identity.md`](architecture/device-identity.md)：网络侧设备身份、IPv6 地址更新和证据过期。
 - [`design/ui.md`](design/ui.md)：React 参考面与原生 LuCI 的视觉和交互设计合同。
 - [`operations/deployment.md`](operations/deployment.md)：Fleet 部署器的输入、资格和目标端事务。
 - [`operations/canary-promotion.md`](operations/canary-promotion.md)：通用 canary 推广与恢复流程。

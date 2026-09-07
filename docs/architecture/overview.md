@@ -87,6 +87,7 @@ RecoveryProfileRef
 | 显示证据 | [evidence.md](evidence.md) | 持久聚合、可比性和失效边界 |
 | RPC 与 UI | [interfaces.md](interfaces.md) | 公开动作、状态投影、插件页面宿主和浏览器边界 |
 | HTTPS 兼容 | [https-compatibility.md](https-compatibility.md) | 可选协议转换、设备信任、接管租约和旁路 |
+| 设备地址来源 | [device-identity.md](device-identity.md) | 网络侧身份接入、动态地址与失效边界 |
 | 模块与扩展 | [extensions.md](extensions.md) | 服务与进程插件接入、进程协议、API 准入和组件投影 |
 | 独立设备管理 | [management.md](management.md) | 网络接入、配置维护、备份恢复和运行面资源 |
 | 软件包与配置输入 | [packaging.md](packaging.md) | versioned package、private Instance 和 deployment bundle |

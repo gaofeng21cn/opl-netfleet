@@ -26,6 +26,9 @@ export function CompatibilityView({ extension, onBack }: { extension?: Extension
       </>}
       {tab === 'devices' && <>
         <div className="nf-section-heading"><h3>设备与信任</h3><button type="button" disabled title={previewReason}>新增设备</button></div>
+        <div className="nf-form-row"><span>地址来源</span><div role="status"><strong>状态未读取</strong></div>
+          <div className="nf-components-actions"><button type="button" disabled title={previewReason}>管理来源</button>
+            <button type="button" disabled title={previewReason}><RefreshCw aria-hidden="true" />同步</button></div></div>
         <div className="nf-table-wrap"><table><thead><tr>{['设备', '系统信任', '应用', '操作'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody><tr><td colSpan={4}>尚未读取接入设备</td></tr></tbody></table></div>
         <div className="nf-components-actions"><button type="button" disabled title={previewReason}><Download aria-hidden="true" />下载公开 CA</button><button type="button" disabled title={previewReason}><Download aria-hidden="true" />macOS 接入工具</button></div>
       </>}

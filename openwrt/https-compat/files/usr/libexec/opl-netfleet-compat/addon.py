@@ -30,6 +30,7 @@ class Compatibility:
         self.socket_path = None
         self.probe = None
         self.clients = {}
+        self.client_devices = {}
         self.failures = deque(maxlen=100)
         self.failed_tls_clients = set()
         self.connection_errors = {}
@@ -80,6 +81,8 @@ class Compatibility:
                                      "active_connections": len(self.clients), "processing_chain": processing,
                                      "transparent_chain": transparent,
                                      "clients_by_address": dict(Counter(self.clients.values())),
+                                     "clients_by_device": dict(Counter(self.client_devices.values())),
+                                     "unassigned_connections": len(self.clients.keys() - self.client_devices.keys()),
                                      "failure_events": list(self.failures),
                                      "observed": self.observed,
                                      "rules": {key: value for key, value in self.results.items() if key != "_health"}}).encode() + b"\n")
@@ -231,9 +234,14 @@ class Compatibility:
         internal = client.peername[0] in ("127.0.0.1", "::1") and client.sockname[1] in (18444, TLS_PORT)
         if not internal:
             self.clients[client.id] = client.peername[0]
+            if self.refresh():
+                devices = [device["id"] for device in self.config["devices"] if client.peername[0] in device["addresses"]]
+                if len(devices) == 1:
+                    self.client_devices[client.id] = devices[0]
 
     def client_disconnected(self, client):
         self.clients.pop(client.id, None)
+        self.client_devices.pop(client.id, None)
         self.failed_tls_clients.discard(client.id)
         self.connection_errors.pop(client.id, None)
         self.selected.pop(client.id, None)

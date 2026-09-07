@@ -90,8 +90,8 @@ function pending(controller, kind, title) {
 	return E('section', {}, [ E('h3', {}, title), E('p', { 'class': error ? 'is-warning' : 'spinning', 'role': 'status' }, error ? errorText(error) : '正在读取设备配置…'),
 		button('重新读取', function() { return load(controller, kind, true); }, !!controller[kind + 'Read']) ]);
 }
-function table(headers, rows) {
-	return E('div', { 'class': 'netfleet-management-table' }, E('table', { 'class': 'table' }, [ E('thead', {}, E('tr', {}, headers.map(function(label) { return E('th', {}, label); }))), E('tbody', {}, rows) ]));
+function table(headers, rows, kind) {
+	return E('div', { 'class': 'netfleet-management-table' + (kind ? ' netfleet-management-' + kind : '') }, E('table', { 'class': 'table' }, [ E('thead', {}, E('tr', {}, headers.map(function(label) { return E('th', {}, label); }))), E('tbody', {}, rows) ]));
 }
 function network(controller) {
 	const state = controller.networkState;
@@ -132,12 +132,16 @@ function network(controller) {
 			E('h4', {}, '设备访问控制'),
 			table(['启用', 'IPv4 / IPv6 / MAC', '代理', 'DNS 接管', '顺序'], draft.lan.rules.map(function(rule, index) {
 				return E('tr', {}, [ E('td', {}, toggle(rule.enabled, function(value) { rule.enabled = value; })),
-					E('td', {}, isDefaultRule(rule) ? [ E('strong', {}, '其余设备（默认规则）'), E('p', {}, '匹配未被前面规则覆盖的所有设备，无需填写地址。') ] : [ lines(rule.ipv4, function(value) { rule.ipv4 = value; }, 'IPv4 地址或网段'), lines(rule.ipv6, function(value) { rule.ipv6 = value; }, 'IPv6 地址或网段'), lines(rule.mac, function(value) { rule.mac = value; }, 'MAC 地址'), E('small', {}, '请填写设备地址；留空并启用会匹配其余所有设备。') ]),
+					E('td', {}, isDefaultRule(rule) ? [ E('strong', {}, '其余设备（默认规则）'), E('p', {}, '匹配未被前面规则覆盖的所有设备，无需填写地址。') ] : [
+						E('label', { 'class': 'netfleet-address-field' }, [ E('span', {}, 'IPv4 地址或网段'), lines(rule.ipv4, function(value) { rule.ipv4 = value; }, 'IPv4 地址或网段') ]),
+						E('label', { 'class': 'netfleet-address-field' }, [ E('span', {}, 'IPv6 地址或网段'), lines(rule.ipv6, function(value) { rule.ipv6 = value; }, 'IPv6 地址或网段') ]),
+						E('label', { 'class': 'netfleet-address-field' }, [ E('span', {}, 'MAC 地址'), lines(rule.mac, function(value) { rule.mac = value; }, 'MAC 地址') ]),
+						E('small', {}, '请填写设备地址；留空并启用会匹配其余所有设备。') ]),
 					E('td', {}, toggle(rule.proxy, function(value) { rule.proxy = value; })), E('td', {}, toggle(rule.dns, function(value) { rule.dns = value; })),
 					E('td', { 'class': 'netfleet-inline-actions' }, [ button('↑', function() { draft.lan.rules.splice(index - 1, 0, draft.lan.rules.splice(index, 1)[0]); controller.redraw(); }, index === 0),
 						button('↓', function() { draft.lan.rules.splice(index + 1, 0, draft.lan.rules.splice(index, 1)[0]); controller.redraw(); }, index === draft.lan.rules.length - 1),
 						button('移除', function() { draft.lan.rules.splice(index, 1); controller.redraw(); }, false, true) ]) ]);
-			})), button('添加设备规则', function() {
+			}), 'devices'), button('添加设备规则', function() {
 				const fallback = draft.lan.rules.findIndex(isDefaultRule);
 				draft.lan.rules.splice(fallback < 0 ? draft.lan.rules.length : fallback, 0, { id: 'new_lan_' + Date.now(), enabled: false, ipv4: [], ipv6: [], mac: [], proxy: true, dns: true });
 				controller.redraw();

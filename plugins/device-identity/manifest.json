@@ -1,0 +1,12 @@
+{
+  "schema": "opl-netfleet-plugin.v1",
+  "id": "device-identity",
+  "label": "设备地址来源",
+  "version": "0.1.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-device-identity",
+  "dependencies": ["python3", "ca-bundle", "ip-full"],
+  "backends": [],
+  "permissions": ["diagnostics"],
+  "actions": {"configure": "write", "sync": "read", "resolve": "read"}
+}

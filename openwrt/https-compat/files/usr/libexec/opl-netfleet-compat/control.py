@@ -15,6 +15,7 @@ import time
 sys.path.insert(0, "/usr/lib/opl-netfleet-compat/vendor")
 
 import gateway
+import identity as device_identity
 from policy import validate
 from recovery import advance
 from routing import admission
@@ -136,14 +137,25 @@ def snapshot():
 def verified_trust(config, trust, fingerprint):
     return {device["id"]: trust[device["id"]] for device in config["devices"]
             if fingerprint and trust.get(device["id"], {}).get("ca_sha256") == fingerprint
-            and trust[device["id"]].get("addresses") == device["addresses"]
+            and device_identity.trust_matches(device, trust[device["id"]])
             and trust[device["id"]].get("verified") is True}
 
 
-def effective(config, trust, fingerprint):
+def effective(config, trust, fingerprint, source=None):
     devices = verified_trust(config, trust, fingerprint)
-    return {**config, "rules": [{**rule, "devices": [device for device in rule["devices"] if device in devices]}
-                                 for rule in config["rules"] if any(device in devices for device in rule["devices"])]}
+    source = device_identity.resolve(config)[0] if source is None else source
+    resolved = [{**device, "addresses": device_identity.addresses(device, source)} for device in config["devices"]]
+    owners = {}
+    for device in resolved:
+        for address in device["addresses"]:
+            owners.setdefault(address, set()).add(device["id"])
+    for device in resolved:
+        device["addresses"] = sorted({address for address in device["addresses"] if len(owners[address]) == 1})
+    eligible = {device["id"] for device in resolved if device["id"] in devices and device["addresses"]}
+    # Empty manual devices are not valid engine configuration, and cannot match rules.
+    return {**config, "devices": [device for device in resolved if device["addresses"] or device.get("identity")],
+            "rules": [{**rule, "devices": [device for device in rule["devices"] if device in eligible]}
+                      for rule in config["rules"] if any(device in eligible for device in rule["devices"])]}
 
 
 async def probe_rules(rules):
@@ -194,6 +206,8 @@ def status():
     health = engine_health()
     kernel = gateway.status()
     fingerprint = ca_fingerprint()
+    source = device_identity.resolve(config)[0]
+    active = effective(config, read(TRUST, {}), fingerprint, source)
     reason = state.get("reason", "disabled" if not config["enabled"] else "not_ready")
     if not kernel["intercepting"] and state.get("intercepting"):
         reason = "lease_expired"
@@ -203,8 +217,13 @@ def status():
         reason = "ca_not_ready"
     return {"installed": True, "revision": revision(), "config": config, "requested": config["enabled"],
             **kernel, "reason": reason, "active_connections": health.get("active_connections"),
-            "device_connections": {device["id"]: sum(health.get("clients_by_address", {}).get(address, 0) for address in device["addresses"])
-                                   if health.get("active_connections") is not None else None for device in config["devices"]},
+            "address_source": source,
+            "device_addresses": {device["id"]: next((item["addresses"] for item in active["devices"] if item["id"] == device["id"]), [])
+                                 for device in config["devices"]},
+            "eligible_devices": sorted({device for rule in active["rules"] for device in rule["devices"]}),
+            "device_connections": {device["id"]: health.get("clients_by_device", {}).get(device["id"], 0)
+                                   if health.get("unassigned_connections") == 0 else
+                                   0 if health.get("active_connections") == 0 else None for device in config["devices"]},
             "active_requests": health.get("active_requests"), "rules": health.get("rules", {}),
             "recovery": state.get("recovery", {}), "ca_sha256": fingerprint,
             "rule_recovery": state.get("rule_recovery", {}),
@@ -243,6 +262,7 @@ def tick():
         gateway.bypass()
         save_state({**previous, "intercepting": False, "reason": "maintenance"}, previous)
         return
+    source, previous["identity_sync"] = device_identity.resolve(config, previous.get("identity_sync"), schedule=True)
     try:
         network = snapshot()
         profile = read(Path("/etc/opl-netfleet/native/run/config.yaml"), {})
@@ -292,7 +312,7 @@ def tick():
             state.pop("unhealthy_since", None)
         save_state(state, previous)
         return
-    active = effective(config, read(TRUST, {}), ca_fingerprint())
+    active = effective(config, read(TRUST, {}), ca_fingerprint(), source)
     rule_states = dict(previous.get("rule_recovery", {}))
     observed = {**previous.get("observed", {}), **health.get("observed", {})}
     state["observed"] = observed
@@ -358,16 +378,28 @@ def apply(action, request):
     if request.get("revision") != revision():
         raise ValueError("compatibility_revision_conflict")
     config = validate(read(CONFIG, DEFAULT))
+    original = config
+    trust = read(TRUST, {})
     original_enabled = config["enabled"]
     if action == "apply":
         config = validate(request.get("config"))
     elif action in ("enable", "disable"):
         config["enabled"] = action == "enable"
+    source = device_identity.resolve(config)[0]
+    if action == "apply":
+        verified = verified_trust(original, trust, ca_fingerprint())
+        for device in config["devices"]:
+            old = next((item for item in original["devices"] if item["id"] == device["id"]), None)
+            if old and not old.get("identity") and device.get("identity") and device["id"] in verified:
+                if not set(old["addresses"]) & set(device_identity.addresses(device, source)):
+                    raise ValueError("device_identity_not_confirmed")
+                trust[device["id"]] = {**trust[device["id"]], "identity": device["identity"]}
     gateway.bypass()
     if action != "disable" and (config["enabled"] or config["devices"]):
         prepare_ca()
     atomic(CONFIG, config)
-    atomic(EFFECTIVE, effective(config, read(TRUST, {}), ca_fingerprint()))
+    atomic(TRUST, {key: value for key, value in trust.items() if any(device["id"] == key for device in config["devices"])})
+    atomic(EFFECTIVE, effective(config, trust, ca_fingerprint(), source))
     previous = read(STATE, {})
     kept = previous if original_enabled and config["enabled"] and action == "apply" else {}
     save_state({**kept, "intercepting": False, "reason": "recovering" if config["enabled"] else "disabled"}, previous)
@@ -394,7 +426,10 @@ def trust_action(request):
         if report.get("ca_sha256") != ca_fingerprint() or report.get("system") is not True:
             raise ValueError("device_trust_not_verified")
         # Only the authenticated enrollment tool records verification; UI has no ready toggle.
+        if device.get("identity") and not device_identity.addresses(device, device_identity.resolve(config)[0]):
+            raise ValueError("device_identity_not_confirmed")
         trust[device["id"]] = {"verified": True, "ca_sha256": ca_fingerprint(), "addresses": device["addresses"],
+                                **({"identity": device["identity"]} if device.get("identity") else {}),
                                 "verified_at": int(time.time()), "runtimes": {"system": True,
                                 **{name: report.get(name) if type(report.get(name)) is bool else None
                                    for name in ("codex_app", "codex_cli", "images")}}}
