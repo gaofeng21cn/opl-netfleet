@@ -367,5 +367,5 @@ printf("%J\n", result);
 exit(result.ok ? 0 : 1);
 };
 
-return { command };
+return { command, cleanup, status };
 };

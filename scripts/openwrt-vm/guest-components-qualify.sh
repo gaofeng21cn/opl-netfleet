@@ -209,6 +209,25 @@ done
 rpc_ready
 [ "$(pidof rpcd)" != "$rpcd_before" ]
 unchanged
+stage=durable_terminal_reconcile
+transaction=/etc/opl-netfleet/package-transactions
+saved_id=$(jsonfilter -i "$transaction/request.json" -e '@.id')
+test "$(jsonfilter -i "$transaction/$saved_id/journal.json" -e '@.phase')" = complete
+# Model a process loss after terminal persistence, before pending removal.
+printf '{"id":"%s"}\n' "$saved_id" >"$transaction/pending.json"
+rm -f /tmp/opl-netfleet-operation-packages.json
+ubus -t 20 call opl-netfleet components_recover '{}' >"$work/recover-start.json"
+assert_json "$work/recover-start.json" '@.ok' true
+for attempt in $(seq 1 90); do
+	[ -e "$transaction/pending.json" ] || break
+	sleep 1
+done
+test ! -e "$transaction/pending.json"
+unchanged
+# A lost volatile progress record must not prevent the next operation.
+request components_check
+assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
+unchanged
 stage=component_failed_candidate_rollback
 printf '%s\n' "$feed_url/components-fixtures/bad/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
 request components_update "$bad"
@@ -238,6 +257,56 @@ done
 apk --no-network --simulate add opl-netfleet luci-app-netfleet >>"$work/post-hook-reconcile.log" 2>&1
 rpc_ready
 unchanged
+stage=interrupted_package_install_recovery
+printf '%s\n' "$feed_url/components-fixtures/interrupted/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
+ubus -t 20 call opl-netfleet components_update "{\"component\":\"netfleet\",\"version\":\"$current\"}" >"$work/interrupted-start.json"
+assert_json "$work/interrupted-start.json" '@.ok' true
+for attempt in $(seq 1 120); do
+	[ ! -f /tmp/netfleet-update-paused ] || break
+	sleep 1
+done
+test -f /tmp/netfleet-update-paused
+worker=$(ubus call service list '{"name":"opl-netfleet-update"}' | jsonfilter -e '@["opl-netfleet-update"].instances.update.pid')
+python3 - "$worker" <<'PYKILL'
+import os, signal, sys
+from pathlib import Path
+root = int(sys.argv[1])
+assert root > 1
+os.kill(root, signal.SIGSTOP)
+parents = {}
+for path in Path('/proc').glob('[0-9]*/stat'):
+    try:
+        fields = path.read_text().rsplit(')', 1)[1].split()
+        parents[int(path.parent.name)] = int(fields[1])
+    except (OSError, ValueError):
+        pass
+family = [root]
+for pid in family:
+    family.extend(child for child, parent in parents.items() if parent == pid and child not in family)
+for pid in reversed(family):
+    try: os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError: pass
+PYKILL
+# Lose volatile progress and make installed entry unreadable, as a partial replacement can.
+rm -f /tmp/opl-netfleet-operation-packages.json
+printf 'incomplete package bytes\n' >/usr/libexec/opl-netfleet/main.uc
+/etc/init.d/opl-netfleet-update-recovery start
+for attempt in $(seq 1 120); do
+	[ -e /etc/opl-netfleet/package-transactions/pending.json ] || break
+	sleep 1
+done
+test ! -e /etc/opl-netfleet/package-transactions/pending.json
+rpc_ready
+unchanged
+ucode "$owner" components-operation >"$work/recovered-result.json"
+assert_json "$work/recovered-result.json" '@.result.packages.recovery' restored
+assert_json "$work/recovered-result.json" '@.result.packages.state' failed
+cmp /etc/apk/world "$work/update-world"
+for name in $product_packages; do
+	expected=$(package_version "$name" current)
+	[ "$name" != opl-netfleet-plugin-dashboard ] || expected=$independent
+	apk list --manifest | grep -Fqx "$name $expected"
+done
 stage=core_update
 printf '%s\n' "$feed_url/components-fixtures/good/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
 uclient-fetch -q -O "$work/mihomo-meta-$core_old.apk" "$feed_url/components-fixtures/good/mihomo-meta-$core_old.apk"
@@ -272,4 +341,4 @@ unchanged
 stage=complete
 # Remove the explicit root introduced by the independent-plugin test; the product still needs it.
 apk --no-network --repositories-file /dev/null del opl-netfleet-plugin-dashboard >"$work/independent-root-remove.log" 2>&1
-printf '%s\n' '{"ok":true,"checks":{"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"installer_complete_product_upgrade":true,"component_preserves_newer_independent_plugin":true,"component_world_preserved":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_failed_package_hook_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"
+printf '%s\n' '{"ok":true,"checks":{"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"installer_complete_product_upgrade":true,"component_preserves_newer_independent_plugin":true,"component_world_preserved":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_durable_terminal_reconcile":true,"component_interrupted_install_recovery":true,"component_failed_package_hook_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"

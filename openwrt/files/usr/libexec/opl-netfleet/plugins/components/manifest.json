@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "components",
   "label": "Components and updates",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "api_version": 1,
   "package": "opl-netfleet-plugin-components",
   "services": {
@@ -11,6 +11,7 @@
       "module": "lib/control.uc",
       "requires": {
         "dashboard.control": 1,
+        "mihomo.gateway": 1,
         "events.operation": 1,
         "mihomo.controller": 1,
         "platform.files": 1,

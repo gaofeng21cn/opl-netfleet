@@ -2,8 +2,9 @@ import * as fs from "fs";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, restore_world, feed, newer, available, update_process, progress, get, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, restore_services, rollback, recover, journal, upgrade, command;
+let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, restore_world, feed, newer, available, update_process, progress, get, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, recovery_stop, restore_services, rollback, recover, journal, upgrade, command;
 
+const gateway = context.use("mihomo.gateway");
 const dashboard_resource = context.use("dashboard.control").resource;
 const operation = context.use("events.operation");
 const proxies = context.use("mihomo.controller").proxies;
@@ -401,7 +402,8 @@ upgrade = function(request, work, candidates) {
 	}
 	if (system("/etc/init.d/opl-netfleet-update-recovery enable >/dev/null 2>&1") != 0) fail("update_recovery_unavailable");
 	if (!atomic_json(`${work}/before.json`, before) || !run_command(`tar -cf ${q(`${work}/private.tar`)} -C / ${join(" ", map(paths, path => q(substr(path, 1))))}`, work)) fail("update_state_write_failed");
-	journal(work, { phase: "prepared", before, names, versions, candidates, old, next, inputs: input_identity([`${work}/private.tar`, `${work}/code`, ...old, ...next]) });
+	if (!run_command(`tar -cf ${q(`${work}/runtime.tar`)} -C / ${join(" ", map(before.runtime_paths, path => q(substr(path, 1))))}`, work)) fail("update_state_write_failed");
+	journal(work, { phase: "prepared", before, names, versions, candidates, old, next, inputs: input_identity([`${work}/private.tar`, `${work}/runtime.tar`, `${work}/code`, ...old, ...next]) });
 	if (!atomic_json(PENDING, { id: request.id }) || system("sync") != 0) fail("update_state_write_failed");
 	let error = null;
 	let install_started = false;
@@ -431,6 +433,19 @@ upgrade = function(request, work, candidates) {
 journal = function(work, value) {
 	if (!atomic_json(`${work}/journal.json`, value) || system("sync") != 0) fail("update_state_write_failed");
 };
+recovery_stop = function(work) {
+	if (KIND != "native-mihomo") return stop_services(work);
+	// Use the retained owner, since installed init hooks may be partially replaced.
+	if (gateway.cleanup()?.ok != true) return false;
+	for (let name in ["opl-netfleet", SERVICE])
+		if (!run_command(`ubus call service delete ${q(sprintf("%J", { name }))}`, work)) return false;
+	for (let attempt = 0; attempt < 20; attempt++) {
+		if (!service_running("opl-netfleet") && !service_running(SERVICE) &&
+			capture("pidof mihomo") == null && gateway.status()?.result?.clean == true) return true;
+		system("sleep 1");
+	}
+	return false;
+};
 recover = function() {
 	if (fs.lstat(PENDING) == null) return { recovered: false };
 	const pending = private_file(PENDING) ? read_json(PENDING) : null;
@@ -453,6 +468,11 @@ recover = function() {
 	for (let path in old) if (index(path, `${work}/old/`) != 0 || !run_command(`apk verify ${q(path)}`, work)) fail("rollback_package_unavailable");
 	operation.begin("packages", "rolling_back", { id: pending.id, subject: "netfleet" });
 	journal(work, { ...state, phase: "recovering" });
+	if (!recovery_stop(work)) fail("rollback_stop_failed");
+	if (!run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work) ||
+		sprintf("%J", input_identity(before.runtime_paths)) != sprintf("%J", before.runtime_inputs)) fail("rollback_identity_mismatch");
+	// The marker protects a kernel generation; only release it after restoring all old bytes.
+	fs.unlink("/var/run/opl-netfleet-plugin-maintenance/.kernel");
 	const recovery_error = rollback(before, work, names, versions, old, true);
 	if (recovery_error != null) fail(recovery_error);
 	if (!run_command(`/etc/init.d/${SERVICE} ${before.core_enabled ? "enable" : "disable"}`, work) ||

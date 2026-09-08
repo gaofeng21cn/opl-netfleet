@@ -73,7 +73,7 @@ def build(candidate, output, baseline=None):
             "--info", "name:opl-netfleet-https-compat", "--info", "version:0.1.7-r1",
             "--info", "arch:noarch", "--info", "description:Dependency rejection fixture",
             "--info", "license:MIT", "--info", "depends:opl-netfleet")
-        for kind in ("good", "bad", "bad-core", "bad-hook"):
+        for kind in ("good", "bad", "bad-core", "bad-hook", "interrupted"):
             (output / kind).mkdir()
             for archive in candidate.glob("*.apk"):
                 shutil.copy2(archive, output / kind / archive.name)
@@ -130,6 +130,11 @@ def build(candidate, output, baseline=None):
                 script_args = [f"pre-upgrade:{failed_hook}" if value.startswith("pre-upgrade:") else value
                                for value in script_args]
                 package(following, "bad-hook")
+                pause_hook = scratch / "pause-pre-upgrade"
+                pause_hook.write_text("#!/bin/sh\ntouch /tmp/netfleet-update-paused\nwhile :; do sleep 1; done\n")
+                script_args = [f"pre-upgrade:{pause_hook}" if value.startswith("pre-upgrade:") else value
+                               for value in original_scripts]
+                package(following, "interrupted")
                 script_args = original_scripts
             if name == "opl-netfleet-plugin-mihomo":
                 init = root / "etc/init.d/opl-netfleet-core"
@@ -143,7 +148,7 @@ def build(candidate, output, baseline=None):
                 core.write_text("#!/bin/sh\nexit 1\n")
                 core.chmod(0o755)
             package(following, "bad-core" if name == "mihomo-meta" else "bad")
-        for kind in ("old", "good", "bad", "bad-core", "bad-hook", "independent"):
+        for kind in ("old", "good", "bad", "bad-core", "bad-hook", "interrupted", "independent"):
             run("--allow-untrusted", "mkndx", "--output", output / kind / "packages.adb",
                 "--sign", private_key, *sorted((output / kind).glob("*.apk")))
         if baseline is not None:

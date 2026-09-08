@@ -378,7 +378,7 @@ function compositionDialog(controller) {
 			const select = E('select', { 'aria-label': '服务提供者 ' + service, disabled: busy || applied ? '' : null, change: event => update('bindings', service, event.target.value) },
 				[E('option', { value: '' }, '继承（' + (inherited.bindings?.[service] || '未绑定') + '）'), ...providers.map(provider => E('option', { value: provider.plugin }, provider.plugin + ' · v' + provider.version))]);
 			const selected = local.bindings?.[service];
-			if (selected && !providers.some(provider => provider.plugin === selected)) select.replaceChildren(...providers.map(provider => E('option', { value: provider.plugin }, provider.plugin + ' · v' + provider.version)), E('option', { value: selected }, selected + '（当前不可用）')); 
+			if (selected && !providers.some(provider => provider.plugin === selected)) select.replaceChildren(E('option', { value: '' }, '继承（' + (inherited.bindings?.[service] || '未绑定') + '）'), ...providers.map(provider => E('option', { value: provider.plugin }, provider.plugin + ' · v' + provider.version)), E('option', { value: selected }, selected + '（当前不可用）')); 
 			select.value = selected || '';
 			rows.push(E('div', {}, [E('label', {}, [service + ' ', select])]));
 		}
