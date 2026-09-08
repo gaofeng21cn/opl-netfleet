@@ -177,7 +177,7 @@ legacy_native_migration() {
 		product_packages="$product_packages $name"
 	done <"$work/current-files.txt"
 	# Fetch and retain the old product's dependencies before taking it offline.
-	legacy_dependencies=$(jsonfilter -i "$work/legacy-fixture.json" -e '@.legacy.system_dependencies[*]')
+	legacy_dependencies=$(jsonfilter -i "$work/legacy-fixture.json" -e '@.legacy.system_dependencies[*]' 2>/dev/null || true)
 	(
 		exec 9>"$lock"
 		flock 9
@@ -344,7 +344,7 @@ if [ -n "$feed_url" ]; then
 	package_identity
 	# Resolve old engine dependencies before the isolated upstream owns DNS.
 	uclient-fetch -q -O "$work/legacy-fixture.json" "$feed_url/components-fixtures/fixture.json"
-	legacy_dependencies=$(jsonfilter -i "$work/legacy-fixture.json" -e '@.legacy.system_dependencies[*]')
+	legacy_dependencies=$(jsonfilter -i "$work/legacy-fixture.json" -e '@.legacy.system_dependencies[*]' 2>/dev/null || true)
 	if [ -n "$legacy_dependencies" ]; then
 		apk --timeout 300 add $legacy_dependencies >>"$work/packages.log" 2>&1
 	fi
