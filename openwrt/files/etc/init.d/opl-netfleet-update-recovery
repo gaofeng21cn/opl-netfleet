@@ -3,16 +3,23 @@ USE_PROCD=1
 START=94
 STOP=06
 
+private_path() {
+	ucode -e 'import * as fs from "fs";
+		const item = fs.lstat(ARGV[0]);
+		exit(item != null && item.uid == 0 && item.type == ARGV[1] &&
+			(item.mode & 0777) == int(ARGV[2]) ? 0 : 1);' "$1" "$2" "$3"
+}
+
 start_service() {
 	local root=/etc/opl-netfleet/package-transactions id work
 	[ -f "$root/pending.json" ] || return 0
-	[ "$(stat -c '%u:%a' "$root")" = 0:700 ] || return 1
-	[ "$(stat -c '%u:%a' "$root/pending.json")" = 0:600 ] || return 1
+	private_path "$root" directory 448 || return 1
+	private_path "$root/pending.json" file 384 || return 1
 	id=$(jsonfilter -i "$root/pending.json" -e '@.id')
 	[ "${#id}" = 32 ] || return 1
 	case "$id" in *[!a-f0-9]*) return 1 ;; esac
 	work="$root/$id"
-	[ ! -L "$work" ] && [ "$(stat -c '%u:%a' "$work")" = 0:700 ] || return 1
+	private_path "$work" directory 448 || return 1
 	[ -f "$work/code/plugins/components/recover.uc" ] || return 1
 	procd_open_instance recovery
 	procd_set_param command /usr/bin/flock -w 10 /var/lock/opl-netfleet-deploy.lock /usr/bin/ucode "$work/code/plugins/components/recover.uc"
