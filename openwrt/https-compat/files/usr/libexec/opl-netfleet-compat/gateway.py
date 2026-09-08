@@ -13,6 +13,7 @@ OWNER = "/usr/libexec/opl-netfleet/main.uc"
 PORT = 18443
 _epoch = None
 _worker = None
+_watching = False
 
 
 def stop_worker():
@@ -61,7 +62,8 @@ def worker_response(timeout, request=b''):
 
 
 def start_worker():
-    global _worker
+    global _worker, _watching
+    _watching = True
     if _worker is not None and _worker.poll() is None:
         return
     stop_worker()
@@ -82,6 +84,8 @@ atexit.register(stop_worker)
 
 
 def call(action, **params):
+    if _watching and _worker is None:
+        raise ValueError('lease_service_unavailable')
     if _worker is not None:
         try:
             data = json.dumps({'action': action, **params}).encode() + b'\n'

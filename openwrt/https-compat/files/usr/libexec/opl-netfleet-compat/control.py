@@ -1,4 +1,7 @@
 #!/usr/bin/python3
+import sys
+sys.dont_write_bytecode = True
+
 import fcntl
 import asyncio
 from contextlib import contextmanager
@@ -9,7 +12,6 @@ from pathlib import Path
 import re
 import socket
 import subprocess
-import sys
 import tarfile
 import time
 

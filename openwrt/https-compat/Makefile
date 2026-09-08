@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet-https-compat
-PKG_VERSION:=0.2.2
+PKG_VERSION:=0.2.3
 PKG_RELEASE:=1
 PKG_LICENSE:=MIT
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)
@@ -60,7 +60,11 @@ endef
 
 define Package/opl-netfleet-https-compat/postinst
 #!/bin/sh
-[ -n "$$IPKG_INSTROOT" ] || /usr/libexec/opl-netfleet-plugin-package https-compat postinst
+if [ -z "$$IPKG_INSTROOT" ]; then
+ # Reproducible packages can retain a stale timestamp-and-size Python cache.
+ find /usr/libexec/opl-netfleet-compat /usr/lib/opl-netfleet-compat/vendor -type f -name '*.py[co]' -exec rm -f {} + || exit 1
+ /usr/libexec/opl-netfleet-plugin-package https-compat postinst
+fi
 exit 0
 endef
 

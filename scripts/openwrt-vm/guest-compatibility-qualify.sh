@@ -84,7 +84,33 @@ python3 /tmp/tests/https_compat_native.py >&2
 du -sk "$vendor" >&2
 if [ -f /tmp/compat-runtime/compat-manifest.json ]; then
  sha256sum /etc/opl-netfleet/compatibility/ca/mitmproxy-ca.pem >/tmp/compat-ca.sha256
+ python3 - <<'PY'
+import os, py_compile, subprocess
+from pathlib import Path
+source = Path('/usr/libexec/opl-netfleet-compat/isolation.py')
+original, stamp = source.read_bytes(), source.stat()
+stale = original.replace(b'"cpu.max": "50000 100000"})', b'"cpu.max": "20000 100000"})')
+assert stale != original and len(stale) == len(original)
+try:
+    source.write_bytes(stale)
+    os.utime(source, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+    py_compile.compile(str(source), doraise=True)
+finally:
+    source.write_bytes(original)
+    os.utime(source, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+check = "import sys; sys.path.insert(0, '/usr/libexec/opl-netfleet-compat'); import isolation; assert '20000 100000' in isolation.constrain_manager.__code__.co_consts"
+subprocess.run(['python3', '-c', check], check=True)
+PY
  apk add --force-reinstall /tmp/compat-runtime/*.apk >&2
+ python3 -B - <<'PY'
+import sys
+from pathlib import Path
+root = Path('/usr/libexec/opl-netfleet-compat')
+assert not list(root.rglob('*.pyc'))
+sys.path.insert(0, str(root))
+import isolation
+assert '50000 100000' in isolation.constrain_manager.__code__.co_consts
+PY
  sha256sum -c /tmp/compat-ca.sha256 >&2
  apk del opl-netfleet-https-compat >&2
  sha256sum -c /tmp/compat-ca.sha256 >&2

@@ -17,9 +17,11 @@ class Isolation(unittest.TestCase):
             self.skipTest('disposable VM required')
         program = r'''
 import os, signal, sys, time
+from pathlib import Path
 sys.path.insert(0, '/usr/libexec/opl-netfleet-compat')
 import gateway, isolation
 isolation.constrain_manager()
+assert Path('/sys/fs/cgroup/netfleet-compat-manager/cpu.max').read_text().strip() == '50000 100000'
 gateway.start_worker()
 worker = gateway._worker.pid
 assert gateway.status()['intercepting'] is False
@@ -33,6 +35,13 @@ try:
 except ValueError as error:
     assert str(error) == 'lease_service_timeout'
 assert time.monotonic() - started < 4
+started = time.monotonic()
+try:
+    gateway.bypass()
+    raise AssertionError('dead service fell back to synchronous startup')
+except ValueError as error:
+    assert str(error) == 'lease_service_unavailable'
+assert time.monotonic() - started < 0.1
 gateway.start_worker()
 assert gateway._worker.pid != worker
 assert gateway.status()['intercepting'] is False
