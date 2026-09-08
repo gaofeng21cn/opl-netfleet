@@ -29,7 +29,7 @@ is_proxy_leaf = function(proxy_state, value) {
 		type(state.all) != "array" && type(state.now) != "string";
 };
 
-is_provider_proxy_leaf = function(provider_state, source_name, value, require_alive) {
+is_provider_proxy_leaf = function(provider_state, source_name, value, require_alive, url) {
 	if (type(source_name) != "string" || length(trim(source_name)) == 0 ||
 		type(value) != "string" || length(trim(value)) == 0) {
 		return false;
@@ -49,24 +49,24 @@ is_provider_proxy_leaf = function(provider_state, source_name, value, require_al
 		matched = nodes[i];
 	}
 	const proxy_type = lc(`${matched?.type ?? ""}`);
-	return matched != null && (require_alive != true || matched.alive == true) && length(proxy_type) > 0 &&
+	return matched != null && (require_alive != true || matched.extra?.[url]?.alive == true) && length(proxy_type) > 0 &&
 		CONTROL_PROXY_TYPES[proxy_type] != true;
 };
 
-provider_group_leaf_with_health = function(proxy_state, provider_state, source_name, group, require_alive) {
+provider_group_leaf_with_health = function(proxy_state, provider_state, source_name, group, require_alive, url) {
 	const group_state = proxy_state?.[group];
 	const leaf = group_state?.now ?? null;
-	return group_state?.alive == true && type(group_state?.all) == "array" &&
+	return (require_alive ? group_state?.extra?.[url]?.alive == true : group_state?.alive == true) && type(group_state?.all) == "array" &&
 		index(group_state.all, leaf) >= 0 &&
-		is_provider_proxy_leaf(provider_state, source_name, leaf, require_alive) ? leaf : null;
+		is_provider_proxy_leaf(provider_state, source_name, leaf, require_alive, url) ? leaf : null;
 };
 
 provider_group_current_leaf = function(proxy_state, provider_state, source_name, group) {
 	return provider_group_leaf_with_health(proxy_state, provider_state, source_name, group, false);
 };
 
-provider_group_leaf = function(proxy_state, provider_state, source_name, group) {
-	return provider_group_leaf_with_health(proxy_state, provider_state, source_name, group, true);
+provider_group_leaf = function(proxy_state, provider_state, source_name, group, url) {
+	return provider_group_leaf_with_health(proxy_state, provider_state, source_name, group, true, url);
 };
 
 control_proxy_type = function(value) {
@@ -102,7 +102,7 @@ provider_source_summary = function(provider_state, source_name) {
 	};
 };
 
-provider_round_summary = function(entry, proxy_state, provider_state) {
+provider_round_summary = function(entry, proxy_state, provider_state, url) {
 	const sources = [];
 	const groups = [];
 	if (provider_state == null || type(provider_state) != "object") {
@@ -128,7 +128,7 @@ provider_round_summary = function(entry, proxy_state, provider_state) {
 	for (let i = 0; i < length(candidate_groups) && i < 64; i++) {
 		const group = candidate_groups[i];
 		const source_name = entry?.providers?.[group?.provider]?.source_name;
-		const leaf = provider_group_leaf(proxy_state, provider_state, source_name, group?.name);
+		const leaf = provider_group_leaf(proxy_state, provider_state, source_name, group?.name, url);
 		const group_state = proxy_state?.[group?.name];
 		const now_type = lc(`${proxy_state?.[group_state?.now]?.type ?? ""}`);
 		let reason = "ready";

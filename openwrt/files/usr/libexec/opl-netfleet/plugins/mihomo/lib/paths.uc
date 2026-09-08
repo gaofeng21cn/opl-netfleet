@@ -65,7 +65,7 @@ measured_group_leaf = function(secret, entry, group, policy) {
 	for (let attempt = 0; attempt < attempts; attempt++) {
 		const state = proxies(secret);
 		const provider_state = proxy_providers(secret, 1)?.providers ?? null;
-		const leaf = provider_group_leaf(state?.proxies, provider_state, source_name, group);
+		const leaf = provider_group_leaf(state?.proxies, provider_state, source_name, group, policy.checks.latency.url);
 		result = { ok: leaf != null && round?.results?.[leaf]?.status == "ok",
 			leaf: leaf, source_name: source_name, round: round, state: state, provider_state: provider_state };
 		if (result.ok || round.status != "ok") break;
@@ -335,7 +335,7 @@ reset_candidate_groups = function(secret, entry) {
 	return reset;
 };
 
-candidate_provider_leaves_ready = function(entry, proxy_state, provider_state) {
+candidate_provider_leaves_ready = function(entry, proxy_state, provider_state, url) {
 	const groups = entry?.candidate_groups ?? [];
 	if (length(groups) == 0 || type(proxy_state) != "object" ||
 		type(provider_state) != "object") {
@@ -344,21 +344,21 @@ candidate_provider_leaves_ready = function(entry, proxy_state, provider_state) {
 	for (let i = 0; i < length(groups); i++) {
 		const group = groups[i];
 		const source_name = entry?.providers?.[group?.provider]?.source_name;
-		if (provider_group_leaf(proxy_state, provider_state, source_name, group?.name) == null) {
+		if (provider_group_leaf(proxy_state, provider_state, source_name, group?.name, url) == null) {
 			return false;
 		}
 	}
 	return true;
 };
 
-wait_for_candidate_provider_leaves = function(secret, entry, timeout_seconds) {
+wait_for_candidate_provider_leaves = function(secret, entry, timeout_seconds, url) {
 	let state = null;
 	let provider_state = null;
 	const attempts = (type(timeout_seconds) == "int" && timeout_seconds > 0 ? timeout_seconds : 1) + 1;
 	for (let attempt = 0; attempt < attempts; attempt++) {
 		state = proxies(secret, 1);
 		provider_state = proxy_providers(secret, 1)?.providers ?? null;
-		if (candidate_provider_leaves_ready(entry, state?.proxies, provider_state)) {
+		if (candidate_provider_leaves_ready(entry, state?.proxies, provider_state, url)) {
 			break;
 		}
 		if (attempt < attempts - 1) {

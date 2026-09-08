@@ -136,7 +136,8 @@ entries_for = function(candidates, sampled_at) {
 			region_id: candidate.region_id,
 			role: candidate.role,
 			leaf: candidate.candidate_id,
-			quota_state: candidate?.quota?.state ?? "unknown"
+			quota_state: candidate?.quota?.state ?? "unknown",
+			reason: candidate.reason ?? null
 		};
 		if (entry.ok) entry.delay_ms = candidate.latency.delay_ms;
 		push(entries, entry);

@@ -795,6 +795,16 @@ function tableItems(items, state, name) {
 	return rows;
 }
 
+function measurementCell(value) {
+	const labels = { group_unavailable: '组未加载', latency_health_failed: '测速目标未通过', no_verified_leaf: '节点身份或测速未通过', delay_unavailable: '无本轮延迟', quota_exhausted: '配额耗尽', measurement_unavailable: '测量不可用' };
+	if (!value) return E('td', {}, '尚无选优记录');
+	const reasons = Object.entries(value.exclusions || {}).map(function(item) { return (labels[item[0]] || '测量不可用') + ' ' + item[1] + ' 组'; }).join(' · ');
+	return E('td', { 'title': sampledAt(value.sampled_at) }, [
+		E('span', {}, delay(value.best_delay_ms, '本轮无有效测速')),
+		E('small', {}, reasons || value.measured_count + ' 组测速通过')
+	]);
+}
+
 function providersPage(status, controller) {
 	const refresh = status.subscription_refresh || {};
 	const subscriptions = status.subscriptions || [];
@@ -870,7 +880,8 @@ function providersPage(status, controller) {
 			E('td', {}, availabilityMeasured ? [
 				E('span', {}, countPair(provider.available_region_count, provider.region_count) + ' 地区'),
 				E('small', {}, providerNodes(provider, subscription))
-			] : status.active ? '暂不可读' : '未接管')
+			] : status.active ? '暂不可读' : '未接管'),
+			measurementCell(provider.measurement)
 		].concat(provider.delay_sample_count === 0 ? [E('td', { 'colspan': 2 }, '暂无有效测量')] : [
 			E('td', {}, delay(provider.last_best_delay_ms ?? provider.best_delay_ms)),
 			E('td', {}, [
@@ -888,7 +899,7 @@ function providersPage(status, controller) {
 	});
 	const update = function() {
 		const visible = tableItems(providers, state, function(provider) { return providerName(status, provider.id); });
-		list.replaceChildren(simpleTable([ '机场', '定位', '可用资源', '最近最优', '平均最优', '订阅状态', '剩余流量', '到期时间' ],
+		list.replaceChildren(simpleTable([ '机场', '定位', '可用资源', '本轮测速', '历史最近', '平均最优', '订阅状态', '剩余流量', '到期时间' ],
 			visible.map(function(provider) { return rows[providers.indexOf(provider)]; }), '没有匹配的机场', 'netfleet-data-table netfleet-provider-table'));
 	};
 	update();
@@ -932,7 +943,8 @@ function regionsPage(status, controller) {
 		return E('tr', { 'class': region.selected ? 'cbi-rowstyle-1' : '' }, [
 			E('td', {}, regionName(status, region.id) + (region.selected ? '（当前使用）' : '')),
 			E('td', {}, countPair(region.available_provider_count, region.provider_count)),
-			E('td', {}, region.node_count == null ? '节点清单暂不可读' : countPair(region.available_node_count, region.node_count))
+			E('td', {}, region.node_count == null ? '节点清单暂不可读' : countPair(region.available_node_count, region.node_count)),
+			measurementCell(region.measurement)
 		].concat(region.delay_sample_count === 0 ? [E('td', { 'colspan': 3 }, '暂无有效测量')] : [
 			E('td', {}, delay(region.last_best_delay_ms)),
 			E('td', {}, averageDelay(region.average_best_delay_ms, region.delay_sample_count)),
@@ -947,7 +959,7 @@ function regionsPage(status, controller) {
 	const update = function() {
 		const visible = tableItems(regions, state, function(region) { return regionName(status, region.id); });
 		caption.replaceChildren('当前 ' + regions.length + ' 个地区可用 · 显示 ' + visible.length + ' 个');
-		list.replaceChildren(simpleTable([ '地区', '可用机场', '可用节点', '最近最优', '平均最优', '有效测量', '模式' ],
+		list.replaceChildren(simpleTable([ '地区', '可用机场', '可用节点', '本轮测速', '历史最近', '平均最优', '有效测量', '模式' ],
 			visible.map(function(region) { return rows[regions.indexOf(region)]; }), '没有匹配的地区', 'netfleet-data-table'));
 	};
 	update();

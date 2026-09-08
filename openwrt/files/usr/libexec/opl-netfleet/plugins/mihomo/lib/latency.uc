@@ -122,18 +122,22 @@ complete_from_fresh_history = function(round, before, after, groups, checks) {
 
 	for (let i = 0; i < length(groups ?? []); i++) {
 		const name = groups[i];
-		if (!comparable || type(name) != "string" || results[name] != null) {
+		if (!comparable || type(name) != "string") {
+			delete results[name];
 			continue;
 		}
-		const previous = latest_history(before?.proxies?.[name]);
+		const previous = latest_history(before?.proxies?.[name]?.extra?.[latency.url]);
 		const current_group = after?.proxies?.[name];
-		const current = latest_history(current_group);
-		if (current_group?.alive != true || type(current_group?.now) != "string" ||
+		const health = current_group?.extra?.[latency.url];
+		const current = latest_history(health);
+		if (health?.alive != true || type(current_group?.now) != "string" ||
 			type(current_group?.all) != "array" || index(current_group.all, current_group.now) < 0 ||
 			type(current?.time) != "string" || current.time == previous?.time ||
 			type(current?.delay) != "int" || current.delay <= 0) {
+			delete results[name];
 			continue;
 		}
+		if (results[name] != null) continue;
 		results[name] = {
 			method: "mihomo_delay",
 			status: "ok",

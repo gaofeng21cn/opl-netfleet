@@ -41,7 +41,7 @@ it('mounts the packaged product page through its actual ESM and LuCI module adap
     const text = node => typeof node === 'string' ? node : (node?.children || []).map(text).join('');
     assert.match(text(container), /首次设置 NetFleet/);
     assert.equal(nodes.get('netfleet-native-style').attrs.href.endsWith('/product-ui/resources/native.css'), true);
-    assert.equal(polls.size, 1);
+    assert.equal(polls.size, 0);
     const content = container.children[0];
     await scope.dispose();
     assert.equal(polls.size, 0);

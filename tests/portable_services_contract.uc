@@ -98,7 +98,7 @@ try {
 	const state = {proxies: {}}, delays = {};
 	for (let group in candidates) {
 		const node = `${group.region}-node`;
-		state.proxies[group.name] = {type: "URLTest", alive: true, now: node, all: [node]};
+		state.proxies[group.name] = {type: "URLTest", alive: true, now: node, all: [node], extra: { [policy.checks.latency.url]: { alive: true } }};
 		delays[group.name] = {status: "ok", delay_ms: group.region == "near" ? 40 : 240};
 	}
 	state.proxies[entry.name] = {type: "Selector", now: entry.automatic_name};
@@ -106,13 +106,16 @@ try {
 	const provider_state = { [entry.providers.alpha.source_name]: {
 		proxies: [{name: "near-node", type: "Shadowsocks", alive: true}, {name: "far-node", type: "Shadowsocks", alive: true}]
 	} };
+	for (let node in provider_state[entry.providers.alpha.source_name].proxies) node.extra = { [policy.checks.latency.url]: { alive: true } };
+	provider_state[entry.providers.alpha.source_name].proxies[0].alive = false;
+	state.proxies[near.name].alive = false;
 	ports["mihomo.artifacts"] = {load_manifest: () => manifest};
 	ports["mihomo.controller"] = {
 		protected_probes: () => ({ok: true}), proxies: () => state,
 		proxy_providers: () => ({providers: provider_state}), controller_ready: () => true,
 		select: () => true
 	};
-	ports["mihomo.latency"] = {measure: () => ({results: delays}), measure_providers: () => true,
+	ports["mihomo.latency"] = {measure: () => ({results: delays, target: policy.checks.latency.url}), measure_providers: () => true,
 		complete_from_fresh_history: round => round};
 	ports["mihomo.paths"] = {
 		selection_group: value => value.selector_name,
@@ -129,6 +132,14 @@ try {
 	selection.command_select(["select", "standard", "auto"]);
 	check(selected == near.name && results[-1]?.result.state == "selected", "real selection control chooses fastest eligible region");
 	check(documents.load_evidence() != null, "selection persists valid evidence through alternate storage");
+	provider_state[entry.providers.alpha.source_name].proxies[0].alive = true;
+	provider_state[entry.providers.alpha.source_name].proxies[0].extra[policy.checks.latency.url].alive = false;
+	state.proxies[near.name].alive = true;
+	selection.command_select(["select", "standard", "auto"]);
+	check(selected != near.name, "other URL success cannot authorize a failed speed test");
+	const rejected_entry = filter(documents.load_evidence().capabilities.standard.entries, item => item.candidate == near.name)[0];
+	check(rejected_entry.ok == false && rejected_entry.reason == 'no_verified_leaf', "excluded candidate remains visible with reason");
+	provider_state[entry.providers.alpha.source_name].proxies[0].extra[policy.checks.latency.url].alive = true;
 	selection_ok = false;
 	let rejected = false;
 	try { selection.command_select(["select", "standard", "auto"]); }

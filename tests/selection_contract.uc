@@ -3,8 +3,9 @@ import { use, release as release_services } from "./services.uc";
 
 const choose_automatic = use("selection.algorithm").choose_automatic;
 const provider_group_current_leaf = use("models.selector").provider_group_current_leaf;
-const provider_group_leaf = use("models.selector").provider_group_leaf;
-const provider_round_summary = use("models.selector").provider_round_summary;
+const speed_url = 'https://speed.example/204';
+const provider_group_leaf = (state, providers, source, group) => use("models.selector").provider_group_leaf(state, providers, source, group, speed_url);
+const provider_round_summary = (entry, state, providers) => use("models.selector").provider_round_summary(entry, state, providers, speed_url);
 
 const policy = {
 	capabilities: {
@@ -54,6 +55,8 @@ const provider_state = {
 		{ name: "shared-node", type: "Hysteria2", alive: false }
 	] }
 };
+for (let name, group in proxy_state) group.extra = { [speed_url]: { alive: group.alive } };
+for (let name, provider in provider_state) for (let node in provider.proxies) node.extra = { [speed_url]: { alive: node.alive } };
 if (provider_group_leaf(proxy_state, provider_state, "SOURCE-ALPHA", "alpha-korea") != "shared-node" ||
 	provider_group_leaf(proxy_state, provider_state, "SOURCE-BETA", "alpha-korea") != null ||
 	provider_group_leaf(proxy_state, provider_state, "SOURCE-ALPHA", "alpha-dead") != null ||
@@ -65,6 +68,16 @@ if (provider_group_leaf(proxy_state, provider_state, "SOURCE-ALPHA", "alpha-kore
 	print("manifest_bound_provider_leaf_failed\n");
 	exit(1);
 }
+
+provider_state['SOURCE-ALPHA'].proxies[0].alive = false;
+proxy_state['alpha-korea'].alive = false;
+if (provider_group_leaf(proxy_state, provider_state, 'SOURCE-ALPHA', 'alpha-korea') != 'shared-node') die('other_url_failure_vetoed_speed_success');
+provider_state['SOURCE-ALPHA'].proxies[0].alive = true;
+proxy_state['alpha-korea'].alive = true;
+provider_state['SOURCE-ALPHA'].proxies[0].extra[speed_url].alive = false;
+if (provider_group_leaf(proxy_state, provider_state, 'SOURCE-ALPHA', 'alpha-korea') != null) die('other_url_success_accepted_speed_failure');
+delete provider_state['SOURCE-ALPHA'].proxies[0].extra[speed_url];
+if (provider_group_leaf(proxy_state, provider_state, 'SOURCE-ALPHA', 'alpha-korea') != null) die('missing_speed_health_accepted');
 
 const summary_entry = {
 	providers: {
@@ -85,6 +98,7 @@ const summary_providers = {
 		{ name: "DIRECT", type: "Hysteria2", alive: true }
 	] }
 };
+for (let name, provider in summary_providers) for (let node in provider.proxies) node.extra = { [speed_url]: { alive: node.alive } };
 function source_by_id(summary, provider_id) {
 	const sources = summary?.sources ?? [];
 	for (let i = 0; i < length(sources); i++) {

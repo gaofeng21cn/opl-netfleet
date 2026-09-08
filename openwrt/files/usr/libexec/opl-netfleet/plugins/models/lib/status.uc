@@ -14,6 +14,21 @@ const is_proxy_leaf = context.use("models.selector").is_proxy_leaf;
 const is_control_proxy = context.use("models.selector").is_control_proxy;
 const provider_group_current_leaf = context.use("models.selector").provider_group_current_leaf;
 
+function measurement(evidence, dimension, id) {
+	if (type(evidence?.sampled_at) != "int") return null;
+	const result = { sampled_at: evidence.sampled_at, best_delay_ms: null, measured_count: 0, exclusions: {} };
+	for (let entry in evidence.entries ?? []) {
+		if (entry?.[dimension] != id) continue;
+		if (entry.ok == true && type(entry.delay_ms) == "int") {
+			result.measured_count++;
+			if (result.best_delay_ms == null || entry.delay_ms < result.best_delay_ms) result.best_delay_ms = entry.delay_ms;
+		}
+		const reason = entry.reason ?? (entry.ok ? null : "measurement_unavailable");
+		if (reason != null) result.exclusions[reason] = (result.exclusions[reason] ?? 0) + 1;
+	}
+	return result;
+}
+
 evidence_delay = function(evidence, group) {
 	const entries = evidence?.entries ?? [];
 	for (let i = 0; i < length(entries); i++) {
@@ -725,6 +740,7 @@ build = function(policy, manifest, state, evidence, owner) {
 	for (let i = 0; i < length(provider_names); i++) {
 		const provider = providers[provider_names[i]];
 		const aggregate = aggregate_evidence(root_evidence, "providers", provider_names[i]);
+		if (provider != null) provider.measurement = measurement(root_evidence, "provider_id", provider_names[i]);
 		if (provider == null || aggregate == null) {
 			continue;
 		}
@@ -737,6 +753,7 @@ build = function(policy, manifest, state, evidence, owner) {
 	for (let i = 0; i < length(region_names); i++) {
 		const region = regions[region_names[i]];
 		const aggregate = aggregate_evidence(root_evidence, "regions", region_names[i]);
+		if (region != null) region.measurement = measurement(root_evidence, "region_id", region_names[i]);
 		if (region == null || aggregate == null) {
 			continue;
 		}

@@ -563,4 +563,11 @@ if (stale_owner_result.actions?.can_disable != true ||
 
 print("status_contract_ok\n");
 
+const recent_failure = json(sprintf('%J', evidence));
+recent_failure.capabilities.standard.sampled_at = 456;
+recent_failure.capabilities.standard.entries = [{ candidate: '常规出口 · 南方 · Beta', region_id: 'south', provider_id: 'beta', sampled_at: 456, ok: false, reason: 'latency_health_failed' }];
+const failed_measurement = build(policy, manifest, state, recent_failure, { active: true, mihomo_running: true, netfleet_present: true });
+const failed_region = filter(failed_measurement.regions, region => region.id == 'south')[0];
+if (failed_region.measurement.best_delay_ms != null || failed_region.measurement.sampled_at != 456 ||
+	failed_region.measurement.exclusions.latency_health_failed != 1 || failed_region.last_best_delay_ms != 20) die('historical_success_masked_current_failure');
 release_services();

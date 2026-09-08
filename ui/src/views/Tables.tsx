@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { SubscriptionsPreview } from '../config/SubscriptionsPreview';
 import { averageDelay, countPair, delay, delayClass, providerExpiry, providerName, quota, quotaResetLabel, regionName, sortProvidersForDisplay, sortRegionsForDisplay } from '../lib/format';
-import type { Provider, StatusSnapshot, SubscriptionStatus } from '../types';
+import type { Measurement, Provider, StatusSnapshot, SubscriptionStatus } from '../types';
 
 const role = (value: string) => value === 'reserve' ? '备用' : '主用';
 const billing = (value: string) => ({ subscription: '订阅制', buyout: '买断制' }[value] || value || '未知');
@@ -11,6 +11,12 @@ const sampledAt = (value?: number | null) => value
   ? new Date(value * 1000).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
   : '暂无有效测量';
 const executionAt = (value?: number | null) => value ? sampledAt(value) : '尚未执行';
+function MeasurementCell({ value }: { value?: Measurement | null }) {
+  if (!value) return <td>尚无选优记录</td>;
+  const labels: Record<string, string> = { group_unavailable: '组未加载', latency_health_failed: '测速目标未通过', no_verified_leaf: '节点身份或测速未通过', delay_unavailable: '无本轮延迟', quota_exhausted: '配额耗尽', measurement_unavailable: '测量不可用' };
+  const reasons = Object.entries(value.exclusions).map(([reason, count]) => `${labels[reason] || '测量不可用'} ${count} 组`).join(' · ');
+  return <td title={sampledAt(value.sampled_at)}><span>{delay(value.best_delay_ms, '本轮无有效测速')}</span><small>{reasons || `${value.measured_count} 组测速通过`}</small></td>;
+}
 const duration = (value?: number | null) => value == null ? '未提供'
   : value % 86400 === 0 ? `${value / 86400} 天`
     : value % 3600 === 0 ? `${value / 3600} 小时`
@@ -123,7 +129,7 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
       <div className={`nf-master-detail ${focused ? 'has-detail' : ''}`}>
       <div className="nf-table-wrap">
         <table className="nf-provider-table">
-          <thead><tr><th>机场</th><th>定位</th><th>可用资源</th><th>最近最优</th><th>平均最优</th><th>订阅状态</th><th>剩余流量</th><th>到期时间</th></tr></thead>
+          <thead><tr><th>机场</th><th>定位</th><th>可用资源</th><th>本轮测速</th><th>历史最近</th><th>平均最优</th><th>订阅状态</th><th>剩余流量</th><th>到期时间</th></tr></thead>
           <tbody>{providers.map((provider) => {
             const subscription = subscriptionFor(snapshot, provider);
             const section = provider.subscription_section || '';
@@ -133,6 +139,7 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
                 <td><button className="nf-name-link" type="button" aria-expanded={expanded} aria-controls={focused ? 'nf-provider-inspector' : undefined} onClick={e => { opener.current = e.currentTarget; setExpandedProviderId(provider.id); }}>{providerName(snapshot, provider.id)}</button>{provider.selected && <small>当前使用</small>}</td>
                 <td>{role(provider.role)} · {billing(provider.billing)}</td>
                 <td><span>{availabilityMeasured ? `${countPair(provider.available_region_count, provider.region_count)} 地区` : snapshot.active ? '暂不可读' : '未接管'}</span>{availabilityMeasured && <small>{providerNodes(provider, subscription)}</small>}</td>
+                <MeasurementCell value={provider.measurement} />
                 {provider.delay_sample_count === 0 ? <td colSpan={2} className="nf-muted">暂无有效测量</td> : <>
                   <td className={delayClass(provider.last_best_delay_ms ?? provider.best_delay_ms, regionMargin)}>{delay(provider.last_best_delay_ms ?? provider.best_delay_ms)}</td>
                   <td><span>{averageDelay(provider.average_best_delay_ms, provider.delay_sample_count)}</span>{Number(provider.delay_sample_count) >= 2 && <small>{provider.delay_sample_count} 次有效测量</small>}</td>
@@ -190,12 +197,13 @@ export function RegionTable({ snapshot, full = false }: { snapshot: StatusSnapsh
       <p className="nf-table-caption">当前 {sortRegionsForDisplay(snapshot).length} 个地区可用 · 显示 {regions.length} 个</p>
       <div className="nf-table-wrap">
         <table>
-          <thead><tr><th>地区</th><th>可用机场</th><th>可用节点</th><th>最近最优</th><th>平均最优</th><th>有效测量</th><th>模式</th></tr></thead>
+          <thead><tr><th>地区</th><th>可用机场</th><th>可用节点</th><th>本轮测速</th><th>历史最近</th><th>平均最优</th><th>有效测量</th><th>模式</th></tr></thead>
           <tbody>{regions.map((region) => (
             <tr className={region.selected ? 'is-selected' : ''} key={region.id}>
               <td><span className="nf-table-name">{regionName(snapshot, region.id)}</span>{region.selected && <small>当前使用</small>}</td>
               <td>{countPair(region.available_provider_count, region.provider_count)}</td>
               <td>{region.node_count == null ? '节点清单暂不可读' : countPair(region.available_node_count, region.node_count)}</td>
+              <MeasurementCell value={region.measurement} />
               {region.delay_sample_count === 0 ? <td colSpan={3} className="nf-muted">暂无有效测量</td> : <>
                 <td className={delayClass(region.last_best_delay_ms, regionMargin)}>{delay(region.last_best_delay_ms)}</td>
                 <td>{averageDelay(region.average_best_delay_ms, region.delay_sample_count)}</td>

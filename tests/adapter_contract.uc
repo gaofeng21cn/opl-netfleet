@@ -71,19 +71,25 @@ if (latency.status != "unavailable" || latency.method != "mihomo_delay" ||
 	exit(1);
 }
 
+const speed_url = 'https://www.gstatic.com/generate_204';
+function group_health(time, delay, alive) {
+	return { alive: !alive, now: 'leaf', all: ['leaf'], history: [{time: 'unrelated', delay: 1}],
+		extra: { [speed_url]: { alive, history: [{ time, delay }] } } };
+}
 const completed = complete_from_fresh_history({
 	results: { current: { status: "ok", delay_ms: 10 } }
 }, {
 	proxies: {
-		fresh: { history: [{ time: "before", delay: 80 }] },
-		stale: { history: [{ time: "same", delay: 20 }] }
+		fresh: group_health('before', 80, true),
+		stale: group_health('same', 20, true)
 	}
 }, {
 	proxies: {
-		fresh: { alive: true, now: "leaf", all: ["leaf"], history: [{ time: "after", delay: 30 }] },
-		startup: { alive: true, now: "leaf", all: ["leaf"], history: [{ time: "startup", delay: 25 }] },
-		stale: { alive: true, now: "leaf", all: ["leaf"], history: [{ time: "same", delay: 20 }] },
-		failed: { alive: false, now: "leaf", all: ["leaf"], history: [{ time: "after", delay: 0 }] }
+		current: group_health('after', 10, true),
+		fresh: group_health('after', 30, true),
+		startup: group_health('startup', 25, true),
+		stale: group_health('same', 20, true),
+		failed: group_health('after', 0, false)
 	}
 }, ["current", "fresh", "startup", "stale", "failed"], {
 	latency: { url: "https://www.gstatic.com/generate_204", expected_status: 204 }
@@ -94,6 +100,11 @@ if (completed.results.current?.delay_ms != 10 || completed.results.fresh?.delay_
 	print("fresh_group_history_completion_failed\n");
 	exit(1);
 }
+
+const rejected = complete_from_fresh_history({ results: { bad: { status: 'ok', delay_ms: 12 }, missing: { status: 'ok', delay_ms: 10 } } },
+	{ proxies: {} }, { proxies: { bad: group_health('after', 12, false), missing: { alive: true, now: 'leaf', all: ['leaf'] } } },
+	['bad', 'missing'], { latency: { url: speed_url, expected_status: 204 } });
+if (length(keys(rejected.results))) die('delay_response_bypassed_url_health');
 
 const atomic_path = "/tmp/opl-netfleet-atomic-contract.json";
 if (!write_json_atomic(atomic_path, { schema: 1, value: "current" }) ||

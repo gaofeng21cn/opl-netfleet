@@ -53,7 +53,15 @@ export interface Capability {
   reason?: CapabilityReason;
 }
 
+export interface Measurement {
+  sampled_at: number;
+  best_delay_ms: number | null;
+  measured_count: number;
+  exclusions: Record<string, number>;
+}
+
 export interface Provider {
+  measurement?: Measurement | null;
   id: string;
   display_name?: string;
   subscription_section?: string | null;
@@ -92,6 +100,7 @@ export interface SubscriptionStatus {
 }
 
 export interface Region {
+  measurement?: Measurement | null;
   id: string;
   display_name?: string;
   mode: string;

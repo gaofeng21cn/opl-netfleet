@@ -27,29 +27,29 @@ automatic_candidates = function(manifest, quotas, state, provider_state, capabil
 	for (let i = 0; i < length(groups); i++) {
 		const group = groups[i];
 		const group_state = state?.proxies?.[group.name];
-		if (group_state == null || group_state.alive == false) {
-			continue;
-		}
 		// Mihomo owns node-level URLTest inside each provider/region group.
 		// NetFleet compares only that group's current leaf once per round.
 		const source_name = entry?.providers?.[group.provider]?.source_name;
 		const candidate_id = provider_group_leaf(state?.proxies, provider_state,
-			source_name, group.name);
-		if (candidate_id == null) {
-			continue;
-		}
+			source_name, group.name, latency_round?.target);
 		const latency = latency_round?.results?.[group.name] ??
 			{ method: "mihomo_delay", status: "unavailable", reason: "delay_test_failed" };
-		const available = latency?.status == "ok";
+		const reason = group_state == null ? "group_unavailable" :
+			group_state.extra?.[latency_round?.target]?.alive != true ? "latency_health_failed" :
+			candidate_id == null ? "no_verified_leaf" :
+			latency?.status != "ok" ? "delay_unavailable" :
+			quotas[group.provider]?.state == "exhausted" ? "quota_exhausted" : null;
+		const available = candidate_id != null && latency?.status == "ok";
 		const candidate = {
 			capability: capability,
 			candidate_id: candidate_id,
-			leaf_verified: true,
+			leaf_verified: candidate_id != null,
 			provider_id: group.provider,
 			region_id: group.region,
 			role: group.role,
 			group: group.name,
 			available: available,
+			reason: reason,
 			quota: quotas[group.provider] ?? { state: "unknown" }
 		};
 		candidate.latency = latency;
@@ -78,9 +78,9 @@ automatic_round = function(policy, manifest, manifest_entry, capability, secret,
 		return { ok: false, error: "mihomo_state_unavailable_after_delay", candidates: [] };
 	}
 	let provider_state = proxy_providers(secret, 1)?.providers ?? null;
-	if (!candidate_provider_leaves_ready(manifest_entry, measured_state.proxies, provider_state)) {
+	if (!candidate_provider_leaves_ready(manifest_entry, measured_state.proxies, provider_state, policy.checks.latency.url)) {
 		const waited = wait_for_candidate_provider_leaves(secret, manifest_entry,
-			candidate_leaf_wait_seconds(policy));
+			candidate_leaf_wait_seconds(policy), policy.checks.latency.url);
 		if (waited.state != null && waited.state.proxies != null) {
 			measured_state = waited.state;
 		}
@@ -97,7 +97,7 @@ automatic_round = function(policy, manifest, manifest_entry, capability, secret,
 		error: decision.error,
 		decision: decision,
 		candidates: candidates,
-		summary: provider_round_summary(manifest_entry, measured_state?.proxies, provider_state),
+		summary: provider_round_summary(manifest_entry, measured_state?.proxies, provider_state, policy.checks.latency.url),
 		latency_round: latency_round,
 		provider_state_available: provider_state != null,
 		provider_measurement_ok: provider_measurement_ok

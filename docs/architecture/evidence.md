@@ -11,6 +11,8 @@
 
 `/etc/opl-netfleet/evidence.json` 是唯一 display evidence owner，并位于 OpenWrt 持久 overlay；不得放在指向 `/tmp` 的 `/var` 下。每次成功的 enable、显式或定期 `select auto` 按 capability 覆盖保存本轮有界候选结果，并分别维护固定空间的机场和地区 delay 聚合；每个机场或地区在一轮内只记其最小有效 delay，全局机场表和地区表都只投影根 automatic capability。
 
+候选结果覆盖 manifest 中的全部候选组。未通过的组保留无真实节点、测速 URL 健康失败、缺少本轮延迟或配额耗尽等原因，不因提前过滤而从证据消失。机场和地区的 `measurement` 投影根能力最近一轮的采样时间、有效测速最小延迟、有效测速候选数及排除原因计数；历史聚合不能补入本轮值。无证据时为 `null`，本轮没有有效测量时 `best_delay_ms` 为 `null`。测速成功数不等于通过地区授权、故障层级和业务保护的最终入选数。
+
 ## 可比性与失效
 
 聚合身份只绑定实际延迟测量口径（测量模型、URL、期望状态与 timeout），不绑定完整 artifact、Policy Source 或 policy：代码、显示文案、Fail-Open、自动周期、设备重启或其他不改变延迟可比性的更新不得清空历史。机场、地区或 capability 拓扑变化时，当前轮按稳定 ID 保留仍存在对象的聚合、移除已不存在对象并从单样本建立新增对象；测量口径变化才整体重置。
