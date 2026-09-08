@@ -81,6 +81,24 @@ refresh_data_fallback = function(secret, entry, policy, provider_state, selected
 	if (selected_group != null && (!unfix_proxy(secret, selected_group) ||
 		!test_group_path(secret, selected_group, policy.checks)))
 		return { ok: false, error: "selected_path_probe_failed", round: null, runtime: null };
+	if (selected_group != null) {
+		// Mihomo caches health independently for each URL. A latency test on the
+		// candidate cannot revive a selector or wrapper failed by a business URL.
+		// Refresh only the bound chain, from the inner selector to the outer guard.
+		const health = policy?.fail_open?.healthcheck;
+		const stages = [
+			{ group: selection_group(entry), probe: health?.path_probe_id },
+			{ group: entry?.proxy_path_name, probe: health?.guard_probe_id }
+		];
+		for (let stage in stages) {
+			let probe = null;
+			for (let candidate in policy?.fail_open?.probes ?? [])
+				if (candidate.id == stage.probe) probe = candidate;
+			if (probe == null || !test_group_path(secret, stage.group, { latency: {
+				url: probe.url, expected_status: probe.expected_status, timeout_ms: health.timeout_ms
+			} })) return { ok: false, error: "selected_business_path_probe_failed", round: round, runtime: null };
+		}
+	}
 	const state = proxies(secret);
 	if (state == null || state.proxies == null) {
 		return { ok: false, error: "mihomo_state_unavailable", round: round };
@@ -101,7 +119,7 @@ refresh_data_fallback = function(secret, entry, policy, provider_state, selected
 
 wait_for_preferred_runtime = function(secret, entry, choice, policy, provider_state, after_restart) {
 	let fallback = refresh_data_fallback(secret, entry, policy, provider_state, choice);
-	if (fallback.error == "selected_path_probe_failed") return fallback;
+	if (fallback.error != null) return fallback;
 	if (fallback.ok && preferred_runtime_ready(fallback.runtime, choice)) {
 		return fallback;
 	}
@@ -167,7 +185,7 @@ activate_preferred_choice = function(secret, entry, choice, policy, after_restar
 	if (!fallback.ok || !preferred_runtime_ready(fallback.runtime, choice)) {
 		return {
 			ok: false,
-			error: "preferred_path_unavailable",
+			error: fallback.error ?? "preferred_path_unavailable",
 			choice: choice,
 			leaf: leaf.leaf,
 			data_path: fallback.runtime?.data_path ?? "unknown",

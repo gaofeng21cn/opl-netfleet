@@ -390,7 +390,16 @@ ucode "$main" probe >"$work/resumed-probe-result.json"
 assert_json "$work/resumed-probe-result.json" '@.ok' true
 stage=events_without_logd
 /etc/init.d/log stop
-if ubus -t 1 list log >/dev/null 2>&1; then exit 1; fi
+# procd stop is asynchronous; verify the logging owner has exited before
+# measuring the log-free event path, without relaxing its latency bound.
+for attempt in 1 2 3 4 5; do
+	ubus -t 1 list log >/dev/null 2>&1 || break
+	sleep 1
+done
+if ubus -t 1 list log >/dev/null 2>&1; then
+	echo "log owner still registered after stop" >&2
+	exit 1
+fi
 events_started=$(date +%s)
 ucode "$main" events >"$work/events-without-logd-result.json"
 test "$(( $(date +%s) - events_started ))" -lt 5
