@@ -104,8 +104,12 @@ direct_probe() {
 			http://198.18.1.2:19091/version >>"$work/client-ipv4.log"
 		ip netns exec nf-setup-client curl -gfsS --noproxy '*' --max-time 8 \
 			'http://[fd77:a::2]:19091/version' >>"$work/client-ipv6.log"
-		ip netns exec nf-setup-client curl -fsS --socks5-hostname 198.18.1.2:1081 --max-time 10 \
-			https://www.gstatic.com/generate_204
+		ip netns exec nf-setup-client curl -fsS --noproxy '*' --max-time 10 \
+			--cacert /tmp/local-probe.crt --resolve netfleet-probe.test:19443:198.18.1.2 \
+			https://netfleet-probe.test:19443/generate_204
+		ip netns exec nf-setup-client curl -fsS --noproxy '*' --max-time 10 \
+			--cacert /tmp/local-probe.crt --resolve 'netfleet-probe.test:19443:[fd77:a::2]' \
+			https://netfleet-probe.test:19443/generate_204
 	fi
 }
 package_transaction() {
@@ -316,7 +320,7 @@ printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
 : >"$work/packages.log"
 for attempt in 1 2 3; do
 	apk --timeout 120 update >>"$work/packages.log" 2>&1 || true
-	if apk --timeout 120 add curl flock coreutils-timeout ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket \
+	if apk --timeout 120 add curl flock coreutils-timeout ip-full socat kmod-veth kmod-nft-tproxy kmod-nft-socket \
 		ucode-mod-fs ucode-mod-uci ucode-mod-ubus ucode-mod-uloop >>"$work/packages.log" 2>&1; then
 		break
 	fi
@@ -435,6 +439,9 @@ cat >"$work/helper.json" <<'EOF'
 EOF
 ip netns exec nf-setup-upstream "$work/bin/nf-setup-proxy" -d "$work" -f "$work/helper.json" >"$work/helper.log" 2>&1 &
 helper_pids="$helper_pids $!"
+ip netns exec nf-setup-upstream socat 'TCP6-LISTEN:19443,ipv6only=0,reuseaddr,fork' \
+	"TCP4:192.168.1.2:$probe_port" >"$work/tls-endpoint.log" 2>&1 &
+helper_pids="$helper_pids $!"
 for attempt in $(seq 1 15); do
 	if curl -fsS --socks5-hostname 198.18.1.2:1081 --max-time 4 https://www.gstatic.com/generate_204 >/dev/null; then break; fi
 	[ "$attempt" -lt 15 ] || exit 1
@@ -451,6 +458,12 @@ ip netns exec nf-setup-client ip addr add 192.168.1.20/24 dev nf-setup-client
 ip netns exec nf-setup-client ip -6 addr add fd77:9::2/64 dev nf-setup-client nodad
 ip netns exec nf-setup-client ip route add default via 192.168.1.1
 ip netns exec nf-setup-client ip -6 route add default via fd77:9::1
+for attempt in $(seq 1 10); do
+	if ip netns exec nf-setup-client curl -gfsS --noproxy '*' --max-time 2 \
+		'http://[fd77:a::2]:19091/version' >>"$work/client-ready.log" 2>&1; then break; fi
+	[ "$attempt" -lt 10 ] || exit 1
+	sleep 1
+done
 touch "$work/client-ready"
 direct_probe
 
