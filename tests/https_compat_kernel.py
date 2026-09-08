@@ -67,7 +67,7 @@ class Kernel(Protocol):
         host = host or self.HOST
         code = """import json,socket,ssl,sys
 context=ssl.create_default_context(cafile=sys.argv[2]); context.set_alpn_protocols(['h2','http/1.1'] if sys.argv[7]=='h2' else ['http/1.1'])
-source=(sys.argv[5] or ('::' if ':' in sys.argv[3] else '0.0.0.0'),int(sys.argv[8])) if sys.argv[5] or int(sys.argv[8]) else None
+source=(sys.argv[5] or ('2001:db8:77::2' if ':' in sys.argv[3] else '10.77.0.2'),int(sys.argv[8])) if sys.argv[5] or int(sys.argv[8]) else None
 with socket.create_connection((sys.argv[3],int(sys.argv[1])),timeout=3,source_address=source) as raw:
  with context.wrap_socket(raw,server_hostname=sys.argv[4]) as connection:
   if sys.argv[7]=='h2':
