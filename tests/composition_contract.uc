@@ -253,6 +253,7 @@ try {
 	lease = fs.open(`${root}/locks/.data.lock`, 'ae', 0600);
 	check(lease.lock('xn'), 'fixture holds backup data barrier');
 	check(request({ id: 'workspace-note', action: 'config-get' }).error == 'mutation_busy', 'backup barrier excludes private actions');
+	check(change('echo', 'reload').error == 'plugin_data_busy', 'data barrier also excludes lifecycle composition writes');
 	lease.close(); lease = null;
 	check(request({ id: 'workspace-note', action: 'config-get' }).ok, 'failed admission releases plugin locks');
 

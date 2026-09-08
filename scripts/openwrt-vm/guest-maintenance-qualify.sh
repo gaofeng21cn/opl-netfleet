@@ -20,6 +20,28 @@ finish() {
 }
 trap finish EXIT INT TERM
 ucode /tmp/tests/maintenance_device.uc >"$work/active.log" 2>&1
+stage=composition
+ucode -e '
+import * as fs from "fs";
+import { execute } from "/usr/libexec/opl-netfleet/kernel/host.uc";
+import { create } from "/usr/libexec/opl-netfleet/adapters/openwrt.uc";
+const root = "/usr/libexec/opl-netfleet", options = { adapter: create() };
+const path = "/tmp/netfleet-maintenance-fixture/composition-request.json";
+function check(value, label) { if (!value) die(label); };
+function get() { const value = execute(["plugins-system-get"], root, options); check(value.ok, sprintf("%J", value)); return value.result; };
+function apply(config, revision) {
+  check(fs.writefile(path, sprintf("%J", { request: { config, revision, confirm: true } })) && fs.chmod(path, 0600), "private composition request");
+  const result = execute(["plugins-system-apply", path], root, options);
+  check(result.ok, sprintf("%J", result));
+};
+const original = get(), config = json(sprintf("%J", original.config));
+config.config = { ...(config.config ?? {}), models: { qualification: true } };
+apply(config, original.revision);
+check(get().config.config.models.qualification == true, "active composition readback");
+apply(original.config, get().revision);
+fs.unlink(path);
+print("active_composition_roundtrip_ok\n");
+' >"$work/composition.log" 2>&1
 ucode "$main" probe >"$work/probe-result.json"
 [ "$(jsonfilter -i "$work/probe-result.json" -e '@.result.ok')" = true ]
 stage=stopped

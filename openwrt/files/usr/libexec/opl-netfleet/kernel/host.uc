@@ -754,7 +754,12 @@ function management(action, argv, root, options) {
 			if (!reconciled.ok) return reconciled;
 		}
 		if (item.manifest.api_version != API_VERSION && index(['get','unload'], input.action) < 0) return failure('plugin_api_incompatible');
-		if (!item.process) return service_request(input, item, host);
+		if (!item.process) {
+			if (index(['load','unload','reload'], input.action) < 0) return service_request(input, item, host);
+			const data = data_lock(options, true);
+			if (data == null) return failure('plugin_data_busy');
+			return guarded(() => service_request(input, item, host), data.close);
+		}
 		if (host.instance != 'default') return failure('plugin_process_instance_unsupported');
 		if (index(['get','unload'], input.action) < 0) {
 			if (length(item.manifest.backends)) {
