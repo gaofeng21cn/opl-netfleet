@@ -115,7 +115,8 @@ try {
 		proxy_providers: () => ({providers: provider_state}), controller_ready: () => true,
 		select: () => true
 	};
-	ports["mihomo.latency"] = {measure: () => ({results: delays, target: policy.checks.latency.url}), measure_providers: () => true,
+	let delay_calls = 0;
+	ports["mihomo.latency"] = {measure: () => { delay_calls++; return {results: delays, target: policy.checks.latency.url}; }, measure_providers: () => true,
 		complete_from_fresh_history: round => round};
 	ports["mihomo.paths"] = {
 		selection_group: value => value.selector_name,
@@ -140,6 +141,26 @@ try {
 	const rejected_entry = filter(documents.load_evidence().capabilities.standard.entries, item => item.candidate == near.name)[0];
 	check(rejected_entry.ok == false && rejected_entry.reason == 'no_verified_leaf', "excluded candidate remains visible with reason");
 	provider_state[entry.providers.alpha.source_name].proxies[0].extra[policy.checks.latency.url].alive = true;
+	const round = use("selection.round");
+	const child = clone(entry);
+	policy.capabilities.secondary = {enabled: true, mode: "automatic"};
+	child.candidate_groups = map(entry.candidate_groups, group => ({...group, name: group.name + "-secondary"}));
+	manifest.generated_groups.secondary = child;
+	for (let i = 0; i < length(child.candidate_groups); i++) {
+		const original = entry.candidate_groups[i].name, name = child.candidate_groups[i].name;
+		state.proxies[name] = clone(state.proxies[original]);
+		delays[name] = delays[original];
+	}
+	const shared = {entries: {}, prepared: true};
+	delay_calls = 0;
+	round.automatic_round(policy, manifest, entry, "standard", "fixture", false, state, true, null, shared);
+	const same = round.automatic_round(policy, manifest, child, "secondary", "fixture", false, state, true, null, shared);
+	check(same.ok && delay_calls == 1, "equivalent exit candidates reuse one physical measurement round");
+	child.candidate_groups[0].filter = "different-scope";
+	round.automatic_round(policy, manifest, child, "secondary", "fixture", false, state, true, null, shared);
+	check(delay_calls == 2, "different candidate scopes cannot reuse measurements");
+	delete policy.capabilities.secondary;
+	delete manifest.generated_groups.secondary;
 	selection_ok = false;
 	let rejected = false;
 	try { selection.command_select(["select", "standard", "auto"]); }

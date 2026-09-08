@@ -152,7 +152,7 @@ describe('地区显示与统计口径', () => {
       { id: 'selected', display_name: 'Selected', role: 'primary', billing: 'subscription', selected: true, available_region_count: 0, best_delay_ms: 999 },
     ];
 
-    expect(sortRegionsForDisplay(snapshot).map((region) => region.id)).toEqual(['selected', 'a', 'b', 'z']);
+    expect(sortRegionsForDisplay(snapshot).map((region) => region.id)).toEqual(['a', 'b', 'z', 'selected']);
     expect(sortProvidersForDisplay(snapshot).map((provider) => provider.id)).toEqual(['selected', 'a', 'z']);
   });
 

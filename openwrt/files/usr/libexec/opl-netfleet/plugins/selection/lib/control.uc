@@ -15,6 +15,7 @@ const load_manifest = context.use("mihomo.artifacts").load_manifest;
 const protected_probes = context.use("mihomo.controller").protected_probes;
 const proxies = context.use("mihomo.controller").proxies;
 const select_proxy = context.use("mihomo.controller").select;
+const reset_candidate_groups = context.use("mihomo.paths").reset_candidate_groups;
 const measure_providers = context.use("mihomo.latency").measure_providers;
 const selection_group = context.use("mihomo.paths").selection_group;
 const activate_preferred_choice = context.use("mihomo.paths").activate_preferred_choice;
@@ -80,14 +81,18 @@ automatic_select_action = function(policy, capability, evidence, trigger, initia
 	}
 	const provider_measurement_ok = measure_providers(secret,
 		automatic_provider_sources(manifest, automatic_names), policy.checks);
+	const shared = { entries: {}, prepared: true };
+	for (let name in automatic_names) {
+		if (!reset_candidate_groups(secret, manifest.generated_groups[name])) fail("select", "candidate_group_reset_failed", name);
+	}
+	operation_update("measuring", { subject: null, total: 0, completed: 0 });
 	const results = {};
 	for (let i = 0; i < length(automatic_names); i++) {
 		const name = automatic_names[i];
 		const parent = policy.capabilities?.[name]?.prefer_region_from;
 		const preferred_region = parent == null ? null : results[parent]?.decision?.region_id;
-		operation_update("selecting", { subject: name, total: length(automatic_names), completed: i });
 		const result = automatic_round(policy, manifest, manifest.generated_groups[name], name, secret,
-			baseline_probes.ok, state, provider_measurement_ok, preferred_region);
+			baseline_probes.ok, state, provider_measurement_ok, preferred_region, shared, trigger == "manual");
 		results[name] = result;
 		if (!result.ok) {
 			const decision = result.decision ?? { error: result.error };
@@ -107,7 +112,7 @@ automatic_select_action = function(policy, capability, evidence, trigger, initia
 	for (let i = 0; i < length(automatic_names); i++) {
 		const name = automatic_names[i];
 		const result = results[name];
-		operation_update("reloading", { subject: name, total: length(automatic_names), completed: i });
+		operation_update("applying", { subject: name, total: length(automatic_names), completed: i });
 		const activation = activate_preferred_choice(secret, manifest.generated_groups[name],
 			result.decision.group, policy, false, false);
 		activations[name] = activation;

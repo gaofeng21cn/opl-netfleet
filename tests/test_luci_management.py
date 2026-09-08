@@ -90,7 +90,7 @@ function configModule(management) {
 function modesModule(api) {
     const source = fs.readFileSync(path.join(resources, 'product-pages.js'), 'utf8');
     const exports = source.slice(0, source.lastIndexOf('return baseclass.extend({')) +
-        'return { controls: operatingModeControls, controller: productController, summary: statusSummary, health: pathHealthLabel, region: currentRegion, mode: modeName };';
+        'return { regions: regionsPage, controls: operatingModeControls, controller: productController, summary: statusSummary, health: pathHealthLabel, region: currentRegion, mode: modeName };';
     return new Function('baseclass', 'ui', 'netfleet', 'E', 'managed', exports)(baseclass, ui, api, E, { notify: ui.addNotification });
 }
 function networkState() {
@@ -454,6 +454,20 @@ await fire(button(managed.components(owner), '检查更新'));
 assert.equal(owner.dashboardError, null);
 assert.equal(owner.components.dashboard.checked_at, 100);
 assert(owner.componentsError);
+""")
+
+    def test_regions_rank_current_measurement_without_pinning_the_selected_region(self):
+        self.run_js(r"""
+const view = modesModule({});
+const region = (id, selected, measured, historic) => ({id, display_name: id, selected, mode: 'automatic', available_count: 1,
+ available_provider_count: 1, available_node_count: 1, measurement: measured == null ? null : {best_delay_ms: measured, measured_count: 1},
+ last_best_delay_ms: historic, delay_sample_count: 2});
+const status = {regions: [region('Japan', true, 93, 20), region('Singapore', false, 49, 99), region('Old', false, null, 1)]};
+const page = view.regions(status, {});
+const rows = all(page, node => node.tag === 'tr').filter(row => all(row, node => node.tag === 'td').length);
+assert(text(rows[0]).startsWith('Singapore'));
+assert(text(rows[1]).startsWith('Japan（当前使用）'));
+assert(text(rows[2]).startsWith('Old'));
 """)
 
     def test_subscription_selection_is_one_operation_feedback(self):

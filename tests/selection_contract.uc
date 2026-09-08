@@ -156,6 +156,14 @@ if (!result.ok || result.region_id != "fast") {
 	exit(1);
 }
 
+result = choose_automatic([
+	candidate("near-node", "p1", "near", 49, 10, "primary"),
+	candidate("current-node", "p2", "current", 93, 10, "primary")
+], policy, "standard", "current", null, true);
+if (!result.ok || result.region_id != "near" || result.changed_region != true) {
+	print("explicit_reselection_kept_slower_region\n"); exit(1);
+}
+
 const capability_margin = json(sprintf("%J", policy));
 capability_margin.capabilities.standard.region_switch_margin_ms = 200;
 result = choose_automatic([

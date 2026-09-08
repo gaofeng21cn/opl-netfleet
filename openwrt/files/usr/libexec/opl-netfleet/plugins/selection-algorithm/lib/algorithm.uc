@@ -31,7 +31,7 @@ generated_group = function(manifest, capability) {
 	return manifest?.generated_groups?.[capability];
 };
 
-choose_automatic = function(candidates, policy, capability, current_region, preferred_region) {
+choose_automatic = function(candidates, policy, capability, current_region, preferred_region, reselect) {
 	const margin = region_switch_margin(policy, capability);
 	const primary = eligible_candidates(candidates, capability, policy, "primary");
 	const reserve = eligible_candidates(candidates, capability, policy, "reserve");
@@ -54,7 +54,7 @@ choose_automatic = function(candidates, policy, capability, current_region, pref
 		if (preferred != null) {
 			selected_region = preferred.region_id;
 			reason = "followed_capability_region";
-		} else if (current != null && current.region_id != fastest.region_id &&
+		} else if (reselect != true && current != null && current.region_id != fastest.region_id &&
 			current.latency.delay_ms - fastest.latency.delay_ms < margin) {
 			selected_region = current.region_id;
 			reason = "kept_current_region";

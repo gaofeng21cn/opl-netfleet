@@ -36,10 +36,7 @@ export const sortRegionsForDisplay = (snapshot: StatusSnapshot): Region[] => sna
   .filter((region) => finite(region.available_count, 0) > 0 && finite(region.available_provider_count, 0) > 0)
   .slice()
   .sort((a, b) =>
-    Number(Boolean(b.selected)) - Number(Boolean(a.selected)) ||
-    finite(a.last_best_delay_ms, Infinity) - finite(b.last_best_delay_ms, Infinity) ||
-    finite(a.average_best_delay_ms, Infinity) - finite(b.average_best_delay_ms, Infinity) ||
-    finite(b.available_count, -1) - finite(a.available_count, -1) ||
+    finite(a.measurement?.best_delay_ms, Infinity) - finite(b.measurement?.best_delay_ms, Infinity) ||
     finite(b.available_node_count, -1) - finite(a.available_node_count, -1) ||
     finite(b.available_provider_count, -1) - finite(a.available_provider_count, -1) ||
     regionName(snapshot, a.id).localeCompare(regionName(snapshot, b.id), 'zh-CN')

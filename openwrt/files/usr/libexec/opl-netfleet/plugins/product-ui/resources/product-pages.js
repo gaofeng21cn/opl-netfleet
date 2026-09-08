@@ -782,12 +782,12 @@ function quotaMeter(provider) {
 		'aria-label': '剩余流量比例', 'title': '剩余 ' + Math.round(value.remaining_bytes / value.total_bytes * 100) + '%' });
 }
 
-function tableTools(label, state, update) {
+function tableTools(label, state, update, defaultLabel) {
 	return E('div', { 'class': 'netfleet-table-tools' }, [
 		E('input', { 'type': 'search', 'aria-label': '搜索' + label, 'placeholder': '搜索' + label, 'value': state.query || '',
 			'input': function(event) { state.query = event.target.value; update(); } }),
 		E('select', { 'aria-label': label + '排序', 'change': function(event) { state.sort = event.target.value; update(); } },
-			[ ['default', '默认排序'], ['name', '名称'], ['latest', '最近最优'], ['average', '平均最优'] ].map(function(item) {
+			[ ['default', defaultLabel || '默认排序'], ['name', '名称'], ['latest', '最近最优'], ['average', '平均最优'] ].map(function(item) {
 				return E('option', { 'value': item[0], 'selected': (state.sort || 'default') === item[0] ? true : null }, item[1]);
 			})),
 		E('label', {}, [ E('input', { 'type': 'checkbox', 'checked': state.selectedOnly || null,
@@ -814,7 +814,7 @@ function measurementCell(value) {
 	const reasons = Object.entries(value.exclusions || {}).map(function(item) { return (labels[item[0]] || '测量不可用') + ' ' + item[1] + ' 组'; }).join(' · ');
 	return E('td', { 'title': sampledAt(value.sampled_at) }, [
 		E('span', {}, delay(value.best_delay_ms, '本轮无有效测速')),
-		E('small', {}, reasons || value.measured_count + ' 组测速通过')
+		E('small', { 'class': 'netfleet-measurement-note' }, reasons || value.measured_count + ' 组测速通过')
 	]);
 }
 
@@ -945,11 +945,10 @@ function providersPage(status, controller) {
 function regionsPage(status, controller) {
 	const state = controller.regionTableState || (controller.regionTableState = {});
 	const regions = currentRegionPlan(status).sort(function(a, b) {
-		return Number(Boolean(b.selected)) - Number(Boolean(a.selected)) ||
-			(Number(a.last_best_delay_ms) || Infinity) - (Number(b.last_best_delay_ms) || Infinity) ||
-			(Number(a.average_best_delay_ms) || Infinity) - (Number(b.average_best_delay_ms) || Infinity) ||
-			(Number(b.available_count) || -1) - (Number(a.available_count) || -1) ||
+		return (finite(a.measurement?.best_delay_ms) ? Number(a.measurement.best_delay_ms) : Infinity) -
+			(finite(b.measurement?.best_delay_ms) ? Number(b.measurement.best_delay_ms) : Infinity) ||
 			(Number(b.available_node_count) || -1) - (Number(a.available_node_count) || -1) ||
+			(Number(b.available_provider_count) || -1) - (Number(a.available_provider_count) || -1) ||
 			regionName(status, a.id).localeCompare(regionName(status, b.id), 'zh-CN');
 	});
 	const rows = regions.map(function(region) {
@@ -976,7 +975,7 @@ function regionsPage(status, controller) {
 			visible.map(function(region) { return rows[regions.indexOf(region)]; }), '没有匹配的地区', 'netfleet-data-table'));
 	};
 	update();
-	return [ E('section', {}, [ tableTools('地区', state, update), caption, list ]) ];
+	return [ E('section', {}, [ tableTools('地区', state, update, '本轮测速（从低到高）'), caption, list ]) ];
 }
 
 function displayEventName(events, kind, id) {

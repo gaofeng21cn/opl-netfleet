@@ -1710,3 +1710,5 @@
 	.netfleet-native .netfleet-master-detail.has-detail { grid-template-columns: minmax(0, 1fr); }
 	.netfleet-native .netfleet-inspector { margin: 18px 0 0; padding: 16px 0; border-left: 0; border-top: 1px solid var(--nf-border); }
 }
+
+.netfleet-native .netfleet-measurement-note { display: block; margin-top: 4px; color: var(--nf-muted); font-size: 12px; line-height: 1.5; }

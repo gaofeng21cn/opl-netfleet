@@ -150,7 +150,7 @@ function button(label, click, disabled, destructive) {
 const PHASE_LABELS = {
 	preparing: '准备更新', checking: '检查更新源', downloading: '下载中', validating: '校验内容',
 	compiling: '生成运行配置', reloading: '重载运行配置', selecting: '重新选优',
-	installing: '安装组件', verifying: '确认运行状态', rolling_back: '恢复更新前状态', done: '已完成'
+	measuring: '共享测速', applying: '应用出口', installing: '安装组件', verifying: '确认运行状态', rolling_back: '恢复更新前状态', done: '已完成'
 };
 
 function isRunning(operation) { return operation && ['queued', 'running'].includes(operation.state); }
@@ -215,7 +215,7 @@ function operationNode(controller, kind) {
 		details.push(E('span', {}, label + Number(operation.completed || 0) + ' / ' + Number(operation.total) + unit));
 	}
 	if (kind === 'subscription' && related && operation.phase === 'selecting') {
-		details.push(E('span', {}, ({ preparing: '准备测速', checking: '检查节点健康', selecting: '测量候选并选优', verifying: '验证业务连通性' })[selection.phase] || '测速与选优'));
+		details.push(E('span', {}, ({ preparing: '准备测速', checking: '检查节点健康', selecting: '测量候选并选优', verifying: '验证业务连通性' })[selection.phase] || PHASE_LABELS[selection.phase] || '测速与选优'));
 		if (selection.total > 0) details.push(E('span', {}, '已完成 ' + Number(selection.completed || 0) + ' / ' + Number(selection.total) + ' 个出口'));
 		if (selection.error) details.push(E('span', { 'class': 'is-warning' }, errorLabel(selection.error)));
 	}
