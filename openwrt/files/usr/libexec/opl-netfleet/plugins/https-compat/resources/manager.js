@@ -288,7 +288,10 @@ function render(controller) {
 				config.rules = config.rules.map(function(rule) { rule.devices = rule.devices.filter(function(id) { return id !== device.id; }); return rule; }).filter(function(rule) { return rule.devices.length; });
 			}); }, busy) ]) ]);
 	});
-	function table(headers, rows, empty) { return E('div', { 'class': 'table netfleet-config-table' }, E('table', {}, [ E('thead', {}, E('tr', {}, headers.map(function(title) { return E('th', {}, title); }))), E('tbody', {}, rows.length ? rows : E('tr', {}, E('td', { 'colspan': headers.length }, empty || '暂无记录'))) ])); }
+	function table(headers, rows, empty) {
+		rows.forEach(row => Array.from(row.children).forEach((cell, index) => cell.setAttribute('data-label', headers[index])));
+		return E('div', { 'class': 'netfleet-config-table' }, E('table', {}, [ E('thead', {}, E('tr', {}, headers.map(function(title) { return E('th', {}, title); }))), E('tbody', {}, rows.length ? rows : E('tr', {}, E('td', { 'colspan': headers.length }, empty || '暂无记录'))) ]));
+	}
 	const tab = controller.compatibilityTab || 'rules';
 	const diagnostics = [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h4', {}, '诊断'), E('div', { 'class': 'netfleet-inline-actions' }, [
 		button('连接验证', function() { return mutate(controller, 'compatibilityProbe', {}); }, busy),

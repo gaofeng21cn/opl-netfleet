@@ -240,18 +240,31 @@ else:
         finally:
             os.kill(engine, signal.SIGCONT)
             os.kill(lifecycle, signal.SIGCONT)
+        resumed_at = time.monotonic()
         for _ in range(3):
             deadline = time.monotonic() + 12
-            while not self.owner.call("get").get("recovery", {}).get("healthy"):
-                self.assertLess(time.monotonic(), deadline, self.owner.call("get"))
+            while True:
+                recovery = self.owner.call("get").get("recovery", {})
+                if recovery.get("latched") or recovery.get("healthy") and (recovery.get("healthy_since") or 0) >= resumed_at:
+                    break
+                self.assertLess(time.monotonic(), deadline, recovery)
                 await asyncio.sleep(1)
-            if self.owner.call("get")["recovery"].get("latched"):
+            if recovery.get("latched"):
                 break
+            fault_count = len(recovery.get("faults", []))
+            engine = self.owner.health()["pid"]
             os.kill(engine, signal.SIGSTOP)
             try:
-                await asyncio.sleep(6)
+                deadline = time.monotonic() + 12
+                while True:
+                    recovery = self.owner.call("get").get("recovery", {})
+                    if len(recovery.get("faults", [])) > fault_count:
+                        break
+                    self.assertLess(time.monotonic(), deadline, recovery)
+                    await asyncio.sleep(0.5)
             finally:
                 os.kill(engine, signal.SIGCONT)
+                resumed_at = time.monotonic()
         await asyncio.sleep(32)
         state = self.owner.call("get")
         self.assertTrue(state["recovery"]["latched"], state)
