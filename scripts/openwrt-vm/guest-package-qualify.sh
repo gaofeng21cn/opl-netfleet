@@ -560,7 +560,7 @@ if [ "$(jsonfilter -i "$fixture/lifecycle-fixture.json" -e '@.legacy.key_sha256'
 	done <"$fixture/legacy-files.txt"
 	legacy_dependencies=$(jsonfilter -i "$fixture/lifecycle-fixture.json" -e '@.legacy.system_dependencies[*]')
 	if [ -n "$legacy_dependencies" ]; then
-		owner_locked "$real_apk" --timeout 300 add $legacy_dependencies >>"$fixture/package-manager.log" 2>&1
+		owner_locked "$real_apk" --no-network add $legacy_dependencies >>"$fixture/package-manager.log" 2>&1
 	fi
 	# The core may have been autoremove'd with the new product; resolve the old
 	# product's real system dependencies from the same configured signed feeds.

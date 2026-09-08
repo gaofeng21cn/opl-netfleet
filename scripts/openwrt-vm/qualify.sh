@@ -492,6 +492,9 @@ run_guest() {
 	if [ "$guest_kind" = setup ] && [ -n "$package_archive" ]; then
 		guest_arguments="$guest_arguments '$feed_url'"
 	fi
+	if [ "$result_name" = package-runtime ]; then
+		guest_arguments="$guest_arguments '$feed_url'"
+	fi
 	if ! ssh $ssh_common root@127.0.0.1 \
 		"sh /tmp/$guest_script '$source_commit' '$source_tree' $guest_arguments" \
 		>"$work/$result_name-result.json" 2>"$work/$result_name-result.stderr"; then
