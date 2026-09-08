@@ -20,5 +20,8 @@ while (true) {
 			`${root}/kernel/host.uc`, `${root}/adapters/openwrt.uc`))()(root, states);
 	} catch (error) { warn(`NetFleet supervisor: ${error.message}\n`); }
 	lease?.close();
+	// Reclaim cycles from hot-loaded factories and closed scopes after each tick.
+	// Only the explicitly retained scheduler state survives between iterations.
+	gc();
 	sleep(delay);
 }

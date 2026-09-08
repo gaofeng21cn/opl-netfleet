@@ -759,10 +759,21 @@ supervisor_pid=$!
 sleep 1
 supervisor_ticks_start=$(awk '{print $14 + $15}' "/proc/$supervisor_pid/stat")
 supervisor_started=$(date +%s)
-sleep 60
+supervisor_rss_warm=0
+supervisor_rss_peak=0
+for sample in $(seq 1 15); do
+	sleep 4
+	resident=$(awk '/^VmRSS:/ {print $2}' "/proc/$supervisor_pid/status")
+	[ "$resident" -le "$supervisor_rss_peak" ] || supervisor_rss_peak=$resident
+	[ "$sample" -ne 4 ] || supervisor_rss_warm=$resident
+done
 supervisor_ticks_end=$(awk '{print $14 + $15}' "/proc/$supervisor_pid/stat")
 supervisor_finished=$(date +%s)
 supervisor_rss_kib=$(awk '/^VmRSS:/ {print $2}' "/proc/$supervisor_pid/status")
+[ "$((supervisor_rss_kib - supervisor_rss_warm))" -le 2048 ] || {
+	echo 'Supervisor idle memory did not plateau after warm-up' >&2
+	exit 1
+}
 
 active_pid=$(cat /var/run/nikki/mihomo.pid)
 kill "$active_pid"
@@ -871,9 +882,9 @@ supervisor_cpu_milli_percent=$(awk -v ticks="$supervisor_ticks" -v elapsed="$sup
 stage=complete
 qualification=$work/qualification.json
 qualification_temporary=$qualification.tmp
-printf '{"ok":true,"source_commit":"%s","source_tree":"%s","checks":{"ucode_runtime":true,"mihomo_runtime":true,"connections_readback":true,"config_get":true,"config_validate":true,"config_save_inactive":true,"config_apply_saved":true,"config_apply_active":true,"config_apply_rollback":true,"compile_staged":true,"multi_provider_topology":true,"enable_readback":true,"select_readback":true,"direct_history_isolated":true,"subscription_refresh_unchanged":true,"subscription_refresh_changed":true,"subscription_refresh_provider_lkg":true,"subscription_refresh_rollback":true,"direct_fallback":true,"supervisor_native_recovery":true,"supervisor_lan_ingress_passthrough":true,"supervisor_lock_retry":true,"supervisor_dns_ingress_passthrough":true,"disable_native":true},"metrics":{"compile_ms":%s,"enable_ms":%s,"select_auto_ms":%s,"disable_ms":%s,"status_samples":30,"status_p50_ms":%s,"status_p95_ms":%s,"supervisor_window_seconds":%s,"supervisor_cpu_milli_percent":%s,"supervisor_rss_kib":%s},"runtime":{"openwrt_ucode":true,"mihomo_version":"v1.19.30","yq_version":"v4.53.6","nikki_fixture":"synthetic_lifecycle_only"}}\n' \
+printf '{"ok":true,"source_commit":"%s","source_tree":"%s","checks":{"ucode_runtime":true,"mihomo_runtime":true,"connections_readback":true,"config_get":true,"config_validate":true,"config_save_inactive":true,"config_apply_saved":true,"config_apply_active":true,"config_apply_rollback":true,"compile_staged":true,"multi_provider_topology":true,"enable_readback":true,"select_readback":true,"direct_history_isolated":true,"subscription_refresh_unchanged":true,"subscription_refresh_changed":true,"subscription_refresh_provider_lkg":true,"subscription_refresh_rollback":true,"direct_fallback":true,"supervisor_native_recovery":true,"supervisor_lan_ingress_passthrough":true,"supervisor_lock_retry":true,"supervisor_dns_ingress_passthrough":true,"disable_native":true},"metrics":{"compile_ms":%s,"enable_ms":%s,"select_auto_ms":%s,"disable_ms":%s,"status_samples":30,"status_p50_ms":%s,"status_p95_ms":%s,"supervisor_window_seconds":%s,"supervisor_cpu_milli_percent":%s,"supervisor_rss_kib":%s,"supervisor_rss_warm_kib":%s,"supervisor_rss_peak_kib":%s},"runtime":{"openwrt_ucode":true,"mihomo_version":"v1.19.30","yq_version":"v4.53.6","nikki_fixture":"synthetic_lifecycle_only"}}\n' \
 	"$source_commit" "$source_tree" "$compile_ms" "$enable_ms" "$select_ms" "$disable_ms" \
-	"$status_p50_ms" "$status_p95_ms" "$supervisor_elapsed" "$supervisor_cpu_milli_percent" "$supervisor_rss_kib" \
+	"$status_p50_ms" "$status_p95_ms" "$supervisor_elapsed" "$supervisor_cpu_milli_percent" "$supervisor_rss_kib" "$supervisor_rss_warm" "$supervisor_rss_peak" \
 	>"$qualification_temporary"
 [ -s "$qualification_temporary" ]
 [ "$(jsonfilter -i "$qualification_temporary" -e '@.ok')" = true ]

@@ -40,7 +40,8 @@ qualification，HTTPS 模块另用自己的包与故障演练。
 这些都是 synthetic platform proof；真实 provider、DNS、TPROXY、硬件和应用验收按
 [Canary 推广与复原](../operations/canary-promotion.md)独立完成。
 
-runtime lane 记录 30 次状态请求的 p50/p95，以及至少 60 秒监督器 CPU/RSS 采样。
+runtime lane 记录 30 次状态请求的 p50/p95，以及至少 60 秒监督器 CPU/RSS 采样；
+预热后 RSS 增长超过 2 MiB 会失败，回执保留预热值、峰值和最终值以便比较。
 这是有界性能基线，不是路由器吞吐或长期稳定性结论。`maintenance_device.uc` 在真实
 OpenWrt 文件系统上验证插件私有数据与实例组合的备份往返、旧格式保留和失败恢复。
 
