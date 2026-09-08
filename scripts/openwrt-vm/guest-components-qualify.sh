@@ -267,26 +267,23 @@ for attempt in $(seq 1 120); do
 done
 test -f /tmp/netfleet-update-paused
 worker=$(ubus call service list '{"name":"opl-netfleet-update"}' | jsonfilter -e '@["opl-netfleet-update"].instances.update.pid')
-python3 - "$worker" <<'PYKILL'
-import os, signal, sys
-from pathlib import Path
-root = int(sys.argv[1])
-assert root > 1
-os.kill(root, signal.SIGSTOP)
-parents = {}
-for path in Path('/proc').glob('[0-9]*/stat'):
-    try:
-        fields = path.read_text().rsplit(')', 1)[1].split()
-        parents[int(path.parent.name)] = int(fields[1])
-    except (OSError, ValueError):
-        pass
-family = [root]
-for pid in family:
-    family.extend(child for child, parent in parents.items() if parent == pid and child not in family)
-for pid in reversed(family):
-    try: os.kill(pid, signal.SIGKILL)
-    except ProcessLookupError: pass
-PYKILL
+ucode - "$worker" <<'UCKILL'
+import * as fs from 'fs';
+const root = int(ARGV[0]);
+if (root <= 1) exit(1);
+system(`kill -STOP ${root}`);
+const parents = {};
+for (let name in fs.lsdir('/proc')) {
+	if (!match(name, /^[0-9]+$/)) continue;
+	const text = fs.readfile(`/proc/${name}/stat`);
+	if (text != null) parents[name] = int(split(replace(text, /^.*\) /, ''), ' ')[1]);
+}
+const family = [root];
+for (let i = 0; i < length(family); i++)
+	for (let child, parent in parents)
+		if (parent == family[i] && index(family, int(child)) < 0) push(family, int(child));
+for (let pid in reverse(family)) system(`kill -KILL ${pid} 2>/dev/null`);
+UCKILL
 # Lose volatile progress and make installed entry unreadable, as a partial replacement can.
 rm -f /tmp/opl-netfleet-operation-packages.json
 printf 'incomplete package bytes\n' >/usr/libexec/opl-netfleet/main.uc

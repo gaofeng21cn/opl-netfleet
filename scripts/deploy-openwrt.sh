@@ -485,6 +485,7 @@ if [[ "$release_mode" == source ]]; then
 	cp "$source_dir/openwrt/files/etc/init.d/opl-netfleet" \
 		"$payload_dir/etc/init.d/opl-netfleet"
 	cp "$source_dir/openwrt/files/etc/init.d/opl-netfleet-core" "$payload_dir/etc/init.d/opl-netfleet-core"
+	cp "$source_dir/openwrt/files/etc/init.d/opl-netfleet-update-recovery" "$payload_dir/etc/init.d/opl-netfleet-update-recovery"
 	mkdir -p "$payload_dir/usr/share/opl-netfleet"
 	cp -R "$source_dir/openwrt/files/usr/share/opl-netfleet/." "$payload_dir/usr/share/opl-netfleet/"
 	cp "$source_dir/openwrt/files/etc/config/netfleet" "$payload_dir/usr/share/opl-netfleet/netfleet.config"
@@ -512,7 +513,7 @@ if [[ "$release_mode" == source ]]; then
 		"$payload_dir/usr/libexec/opl-netfleet/supervisor.uc" \
 		"$payload_dir/usr/libexec/rpcd/opl-netfleet" \
 		"$payload_dir/usr/libexec/rpcd/opl-netfleet.plugins" \
-		"$payload_dir/etc/init.d/opl-netfleet" "$payload_dir/etc/init.d/opl-netfleet-core"
+		"$payload_dir/etc/init.d/opl-netfleet" "$payload_dir/etc/init.d/opl-netfleet-core" "$payload_dir/etc/init.d/opl-netfleet-update-recovery"
 	if command -v xattr >/dev/null 2>&1; then
 		xattr -cr "$payload_dir" >/dev/null 2>&1 || die "cannot sanitize temporary payload metadata"
 	fi

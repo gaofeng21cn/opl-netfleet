@@ -304,14 +304,14 @@ restore_services = function(before, work) {
 	}
 	return false;
 };
-rollback = function(before, work, names, versions, old, install_started) {
+rollback = function(before, work, names, versions, old, install_started, already_stopped) {
 	const errors = [];
 	function attempt(code, action) {
 		try { if (action()) return true; } catch (error) {}
 		push(errors, code);
 		return false;
 	}
-	const stopped = attempt("rollback_stop_failed", () => stop_services(work));
+	const stopped = already_stopped || attempt("rollback_stop_failed", () => stop_services(work));
 	if (stopped) {
 		if (install_started) fs.unlink(UPGRADE_STATE);
 		attempt("rollback_configuration_failed", () => run_command(`tar -xf ${q(`${work}/private.tar`)} -C /`, work));
@@ -438,7 +438,7 @@ recovery_stop = function(work) {
 	// Use the retained owner, since installed init hooks may be partially replaced.
 	if (gateway.cleanup()?.ok != true) return false;
 	for (let name in ["opl-netfleet", SERVICE])
-		if (!run_command(`ubus call service delete ${q(sprintf("%J", { name }))}`, work)) return false;
+		if (parsed(`ubus call service list ${q(sprintf("%J", { name }))}`)?.[name] != null && !run_command(`ubus call service delete ${q(sprintf("%J", { name }))}`, work)) return false;
 	for (let attempt = 0; attempt < 20; attempt++) {
 		if (!service_running("opl-netfleet") && !service_running(SERVICE) &&
 			capture("pidof mihomo") == null && gateway.status()?.result?.clean == true) return true;
@@ -473,7 +473,7 @@ recover = function() {
 		sprintf("%J", input_identity(before.runtime_paths)) != sprintf("%J", before.runtime_inputs)) fail("rollback_identity_mismatch");
 	// The marker protects a kernel generation; only release it after restoring all old bytes.
 	fs.unlink("/var/run/opl-netfleet-plugin-maintenance/.kernel");
-	const recovery_error = rollback(before, work, names, versions, old, true);
+	const recovery_error = rollback(before, work, names, versions, old, true, true);
 	if (recovery_error != null) fail(recovery_error);
 	if (!run_command(`/etc/init.d/${SERVICE} ${before.core_enabled ? "enable" : "disable"}`, work) ||
 		!run_command(`/etc/init.d/opl-netfleet ${before.supervisor_enabled ? "enable" : "disable"}`, work)) fail("rollback_runtime_failed");

@@ -145,6 +145,7 @@ git -C "$repo_dir" archive "$source_commit" \
 	openwrt/luci-app-netfleet/root/usr/share/rpcd/acl.d/luci-app-netfleet.json \
 	openwrt/files/etc/init.d/opl-netfleet \
 	openwrt/files/etc/init.d/opl-netfleet-core \
+	openwrt/files/etc/init.d/opl-netfleet-update-recovery \
 	openwrt/files/etc/config/netfleet \
 	openwrt/files/usr/share/opl-netfleet \
 	openwrt/files/etc/opl-netfleet/policy.example.json \
