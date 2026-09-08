@@ -156,7 +156,7 @@ apk update && apk upgrade opl-netfleet-plugin-selection-algorithm
 
 ### 模式切换与恢复
 
-选择 Mihomo 原生代理会退出增强调度、保留原生代理；选择 OpenWrt 原生直连则停止代理并撤销网络接管。切换失败时回读实际运行状态和业务探针结果，不把请求成功当成网络恢复。模式定义与恢复规则统一见[运行模式](docs/architecture/runtime-and-recovery.md#用户运行模式)。
+选择 Mihomo 原生代理会退出增强调度、保留原生代理；选择 OpenWrt 原生直连则停止代理并撤销网络接管。切换后回读实际运行状态，业务是否可达仍以真实探针为准，不把模式切换成功当成网络恢复。模式定义与恢复规则统一见[运行模式](docs/architecture/runtime-and-recovery.md#用户运行模式)。
 
 ## 面向多设备部署
 

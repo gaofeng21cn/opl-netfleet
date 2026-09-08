@@ -266,9 +266,9 @@ fallback state.
 ### Mode Switching And Recovery
 
 Native Mihomo mode stops enhanced scheduling while retaining native proxying.
-Native OpenWrt direct mode stops the proxy and removes network takeover. Failed
-transitions report actual runtime and business probe results; an accepted request
-does not prove network recovery. See [operating modes](docs/architecture/runtime-and-recovery.md#用户运行模式)
+Native OpenWrt direct mode stops the proxy and removes network takeover. After
+each transition, the UI reads actual runtime state; business probes remain separate
+evidence of reachability. See [operating modes](docs/architecture/runtime-and-recovery.md#用户运行模式)
 for the authoritative behavior and recovery rules.
 
 ## Fleet Deployment
