@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "platform",
   "label": "Platform runtime and process",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "api_version": 1,
   "package": "opl-netfleet-plugin-platform",
   "services": {
