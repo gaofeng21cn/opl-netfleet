@@ -9,10 +9,11 @@ import stat
 
 ACCOUNT = "netfleet-compat"
 CGROUP = Path("/sys/fs/cgroup/netfleet-compat")
-# mitmproxy's Python runtime reaches about 398 MiB during TLS setup and the
-# streaming/probe workload on the supported OpenWrt target. Keep a bounded
-# cgroup with enough headroom for that measured peak.
-BUDGETS = {"memory.max": str(512 * 1024 * 1024), "memory.swap.max": "0",
+# mitmproxy's Python runtime reaches about 529 MiB during the native TLS,
+# streaming and recovery workload on the supported OpenWrt target. Keep a
+# bounded cgroup with measured headroom while leaving the base data plane
+# outside this limit.
+BUDGETS = {"memory.max": str(640 * 1024 * 1024), "memory.swap.max": "0",
            "memory.oom.group": "1", "pids.max": "32", "cpu.max": "50000 100000"}
 
 
