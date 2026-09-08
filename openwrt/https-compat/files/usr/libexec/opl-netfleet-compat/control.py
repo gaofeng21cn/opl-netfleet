@@ -164,17 +164,24 @@ def engine_health(probe=False):
                         return value
         except (OSError, ValueError):
             pass
-    connections = None
+    connections, pid, starting = None, None, False
     try:
         result = subprocess.run(["ubus", "call", "service", "list", '{"name":"opl-netfleet-compat"}'],
                                 capture_output=True, text=True, timeout=0.4)
         if result.returncode == 0:
             instances = json.loads(result.stdout).get("opl-netfleet-compat", {}).get("instances", {})
-            if not instances.get("engine", {}).get("running"):
+            engine = instances.get("engine", {})
+            if not engine.get("running"):
                 connections = 0
-    except (OSError, ValueError, subprocess.SubprocessError):
+            elif type(engine.get('pid')) is int:
+                pid = engine['pid']
+                fields = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
+                age = time.monotonic() - int(fields[19]) / os.sysconf('SC_CLK_TCK')
+                starting = 0 <= age < 60
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
         pass
-    return {"ready": False, "active_requests": None, "active_connections": connections, "rules": {}}
+    return {"ready": False, "active_requests": None, "active_connections": connections, "rules": {},
+            "pid": pid, "starting": starting}
 
 
 def snapshot():
@@ -340,6 +347,7 @@ def tick(lock=None):
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         reason = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[a-z_]+', str(error)) else "native_gateway_unavailable"
     health = probe_without_network_lock(lock, lambda: engine_health(probe=True))
+    starting = health.get('starting') and health.get('pid') != previous.get('ready_engine_pid')
     expected = hashlib.sha256(EFFECTIVE.read_bytes()).hexdigest() if EFFECTIVE.exists() else None
     healthy = (not reason and health.get("ready") and health.get("processing_chain") is True
                and health.get("transparent_chain") is True and health.get("revision") == expected)
@@ -348,8 +356,10 @@ def tick(lock=None):
                   "processing_chain_failed" if health.get("processing_chain") is not True else
                   "transparent_chain_failed" if health.get("transparent_chain") is not True else
                   "engine_config_pending" if health.get("revision") != expected else None)
+    if starting:
+        reason = 'engine_starting'
     recovery = advance(previous.get("recovery"), requested=True, healthy=bool(healthy), reason=reason, now=now,
-                       count_failure=network.get("ready") is True and not network.get("reason") and reason != "engine_config_pending")
+                       count_failure=not starting and network.get("ready") is True and not network.get("reason") and reason != "engine_config_pending")
     last_pid = previous.get("engine_pid")
     if health.get("pid") and last_pid and health["pid"] != last_pid:
         if previous.get("recovery", {}).get("healthy") is True:
@@ -360,13 +370,15 @@ def tick(lock=None):
         recovery["reason"] = "manual_recovery_required" if recovery["latched"] else "engine_restarted"
     state = {**previous, "recovery": recovery, "reason": recovery["reason"], "intercepting": False}
     state["engine_pid"] = health.get("pid", last_pid)
+    if health.get('ready') and health.get('pid'):
+        state['ready_engine_pid'] = health['pid']
     if not recovery["intercepting"]:
         gateway.bypass()
         if (not health.get("ready") or health.get("processing_chain") is not True
                 or health.get("transparent_chain") is not True):
             since = previous.get("unhealthy_since", now)
             state["unhealthy_since"] = since
-            if now - since >= 10 and not recovery["latched"] and network.get("ready"):
+            if now - since >= 10 and not starting and not recovery["latched"] and network.get("ready"):
                 # Failed start attempts count even when no ready engine was ever observed.
                 recovery["faults"] = [stamp for stamp in recovery.get("faults", []) if now - 600 <= stamp <= now] + [now]
                 recovery["latched"] = len(recovery["faults"]) >= 3

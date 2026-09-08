@@ -12,6 +12,43 @@ import control
 
 
 class Isolation(unittest.TestCase):
+    def test_cold_start_grace_expires_and_never_masks_a_ready_engine_failure(self):
+        from contextlib import ExitStack
+        from unittest.mock import patch
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory)
+            paths = {name: root / name for name in ('CONFIG', 'TRUST', 'STATE', 'EFFECTIVE')}
+            stack.enter_context(patch.multiple(control, **paths))
+            paths['CONFIG'].write_text(json.dumps({**control.DEFAULT, 'enabled': True}))
+            paths['TRUST'].write_text('{}')
+            paths['EFFECTIVE'].write_text('{}')
+            stack.enter_context(patch.object(control.time, 'monotonic', return_value=1000))
+            stack.enter_context(patch.object(control.device_identity, 'resolve', return_value=({}, {})))
+            stack.enter_context(patch.object(control, 'probe_without_network_lock', side_effect=lambda lock, work: work()))
+            stack.enter_context(patch.object(control, 'snapshot', return_value={'ready': True, 'epoch': 'fixture'}))
+            stack.enter_context(patch.object(control.gateway, 'prepare'))
+            bypass = stack.enter_context(patch.object(control.gateway, 'bypass'))
+            execute = stack.enter_context(patch.object(control.subprocess, 'run'))
+            health = stack.enter_context(patch.object(control, 'engine_health'))
+            previous = {'last_tick': 999, 'unhealthy_since': 980, 'engine_pid': 123}
+            for starting, ready_before in ((True, False), (False, False), (True, True)):
+                with self.subTest(starting=starting, ready_before=ready_before):
+                    paths['STATE'].write_text(json.dumps({**previous, **({'ready_engine_pid': 123} if ready_before else {})}))
+                    health.return_value = {'ready': False, 'starting': starting, 'pid': 123}
+                    execute.reset_mock()
+                    control.tick()
+                    state = json.loads(paths['STATE'].read_text())
+                    self.assertFalse(state['intercepting'])
+                    if starting and not ready_before:
+                        execute.assert_not_called()
+                        self.assertEqual(state['reason'], 'engine_starting')
+                        self.assertEqual(state['recovery']['faults'], [])
+                    else:
+                        self.assertEqual(execute.call_count, 2)
+                        self.assertEqual(len(state['recovery']['faults']), 1)
+            self.assertEqual(bypass.call_count, 3)
+
     def test_gateway_session_deadline_and_recovery_with_cpu_budget(self):
         if not Path('/tmp/netfleet-compat-vm-authorized').exists():
             self.skipTest('disposable VM required')
