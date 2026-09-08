@@ -12,6 +12,7 @@ RESOURCES = Path('/usr/libexec/opl-netfleet/plugins/mihomo/resources')
 if not RESOURCES.exists():
     RESOURCES = Path(__file__).resolve().parents[1] / 'openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/resources'
 sys.path.insert(0, str(RESOURCES))
+sys.dont_write_bytecode = True
 import interception
 
 OWNER = {"owner": "https-compat", "service": "opl-netfleet-compat", "instance": "engine", "user": "netfleet-compat"}
