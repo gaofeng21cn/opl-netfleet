@@ -4,14 +4,16 @@ const root = replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-n
 const model = loadfile(root + "models/lib/activation.uc")()({});
 let finished = 0;
 const output = loadfile(root + "events/lib/output.uc")()({ use: () => ({ finish: () => { finished++; } }) });
-let state, writes, starts, stops, compilation_error, activation_error, restore_error, cleanup_error, policy;
+let state, writes, starts, stops, compilation_error, activation_error, restore_error, cleanup_error, compatibility_error, policy;
 function check(value, message) { if (!value) die(message); }
 function reset(mode) {
 	state = { profile: mode == "netfleet" ? "file:OPL-NetFleet.json" : "subscription:original",
 		enabled: mode != "openwrt", running: mode != "openwrt", present: mode == "netfleet",
-		supervisor: { installed: true, enabled: mode == "netfleet", running: mode == "netfleet" } };
+		supervisor: { installed: true, enabled: mode == "netfleet", running: mode == "netfleet" },
+		compatibility: { installed: false, enabled: false, running: false } };
 	writes = 0; starts = 0; stops = 0;
 	compilation_error = false; activation_error = false; restore_error = false; cleanup_error = false;
+	compatibility_error = false;
 	policy = { recovery_profile: { ref: "subscription:recovery" } };
 }
 const services = {
@@ -33,8 +35,15 @@ const services = {
 	"platform.credentials": { api_secret: () => "fixture" },
 	"platform.documents": { load_policy: () => policy, load_evidence: () => ({}) },
 	"platform.service": {
-		service_state: () => ({ ...state.supervisor }),
-		set_service_state: desired => { writes++; state.supervisor = { installed: true, ...desired }; return { ok: true }; }
+		service_state: name => ({ ...(name == "opl-netfleet-compat" ? state.compatibility : state.supervisor) }),
+		set_service_state: (desired, name) => {
+			writes++;
+			if (name == "opl-netfleet-compat") {
+				if (compatibility_error) return { ok: false };
+				state.compatibility = { installed: true, ...desired };
+			} else state.supervisor = { installed: true, ...desired };
+			return { ok: true };
+		}
 	},
 	"recovery.state": { clear: () => { writes++; return true; } },
 	"recovery.control": { restore_profile_with_probes: (ref, policy) => {
@@ -84,4 +93,13 @@ check(!mode.set({ mode: "mihomo", expected_mode: "openwrt" }).ok && mode.get().r
 reset("mihomo"); cleanup_error = true;
 check(!mode.set({ mode: "openwrt", expected_mode: "mihomo" }).ok && mode.get().result.mode == null, "cleanup failure cannot claim direct mode");
 check(output.capture(() => 42).result == 42, "failure capture must restore state after errors");
+for (let target in ["openwrt", "mihomo"]) {
+	reset("mihomo"); state.compatibility = { installed: true, enabled: true, running: true };
+	check(mode.get().result.mode == null, "optional engine prevents native-mode confirmation");
+	check(mode.set({ mode: target, expected_mode: null }).ok && !state.compatibility.running && !state.compatibility.enabled,
+		"native modes must stop optional engine persistently");
+}
+reset("netfleet"); state.compatibility = { installed: true, enabled: true, running: true }; compatibility_error = true;
+check(!mode.set({ mode: "openwrt", expected_mode: "netfleet" }).ok && stops == 0 && state.supervisor.running,
+	"failed optional drain preserves core and does not claim direct mode");
 print("operating_mode_contract_ok\n");

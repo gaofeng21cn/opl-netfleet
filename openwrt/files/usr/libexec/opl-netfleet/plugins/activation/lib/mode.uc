@@ -17,7 +17,8 @@ return function(context) {
 		const value = { profile: current, backend_enabled: profile.backend_enabled(), mihomo_running: running,
 			active: model.is_active(current), controller_available: state?.proxies != null,
 			netfleet_present: readback.state_has_netfleet(state, storage.read_json(backend.MANIFEST_PATH), current),
-			cleanup: running ? null : backend.cleanup_state(), supervisor: service.service_state() };
+			cleanup: running ? null : backend.cleanup_state(), supervisor: service.service_state(),
+			compatibility: service.service_state("opl-netfleet-compat") };
 		return { ...value, mode: model.operating_mode(value) };
 	};
 	function failure(error, detail) { return { ok: false, error, result: { ...get(), detail: detail ?? null } }; };
@@ -53,6 +54,9 @@ return function(context) {
 		if (request.mode == "mihomo" && target == null) return failure("native_profile_unavailable");
 		if (!recovery_state.clear()) return failure("recovery_state_write_failed");
 		if (request.mode == before.mode) return { ok: true, result: { ...get(), unchanged: true } };
+		if (request.mode != "netfleet" && before.compatibility.installed &&
+			!service.set_service_state({ enabled: false, running: false }, "opl-netfleet-compat").ok)
+			return failure("compatibility_stop_failed");
 		if (!pause()) return failure("supervisor_stop_failed");
 		const attempt = output.capture(() => {
 			if (request.mode == "openwrt") {

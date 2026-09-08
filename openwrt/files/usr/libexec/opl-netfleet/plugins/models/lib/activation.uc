@@ -26,13 +26,14 @@ is_active = function(current_profile) {
 };
 
 function operating_mode(owner) {
+	const compatibility_stopped = owner.compatibility?.running != true && owner.compatibility?.enabled != true;
 	if (owner.backend_enabled == false && owner.mihomo_running == false &&
-		owner.cleanup?.ok == true && owner.supervisor?.running == false && owner.supervisor?.enabled == false) return "openwrt";
+		owner.cleanup?.ok == true && owner.supervisor?.running == false && owner.supervisor?.enabled == false && compatibility_stopped) return "openwrt";
 	if (owner.backend_enabled != true || owner.mihomo_running != true || owner.controller_available != true) return null;
 	if (owner.active == true && owner.netfleet_present == true &&
 		owner.supervisor?.running == true && owner.supervisor?.enabled == true) return "netfleet";
 	if (type(owner.profile) == "string" && !is_active(owner.profile) && owner.netfleet_present == false &&
-		owner.supervisor?.running == false && owner.supervisor?.enabled == false) return "mihomo";
+		owner.supervisor?.running == false && owner.supervisor?.enabled == false && compatibility_stopped) return "mihomo";
 	return null;
 };
 
