@@ -10,5 +10,17 @@ return function(context) {
 		try { return gateway.request(owner, json(fs.readfile(argv[1]))); }
 		catch (error) { return { ok: false, error: 'lease_request_invalid' }; }
 	};
-	return { command };
+	function watch() {
+		fs.stdout.write('{"ready":true}\n');
+		fs.stdout.flush();
+		for (let line = fs.stdin.read('line'); line != null; line = fs.stdin.read('line')) {
+			if (length(line) > 262144) return { ok: false, error: 'lease_request_invalid' };
+			let response;
+			try { response = gateway.request(owner, json(line)); }
+			catch (error) { response = { ok: false, error: 'lease_request_invalid' }; }
+			if (!fs.stdout.write(sprintf('%J\n', response)) || !fs.stdout.flush()) break;
+		}
+		return { ok: true, result: { stopped: true } };
+	};
+	return { command, watch };
 };

@@ -527,6 +527,7 @@ def main():
         while True:
             started = time.monotonic()
             try:
+                gateway.start_worker()
                 with mutation_lock() as lock:
                     tick(lock)
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
@@ -534,13 +535,18 @@ def main():
                 if reason not in ('mutation_busy', 'compatibility_probe_stale'):
                     try:
                         with mutation_lock():
-                            gateway.bypass()
+                            try:
+                                gateway.bypass()
+                            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+                                pass
                             previous = read(STATE, {})
                             save_state({**previous, 'intercepting': False, 'reason': reason}, previous)
                     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
                         # No renewal on failure; the kernel remains the expiry owner.
                         pass
-            time.sleep(max(0.05, 2 - (time.monotonic() - started)))
+                time.sleep(2)
+            else:
+                time.sleep(max(0.05, 2 - (time.monotonic() - started)))
     if action == "run":
         isolation.prepare(BASE, RUN)
         isolation.constrain()

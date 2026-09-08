@@ -12,6 +12,35 @@ import control
 
 
 class Isolation(unittest.TestCase):
+    def test_gateway_session_deadline_and_recovery_with_cpu_budget(self):
+        if not Path('/tmp/netfleet-compat-vm-authorized').exists():
+            self.skipTest('disposable VM required')
+        program = r'''
+import os, signal, sys, time
+sys.path.insert(0, '/usr/libexec/opl-netfleet-compat')
+import gateway, isolation
+isolation.constrain_manager()
+gateway.start_worker()
+worker = gateway._worker.pid
+assert gateway.status()['intercepting'] is False
+assert gateway.status()['intercepting'] is False
+assert gateway._worker.pid == worker
+os.kill(worker, signal.SIGSTOP)
+started = time.monotonic()
+try:
+    gateway.status()
+    raise AssertionError('stalled service was accepted')
+except ValueError as error:
+    assert str(error) == 'lease_service_timeout'
+assert time.monotonic() - started < 4
+gateway.start_worker()
+assert gateway._worker.pid != worker
+assert gateway.status()['intercepting'] is False
+gateway.stop_worker()
+'''
+        child = subprocess.run([sys.executable, '-c', program], capture_output=True, text=True, timeout=35)
+        self.assertEqual(child.returncode, 0, child.stderr)
+
     def test_probe_releases_network_lock_and_rejects_stale_results(self):
         from unittest.mock import patch
         import tempfile

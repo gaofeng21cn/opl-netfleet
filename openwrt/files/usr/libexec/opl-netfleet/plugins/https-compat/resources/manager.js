@@ -31,6 +31,8 @@ function reason(value) {
 		upstream_transport_failed: '上游传输中断', client_cancelled: '客户端已取消', processing_chain_failed: '本地处理链异常',
 		transparent_chain_failed: '透明接管入口异常，已旁路',
 		engine_unavailable: '兼容引擎未就绪', engine_config_pending: '等待引擎载入配置',
+		lease_service_timeout: '网关控制链超时，当前旁路', lease_service_unavailable: '网关控制链不可用，当前旁路',
+		lease_response_too_large: '网关控制响应异常，当前旁路', compatibility_controller_failed: '兼容管理进程异常，当前旁路',
 		native_gateway_unavailable: '原生网关暂不可用', native_gateway_not_ready: '原生网关尚未就绪',
 		native_ownership_guard_missing: '原生网关缺少连接归属保护',
 		upstream_protocol_failed: '目标 TLS 或协议验证失败' })[value] || value || '正常';

@@ -83,7 +83,7 @@ def group_limits(path, budgets):
 
 def constrain_manager():
     group_limits(CGROUP.with_name("netfleet-compat-manager"), {
-        **BUDGETS, "memory.max": str(96 * 1024 * 1024), "pids.max": "16", "cpu.max": "20000 100000"})
+        **BUDGETS, "memory.max": str(96 * 1024 * 1024), "pids.max": "16", "cpu.max": "50000 100000"})
     resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
     resource.setrlimit(resource.RLIMIT_FSIZE, (8 * 1024 * 1024, 8 * 1024 * 1024))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
