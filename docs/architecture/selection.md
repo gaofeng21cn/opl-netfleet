@@ -22,7 +22,7 @@
 
 关键业务 URL 和预期 status 属于 target-local `fail_open.probes`。`expected_status` 验证事务 GET；可选的 `head_expected_status` 验证 Mihomo URLTest 使用的 HEAD，未设置时沿用 `expected_status`。候选测速、所选链刷新和持续 fallback 健康检查均使用 HEAD；编译与即时刷新必须使用相同的 HEAD 预期值。HEAD 状态必须来自目标端点的实测合同，不能从 GET 成功推断，也不能自动接受 404；事务 GET 验收继续独立执行。`fail_open.healthcheck` 以 `path_probe_id`、`guard_probe_id` 引用其中两项，并统一声明 `timeout_ms`、`interval_seconds` 和 `max_failed_times`。实际业务域名只存在于设备私有 policy 或 Nikki mixin，公开 bundle 和 engine 不包含实例域名常量。事务探针必须通过当前 Mihomo 显式代理端口并使用所选后端认证配置，不能用路由器本机直连替代；生成 Profile 的 Provider fallback 和内层 path fallback 使用 path probe，外层 guard 使用 guard probe，最终都允许进入 DIRECT。两项 probe 可以引用同一 ID，但都必须显式存在；它们不参与候选速度排序。
 
-选路提交前，activation 按依赖顺序对已选 preferred selector 使用 path probe、对内层 proxy path 使用 guard probe，刷新 Mihomo 按 URL 独立保存的健康状态，再回读完整优选路径。测速 URL 的成功不能替代这两个业务 URL 的健康事实。验证只经过所选链，不遍历备用分支，不固定 fallback，也不把业务探针延迟写入排序；Mihomo 单个 delay 响应可能带有数值却未满足预期 HTTP status，因此必须同时回读该 URL 的独立健康记录。任一层验证失败保留具体错误并走原事务恢复。
+选路提交前，activation 按依赖顺序对已选 preferred selector 使用 path probe、对内层 proxy path 使用 guard probe，刷新 Mihomo 按 URL 独立保存的健康状态，再回读完整优选路径。测速 URL 的成功不能替代这两个业务 URL 的健康事实。验证只经过所选链，不遍历备用分支，不固定 fallback，也不把业务探针延迟写入排序；Mihomo 单个 delay 响应可能带有数值却未满足预期 HTTP status，因此必须同时回读该 URL 的独立健康记录。不足 1 ms 的成功 URLTest 可能被核心取整为零并由 delay API 返回 503；只有该请求前后对应 URL 的最新历史时间发生变化、`alive=true` 且最新 delay 为零时，才接受这一特例；旧健康记录不能证明本次成功。任一层验证失败保留具体错误并走原事务恢复。
 
 当前 source 不提供逐候选 capability 业务探测。AI automatic 的地区资格来自显式 allowed/excluded 地区，最终业务资格由 Policy Source 的 AI 分类规则和事务 protected probe 验证；protected probe 失败时整笔多 capability 事务按同一 Fail-Open 路径恢复。若未来必须在写 selector 前逐候选验证 AI 业务资格，必须先证明平台可以在不增加常驻代理和第二证据库的情况下完成。
 
