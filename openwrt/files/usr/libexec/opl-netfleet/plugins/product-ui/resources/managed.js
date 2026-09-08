@@ -613,10 +613,13 @@ function componentsPage(controller) {
 			E('small', {}, '由 NetFleet 更新入口管理') ]) ]));
 	const moduleRows = [];
 	(snapshot.extensions || []).filter(function(extension) { return extension.kind === 'plugin'; }).forEach(function(plugin) {
+		const controls = [];
+		if (plugin.id === 'https-compat') controls.push(button('配置', function() { controller.openCompatibility(); }, active || plugin.enabled === false));
+		if (plugin.revision) controls.push(button(plugin.id === 'https-compat' ? '插件状态' : '管理', function() { pluginDialog(controller, plugin); }, active));
 		moduleRows.push(E('tr', {}, [ E('td', {}, [ E('strong', { 'title': plugin.package || '' }, plugin.label), E('small', {}, plugin.runtime === 'service' ? '功能插件' : '进程插件') ]),
 			E('td', {}, E('strong', {}, plugin.installed_version || plugin.version || '未知版本')),
 			E('td', {}, plugin.reason ? errorLabel(plugin.reason) : plugin.enabled === true ? '已启用' : '可按需加载'), E('td', { 'class': 'netfleet-component-actions' },
-				plugin.revision ? button('管理', function() { pluginDialog(controller, plugin); }, active) : '') ]));
+				controls) ]));
 	});
 	(snapshot.extensions || []).filter(function(extension) { return extension.kind === 'optional'; }).forEach(function(extension) {
 		const state = ({ ready: '可配置', not_installed: '未安装', incompatible: '模块版本不兼容', backend_unsupported: '当前后端不支持', dependency_missing: '缺少依赖', unknown: '状态未确认' })[extension.state];

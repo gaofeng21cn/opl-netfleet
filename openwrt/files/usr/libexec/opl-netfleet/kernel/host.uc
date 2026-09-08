@@ -363,13 +363,19 @@ create = function(root, options) {
 	};
 	inventory = function(versions) {
 		const rows = [];
+		const available = {};
+		function dependency(name) {
+			if (versions == null) return { id: name, installed_version: null, available: null };
+			// Package managers may satisfy a dependency through a virtual provide.
+			if (available[name] == null) available[name] = versions[name] != null || adapter.package_available(name);
+			return { id: name, installed_version: versions[name] ?? null, available: available[name] };
+		};
 		for (let id in sort(keys(found))) {
 			const item = found[id];
 			if (!item.ok) { push(rows, { id: id, label: id, kind: 'plugin', state: 'invalid', reason: item.error, instance: instance_id }); continue; }
 			const manifest = item.manifest;
 			if (instance_id != 'default' && item.process) continue;
-			const dependencies = map(manifest.package_dependencies ?? manifest.dependencies ?? [], name => ({ id: name,
-				installed_version: versions?.[name] ?? null, available: versions == null ? null : versions[name] != null }));
+			const dependencies = map(manifest.package_dependencies ?? manifest.dependencies ?? [], dependency);
 			let reason = blocked(id) ? 'plugin_package_maintenance' : manifest.api_version != API_VERSION ? 'plugin_api_incompatible' : null;
 			if (reason == null && !item.process && system.enabled[id] != true) reason = 'plugin_disabled';
 			if (reason == null && length(filter(dependencies, entry => entry.available == false))) reason = 'plugin_dependency_missing';

@@ -703,6 +703,25 @@ assert.equal(serviceCalls.at(-1)[1].instance, 'review');
 assert.equal(serviceCalls.at(-1)[1].action, 'config-set');
 """)
 
+    def test_https_service_exposes_configuration_without_loading_engine(self):
+        self.run_js(r"""
+const owner = controller();
+let opened = 0;
+owner.openCompatibility = () => { opened++; };
+const plugin = { id: 'https-compat', label: 'HTTPS compatibility', kind: 'plugin', runtime: 'service',
+  version: '0.7.0', revision: 'https-r1', enabled: true };
+owner.components = { supported: true, feed: {}, components: [], dependencies: [], extensions: [plugin] };
+const managed = module('managed.js', {});
+let page = managed.components(owner);
+fire(button(page, '配置'));
+assert.equal(opened, 1);
+assert(button(page, '插件状态'));
+plugin.enabled = false;
+page = managed.components(owner);
+assert(button(page, '配置').disabled, 'disabled management plugin must not be loaded by opening its configuration');
+assert(!button(page, '插件状态').disabled);
+""")
+
     def test_composition_preview_binds_edits_and_confirmation(self):
         self.run_js(r"""
 const owner = controller(), calls = [];
