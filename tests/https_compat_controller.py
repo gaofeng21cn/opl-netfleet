@@ -13,8 +13,8 @@ CONTROL = "/usr/libexec/opl-netfleet-compat/control.py"
 
 
 class Controller(unittest.TestCase):
-    def call(self, action, request=None, success=True):
-        command = ["ucode", MAIN, "compatibility-" + action]
+    def call(self, action, request=None, success=True, internal=False):
+        command = ["python3", CONTROL, action] if internal else ["ucode", MAIN, "compatibility-" + action]
         if request is not None:
             path = Path("/tmp/netfleet-controller-request.json")
             path.write_text(json.dumps({"request": request}))
@@ -83,9 +83,9 @@ class Controller(unittest.TestCase):
         self.assertFalse(disabled["intercepting"])
         self.assertEqual(self.call("ca")["sha256"], ca["sha256"])
         # A subsequent reconciliation must not undo a manual disable.
-        subprocess.run(["python3", CONTROL, "tick"], check=True, capture_output=True, timeout=10)
+        self.call("tick", internal=True)
         self.assertFalse(self.call("get")["requested"])
-        subprocess.run(["python3", CONTROL, "drain"], check=True, capture_output=True, timeout=10)
+        self.call("drain", internal=True)
         public_ca = Path("/etc/opl-netfleet/compatibility/ca/mitmproxy-ca-cert.pem")
         original = public_ca.read_bytes()
         try:

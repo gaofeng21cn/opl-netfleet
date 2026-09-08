@@ -22,11 +22,28 @@ for (let definition in [compatibility.extension, dashboard.extension]) {
 	for (let command, entry in definition.commands) {
 		check(host.command(command) != null, "adapter command registered by installed service manifest");
 		const method = replace(command, "-", "_");
+		if (definition.id == 'https-compat') {
+			check(methods[method] == null, "HTTPS CLI commands do not add host-specific RPC methods");
+			continue;
+		}
 		check(methods[method] != null, "declared command exists in real RPC list");
 		let permitted = false;
 		for (let key, group in acl) if (index(group?.[entry.access]?.ubus?.["opl-netfleet"] ?? [], method) >= 0) permitted = true;
 		check(permitted, "declared access matches installed RPC ACL");
 	}
+}
+const manifest = host.found['https-compat'].manifest;
+const plugin_rpc = fs.popen(`sh '${rpc_path}.plugins' list`);
+const plugin_methods = json(plugin_rpc.read('all'));
+check(plugin_rpc.close() == 0, 'real generic plugin RPC list succeeds');
+for (let action in ['config-get', 'config-set', 'enable', 'disable', 'probe', 'public-ca']) {
+	const entry = manifest.actions[action];
+	check(entry != null && entry.lock == 'plugin', "HTTPS action belongs to its plugin");
+	const method = entry.access == 'read' ? 'plugin_read' : 'plugin_call';
+	check(plugin_methods[method] != null, "HTTPS uses the real generic plugin RPC");
+	let permitted = false;
+	for (let key, group in acl) if (index(group?.[entry.access]?.ubus?.['opl-netfleet.plugins'] ?? [], method) >= 0) permitted = true;
+	check(permitted, "generic plugin action access matches installed ACL");
 }
 const rows = host.inventory(null);
 for (let id, enabled in host.system.enabled) if (enabled)
