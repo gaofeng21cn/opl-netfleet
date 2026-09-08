@@ -12,6 +12,7 @@ from contextlib import ExitStack
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "openwrt/https-compat/files/usr/libexec/opl-netfleet-compat"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/resources"))
 from recovery import advance
 from policy import select, validate
 from routing import admission
@@ -142,8 +143,7 @@ with open(sys.argv[1], 'a') as file:
                                           "rule_recovery": {"target": admitted}})
             stack.enter_context(patch.object(control, "effective", side_effect=lambda c, *a: copy.deepcopy(c)))
             stack.enter_context(patch.object(control, "ca_fingerprint", return_value="test"))
-            stack.enter_context(patch.object(control, "snapshot", return_value={"interfaces": [], "ipv4_proxy": True}))
-            stack.enter_context(patch.object(control, "admission", return_value=None))
+            stack.enter_context(patch.object(control, "snapshot", return_value={"interfaces": [], "ipv4_proxy": True, "reason": None}))
             for name in ("prepare", "bypass", "renew"):
                 stack.enter_context(patch.object(control.gateway, name))
             events = [{"id": i + 1, "rule": "target", "at": now, "reason": "upstream_connection_reset"} for i in range(4)]
@@ -156,7 +156,8 @@ with open(sys.argv[1], 'a') as file:
             for offset, ok in ((0, True), (11, False), (22, True), (33, False), (44, True)):
                 probe.return_value = {"target": {"ok": ok, "reason": None if ok else "upstream_probe_timeout"}}
                 with patch.object(control.time, "monotonic", return_value=now + offset):
-                    control.tick()
+                    with (root / "network.lock").open("a") as lock:
+                        control.tick(lock)
                 state = control.read(control.STATE)
                 recovery = state["rule_recovery"]["target"]
                 self.assertFalse(recovery["latched"])

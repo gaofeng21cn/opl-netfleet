@@ -7,7 +7,6 @@
 'require netfleet.management as management';
 'require netfleet.api as netfleet';
 'require netfleet.config as netfleetConfig';
-'require netfleet.compatibility as compatibility';
 'require netfleet.product as product';
 'require poll';
 
@@ -1170,24 +1169,7 @@ const productController = {
 		managed.preloadSubscriptions(this).catch(function() {});
 		managed.readOperations(this);
 		this.loadConfig();
-		if (!this.compatibilityPoll) {
-			this.compatibilityPoll = () => this.currentView === 'components' && this.componentDetail === 'https-compat' ? compatibility.refresh(this) : Promise.resolve();
-			poll.add(this.compatibilityPoll, 5);
-		}
 		return this.prepareDashboard();
-	},
-
-	openCompatibility: function(tab) {
-		if (this.currentView !== 'components') {
-			this.context.navigate('components', { componentDetail: 'https-compat', compatibilityTab: tab || 'rules' });
-			return Promise.resolve();
-		}
-		this.currentView = 'components';
-		this.componentDetail = 'https-compat';
-		this.compatibilityTab = tab || 'rules';
-		this.redraw();
-		managed.loadComponents(this);
-		return compatibility.refresh(this);
 	},
 
 	loadConfig: function() {
@@ -1279,7 +1261,7 @@ const productController = {
 		else if (this.currentView === 'providers') content = [ managed.operationNode(this, 'subscription') ].concat(providersPage(this.status, this));
 		else if (this.currentView === 'regions') content = regionsPage(this.status, this);
 		else if (this.currentView === 'config') content = [ netfleetConfig.render(this) ];
-		else if (this.currentView === 'components') content = [ this.componentDetail === 'https-compat' ? compatibility.render(this) : managed.components(this) ];
+		else if (this.currentView === 'components') content = [ managed.components(this) ];
 		else if (this.currentView === 'events') content = eventsPage(this.status, this.events, this.connections, this.connectionsLoading, this.connectionsError, this.eventPage, function(page) {
 			self.eventPage = page;
 			self.redraw();
@@ -1292,10 +1274,6 @@ const productController = {
 			content.splice(1, 0, product.diagnosis(this, regionalDisplayName));
 		if (this.currentView !== 'components' && this.currentView !== 'config')
 			content.unshift(managed.operationNode(this, 'selection'));
-		if (this.currentView === 'events')
-			content.push(E('div', { 'class': 'netfleet-inline-actions' }, [
-				E('button', { 'class': 'btn cbi-button', 'click': function() { return self.openCompatibility('diagnostics'); } }, 'HTTPS 兼容诊断')
-			]));
 
 		let sourceName = '设备实时 RPC';
 		let freshness = '刚刚更新';
@@ -1638,11 +1616,8 @@ return baseclass.extend({
 		const controller = Object.create(productController);
 		controller.context = context;
 		controller.pageId = pageId;
-		controller.componentDetail = context.state?.componentDetail || null;
-		controller.compatibilityTab = context.state?.compatibilityTab || null;
 		context.scope.effect(function() {
 			ui.hideModal();
-			if (controller.compatibilityPoll) poll.remove(controller.compatibilityPoll);
 			clearTimeout(controller.operationTimer);
 			if (controller.root) controller.root.remove();
 			const style = document.getElementById('netfleet-native-style');
@@ -1651,6 +1626,5 @@ return baseclass.extend({
 		const initial = await controller.load();
 		if (context.signal.aborted) return;
 		context.container.replaceChildren(controller.render(initial));
-		if (controller.componentDetail === 'https-compat') void compatibility.refresh(controller);
 	}
 });

@@ -20,7 +20,6 @@ import isolation
 import identity as device_identity
 from policy import validate
 from recovery import advance
-from routing import admission
 
 
 BASE = Path("/etc/opl-netfleet/compatibility")
@@ -169,7 +168,7 @@ def engine_health(probe=False):
                                 capture_output=True, text=True, timeout=0.4)
         if result.returncode == 0:
             instances = json.loads(result.stdout).get("opl-netfleet-compat", {}).get("instances", {})
-            if not any(instance.get("running") for instance in instances.values()):
+            if not instances.get("engine", {}).get("running"):
                 connections = 0
     except (OSError, ValueError, subprocess.SubprocessError):
         pass
@@ -177,10 +176,7 @@ def engine_health(probe=False):
 
 
 def snapshot():
-    result = subprocess.run(["ucode", OWNER, "native-gateway-compatibility-snapshot"], capture_output=True, text=True, timeout=1)
-    if result.returncode:
-        raise ValueError("native_gateway_unavailable")
-    return json.loads(result.stdout)["result"]
+    return gateway.snapshot()
 
 
 def verified_trust(config, trust, fingerprint):
@@ -287,12 +283,12 @@ def save_state(state, previous):
 
 def probe_without_network_lock(lock, work):
     if lock is None:
-        return work()
+        raise ValueError("compatibility_probe_requires_independent_lock")
     paths = (CONFIG, TRUST, STATE, EFFECTIVE, CA / "mitmproxy-ca-cert.pem",
              Path("/etc/opl-netfleet/native/run/config.yaml"), Path("/etc/config/netfleet"),
              Path("/var/run/opl-netfleet-core/ownership.json"))
     def identity():
-        return tuple(path.read_bytes() if path.exists() else None for path in paths), snapshot()
+        return tuple(path.read_bytes() if path.exists() else None for path in paths)
     before = identity()
     fcntl.flock(lock, fcntl.LOCK_UN)
     try:
@@ -327,15 +323,16 @@ def tick(lock=None):
         gateway.bypass()
         save_state({**previous, "intercepting": False, "reason": "maintenance"}, previous)
         return
-    source, previous["identity_sync"] = device_identity.resolve(config, previous.get("identity_sync"), schedule=True)
+    source, previous["identity_sync"] = probe_without_network_lock(lock,
+        lambda: device_identity.resolve(config, previous.get("identity_sync"), schedule=True))
+    network = {}
     try:
         network = snapshot()
-        profile = read(Path("/etc/opl-netfleet/native/run/config.yaml"), {})
-        reason = admission(profile, network)
+        reason = network.get("reason", "native_gateway_unavailable")
         if not reason:
-            gateway.prepare(network["interfaces"], network.get("dscp_bypass", []))
-    except (OSError, ValueError, subprocess.SubprocessError):
-        network, reason = {}, "native_gateway_unavailable"
+            gateway.prepare(network)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        reason = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[a-z_]+', str(error)) else "native_gateway_unavailable"
     health = probe_without_network_lock(lock, lambda: engine_health(probe=True))
     expected = hashlib.sha256(EFFECTIVE.read_bytes()).hexdigest() if EFFECTIVE.exists() else None
     healthy = (not reason and health.get("ready") and health.get("processing_chain") is True
@@ -345,7 +342,8 @@ def tick(lock=None):
                   "processing_chain_failed" if health.get("processing_chain") is not True else
                   "transparent_chain_failed" if health.get("transparent_chain") is not True else
                   "engine_config_pending" if health.get("revision") != expected else None)
-    recovery = advance(previous.get("recovery"), requested=True, healthy=bool(healthy), reason=reason, now=now)
+    recovery = advance(previous.get("recovery"), requested=True, healthy=bool(healthy), reason=reason, now=now,
+                       count_failure=network.get("ready") is True and not network.get("reason") and reason != "engine_config_pending")
     last_pid = previous.get("engine_pid")
     if health.get("pid") and last_pid and health["pid"] != last_pid:
         if previous.get("recovery", {}).get("healthy") is True:
@@ -362,7 +360,7 @@ def tick(lock=None):
                 or health.get("transparent_chain") is not True):
             since = previous.get("unhealthy_since", now)
             state["unhealthy_since"] = since
-            if now - since >= 10 and not recovery["latched"]:
+            if now - since >= 10 and not recovery["latched"] and network.get("ready"):
                 # Failed start attempts count even when no ready engine was ever observed.
                 recovery["faults"] = [stamp for stamp in recovery.get("faults", []) if now - 600 <= stamp <= now] + [now]
                 recovery["latched"] = len(recovery["faults"]) >= 3
@@ -430,7 +428,6 @@ def tick(lock=None):
                 if network.get(f"ipv{family}_proxy") and (":" in destination) == (family == 6):
                     candidates.append((address, destination, port))
     if candidates:
-        gateway.prepare(network["interfaces"], network.get("dscp_bypass", []))
         gateway.renew(candidates)
     else:
         gateway.bypass()
@@ -471,7 +468,8 @@ def apply(action, request):
     if config["enabled"]:
         subprocess.run([SERVICE, "enable"], check=True, capture_output=True, timeout=2)
         subprocess.run([SERVICE, "start"], check=True, capture_output=True, timeout=3)
-    tick()
+    else:
+        subprocess.run([SERVICE, "disable"], check=True, capture_output=True, timeout=2)
     return status()
 
 
@@ -500,7 +498,6 @@ def trust_action(request):
                                    for name in ("codex_app", "codex_cli", "images")}}}
     atomic(TRUST, trust)
     atomic(EFFECTIVE, effective(config, trust, ca_fingerprint()))
-    tick()
     return status()
 
 
@@ -519,6 +516,25 @@ def drain(timeout=30):
 def main():
     os.umask(0o077)
     action = sys.argv[1]
+    if action == "watch":
+        isolation.constrain_manager()
+        while True:
+            started = time.monotonic()
+            try:
+                with mutation_lock() as lock:
+                    tick(lock)
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+                reason = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[a-z_]+', str(error)) else 'compatibility_controller_failed'
+                if reason not in ('mutation_busy', 'compatibility_probe_stale'):
+                    try:
+                        with mutation_lock():
+                            gateway.bypass()
+                            previous = read(STATE, {})
+                            save_state({**previous, 'intercepting': False, 'reason': reason}, previous)
+                    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+                        # No renewal on failure; the kernel remains the expiry owner.
+                        pass
+            time.sleep(max(0.05, 2 - (time.monotonic() - started)))
     if action == "run":
         isolation.prepare(BASE, RUN)
         isolation.constrain()
@@ -562,6 +578,29 @@ def main():
         if action == "bypass":
             gateway.bypass()
             return {"intercepting": False}
+        if action == "suspend":
+            previous = read(STATE, {})
+            service = subprocess.run(["ubus", "call", "service", "list", '{"name":"opl-netfleet-compat"}'],
+                                     check=True, capture_output=True, text=True, timeout=1)
+            instances = json.loads(service.stdout).get("opl-netfleet-compat", {}).get("instances", {})
+            saved = previous.get("suspended") or {"revision": revision(), "requested": read(CONFIG, DEFAULT)["enabled"],
+                                                  "running": any(item.get("running") for item in instances.values())}
+            save_state({**previous, "suspended": saved, "maintenance": True, "intercepting": False, "reason": "maintenance"}, previous)
+            drain()
+            gateway.remove()
+            if instances:
+                subprocess.run(["ubus", "call", "service", "delete", '{"name":"opl-netfleet-compat"}'], check=True, capture_output=True, timeout=2)
+            return saved
+        if action == "resume":
+            saved = read(Path(sys.argv[2]), {}).get("request", {})
+            previous = read(STATE, {})
+            if saved.get("running") and saved.get("requested") and saved.get("revision") == revision() and read(CONFIG, DEFAULT)["enabled"]:
+                previous.pop("maintenance", None)
+                previous.pop("suspended", None)
+                previous.pop("recovery", None)
+                save_state({**previous, "intercepting": False, "reason": "recovering"}, previous)
+                subprocess.run([SERVICE, "start"], check=True, capture_output=True, timeout=3)
+            return {"intercepting": False}
         if action in ("drain", "remove"):
             previous = read(STATE, {})
             save_state({**previous, "maintenance": True, "intercepting": False, "reason": "maintenance"}, previous)
@@ -589,8 +628,7 @@ def main():
                     state.pop("unhealthy_since", None)
                     state.pop("maintenance", None)
                 atomic(STATE, state)
-                tick()
-            return {"processing_chain": engine_health(probe=True).get("processing_chain") is True, **status()}
+            return status()
         raise ValueError("unknown_compatibility_action")
 
 

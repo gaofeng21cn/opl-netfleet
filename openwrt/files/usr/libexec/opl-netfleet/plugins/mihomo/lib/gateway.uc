@@ -3,7 +3,7 @@ import { cursor } from "uci";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let shell, capture, parse, directory, uci_value, enabled, merge, source_path, process_state, controller_ready, ownership, routes_present, status, render_profile, prepare, cleanup, attach, reconcile, watch, compatibility_snapshot, command;
+let shell, capture, parse, directory, uci_value, enabled, merge, source_path, process_state, controller_ready, ownership, routes_present, status, render_profile, prepare, cleanup, attach, reconcile, watch, interception_snapshot, command;
 
 const private_file = context.use("platform.files").private_file;
 const private_directory = context.use("platform.files").private_directory;
@@ -21,7 +21,6 @@ const CONFIG = `${RUN}/config.yaml`;
 const VENDOR = "/usr/share/opl-netfleet/nikki";
 const SERVICE = "opl-netfleet-core";
 const COMMAND = ["/usr/bin/mihomo", "-d", RUN, "-f", CONFIG];
-const COMPAT = "/usr/libexec/opl-netfleet-compat/control.py";
 
 shell = function(command) { return system(command + " >/dev/null 2>&1") == 0; };
 capture = function(command) {
@@ -147,6 +146,7 @@ cleanup = function() {
 	// The optional TLS layer cannot remain attached while the original gateway is changing.
 	const compatibility_clean = !shell("nft list table inet netfleet_compat") ||
 		shell("nft delete table inet netfleet_compat");
+	if (compatibility_clean) fs.unlink(`${STATE}/interception.json`);
 	const cleaned = compatibility_clean ? { ok: true, result: { clean: true } } :
 		{ ok: false, error: "compatibility_cleanup_failed", result: { clean: false, base_clean: true } };
 	const state = ownership();
@@ -255,12 +255,6 @@ watch = function() {
 			shell(`logger -t ${SERVICE} lifecycle_reconcile_failed`);
 	};
 	const pending = loop.timer(-1, synchronize);
-	let compatibility = null;
-	compatibility = loop.timer(-1, () => {
-		compatibility.set(2000);
-		if (fs.stat(COMPAT) != null) shell(`timeout 4 /usr/bin/python3 ${COMPAT} tick >/dev/null 2>&1 &`);
-	});
-	if (compatibility != null) compatibility.set(2000);
 	if (pending == null) return { ok: false, error: "lifecycle_timer_unavailable" };
 	// procd emits object notifications, not service trigger events.
 	const subscriber = connection.subscriber((request) => {
@@ -279,10 +273,12 @@ watch = function() {
 	return { ok: false, error: "lifecycle_subscription_ended" };
 };
 
-compatibility_snapshot = function() {
+interception_snapshot = function(listener) {
 	const uci = cursor();
-	const service = parse(capture("ubus call service list '{\"name\":\"opl-netfleet-compat\"}'"));
-	const engine = service?.["opl-netfleet-compat"]?.instances?.engine;
+	if (!match(listener?.service ?? '', /^[a-z][a-z0-9-]{0,47}$/) || !match(listener?.instance ?? '', /^[a-z][a-z0-9-]{0,47}$/))
+		return { ok: false, error: 'lease_listener_invalid' };
+	const service = parse(capture(`ubus call service list ${shell_quote(sprintf('%J', { name: listener.service }))}`));
+	const engine = service?.[listener.service]?.instances?.[listener.instance];
 	const membership = engine?.running == true && type(engine.pid) == "int" ? fs.readfile(`/proc/${engine.pid}/cgroup`) : null;
 	let engine_group = null;
 	for (let line in split(membership ?? "", "\n"))
@@ -337,7 +333,7 @@ compatibility_snapshot = function() {
 	const ownership_guard = length(guard) == 2 && condition?.op == "!=" && condition?.right == 0 &&
 		condition?.left?.["&"]?.[0]?.ct?.key == "mark" && condition?.left?.["&"]?.[1] == 16777216 &&
 		guard[1] != null && "return" in guard[1];
-	return { ok: true, result: { backend: "native-mihomo", ready: result.result?.ready == true,
+	return { ok: true, result: { backend: "native-mihomo", ready: result.result?.ready == true && enabled("config", "enabled"),
 		compatibility_ownership_guard: ownership_guard, core_pid: process_state().pid, engine_pid: engine?.pid,
 		router_proxy: enabled("proxy", "router_proxy"), lan_proxy: enabled("proxy", "lan_proxy"),
 		ipv4_proxy: enabled("proxy", "ipv4_proxy"), ipv6_proxy: enabled("proxy", "ipv6_proxy"),
@@ -360,12 +356,11 @@ try {
 	else if (ARGV[0] == "reconcile") result = reconcile();
 	else if (ARGV[0] == "watch") result = watch();
 	else if (ARGV[0] == "status") result = status();
-	else if (ARGV[0] == "compatibility-snapshot") result = compatibility_snapshot();
 	else result = { ok: false, error: "unknown_gateway_action" };
 } catch (error) { result = { ok: false, error: "gateway_operation_failed" }; }
 printf("%J\n", result);
 exit(result.ok ? 0 : 1);
 };
 
-return { command, cleanup, status };
+return { command, cleanup, status, interception_snapshot };
 };

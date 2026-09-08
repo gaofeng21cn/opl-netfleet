@@ -1,0 +1,27 @@
+.netfleet-https-plugin { --nf-border: #d6dadd; --nf-muted: #626970; --nf-accent: #187a57; min-width: 0; line-height: 1.5; }
+.netfleet-https-plugin .netfleet-section-heading, .netfleet-https-plugin .netfleet-inline-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.netfleet-https-plugin h3 { margin: 0; padding: 0; font-size: 18px; }
+.netfleet-https-plugin .netfleet-config-row { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(160px, 1fr) 40px; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--nf-border); }
+.netfleet-https-plugin small { display: block; margin-top: 4px; color: var(--nf-muted); }
+.netfleet-https-plugin .netfleet-check { display: flex; align-items: center; gap: 10px; }
+.netfleet-https-plugin table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.netfleet-https-plugin th, .netfleet-https-plugin td { padding: 10px 8px; border-bottom: 1px solid var(--nf-border); text-align: left; overflow-wrap: anywhere; vertical-align: top; }
+.netfleet-https-plugin td .cbi-button { margin: 0 6px 6px 0; }
+.netfleet-https-plugin details { margin: 10px 0; }
+.netfleet-https-plugin summary { cursor: pointer; }
+.netfleet-https-plugin .is-warning { color: #ad3c28; }
+.netfleet-https-plugin .netfleet-inline-add { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; padding: 12px 0; }
+.netfleet-https-plugin .netfleet-compat-tabs { display: flex; border-bottom: 1px solid var(--nf-border); margin: 8px 0 18px; }
+.netfleet-https-plugin .netfleet-compat-tabs button { min-height: 44px; padding: 8px 18px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--nf-muted); font: inherit; cursor: pointer; }
+.netfleet-https-plugin .netfleet-compat-tabs button.is-active { color: var(--nf-accent); border-bottom-color: var(--nf-accent); }
+.netfleet-https-plugin .netfleet-compat-fingerprint { display: block; overflow-wrap: anywhere; margin: 10px 0; }
+.modal .netfleet-config-row { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(0, 2fr); gap: 12px; margin: 12px 0; }
+.modal .netfleet-config-row[hidden] { display: none; }
+.modal .netfleet-config-row input, .modal .netfleet-config-row select { width: 100%; min-width: 0; }
+@media (max-width: 760px) {
+  .netfleet-https-plugin .netfleet-config-row { grid-template-columns: minmax(0, 1fr) 40px; gap: 12px; }
+  .netfleet-https-plugin .netfleet-config-row > label { grid-column: 1 / -1; }
+  .netfleet-https-plugin .netfleet-compat-tabs button { flex: 1; padding: 8px; }
+  .netfleet-https-plugin table { table-layout: auto; font-size: 12px; }
+  .netfleet-https-plugin td, .netfleet-https-plugin th { padding: 8px 4px; }
+}

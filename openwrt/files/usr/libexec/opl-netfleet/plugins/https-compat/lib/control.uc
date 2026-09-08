@@ -8,6 +8,7 @@ const API_VERSION = context.use("models.extensions").API_VERSION;
 const admission = context.use("models.extensions").admission;
 const KIND = context.use("platform.runtime").KIND;
 const shell_quote = context.use("platform.process").shell_quote;
+const files = context.use("platform.files");
 
 const OWNER = "/usr/libexec/opl-netfleet-compat/control.py";
 const DECLARATION = "/usr/libexec/opl-netfleet-compat/extension.json";
@@ -40,17 +41,20 @@ inspection = function() {
 };
 
 dispatch = function(action, envelope) {
-	if (!length(filter(values(extension.commands), entry => entry.method == action)))
+	if (!length(filter(values(extension.commands), entry => entry.method == action)) && index(['suspend', 'resume'], action) < 0)
 		return { ok: false, error: "extension_action_not_allowed" };
+	if (fs.stat(OWNER) == null && index(['suspend', 'resume'], action) >= 0) return { ok: true, result: { installed: false } };
 	if (fs.stat(OWNER) == null) return action == "get" ? { ok: true, result: {
 		installed: false, requested: false, intercepting: false, reason: "component_not_installed",
 		revision: null, config: { schema: 1, enabled: false, devices: [], rules: [] }, trust: {}, rules: {}, events: []
 	} } : { ok: false, error: "compatibility_component_not_installed" };
-	const command = `/usr/bin/python3 ${OWNER} ${shell_quote(action)}` + (envelope ? ` ${shell_quote(envelope)}` : "");
+	const limit = action == 'suspend' ? 35 : 10;
+	const command = `timeout -k 1 ${limit} /usr/bin/python3 ${OWNER} ${shell_quote(action)}` + (envelope ? ` ${shell_quote(envelope)}` : "");
 	const process = fs.popen(command + " 2>/dev/null");
 	if (process == null) return { ok: false, error: "compatibility_owner_unavailable" };
 	const raw = process.read("all");
-	process.close();
+	const status = process.close();
+	if (status == 124 || status == 137) return { ok: false, error: 'compatibility_owner_timeout' };
 	try {
 		const response = json(raw);
 		if (action == "get" && response?.ok == true && type(response.result) == "object") {
@@ -105,5 +109,27 @@ command_compatibility_probe = function(argv) {
 	return dispatch("probe", argv[1]);
 };
 
-return { extension, inspection, dispatch, command_compatibility_get, command_compatibility_ca, command_compatibility_apply, command_compatibility_enable, command_compatibility_disable, command_compatibility_probe };
+function action(name, params) {
+	if (index(['suspend', 'resume'], name) < 0) {
+		const error = admission(extension, inspection(), `compatibility-${name}`, KIND);
+		if (error != null) return { ok: false, error };
+	}
+	const directory = fs.mkdtemp('/tmp/netfleet-compat-action.XXXXXX');
+	if (directory == null) return { ok: false, error: 'compatibility_request_unavailable' };
+	const path = `${directory}/request.json`;
+	let result;
+	try {
+		result = fs.chmod(directory, 0700) && files.atomic_json(path, { request: params ?? {} })
+			? dispatch(name, path) : { ok: false, error: 'compatibility_request_unavailable' };
+	} catch (error) { result = { ok: false, error: 'compatibility_request_unavailable' }; }
+	fs.unlink(path); fs.rmdir(directory);
+	return result;
+};
+
+return { extension, inspection, dispatch, command_compatibility_get, command_compatibility_ca, command_compatibility_apply, command_compatibility_enable, command_compatibility_disable, command_compatibility_probe,
+	config_get: () => dispatch('get'), config_set: params => action('apply', params),
+	enable: params => action('enable', params), disable: params => action('disable', params),
+	probe: params => action('probe', params), public_ca: () => dispatch('ca'),
+	drain: () => action('suspend'), resume: state => action('resume', state)
+};
 };

@@ -1,4 +1,4 @@
-"""Conservative admission before replacing a LAN connection with router egress."""
+"""Gateway-owned admission for replacing a LAN connection with router egress."""
 
 
 def admission(profile, gateway):

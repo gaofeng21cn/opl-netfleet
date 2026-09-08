@@ -73,6 +73,7 @@ python3 /tmp/tests/device_identity.py >&2
 python3 /tmp/tests/https_compat_identity.py >&2
 python3 /tmp/tests/https_compat_protocol.py >&2
 touch /tmp/netfleet-compat-vm-authorized
+python3 /tmp/tests/https_compat_lease.py >&2
 python3 /tmp/tests/https_compat_kernel.py >&2
 chmod 0755 /etc/init.d/opl-netfleet-compat /usr/libexec/opl-netfleet-compat/mitmdump
 python3 /tmp/tests/https_compat_isolation.py >&2

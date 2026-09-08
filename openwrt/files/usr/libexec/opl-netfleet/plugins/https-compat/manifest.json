@@ -2,21 +2,32 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "https-compat",
   "label": "HTTPS compatibility",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "api_version": 1,
   "package": "opl-netfleet-plugin-https-compat",
   "services": {
+    "https-compat.lease": {
+      "version": 1,
+      "module": "lib/lease.uc",
+      "requires": { "mihomo.interception": 1, "platform.files": 1 }
+    },
     "https-compat.control": {
       "version": 1,
       "module": "lib/control.uc",
       "requires": {
         "models.extensions": 1,
         "platform.runtime": 1,
-        "platform.process": 1
+        "platform.process": 1,
+        "platform.files": 1
       }
     }
   },
   "commands": {
+    "compatibility-lease": {
+      "service": "https-compat.lease",
+      "method": "command",
+      "access": "write"
+    },
     "compatibility-get": {
       "service": "https-compat.control",
       "method": "command_compatibility_get",
@@ -48,5 +59,19 @@
       "access": "write"
     }
   },
-  "package_dependencies": []
+  "actions": {
+    "config-get": { "service": "https-compat.control", "method": "config_get", "access": "read", "lock": "plugin" },
+    "config-set": { "service": "https-compat.control", "method": "config_set", "access": "write", "lock": "plugin" },
+    "enable": { "service": "https-compat.control", "method": "enable", "access": "write", "lock": "plugin" },
+    "disable": { "service": "https-compat.control", "method": "disable", "access": "write", "lock": "plugin" },
+    "probe": { "service": "https-compat.control", "method": "probe", "access": "write", "lock": "plugin" },
+    "public-ca": { "service": "https-compat.control", "method": "public_ca", "access": "read", "lock": "plugin" }
+  },
+  "configuration": { "read": "config-get", "write": "config-set" },
+  "ui": [{ "id": "settings", "title": "HTTPS 兼容", "module": "resources/page.js" }],
+  "lifecycle": {
+    "drain": { "service": "https-compat.control", "method": "drain" },
+    "resume": { "service": "https-compat.control", "method": "resume" }
+  },
+  "package_dependencies": ["coreutils-timeout"]
 }

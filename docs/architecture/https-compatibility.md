@@ -61,22 +61,29 @@ cgroup 和 Mihomo 出口选路。管理进程只提交当前配置对应的目�
 OpenWrt SDK、依赖目录、APK 签名私钥、输出目录和源码 ref。依赖由同目录 Dockerfile
 构建。组件包安装验证与基础 NetFleet qualification 分开，二者都不能替代网络验收。
 
-`compatibility_get/apply/enable/disable/probe/ca` 经 rpcd、`main.uc` 和专属 controller
-到达唯一实现，管理动作通过[Extension API v1](extensions.md)注册与准入。独立包的
+浏览器通过通用 `plugin_read/plugin_call` 的 `config-get/config-set/enable/disable/probe/public-ca`
+动作到达 `https-compat.control`，macOS 接入工具的 `compatibility-*` CLI 命令调用同一
+controller。配置同时校验插件代码 revision 与私有配置 revision。独立引擎包的
 `extension.json` 声明接口 major；组件状态从安装记录和该声明投影，不启动兼容引擎。
 所有 mutation 使用当前 revision；revision 同时绑定配置和信任记录。
 `probe` 的 `trust_record`、`trust_revoke`、`recover` 操作分别记录接入工具证明、撤销
 设备接管和人工解除故障锁定。`ca` 只返回公开 PEM 及 SHA-256，不接受任意文件路径。
 
 私有配置和稳定 CA 位于 `/etc/opl-netfleet/compatibility`，运行状态与有效规则位于
-`/var/run/opl-netfleet-compat`。原生 gateway 的现有观察进程每两秒调用 tick；引擎由
-procd 托管。后台 tick 在引擎健康、上游探测与 DNS 等待期间释放全局 mutation 锁；
+`/var/run/opl-netfleet-compat`。插件自身的 procd manager 每两秒执行健康循环；基础
+gateway 观察进程只负责核心生命周期，不加载或调用 HTTPS controller。管理动作
+只保存意图并唤起插件，不同步等待远端探测。后台 tick 在身份来源、引擎健康、
+上游探测与 DNS 等待期间释放全局 mutation 锁；
 重新取得锁后核对配置、信任、状态、有效配置及基础运行身份，变化时丢弃该次结果，
 不续租也不覆盖新的用户意图。引擎使用专用 `netfleet-compat` 用户，配置、信任记录与状态仍由 root 管理；
 引擎仅可读取有效规则与本插件 CA，健康 socket 位于独立可写子目录。启动前必须落实
 cgroup v2 的内存、CPU 与进程数限制，并设置文件描述符及单文件大小限制；缺少所需
 控制器时拒绝启动引擎，接管继续旁路。该约束提供进程资源与文件权限隔离，不是完整
 文件系统沙箱。引擎无网络管理权限，回环探针通过专用 socket priority 与实际 UID 匹配。nftables 租约只存在于 `inet netfleet_compat`，不修改基础 NetFleet 表。
+管理循环与引擎使用独立 cgroup：引擎预算为 192 MiB、半核 CPU、32 个进程和 512 个
+文件描述符，管理循环为 96 MiB、五分之一核、16 个进程和 128 个文件描述符。两组都
+禁止 swap 和 core dump，单文件上限 8 MiB；运行文件位于 OpenWrt tmpfs，页计入
+所属进程组内存限制。引擎不输出业务日志，控制状态与事件使用有界对象保存。
 原生 gateway 合同保留 conntrack mark 的 `0x01000000` 位标识兼容连接归属；它与
 Mihomo 的 packet mark 分开。兼容模块在 conntrack 后、TPROXY 前，仅为未确认的
 首个 TCP SYN 按有效租约设置该位。原生 LAN TPROXY 跳过这类连接，兼容 NAT 完成
@@ -87,18 +94,21 @@ Mihomo 的 packet mark 分开。兼容模块在 conntrack 后、TPROXY 前，仅
 接管前读取内核实际的 LAN mangle 链，确认首条规则按上述归属位返回；旧核心、
 规则丢失或顺序不匹配时保持旁路，不能仅凭安装版本或服务 ready 状态准入。
 停止命令先进入维护旁路，最多等待三十秒排空，健康连接未排空则停止操作失败。
-APK 会忽略包钩子的失败退出码，因此升级、卸载钩子必须等待排空才能返回，不能
-用报错退出阻止文件替换。管理员可先执行 `control.py drain` 做有界排空，再运行
-包操作。维护旁路保留用户开启意图，验证组件后通过人工恢复重新接管。
+管理插件与可选引擎包均使用标准插件 `lifecycle.drain/resume` 和包钩子。暂停先进入
+维护旁路、排空并停止自己的服务，恢复仅重启此前实际运行且配置 revision 未变的实例，
+不能推翻用户关闭或运行模式选择。APK 忽略钩子失败退出码，因此统一包入口在排空未完成
+时保持旧代码。基础网关关闭不调用该排空操作；它独立撤销接管并完成自己的清理。
+接管通过[网关受限 TCP 服务](runtime-and-recovery.md#运行后端与原生网关)申请，插件不直接执行 nft。
 包钩子继承更新进程的 mutation lock 时，控制器核验 root 祖先进程、同一锁文件
 的设备号与 inode，以及内核记录的排他 flock，沿用该锁完成排空；环境变量不能
 跳过锁检查，无关进程持锁仍返回忙碌。
 ARM64 依赖安装约占 80 MiB；安装和重装还需要包管理器的临时空间，不能只按压缩包
 大小评估设备可用空间。兼容模块的 QEMU 验证使用 512 MiB 根分区。
 
-LuCI 的“组件与更新 → HTTPS 兼容”是唯一管理入口，内部按规则、设备与信任、诊断分栏，
-独立保存规则，不调用全局配置应用。状态轮询仅在模块详情打开时执行。首页不显示兼容摘要，
-全局事件页只提供管理跳转，React 是参考界面。macOS 工具通过已验证主机身份的 SSH 获取公开 CA，使用
+LuCI 的 HTTPS 插件页面按规则、设备与信任、诊断分栏，组件列表通过声明的“配置”入口
+进入同一页面。页面、样式、状态轮询与动作全部由插件拥有，页面退出时释放轮询和弹窗。
+独立保存规则，不调用全局配置应用，首页和全局诊断不加载 HTTPS 资源。React 是参考界面。
+macOS 工具通过已验证主机身份的 SSH 获取公开 CA，使用
 系统 `security` 安装、验证或撤销信任。工具不会改应用 URL。下载后可执行：
 
 ```sh

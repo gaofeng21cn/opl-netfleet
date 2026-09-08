@@ -1,9 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-'use strict';
-'require baseclass';
-'require ui';
-'require netfleet.api as api';
-'require netfleet.managed as managed';
+export function createManager({ api, ui, resourceUrl, readOnly }) {
+const managed = { notify: (...args) => ui.addNotification(...args) };
 
 function reason(value) {
 	return ({ disabled: '已关闭', draining: '停止接管，正在排空', recovering: '健康观察中',
@@ -152,7 +149,7 @@ function mutate(controller, method, request, revision) {
 
 function mutationBlocked(controller, method) {
 	const state = controller.compatibility;
-	return controller.compatibilityBusy || !state || !state.installed || !!controller.compatibilityError ||
+	return readOnly() || controller.compatibilityBusy || !state || !state.installed || !!controller.compatibilityError ||
 		state.managed === false && method !== 'compatibilityDisable';
 }
 
@@ -242,7 +239,7 @@ function download(name, value, type) {
 
 function render(controller) {
 	const state = controller.compatibility;
-	const back = button('返回组件列表', function() { controller.componentDetail = null; controller.redraw(); });
+	const back = button('返回组件列表', function() { controller.context.navigate('plugin:product-ui:components'); });
 	const extension = ((controller.components || {}).extensions || []).find(item => item.id === 'https-compat');
 	const heading = E('div', { 'class': 'netfleet-section-heading' }, [ E('div', {}, [ E('h3', {}, 'HTTPS 兼容'),
 		extension ? E('small', {}, extension.installed_version || '未安装') : '' ]), E('div', { 'class': 'netfleet-inline-actions' }, [ back,
@@ -343,4 +340,5 @@ function render(controller) {
 		})), E('div', { 'id': 'netfleet-compat-panel', 'role': 'tabpanel' }, panels[tab]) ]);
 }
 
-return baseclass.extend({ render: render, refresh: refresh, label: label });
+return { render, refresh, label };
+}

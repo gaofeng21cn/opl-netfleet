@@ -186,7 +186,8 @@ else:
             try:
                 await asyncio.sleep(32)
                 self.assertIsNone(upgrade.returncode, "package replacement must wait for the live TLS connection")
-                self.assertFalse(self.owner.call("get")["intercepting"])
+                from https_compat_kernel import gateway as kernel_gateway
+                self.assertFalse(kernel_gateway.status()["intercepting"])
                 self.assertFalse((await self.request(ca=self.directory / "upstream.pem"))["h2"])
                 output, error = await asyncio.wait_for(held.communicate(b"\n"), 6)
                 self.assertEqual(held.returncode, 0, error.decode())
@@ -223,8 +224,9 @@ else:
             self.assertLess(time.monotonic(), deadline, self.owner.call("get"))
             await asyncio.sleep(1)
         self.assertTrue((await self.request())["h2"])
-        service = json.loads(subprocess.check_output(["ubus", "call", "service", "list", '{"name":"opl-netfleet-core"}']))
-        lifecycle = service["opl-netfleet-core"]["instances"]["lifecycle"]["pid"]
+        service = json.loads(subprocess.check_output(["ubus", "call", "service", "list", '{"name":"opl-netfleet-compat"}']))
+        lifecycle = service["opl-netfleet-compat"]["instances"]["manager"]["pid"]
+        core_before = json.loads(subprocess.check_output(["ubus", "call", "service", "list", '{"name":"opl-netfleet-core"}']))["opl-netfleet-core"]["instances"]["core"]["pid"]
         engine = self.owner.health()["pid"]
         import os
         os.kill(lifecycle, signal.SIGSTOP)
@@ -233,6 +235,8 @@ else:
             await asyncio.sleep(11)
             self.assertFalse(self.owner.call("get")["intercepting"])
             self.assertFalse((await self.request(ca=self.directory / "upstream.pem"))["h2"])
+            core_after = json.loads(subprocess.check_output(["ubus", "call", "service", "list", '{"name":"opl-netfleet-core"}']))["opl-netfleet-core"]["instances"]["core"]["pid"]
+            self.assertEqual(core_before, core_after, 'plugin faults cannot restart the base core')
         finally:
             os.kill(engine, signal.SIGCONT)
             os.kill(lifecycle, signal.SIGCONT)
@@ -259,12 +263,12 @@ else:
             self.assertLess(time.monotonic(), deadline, self.owner.call("get"))
             await asyncio.sleep(1)
         self.assertTrue((await self.request())["h2"])
-        owner = "/usr/libexec/opl-netfleet/main.uc"
+        sys.path.insert(0, "/usr/libexec/opl-netfleet-compat")
+        import gateway
         for selector in ("user", "group"):
             self.command("uci", "add_list", f"netfleet.@router_access_control[0].{selector}=netfleet-compat")
             try:
-                snapshot = json.loads(subprocess.check_output(["ucode", owner, "native-gateway-compatibility-snapshot"]))
-                self.assertTrue(snapshot["result"]["custom_lan_access"], "matching engine identity must reject admission")
+                self.assertTrue(gateway.snapshot()["custom_lan_access"], "matching engine identity must reject admission")
             finally:
                 self.command("uci", "del_list", f"netfleet.@router_access_control[0].{selector}=netfleet-compat")
 
