@@ -84,7 +84,10 @@ System configuration selects service providers and supports named instances with
 local bindings and configuration. One plugin can serve multiple distinct
 compositions. Service and page scopes own listeners, connections, and cleanup
 callbacks, releasing their resources when a call ends, a page closes, or a plugin
-unloads.
+unloads. Administrators can edit the composition JSON under **Components and
+Updates -> Service Composition**, validate dependencies and preview affected
+plugins, then confirm application. A failed change restores the previous
+composition and resource state.
 
 The selection algorithm has its own package. Separate platform plugins provide
 storage, OpenWrt configuration, and runtime management; the kernel also receives
@@ -138,7 +141,10 @@ Read the [product whitepaper](docs/product/whitepaper.md) for the full rationale
 and the [architecture overview](docs/architecture/overview.md) for current
 implementation behavior.
 
-See the chosen release for supported platforms and optional packages.
+NetFleet script and UI packages are `noarch`; the Mihomo core currently supplied
+by the feed covers ARM64 `aarch64_generic` only. Other architectures need an
+already compatible core. Portable code packages do not imply complete fresh-device
+support. See the chosen release and the [package contract](docs/architecture/packaging.md).
 
 ## Installation
 
@@ -229,8 +235,11 @@ network traffic rules under **Business Rules**.
 
 **Configuration -> Profiles and Backup** imports, downloads, and edits local
 profiles and exports or restores NetFleet backups. A profile currently in use
-cannot be overwritten or deleted directly. Backups contain private subscription
-addresses and credentials, not system firmware, and should be stored securely.
+cannot be overwritten or deleted directly. Backups include private subscriptions,
+service composition, instance configuration, and persistent plugin data. Restore
+checks required plugins and interface compatibility; plugin code is installed
+from signed packages. Backups contain private data, not system firmware, and
+should be stored securely.
 
 **Events and Diagnostics** provides core restart, reload, and on-demand startup
 logs. Startup failures remain inspectable when the Mihomo controller is
@@ -264,9 +273,10 @@ and the device reports the actual business probe result.
 
 ## Fleet Deployment
 
-Direct LuCI setup suits a single device. For reproducible multi-device rollout,
-use the Fleet deployment entry point with a bundle rendered by a private OPL
-Instance:
+Direct LuCI setup suits a single device. Use **Components and Updates** for
+routine software updates, and the device setup or migration entry point for
+native onboarding. To reproduce **Nikki environments** across devices, use the
+Fleet entry point with a bundle rendered by a private OPL Instance:
 
 ```bash
 scripts/deploy-openwrt.sh <ssh-target> --ref <release-or-commit> \
@@ -277,9 +287,9 @@ scripts/deploy-openwrt.sh <ssh-target> --ref <release-or-commit> \
 The bundle contains policy, subscription references, a backend mixin, and a
 platform declaration. The default path installs, compiles, and reads back a
 staged result. Add `--activate` after the same source has passed OpenWrt QEMU
-qualification to enable the target and perform the final readback. An existing
-Nikki bundle and native migration remain distinct entry points; changing a
-backend name is not a substitute for migration.
+qualification to enable the target and perform the final readback. This four-file
+projection targets Nikki environments; updating a native device does not apply a
+Nikki bundle or start Nikki. See [deployment entry points](docs/operations/deployment.md#按设备当前状态选择入口).
 
 For rollout, complete the full compile, enable, readback, and disable cycle on
 a locally recoverable canary before promoting the same package and configuration

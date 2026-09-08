@@ -3,6 +3,20 @@
 本节描述现有面向 Nikki 的 Fleet deployment bundle 安装入口；原生首次设置与后端迁移
 使用[运行文档的设备端事务](../architecture/runtime-and-recovery.md#首次设置与迁移)，不能把该四文件 bundle 或 host 部署器作为原生独立安装的前置条件。
 
+## 按设备当前状态选择入口
+
+| 当前状态与目的 | 使用入口 |
+| --- | --- |
+| 空白设备安装并接入原生 Mihomo | 签名安装器安装产品，再由 LuCI 首次接入事务建立订阅、配置与网络 owner |
+| 已使用任一受支持后端，日常更新 NetFleet | LuCI“组件与更新”的设备端签名包事务，保留后端选择和私有输入 |
+| 已运行 Nikki，迁移到原生后端 | LuCI“配置 → 基础接入”的显式迁移事务 |
+| 按 private Instance 复现 Nikki 环境 | 本文 Fleet 入口，消费生成的四文件 deployment bundle |
+
+软件包身份、候选与旧包获取、失败回滚及中断边界统一见
+[设备端组件维护](../architecture/packaging.md#设备端组件维护)。已经运行原生后端的设备
+不通过应用 Nikki bundle 或启动 Nikki 完成更新。部署前必须读取所选后端、已安装代码
+身份、当前操作和运行状态；请求超时后先回读操作结果与 owner，再决定是否继续。
+
 ## 候选与输入
 
 开发、虚拟机资格验证和设备写入是三个独立阶段。开发 worktree 只产生经验证并吸收到远端 canonical `main` 的 source；QEMU 启动官方 OpenWrt 镜像，验证真实 BusyBox、`/var -> /tmp`、ubus/rpcd/procd、隔离安装和失败回滚后，才为该精确 commit/tree 生成一次 qualification receipt；设备部署只接受一个显式 Git ref，解析并冻结其 commit/tree，从 Git object 构建 bundle，不读取 checkout 的 dirty 或未提交字节。bundle 包含逐文件 SHA-256 和 source identity，目标端只用一次性前台进程执行，不增加 daemon、queue 或 operation history。VM receipt 只证明通用 OpenWrt 控制面和回滚合同，不证明机场、真实 DNS/TPROXY、硬件驱动或业务路径。

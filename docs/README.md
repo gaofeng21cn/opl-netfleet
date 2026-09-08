@@ -9,9 +9,9 @@
 - [`architecture/microkernel.md`](architecture/microkernel.md)：功能服务组合、依赖绑定、插件热替换与资源交接。
 - [`architecture/device-identity.md`](architecture/device-identity.md)：网络侧设备身份、IPv6 地址更新和证据过期。
 - [`design/ui.md`](design/ui.md)：React 参考面与原生 LuCI 的视觉和交互设计合同。
-- [`operations/deployment.md`](operations/deployment.md)：Fleet 部署器的输入、资格和目标端事务。
+- [`operations/deployment.md`](operations/deployment.md)：按后端与设备状态选择安装、更新、迁移入口，以及 Nikki Fleet 事务。
 - [`operations/canary-promotion.md`](operations/canary-promotion.md)：通用 canary 推广与恢复流程。
-- [`development/validation.md`](development/validation.md)：源码、UI、隔离 OpenWrt 与发布验证入口。
+- [`development/validation.md`](development/validation.md)：源码、UI、隔离 OpenWrt、发布验证，以及实体性能评估方法。
 - [`development/plugins.md`](development/plugins.md)：插件接口、开发模板、软件包构建、安装与热加载。
 
 ## 目标与理由

@@ -57,7 +57,7 @@ NetFleet 把“访问需求”和“具体节点”分开管理。规则只需�
 
 NetFleet 将业务、平台能力和界面组织为功能插件。内核处理发现、服务绑定、依赖解析、调用准入和资源生命周期；订阅、选路、配置编译、恢复、后端与调度通过服务组合运行。插件可同时声明服务、CLI 命令、浏览器业务动作、配置和页面，独立安装后由宿主发现，无需为新功能修改宿主的 RPC 或导航表。
 
-系统配置明确选择服务提供者，并支持具名实例的局部绑定与配置。同一插件可以组合出不同用途的实例；服务和页面的作用域统一管理监听、连接及清理函数，在调用结束、退出页面或卸载时撤销所属资源。
+系统配置明确选择服务提供者，并支持具名实例的局部绑定与配置。同一插件可以组合出不同用途的实例；服务和页面的作用域统一管理监听、连接及清理函数，在调用结束、退出页面或卸载时撤销所属资源。管理员可在“组件与更新 → 服务组合”编辑组合 JSON，先校验依赖和预览影响，再确认应用；失败恢复原组合与资源状态。
 
 选择算法已独立成包；存储、OpenWrt 配置和运行管理分别由平台插件提供，内核的系统操作也通过注入的宿主适配器完成。业务服务可以通过能力绑定复用，跨平台分工见[平台能力边界](docs/architecture/microkernel.md#平台能力边界)。
 
@@ -83,7 +83,9 @@ UCode 运行服务在 OpenWrt 本地执行，Mihomo 负责连接和组内节点�
 
 完整设计理念见[产品白皮书](docs/product/whitepaper.md)，当前实现与运行行为见[架构总览](docs/architecture/overview.md)。
 
-安装支持的平台与可选包范围见所选 Release。
+NetFleet 脚本与界面包为 `noarch`；当前随 Feed 提供的 Mihomo 核心只覆盖 ARM64
+`aarch64_generic`。其他架构需已有兼容核心，不能把代码包可安装等同于空白设备完整支持。
+安装范围以所选 Release 和[软件包合同](docs/architecture/packaging.md)为准。
 
 ## 安装
 
@@ -136,7 +138,7 @@ apk update && apk upgrade opl-netfleet-plugin-selection-algorithm
 
 “配置 -> 网络接入”管理原生后端的 DNS、代理范围、设备规则、监听和认证，应用前校验，失败恢复原配置；不修改 OpenWrt 的 WAN/LAN 地址或默认路由。业务流量的域名与网段分流在“业务规则”中配置。
 
-“配置 -> 配置文件与备份”用于导入、下载和编辑本地配置，以及导出或恢复 NetFleet 备份。使用中的文件不能直接覆盖或删除。备份包含订阅地址等私有数据，不是系统固件备份，应妥善保管。
+“配置 -> 配置文件与备份”用于导入、下载和编辑本地配置，以及导出或恢复 NetFleet 备份。使用中的文件不能直接覆盖或删除。备份包含订阅地址、服务组合、实例配置和插件私有持久数据；恢复前检查所需插件与接口兼容性，插件程序仍由签名包安装。备份含私有数据，不是系统固件备份，应妥善保管。
 
 “事件与诊断”提供核心重启、重载及按需读取的启动日志；即使 Mihomo 控制接口不可用，仍可排查启动错误。管理范围与恢复规则见[设备独立管理](docs/architecture/management.md)。
 
@@ -158,7 +160,7 @@ apk update && apk upgrade opl-netfleet-plugin-selection-algorithm
 
 ## 面向多设备部署
 
-个人使用可以直接通过 LuCI 完成首次设置。需要在多台设备上精确复现配置时，可使用 Fleet 声明式部署入口：
+个人使用可以直接通过 LuCI 完成首次设置。日常软件更新使用“组件与更新”，原生接入和 Nikki 迁移使用各自设备端入口。需要在多台设备上精确复现 **Nikki 环境**时，可使用 Fleet 声明式部署入口：
 
 ```bash
 scripts/deploy-openwrt.sh <ssh-target> --ref <release-or-commit> \
@@ -166,7 +168,7 @@ scripts/deploy-openwrt.sh <ssh-target> --ref <release-or-commit> \
   --instance /private/path/deployment-bundle
 ```
 
-deployment bundle 由私有 OPL Instance 生成，包含策略、订阅引用、后端 mixin 和平台声明。默认部署会完成安装、编译和 staged 回读；增加 `--activate` 后，部署器会先确认同一源码已经通过 OpenWrt QEMU qualification，再启用并回读目标设备。已有 Nikki bundle 的投影与原生迁移是独立入口，不能通过改一个后端名称代替迁移。
+deployment bundle 由私有 OPL Instance 生成，包含策略、订阅引用、后端 mixin 和平台声明。默认部署会完成安装、编译和 staged 回读；增加 `--activate` 后，部署器会先确认同一源码已经通过 OpenWrt QEMU qualification，再启用并回读目标设备。该四文件投影用于 Nikki 环境；原生设备更新不应用 Nikki bundle 或启动 Nikki。各入口的适用状态见[部署操作](docs/operations/deployment.md#按设备当前状态选择入口)。
 
 多设备推广建议先在可本地恢复的 canary 完成一次“编译、启用、回读、关闭”全流程，再把同一发布包和配置推广到其他设备。完整步骤见[Canary 推广与复原](docs/operations/canary-promotion.md)。
 

@@ -27,8 +27,9 @@ UCode 插件的 `manifest.json` 使用 `opl-netfleet-service-plugin.v1`，声明
 
 服务插件的 `actions` 将动作名映射到本插件的 `{ service, method, access }`，其中
 `access` 为 `read` 或 `write`。统一 `plugin_read` / `plugin_call` 按声明分派，方法接收
-`params` 对象并返回 `{ ok, result }`。写动作沿用网络 mutation 锁、显式确认与当前代码
-revision 校验；读入口不能调用写动作。进程插件继续使用自己的 actions 声明。
+`params` 对象并返回 `{ ok, result }`。写动作要求显式确认与当前代码 revision 校验，
+默认使用网络 mutation 锁；只访问插件私有数据的服务动作可选择下文的插件锁。
+读入口不能调用写动作。进程插件继续使用自己的 actions 声明。
 `configuration: { read, write }` 引用同一插件已声明的配置读取和保存动作；配置校验、
 持久化和应用结果由插件拥有，界面不产生第二份配置事实。
 
@@ -73,7 +74,8 @@ effect 登记其实际取消函数，平台提供者负责执行机制。跨调�
 管理员通过 `plugins-system-get`、`plugins-system-validate` 和 `plugins-system-apply` 管理私有
 服务组合。读取返回 revision；校验只解析候选依赖图并报告受影响插件，不运行工厂；应用
 绑定原 revision，在网络锁下排空受影响资源、原子写入并恢复。失败还原原始覆盖文件与
-资源状态。私有配置可含凭据，读取与应用均限具有管理写权限的调用者。
+资源状态。私有配置可含凭据，读取与应用均限具有管理写权限的调用者。LuCI 组合编辑
+与 RPC 请求约束见[公开接口](interfaces.md#原生接入与管理)，界面不维护独立绑定状态。
 
 只访问本插件私有数据的服务动作可以声明 `lock: "plugin"`，使用跨实例共享的插件锁，
 不占用网络 mutation 锁。未声明的动作、进程插件和资源生命周期仍使用网络锁。插件私有

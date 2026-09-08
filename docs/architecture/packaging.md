@@ -104,6 +104,10 @@ Mihomo 本体单独确认。已安装的可选 HTTPS 引擎有独立版本，Fee
 软件自升级会重启 rpcd，因此设备通过 procd 执行一个有界、无自动重试的一次性更新进程，
 使用全局 mutation lock 和更新前暂存的实现完成事务；浏览器关闭或临时断连不取消更新。
 这不是第二个网络 owner，也不拥有持久运行状态；页面通过只读进度接口确认最终结果。
+事务代码副本、候选与回退包、私有快照和请求保存在 `/tmp/opl-netfleet-components/`，
+未完成的升级标记位于 `/tmp/opl-netfleet-package-upgrade-state`。普通失败在当前进程内
+回滚；发现尚未完成的更新时拒绝新的更新。客户端断连不会取消后台进程，但这些暂存
+不跨设备重启保存，当前没有持久事务日志与启动时恢复入口，不能据此承诺断电后自动恢复。
 
 独立插件模式不要求开发机生成 deployment bundle。已有 Nikki 的设备可以复用当前原生
 Profile 和有效 subscription cache；空白设备则由原生后端维护订阅和配置。安装 package
