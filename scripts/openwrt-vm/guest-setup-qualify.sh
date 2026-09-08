@@ -33,6 +33,10 @@ finish() {
 	trap - EXIT INT TERM
 	set +e
 	if [ "$rc" -ne 0 ]; then
+		ip -j addr show >"$work/failed-addresses.log"
+		ip -6 route show table all >"$work/failed-ipv6-routes.log"
+		ip netns exec nf-setup-upstream ip -6 route show table all >"$work/failed-upstream-routes.log"
+		nft list ruleset >"$work/failed-nft.log"
 		secret=$(uci -q get netfleet.mixin.api_secret)
 		for endpoint in proxies providers/proxies; do
 			curl -fsS --noproxy '*' --max-time 3 -H "Authorization: Bearer $secret" \
@@ -376,10 +380,9 @@ ip netns exec nf-setup-upstream ip link set lo up
 ip netns exec nf-setup-upstream ip link set nf-setup-peer up
 ip netns exec nf-setup-upstream ip addr add 198.18.1.2/30 dev nf-setup-peer
 ip netns exec nf-setup-upstream ip -6 addr add fd77:a::2/64 dev nf-setup-peer nodad
-ip -6 addr add fd77:a::1/64 dev nf-setup-uplink nodad
 ip netns exec nf-setup-upstream ip route add default via 198.18.1.1
 ip netns exec nf-setup-upstream ip -6 route add default via fd77:a::1
-ubus call network add_dynamic '{"name":"wan","proto":"static","device":"nf-setup-uplink","ipaddr":["198.18.1.1/30"],"dns":["198.18.1.2"]}' >"$work/wan-result.json"
+ubus call network add_dynamic '{"name":"wan","proto":"static","device":"nf-setup-uplink","ipaddr":["198.18.1.1/30"],"ip6addr":["fd77:a::1/64"],"dns":["198.18.1.2"]}' >"$work/wan-result.json"
 ubus call network.interface.wan up >>"$work/wan-result.json"
 for attempt in 1 2 3 4 5; do
 	[ "$(ubus call network.interface.wan status | jsonfilter -e '@.up')" != true ] || break
