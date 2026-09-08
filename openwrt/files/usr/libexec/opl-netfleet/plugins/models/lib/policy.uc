@@ -636,7 +636,9 @@ validate = function(policy) {
 			const probe = policy.fail_open.probes[i];
 			if (!is_object(probe) || !is_nonempty_string(probe.id) ||
 				!is_nonempty_string(probe.url) || index(probe.url, "https://") != 0 ||
-				type(probe.expected_status) != "int" || probe.expected_status < 100 || probe.expected_status > 599) {
+				type(probe.expected_status) != "int" || probe.expected_status < 100 || probe.expected_status > 599 ||
+				(has(probe, "head_expected_status") && (type(probe.head_expected_status) != "int" ||
+				probe.head_expected_status < 100 || probe.head_expected_status > 599))) {
 				add_error(errors, `invalid fail_open.probes entry: ${i}`);
 			}
 			if (is_nonempty_string(probe?.id)) {

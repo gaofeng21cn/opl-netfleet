@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "compilation",
   "label": "Policy compilation",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "api_version": 1,
   "package": "opl-netfleet-plugin-compilation",
   "services": {

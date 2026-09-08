@@ -95,8 +95,9 @@ refresh_data_fallback = function(secret, entry, policy, provider_state, selected
 			for (let candidate in policy?.fail_open?.probes ?? [])
 				if (candidate.id == stage.probe) probe = candidate;
 			if (probe == null || !test_group_path(secret, stage.group, { latency: {
-				url: probe.url, expected_status: probe.expected_status, timeout_ms: health.timeout_ms
-			} })) return { ok: false, error: "selected_business_path_probe_failed", round: round, runtime: null };
+				url: probe.url, expected_status: probe.head_expected_status ?? probe.expected_status, timeout_ms: health.timeout_ms
+			} })) return { ok: false, error: "selected_business_path_probe_failed", probe: stage.probe, group: stage.group,
+				method: "HEAD", expected_status: probe?.head_expected_status ?? probe?.expected_status, round: round, runtime: null };
 		}
 	}
 	const state = proxies(secret);
@@ -186,6 +187,8 @@ activate_preferred_choice = function(secret, entry, choice, policy, after_restar
 		return {
 			ok: false,
 			error: fallback.error ?? "preferred_path_unavailable",
+			probe: fallback.probe, group: fallback.group, method: fallback.method,
+			expected_status: fallback.expected_status,
 			choice: choice,
 			leaf: leaf.leaf,
 			data_path: fallback.runtime?.data_path ?? "unknown",
