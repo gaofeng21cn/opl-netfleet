@@ -117,7 +117,7 @@ define Package/opl-netfleet
   CATEGORY:=Network
   TITLE:=OPL NetFleet default network platform
   DEPENDS:=+opl-netfleet-kernel $(foreach plugin,$(NETFLEET_PLUGINS),+opl-netfleet-plugin-$(plugin))
-  EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.1) $(if $(CONFIG_USE_APK),!opl-netfleet-https-compat (<0.1.8))
+  EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.1)$(if $(CONFIG_USE_APK),$(comma) !opl-netfleet-https-compat (<0.1.8))
   $(if $(CONFIG_USE_APK),,CONFLICTS:=opl-netfleet-https-compat (<0.1.8))
   PKGARCH:=all
 endef

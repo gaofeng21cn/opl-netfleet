@@ -66,6 +66,13 @@ def build(candidate, output, baseline=None):
                         "-out", str(private_key)], check=True, capture_output=True)
         subprocess.run(["openssl", "pkey", "-in", str(private_key), "-pubout", "-out", str(public_key)],
                        check=True, capture_output=True)
+        incompatible_root = scratch / "incompatible-compatibility"
+        incompatible_root.mkdir()
+        run("mkpkg", "--files", incompatible_root, "--sign-key", private_key,
+            "--output", output / "incompatible-compatibility.apk",
+            "--info", "name:opl-netfleet-https-compat", "--info", "version:0.1.7-r1",
+            "--info", "arch:noarch", "--info", "description:Dependency rejection fixture",
+            "--info", "license:MIT", "--info", "depends:opl-netfleet")
         for kind in ("good", "bad", "bad-core", "bad-hook"):
             (output / kind).mkdir()
             for archive in candidate.glob("*.apk"):

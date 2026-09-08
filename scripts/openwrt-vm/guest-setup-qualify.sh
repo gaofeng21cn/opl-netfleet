@@ -197,6 +197,13 @@ legacy_native_migration() {
 	stage=legacy_native_failed_upgrade
 	uclient-fetch -q -O /etc/apk/keys/netfleet-component-fixture.pem \
 		"$feed_url/components-fixtures/component-fixture.pem"
+	uclient-fetch -q -O "$candidate/incompatible-compatibility.apk" \
+		"$feed_url/components-fixtures/incompatible-compatibility.apk"
+	apk --no-network verify "$candidate/incompatible-compatibility.apk" >>"$work/packages.log" 2>&1
+	if package_transaction --simulate add $current_packages "$candidate/incompatible-compatibility.apk"; then
+		echo 'unsupported legacy engine was accepted' >&2
+		exit 1
+	fi
 	bad_version=$(jsonfilter -i "$work/legacy-fixture.json" -e '@.package_versions["opl-netfleet-plugin-mihomo"].bad')
 	bad_file=opl-netfleet-plugin-mihomo-$bad_version.apk
 	uclient-fetch -q -O "$candidate/$bad_file" "$feed_url/components-fixtures/bad/$bad_file"
