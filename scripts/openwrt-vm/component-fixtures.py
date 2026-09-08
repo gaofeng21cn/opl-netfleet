@@ -134,15 +134,20 @@ def build(candidate, output, baseline=None):
             legacy_dir = output / "legacy"
             legacy_dir.mkdir()
             shutil.copy2(baseline / "baseline.pem", legacy_dir / "baseline.pem")
-            legacy = {"artifacts": []}
+            legacy = {"artifacts": [], "system_dependencies": []}
             for archive in sorted(baseline.glob("*.apk")):
                 target = legacy_dir / archive.name
                 shutil.copy2(archive, target)
                 run("verify", "--keys-dir", legacy_dir, target)
                 metadata = json.loads(run("adbdump", "--format", "json", target))
                 name = metadata["info"]["name"]
-                if name not in ("opl-netfleet", "luci-app-netfleet"):
-                    raise SystemExit("Legacy fixture must contain only the monolith and LuCI")
+                if name not in ("opl-netfleet", "luci-app-netfleet", "opl-netfleet-https-compat"):
+                    raise SystemExit("Legacy fixture contains an unsupported package")
+                if name == "opl-netfleet-https-compat":
+                    legacy["system_dependencies"] = [
+                        dependency for dependency in metadata["info"].get("depends", [])
+                        if dependency != "opl-netfleet"
+                    ]
                 legacy["artifacts"].append({"name": target.name, "package": name,
                                             "version": metadata["info"]["version"],
                                             "sha256": hashlib.sha256(target.read_bytes()).hexdigest()})
@@ -151,7 +156,7 @@ def build(candidate, output, baseline=None):
                     legacy_root.mkdir()
                     run("--allow-untrusted", "extract", "--destination", legacy_root, target)
                     legacy["build"] = json.loads((legacy_root / "usr/share/opl-netfleet/build.json").read_text())
-            if {item["package"] for item in legacy["artifacts"]} != {"opl-netfleet", "luci-app-netfleet"}:
+            if not {"opl-netfleet", "luci-app-netfleet"}.issubset(item["package"] for item in legacy["artifacts"]):
                 raise SystemExit("Legacy fixture requires the monolith and LuCI APKs")
             legacy["key_sha256"] = hashlib.sha256((legacy_dir / "baseline.pem").read_bytes()).hexdigest()
     (output / "fixture.json").write_text(json.dumps({

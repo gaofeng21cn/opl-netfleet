@@ -152,10 +152,11 @@ legacy_native_migration() {
 		product_packages="$product_packages $name"
 	done <"$work/current-files.txt"
 	# Fetch and retain the old product's dependencies before taking it offline.
+	legacy_dependencies=$(jsonfilter -i "$work/legacy-fixture.json" -e '@.legacy.system_dependencies[*]')
 	(
 		exec 9>"$lock"
 		flock 9
-		apk --timeout 300 add mihomo-meta yq unzip 9>&-
+		apk --timeout 300 add mihomo-meta yq unzip $legacy_dependencies 9>&-
 	) >>"$work/packages.log" 2>&1
 	tar -czf "$work/legacy-private.tar.gz" -C / etc/config/netfleet etc/opl-netfleet
 	stage=legacy_native_baseline_install
@@ -201,9 +202,16 @@ legacy_native_migration() {
 	direct_probe
 
 	stage=legacy_native_formal_package_rollback
+	if apk info -e opl-netfleet-https-compat >/dev/null 2>&1; then
+		# The legacy engine owns its own lock. Run its normal removal before the
+		# product transaction takes that lock, with the engine already bypassed.
+		! nft list table inet netfleet_compat >/dev/null 2>&1
+		timeout 60 apk --no-network del opl-netfleet-https-compat >>"$work/packages.log" 2>&1 || true
+		! apk info -e opl-netfleet-https-compat >/dev/null 2>&1
+	fi
 	# Old pre-upgrade hooks import removed monolith modules. Run normal remove
 	# and install hooks, then restore the private snapshot with the old owner.
-	package_transaction del $product_packages
+	package_transaction del $product_packages || true
 	[ ! -e "$main" ]
 	[ -z "$(pidof mihomo 2>/dev/null || true)" ]
 	! nft list table inet netfleet >/dev/null 2>&1
@@ -228,6 +236,9 @@ legacy_native_migration() {
 	package_transaction add $current_packages
 	package_identity
 	native_restored
+	while read -r expected filename name version; do
+		[ "$name" != opl-netfleet-https-compat ] || apk list --manifest | grep -Fqx "$name $version"
+	done <"$work/legacy-files.txt"
 	[ ! -e /usr/libexec/opl-netfleet/adapters/runtime.uc ]
 	[ -f /usr/libexec/opl-netfleet/adapters/openwrt.uc ]
 	[ ! -e /tmp/opl-netfleet-package-upgrade-state ]
@@ -237,6 +248,10 @@ legacy_native_migration() {
 	dependency_packages=$(printf '%s\n' "$product_packages" | tr ' ' '\n' | grep -vE '^(|opl-netfleet|luci-app-netfleet)$')
 	package_transaction del $dependency_packages mihomo-meta yq unzip
 	legacy_checks=',"legacy_native_upgrade":true,"legacy_native_failed_upgrade_direct_usable":true,"legacy_native_formal_package_rollback":true,"legacy_native_private_state_and_routes_restored":true'
+	if apk info -e opl-netfleet-https-compat >/dev/null 2>&1; then
+		legacy_checks="$legacy_checks,\"legacy_native_optional_engine_preserved\":true"
+		timeout 60 apk --no-network del opl-netfleet-https-compat >>"$work/packages.log" 2>&1
+	fi
 }
 setup_request() {
 	ucode -e '

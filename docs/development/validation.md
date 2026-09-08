@@ -37,6 +37,10 @@ receipt 绑定精确 commit/tree、runner/guest 架构、QEMU、accelerator 和�
 安装 lane。`--diagnostic` 只用于定位单条路径，不能授权部署。管理、组件和传输子阶段
 由对应 guest 脚本编排，不是任意可选的正式准入门禁。数据面变更的候选须完成完整
 qualification，HTTPS 模块另用自己的包与故障演练。
+`NETFLEET_VM_PACKAGE_BASELINE` 指向迁移前的真实签名 APK 集合与 `baseline.pem` 公钥。
+集合必须包含旧主包、LuCI 和目标上已安装的旧 HTTPS 引擎；关闭引擎不会消除它对包
+依赖排序的影响。未带该引擎的迁移结果不能用于带引擎的设备。外部部署执行器的回退
+不由包测试代为证明，须以同一执行器、旧包集合和实际失败阶段单独验证。
 这些都是 synthetic platform proof；真实 provider、DNS、TPROXY、硬件和应用验收按
 [Canary 推广与复原](../operations/canary-promotion.md)独立完成。
 
