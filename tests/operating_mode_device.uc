@@ -19,7 +19,15 @@ function call(action, request) {
 const inventory = call("plugins-list").result.plugins;
 const plugin = filter(inventory, row => row.id == "activation" && row.instance == "default")[0];
 check(plugin?.revision != null, "activation revision missing");
-function get() { return call("plugin-read", { id: "activation", action: "get-mode" }).result; }
+function get() {
+	for (let attempt = 0; attempt < 10; attempt++) {
+		const result = call("plugin-read", { id: "activation", action: "get-mode" });
+		if (result.ok) return result.result;
+		check(result.error == "mutation_busy", `mode read failed: ${sprintf("%J", result)}`);
+		system("sleep 1");
+	}
+	die("mode read remained busy");
+}
 function change(mode) {
 	const before = get();
 	const result = call("plugin-call", { id: "activation", instance: "default", action: "set-mode",
