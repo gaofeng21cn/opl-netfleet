@@ -132,9 +132,9 @@ within node groups, and LuCI presents state and submits scoped operations.
 Runtime and recovery work without an open browser, cloud controller, or Node.js host.
 
 Configuration is validated and staged before explicit activation and runtime
-checks. Disabling or recovering first returns to an independently usable
-Recovery Profile. If that fails, the selected backend cleans up its own network
-takeover and restores direct connectivity. The recovery plugin coordinates this
+checks. Leaving enhanced mode or recovering first returns to an independently usable
+Recovery Profile. Explicitly choosing native OpenWrt direct mode stops the proxy
+and removes its network takeover. The recovery plugin coordinates this
 shared path, while resource plugins handle their own failure exits.
 
 Read the [product whitepaper](docs/product/whitepaper.md) for the full rationale
@@ -263,13 +263,13 @@ preferred -> other primary providers -> reserve providers -> DIRECT
 LuCI shows the active capability, region, provider, node, selection reason, and
 fallback state.
 
-### Closing And Recovery
+### Mode Switching And Recovery
 
-Disabling NetFleet switches back to the Recovery Profile selected during setup
-and checks the selected backend, Mihomo, transparent proxy, and DNS state. Only
-if the recovery profile cannot be restored does that backend's cleanup restore
-direct networking. The native gateway removes only the network state it owns,
-and the device reports the actual business probe result.
+Native Mihomo mode stops enhanced scheduling while retaining native proxying.
+Native OpenWrt direct mode stops the proxy and removes network takeover. Failed
+transitions report actual runtime and business probe results; an accepted request
+does not prove network recovery. See [operating modes](docs/architecture/runtime-and-recovery.md#用户运行模式)
+for the authoritative behavior and recovery rules.
 
 ## Fleet Deployment
 
