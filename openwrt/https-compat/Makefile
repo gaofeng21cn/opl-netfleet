@@ -13,7 +13,7 @@ define Package/opl-netfleet-https-compat
   SECTION:=net
   CATEGORY:=Network
   TITLE:=NetFleet optional HTTPS compatibility engine
-  DEPENDS:=@aarch64 +opl-netfleet-plugin-https-compat +opl-netfleet-plugin-mihomo +python3 +libstdcpp +libgcc +libopenssl +ca-bundle +coreutils-timeout
+  DEPENDS:=@aarch64 +opl-netfleet-plugin-https-compat +opl-netfleet-plugin-mihomo +python3 +libc +libstdcpp +libgcc +libopenssl +ca-bundle +coreutils-timeout
   EXTRA_DEPENDS:=python3 (~3.13), opl-netfleet-plugin-https-compat (>=0.8.3)
 endef
 
