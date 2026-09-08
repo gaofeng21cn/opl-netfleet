@@ -27,6 +27,7 @@ const CACHE = `${ROOT}/checked.json`;
 const REQUEST = `${ROOT}/request.json`;
 const REPOSITORY = "/etc/apk/repositories.d/opl-netfleet.list";
 const UPDATE_SERVICE = "opl-netfleet-update";
+const RECOVERY_SERVICE = "opl-netfleet-update-recovery";
 const MAIN = "/usr/libexec/opl-netfleet/main.uc";
 const UPGRADE_STATE = "/tmp/opl-netfleet-package-upgrade-state";
 const PACKAGES = ["opl-netfleet", "luci-app-netfleet", "mihomo-meta"];
@@ -119,7 +120,10 @@ progress = function() {
 	const request = private_file(REQUEST) ? read_json(REQUEST) : null;
 	const process = update_process();
 	const pending = private_file(PENDING) ? read_json(PENDING) : null;
-	if (pending && process?.running != true) return { id: pending.id, kind: "packages", state: "interrupted", phase: "rolling_back", error: "previous_update_incomplete", recovery: "required" };
+	if (pending && process?.running != true) {
+		const recovering = service_running(RECOVERY_SERVICE);
+		return { id: pending.id, kind: "packages", state: recovering ? "running" : "interrupted", phase: "rolling_back", error: recovering ? null : "previous_update_incomplete", recovery: "required" };
+	}
 	if (request != null && state?.id != request.id) {
 		const running = process?.running == true;
 		return { id: request.id, kind: "packages", state: running ? "queued" : "interrupted", phase: "preparing", started_at: request.started_at,
@@ -164,7 +168,9 @@ start = function(action, component, version) {
 	if (previous && match(previous.id ?? "", /^[a-f0-9]{32}$/)) {
 		const oldwork = `${ROOT}/${previous.id}`;
 		const state = operation.get("packages");
-		const safe = state?.id == previous.id && (state.state == "succeeded" ||
+		const terminal = private_file(`${oldwork}/journal.json`) ? read_json(`${oldwork}/journal.json`) : null;
+		const safe = index(["complete", "rolled_back"], terminal?.phase) >= 0 ||
+			state?.id == previous.id && (state.state == "succeeded" ||
 			state.state == "failed" && match(state.error ?? "", /_rolled_back$/));
 		if (!safe && fs.lstat(`${oldwork}/before.json`) != null) fail("previous_update_incomplete");
 		if (private_directory(oldwork))
@@ -359,7 +365,7 @@ upgrade = function(request, work, candidates) {
 	}
 	if (system("/etc/init.d/opl-netfleet-update-recovery enable >/dev/null 2>&1") != 0) fail("update_recovery_unavailable");
 	if (!atomic_json(`${work}/before.json`, before) || !run_command(`tar -cf ${q(`${work}/private.tar`)} -C / ${join(" ", map(paths, path => q(substr(path, 1))))}`, work)) fail("update_state_write_failed");
-	journal(work, { phase: "prepared", before, names, versions, old, next, inputs: input_identity([`${work}/private.tar`, `${work}/code`, ...old, ...next]) });
+	journal(work, { phase: "prepared", before, names, versions, candidates, old, next, inputs: input_identity([`${work}/private.tar`, `${work}/code`, ...old, ...next]) });
 	if (!atomic_json(PENDING, { id: request.id }) || system("sync") != 0) fail("update_state_write_failed");
 	let error = null;
 	let install_started = false;
@@ -406,7 +412,11 @@ recover = function() {
 		index(["prepared", "installing", "recovering", "complete", "rolled_back"], state.phase) < 0) fail("update_recovery_state_invalid");
 	for (let path, digest in state.inputs) if (index(path, `${work}/`) != 0 || sha256(path) != digest) fail("update_recovery_artifact_changed");
 	if (index(["complete", "rolled_back"], state.phase) >= 0) {
-		if (!restore_services(state.before, work)) fail("rollback_runtime_failed");
+		const expected = state.phase == "complete" ? state.candidates : state.versions;
+		const current = installed();
+		if (type(expected) != "object" || type(state.names) != "array") fail("update_recovery_state_invalid");
+		for (let name in state.names) if (current?.[name] != expected[name]) fail("rollback_identity_mismatch");
+		if (!same_inputs(state.before) || !restore_services(state.before, work)) fail("rollback_runtime_failed");
 		fs.unlink(PENDING); system("sync"); return { recovered: true };
 	}
 	const before = state.before, old = state.old, names = state.names, versions = state.versions;

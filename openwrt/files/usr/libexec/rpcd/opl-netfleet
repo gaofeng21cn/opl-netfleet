@@ -92,7 +92,7 @@ component_update() {
 
 case "$1" in
 	list)
-		printf '%s\n' '{"compatibility_get":{},"compatibility_ca":{},"compatibility_apply":{"request":"Table"},"compatibility_enable":{"request":"Table"},"compatibility_disable":{"request":"Table"},"compatibility_probe":{"request":"Table"},"components_get":{},"components_check":{},"components_update":{"component":"String","version":"String"},"operation_get":{},"native_setup_get":{},"native_setup_apply":{"request":"Table"},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":"Table"},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":"Table"},"onboarding_get":{},"onboarding_apply":{"request":"Table"},"status":{},"events":{},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":"Table"},"config_save":{"request":"Table"},"config_apply":{"request":"Table"},"enable":{},"select_auto":{"capability":"String"},"refresh":{},"disable":{},"network_get":{},"network_validate":{"request":"Table"},"network_apply":{"request":"Table"},"maintenance_get":{},"profile_get":{"id":"String"},"profile_save":{"request":"Table"},"profile_delete":{"request":"Table"},"backup_export":{},"backup_restore":{"request":"Table"},"core_action":{"request":"Table"},"diagnostics_get":{},"dashboard_check":{},"dashboard_update":{"version":"String"}}'
+		printf '%s\n' '{"compatibility_get":{},"compatibility_ca":{},"compatibility_apply":{"request":"Table"},"compatibility_enable":{"request":"Table"},"compatibility_disable":{"request":"Table"},"compatibility_probe":{"request":"Table"},"components_get":{},"components_check":{},"components_recover":{},"components_update":{"component":"String","version":"String"},"operation_get":{},"native_setup_get":{},"native_setup_apply":{"request":"Table"},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":"Table"},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":"Table"},"onboarding_get":{},"onboarding_apply":{"request":"Table"},"status":{},"events":{},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":"Table"},"config_save":{"request":"Table"},"config_apply":{"request":"Table"},"enable":{},"select_auto":{"capability":"String"},"refresh":{},"disable":{},"network_get":{},"network_validate":{"request":"Table"},"network_apply":{"request":"Table"},"maintenance_get":{},"profile_get":{"id":"String"},"profile_save":{"request":"Table"},"profile_delete":{"request":"Table"},"backup_export":{},"backup_restore":{"request":"Table"},"core_action":{"request":"Table"},"diagnostics_get":{},"dashboard_check":{},"dashboard_update":{"version":"String"}}'
 		;;
 	call)
 		case "$2" in
@@ -128,6 +128,14 @@ case "$1" in
 				respond_owner ucode "$main" components-check 9>&-
 				;;
 			components_update) component_update ;;
+			components_recover)
+				lock_mutation
+				if /etc/init.d/opl-netfleet-update-recovery start 9>&-; then
+					printf '%s\n' '{"ok":true,"result":{"started":true}}'
+				else
+					printf '%s\n' '{"ok":false,"error":"update_recovery_unavailable"}'
+				fi
+				;;
 			subscriptions_refresh)
 				payload=$(cat)
 				id=$(jsonfilter -s "$payload" -e '@.id' 2>/dev/null || true)

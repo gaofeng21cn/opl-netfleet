@@ -551,6 +551,13 @@ function componentsPage(controller) {
 		return E('section', { 'class': 'cbi-section netfleet-components' }, content);
 	}
 	const packageOperation = controller.operations && controller.operations.packages;
+	if (packageOperation?.recovery === 'required') content.push(button('恢复中断更新', async function() {
+		if (componentsLocked(controller)) return;
+		controller.componentsStarting = true; controller.redraw();
+		try { await api.componentsRecover(); await readOperations(controller); await loadComponents(controller); }
+		catch (error) { controller.componentsError = error; }
+		finally { controller.componentsStarting = false; controller.redraw(); }
+	}, active));
 	const packageFailed = packageOperation && ['failed', 'interrupted'].includes(packageOperation.state);
 	const sameFeedFailure = packageFailed && packageOperation.error === feed.error && (!feed.checked_at || feed.checked_at >= packageOperation.started_at && feed.checked_at <= packageOperation.finished_at);
 	if (feed.error && !sameFeedFailure && !isRunning(packageOperation)) content.push(resultNode(controller, 'feed', String(feed.checked_at || 0), '软件包源检查', [

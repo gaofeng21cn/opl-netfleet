@@ -38,6 +38,7 @@ const calls = {
 	dashboardCheck: declare({ object: 'opl-netfleet', method: 'dashboard_check' }),
 	dashboardUpdate: declare({ object: 'opl-netfleet', method: 'dashboard_update', params: [ 'version' ] }),
 	componentsGet: declare({ object: 'opl-netfleet', method: 'components_get' }),
+	componentsRecover: declare({ object: 'opl-netfleet', method: 'components_recover' }),
 	componentsCheck: declare({ object: 'opl-netfleet', method: 'components_check' }),
 	componentsUpdate: declare({ object: 'opl-netfleet', method: 'components_update', params: [ 'component', 'version' ] }),
 	operationGet: declare({ object: 'opl-netfleet', method: 'operation_get' }),
