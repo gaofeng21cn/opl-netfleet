@@ -126,6 +126,11 @@ progress = function() {
 		return { id: pending.id, kind: "packages", state: recovering ? "running" : "interrupted", phase: "rolling_back", error: recovering ? null : "previous_update_incomplete", recovery: "required" };
 	}
 	if (request != null && state?.id != request.id) {
+		const terminal = private_file(`${ROOT}/${request.id}/journal.json`) ? read_json(`${ROOT}/${request.id}/journal.json`) : null;
+		if (index(["complete", "rolled_back"], terminal?.phase) >= 0)
+			return { id: request.id, kind: "packages", state: terminal.phase == "complete" ? "succeeded" : "failed", phase: "verifying",
+				started_at: request.started_at, updated_at: terminal.finished_at ?? null, finished_at: terminal.finished_at ?? null,
+				error: terminal.phase == "complete" ? null : "update_interrupted_rolled_back", recovery: terminal.phase == "rolled_back" ? "restored" : null };
 		const running = process?.running == true;
 		return { id: request.id, kind: "packages", state: running ? "queued" : "interrupted", phase: "preparing", started_at: request.started_at,
 			updated_at: request.started_at, finished_at: null, completed: 0, total: null, subject: request.component, error: running ? null : "operation_interrupted" };
@@ -316,7 +321,7 @@ rollback = function(before, work, names, versions, old, install_started, already
 		if (install_started) fs.unlink(UPGRADE_STATE);
 		attempt("rollback_configuration_failed", () => run_command(`tar -xf ${q(`${work}/private.tar`)} -C /`, work));
 		if (install_started) {
-			attempt("rollback_install_failed", () => run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(old, q))}`, work));
+			attempt("rollback_install_failed", () => run_command(`apk --no-network --repositories-file /dev/null ${already_stopped ? "--force-reinstall " : ""}add ${join(" ", map(old, q))}`, work));
 			attempt("rollback_world_failed", () => restore_world(names, before.world, work));
 		}
 	}
@@ -387,7 +392,7 @@ upgrade = function(request, work, candidates) {
 	const paths = private_paths();
 	const before = { backend: KIND, core_enabled: capture(`/etc/init.d/${SERVICE} enabled`) != null, supervisor_enabled: capture("/etc/init.d/opl-netfleet enabled") != null, active: before_status?.active ?? false, unconfigured: unconfigured, core: service_running(SERVICE), supervisor: service_running("opl-netfleet"), selections: {}, paths: paths, inputs: input_identity(paths), world: package_world() };
 	before.runtime_paths = filter(["/usr/libexec/opl-netfleet", "/usr/libexec/opl-netfleet-plugin-package",
-		"/usr/share/opl-netfleet", "/etc/init.d/opl-netfleet", `/etc/init.d/${SERVICE}`,
+		"/usr/share/opl-netfleet", "/etc/init.d/opl-netfleet", "/etc/init.d/opl-netfleet-update-recovery", `/etc/init.d/${SERVICE}`,
 		...(request.component == "mihomo" ? ["/usr/libexec/mihomo"] : [])], path => fs.lstat(path) != null);
 	before.runtime_inputs = input_identity(before.runtime_paths);
 	if (before.core) {
@@ -431,6 +436,7 @@ upgrade = function(request, work, candidates) {
 
 
 journal = function(work, value) {
+	if (index(["complete", "rolled_back"], value.phase) >= 0) value.finished_at = int(time());
 	if (!atomic_json(`${work}/journal.json`, value) || system("sync") != 0) fail("update_state_write_failed");
 };
 recovery_stop = function(work) {
