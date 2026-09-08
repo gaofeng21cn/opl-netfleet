@@ -25,6 +25,17 @@ is_active = function(current_profile) {
 		current_profile == "file:opl-netfleet/mvp.json";
 };
 
+function operating_mode(owner) {
+	if (owner.backend_enabled == false && owner.mihomo_running == false &&
+		owner.cleanup?.ok == true && owner.supervisor?.running == false && owner.supervisor?.enabled == false) return "openwrt";
+	if (owner.backend_enabled != true || owner.mihomo_running != true || owner.controller_available != true) return null;
+	if (owner.active == true && owner.netfleet_present == true &&
+		owner.supervisor?.running == true && owner.supervisor?.enabled == true) return "netfleet";
+	if (type(owner.profile) == "string" && !is_active(owner.profile) && owner.netfleet_present == false &&
+		owner.supervisor?.running == false && owner.supervisor?.enabled == false) return "mihomo";
+	return null;
+};
+
 recovery_owner = function(current_profile, previous_profile, runtime_netfleet_present) {
 	return is_active(current_profile) || is_active(previous_profile) ||
 		runtime_netfleet_present == true;
@@ -133,5 +144,5 @@ passthrough_outcome = function(cleanup, persistent, business_ok) {
 	};
 };
 
-return { enable_precondition, is_active, recovery_owner, preferred_runtime_ready, expected_runtime_groups, expected_runtime_residue_groups, recovery_profile, passthrough_outcome };
+return { enable_precondition, is_active, operating_mode, recovery_owner, preferred_runtime_ready, expected_runtime_groups, expected_runtime_residue_groups, recovery_profile, passthrough_outcome };
 };

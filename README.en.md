@@ -35,7 +35,7 @@ runtime logic.
 - **Multiple providers in one place.** View regions, nodes, latency, and usage; assign primary and reserve roles to provide alternatives when individual paths fail.
 - **Automatic exits for each purpose.** Standard traffic and region-constrained services can use distinct capabilities, with visible selections and switching reasons.
 - **Composable feature plugins.** Services, business actions, configuration, and pages use one plugin protocol with independent installation, updates, and hot replacement. First-party and third-party developers share the same interfaces and tools.
-- **Controlled changes and recovery.** Installation, configuration generation, and takeover are separate. Failed changes restore the previous configuration; disabling returns to an independent recovery profile.
+- **Explicit network operating modes.** Switch between native OpenWrt direct networking, native Mihomo proxying, and NetFleet enhanced proxying, with separate control of the core, network interception, and scheduling. See [operating modes](docs/architecture/runtime-and-recovery.md#用户运行模式).
 - **Reproducible device configuration.** Fleet deploys an explicit version, validates and compiles on the device, and reads back the result.
 
 ## Two Ways To Connect

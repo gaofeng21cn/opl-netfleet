@@ -8,6 +8,26 @@ supervisor 只承载内核调用循环。
 
 ## 运行后端与原生网关
 
+### 用户运行模式
+
+用户通过 activation 插件的 `set-mode` 动作选择网络运行模式。模式来自实际后端、
+Profile、controller、网络清理和调度器回读，不以 NetFleet 增强是否启用代替整个网络状态。
+
+| 模式 | 实际行为 |
+| --- | --- |
+| `openwrt`：OpenWrt 原生直连 | 持久禁用代理后端与 NetFleet 调度，停止核心并验证本 owner 的 DNS、透明代理和策略路由接管全部清理；OpenWrt 网络与管理服务继续运行 |
+| `mihomo`：Mihomo 原生代理 | 持久启用所选 Mihomo 后端，使用非 NetFleet 的原生 Profile；退出 NetFleet 调度，保留原生代理与 DNS 接管 |
+| `netfleet`：NetFleet 增强代理 | 编译并验证当前 policy，激活 NetFleet Profile 与出口组合，启动 NetFleet 调度 |
+
+当前状态不满足任一模式的运行条件时显示未确认，不能将故障、切换中或残留接管包装成
+原生直连。模式动作使用现有插件写入权限、代码 revision 和全局 mutation 锁；请求同时
+绑定用户看到的模式，拒绝过期状态。重复选择已确认模式不重启核心。
+
+原生代理保留当前健康的非 NetFleet Profile；从增强或直连进入时，按需恢复已配置的
+Recovery Profile。直连操作不依赖 policy 完整性，禁止因此自动重新启用代理。请求启动
+代理失败时执行现有后端清理与 Fail-Open 恢复，回读真实结果。既有 `enable/disable`
+仍供部署与内部恢复调用；`disable` 表示退出增强并恢复原生 Profile，不表示关闭整个代理。
+
 后端选择和 namespace 见[产品对象](domain-model.md#后端与订阅归属)。两种后端
 共用下文的 compiler、activation 和选择合同；`mihomo.backend` 是 Profile、
 服务启停和运行回读边界。Nikki 模式调用官方服务；原生模式由

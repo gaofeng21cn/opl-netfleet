@@ -156,7 +156,7 @@ return baseclass.extend({
 	componentsGet: function() { return execute('componentsGet'); },
 	pluginsList: function() { return execute('pluginsList'); },
 	pluginRead: function(request) { return withRpcTimeout(70, function() { return executeRequest('pluginRead', request); }); },
-	pluginCall: function(request) { return withRpcTimeout(200, function() { return executeRequest('pluginCall', request); }); },
+	pluginCall: function(request) { return withRpcTimeout(300, function() { return executeRequest('pluginCall', request); }); },
 	componentsCheck: function() { return execute('componentsCheck'); },
 	componentsUpdate: function(component, version) {
 		return calls.componentsUpdate(component, version).then(function(response) {

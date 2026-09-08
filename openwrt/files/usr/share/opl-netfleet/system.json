@@ -1,6 +1,7 @@
 {
   "bindings": {
     "activation.control": "activation",
+    "activation.mode": "activation",
     "compilation.compiler": "compilation",
     "compilation.control": "compilation",
     "components.control": "components",

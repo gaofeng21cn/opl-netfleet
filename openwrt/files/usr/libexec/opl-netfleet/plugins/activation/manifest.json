@@ -6,6 +6,26 @@
   "api_version": 1,
   "package": "opl-netfleet-plugin-activation",
   "services": {
+    "activation.mode": {
+      "version": 1,
+      "module": "lib/mode.uc",
+      "requires": {
+        "events.output": 1,
+        "activation.control": 1,
+        "compilation.control": 1,
+        "mihomo.backend": 1,
+        "mihomo.controller": 1,
+        "mihomo.readback": 1,
+        "models.activation": 1,
+        "platform.profile": 1,
+        "platform.storage": 1,
+        "platform.credentials": 1,
+        "platform.service": 1,
+        "platform.documents": 1,
+        "recovery.control": 1,
+        "recovery.state": 1
+      }
+    },
     "activation.control": {
       "version": 1,
       "module": "lib/control.uc",
@@ -55,6 +75,10 @@
       "method": "command_resume",
       "access": "write"
     }
+  },
+  "actions": {
+    "get-mode": { "service": "activation.mode", "method": "get", "access": "read" },
+    "set-mode": { "service": "activation.mode", "method": "set", "access": "write" }
   },
   "package_dependencies": []
 }

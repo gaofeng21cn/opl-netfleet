@@ -21,12 +21,13 @@ service_state = function() {
 
 set_service_state = function(desired) {
 	const init = `/etc/init.d/${SERVICE_NAME}`;
-	if (system(`test -x '${init}'`) != 0) return { ok: false, error: "service_unavailable", readback: service_state() };
+	const before = service_state();
+	if (!before.installed) return { ok: false, error: "service_unavailable", readback: before };
 	let ok = true;
-	if (desired?.enabled == true) ok = system(`'${init}' enable >/dev/null 2>&1`) == 0 && ok;
-	if (desired?.running == true) ok = system(`'${init}' start >/dev/null 2>&1`) == 0 && ok;
-	if (desired?.running != true) ok = system(`'${init}' stop >/dev/null 2>&1`) == 0 && ok;
-	if (desired?.enabled != true) ok = system(`'${init}' disable >/dev/null 2>&1`) == 0 && ok;
+	if (desired?.enabled == true && !before.enabled) ok = system(`'${init}' enable >/dev/null 2>&1`) == 0 && ok;
+	if (desired?.running == true && !before.running) ok = system(`'${init}' start >/dev/null 2>&1`) == 0 && ok;
+	if (desired?.running != true && before.running) ok = system(`'${init}' stop >/dev/null 2>&1`) == 0 && ok;
+	if (desired?.enabled != true && before.enabled) ok = system(`'${init}' disable >/dev/null 2>&1`) == 0 && ok;
 	let readback = null;
 	for (let attempt = 0; attempt < 20; attempt++) {
 		readback = service_state();

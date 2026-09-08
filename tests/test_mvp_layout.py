@@ -713,7 +713,7 @@ function createPage(storage, api, notifications) {
     assert(nodeText(root).includes('缓存数据，正在更新'));
     assert(nodeText(root).includes('NetFleet 当前未接管，机场和地区的实时可用性未测量'));
     assert(!nodeText(root).includes('不可用机场：'), 'inactive availability must not be reported as provider outage');
-    const cachedEnable = findNode(root, function(node) { return node.tag === 'button' && nodeText(node) === '启用 NetFleet'; });
+    const cachedEnable = findNode(root, function(node) { return node.tag === 'button' && nodeText(node) === '切换模式'; });
     assert(cachedEnable && cachedEnable.attrs.disabled === true, 'cached actions must stay disabled');
 
     liveStatus.resolve(status(true, { can_disable: true }));
@@ -923,7 +923,7 @@ function createPage(storage, api, notifications) {
     await new Promise(function(resolve) { setImmediate(resolve); });
     assert.strictEqual(failedPage.liveDataReady, false);
     assert(nodeText(failedRoot).includes('缓存数据，刷新失败'));
-    const failedDisable = findNode(failedRoot, function(node) { return node.tag === 'button' && nodeText(node) === '关闭 NetFleet'; });
+    const failedDisable = findNode(failedRoot, function(node) { return node.tag === 'button' && nodeText(node) === '切换模式'; });
     assert(failedDisable && failedDisable.attrs.disabled === true, 'failed refresh must not authorize actions');
     const retry = findNode(failedRoot, function(node) { return node.tag === 'button' && nodeText(node) === '刷新'; });
     assert(retry && retry.attrs.disabled !== true, 'refresh retry must remain available');

@@ -14,6 +14,7 @@ const proxies = context.use("mihomo.controller").proxies;
 const proxy_providers = context.use("mihomo.controller").proxy_providers;
 const state_has_netfleet = context.use("mihomo.readback").state_has_netfleet;
 const is_active = context.use("models.activation").is_active;
+const operating_mode = context.use("models.activation").operating_mode;
 const automation_config = context.use("models.policy").automation;
 const build_status = context.use("models.status").build;
 const load_policy = context.use("platform.documents").load_policy;
@@ -68,7 +69,11 @@ status_action = function(policy, evidence) {
 			cleanup = { ok: false, error: "cleanup_readback_error" };
 		}
 	}
+	const supervisor = service_state();
 	ok("status", build_status(policy, manifest, state, evidence, {
+		operating_mode: operating_mode({ profile: profile, backend_enabled: enabled, mihomo_running: mihomo_running,
+			active: is_active(profile), controller_available: state?.proxies != null,
+			netfleet_present: state_has_netfleet(state, manifest, profile), cleanup: cleanup, supervisor: supervisor }),
 		build: installed_build(),
 		backend: backend_metadata(),
 		active: is_active(profile) && enabled && mihomo_running,
@@ -85,7 +90,7 @@ status_action = function(policy, evidence) {
 		provider_names: provider_display_names(policy),
 		automation: automation_config(policy),
 		subscription_refresh: subscription_refresh_projection(policy),
-		supervisor: service_state()
+		supervisor: supervisor
 	}));
 };
 

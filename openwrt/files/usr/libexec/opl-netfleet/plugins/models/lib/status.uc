@@ -756,6 +756,7 @@ build = function(policy, manifest, state, evidence, owner) {
 	return {
 		build: owner.build ?? { version: null, source_commit: null, source_tree: null },
 		active: owner.active,
+		operating_mode: owner.operating_mode ?? null,
 		recovery: owner.recovery ?? null,
 		policy_enabled: policy.main.enabled == true,
 		profile: owner.profile,

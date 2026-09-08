@@ -12,7 +12,7 @@
 `git diff --check`，不以 Markdown 关键词或固定文本判断语义。
 
 算法证据的入口是 `tests/selection_contract.uc`、`tests/adapter_contract.uc` 和
-`tests/compiler_contract.uc`；运行、状态和显示聚合分别由 `tests/activation_contract.uc`、
+`tests/compiler_contract.uc`；三模式切换与失败恢复由 `tests/operating_mode_contract.uc` 覆盖；运行、状态和显示聚合分别由 `tests/activation_contract.uc`、
 `tests/status_contract.uc`、`tests/evidence_contract.uc` 覆盖。它们分别证明纯函数、
 平台响应映射与生成合同；不证明某台设备的实时延迟、业务或网络恢复。
 

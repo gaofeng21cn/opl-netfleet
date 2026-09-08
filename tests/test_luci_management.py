@@ -83,6 +83,12 @@ function module(name, api) {
 function configModule(management) {
     return new Function('baseclass', 'ui', 'management', 'E', 'compatibility', fs.readFileSync(path.join(resources, 'config.js'), 'utf8'))(baseclass, ui, management, E, { render: () => null });
 }
+function modesModule(api) {
+    const source = fs.readFileSync(path.join(resources, 'product-pages.js'), 'utf8');
+    const exports = source.slice(0, source.lastIndexOf('return baseclass.extend({')) +
+        'return { controls: operatingModeControls, controller: productController, summary: statusSummary };';
+    return new Function('baseclass', 'ui', 'netfleet', 'E', 'managed', exports)(baseclass, ui, api, E, { notify: ui.addNotification });
+}
 function networkState() {
     return { available: true, backend: 'native-mihomo', revision: 'network-r1', running: true,
         settings: {
@@ -608,6 +614,45 @@ for (const [state, code, message] of [
   assert(find(row, node => node.tag === 'details').open);
   assert.equal(all(root, node => node.attrs.role === 'alert').length, 0);
 }
+""")
+
+    def test_operating_modes_use_live_state_revision_and_read_back_failures(self):
+        self.run_js(r"""
+let calls = [], fail = false;
+const modes = modesModule({
+  pluginsList: async () => ({ plugins: [{ id: 'activation', instance: 'default', revision: 'live-r2' }] }),
+  pluginCall: async request => { calls.push(request); if (fail) throw new Error('runtime_mode_changed'); }
+});
+const owner = Object.assign(Object.create(modes.controller), controller(), { context: { readOnly: false }, status: { operating_mode: 'mihomo', runtime: {} } });
+let page = modes.controls(owner);
+assert.equal(all(page, n => n.type === 'radio').length, 3);
+assert.equal(find(page, n => n.type === 'radio' && n.checked).value, 'mihomo');
+assert(button(page, '切换模式').disabled);
+fire(find(page, n => n.value === 'netfleet'), 'change');
+page = modes.controls(owner);
+owner.refreshData = async () => { owner.refreshes++; owner.status.operating_mode = fail ? 'mihomo' : 'netfleet'; };
+await fire(button(page, '切换模式'));
+assert.equal(calls.length, 1);
+assert.deepEqual(calls[0], { id: 'activation', instance: 'default', action: 'set-mode', revision: 'live-r2', confirm: true,
+  params: { mode: 'netfleet', expected_mode: 'mihomo' } });
+assert.equal(owner.refreshes, 1);
+assert.equal(owner.busy, false);
+assert(notifications.at(-1).text.includes('NetFleet 增强代理'));
+fail = true;
+await owner.runMode('openwrt', 'netfleet');
+assert.equal(owner.refreshes, 2, 'failed mutations must read current owner state');
+assert(notifications.at(-1).text.includes('Mihomo 原生代理'));
+assert.equal(notifications.at(-1).severity, 'warning');
+owner.liveDataReady = false;
+owner.modeDraft = 'openwrt';
+assert(button(modes.controls(owner), '切换模式').disabled);
+await owner.runMode('openwrt', 'mihomo');
+assert.equal(calls.length, 2, 'cached state cannot authorize a mode change');
+owner.liveDataReady = true; owner.context.readOnly = true;
+await owner.runMode('openwrt', 'mihomo');
+assert.equal(calls.length, 2, 'read-only view cannot mutate');
+assert(text(modes.summary({ operating_mode: null, runtime: {} })).includes('状态未确认'));
+assert(!text(modes.summary({ operating_mode: 'mihomo', runtime: { mihomo_running: true } })).includes('已关闭'));
 """)
 
     def test_dynamic_plugin_management_uses_current_identity_and_confirmation(self):

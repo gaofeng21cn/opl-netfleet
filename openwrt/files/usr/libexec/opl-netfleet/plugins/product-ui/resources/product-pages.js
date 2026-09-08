@@ -399,7 +399,7 @@ function statusSummary(status) {
 	const supervisor = status.runtime.supervisor || {};
 	const lanRuntime = status.runtime.lan_runtime || {};
 	const items = [
-		[ 'NetFleet', status.recovery ? '降级恢复中' : status.active ? '已启用' : status.runtime.netfleet_present ? '待清理' : '已关闭' ],
+		[ '运行模式', operatingModeLabel(status.operating_mode) ],
 		[ 'Mihomo', status.runtime.mihomo_running ? '运行中' : '未运行' ],
 		[ 'LAN 透明代理', lanRuntime.transparent_proxy_ready ? '可用' : status.active ? '不可用' : '未接管' ],
 		[ 'DNS 接管', lanRuntime.dns_ready ? '可用' : status.active ? '不可用' : '未接管' ],
@@ -411,6 +411,30 @@ function statusSummary(status) {
 	return E('div', { 'class': 'netfleet-status-line', 'aria-label': '运行状态' }, items.map(function(item) {
 		return E('span', {}, [ E('span', {}, item[0]), E('strong', {}, item[1]) ]);
 	}));
+}
+
+const OPERATING_MODES = { openwrt: 'OpenWrt 原生直连', mihomo: 'Mihomo 原生代理', netfleet: 'NetFleet 增强代理' };
+
+function operatingModeLabel(mode) {
+	return OPERATING_MODES[mode] || '状态未确认';
+}
+
+function operatingModeControls(owner) {
+	const current = owner.status.operating_mode ?? null;
+	const selected = owner.modeDraft ?? current;
+	const disabled = owner.busy || owner.refreshing || owner.modeSwitching || !owner.liveDataReady || owner.context.readOnly;
+	return E('fieldset', { 'class': 'netfleet-operating-mode', 'disabled': disabled || null }, [
+		E('legend', {}, '网络运行模式'),
+		E('div', { 'class': 'netfleet-mode-options' }, Object.keys(OPERATING_MODES).map(function(mode) {
+			return E('label', {}, [
+				E('input', { 'type': 'radio', 'name': 'netfleet-operating-mode', 'value': mode, 'checked': mode === selected || null,
+					'change': function() { owner.modeDraft = mode; owner.redraw(); } }),
+				E('span', {}, OPERATING_MODES[mode])
+			]);
+		})),
+		E('button', { 'class': 'btn cbi-button cbi-button-action', 'disabled': disabled || !selected || selected === current || null,
+			'click': function() { return owner.runMode(selected, current); } }, owner.modeSwitching ? '正在切换…' : '切换模式')
+	]);
 }
 
 function fastest(items, value) {
@@ -1237,14 +1261,10 @@ const productController = {
 		const buttons = this.currentView === 'components' ? [] : [
 			E('button', buttonAttrs({ 'class': 'btn cbi-button', 'click': function() { return self.currentView === 'components' ? managed.loadComponents(self) : self.refreshData(); } }, false), this.busy || this.refreshing ? '正在读取…' : '刷新')
 		];
-		if (this.currentView === 'overview' && actions.can_enable === true)
-			buttons.push(E('button', buttonAttrs({ 'class': 'btn cbi-button cbi-button-action', 'click': function() { self.confirmAction('enable'); } }, true), '启用 NetFleet'));
 		if ([ 'overview', 'exits', 'regions' ].includes(this.currentView) && actions.can_select_auto === true)
 			buttons.push(E('button', buttonAttrs({ 'class': 'btn cbi-button cbi-button-action', 'click': function() { self.confirmAction('select'); } }, true), '重新选优'));
 		if (this.currentView === 'providers' && actions.can_refresh === true)
 			buttons.push(E('button', buttonAttrs({ 'class': 'btn cbi-button cbi-button-action', 'click': function() { self.confirmAction('refresh'); } }, true), '立即更新订阅'));
-		if (this.currentView === 'overview' && actions.can_disable === true)
-			buttons.push(E('button', buttonAttrs({ 'class': 'btn cbi-button cbi-button-negative', 'click': function() { self.confirmAction('disable'); } }, true), '关闭 NetFleet'));
 
 		let content;
 		if (this.currentView === 'exits') content = exitsPage(this.status);
@@ -1259,6 +1279,7 @@ const productController = {
 		else content = overviewPage(this.status, this.events, function(target) {
 			self.context.navigate(target);
 		});
+		if (this.currentView === 'overview') content.splice(1, 0, operatingModeControls(this));
 		if (this.currentView === 'events')
 			content.splice(1, 0, product.diagnosis(this, regionalDisplayName));
 		if (this.currentView !== 'components' && this.currentView !== 'config')
@@ -1550,20 +1571,46 @@ const productController = {
 		ui.showModal('首次设置 NetFleet', netfleetConfig.wizard(this, step));
 	},
 
+	runMode: async function(mode, expectedMode) {
+		if (this.busy || this.refreshing || this.modeSwitching || !this.liveDataReady || this.context.readOnly) return;
+		this.modeSwitching = true;
+		this.busy = true;
+		this.redraw();
+		ui.showModal('切换网络运行模式', [ E('p', { 'class': 'spinning' }, '正在切换至' + operatingModeLabel(mode) + '…') ]);
+		let failure = null;
+		try {
+			const inventory = await netfleet.pluginsList();
+			const plugin = (inventory.plugins || []).find(function(item) { return item.id === 'activation' && (item.instance || 'default') === 'default'; });
+			if (!plugin || !plugin.revision) throw new Error('运行模式插件不可用');
+			await netfleet.pluginCall({ id: 'activation', instance: 'default', action: 'set-mode',
+				revision: plugin.revision, confirm: true, params: { mode: mode, expected_mode: expectedMode } });
+		} catch (error) { failure = error; }
+		try { await this.refreshData(true); }
+		catch (error) { failure = failure || error; }
+		this.modeDraft = null;
+		this.modeSwitching = false;
+		this.busy = false;
+		ui.hideModal();
+		this.redraw();
+		const confirmed = this.liveDataReady && this.status.operating_mode === mode;
+		const actual = this.liveDataReady ? operatingModeLabel(this.status.operating_mode) : '设备状态暂不可读';
+		const reason = failure && failure.netfleetKind === 'request_aborted' ? '浏览器连接已中止' : text(failure && failure.message, '设备未确认');
+		managed.notify(null, E('p', {}, failure ? '切换未完成：' + reason + '；当前：' + actual :
+			confirmed ? '当前：' + actual : '切换结果尚未确认；当前：' + actual), failure || !confirmed ? 'warning' : 'info');
+	},
+
 	confirmAction: function(action) {
 		const self = this;
 		const copy = {
-			enable: [ '启用 NetFleet', '将按当前设备策略生成运行配置，并在网络检查和设备状态确认通过后接管网络出口。', '确认启用' ],
 			select: [ '重新自动选优', '将按依赖顺序执行一轮有界测速和原子选择，并恢复后台周期选优。', '开始选优' ],
-			refresh: [ '立即更新机场订阅', '将更新当前配置相关的机场；内容未变化时不重载。使用中的内容变化后会重启核心并重新选优，已有连接可能中断；失败的机场保留旧缓存。', '开始更新' ],
-			disable: [ '关闭 NetFleet', '将优先恢复原生配置；只有原生配置无法恢复时，才停止 ' + backendName(this.status) + ' 并恢复网络直通。', '确认关闭' ]
+			refresh: [ '立即更新机场订阅', '将更新当前配置相关的机场；内容未变化时不重载。使用中的内容变化后会重启核心并重新选优，已有连接可能中断；失败的机场保留旧缓存。', '开始更新' ]
 			}[action];
 		ui.showModal(copy[0], [
 			E('p', {}, copy[1]),
 			E('div', { 'class': 'right' }, [
 				E('button', { 'class': 'btn', 'click': ui.hideModal }, '取消'),
 				' ',
-				E('button', { 'class': action === 'disable' ? 'btn cbi-button-negative' : 'btn cbi-button-action', 'click': function() {
+				E('button', { 'class': 'btn cbi-button-action', 'click': function() {
 					return self.runAction(action);
 				} }, copy[2])
 			])
@@ -1571,29 +1618,9 @@ const productController = {
 	},
 
 	runAction: function(action) {
-		const self = this;
 		if (action === 'refresh') return managed.runSubscription(this, function() { return netfleet.refresh(); });
 		const automaticCapability = this.status.selection && this.status.selection.automatic_capability_id;
 		if (action === 'select') return managed.runSelection(this, function() { return netfleet.selectAuto(automaticCapability); });
-		let request;
-			if (action === 'enable') request = netfleet.enable();
-			else request = netfleet.disable();
-		ui.showModal('NetFleet', [ E('p', { 'class': 'spinning' }, '正在执行并等待设备确认…') ]);
-		this.busy = true;
-		return request.then(function() {
-			return self.refreshData(true);
-		}).then(function() {
-			ui.hideModal();
-				managed.notify(null, E('p', {}, ({ enable: 'NetFleet 已启用。', select: '自动选优已完成。', disable: 'NetFleet 已关闭。' })[action]), 'info');
-		}).catch(function(error) {
-			ui.hideModal();
-			if (error && error.netfleetKind === 'request_aborted')
-				managed.notify(null, E('p', {}, '浏览器连接已中止，设备端结果尚未确认；请刷新状态并查看事件。'), 'warning');
-			else
-				managed.notify(null, E('p', {}, '操作失败：' + text(error && error.message, '设备未返回成功结果')), 'error');
-			self.busy = false;
-			self.redraw();
-		});
 	},
 
 };

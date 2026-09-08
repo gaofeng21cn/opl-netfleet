@@ -111,6 +111,12 @@ LuCI 通过 `fs.exec_direct` 调用白名单 `opl-netfleet-transfer`，经 `cgi-
 启用状态；配置投影的 `backend` 来自同一 owner。UI 不保留 Nikki 专用状态字段别名，
 恢复文案使用实际后端名称，不能把“NetFleet 原生后端运行”描述成 Nikki 运行。
 
+`status.operating_mode` 是[用户运行模式](runtime-and-recovery.md#用户运行模式)的只读投影，
+未知或不一致时为 `null`。概览使用三项单选与切换按钮；`activation` 插件的 `get-mode`
+返回同一运行判定，`set-mode` 接受 `{mode, expected_mode}`。写请求通过 `plugin_call`
+绑定 default 实例、插件 revision 和确认；模式过期时拒绝写入。成功或失败后都重新读取
+设备状态，超时不自动重试。服务自启动与实际运行均须满足所选模式，缓存不授权切换。
+
 root CLI 的管理动作与 RPC 经内核路由到相同功能服务：`subscriptions-get/set/refresh`、
 `native-setup-get/apply`、`migration-get/apply`、`network-get/validate/apply`、
 `maintenance-get`、`profile-get/save/delete`、`backup-export/restore`、`core-action`、

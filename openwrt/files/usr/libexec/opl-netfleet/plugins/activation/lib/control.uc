@@ -81,7 +81,7 @@ fail_enable_after_switch = function(policy, original_profile, reason, details) {
 	fail("enable", reason, details);
 };
 
-enable_action = function(policy, evidence) {
+enable_action = function(policy, evidence, quiet) {
 	let current = current_profile();
 	const stopped = BACKEND_KIND == "native-mihomo" && backend_enabled() != true && !running();
 	if (policy.main.enabled != true) {
@@ -245,7 +245,7 @@ enable_action = function(policy, evidence) {
 	const events_recorded = record_events(event_entries);
 	const sole_selection = length(capability_names) == 1 ? selections[capability_names[0]] : null;
 	if (!clear_recovery()) fail("enable", "recovery_state_write_failed");
-	ok("enable", {
+	const result = {
 		readback: readback,
 		capabilities: selections,
 		selected_group: sole_selection?.selected_group ?? null,
@@ -255,7 +255,9 @@ enable_action = function(policy, evidence) {
 		base_probes: base_probes,
 		evidence_recorded: evidence_recorded,
 		events_recorded: events_recorded
-	});
+	};
+	if (quiet) return result;
+	ok("enable", result);
 };
 
 disable_action = function(policy) {
