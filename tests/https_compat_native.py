@@ -261,12 +261,12 @@ else:
         self.assertTrue((await self.request())["h2"])
         owner = "/usr/libexec/opl-netfleet/main.uc"
         for selector in ("user", "group"):
-            self.command("uci", "add_list", f"netfleet.@router_access_control[0].{selector}=root")
+            self.command("uci", "add_list", f"netfleet.@router_access_control[0].{selector}=netfleet-compat")
             try:
                 snapshot = json.loads(subprocess.check_output(["ucode", owner, "native-gateway-compatibility-snapshot"]))
                 self.assertTrue(snapshot["result"]["custom_lan_access"], "matching engine identity must reject admission")
             finally:
-                self.command("uci", "del_list", f"netfleet.@router_access_control[0].{selector}=root")
+                self.command("uci", "del_list", f"netfleet.@router_access_control[0].{selector}=netfleet-compat")
 
 
 if __name__ == "__main__":
