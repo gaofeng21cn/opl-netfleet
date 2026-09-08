@@ -58,6 +58,13 @@ unchanged() {
 	assert_json "$work/probe-result.json" '@.ok' true
 	assert_json "$work/probe-result.json" '@.result.ok' true
 	[ ! -e /tmp/opl-netfleet-package-upgrade-state ]
+	[ -e /tmp/netfleet-setup-fixture/client-ready ]
+	ip netns exec nf-setup-client nslookup -type=A www.gstatic.com 192.168.1.1 >>"$work/client.log" 2>&1
+	for address in 198.18.1.2 '[fd77:a::2]'; do
+		ip netns exec nf-setup-client curl -fsS --noproxy '*' --max-time 10 \
+			--cacert /tmp/local-probe.crt --resolve "netfleet-probe.test:19443:$address" \
+			https://netfleet-probe.test:19443/generate_204
+	done
 }
 wait_operation() {
 	wanted=$1
