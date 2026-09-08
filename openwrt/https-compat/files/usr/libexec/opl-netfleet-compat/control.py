@@ -16,6 +16,7 @@ import time
 sys.path.insert(0, "/usr/lib/opl-netfleet-compat/vendor")
 
 import gateway
+import isolation
 import identity as device_identity
 from policy import validate
 from recovery import advance
@@ -89,6 +90,12 @@ def atomic(path, value):
         stream.write(data)
         stream.flush()
         os.fsync(stream.fileno())
+    if path == EFFECTIVE:
+        try:
+            os.chown(temporary, 0, isolation.account()[1])
+            os.chmod(temporary, 0o640)
+        except KeyError:
+            pass
     temporary.replace(path)
     descriptor = os.open(path.parent, os.O_RDONLY)
     try:
@@ -146,7 +153,7 @@ def engine_health(probe=False):
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
                 connection.settimeout(1.8 if probe else 0.4)
-                connection.connect(str(RUN / "engine.sock"))
+                connection.connect(str(RUN / "engine/engine.sock"))
                 connection.sendall(b"probe\n" if probe else b"status\n")
                 with connection.makefile("rb") as stream:
                     value = json.loads(stream.readline(65536))
@@ -204,7 +211,7 @@ async def probe_rules(rules):
         request = {"command": "probe_upstreams", "revision": hashlib.sha256(EFFECTIVE.read_bytes()).hexdigest(),
                    "rules": [{key: rule[key] for key in ("id", "domain", "port", "address") if key in rule} for rule in rules]}
         async with asyncio.timeout(1.8):
-            reader, writer = await asyncio.open_unix_connection(str(RUN / "engine.sock"))
+            reader, writer = await asyncio.open_unix_connection(str(RUN / "engine/engine.sock"))
             writer.write(json.dumps(request).encode() + b"\n")
             await writer.drain()
             response = json.loads(await reader.readline())
@@ -250,7 +257,7 @@ def status():
     elif not fingerprint:
         reason = "ca_not_ready"
     return {"installed": True, "revision": revision(), "config": config, "requested": config["enabled"],
-            **kernel, "reason": reason, "active_connections": health.get("active_connections"),
+            **kernel, "isolation": isolation.status(), "reason": reason, "active_connections": health.get("active_connections"),
             "address_source": source,
             "device_addresses": {device["id"]: next((item["addresses"] for item in active["devices"] if item["id"] == device["id"]), [])
                                  for device in config["devices"]},
@@ -489,12 +496,16 @@ def main():
     os.umask(0o077)
     action = sys.argv[1]
     if action == "run":
+        isolation.prepare(BASE, RUN)
+        isolation.constrain()
+        engine_ca = RUN / "ca"
         os.execv("/usr/libexec/opl-netfleet-compat/mitmdump", ["mitmdump", "--mode", "transparent@18443",
             "--mode", "regular@127.0.0.1:18444", "-s", "/usr/libexec/opl-netfleet-compat/addon.py",
-            "--set", f"confdir={CA}", "--set", "upstream_cert=false", "--set", "connection_strategy=lazy",
+            "--set", f"confdir={engine_ca}", "--set", "upstream_cert=false", "--set", "connection_strategy=lazy",
             "--set", "block_global=false",
             "--set", "netfleet_preserve_source_port=true", "--set", "netfleet_local_probe=true",
-            "--set", f"ssl_verify_upstream_trusted_ca={CA / 'upstream-trust.pem'}",
+            "--set", f"ssl_verify_upstream_trusted_ca={engine_ca / 'upstream-trust.pem'}",
+            "--set", f"netfleet_socket={RUN / 'engine/engine.sock'}",
             "--set", f"netfleet_config={EFFECTIVE}", "--set", "flow_detail=0", "--set", "termlog_verbosity=error"])
     if action == "get":
         return status()

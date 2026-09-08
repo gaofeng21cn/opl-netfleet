@@ -52,6 +52,8 @@ chmod 0755 /usr/libexec/opl-netfleet-plugin-package
  ln -s /tmp/yq_linux_arm64-v4.53.6 /usr/bin/yq
  chmod 0755 /tmp/compat-mihomo /tmp/yq_linux_arm64-v4.53.6
 fi
+grep -q '^netfleet-compat:' /etc/group || echo 'netfleet-compat:x:453:' >>/etc/group
+grep -q '^netfleet-compat:' /etc/passwd || echo 'netfleet-compat:x:453:453:NetFleet compatibility:/var/empty:/bin/false' >>/etc/passwd
 export PYTHONPATH="$vendor"
 launcher=/usr/libexec/opl-netfleet-compat/mitmdump
 chmod 0755 "$launcher"

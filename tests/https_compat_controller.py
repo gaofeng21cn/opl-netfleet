@@ -33,7 +33,7 @@ class Controller(unittest.TestCase):
     def health(self, probe=False):
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
             connection.settimeout(2)
-            connection.connect("/var/run/opl-netfleet-compat/engine.sock")
+            connection.connect("/var/run/opl-netfleet-compat/engine/engine.sock")
             connection.sendall(b"probe\n" if probe else b"status\n")
             return json.loads(connection.makefile("rb").readline())
 

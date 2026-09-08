@@ -2,6 +2,7 @@ import ipaddress
 import hashlib
 import json
 import subprocess
+from isolation import account
 
 from recovery import LEASE_SECONDS
 
@@ -33,7 +34,8 @@ def prepare(interfaces, dscp_bypass=()):
         raise ValueError("invalid_dscp_bypass")
     dscp = ", ".join(str(value) for value in dscp_bypass)
     exclusions = f"ip dscp {{ {dscp} }} return\n  ip6 dscp {{ {dscp} }} return" if dscp else ""
-    signature = hashlib.sha256(json.dumps([3, interfaces, list(dscp_bypass)]).encode()).hexdigest()
+    engine_uid = account()[0]
+    signature = hashlib.sha256(json.dumps([4, interfaces, list(dscp_bypass), engine_uid]).encode()).hexdigest()
     present = exists()
     if present:
         current = json.loads(run(["nft", "-j", "list", "table", "inet", TABLE]))
@@ -61,8 +63,8 @@ def prepare(interfaces, dscp_bypass=()):
  }}
  chain local_probe {{
   type nat hook output priority -101; policy accept;
-  meta mark 0x02000000 ip saddr 127.0.0.1 ip daddr 127.0.0.1 tcp dport 18445 redirect to :{PORT}
-  meta mark 0x02000000 ip6 saddr ::1 ip6 daddr ::1 tcp dport 18445 redirect to :{PORT}
+  meta skuid {engine_uid} meta priority 6 ip saddr 127.0.0.1 ip daddr 127.0.0.1 tcp dport 18445 redirect to :{PORT}
+  meta skuid {engine_uid} meta priority 6 ip6 saddr ::1 ip6 daddr ::1 tcp dport 18445 redirect to :{PORT}
  }}
 }}
 """)

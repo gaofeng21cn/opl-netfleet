@@ -67,7 +67,7 @@ class LocalProbe:
                 else:
                     sock = socket.socket(family, socket.SOCK_STREAM)
                     sock.setblocking(False)
-                    sock.setsockopt(socket.SOL_SOCKET, getattr(socket, "SO_MARK", 36), 0x02000000)
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_PRIORITY, 6)
                     await asyncio.get_running_loop().sock_connect(sock, (host, TLS_PORT))
                     reader, writer = await asyncio.open_connection(sock=sock)
                     sock = None  # StreamWriter owns the socket now.
