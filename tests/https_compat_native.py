@@ -252,8 +252,10 @@ else:
         for _ in range(3):
             deadline = time.monotonic() + 12
             while True:
-                recovery = self.owner.call("get").get("recovery", {})
-                if recovery.get("latched") or recovery.get("healthy") and (recovery.get("healthy_since") or 0) >= resumed_at:
+                state = json.loads(Path("/var/run/opl-netfleet-compat/state.json").read_text())
+                recovery = state.get("recovery", {})
+                # A tick can begin before SIGCONT and finish its health probe afterward.
+                if recovery.get("latched") or recovery.get("healthy") and state.get("last_tick", 0) >= resumed_at:
                     break
                 self.assertLess(time.monotonic(), deadline, recovery)
                 await asyncio.sleep(1)
