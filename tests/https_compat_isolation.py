@@ -156,11 +156,14 @@ gateway.stop_worker()
         private.write_text("private fixture")
         private.chmod(0o600)
         self.addCleanup(private.unlink)
+        pressure_group = isolation.CGROUP.with_name("netfleet-compat-pressure-test")
+        self.addCleanup(lambda: pressure_group.rmdir() if pressure_group.exists() else None)
         program = r'''
 import json, os, resource, subprocess, sys
 from pathlib import Path
 sys.path.insert(0, "/usr/libexec/opl-netfleet-compat")
 import isolation
+isolation.CGROUP = isolation.CGROUP.with_name("netfleet-compat-pressure-test")
 isolation.constrain()
 try:
     Path("/tmp/netfleet-isolation-private").read_bytes()
@@ -181,10 +184,10 @@ print(json.dumps({"uid": os.getuid(), "limits": isolation.status()}))
         self.assertTrue(json.loads(child.stdout)["limits"]["enforced"])
         # Exceed the real group memory limit, not a mocked setrlimit call.
         pressure = program[:program.index('try:')] + "\nblocks=[]\nwhile True: blocks.append(bytearray(8*1024*1024))\n"
-        before = (isolation.CGROUP / "memory.events").read_text()
+        before = (pressure_group / "memory.events").read_text()
         child = subprocess.run([sys.executable, "-c", pressure], capture_output=True, timeout=15)
         self.assertNotEqual(child.returncode, 0)
-        after = (isolation.CGROUP / "memory.events").read_text()
+        after = (pressure_group / "memory.events").read_text()
         counts = lambda text: dict(zip(text.split()[::2], map(int, text.split()[1::2])))
         self.assertGreater(counts(after)["oom_kill"], counts(before)["oom_kill"])
         self.assertEqual(subprocess.run(["ubus", "call", "system", "board"], capture_output=True).returncode, 0)

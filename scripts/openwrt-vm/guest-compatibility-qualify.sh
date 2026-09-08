@@ -81,6 +81,17 @@ python3 /tmp/tests/https_compat_controller.py >&2
 python3 /tmp/tests/device_identity_device.py >&2
 chmod 0755 /etc/init.d/opl-netfleet-core
 python3 /tmp/tests/https_compat_native.py >&2
+python3 - <<'PY'
+import json
+from pathlib import Path
+group = Path('/sys/fs/cgroup/netfleet-compat')
+events = dict(line.split() for line in (group / 'memory.events').read_text().splitlines())
+metrics = {'engine_memory_peak_bytes': int((group / 'memory.peak').read_text()),
+           'engine_memory_max_bytes': int((group / 'memory.max').read_text()),
+           'engine_oom_kill': int(events['oom_kill'])}
+assert metrics['engine_oom_kill'] == 0, metrics
+Path('/tmp/compat-resources.json').write_text(json.dumps(metrics))
+PY
 du -sk "$vendor" >&2
 if [ -f /tmp/compat-runtime/compat-manifest.json ]; then
  sha256sum /etc/opl-netfleet/compatibility/ca/mitmproxy-ca.pem >/tmp/compat-ca.sha256
@@ -127,5 +138,6 @@ import json, sys
 from pathlib import Path
 print(json.dumps({"ok": True, "source_commit": sys.argv[1], "source_tree": sys.argv[2],
                   "checks": {"musl_runtime": True, "protocol_wire": True, "kernel_lease": True, "controller_procd": True, "native_egress": True, "device_identity": True},
+                  "resources": json.loads(Path('/tmp/compat-resources.json').read_text()),
                   "signed_package_lifecycle": Path('/tmp/compat-runtime/compat-manifest.json').exists(), "production_ready": False}))
 PY

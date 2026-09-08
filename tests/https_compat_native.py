@@ -250,12 +250,15 @@ else:
             os.kill(lifecycle, signal.SIGCONT)
         resumed_at = time.monotonic()
         for _ in range(3):
-            deadline = time.monotonic() + 12
+            deadline = time.monotonic() + 45
             while True:
                 state = json.loads(Path("/var/run/opl-netfleet-compat/state.json").read_text())
                 recovery = state.get("recovery", {})
-                # A tick can begin before SIGCONT and finish its health probe afterward.
-                if recovery.get("latched") or recovery.get("healthy") and state.get("last_tick", 0) >= resumed_at:
+                # Failures during the recovery window belong to the same outage.
+                # Start another incident only after the kernel admits new flows.
+                if recovery.get("latched") or (state.get("intercepting")
+                        and state.get("last_tick", 0) >= resumed_at
+                        and self.owner.call("get")["intercepting"]):
                     break
                 self.assertLess(time.monotonic(), deadline, recovery)
                 await asyncio.sleep(1)
