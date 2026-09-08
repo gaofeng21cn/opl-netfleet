@@ -179,6 +179,8 @@ else:
         self.assertFalse((await self.request(host="other.example", ca=self.directory / "upstream.pem"))["h2"])
         packages = list(Path("/tmp/compat-runtime").glob("opl-netfleet-https-compat-*.apk"))
         if packages:
+            core_command = ["ubus", "call", "service", "list", '{"name":"opl-netfleet-core"}']
+            core_before_upgrade = json.loads(subprocess.check_output(core_command))["opl-netfleet-core"]["instances"]["core"]["pid"]
             held = await self.request(hold=True)
             upgrade = await asyncio.create_subprocess_exec("flock", "/var/lock/opl-netfleet-deploy.lock",
                 "apk", "add", "--force-reinstall", str(packages[0]),
@@ -194,6 +196,8 @@ else:
                 self.assertTrue(json.loads(output)["h2"], "the existing connection must finish before engine replacement")
                 output, error = await asyncio.wait_for(upgrade.communicate(), 30)
                 self.assertEqual(upgrade.returncode, 0, error.decode())
+                core_after_upgrade = json.loads(subprocess.check_output(core_command))["opl-netfleet-core"]["instances"]["core"]["pid"]
+                self.assertEqual(core_before_upgrade, core_after_upgrade, "plugin replacement cannot restart the base core")
             finally:
                 for process in (held, upgrade):
                     if process.returncode is None:
