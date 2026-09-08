@@ -86,7 +86,7 @@ function configModule(management) {
 function modesModule(api) {
     const source = fs.readFileSync(path.join(resources, 'product-pages.js'), 'utf8');
     const exports = source.slice(0, source.lastIndexOf('return baseclass.extend({')) +
-        'return { controls: operatingModeControls, controller: productController, summary: statusSummary };';
+        'return { controls: operatingModeControls, controller: productController, summary: statusSummary, health: pathHealthLabel, region: currentRegion, mode: modeName };';
     return new Function('baseclass', 'ui', 'netfleet', 'E', 'managed', exports)(baseclass, ui, api, E, { notify: ui.addNotification });
 }
 function networkState() {
@@ -653,6 +653,10 @@ await owner.runMode('openwrt', 'mihomo');
 assert.equal(calls.length, 2, 'read-only view cannot mutate');
 assert(text(modes.summary({ operating_mode: null, runtime: {} })).includes('状态未确认'));
 assert(!text(modes.summary({ operating_mode: 'mihomo', runtime: { mihomo_running: true } })).includes('已关闭'));
+const direct = { data_path: 'passthrough', alive: true, user_mode: 'native_profile' };
+assert.equal(modes.health(direct), '已直连');
+assert.equal(modes.region({}, direct), '直连');
+assert.equal(modes.mode(direct), '原生直连');
 """)
 
     def test_dynamic_plugin_management_uses_current_identity_and_confirmation(self):

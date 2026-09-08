@@ -206,6 +206,7 @@ function runtimeFallback(capability) {
 }
 
 function modeName(capability) {
+	if (capability.data_path === 'passthrough') return '原生直连';
 	if (capability.data_path === 'native_profile')
 		return '原生配置';
 	const mode = capability.user_mode || capability.mode;
@@ -216,6 +217,11 @@ function modeName(capability) {
 		manual: '手动选择',
 		manual_only: '仅手动'
 	})[mode] || text(mode, '未知');
+}
+
+function pathHealthLabel(capability) {
+	if (capability.data_path === 'passthrough') return capability.alive ? '已直连' : '状态未确认';
+	return capability.alive ? '健康' : '不可用';
 }
 
 function reasonText(status, capability) {
@@ -459,6 +465,7 @@ function currentRegionPlan(status) {
 }
 
 function currentRegion(status, capability) {
+	if (capability.data_path === 'passthrough') return '直连';
 	if (capability.data_path === 'native_profile')
 		return '原生配置';
 	if (capability.data_path === 'provider_fallback')
@@ -469,6 +476,7 @@ function currentRegion(status, capability) {
 }
 
 function currentProvider(status, capability) {
+	if (capability.data_path === 'passthrough') return '不经过机场';
 	if (capability.data_path === 'native_profile')
 		return text(status.recovery_profile_display_name, '当前原生配置');
 	if (capability.data_path === 'direct_fallback' || capability.data_path === 'direct_manual')
@@ -492,7 +500,7 @@ function overviewExitSummary(status, navigate) {
 			E('td', {}, currentRegion(status, capability)),
 			E('td', {}, currentProvider(status, capability)),
 			E('td', {}, delay(capability.reason && capability.reason.delay_ms)),
-			E('td', { 'class': capability.alive ? 'is-ok' : 'is-warning' }, capability.alive ? '健康' : '不可用'),
+			E('td', { 'class': capability.alive ? 'is-ok' : 'is-warning' }, pathHealthLabel(capability)),
 			E('td', {}, modeName(capability))
 		]);
 	});
@@ -574,8 +582,8 @@ function overviewDigest(status, events, navigate) {
 	});
 	const lanRuntime = status.runtime.lan_runtime || {};
 	const attention = [
-		!status.runtime.mihomo_running ? 'Mihomo 未运行' : null,
-		!status.runtime.controller_available ? '设备控制接口不可用' : null,
+		status.operating_mode !== 'openwrt' && !status.runtime.mihomo_running ? 'Mihomo 未运行' : null,
+		status.operating_mode !== 'openwrt' && !status.runtime.controller_available ? '设备控制接口不可用' : null,
 		status.active && !lanRuntime.transparent_proxy_ready ? 'LAN 透明代理不可用' : null,
 		status.active && !lanRuntime.dns_ready ? 'DNS 接管不可用' : null,
 		availabilityMeasured && unavailableProviders.length ? '不可用机场：' + unavailableProviders.map(function(provider) { return providerName(status, provider.id); }).join('、') : null,
@@ -657,7 +665,7 @@ function capabilityPanel(status, capability) {
 				E('dt', {}, '健康状态'),
 				E('dd', { 'class': capability.alive ? 'is-ok' : 'is-warning' }, [
 					E('span', { 'class': 'netfleet-health-dot' + (capability.alive ? '' : ' is-bad') }),
-					capability.alive ? '健康' : '不可用'
+					pathHealthLabel(capability)
 				])
 			]),
 			E('dl', {}, [ E('dt', {}, '选择方式'), E('dd', {}, modeName(capability)) ])
