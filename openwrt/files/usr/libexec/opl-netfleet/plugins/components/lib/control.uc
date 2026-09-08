@@ -311,6 +311,9 @@ upgrade = function(request, work, candidates) {
 		if (newer(versions[name], candidates[name])) candidates[name] = versions[name];
 	}
 	if (!length(filter(names, name => newer(candidates[name], versions[name])))) return;
+	const space = capture(`df -Pk ${q(ROOT)} | awk 'NR == 2 { print $4 }'`);
+	const footprint = capture(`du -sk ${q(`${work}/code`)} | awk '{print $1}'`);
+	if (!match(space ?? "", /^[0-9]+$/) || !match(footprint ?? "", /^[0-9]+$/) || int(space) < int(footprint) * 3 + 8192) fail("insufficient_update_space");
 	const olddir = `${work}/old`, nextdir = `${work}/new`;
 	if (!directory(olddir) || !directory(nextdir)) fail("update_stage_failed");
 	const old = [], next = [];
@@ -354,6 +357,7 @@ upgrade = function(request, work, candidates) {
 		if (!directory(extracted) || !run_command(`apk extract --destination ${q(extracted)} ${q(next[0])}`, work) ||
 			!run_command(`${q(`${extracted}/usr/libexec/mihomo`)} -t -d ${q(RUN_DIR)} -f ${q(`${RUN_DIR}/config.yaml`)}`, work)) fail("core_config_incompatible");
 	}
+	if (system("/etc/init.d/opl-netfleet-update-recovery enable >/dev/null 2>&1") != 0) fail("update_recovery_unavailable");
 	if (!atomic_json(`${work}/before.json`, before) || !run_command(`tar -cf ${q(`${work}/private.tar`)} -C / ${join(" ", map(paths, path => q(substr(path, 1))))}`, work)) fail("update_state_write_failed");
 	journal(work, { phase: "prepared", before, names, versions, old, next, inputs: input_identity([`${work}/private.tar`, `${work}/code`, ...old, ...next]) });
 	if (!atomic_json(PENDING, { id: request.id }) || system("sync") != 0) fail("update_state_write_failed");
@@ -398,7 +402,8 @@ recover = function() {
 	if (!match(pending?.id ?? "", /^[a-f0-9]{32}$/)) fail("update_recovery_state_invalid");
 	const work = `${ROOT}/${pending.id}`;
 	const state = private_file(`${work}/journal.json`) ? read_json(`${work}/journal.json`) : null;
-	if (!state || state.before?.backend != KIND || !private_directory(work) || type(state.inputs) != "object") fail("update_recovery_state_invalid");
+	if (!state || state.before?.backend != KIND || !private_directory(work) || type(state.inputs) != "object" ||
+		index(["prepared", "installing", "recovering", "complete", "rolled_back"], state.phase) < 0) fail("update_recovery_state_invalid");
 	for (let path, digest in state.inputs) if (index(path, `${work}/`) != 0 || sha256(path) != digest) fail("update_recovery_artifact_changed");
 	if (index(["complete", "rolled_back"], state.phase) >= 0) {
 		if (!restore_services(state.before, work)) fail("rollback_runtime_failed");
