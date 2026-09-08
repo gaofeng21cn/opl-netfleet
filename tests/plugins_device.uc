@@ -19,15 +19,18 @@ const manifest = { schema: "opl-netfleet-plugin.v1", id: id, label: "VM plugin",
 	package: `opl-netfleet-plugin-${id}`, dependencies: [], backends: ["native-mihomo", "nikki-mihomo"], permissions: ["diagnostics"], actions: { inspect: "read", reset: "write" } };
 function publish(version, behavior) {
 	manifest.version = version;
-	fs.writefile(`${directory}/manifest.json`, sprintf("%J", manifest));
-	fs.chmod(`${directory}/manifest.json`, 0644);
-	fs.writefile(`${directory}/control`, '#!/usr/bin/ucode\nimport * as fs from "fs";\n' +
+	// Package updates replace files atomically, invalidating metadata-based inspection caches.
+	fs.writefile(`${directory}/manifest.json.next`, sprintf("%J", manifest));
+	fs.chmod(`${directory}/manifest.json.next`, 0644);
+	check(fs.rename(`${directory}/manifest.json.next`, `${directory}/manifest.json`), "replace manifest");
+	fs.writefile(`${directory}/control.next`, '#!/usr/bin/ucode\nimport * as fs from "fs";\n' +
 		`const state = "${state}"; const action = ARGV[0];\n` +
 		'if (action == "load") fs.writefile(state, "loaded");\n' +
 		'if (action == "unload") fs.unlink(state);\n' +
 		(behavior ?? '') +
 		`printf("%J\\n", {ok:true,result:{loaded:fs.stat(state)!=null,ready:true,version:"${version}"}});\n`);
-	fs.chmod(`${directory}/control`, 0755);
+	fs.chmod(`${directory}/control.next`, 0755);
+	check(fs.rename(`${directory}/control.next`, `${directory}/control`), "replace control");
 };
 function call(action, access, revision) {
 	const row = filter(inventory(), item => item.id == id)[0];
