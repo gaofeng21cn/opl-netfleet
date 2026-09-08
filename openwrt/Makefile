@@ -21,7 +21,6 @@ define Package/opl-netfleet-kernel
   PROVIDES:=netfleet-plugin-api-v1
   REPLACES:=opl-netfleet
   DEPENDS:=+ucode +ucode-mod-fs +flock +coreutils-timeout
-  $(if $(CONFIG_USE_APK),EXTRA_DEPENDS:=!opl-netfleet-https-compat (<0.1.8),CONFLICTS:=opl-netfleet-https-compat (<0.1.8))
   PKGARCH:=all
 endef
 
@@ -118,7 +117,8 @@ define Package/opl-netfleet
   CATEGORY:=Network
   TITLE:=OPL NetFleet default network platform
   DEPENDS:=+opl-netfleet-kernel $(foreach plugin,$(NETFLEET_PLUGINS),+opl-netfleet-plugin-$(plugin))
-  EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.1)
+  EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.1)$(if $(CONFIG_USE_APK),$(comma) !opl-netfleet-https-compat (<0.1.8))
+  $(if $(CONFIG_USE_APK),,CONFLICTS:=opl-netfleet-https-compat (<0.1.8))
   PKGARCH:=all
 endef
 

@@ -5,6 +5,7 @@ umask 077
 source_commit=${1:?}
 source_tree=${2:?}
 probe_port=${3:?}
+feed_url=${4:-}
 work=/tmp/netfleet-runtime-fixture
 bin=$work/bin
 metrics=$work/metrics
@@ -74,6 +75,11 @@ grep -Fq 'www.gstatic.com' /etc/hosts || printf '192.168.1.2 www.gstatic.com\n' 
 printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
 stage=install_dependencies
 : >"$work/package-manager.log"
+legacy_dependencies=
+if [ -n "$feed_url" ]; then
+	uclient-fetch -q -O "$work/legacy-dependencies.json" "$feed_url/components-fixtures/fixture.json"
+	legacy_dependencies=$(jsonfilter -i "$work/legacy-dependencies.json" -e '@.legacy.system_dependencies[*]')
+fi
 dependencies_installed=false
 for dependency_attempt in 1 2 3; do
 	# An unrelated feed can fail transiently even when every package needed by
@@ -81,7 +87,7 @@ for dependency_attempt in 1 2 3; do
 	package_result=true
 	if command -v apk >/dev/null 2>&1; then
 		apk --timeout 300 update >>"$work/package-manager.log" 2>&1 || true
-		apk --timeout 300 add curl flock coreutils-date >>"$work/package-manager.log" 2>&1 || package_result=false
+		apk --timeout 300 add curl flock coreutils-date $legacy_dependencies >>"$work/package-manager.log" 2>&1 || package_result=false
 	else
 		opkg update >>"$work/package-manager.log" 2>&1 || true
 		opkg install curl flock coreutils-date >>"$work/package-manager.log" 2>&1 || package_result=false
@@ -135,11 +141,10 @@ ruleset_index=0
 while :; do
 	ruleset_id=$(jsonfilter -i /etc/opl-netfleet/rulesets.lock.json -e "@.rulesets[$ruleset_index].id" 2>/dev/null || true)
 	[ -n "$ruleset_id" ] || break
-	ruleset_url=$(jsonfilter -i /etc/opl-netfleet/rulesets.lock.json -e "@.rulesets[$ruleset_index].url")
 	ruleset_size=$(jsonfilter -i /etc/opl-netfleet/rulesets.lock.json -e "@.rulesets[$ruleset_index].size_bytes")
 	ruleset_sha=$(jsonfilter -i /etc/opl-netfleet/rulesets.lock.json -e "@.rulesets[$ruleset_index].sha256")
 	ruleset_path=/etc/nikki/run/rulesets/$ruleset_id.mrs
-	curl -fsSL --connect-timeout 10 --max-time 90 "$ruleset_url" -o "$ruleset_path"
+	cp "/tmp/runtime-rulesets/$ruleset_id.mrs" "$ruleset_path"
 	[ "$(wc -c <"$ruleset_path" | tr -d ' ')" = "$ruleset_size" ]
 	[ "$(sha256sum "$ruleset_path" | awk '{print $1}')" = "$ruleset_sha" ]
 	ruleset_index=$((ruleset_index + 1))

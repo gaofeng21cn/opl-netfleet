@@ -139,6 +139,18 @@ fetch_asset() {
 
 fetch_asset "$mihomo_name" "$mihomo_sha" "$mihomo_url"
 fetch_asset "$yq_name" "$yq_sha" "$yq_url"
+mkdir -p "$work/runtime-rulesets"
+python3 - "$workspace/openwrt/files/etc/opl-netfleet/rulesets.lock.json" >"$work/ruleset-assets.tsv" <<'PY'
+import json, sys
+
+for rule in json.load(open(sys.argv[1]))["rulesets"]:
+    print(rule["id"], rule["sha256"], rule["url"], rule["size_bytes"], sep="\t")
+PY
+while IFS="$(printf '\t')" read -r rule_id rule_sha rule_url rule_size; do
+	fetch_asset "ruleset-$rule_sha.mrs" "$rule_sha" "$rule_url"
+	[ "$(wc -c <"$work/ruleset-$rule_sha.mrs" | tr -d ' ')" = "$rule_size" ]
+	mv "$work/ruleset-$rule_sha.mrs" "$work/runtime-rulesets/$rule_id.mrs"
+done <"$work/ruleset-assets.tsv"
 tar -cf "$work/runtime-source.tar" -C "$workspace" \
 	openwrt/Makefile \
 	openwrt/plugin_payload.py \
@@ -154,7 +166,8 @@ tar -cf "$work/runtime-source.tar" -C "$workspace" \
 	openwrt/files/usr/share/opl-netfleet \
 	openwrt/files/etc/opl-netfleet/policy.example.json \
 	openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json \
-	openwrt/files/etc/opl-netfleet/rulesets.lock.json examples/plugins plugins/device-identity tests
+	openwrt/files/etc/opl-netfleet/rulesets.lock.json examples/plugins plugins/device-identity tests \
+	-C "$work" runtime-rulesets
 openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
 	-keyout "$work/local-probe-ca.key" -out "$work/local-probe.crt" \
 	-subj '/CN=NetFleet QEMU Test CA' \
@@ -490,6 +503,9 @@ run_guest() {
 			ssh $ssh_common root@127.0.0.1 "touch /tmp/netfleet-${guest_kind}-vm-authorized" ;;
 	esac
 	if [ "$guest_kind" = setup ] && [ -n "$package_archive" ]; then
+		guest_arguments="$guest_arguments '$feed_url'"
+	fi
+	if [ "$result_name" = package-runtime ]; then
 		guest_arguments="$guest_arguments '$feed_url'"
 	fi
 	if ! ssh $ssh_common root@127.0.0.1 \
