@@ -189,7 +189,6 @@ with open(sys.argv[1], 'a') as file:
         self.assertIsNone(admission({"rules": ["DOMAIN,example.com,DIRECT", "MATCH,DIRECT"]}, network))
         self.assertIsNotNone(admission({"rules": ["SRC-IP-CIDR,192.0.2.0/24,DIRECT"]}, network))
         self.assertIsNotNone(admission({"rules": ["SRC-PORT,41641,DIRECT"]}, network))
-        self.assertIsNone(admission({"rules": ["SRC-PORT,41641,DIRECT"]}, {**network, "preserve_source_port": True}))
 
 
 if __name__ == "__main__":

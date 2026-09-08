@@ -4,6 +4,7 @@ import asyncio
 import json
 from pathlib import Path
 import signal
+import socket
 import subprocess
 import sys
 import unittest
@@ -22,7 +23,6 @@ class Kernel(Protocol):
     DEVICE = "10.77.0.2"
     MODE = "transparent"
     PROXY_PORT = gateway.PORT
-    PRESERVE_SOURCE_PORT = True
     DESTINATION = "198.51.100.10"
     HOST = "localhost"
 
@@ -58,11 +58,11 @@ class Kernel(Protocol):
     def command(*args):
         subprocess.run(args, check=True, capture_output=True, timeout=5)
 
-    async def request(self, host=None, ca=None, source=None, hold=False, h2=False):
+    async def request(self, host=None, ca=None, source=None, hold=False, h2=False, source_port=0):
         host = host or self.HOST
         code = """import json,socket,ssl,sys
 context=ssl.create_default_context(cafile=sys.argv[2]); context.set_alpn_protocols(['h2','http/1.1'] if sys.argv[7]=='h2' else ['http/1.1'])
-source=(sys.argv[5],0) if sys.argv[5] else None
+source=(sys.argv[5] or ('::' if ':' in sys.argv[3] else '0.0.0.0'),int(sys.argv[8])) if sys.argv[5] or int(sys.argv[8]) else None
 with socket.create_connection((sys.argv[3],int(sys.argv[1])),timeout=3,source_address=source) as raw:
  with context.wrap_socket(raw,server_hostname=sys.argv[4]) as connection:
   if sys.argv[7]=='h2':
@@ -76,7 +76,7 @@ with socket.create_connection((sys.argv[3],int(sys.argv[1])),timeout=3,source_ad
   print(json.dumps({'h2':b'x-upstream-protocol: 2' in result.lower(),'source_port':connection.getsockname()[1],'status':result.split(b'\\r\\n')[0].decode(),'error':result[-512:].decode(errors='replace') if b'502 Bad Gateway' in result else None}))
 """
         child = await asyncio.create_subprocess_exec("ip", "netns", "exec", "netfleet-compat-test",
-            sys.executable, "-c", code, str(self.upstream_port), str(ca or self.ca_bundle), self.DESTINATION, host, source or "", "hold" if hold else "", "h2" if h2 else "h1",
+            sys.executable, "-c", code, str(self.upstream_port), str(ca or self.ca_bundle), self.DESTINATION, host, source or "", "hold" if hold else "", "h2" if h2 else "h1", str(source_port),
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         if hold:
             self.assertEqual(await asyncio.wait_for(child.stdout.readline(), 6), b"connected\n")
@@ -85,6 +85,16 @@ with socket.create_connection((sys.argv[3],int(sys.argv[1])),timeout=3,source_ad
         self.assertEqual(child.returncode, 0, error.decode())
         return json.loads(out)
 
+    async def assert_occupied_port_paths(self):
+        family = socket.AF_INET6 if ":" in self.DESTINATION else socket.AF_INET
+        for host in (self.HOST, "other.example"):
+            with socket.socket(family) as occupied:
+                occupied.bind(("::" if family == socket.AF_INET6 else "0.0.0.0", 0))
+                matched = host == self.HOST
+                response = await self.request(host=host, source_port=occupied.getsockname()[1],
+                                              ca=None if matched else self.directory / "upstream.pem")
+                self.assertEqual(response["h2"], matched, response)
+
     async def test_kernel_expiry_and_manual_bypass(self):
         self.assertFalse((await self.request())["h2"])
         candidates = [(self.DEVICE, self.DESTINATION + ("/128" if ":" in self.DESTINATION else "/32"), self.upstream_port)]
@@ -92,7 +102,7 @@ with socket.create_connection((sys.argv[3],int(sys.argv[1])),timeout=3,source_ad
         self.assertTrue(gateway.status()["intercepting"])
         response = await self.request()
         self.assertTrue(response["h2"], response)
-        self.assertEqual(self.received[-1]["source_port"], response["source_port"])
+        await self.assert_occupied_port_paths()
         # The same destination IP with a different SNI must preserve the origin certificate.
         self.assertFalse((await self.request(host="other.example", ca=self.directory / "upstream.pem"))["h2"])
         gateway.bypass()

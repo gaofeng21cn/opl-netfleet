@@ -173,9 +173,11 @@ else:
         self.assertTrue(wire6["h2"], {"wire": wire6, "health": self.owner.health()})
         global_wire = await self.request(source=self.global_source)
         self.assertTrue(global_wire["h2"], {"wire": global_wire, "health": self.owner.health()})
+        await self.assert_occupied_port_paths()
         self.assertEqual((await self.request(ca=self.directory / "upstream.pem", h2=True))["alpn"], "h2")
         self.assertFalse((await self.request(host="other.example", ca=self.directory / "upstream.pem"))["h2"])
         self.DESTINATION = "198.51.100.10"
+        await self.assert_occupied_port_paths()
         self.assertFalse((await self.request(host="other.example", ca=self.directory / "upstream.pem"))["h2"])
         packages = list(Path("/tmp/compat-runtime").glob("opl-netfleet-https-compat-*.apk"))
         if packages:

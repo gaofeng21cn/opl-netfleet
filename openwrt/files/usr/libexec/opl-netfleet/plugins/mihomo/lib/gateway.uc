@@ -337,7 +337,7 @@ interception_snapshot = function(listener) {
 		compatibility_ownership_guard: ownership_guard, core_pid: process_state().pid, engine_pid: engine?.pid,
 		router_proxy: enabled("proxy", "router_proxy"), lan_proxy: enabled("proxy", "lan_proxy"),
 		ipv4_proxy: enabled("proxy", "ipv4_proxy"), ipv6_proxy: enabled("proxy", "ipv6_proxy"),
-		interfaces: interfaces, custom_lan_access: custom, preserve_source_port: true,
+		interfaces: interfaces, custom_lan_access: custom,
 		source_bypass: length(uci_value("proxy", "bypass_fwmark", [])) > 0,
 		dscp_bypass: map(uci_value("proxy", "bypass_dscp", []), value => int(value)) } };
 };

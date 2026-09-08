@@ -22,8 +22,7 @@ def admission(profile, gateway):
         fields = rule.split(",")
         kind = fields[0]
         if kind == "SRC-PORT":
-            if not gateway.get("preserve_source_port"):
-                return "source_port_not_preserved"
+            return "source_port_not_preserved"
         elif kind == "RULE-SET":
             provider = profile.get("rule-providers", {}).get(fields[1] if len(fields) > 1 else "", {})
             if provider.get("behavior") not in ("domain", "ipcidr"):

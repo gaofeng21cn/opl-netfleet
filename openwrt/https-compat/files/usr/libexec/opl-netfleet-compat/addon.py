@@ -40,7 +40,6 @@ class Compatibility:
     def load(self, loader):
         loader.add_option("netfleet_config", str, "/etc/opl-netfleet/compatibility.json", "NetFleet compatibility configuration")
         loader.add_option("netfleet_socket", str, "/var/run/opl-netfleet-compat/engine.sock", "Private health socket")
-        loader.add_option("netfleet_preserve_source_port", bool, False, "Preserve TCP source port for transparent routing")
         loader.add_option("netfleet_local_probe", bool, False, "Enable the private TLS and HTTP processing probe")
 
     def configure(self, updated):
@@ -197,12 +196,6 @@ class Compatibility:
 
     def server_connect(self, data):
         self.connection_errors.pop(data.client.id, None)
-        internal = self.probe and data.client.peername[0] in ("127.0.0.1", "::1") and data.server.address[1] == TLS_PORT
-        if ctx.options.netfleet_preserve_source_port and not internal:
-            # An unavailable source port must fail the connection, never silently change its route.
-            # asyncio resolves a None local host as loopback, not a wildcard bind.
-            bind = ctx.options.connect_addr or ("::" if ":" in data.server.address[0] else "0.0.0.0")
-            data.server.sockname = (bind, data.client.peername[1])
 
     def server_connect_error(self, data):
         message = str(data.server.error or "").lower()
