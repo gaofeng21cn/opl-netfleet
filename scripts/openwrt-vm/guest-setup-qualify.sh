@@ -89,7 +89,7 @@ direct_probe() {
 	curl -fsS --noproxy '*' --connect-timeout 2 --max-time 8 \
 		--cacert /tmp/local-probe.crt "https://192.168.1.2:$probe_port/generate_204"
 	if [ -e "$work/client-ready" ]; then
-		ip netns exec nf-setup-client nslookup www.gstatic.com 192.168.1.1 >>"$work/client-dns.log" 2>&1
+		ip netns exec nf-setup-client nslookup -type=A www.gstatic.com 192.168.1.1 >>"$work/client-dns.log" 2>&1
 		ip netns exec nf-setup-client curl -fsS --noproxy '*' --max-time 8 \
 			http://198.18.1.2:19091/version >>"$work/client-ipv4.log"
 		ip netns exec nf-setup-client curl -gfsS --noproxy '*' --max-time 8 \
