@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet-https-compat
-PKG_VERSION:=0.2.7
+PKG_VERSION:=0.2.8
 PKG_RELEASE:=1
 PKG_LICENSE:=MIT
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)
