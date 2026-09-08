@@ -78,7 +78,9 @@ stage=install_dependencies
 legacy_dependencies=
 if [ -n "$feed_url" ]; then
 	uclient-fetch -q -O "$work/legacy-dependencies.json" "$feed_url/components-fixtures/fixture.json"
-	legacy_dependencies=$(jsonfilter -i "$work/legacy-dependencies.json" -e '@.legacy.system_dependencies[*]' 2>/dev/null || true)
+	if jsonfilter -i "$work/legacy-dependencies.json" -e '@.legacy.system_dependencies[*]' >"$work/legacy-dependencies.txt" 2>/dev/null; then
+		legacy_dependencies=$(cat "$work/legacy-dependencies.txt")
+	fi
 fi
 dependencies_installed=false
 for dependency_attempt in 1 2 3; do
