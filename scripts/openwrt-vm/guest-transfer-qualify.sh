@@ -162,7 +162,8 @@ ucode -e 'import { readfile, stat } from "fs";
 	const response = json(readfile(ARGV[0]));
 	const backup = response?.result?.backup;
 	const file = filter(backup?.files ?? [], value => value.path == "native/profiles/"+ARGV[2])[0];
-	if (stat(ARGV[0]).size <= 1048576 || response.ok != true || backup.format != "netfleet-backup-v1" ||
+	if (stat(ARGV[0]).size <= 1048576 || response.ok != true || backup.format != "netfleet-backup-v2" ||
+		backup.composition?.config?.schema != "opl-netfleet-system.v1" ||
 		file == null || b64dec(file.content) != readfile(ARGV[1])) exit(1);' \
 	"$work/backup-response.json" "$work/expected-profile.yaml" "$profile"
 unchanged_runtime
