@@ -165,7 +165,7 @@ function system_management(action, argv, root, options) {
 			!atomic_json(`${options.maintenance_root}/.coordinator`, options.adapter.process_identity()))) return failure('plugin_package_marker_failed');
 		host = create(root, { ...options, code_locks: false });
 		const revision = system_revision(host), current = private_system(options);
-		if (action == 'plugins-system-get') return { ok: true, result: { revision, config: current, defaults: configured_system(root, options, {}),
+		if (action == 'plugins-system-get') return { ok: true, result: { revision, config: current, defaults: configured_system(root, options, { schema: 'opl-netfleet-system.v1', bindings: {}, enabled: {} }),
 			plugins: map(host.inventory(), item => ({ id: item.id, version: item.version, api_version: item.api_version, state: item.state, reason: item.reason,
 				services: map(keys(item.services ?? {}), name => ({ name, version: item.services[name].version, requires: item.services[name].requires ?? {} })) })) } };
 		const path = argv[1];
