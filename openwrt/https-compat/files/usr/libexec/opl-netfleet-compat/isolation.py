@@ -59,7 +59,7 @@ def prepare(base, run):
     os.chmod(engine, 0o700)
 
 
-def constrain():
+def group_limits(path, budgets):
     root = CGROUP.parent
     required = {"memory", "cpu", "pids"}
     if not required <= set((root / "cgroup.controllers").read_text().split()):
@@ -67,18 +67,30 @@ def constrain():
     missing = required - set((root / "cgroup.subtree_control").read_text().split())
     if missing:
         (root / "cgroup.subtree_control").write_text(" ".join("+" + name for name in sorted(missing)))
-    if CGROUP.is_symlink():
+    if path.is_symlink():
         raise ValueError("engine_cgroup_unsafe")
-    CGROUP.mkdir(exist_ok=True)
-    os.chmod(CGROUP, 0o755)
-    if (CGROUP / "cgroup.procs").read_text().strip():
+    path.mkdir(exist_ok=True)
+    os.chmod(path, 0o755)
+    if (path / "cgroup.procs").read_text().strip():
         raise ValueError("engine_already_running")
-    for name, value in BUDGETS.items():
-        path = CGROUP / name
-        path.write_text(value)
-        if path.read_text().strip() != value:
+    for name, value in budgets.items():
+        target = path / name
+        target.write_text(value)
+        if target.read_text().strip() != value:
             raise ValueError("engine_resource_limit_failed")
-    (CGROUP / "cgroup.procs").write_text(str(os.getpid()))
+    (path / "cgroup.procs").write_text(str(os.getpid()))
+
+
+def constrain_manager():
+    group_limits(CGROUP.with_name("netfleet-compat-manager"), {
+        **BUDGETS, "memory.max": str(96 * 1024 * 1024), "pids.max": "16", "cpu.max": "20000 100000"})
+    resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
+    resource.setrlimit(resource.RLIMIT_FSIZE, (8 * 1024 * 1024, 8 * 1024 * 1024))
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+
+
+def constrain():
+    group_limits(CGROUP, BUDGETS)
     resource.setrlimit(resource.RLIMIT_NOFILE, (512, 512))
     resource.setrlimit(resource.RLIMIT_FSIZE, (8 * 1024 * 1024, 8 * 1024 * 1024))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))

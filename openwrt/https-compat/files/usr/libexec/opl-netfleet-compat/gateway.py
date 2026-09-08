@@ -1,108 +1,50 @@
-import ipaddress
-import hashlib
+"""Typed calls to the native gateway's limited interception service."""
 import json
+import os
+from pathlib import Path
 import subprocess
-from isolation import account
+import tempfile
 
-from recovery import LEASE_SECONDS
-
-
-TABLE = "netfleet_compat"
+OWNER = "/usr/libexec/opl-netfleet/main.uc"
 PORT = 18443
+_epoch = None
 
 
-def run(arguments, *, input=None):
-    result = subprocess.run(arguments, input=input, text=True, capture_output=True, timeout=1)
-    if result.returncode:
-        raise RuntimeError("gateway_command_failed")
-    return result.stdout
+def call(action, **params):
+    with tempfile.TemporaryDirectory(prefix="netfleet-lease-") as directory:
+        path = Path(directory) / "request.json"
+        with path.open("w") as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            json.dump({"action": action, **params}, stream)
+        result = subprocess.run(["ucode", OWNER, "compatibility-lease", str(path)],
+                                text=True, capture_output=True, timeout=3)
+    response = json.loads(result.stdout)
+    if not response.get("ok"):
+        raise ValueError(response.get("error", "lease_operation_failed"))
+    return response["result"]
 
 
-def exists():
-    try:
-        run(["nft", "list", "table", "inet", TABLE])
-        return True
-    except (RuntimeError, subprocess.TimeoutExpired, OSError):
-        return False
+def snapshot():
+    return call("snapshot")
 
 
-def prepare(interfaces, dscp_bypass=()):
-    if not interfaces or not all(isinstance(name, str) and name and len(name) <= 15 for name in interfaces):
-        raise ValueError("lan_interfaces_required")
-    names = ", ".join(json.dumps(name) for name in interfaces)
-    if not all(type(value) is int and 0 <= value <= 63 for value in dscp_bypass):
-        raise ValueError("invalid_dscp_bypass")
-    dscp = ", ".join(str(value) for value in dscp_bypass)
-    exclusions = f"ip dscp {{ {dscp} }} return\n  ip6 dscp {{ {dscp} }} return" if dscp else ""
-    engine_uid = account()[0]
-    signature = hashlib.sha256(json.dumps([4, interfaces, list(dscp_bypass), engine_uid]).encode()).hexdigest()
-    present = exists()
-    if present:
-        current = json.loads(run(["nft", "-j", "list", "table", "inet", TABLE]))
-        if any(item.get("table", {}).get("comment") == signature for item in current.get("nftables", [])):
-            return
-    run(["nft", "-f", "-"], input=(f"delete table inet {TABLE}\n" if present else "") + f"""table inet {TABLE} {{
- comment "{signature}"
- set targets4 {{ type ipv4_addr . ipv4_addr . inet_service; flags interval,timeout; timeout {LEASE_SECONDS}s; }}
- set targets6 {{ type ipv6_addr . ipv6_addr . inet_service; flags interval,timeout; timeout {LEASE_SECONDS}s; }}
- chain assign {{
-  type filter hook prerouting priority -153; policy accept;
-  {exclusions}
-  ct status confirmed return
-  iifname {{ {names} }} ct state new tcp flags & (syn | ack) == syn ip saddr . ip daddr . tcp dport @targets4 ct mark set ct mark | 0x01000000
-  iifname {{ {names} }} ct state new tcp flags & (syn | ack) == syn ip6 saddr . ip6 daddr . tcp dport @targets6 ct mark set ct mark | 0x01000000
- }}
- chain intercept {{
-  type nat hook prerouting priority -101; policy accept;
-  ct direction original ct mark & 0x01000000 != 0 meta l4proto tcp redirect to :{PORT}
- }}
- chain private_listener {{
-  type filter hook input priority -1; policy accept;
-  tcp dport {PORT} ct status dnat accept
-  tcp dport {PORT} reject with tcp reset
- }}
- chain local_probe {{
-  type nat hook output priority -101; policy accept;
-  meta skuid {engine_uid} meta priority 6 ip saddr 127.0.0.1 ip daddr 127.0.0.1 tcp dport 18445 redirect to :{PORT}
-  meta skuid {engine_uid} meta priority 6 ip6 saddr ::1 ip6 daddr ::1 tcp dport 18445 redirect to :{PORT}
- }}
-}}
-""")
-
-
-def bypass():
-    if exists():
-        run(["nft", "-f", "-"], input=f"flush set inet {TABLE} targets4\nflush set inet {TABLE} targets6\n")
+def prepare(network):
+    global _epoch
+    _epoch = network["epoch"]
+    return call("prepare", epoch=_epoch)
 
 
 def renew(candidates):
-    groups = {4: set(), 6: set()}
-    for source, destination, port in candidates:
-        source = ipaddress.ip_address(source)
-        destination = ipaddress.ip_network(destination)
-        if source.version != destination.version or type(port) is not int or not 1 <= port <= 65535:
-            raise ValueError("invalid_lease_candidate")
-        groups[source.version].add(f"{source} . {destination} . {port} timeout {LEASE_SECONDS}s")
-    batch = ""
-    for family, values in groups.items():
-        batch += f"flush set inet {TABLE} targets{family}\n"
-        if values:
-            batch += f"add element inet {TABLE} targets{family} {{ {', '.join(sorted(values))} }}\n"
-    run(["nft", "-f", "-"], input=batch)
+    return call("renew", epoch=_epoch, candidates=candidates)
+
+
+def bypass():
+    return call("bypass")
 
 
 def status():
-    if not exists():
-        return {"intercepting": False, "leases": 0}
-    result = json.loads(run(["nft", "-j", "list", "table", "inet", TABLE]))
-    leases = 0
-    for item in result.get("nftables", []):
-        for element in item.get("set", {}).get("elem", []):
-            if element.get("elem", {}).get("expires", 0) > 0:
-                leases += 1
-    return {"intercepting": leases > 0, "leases": leases}
+    return call("status")
 
 
 def remove():
-    if exists():
-        run(["nft", "delete", "table", "inet", TABLE])
+    return call("remove")

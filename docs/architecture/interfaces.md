@@ -25,12 +25,13 @@ apply 必须明确确认。组件页的“服务组合”先读取私有覆盖�
 实例继承通过删除局部覆盖表达；界面不自行解析依赖或保存另一份组合。
 接口及安装切换合同见[模块与扩展](extensions.md)和[微内核合同](microkernel.md)。
 
-原生后端的可选 [HTTPS 兼容模块](https-compatibility.md) 使用独立的
-`compatibility_get/apply/enable/disable/probe/ca` 动作。rpcd 经内核将请求交给
+原生后端的可选 [HTTPS 兼容模块](https-compatibility.md) 使用上述通用插件接口。
+自身 manifest 声明配置、启停、探测、公开 CA 和独立管理页面，内核将请求交给
 `https-compat.control` 服务，再调用组件 controller；该 controller 复用现有 mutation lock，不运行全局配置应用。
 返回值区分用户意图、实际接管、旁路原因、配置 revision 和验证结果。组件缺失时读取
 返回未安装，基础管理页仍然可用。公开 CA 下载需要 LuCI 读取权限，信任记录与接管
 变更需要写权限；浏览器不能下载 CA 私钥。
+组件页按插件的 `configuration` 和 `ui` 声明提供配置跳转，不硬编码插件 ID。
 
 `native_setup_get / native_setup_apply` 为没有已配置后端的设备提供首次接入：预检只读，
 apply 接受绑定 revision 的明确确认和一份私有订阅输入，完成来源下载、原生核心与数据面

@@ -7,11 +7,13 @@ import signal
 import subprocess
 import sys
 import unittest
+import pwd
 
 from https_compat_protocol import Protocol
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "openwrt/https-compat/files/usr/libexec/opl-netfleet-compat"))
-import gateway
+resources = Path('/usr/libexec/opl-netfleet/plugins/mihomo/resources')
+sys.path.insert(0, str(resources if resources.exists() else Path(__file__).resolve().parents[1] / "openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/resources"))
+import interception as gateway
 
 
 class Kernel(Protocol):
@@ -48,7 +50,7 @@ class Kernel(Protocol):
         await super().asyncSetUp()
         self.ca_bundle = self.directory / "client-ca.pem"
         self.ca_bundle.write_bytes((self.directory / "upstream.pem").read_bytes() + (self.directory / "ca/mitmproxy-ca-cert.pem").read_bytes())
-        gateway.prepare(["nfcompat0"])
+        gateway.prepare(["nfcompat0"], uid=pwd.getpwnam("netfleet-compat").pw_uid, owner="kernel-test")
         self.addCleanup(gateway.remove)
 
     @staticmethod

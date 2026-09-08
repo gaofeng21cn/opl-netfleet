@@ -77,6 +77,10 @@ global.L = { url: value => '/cgi-bin/luci/' + value };
 global.crypto = require('node:crypto').webcrypto;
 const baseclass = { extend: value => value };
 function module(name, api) {
+    if (name === 'compatibility.js') {
+        const source = fs.readFileSync(path.join(resources, '../../https-compat/resources/manager.js'), 'utf8');
+        return new Function('E', source.replace('export function', 'function') + '\nreturn createManager;')(E)({ api, ui, readOnly: () => false });
+    }
     const product = new Function('baseclass', fs.readFileSync(path.join(resources, 'product.js'), 'utf8'))(baseclass);
     return new Function('baseclass', 'ui', 'api', 'E', 'managed', 'product', fs.readFileSync(path.join(resources, name), 'utf8'))(baseclass, ui, api, E, name === 'managed.js' ? null : module('managed.js', api), product);
 }
@@ -574,11 +578,7 @@ assert(!text(row).includes('已就绪'));
 assert(!find(row, node => node.tag === 'details').open);
 assert(text(row).includes('mitmproxy：12.2.3'));
 assert(!text(row).includes('93'));
-assert.deepEqual(all(row, node => node.tag === 'button').map(text), ['管理']);
-let opened = 0;
-owner.openCompatibility = () => { opened++; };
-fire(button(row, '管理'));
-assert.equal(opened, 1);
+assert.deepEqual(all(row, node => node.tag === 'button').map(text), [], 'engine payload is managed through its service plugin');
 owner.components.extensions[0] = { ...extension, installed_version: null, state: 'not_installed', available: false, reason: 'extension_component_not_installed',
   dependencies: [{ id: 'mitmproxy', available: false, installed_version: null }] };
 root = managed.components(owner);
@@ -755,20 +755,24 @@ assert.equal(serviceCalls.at(-1)[1].action, 'config-set');
     def test_https_service_exposes_configuration_without_loading_engine(self):
         self.run_js(r"""
 const owner = controller();
-let opened = 0;
-owner.openCompatibility = () => { opened++; };
+const opened = [];
+owner.context = { navigate: id => opened.push(id) };
 const plugin = { id: 'https-compat', label: 'HTTPS compatibility', kind: 'plugin', runtime: 'service',
-  version: '0.7.0', revision: 'https-r1', enabled: true };
+  version: '0.8.0', revision: 'https-r1', enabled: true, configuration: { read: 'config-get', write: 'config-set' },
+  ui: [{ id: 'settings', title: 'HTTPS 兼容', module: 'resources/page.js' }] };
 owner.components = { supported: true, feed: {}, components: [], dependencies: [], extensions: [plugin] };
 const managed = module('managed.js', {});
 let page = managed.components(owner);
 fire(button(page, '配置'));
-assert.equal(opened, 1);
-assert(button(page, '插件状态'));
+assert.deepEqual(opened, ['plugin:https-compat:settings']);
+assert(button(page, '管理'));
 plugin.enabled = false;
 page = managed.components(owner);
 assert(button(page, '配置').disabled, 'disabled management plugin must not be loaded by opening its configuration');
-assert(!button(page, '插件状态').disabled);
+assert(!button(page, '管理').disabled);
+plugin.id = 'another-plugin'; plugin.enabled = true;
+fire(button(managed.components(owner), '配置'));
+assert.equal(opened.at(-1), 'plugin:another-plugin:settings', 'configuration navigation is manifest-driven');
 """)
 
     def test_composition_preview_binds_edits_and_confirmation(self):
@@ -818,18 +822,18 @@ const source = fs.readFileSync(path.join(resources, 'entry.js'), 'utf8').replace
 const entry = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 const first = new AbortController(), second = new AbortController();
 const [a, b] = await Promise.all([entry.mountPage({ signal: first.signal, readOnly: false }, 'overview'), entry.mountPage({ signal: second.signal, readOnly: true }, 'config')]);
-assert.equal(fetches, 7, 'parallel pages share resource loading');
+assert.equal(fetches, 6, 'parallel pages share resource loading without optional plugin assets');
 assert.notEqual(a.api, b.api, 'each mount has its own permission guard');
 assert.equal(await a.api.configSave(), 'saved');
 await assert.rejects(b.api.configSave(), /plugin_read_only/);
 first.abort(); await assert.rejects(a.api.status(), /plugin_scope_disposed/);
 assert.equal(await b.api.status(), 'ok');
 await entry.mountPage({ signal: second.signal, readOnly: false }, 'events');
-assert.equal(fetches, 7, 'navigation does not fetch or compile the same revision again');
+assert.equal(fetches, 6, 'navigation does not fetch or compile the same revision again');
 const retry = await import('data:text/javascript;base64,' + Buffer.from(source + '\n// different revision').toString('base64'));
 fail = true; await assert.rejects(retry.mountPage({ signal: second.signal }, 'overview'), /product_ui_resource_unavailable/);
 fail = false; assert.equal((await retry.mountPage({ signal: second.signal }, 'overview')).id, 'overview');
-assert.equal(fetches, 21, 'failed load retries with a new resource batch');
+assert.equal(fetches, 18, 'failed load retries with a new resource batch');
 """)
 
     def test_identity_source_setup_and_dynamic_device_binding(self):

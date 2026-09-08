@@ -34,6 +34,12 @@ SDK 排除顶层 `.git`、`.gitignore`、`.gitattributes` 和 `.github` 开发�
 按可安装 payload 校验。前端依赖和构建中间文件放在 payload 外，仅把最终资源输出到
 `resources/`；也可以把生成目录作为独立仓库内的 `plugin/` 子目录。
 
+需要透明 TCP 转换的原生后端插件可声明依赖 `mihomo.interception` v1，通过受限
+`request(owner, input)` 申请接管；参数、单槽位限制和失效语义见
+[运行与恢复](../architecture/runtime-and-recovery.md#运行后端与原生网关)。HTTPS 是当前
+调用者：健康循环、协议引擎和页面位于自身插件，基础网关没有 HTTPS 定时任务。
+普通业务插件无需使用接管能力；插件准入不意味着各插件可以任意写 DNS、nft 或核心配置。
+
 示例 `workspace-note` 管理一份可编辑笔记。服务仅使用 UCode `fs` 模块；存储路径通过
 `context.config.data_path` 注入，没有默认 OpenWrt 路径。读取和保存动作共享同一份
 JSON，保存校验标题、正文和当前 `generation`，在相邻临时位置写入并验证后原子替换，

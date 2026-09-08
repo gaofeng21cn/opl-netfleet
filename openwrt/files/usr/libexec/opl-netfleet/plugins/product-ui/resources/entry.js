@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-const reads = new Set(['status', 'events', 'connections', 'pluginsList', 'pluginRead', 'configGet', 'configValidate', 'networkGet', 'networkValidate', 'maintenanceGet', 'profileGet', 'backupExport', 'diagnosticsGet', 'dashboardGet', 'componentsGet', 'operationGet', 'nativeSetupGet', 'subscriptionsGet', 'migrationGet', 'onboardingGet', 'compatibilityGet', 'compatibilityCa']);
-const names = ['api', 'product', 'managed', 'compatibility', 'management', 'config', 'product-pages'];
+const reads = new Set(['status', 'events', 'connections', 'pluginsList', 'pluginRead', 'configGet', 'configValidate', 'networkGet', 'networkValidate', 'maintenanceGet', 'profileGet', 'backupExport', 'diagnosticsGet', 'dashboardGet', 'componentsGet', 'operationGet', 'nativeSetupGet', 'subscriptionsGet', 'migrationGet', 'onboardingGet']);
+const names = ['api', 'product', 'managed', 'management', 'config', 'product-pages'];
 let factories;
 
 function loadFactories() {
   if (!factories) {
-    const parameters = ['baseclass', 'ui', 'poll', 'rpc', 'fs', 'request', 'resourceUrl', 'netfleet', 'api', 'product', 'managed', 'compatibility', 'management', 'netfleetConfig'];
+    const parameters = ['baseclass', 'ui', 'poll', 'rpc', 'fs', 'request', 'resourceUrl', 'netfleet', 'api', 'product', 'managed', 'management', 'netfleetConfig'];
     factories = Promise.all(names.map(async name => {
       const response = await fetch(new URL(name + '.js', import.meta.url));
       if (!response.ok) throw new Error('product_ui_resource_unavailable:' + name);

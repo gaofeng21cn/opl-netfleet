@@ -614,8 +614,10 @@ function componentsPage(controller) {
 	const moduleRows = [];
 	(snapshot.extensions || []).filter(function(extension) { return extension.kind === 'plugin'; }).forEach(function(plugin) {
 		const controls = [];
-		if (plugin.id === 'https-compat') controls.push(button('配置', function() { controller.openCompatibility(); }, active || plugin.enabled === false));
-		if (plugin.revision) controls.push(button(plugin.id === 'https-compat' ? '插件状态' : '管理', function() { pluginDialog(controller, plugin); }, active));
+		if (plugin.configuration && plugin.ui?.length) controls.push(button('配置', function() {
+			controller.context.navigate('plugin:' + plugin.id + ':' + (plugin.instance && plugin.instance !== 'default' ? plugin.instance + ':' : '') + plugin.ui[0].id);
+		}, active || plugin.enabled === false));
+		if (plugin.revision) controls.push(button('管理', function() { pluginDialog(controller, plugin); }, active));
 		moduleRows.push(E('tr', {}, [ E('td', {}, [ E('strong', { 'title': plugin.package || '' }, plugin.label), E('small', {}, plugin.runtime === 'service' ? '功能插件' : '进程插件') ]),
 			E('td', {}, E('strong', {}, plugin.installed_version || plugin.version || '未知版本')),
 			E('td', {}, plugin.reason ? errorLabel(plugin.reason) : plugin.enabled === true ? '已启用' : '可按需加载'), E('td', { 'class': 'netfleet-component-actions' },
@@ -637,9 +639,7 @@ function componentsPage(controller) {
 				dependency.id + '：' + (dependency.available == null ? '未确认' : dependency.available ? dependency.installed_version || '已安装' : '缺少')); })
 		)));
 		moduleRows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, extension.label), E('small', { 'title': extension.package }, '可选模块') ]),
-			E('td', {}, E('strong', {}, extension.installed_version || (absent ? '未安装' : '安装版本未确认'))), E('td', {}, current), E('td', { 'class': 'netfleet-component-actions' }, extension.id === 'https-compat' ? button('管理', function() {
-				controller.openCompatibility();
-			}) : '') ]));
+			E('td', {}, E('strong', {}, extension.installed_version || (absent ? '未安装' : '安装版本未确认'))), E('td', {}, current), E('td', { 'class': 'netfleet-component-actions' }, '') ]));
 	});
 	if (dashboard) {
 		const controls = [];
