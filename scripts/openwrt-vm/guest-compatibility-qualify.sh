@@ -52,6 +52,7 @@ chmod 0755 /usr/libexec/opl-netfleet-plugin-package
  ln -s /tmp/yq_linux_arm64-v4.53.6 /usr/bin/yq
  chmod 0755 /tmp/compat-mihomo /tmp/yq_linux_arm64-v4.53.6
 fi
+IPKG_INSTROOT=
 . /lib/functions.sh
 compat_gid=$(group_add_next netfleet-compat)
 user_exists netfleet-compat || user_add netfleet-compat "" "$compat_gid"
