@@ -81,7 +81,7 @@ class Native(Kernel):
         root = Path("/etc/opl-netfleet")
         (root / "backend.json").write_text('{"kind":"native-mihomo"}')
         (root / "native/profiles").mkdir(parents=True, exist_ok=True, mode=0o700)
-        (root / "native/profiles/compat.json").write_text(json.dumps({"rules": ["MATCH,DIRECT"], "hosts": {self.HOST: "198.51.100.10"}}))
+        (root / "native/profiles/compat.json").write_text(json.dumps({"rules": ["SRC-PORT,41641,DIRECT", "MATCH,DIRECT"], "hosts": {self.HOST: "198.51.100.10"}}))
         bundle = Path("/etc/ssl/certs/ca-certificates.crt")
         previous_bundle = bundle.read_bytes()
         self.addCleanup(bundle.write_bytes, previous_bundle)
@@ -140,6 +140,7 @@ else:
             await asyncio.sleep(1)
         wire = await self.request()
         self.assertTrue(wire["h2"], {"wire": wire, "engine": self.owner.health()})
+        self.assertFalse((await self.request(source_port=41641, ca=self.directory / "upstream.pem"))["h2"])
         self.assertTrue(self.owner.health(probe=True)["transparent_chain"])
         # The explicit probe stays healthy when only the transparent ingress fails.
         self.command("nft", "insert", "rule", "inet", "netfleet_compat", "private_listener",
@@ -171,6 +172,7 @@ else:
         self.DESTINATION = "2001:db8:88::10"
         wire6 = await self.request()
         self.assertTrue(wire6["h2"], {"wire": wire6, "health": self.owner.health()})
+        self.assertFalse((await self.request(source_port=41641, ca=self.directory / "upstream.pem"))["h2"])
         global_wire = await self.request(source=self.global_source)
         self.assertTrue(global_wire["h2"], {"wire": global_wire, "health": self.owner.health()})
         await self.assert_occupied_port_paths()

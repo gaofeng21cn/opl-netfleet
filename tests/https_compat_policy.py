@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "openwrt/https-comp
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/resources"))
 from recovery import advance
 from policy import select, validate
-from routing import admission
+from routing import admission, egress_policy
 import control
 
 
@@ -188,7 +188,18 @@ with open(sys.argv[1], 'a') as file:
         self.assertEqual(admission({}, {**network, "compatibility_ownership_guard": False}), "native_ownership_guard_missing")
         self.assertIsNone(admission({"rules": ["DOMAIN,example.com,DIRECT", "MATCH,DIRECT"]}, network))
         self.assertIsNotNone(admission({"rules": ["SRC-IP-CIDR,192.0.2.0/24,DIRECT"]}, network))
-        self.assertIsNotNone(admission({"rules": ["SRC-PORT,41641,DIRECT"]}, network))
+        self.assertIsNone(admission({"rules": ["SRC-PORT,41641,DIRECT"]}, network))
+        for expression in ("41600-41650", "0", "65536", "41641/443", "!41641"):
+            self.assertEqual(admission({"rules": [f"SRC-PORT,{expression},DIRECT"]}, network), "source_port_rule_unsupported")
+
+    def test_source_port_rules_exclude_both_ingress_and_egress(self):
+        profile = {"rules": ["SRC-PORT,41641,DIRECT", "SRC-PORT,443,REJECT", "MATCH,DIRECT"]}
+        policy = egress_policy(profile, [32768, 60999])
+        self.assertEqual(policy["excluded_ports"], [443, 41641])
+        self.assertEqual(policy["port_range"], [41642, 60999])
+        self.assertEqual(egress_policy({}, [32768, 60999]), {"excluded_ports": [], "port_range": None})
+        with self.assertRaisesRegex(ValueError, "egress_port_range_unavailable"):
+            egress_policy({"rules": [f"SRC-PORT,{port},DIRECT" for port in range(50000, 50005)]}, [50000, 50004])
 
 
 if __name__ == "__main__":

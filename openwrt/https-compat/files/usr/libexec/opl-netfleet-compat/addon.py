@@ -17,6 +17,7 @@ from mitmproxy.proxy.mode_specs import TransparentMode
 sys.path.insert(0, str(Path(__file__).parent))
 from policy import select, validate
 from local_probe import LocalProbe, TLS_PORT
+from egress import Egress
 
 
 class Compatibility:
@@ -36,6 +37,7 @@ class Compatibility:
         self.failed_tls_clients = set()
         self.connection_errors = {}
         self.observed = {}
+        self.egress = Egress()
 
     def load(self, loader):
         loader.add_option("netfleet_config", str, "/etc/opl-netfleet/compatibility.json", "NetFleet compatibility configuration")
@@ -51,7 +53,9 @@ class Compatibility:
             raw = Path(ctx.options.netfleet_config).read_bytes()
             revision = hashlib.sha256(raw).hexdigest()
             if revision != self.revision:
-                self.config = validate(json.loads(raw))
+                document = json.loads(raw)
+                self.config = validate(document)
+                self.egress.configure(document.get("egress"))
                 self.revision = revision
             return True
         except (OSError, ValueError, TypeError, KeyError):
@@ -60,6 +64,7 @@ class Compatibility:
 
     async def running(self):
         self.refresh()
+        sys.addaudithook(self.egress.audit)
         self.socket_path = Path(ctx.options.netfleet_socket)
         self.socket_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.socket_path.unlink(missing_ok=True)

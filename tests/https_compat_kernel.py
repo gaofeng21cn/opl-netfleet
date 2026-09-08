@@ -51,7 +51,12 @@ class Kernel(Protocol):
         await super().asyncSetUp()
         self.ca_bundle = self.directory / "client-ca.pem"
         self.ca_bundle.write_bytes((self.directory / "upstream.pem").read_bytes() + (self.directory / "ca/mitmproxy-ca-cert.pem").read_bytes())
-        gateway.prepare(["nfcompat0"], uid=pwd.getpwnam("netfleet-compat").pw_uid, owner="kernel-test")
+        self.egress = gateway.egress({"rules": ["SRC-PORT,41641,DIRECT"]})
+        policy_path = self.directory / "config.json"
+        policy_path.write_text(json.dumps({**json.loads(policy_path.read_text()), "egress": self.egress}))
+        self.assertTrue((await self.health())["ready"])
+        gateway.prepare(["nfcompat0"], uid=pwd.getpwnam("netfleet-compat").pw_uid, owner="kernel-test",
+                        excluded_ports=self.egress["excluded_ports"])
         self.addCleanup(gateway.remove)
 
     @staticmethod
@@ -97,14 +102,19 @@ with socket.create_connection((sys.argv[3],int(sys.argv[1])),timeout=3,source_ad
 
     async def test_kernel_expiry_and_manual_bypass(self):
         self.assertFalse((await self.request())["h2"])
+        self.received.clear()
         candidates = [(self.DEVICE, self.DESTINATION + ("/128" if ":" in self.DESTINATION else "/32"), self.upstream_port)]
         gateway.renew(candidates)
         self.assertTrue(gateway.status()["intercepting"])
         response = await self.request()
         self.assertTrue(response["h2"], response)
+        self.assertFalse((await self.request(source_port=41641, ca=self.directory / "upstream.pem"))["h2"])
         await self.assert_occupied_port_paths()
         # The same destination IP with a different SNI must preserve the origin certificate.
         self.assertFalse((await self.request(host="other.example", ca=self.directory / "upstream.pem"))["h2"])
+        for request in self.received:
+            if request["source_port"] != 41641:
+                self.assertTrue(self.egress["port_range"][0] <= request["source_port"] <= self.egress["port_range"][1], request)
         gateway.bypass()
         self.assertFalse(gateway.status()["intercepting"])
         self.assertFalse((await self.request())["h2"])

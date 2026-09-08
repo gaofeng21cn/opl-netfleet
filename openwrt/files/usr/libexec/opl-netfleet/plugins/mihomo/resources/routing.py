@@ -1,5 +1,32 @@
 """Gateway-owned admission for replacing a LAN connection with router egress."""
 
+import re
+
+
+def source_ports(profile):
+    ports = set()
+    for rule in profile.get("rules", []):
+        if isinstance(rule, str) and rule.startswith("SRC-PORT,"):
+            fields = rule.split(",")
+            if len(fields) != 3 or not re.fullmatch(r"[0-9]{1,5}", fields[1]) or not 1 <= int(fields[1]) <= 65535:
+                raise ValueError("source_port_rule_unsupported")
+            ports.add(int(fields[1]))
+    return sorted(ports)
+
+
+def egress_policy(profile, ephemeral):
+    excluded = source_ports(profile)
+    if not excluded:
+        return {"excluded_ports": [], "port_range": None}
+    lower, upper = ephemeral
+    if not 1 <= lower < upper <= 65535:
+        raise ValueError("egress_port_range_unavailable")
+    boundaries = [lower - 1, *[port for port in excluded if lower <= port <= upper], upper + 1]
+    ranges = [(left + 1, right - 1) for left, right in zip(boundaries, boundaries[1:]) if right - left > 2]
+    if not ranges:
+        raise ValueError("egress_port_range_unavailable")
+    return {"excluded_ports": excluded, "port_range": list(max(ranges, key=lambda pair: pair[1] - pair[0]))}
+
 
 def admission(profile, gateway):
     if gateway.get("backend") != "native-mihomo" or not gateway.get("ready"):
@@ -22,7 +49,10 @@ def admission(profile, gateway):
         fields = rule.split(",")
         kind = fields[0]
         if kind == "SRC-PORT":
-            return "source_port_not_preserved"
+            try:
+                source_ports({"rules": [rule]})
+            except ValueError as error:
+                return str(error)
         elif kind == "RULE-SET":
             provider = profile.get("rule-providers", {}).get(fields[1] if len(fields) > 1 else "", {})
             if provider.get("behavior") not in ("domain", "ipcidr"):

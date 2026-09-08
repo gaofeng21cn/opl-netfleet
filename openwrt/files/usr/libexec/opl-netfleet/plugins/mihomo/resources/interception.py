@@ -6,9 +6,11 @@ import os
 from pathlib import Path
 import pwd
 import re
+import socket
+import struct
 import sys
 
-from routing import admission
+from routing import admission, egress_policy
 
 
 TABLE = "netfleet_compat"
@@ -17,7 +19,8 @@ LEASE_SECONDS = 10
 CLAIM = Path("/var/run/opl-netfleet-core/interception.json")
 IDENTITY_PATHS = [Path(path) for path in (
     "/etc/opl-netfleet/native/run/config.yaml", "/etc/config/netfleet",
-    "/var/run/opl-netfleet-core/ownership.json", "/etc/opl-netfleet/backend.json")]
+    "/var/run/opl-netfleet-core/ownership.json", "/etc/opl-netfleet/backend.json",
+    "/proc/sys/net/ipv4/ip_local_port_range")]
 
 
 def run(arguments, *, input=None):
@@ -35,7 +38,7 @@ def exists():
         return False
 
 
-def prepare(interfaces, dscp_bypass=(), *, uid, owner):
+def prepare(interfaces, dscp_bypass=(), *, uid, owner, excluded_ports=()):
     if not interfaces or len(interfaces) > 16 or not all(isinstance(name, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,15}", name) for name in interfaces):
         raise ValueError("lan_interfaces_required")
     names = ", ".join(json.dumps(name) for name in interfaces)
@@ -43,8 +46,12 @@ def prepare(interfaces, dscp_bypass=(), *, uid, owner):
         raise ValueError("invalid_dscp_bypass")
     dscp = ", ".join(str(value) for value in dscp_bypass)
     exclusions = f"ip dscp {{ {dscp} }} return\n  ip6 dscp {{ {dscp} }} return" if dscp else ""
+    if not all(type(port) is int and 1 <= port <= 65535 for port in excluded_ports):
+        raise ValueError("invalid_source_port_exclusions")
+    if excluded_ports:
+        exclusions += "\n  tcp sport { " + ", ".join(map(str, excluded_ports)) + " } return"
     engine_uid = uid
-    signature = hashlib.sha256(json.dumps([5, interfaces, list(dscp_bypass), engine_uid, owner]).encode()).hexdigest()
+    signature = hashlib.sha256(json.dumps([6, interfaces, list(dscp_bypass), engine_uid, owner, list(excluded_ports)]).encode()).hexdigest()
     present = exists()
     if present:
         current = json.loads(run(["nft", "-j", "list", "table", "inet", TABLE]))
@@ -191,6 +198,22 @@ def epoch(network):
     return digest.hexdigest()
 
 
+def egress(profile):
+    policy = egress_policy(profile, list(map(int, IDENTITY_PATHS[-1].read_text().split())))
+    if policy["port_range"]:
+        lower, upper = policy["port_range"]
+        value = struct.pack("I", (upper << 16) | lower)
+        try:
+            for family in (socket.AF_INET, socket.AF_INET6):
+                with socket.socket(family, socket.SOCK_STREAM) as sock:
+                    sock.setsockopt(socket.IPPROTO_IP, 51, value)
+                    if sock.getsockopt(socket.IPPROTO_IP, 51, 4) != value:
+                        raise OSError("port range readback failed")
+        except OSError:
+            raise ValueError("egress_port_range_unsupported") from None
+    return policy
+
+
 def dispatch(owner, request, network):
     descriptor(owner)
     if not isinstance(request, dict) or set(request) - {"action", "epoch", "candidates"}:
@@ -200,7 +223,14 @@ def dispatch(owner, request, network):
         return status()
     if action == "snapshot":
         profile = json.loads(IDENTITY_PATHS[0].read_bytes()) if IDENTITY_PATHS[0].exists() else {}
-        return {**network, "epoch": epoch(network), "reason": admission(profile, network)}
+        reason = admission(profile, network)
+        policy = None
+        if not reason:
+            try:
+                policy = egress(profile)
+            except ValueError as error:
+                reason = str(error)
+        return {**network, "epoch": epoch(network), "reason": reason, "egress": policy}
     if action not in ("prepare", "renew", "bypass", "remove"):
         raise ValueError("lease_action_invalid")
     if not network_lock_held():
@@ -235,7 +265,9 @@ def dispatch(owner, request, network):
             stream.flush()
             os.fsync(stream.fileno())
         temporary.replace(CLAIM)
-    prepare(network["interfaces"], network.get("dscp_bypass", []), uid=uid, owner=owner)
+    policy = egress(profile)
+    prepare(network["interfaces"], network.get("dscp_bypass", []), uid=uid, owner=owner,
+            excluded_ports=policy["excluded_ports"])
     if action == "renew":
         renew(request.get("candidates"))
     return status()

@@ -330,6 +330,10 @@ def tick(lock=None):
         network = snapshot()
         reason = network.get("reason", "native_gateway_unavailable")
         if not reason:
+            current = read(EFFECTIVE, {})
+            if current.get("egress") != network.get("egress"):
+                gateway.bypass()
+                atomic(EFFECTIVE, {**current, "egress": network.get("egress")})
             gateway.prepare(network)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         reason = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[a-z_]+', str(error)) else "native_gateway_unavailable"
@@ -376,6 +380,8 @@ def tick(lock=None):
         save_state(state, previous)
         return
     active = effective(config, read(TRUST, {}), ca_fingerprint(), source)
+    if network.get("egress") is not None:
+        active["egress"] = network["egress"]
     rule_states = dict(previous.get("rule_recovery", {}))
     observed = {**previous.get("observed", {}), **health.get("observed", {})}
     state["observed"] = observed
