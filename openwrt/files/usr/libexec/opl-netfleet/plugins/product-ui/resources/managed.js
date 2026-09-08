@@ -333,10 +333,11 @@ function loadComponents(controller) {
 function compositionDialog(controller) {
 	const output = E('p', { 'role': 'status' }, '正在读取服务组合…');
 	const editor = E('textarea', { 'rows': 16, 'aria-label': '服务组合配置', 'style': 'width:100%;box-sizing:border-box;font-family:monospace' }, '');
-	let revision, preview = null, busy = false, closed = false, snapshot;
+	let revision, preview = null, busy = false, closed = false, applied = false, snapshot;
 	const form = E('div', {}), instance = E('select', { 'aria-label': '组合实例' }, []);
 	function draft() { return JSON.parse(editor.value); }
 	function edit(change) {
+		if (busy || applied) return;
 		try {
 			const value = draft(); change(value); editor.value = JSON.stringify(value, null, 2);
 			preview = null; apply.disabled = true; renderForm();
@@ -346,7 +347,11 @@ function compositionDialog(controller) {
 		if (!snapshot || closed) return;
 		let config;
 		try { config = draft(); } catch (error) { form.textContent = '高级 JSON 无效，修正后可继续使用表单。'; return; }
-		const name = instance.value || 'default', defaults = snapshot.defaults || {};
+		const names = ['default', ...Object.keys(config.instances || {})];
+		const name = names.includes(instance.value) ? instance.value : 'default', defaults = snapshot.defaults || {};
+		instance.replaceChildren(...names.map(value => E('option', { value }, value === 'default' ? '默认实例' : value)));
+		instance.value = name; instance.disabled = busy || applied;
+
 		const local = name === 'default' ? config : config.instances?.[name] || {};
 		const inherited = name === 'default' ? defaults : { enabled: { ...defaults.enabled, ...config.enabled }, bindings: { ...defaults.bindings, ...config.bindings } };
 		function update(field, key, value) {
@@ -359,7 +364,7 @@ function compositionDialog(controller) {
 		const rows = [];
 		for (const plugin of snapshot.plugins || []) {
 			const selected = local.enabled?.[plugin.id];
-			const enable = E('select', { 'aria-label': '插件开关 ' + plugin.id, change: event => update('enabled', plugin.id, event.target.value === '' ? '' : event.target.value === 'true') },
+			const enable = E('select', { 'aria-label': '插件开关 ' + plugin.id, disabled: busy || applied ? '' : null, change: event => update('enabled', plugin.id, event.target.value === '' ? '' : event.target.value === 'true') },
 				[E('option', { value: '' }, '继承（' + (inherited.enabled?.[plugin.id] ? '启用' : '停用') + '）'), E('option', { value: 'true' }, '启用'), E('option', { value: 'false' }, '停用')]);
 			enable.value = selected == null ? '' : String(selected);
 			rows.push(E('div', {}, [E('label', {}, [plugin.id + ' ', enable])]));
@@ -370,9 +375,11 @@ function compositionDialog(controller) {
 			services.get(service.name).push({ plugin: plugin.id, ...service });
 		}
 		for (const [service, providers] of services) {
-			const select = E('select', { 'aria-label': '服务提供者 ' + service, change: event => update('bindings', service, event.target.value) },
+			const select = E('select', { 'aria-label': '服务提供者 ' + service, disabled: busy || applied ? '' : null, change: event => update('bindings', service, event.target.value) },
 				[E('option', { value: '' }, '继承（' + (inherited.bindings?.[service] || '未绑定') + '）'), ...providers.map(provider => E('option', { value: provider.plugin }, provider.plugin + ' · v' + provider.version))]);
-			select.value = local.bindings?.[service] || '';
+			const selected = local.bindings?.[service];
+			if (selected && !providers.some(provider => provider.plugin === selected)) select.replaceChildren(...providers.map(provider => E('option', { value: provider.plugin }, provider.plugin + ' · v' + provider.version)), E('option', { value: selected }, selected + '（当前不可用）')); 
+			select.value = selected || '';
 			rows.push(E('div', {}, [E('label', {}, [service + ' ', select])]));
 		}
 		form.replaceChildren(...rows);
@@ -380,17 +387,17 @@ function compositionDialog(controller) {
 	instance.addEventListener?.('change', renderForm);
 	const apply = button('应用组合', async function() {
 		if (busy || !preview || preview.text !== editor.value) return;
-		busy = true; apply.disabled = true; validate.disabled = true;
+		busy = true; editor.disabled = true; renderForm(); apply.disabled = true; validate.disabled = true;
 		try {
 			await api.systemApply({ revision, config: preview.config, confirm: true });
-			if (!closed) { output.textContent = '组合已应用，插件页面会自动更新。'; editor.disabled = true; }
+			if (!closed) { output.textContent = '组合已应用，插件页面会自动更新。'; applied = true; }
 			await loadComponents(controller);
 		} catch (error) { if (!closed) output.textContent = errorLabel(error.message || String(error)); }
-		finally { busy = false; preview = null; if (!closed) validate.disabled = false; }
+		finally { busy = false; preview = null; if (!closed) { editor.disabled = applied; validate.disabled = applied; renderForm(); } }
 	}, true);
 	const validate = button('校验并预览影响', async function() {
 		if (busy || !revision) return;
-		busy = true; apply.disabled = true; validate.disabled = true; preview = null;
+		busy = true; editor.disabled = true; renderForm(); apply.disabled = true; validate.disabled = true; preview = null;
 		try {
 			const config = JSON.parse(editor.value), text = editor.value;
 			const result = await api.systemValidate({ revision, config });
@@ -401,7 +408,7 @@ function compositionDialog(controller) {
 				apply.disabled = false;
 			} else output.textContent = result.errors.map(item => [item.instance, item.service, item.error].filter(Boolean).join(' · ')).join('\n');
 		} catch (error) { if (!closed) output.textContent = errorLabel(error.message || String(error)); }
-		finally { busy = false; if (!closed) validate.disabled = false; }
+		finally { busy = false; if (!closed) { editor.disabled = applied; validate.disabled = applied; renderForm(); } }
 	}, true);
 	editor.addEventListener?.('input', function() { preview = null; apply.disabled = true; renderForm(); });
 	const close = button('关闭', function() { closed = true; editor.value = ''; ui.hideModal(); });

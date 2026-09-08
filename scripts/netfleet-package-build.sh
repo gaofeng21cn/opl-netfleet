@@ -111,6 +111,7 @@ cp "$work/openwrt/files/usr/libexec/rpcd/opl-netfleet" "$payload/usr/libexec/rpc
 cp "$work/openwrt/files/usr/libexec/rpcd/opl-netfleet.plugins" "$payload/usr/libexec/rpcd/opl-netfleet.plugins"
 cp "$work/openwrt/files/etc/init.d/opl-netfleet" "$payload/etc/init.d/opl-netfleet"
 cp "$work/openwrt/files/etc/init.d/opl-netfleet-core" "$payload/etc/init.d/opl-netfleet-core"
+cp "$work/openwrt/files/etc/init.d/opl-netfleet-update-recovery" "$payload/etc/init.d/opl-netfleet-update-recovery"
 cp -R "$work/openwrt/files/usr/share/opl-netfleet/." "$payload/usr/share/opl-netfleet/"
 cp "$work/openwrt/files/etc/config/netfleet" "$payload/usr/share/opl-netfleet/netfleet.config"
 cp -R "$work/openwrt/files/etc/opl-netfleet/." "$payload/etc/opl-netfleet/"
@@ -133,7 +134,7 @@ chmod 0755 "$payload/usr/libexec/opl-netfleet/main.uc" \
 	"$payload/usr/libexec/opl-netfleet-plugin-package" \
   "$payload/usr/libexec/opl-netfleet/supervisor.uc" \
   "$payload/usr/libexec/rpcd/opl-netfleet" "$payload/usr/libexec/rpcd/opl-netfleet.plugins" \
-  "$payload/etc/init.d/opl-netfleet" "$payload/etc/init.d/opl-netfleet-core"
+  "$payload/etc/init.d/opl-netfleet" "$payload/etc/init.d/opl-netfleet-core" "$payload/etc/init.d/opl-netfleet-update-recovery"
 files_manifest=$output/FILES.sha256
 : >"$files_manifest"
 while IFS= read -r path; do
