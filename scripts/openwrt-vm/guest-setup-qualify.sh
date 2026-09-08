@@ -46,6 +46,9 @@ finish() {
 	for pid in $helper_pids; do kill "$pid" >/dev/null 2>&1; done
 	ubus call network.interface.wan remove >/dev/null 2>&1
 	ip netns del nf-setup-upstream >/dev/null 2>&1
+	ip netns del nf-setup-client >/dev/null 2>&1
+	ip link del nf-setup-lan >/dev/null 2>&1
+	ip -6 addr del fd77:9::1/64 dev br-lan >/dev/null 2>&1
 	ip link del nf-setup-uplink >/dev/null 2>&1
 	nft delete table ip netfleet_setup_fixture >/dev/null 2>&1
 	if [ "$rc" -eq 0 ] && { [ "$stage" != complete ] || [ ! -s "$work/qualification.json" ]; }; then rc=1; fi
@@ -85,6 +88,15 @@ package_identity() {
 direct_probe() {
 	curl -fsS --noproxy '*' --connect-timeout 2 --max-time 8 \
 		--cacert /tmp/local-probe.crt "https://192.168.1.2:$probe_port/generate_204"
+	if [ -e "$work/client-ready" ]; then
+		ip netns exec nf-setup-client nslookup www.gstatic.com 192.168.1.1 >>"$work/client-dns.log" 2>&1
+		ip netns exec nf-setup-client curl -fsS --noproxy '*' --max-time 8 \
+			http://198.18.1.2:19091/version >>"$work/client-ipv4.log"
+		ip netns exec nf-setup-client curl -gfsS --noproxy '*' --max-time 8 \
+			'http://[fd77:a::2]:19091/version' >>"$work/client-ipv6.log"
+		ip netns exec nf-setup-client curl -fsS --socks5-hostname 198.18.1.2:1081 --max-time 10 \
+			https://www.gstatic.com/generate_204
+	fi
 }
 package_transaction() {
 	(
@@ -356,7 +368,10 @@ ip link set nf-setup-uplink up
 ip netns exec nf-setup-upstream ip link set lo up
 ip netns exec nf-setup-upstream ip link set nf-setup-peer up
 ip netns exec nf-setup-upstream ip addr add 198.18.1.2/30 dev nf-setup-peer
+ip netns exec nf-setup-upstream ip -6 addr add fd77:a::2/64 dev nf-setup-peer nodad
+ip -6 addr add fd77:a::1/64 dev nf-setup-uplink nodad
 ip netns exec nf-setup-upstream ip route add default via 198.18.1.1
+ip netns exec nf-setup-upstream ip -6 route add default via fd77:a::1
 ubus call network add_dynamic '{"name":"wan","proto":"static","device":"nf-setup-uplink","ipaddr":["198.18.1.1/30"],"dns":["198.18.1.2"]}' >"$work/wan-result.json"
 ubus call network.interface.wan up >>"$work/wan-result.json"
 for attempt in 1 2 3 4 5; do
@@ -377,6 +392,9 @@ uci set firewall.nfsetup.forward=ACCEPT
 uci set firewall.nfsetup_forward=forwarding
 uci set firewall.nfsetup_forward.src=nfsetup
 uci set firewall.nfsetup_forward.dest=lan
+uci set firewall.nfsetup_client=forwarding
+uci set firewall.nfsetup_client.src=lan
+uci set firewall.nfsetup_client.dest=nfsetup
 /etc/init.d/firewall reload >"$work/firewall.log" 2>&1
 nft -f - <<EOF
 table ip netfleet_setup_fixture {
@@ -397,7 +415,7 @@ ip netns exec nf-setup-upstream dnsmasq --keep-in-foreground --port=53 \
 	--pid-file="$work/dns.pid" >"$work/dns.log" 2>&1 &
 helper_pids="$helper_pids $!"
 cat >"$work/helper.json" <<'EOF'
-{"mixed-port":1081,"allow-lan":true,"bind-address":"198.18.1.2","external-controller":"198.18.1.2:19091","mode":"direct","log-level":"warning","ipv6":false,"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"192.168.1.2"}}
+{"mixed-port":1081,"allow-lan":true,"bind-address":"*","external-controller":"[::]:19091","mode":"direct","log-level":"warning","ipv6":true,"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"192.168.1.2"}}
 EOF
 ip netns exec nf-setup-upstream "$work/bin/nf-setup-proxy" -d "$work" -f "$work/helper.json" >"$work/helper.log" 2>&1 &
 helper_pids="$helper_pids $!"
@@ -406,6 +424,18 @@ for attempt in $(seq 1 15); do
 	[ "$attempt" -lt 15 ] || exit 1
 	sleep 1
 done
+ip netns add nf-setup-client
+ip netns exec nf-setup-client ip link add nf-setup-client type veth peer name nf-setup-lan netns 1
+ip link set nf-setup-lan master br-lan
+ip link set nf-setup-lan up
+ip -6 addr add fd77:9::1/64 dev br-lan nodad
+ip netns exec nf-setup-client ip link set lo up
+ip netns exec nf-setup-client ip link set nf-setup-client up
+ip netns exec nf-setup-client ip addr add 192.168.1.20/24 dev nf-setup-client
+ip netns exec nf-setup-client ip -6 addr add fd77:9::2/64 dev nf-setup-client nodad
+ip netns exec nf-setup-client ip route add default via 192.168.1.1
+ip netns exec nf-setup-client ip -6 route add default via fd77:9::1
+touch "$work/client-ready"
 direct_probe
 
 stage=setup_read_only
@@ -553,7 +583,7 @@ if [ -n "$feed_url" ]; then
 	[ -z "$(ip -4 route show table 11900 2>/dev/null || true)" ]
 	[ -z "$(ip -6 route show table 11900 2>/dev/null || true)" ]
 	direct_probe
-	package_checks=',"signed_package_install":true,"installed_build_identity":true,"native_package_upgrade":true,"upgrade_preserves_private_state":true,"upgrade_gateway_ready":true,"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true,"package_remove_clean":true,"remove_preserves_private_sources":true'
+	package_checks=',"signed_package_install":true,"installed_build_identity":true,"native_package_upgrade":true,"upgrade_preserves_private_state":true,"upgrade_gateway_ready":true,"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_failed_package_hook_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true,"package_remove_clean":true,"remove_preserves_private_sources":true'
 fi
 
 stage=complete

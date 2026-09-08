@@ -66,7 +66,7 @@ def build(candidate, output, baseline=None):
                         "-out", str(private_key)], check=True, capture_output=True)
         subprocess.run(["openssl", "pkey", "-in", str(private_key), "-pubout", "-out", str(public_key)],
                        check=True, capture_output=True)
-        for kind in ("good", "bad", "bad-core"):
+        for kind in ("good", "bad", "bad-core", "bad-hook"):
             (output / kind).mkdir()
             for archive in candidate.glob("*.apk"):
                 shutil.copy2(archive, output / kind / archive.name)
@@ -115,6 +115,15 @@ def build(candidate, output, baseline=None):
                 independent_version = f"{base}-r{int(release) + 2}"
                 package_versions[name]["independent"] = independent_version
                 package(independent_version, "independent")
+            if name == "opl-netfleet-plugin-configuration":
+                # A real APK lifecycle failure, independent of a broken core binary.
+                original_scripts = list(script_args)
+                failed_hook = scratch / "failed-pre-upgrade"
+                failed_hook.write_text("#!/bin/sh\nexit 1\n")
+                script_args = [f"pre-upgrade:{failed_hook}" if value.startswith("pre-upgrade:") else value
+                               for value in script_args]
+                package(following, "bad-hook")
+                script_args = original_scripts
             if name == "opl-netfleet-plugin-mihomo":
                 init = root / "etc/init.d/opl-netfleet-core"
                 source = init.read_text()
@@ -127,7 +136,7 @@ def build(candidate, output, baseline=None):
                 core.write_text("#!/bin/sh\nexit 1\n")
                 core.chmod(0o755)
             package(following, "bad-core" if name == "mihomo-meta" else "bad")
-        for kind in ("old", "good", "bad", "bad-core", "independent"):
+        for kind in ("old", "good", "bad", "bad-core", "bad-hook", "independent"):
             run("--allow-untrusted", "mkndx", "--output", output / kind / "packages.adb",
                 "--sign", private_key, *sorted((output / kind).glob("*.apk")))
         if baseline is not None:
