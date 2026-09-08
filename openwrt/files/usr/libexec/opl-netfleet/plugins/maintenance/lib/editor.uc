@@ -100,6 +100,7 @@ profile_entries = function() {
 };
 revision = function() {
 	const parts = [sha256(CONFIG), sha256(POLICY_PATH), fs.lstat(`${BASE}/mixin.json`) == null ? null : sha256(`${BASE}/mixin.json`)];
+	push(parts, fs.lstat(`${ROOT}/system.json`) == null ? null : sha256(`${ROOT}/system.json`));
 	for (let profile in profile_entries()) push(parts, [profile.id, sha256(`${PROFILES}/${profile.id}`)]);
 	return sha256_text(sprintf("%J", parts));
 };
@@ -164,12 +165,13 @@ stage_input = function(work, relative, content) {
 	return shell(`mkdir -p ${q(parent(path))}`) && write_private(path, content);
 };
 
-collect_files = function() {
+collect_files = function(composition) {
 	const paths = [];
 	function visit(relative) {
 		const path = `${ROOT}/${relative}`, info = fs.lstat(path);
 		if (info == null) return;
 		if (info.type == "directory") {
+			if (!directory(path)) die("unsafe_backup_input");
 			for (let name in sort(fs.lsdir(path) ?? [])) visit(`${relative}/${name}`);
 		} else if (file_path(relative)) {
 			// Credentials stay private; packaged baselines and public rule data may be 0644.
@@ -180,6 +182,7 @@ collect_files = function() {
 	for (let name in ["policy-sources", "native/profiles", "native/subscriptions", "native/mixin.json", "native/providers", "native/rulesets", "native/geodata", "native/certs",
 		"native/run/providers", "native/run/rulesets", "native/run/geodata", "native/run/certs"]) visit(name);
 	for (let name in ["geoip.dat", "geosite.dat", "country.mmdb", "GeoIP.dat", "GeoSite.dat", "Country.mmdb", "ASN.mmdb"]) visit(`native/run/${name}`);
+	if (composition) visit("plugin-data");
 	return paths;
 };
 
@@ -231,10 +234,13 @@ sections = function() {
 
 backup_export = function() {
 	if (!native_ready()) return failure("native_management_unavailable");
-	try {
-		const backup = { format: BACKUP_FORMAT, created_at: int(time()), policy: read_json(POLICY_PATH), sections: sections(), files: [] };
+	const lock = context.composition.lock();
+	if (lock == null) return failure("plugin_data_busy");
+	let result;
+	try { result = (function() {
+		const backup = { format: BACKUP_FORMAT, created_at: int(time()), policy: read_json(POLICY_PATH), sections: sections(), files: [], composition: context.composition.get() };
 		let bytes = 0;
-		for (let relative in collect_files()) {
+		for (let relative in collect_files(true)) {
 			const path = `${ROOT}/${relative}`;
 			if (fs.stat(path).size > MAX_PROFILE_BYTES) return failure("backup_too_large");
 			const content = b64enc(fs.readfile(path));
@@ -246,7 +252,9 @@ backup_export = function() {
 		if (!checked.ok) return checked;
 		if (length(sprintf("%J", backup)) > MAX_BACKUP_BYTES) return failure("backup_too_large");
 		return { ok: true, result: { filename: "netfleet-backup.json", backup: backup } };
-	} catch (error) { return failure("backup_export_failed"); }
+	})(); } catch (error) { result = failure("backup_export_failed"); }
+	lock.close();
+	return result;
 };
 
 snapshot = function(work, paths, allow_unhealthy) {
@@ -343,13 +351,25 @@ backup_restore = function(path) {
 	const validation = validate_backup(backup);
 	if (!validation.ok) return validation;
 	if (!validate_policy(backup.policy).ok) return failure("backup_policy_invalid");
+	let composition = null;
+	if (backup.composition != null) {
+		try { composition = context.composition.validate(backup.composition.config); }
+		catch (error) { return failure("backup_composition_invalid"); }
+		if (!composition.valid) return failure("backup_composition_invalid", { errors: composition.errors });
+		const installed = context.composition.get().plugins;
+		for (let plugin in backup.composition.plugins)
+			if (!length(filter(installed, actual => actual.id == plugin.id && actual.api_version == plugin.api_version)))
+				return failure("backup_plugin_missing", { id: plugin.id });
+	}
 	const work = fs.mkdtemp(`${ROOT}/.maintenance.XXXXXX`);
 	if (work == null) return failure("maintenance_snapshot_failed");
-	let before = null, changed = false, reason = null;
+	let before = null, changed = false, reason = null, resources = null;
 	try {
-		const current_paths = map(collect_files(), relative => `${ROOT}/${relative}`);
+		if (request.revision != revision()) die("maintenance_revision_changed");
+		if (composition != null) resources = context.composition.pause(null, [context.system.bindings["mihomo.backend"]]);
+		const current_paths = map(collect_files(composition != null), relative => `${ROOT}/${relative}`);
 		const next_paths = map(backup.files, file => `${ROOT}/${file.path}`);
-		before = snapshot(work, [CONFIG, POLICY_PATH, EVIDENCE_PATH, ARTIFACT_PATH, MANIFEST_PATH, ...current_paths, ...next_paths]);
+		before = snapshot(work, [CONFIG, POLICY_PATH, EVIDENCE_PATH, ARTIFACT_PATH, MANIFEST_PATH, ...(composition == null ? [] : [`${ROOT}/system.json`]), ...current_paths, ...next_paths]);
 		if (before == null) die("maintenance_snapshot_failed");
 		if (before.profile != COMPILED_PROFILE && index(next_paths, resolve_profile(before.profile)) < 0)
 			die("selected_profile_missing_from_backup");
@@ -373,6 +393,7 @@ backup_restore = function(path) {
 			if (!fs.rename(`${work}/inputs/${file.path}`, `${ROOT}/${file.path}`)) die("backup_install_failed");
 		for (let old in current_paths) if (index(next_paths, old) < 0 && !fs.unlink(old)) die("backup_install_failed");
 		if (!fs.rename(`${work}/netfleet`, CONFIG) || !atomic_json(POLICY_PATH, backup.policy)) die("backup_install_failed");
+		if (composition != null && !atomic_json(`${ROOT}/system.json`, backup.composition.config)) die("backup_install_failed");
 		if (before.profile == COMPILED_PROFILE) {
 			const uci = cursor();
 			uci.set("netfleet", "config", "profile", backup.policy.recovery_profile.ref);
@@ -381,12 +402,17 @@ backup_restore = function(path) {
 			if (!uci.commit("netfleet") || !fs.chmod(CONFIG, 0600)) die("backup_profile_restore_failed");
 		}
 		if (!resume(before, work, false)) die("backup_runtime_verification_failed");
+		resources?.resume(composition.system);
 	} catch (error) {
 		const code = trim(split(`${error}`, "\n")[0]);
 		reason = match(code, /^[a-z][a-z0-9_]+$/) ? code : "backup_restore_failed";
 	}
 	if (reason == null) { clean_work(work); return { ok: true, result: { state: "restored", revision: revision(), runtime_preserved: true } }; }
-	const restored = !changed || restore_snapshot(before, work);
+	let restored = true;
+	try { resources?.quiesce(); } catch (error) { restored = false; }
+	if (restored) restored = !changed || restore_snapshot(before, work);
+	if (restored) try { resources?.resume(); } catch (error) { restored = false; }
+	resources?.close();
 	if (restored) clean_work(work);
 	return failure(reason, { rollback: { ok: restored }, recovery: restored ? "restored" : "failed" });
 };

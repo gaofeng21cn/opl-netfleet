@@ -16,6 +16,10 @@ revision 和明确确认。组件页管理已安装插件的加载、重载、�
 `opl-netfleet` 对象提供，通用插件管理不依赖该业务对象。
 状态与私有配置由插件持有；进程插件回读 loaded/ready，服务插件回读启用状态与绑定依赖是否可用。
 包管理器专用 `plugin-drain` 与 `plugin-package-*` 不暴露给 RPC。
+同一管理对象提供 `system_get`、`system_validate`、`system_apply`，均要求写权限，避免
+向只读会话泄露可能含凭据的实例配置。后两者接受 `{request:{revision,config,confirm?}}`；
+apply 必须明确确认。组件页的“服务组合”先读取私有覆盖、校验依赖并预览影响，再应用。
+输入限制为 64 KiB；编辑后的配置不能沿用旧预览，过期 revision 必须重新读取。
 接口及安装切换合同见[模块与扩展](extensions.md)和[微内核合同](microkernel.md)。
 
 原生后端的可选 [HTTPS 兼容模块](https-compatibility.md) 使用独立的
@@ -93,6 +97,10 @@ LuCI 通过 `fs.exec_direct` 调用白名单 `opl-netfleet-transfer`，经 `cgi-
 网络接入应用前展示变化分类及影响，不在摘要中回显密码。恢复成功不代表原操作成功。
 
 ## 当前运行接口
+
+默认产品页面按插件 revision 共享资源工厂的下载和编译结果；切页重新创建页面绑定、
+权限守卫与作用域。加载失败允许重试，取消一个页面不取消其他页面共用的资源请求。
+私有配置与 API 响应不进入这个工厂缓存。
 
 `status.recovery` 由 `status.control` 投影 `recovery.state` 持有的自动降级恢复请求；存在请求时允许用户执行 disable 取消恢复，界面显示“降级恢复中”。`active` 仍只表示当前实际接管状态，恢复原因与重试时间不能由界面自行推断。
 

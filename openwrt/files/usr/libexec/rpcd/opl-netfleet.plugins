@@ -11,12 +11,13 @@ respond() {
 
 case "$1" in
 	list)
-		printf '%s\n' '{"plugins_list":{},"plugin_read":{"request":"Table"},"plugin_call":{"request":"Table"}}'
+			printf '%s\n' '{"plugins_list":{},"plugin_read":{"request":"Table"},"plugin_call":{"request":"Table"},"system_get":{},"system_validate":{"request":"Table"},"system_apply":{"request":"Table"}}'
 		;;
 	call)
 		case "$2" in
-			plugins_list) respond ucode "$main" plugins-list ;;
-			plugin_read|plugin_call)
+				plugins_list) respond ucode "$main" plugins-list ;;
+				system_get) respond ucode "$main" plugins-system-get ;;
+				plugin_read|plugin_call|system_validate|system_apply)
 				payload=$(head -c 65537)
 				if [ "${#payload}" -gt 65536 ]; then
 					printf '%s\n' '{"ok":false,"error":"plugin_request_too_large"}'
@@ -26,7 +27,7 @@ case "$1" in
 				temporary=$(mktemp /tmp/opl-netfleet-plugin-request.XXXXXX) || exit 1
 				trap 'rm -f "$temporary"' EXIT INT TERM
 				printf '%s' "$payload" >"$temporary" || exit 1
-				case "$2" in plugin_read) action=plugin-read ;; *) action=plugin-call ;; esac
+					case "$2" in plugin_read) action=plugin-read ;; plugin_call) action=plugin-call ;; system_validate) action=plugins-system-validate ;; system_apply) action=plugins-system-apply ;; esac
 				respond ucode "$main" "$action" "$temporary"
 				;;
 			*) printf '%s\n' '{"ok":false,"error":"unknown_plugin_rpc"}' ;;

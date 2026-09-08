@@ -683,6 +683,80 @@ fire(find(modal.content, node => node.tag === 'button' && node.attrs.title === '
 await tick();
 assert.equal(serviceCalls.at(-1)[1].action, 'get');
 assert.equal(serviceCalls.at(-1)[1].revision, 'service-r3', 'read after reload uses the current service identity');
+
+const note = JSON.parse(fs.readFileSync(path.join(resources, '../../../../../../../../examples/plugins/workspace-note/manifest.json'), 'utf8'));
+owner.components.extensions = [{ ...note, kind: 'plugin', runtime: 'service', revision: 'note-r1', instance: 'review' }];
+page = serviceManaged.components(owner);
+fire(button(page, '管理'));
+await tick();
+find(modal.content, node => node.tag === 'select').value = 'config-set';
+find(modal.content, node => node.tag === 'textarea').value = '{"title":"Updated","body":"Note","generation":1}';
+const beforeWrite = serviceCalls.length;
+fire(button(modal.content, '执行'));
+assert.equal(modal.title, '确认插件操作');
+assert.equal(serviceCalls.length, beforeWrite, 'service writes wait for confirmation');
+fire(button(modal.content, '确认'));
+await tick();
+assert.equal(serviceCalls.at(-1)[0], 'write');
+assert.equal(serviceCalls.at(-1)[1].confirm, true);
+assert.equal(serviceCalls.at(-1)[1].instance, 'review');
+assert.equal(serviceCalls.at(-1)[1].action, 'config-set');
+""")
+
+    def test_composition_preview_binds_edits_and_confirmation(self):
+        self.run_js(r"""
+const owner = controller(), calls = [];
+owner.components = { supported: true, feed: {}, components: [], dependencies: [], extensions: [] };
+const managed = module('managed.js', {
+  systemGet: async () => ({ revision: 'current', config: { schema: 'opl-netfleet-system.v1', bindings: {}, enabled: {} } }),
+  systemValidate: async value => { calls.push(['validate', value]); return { valid: true, affected_plugins: ['note'] }; },
+  systemApply: async value => { calls.push(['apply', value]); return { applied: true }; },
+  componentsGet: async () => owner.components,
+});
+fire(button(managed.components(owner), '服务组合')); await tick();
+const editor = find(modal.content, node => node.tag === 'textarea');
+assert(button(modal.content, '应用组合').disabled);
+fire(button(modal.content, '校验并预览影响')); await tick();
+assert.equal(calls.length, 1); assert(text(modal.content).includes('note'));
+editor.value = JSON.stringify({ schema: 'opl-netfleet-system.v1', bindings: {}, enabled: { note: true } });
+fire(button(modal.content, '应用组合')); await tick();
+assert.equal(calls.length, 1, 'editing invalidates the old preview even without an input event');
+fire(button(modal.content, '校验并预览影响')); await tick();
+fire(button(modal.content, '应用组合')); await tick();
+assert.deepEqual(calls.at(-1), ['apply', { revision: 'current', config: JSON.parse(editor.value), confirm: true }]);
+fire(button(modal.content, '关闭')); assert.equal(editor.value, '', 'closing clears private configuration');
+owner.context = { readOnly: true };
+assert(button(managed.components(owner), '服务组合').disabled);
+""")
+
+    def test_product_factories_share_fetches_but_keep_page_guards(self):
+        self.run_js(r"""
+globalThis.L = { require: async () => ({}) };
+let fetches = 0, fail = false;
+globalThis.fetch = async url => {
+  fetches++;
+  if (fail) return { ok: false };
+  const name = path.basename(url.pathname);
+  const source = name === 'api.js' ? 'return { status: async () => "ok", configSave: async () => "saved" };'
+    : name === 'product-pages.js' ? 'return { mount: (ctx, id) => ({ id, api: api }) };' : 'return {};';
+  return { ok: true, text: async () => source };
+};
+const source = fs.readFileSync(path.join(resources, 'entry.js'), 'utf8').replaceAll('import.meta.url', JSON.stringify('file://' + path.join(resources, 'entry.js')));
+const entry = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+const first = new AbortController(), second = new AbortController();
+const [a, b] = await Promise.all([entry.mountPage({ signal: first.signal, readOnly: false }, 'overview'), entry.mountPage({ signal: second.signal, readOnly: true }, 'config')]);
+assert.equal(fetches, 7, 'parallel pages share resource loading');
+assert.notEqual(a.api, b.api, 'each mount has its own permission guard');
+assert.equal(await a.api.configSave(), 'saved');
+await assert.rejects(b.api.configSave(), /plugin_read_only/);
+first.abort(); await assert.rejects(a.api.status(), /plugin_scope_disposed/);
+assert.equal(await b.api.status(), 'ok');
+await entry.mountPage({ signal: second.signal, readOnly: false }, 'events');
+assert.equal(fetches, 7, 'navigation does not fetch or compile the same revision again');
+const retry = await import('data:text/javascript;base64,' + Buffer.from(source + '\n// different revision').toString('base64'));
+fail = true; await assert.rejects(retry.mountPage({ signal: second.signal }, 'overview'), /product_ui_resource_unavailable/);
+fail = false; assert.equal((await retry.mountPage({ signal: second.signal }, 'overview')).id, 'overview');
+assert.equal(fetches, 21, 'failed load retries with a new resource batch');
 """)
 
     def test_identity_source_setup_and_dynamic_device_binding(self):

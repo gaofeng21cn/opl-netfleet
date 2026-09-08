@@ -6,7 +6,7 @@ let profile_id, file_path, profile_referenced, valid_option, validate_backup, re
 
 
 
-const BACKUP_FORMAT = "netfleet-backup-v1";
+const BACKUP_FORMAT = "netfleet-backup-v2";
 const MAX_PROFILE_BYTES = 8388608;
 const MAX_BACKUP_BYTES = 33554432;
 
@@ -21,6 +21,7 @@ file_path = function(path) {
 		!match(path, /^[A-Za-z0-9][A-Za-z0-9_./-]*$/) || index(path, "..") >= 0) return false;
 	const parts = split(path, "/");
 	if (length(filter(parts, part => part == "" || part == ".")) > 0) return false;
+	if (parts[0] == "plugin-data") return length(parts) >= 2;
 	if (path == "native/mixin.json") return true;
 	if (parts[0] == "policy-sources") return length(parts) == 2 && match(parts[1], /^[A-Za-z0-9][A-Za-z0-9_-]*\.json$/) != null;
 	if (parts[0] != "native") return false;
@@ -45,11 +46,25 @@ valid_option = function(value) {
 };
 
 validate_backup = function(value) {
-	if (type(value) != "object" || value.format != BACKUP_FORMAT ||
-		length(filter(keys(value), key => index(["format", "created_at", "policy", "sections", "files"], key) < 0)) > 0 ||
+	if (type(value) != "object" || index([BACKUP_FORMAT, "netfleet-backup-v1"], value.format) < 0 ||
+		length(filter(keys(value), key => index(["format", "created_at", "policy", "sections", "files", "composition"], key) < 0)) > 0 ||
 		type(value.sections) != "array" || !length(value.sections) || length(value.sections) > 512 ||
 		type(value.files) != "array" || length(value.files) > 2048 || type(value.policy) != "object")
 		return { ok: false, error: "invalid_backup_format" };
+	if (value.format == BACKUP_FORMAT) {
+		const composition = value.composition;
+		if (type(composition) != "object" || length(keys(composition)) != 2 || type(composition.config) != "object" ||
+			composition.config.schema != "opl-netfleet-system.v1" || type(composition.config.bindings) != "object" ||
+			type(composition.config.enabled) != "object" || type(composition.plugins) != "array" || length(composition.plugins) > 512)
+			return { ok: false, error: "invalid_backup_composition" };
+		const ids = {};
+		for (let plugin in composition.plugins) {
+			if (type(plugin) != "object" || length(keys(plugin)) != 3 || !match(plugin.id ?? "", /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/) ||
+				ids[plugin.id] || type(plugin.api_version) != "int" || plugin.api_version < 1 || !match(plugin.version ?? "", /^[0-9][A-Za-z0-9.+~-]{0,63}$/))
+				return { ok: false, error: "invalid_backup_composition" };
+			ids[plugin.id] = true;
+		}
+	} else if (value.composition != null) return { ok: false, error: "invalid_backup_composition" };
 	const sections = {}, paths = {};
 	let bytes = 0;
 	for (let section in value.sections) {
@@ -66,6 +81,8 @@ validate_backup = function(value) {
 	if (sections.proxy?.options?.tcp_mode != "tproxy" || sections.proxy?.options?.udp_mode != "tproxy" ||
 		`${sections.mixin.options.tun_enabled ?? "0"}` == "1") return { ok: false, error: "tproxy_mode_required" };
 	for (let file in value.files) {
+		if (value.format != BACKUP_FORMAT && index(file.path ?? "", "plugin-data/") == 0)
+			return { ok: false, error: "invalid_backup_file" };
 		if (type(file) != "object" || length(keys(file)) != 3 || !file_path(file.path) || paths[file.path] != null ||
 			file.encoding != "base64" || type(file.content) != "string" || !match(file.content, /^[A-Za-z0-9+/]*={0,2}$/) ||
 			length(file.content) % 4 != 0 || length(file.content) > MAX_PROFILE_BYTES * 4 / 3 + 4)

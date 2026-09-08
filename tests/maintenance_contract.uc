@@ -21,6 +21,7 @@ check(!profile_referenced("other.json", {}, "file:local.json"), "unused profile 
 
 const example = {
 	format: BACKUP_FORMAT, created_at: 1,
+	composition: { config: { schema: "opl-netfleet-system.v1", bindings: {}, enabled: {} }, plugins: [] },
 	policy: { policy_source: { kind: "bundle", ref: "bundle:base-v1" }, recovery_profile: { ref: "subscription:Provider_1" }, providers: { a: { section: "Provider_1" } } },
 	sections: [
 		{ name: "config", type: "config", options: { profile: "file:OPL-NetFleet.json", enabled: "1" } },
@@ -36,6 +37,17 @@ const example = {
 check(validate_backup(example).ok, "complete backup accepted");
 function copy(value) { return json(sprintf("%J", value)); };
 let changed = copy(example);
+changed.format = "netfleet-backup-v1";
+delete changed.composition;
+check(validate_backup(changed).ok, "existing network-only backups remain readable");
+push(changed.files, { path: "plugin-data/workspace-note.json", encoding: "base64", content: b64enc("{}") });
+check(!validate_backup(changed).ok, "old backups cannot overwrite plugin data");
+changed = copy(example);
+push(changed.files, { path: "plugin-data/review/workspace-note.json", encoding: "base64", content: b64enc("{}") });
+check(validate_backup(changed).ok, "new backup includes instance plugin data");
+changed.composition.config.schema = "unknown";
+check(!validate_backup(changed).ok, "invalid composition is rejected before restore");
+changed = copy(example);
 changed.files[0].path = "native/run/config.yaml";
 check(!validate_backup(changed).ok, "runtime config rejected before restore");
 changed = copy(example);

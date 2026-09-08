@@ -141,6 +141,45 @@ try {
 	check(pipe.close() == 0 && openwrt.inspect_digest(root, [source]) == expected, 'OpenWrt digest preserves installed plugin revisions');
 	check(openwrt.inspect_digest(root, [source, `${root}/missing`]) == null, 'partial file digest failure cannot produce a plugin revision');
 	check(atomic_json(`${root}/record.json`, { ok: true }), 'generic atomic JSON remains available without a platform owner');
+	let scans = 0;
+	const cached_adapter = { ...adapter, paths: { ...adapter.paths, inspection_cache: `${root}/inspection` },
+		inspect_digest: (directory, files) => { scans++; return openwrt.inspect_digest(directory, files); } };
+	const cached_options = { adapter: cached_adapter };
+	check(execute(['plugins-list'], root, cached_options).ok && scans == 2, 'first inventory hashes each package');
+	check(execute(['plugins-list'], root, cached_options).ok && scans == 2, 'unchanged inventory reuses private digest cache');
+	const profile = json(fs.readfile(adapter.paths.default_system));
+	profile.instances = { alpha: {}, beta: {}, gamma: {} };
+	write(adapter.paths.default_system, profile);
+	const expanded = execute(['plugins-list'], root, cached_options);
+	check(length(expanded.result.plugins) == 5 && scans == 2, `named inventories share package inspection without additional hashes: ${scans} ${sprintf('%J', expanded)}`);
+	check(execute(['scheduler-inspect'], root, cached_options).ok && scans == 3, 'executing cached code still performs a fresh digest');
+	const cached_path = `${root}/inspection/scheduler.json`, cached_record = json(fs.readfile(cached_path));
+	cached_record.checked_at = 0; write(cached_path, cached_record);
+	check(execute(['plugins-list'], root, cached_options).ok && scans == 4, 'expired inventory identity is refreshed');
+	write(cached_path, '{broken');
+	check(execute(['plugins-list'], root, cached_options).ok && scans == 5, 'damaged cache falls back to complete inspection');
+	write(`${root}/plugins/scheduler/lib/main.uc`, "return function(ctx) { return { inspect: () => ({ ok: true, updated: true }) }; };\n");
+	check(execute(['scheduler-inspect'], root, cached_options).updated == true, 'module replacement executes only freshly inspected new code');
+	check(fs.chmod(`${root}/plugins/scheduler/lib/main.uc`, 0666), 'unsafe mode fixture');
+	check(execute(['plugins-list'], root, cached_options).result.plugins[1].reason == 'plugin_files_unsafe', 'cached identity never bypasses current permission validation');
+	check(fs.chmod(`${root}/plugins/scheduler/lib/main.uc`, 0600), 'restore fixture permissions');
+	for (let i = 0; i < 32; i++) {
+		const id = `scale-${i}`;
+		fs.mkdir(`${root}/plugins/${id}`, 0700); fs.mkdir(`${root}/plugins/${id}/lib`, 0700);
+		write(`${root}/plugins/${id}/manifest.json`, { schema: 'opl-netfleet-service-plugin.v1', id, label: id,
+			version: '1.0.0', api_version: 1, package: `opl-netfleet-plugin-${id}`, commands: {},
+			services: { [`${id}.control`]: { version: 1, module: 'lib/main.uc', requires: {} } } });
+		write(`${root}/plugins/${id}/lib/main.uc`, 'return function(ctx) { return {}; };');
+		profile.enabled[id] = true; profile.bindings[`${id}.control`] = id;
+	}
+	profile.instances = {};
+	for (let i = 0; i < 16; i++) profile.instances[`instance-${i}`] = {};
+	write(adapter.paths.default_system, profile);
+	remove(cached_adapter.paths.inspection_cache); scans = 0;
+	cached_adapter.inspect_digest = () => { scans++; return revision; };
+	check(length(execute(['plugins-list'], root, cached_options).result.plugins) == 562 && scans == 34,
+		'34 packages and 17 contexts inspect package bytes once, not once per instance');
+	check(execute(['plugins-list'], root, cached_options).ok && scans == 34, 'warm scaled inventory needs no digest subprocesses');
 } catch (error) { host?.release(); remove(root); die(error.message); }
 remove(root);
 printf('host adapter contract: %d assertions passed\n', assertions);

@@ -9,6 +9,7 @@ const PATHS = {
 	network_lock: '/var/lock/opl-netfleet-deploy.lock',
 	code_locks: '/var/lock/opl-netfleet-code',
 	maintenance: '/var/run/opl-netfleet-plugin-maintenance',
+	inspection_cache: '/tmp/opl-netfleet-plugin-inspection',
 };
 
 function failure(error) { return { ok: false, error: error }; };

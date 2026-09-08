@@ -1,10 +1,12 @@
 import * as fs from 'fs';
 import { API_VERSION, valid_id, service_name, descriptor_error, action_access } from './schema.uc';
-import { read_json, trusted, mkdir_private, atomic_json } from './io.uc';
+import { read_json, trusted, mkdir_private, atomic_json, atomic_text } from './io.uc';
 import { dispatch as process_dispatch, lifecycle as process_lifecycle } from './process.uc';
 import { create_scope } from './scope.uc';
 
-const RESERVED = ['plugins-list','plugin-read','plugin-call','plugin-drain','plugin-package-drain','plugin-package-resume','plugin-package-remove','plugin-package-ready'];
+const RESERVED = ['plugins-list','plugins-system-get','plugins-system-validate','plugins-system-apply','plugin-read','plugin-call','plugin-drain','plugin-package-drain','plugin-package-resume','plugin-package-remove','plugin-package-ready'];
+let create, resource_pause, data_lock, resource_owners;
+export { create };
 
 function failure(error) { return { ok: false, error: error }; };
 function clone(value) { return json(sprintf('%J', value)); };
@@ -39,8 +41,8 @@ function checked_overlay(value) {
 function overlay_profile(base, overlay) {
 	const config = { ...(base.config ?? {}) };
 	for (let id, value in overlay.config ?? {}) config[id] = { ...(config[id] ?? {}), ...value };
-	return { ...base, ...overlay, bindings: { ...base.bindings, ...(overlay.bindings ?? {}) },
-		enabled: { ...base.enabled, ...(overlay.enabled ?? {}) }, config: config };
+	return { ...base, ...overlay, bindings: { ...(base.bindings ?? {}), ...(overlay.bindings ?? {}) },
+		enabled: { ...(base.enabled ?? {}), ...(overlay.enabled ?? {}) }, config: config };
 };
 function checked_system(value) {
 	if (type(value) != 'object' || value.schema != 'opl-netfleet-system.v1' ||
@@ -61,6 +63,7 @@ function system_profile(root, options) {
 	let profile = read_json(default_path) ??
 		{ schema: 'opl-netfleet-system.v1', bindings: {}, enabled: {} };
 	profile = checked_system(profile);
+	if (options.skip_override) return profile;
 	const path = options.override_path;
 	if (fs.lstat(path) != null) {
 		if (!trusted(path, 'file', options.trusted_owner) || (fs.lstat(path).mode & 077)) raise('plugin_system_override_unsafe');
@@ -72,47 +75,191 @@ function system_profile(root, options) {
 	return profile;
 };
 
-function plugin_files(directory, owner, relative, files) {
+function configured_system(root, options, overlay) {
+	const base = system_profile(root, { ...options, skip_override: true });
+	const extra = checked_system(overlay), instances = { ...(base.instances ?? {}) };
+	for (let name, value in extra.instances ?? {}) instances[name] = overlay_profile(instances[name] ?? { bindings: {}, enabled: {} }, value);
+	return checked_system({ ...overlay_profile(base, extra), instances });
+};
+
+function private_system(options) {
+	const path = options.override_path;
+	if (fs.lstat(path) == null) return { schema: 'opl-netfleet-system.v1', bindings: {}, enabled: {} };
+	if (!trusted(path, 'file', options.trusted_owner) || (fs.lstat(path).mode & 077) || fs.lstat(path).size > 65536) raise('plugin_system_override_unsafe');
+	return checked_system(read_json(path));
+};
+
+function system_revision(host) {
+	const options = host.options;
+	const files = [options.override_path, options.adapter.paths.default_system, `${host.root}/system.json`];
+	const identities = [];
+	for (let path in files) {
+		if (path == null || fs.lstat(path) == null) { push(identities, 'absent'); continue; }
+		const parent = join('/', slice(split(path, '/'), 0, -1));
+		const digest = options.adapter.inspect_digest(parent, [path]);
+		if (digest == null) raise('plugin_identity_unreadable');
+		push(identities, digest);
+	}
+	for (let id in sort(keys(host.found))) push(identities, `${id}=${host.found[id].revision ?? host.found[id].error}`);
+	return join(':', identities);
+};
+
+function composition_report(host, overlay) {
+	const next_system = configured_system(host.root, host.options, overlay), errors = [], affected = {};
+	const names = { default: true };
+	for (let name in keys(host.all_system.instances ?? {})) names[name] = true;
+	for (let name in keys(next_system.instances ?? {})) names[name] = true;
+	for (let name in sort(keys(names))) {
+		const before = name == 'default' ? host.all_system : host.all_system.instances?.[name] == null ? null : overlay_profile(host.all_system, host.all_system.instances[name]);
+		const after = name == 'default' ? next_system : next_system.instances?.[name] == null ? null : overlay_profile(next_system, next_system.instances[name]);
+		for (let id in keys(host.found)) {
+			const old_services = filter(keys(before?.bindings ?? {}), key => before.bindings[key] == id);
+			const new_services = filter(keys(after?.bindings ?? {}), key => after.bindings[key] == id);
+			if (before?.enabled?.[id] != after?.enabled?.[id] || sprintf('%J', before?.config?.[id]) != sprintf('%J', after?.config?.[id]) ||
+				join(',', sort(old_services)) != join(',', sort(new_services))) affected[id] = true;
+		}
+		if (after == null) continue;
+		const candidate = create(host.root, { ...host.options, system: next_system, instance: name, inspected: host.found, allow_maintenance: true });
+		guarded(() => {
+			const commands = {};
+			for (let id, item in candidate.found) if (item.ok) for (let command in keys(item.manifest.commands ?? {})) commands[command] = true;
+			for (let command in keys(commands)) try { candidate.command(command); }
+			catch (error) { push(errors, { instance: name, error: error.message }); }
+			for (let id, enabled in after.enabled) if (enabled && !candidate.found[id]?.ok) push(errors, { instance: name, error: `plugin_not_installed:${id}` });
+			for (let service, id in after.bindings) {
+				if (after.enabled[id] != true) continue;
+				try { candidate.graph(service, candidate.found[id]?.manifest?.services?.[service]?.version ?? 1, {}, {}, {}); }
+				catch (error) {
+					const local = next_system.instances?.[name];
+					if (name == 'default' || index(error.message, 'plugin_resource_scope_required:') != 0 || local?.enabled?.[id] == true || local?.bindings?.[service] != null)
+						push(errors, { instance: name, service, error: error.message });
+				}
+			}
+			if (name == 'default' && after.scheduler != null) try {
+				candidate.graph(after.scheduler.service, 1, {}, {}, {});
+			} catch (error) { push(errors, { instance: name, error: error.message }); }
+		}, candidate.release);
+	}
+	// Include consumers whose declared dependency closure intersects a changed provider.
+	for (let system in [host.all_system, next_system]) for (let instance in ['default', ...keys(system.instances ?? {})]) {
+		const candidate = create(host.root, { ...host.options, system, instance, inspected: host.found, allow_maintenance: true });
+		guarded(() => {
+			for (let id, item in host.found) if (item.ok && !item.process && candidate.system.enabled[id] == true) {
+				const dependencies = {};
+				try { for (let name, service in item.manifest.services) if (candidate.system.bindings[name] == id) candidate.graph(name, service.version, {}, {}, dependencies); }
+				catch (error) { continue; }
+				if (length(filter(keys(dependencies), key => affected[key]))) affected[id] = true;
+			}
+		}, candidate.release);
+	}
+	return { valid: !length(errors), errors, affected_plugins: sort(keys(affected)), instances: sort(keys(next_system.instances ?? {})), system: next_system };
+};
+
+function system_management(action, argv, root, options) {
+	const applying = action == 'plugins-system-apply';
+	const lock = options.adapter.network_lock(options.network_lock, applying);
+	if (lock == null) return failure('mutation_busy');
+	let host;
+	return guarded(() => {
+		if (applying && (!mkdir_private(options.maintenance_root, options.trusted_owner) ||
+			!atomic_json(`${options.maintenance_root}/.coordinator`, options.adapter.process_identity()))) return failure('plugin_package_marker_failed');
+		host = create(root, { ...options, code_locks: false });
+		const revision = system_revision(host), current = private_system(options);
+		if (action == 'plugins-system-get') return { ok: true, result: { revision, config: current,
+			plugins: map(host.inventory(), item => ({ id: item.id, version: item.version, api_version: item.api_version, state: item.state, reason: item.reason })) } };
+		const path = argv[1];
+		if (!options.adapter.private_file(path) || fs.lstat(path).size > 65536) return failure('plugin_private_request_required');
+		const input = read_json(path)?.request;
+		if (type(input) != 'object' || type(input.config) != 'object') return failure('plugin_system_invalid');
+		if (input.revision != revision) return failure('plugin_system_revision_changed');
+		const report = composition_report(host, input.config);
+		if (input.plugins != null) {
+			if (type(input.plugins) != 'array') return failure('plugin_system_invalid');
+			for (let plugin in input.plugins) {
+				const actual = host.found[plugin.id];
+				if (!actual?.ok || actual.manifest.api_version != plugin.api_version) {
+					report.valid = false; push(report.errors, { error: `plugin_backup_dependency_missing:${plugin.id}` });
+				}
+			}
+		}
+		delete report.system;
+		if (!applying || !report.valid) return { ok: !applying || report.valid, error: report.valid ? null : 'plugin_system_dependencies_invalid', result: { ...report, revision } };
+		if (input.confirm != true) return failure('plugin_confirmation_or_revision_required');
+		const original = fs.lstat(options.override_path) == null ? null : fs.readfile(options.override_path);
+		let changed = false, reason, resources;
+		try {
+			resources = resource_pause(host, report.affected_plugins);
+			if (!atomic_json(options.override_path, input.config)) raise('plugin_system_write_failed');
+			changed = true;
+			resources.resume(configured_system(root, options, input.config));
+		} catch (error) { reason = error.message; }
+		if (reason != null) {
+			let restored = true;
+			try { resources?.quiesce(); } catch (error) { restored = false; }
+			if (restored) restored = !changed || (original == null ? fs.unlink(options.override_path) : atomic_text(options.override_path, original));
+			if (restored) try { resources?.resume(host.all_system); } catch (error) { restored = false; }
+			resources?.close();
+			return { ok: false, error: restored ? 'plugin_system_apply_rolled_back' : 'plugin_system_recovery_required', result: { reason, restored } };
+		}
+		return { ok: true, result: { ...report, applied: true } };
+	}, () => guarded(() => host?.release(), () => { if (applying) fs.unlink(`${options.maintenance_root}/.coordinator`); lock.close(); }));
+};
+
+function plugin_files(directory, owner, relative, files, identities) {
 	const path = relative == '' ? directory : `${directory}/${relative}`;
 	if (!trusted(path, 'directory', owner)) raise('plugin_files_unsafe');
 	for (let name in sort(fs.lsdir(path) ?? [])) {
 		if (!match(name, /^[A-Za-z0-9][A-Za-z0-9._-]*$/)) raise(`plugin_payload_name_invalid:${name}`);
 		const child = relative == '' ? name : `${relative}/${name}`, full = `${directory}/${child}`;
 		const info = fs.lstat(full);
-		if (info?.type == 'directory') plugin_files(directory, owner, child, files);
+		if (info?.type == 'directory') plugin_files(directory, owner, child, files, identities);
 		else {
 			if (!trusted(full, 'file', owner) || info.size > 1048576 || length(files) >= 512) raise('plugin_files_unsafe');
 			push(files, full);
+			push(identities, [child, info.inode, info.size, info.mode, info.uid, info.gid, info.mtime, info.ctime]);
 		}
 	}
 };
-function inspect(root, id, owner, adapter) {
+function inspect(root, id, owner, adapter, cached) {
 	const directory = `${root}/plugins/${id}`, path = `${directory}/manifest.json`;
 	if (fs.lstat(directory) == null) return failure('plugin_not_installed');
 	try {
 		if (!trusted(`${root}/plugins`, 'directory', owner) || !trusted(path, 'file', owner) || fs.lstat(path).size > 16384) return failure('plugin_files_unsafe');
 		const manifest = read_json(path), error = descriptor_error(manifest, id);
 		if (error != null) return failure(error);
-		const files = [];
-		plugin_files(directory, owner, '', files);
+		const files = [], identities = [];
+		plugin_files(directory, owner, '', files, identities);
 		const process = manifest.schema == 'opl-netfleet-plugin.v1';
 		if (process && (!trusted(`${directory}/control`, 'file', owner) || !(fs.lstat(`${directory}/control`).mode & 0111))) return failure('plugin_files_unsafe');
 		for (let name, service in manifest.services ?? {}) if (index(files, `${directory}/${service.module}`) < 0) return failure('plugin_module_missing');
 		for (let page in manifest.ui ?? []) if (index(files, `${directory}/${page.module}`) < 0) return failure('plugin_ui_module_missing');
-		const digest = adapter.inspect_digest(directory, files);
+		const cache_root = cached && root == adapter.paths.installed_root ? adapter.paths.inspection_cache : null;
+		const cache_path = cache_root == null ? null : `${cache_root}/${id}.json`;
+		const signature = sprintf('%J', identities), now = time();
+		let record = null;
+		if (cache_path != null && trusted(cache_root, 'directory', owner) && trusted(cache_path, 'file', owner) &&
+			!(fs.lstat(cache_path).mode & 077) && fs.lstat(cache_path).size <= 131072) record = read_json(cache_path);
+		let digest = record?.signature == signature && record?.root == root && type(record?.checked_at) == 'int' &&
+			now >= record.checked_at && now - record.checked_at < 5 ? record.revision : null;
+		if (type(digest) != 'string' || !match(digest, /^[a-f0-9]{64}$/)) {
+			digest = adapter.inspect_digest(directory, files);
+			if (cache_path != null && type(digest) == 'string' && match(digest, /^[a-f0-9]{64}$/) && mkdir_private(cache_root, owner))
+				atomic_json(cache_path, { root, signature, revision: digest, checked_at: now });
+		}
 		if (type(digest) != 'string' || !match(digest, /^[a-f0-9]{64}$/)) return failure('plugin_identity_unreadable');
 		return { ok: true, manifest: manifest, directory: directory, entry: `${directory}/control`, revision: digest, process: process };
 	} catch (error) { return failure(error.message ?? 'plugin_inspection_failed'); }
 };
 
-export function create(root, options) {
+create = function(root, options) {
 	options = host_options(options);
 	root = fs.realpath(root) ?? root;
 	const adapter = options.adapter, all_system = system_profile(root, options);
 	const instance_id = options.instance ?? 'default';
 	if (!valid_id(instance_id) || (instance_id != 'default' && all_system.instances?.[instance_id] == null)) raise('plugin_instance_unknown');
 	const system = instance_id == 'default' ? all_system : overlay_profile(all_system, all_system.instances[instance_id]);
-	const found = {}, instances = {}, service_scopes = {}, leases = {}, loading = {}, scope = create_scope();
+	const found = options.inspected ?? {}, instances = {}, service_scopes = {}, leases = {}, loading = {}, scope = create_scope();
+	let host_api;
 	const owner = options.trusted_owner;
 	const maintenance_root = options.maintenance_root, lock_root = options.lock_root;
 	const state_store = options.states ?? {};
@@ -121,7 +268,8 @@ export function create(root, options) {
 	const delegated = adapter.coordinator_parent(`${maintenance_root}/.coordinator`);
 	let closed = false;
 	let inventory;
-	for (let id in sort(fs.lsdir(`${root}/plugins`) ?? [])) if (valid_id(id)) found[id] = inspect(root, id, owner, adapter);
+	if (options.inspected == null)
+		for (let id in sort(fs.lsdir(`${root}/plugins`) ?? [])) if (valid_id(id)) found[id] = inspect(root, id, owner, adapter, options.code_locks != false);
 	function blocked(id) {
 		if (options.allow_maintenance || delegated) return false;
 		return fs.lstat(maintenance_root) != null && (!trusted(maintenance_root, 'directory', owner) || fs.lstat(`${maintenance_root}/${id}`) != null);
@@ -184,7 +332,13 @@ export function create(root, options) {
 				if (version == null) raise(`plugin_dependency_undeclared:${name}:${dependency}`);
 				return resolve(dependency, version);
 			},
-			inventory: versions => inventory(versions),
+				inventory: versions => inventory(versions),
+				composition: {
+					get: () => ({ config: private_system(options), plugins: map(inventory(), item => ({ id: item.id, api_version: item.api_version, version: item.version })) }),
+					validate: config => composition_report(host_api, config),
+					pause: (ids, excluded) => resource_pause(host_api, ids ?? keys(found), excluded),
+					lock: () => data_lock(options, true),
+				},
 		};
 		try {
 			const factory = loadfile(`${item.plugin.directory}/${item.service.module}`)();
@@ -251,12 +405,108 @@ export function create(root, options) {
 		closed = true;
 		guarded(scope.dispose, () => { for (let id in keys(leases)) { leases[id].close(); delete leases[id]; } });
 	};
-	return { use: use, call: call, release: release, inventory: inventory, command: command, system: system,
+	host_api = { use: use, call: call, release: release, inventory: inventory, command: command, system: system,
 		all_system: all_system, instance: instance_id, adapter: adapter,
 		found: found, blocked: blocked, acquire: acquire, graph: graph, root: root, options: options };
+	return host_api;
 };
 
-function resource_owners(host, target) {
+// Configuration transactions retain shared code leases: no installed code is replaced.
+function file_lock(path, options, writing) {
+	if (fs.lstat(path) != null && !trusted(path, 'file', options.trusted_owner)) return null;
+	const lock = fs.open(path, 'ae', 0600);
+	if (lock == null || !lock.lock(writing ? 'xn' : 'sn')) { lock?.close(); return null; }
+	return lock;
+};
+data_lock = function(options, writing) {
+	if (!mkdir_private(options.lock_root, options.trusted_owner)) return null;
+	return file_lock(`${options.lock_root}/.data.lock`, options, writing);
+};
+function private_action_lock(options, id, writing) {
+	const data = data_lock(options, false);
+	if (data == null) return null;
+	const lock = file_lock(`${options.lock_root}/${id}.actions`, options, writing);
+	if (lock == null) { data.close(); return null; }
+	return { close: () => { lock.close(); data.close(); } };
+};
+resource_pause = function(host, targets, excluded) {
+	const scopes = [], saved = [], attempted = [];
+	const data = data_lock(host.options, true);
+	if (data == null) raise('plugin_data_busy');
+	let closed = false;
+	function close() { if (!closed) { closed = true; data.close(); } };
+	function quiesce() {
+		const errors = [];
+		for (let attempt in reverse(attempted)) {
+			let current;
+			try {
+				const record = attempt.record;
+				if (record.process) {
+					if (!process_lifecycle(record.item, 'unload', {}, host.adapter).ok) raise('plugin_drain_unconfirmed');
+				} else {
+					current = create(host.root, { ...host.options, system: attempt.system, instance: record.instance, code_locks: true });
+					const hook = current.found[record.id]?.manifest?.lifecycle?.drain;
+					if (hook == null || !current.call(hook.service, hook.method, null)?.ok) raise('plugin_drain_unconfirmed');
+				}
+			} catch (error) { push(errors, error.message); }
+			try { current?.release(); } catch (error) { push(errors, error.message); }
+		}
+		if (length(errors)) raise(join('; ', errors));
+		splice(attempted, 0, length(attempted));
+	};
+	function resume(system) {
+		system = system ?? host.all_system;
+		const errors = [];
+		for (let record in reverse(saved)) {
+			let current;
+			try {
+				if (record.process) {
+					if (record.loaded) push(attempted, { record, system });
+					if (record.loaded && !process_lifecycle(record.item, 'load', {}, host.adapter).ok) raise('plugin_resume_unconfirmed');
+					continue;
+				}
+				if (record.instance != 'default' && system?.instances?.[record.instance] == null) continue;
+				current = create(host.root, { ...host.options, system: system ?? host.all_system, instance: record.instance, code_locks: true });
+				if (current.system.enabled[record.id] == true) {
+					push(attempted, { record, system });
+					const hook = current.found[record.id]?.manifest?.lifecycle?.resume;
+					if (hook == null || !current.call(hook.service, hook.method, record.state)?.ok) raise('plugin_resume_unconfirmed');
+				}
+			} catch (error) { push(errors, `${record.id}:${error.message}`); }
+			try { current?.release(); } catch (error) { push(errors, error.message); }
+		}
+		for (let scope in scopes) try { scope.release(); } catch (error) { push(errors, error.message); }
+		if (length(errors)) raise(join('; ', errors));
+		close();
+	}
+	try {
+		for (let name in ['default', ...sort(keys(host.all_system.instances ?? {}))]) {
+			const scope = create(host.root, { ...host.options, system: host.all_system, instance: name, inspected: host.found, code_locks: true });
+			push(scopes, scope);
+			const owners = [];
+			for (let id in targets) for (let owner in resource_owners(scope, id)) if (index(owners, owner) < 0) push(owners, owner);
+			for (let id in reverse(owners)) {
+				if (index(excluded ?? [], id) >= 0) continue;
+				const hook = scope.found[id].manifest.lifecycle.drain;
+				const result = scope.call(hook.service, hook.method, null);
+				if (!result?.ok) raise(result?.error ?? 'plugin_drain_unconfirmed');
+				push(saved, { id, instance: name, state: result.result ?? {} });
+			}
+		}
+		for (let id in targets) {
+			const item = host.found[id];
+			if (!item?.ok || !item.process) continue;
+			host.acquire({ [id]: true });
+			const state = process_dispatch({ id, action: 'get' }, item, host.adapter);
+			if (!state.ok) raise(state.error);
+			if (state.result.loaded && !process_lifecycle(item, 'unload', {}, host.adapter).ok) raise('plugin_drain_unconfirmed');
+			push(saved, { id, process: true, item, loaded: state.result.loaded });
+		}
+	} catch (error) { guarded(() => raise(error.message), () => guarded(() => resume(host.all_system), close)); }
+	return { resume, quiesce, close };
+};
+
+resource_owners = function(host, target) {
 	const candidates = {}, result = [], visited = {};
 	for (let id, item in host.found) {
 		if (!item.ok || item.process || host.system.enabled[id] != true || item.manifest.lifecycle == null) continue;
@@ -437,6 +687,8 @@ function service_request(input, found, host) {
 };
 
 function management(action, argv, root, options) {
+	if (index(['plugins-system-get','plugins-system-validate','plugins-system-apply'], action) >= 0)
+		return system_management(action, argv, root, options);
 	if (action == 'plugin-package-ready') {
 		if (!valid_id(argv[1])) return failure('plugin_id_invalid');
 		const host = create(root, options);
@@ -447,19 +699,28 @@ function management(action, argv, root, options) {
 		return guarded(() => {
 			const plugins = host.inventory(null), names = sort(keys(host.all_system.instances ?? {}));
 			for (let name in names) {
-				const instance = create(root, { ...options, instance: name });
+				const instance = create(root, { ...options, instance: name, inspected: host.found });
 				guarded(() => { for (let row in instance.inventory(null)) push(plugins, row); }, instance.release);
 			}
 			return { ok: true, result: { plugins: plugins, instances: ['default', ...names] } };
 		}, () => host.release());
 	}
 	const adapter = options.adapter;
-	const lock = adapter.network_lock(options.network_lock, action != 'plugin-read');
-	if (lock == null) return failure('mutation_busy');
-	let host;
+	let host, input, local = false;
+	if (index(['plugin-read','plugin-call'], action) >= 0) {
+		const path = argv[1];
+		if (!adapter.private_file(path) || fs.lstat(path).size > 65536) return failure('plugin_private_request_required');
+		input = read_json(path)?.request;
+		if (type(input) != 'object' || !valid_id(input.id) || type(input.action) != 'string' ||
+			(input.instance != null && !valid_id(input.instance)) || (input.params != null && type(input.params) != 'object')) return failure('plugin_request_invalid');
+		host = create(root, { ...options, instance: input.instance ?? 'default' });
+		local = host.found[input.id]?.manifest?.actions?.[input.action]?.lock == 'plugin';
+	}
+	const lock = local ? private_action_lock(options, input.id, action != 'plugin-read') : adapter.network_lock(options.network_lock, action != 'plugin-read');
+	if (lock == null) { host?.release(); return failure('mutation_busy'); }
 	const base = options.maintenance_root;
 	return guarded(() => {
-		if (action != 'plugin-read' && (!mkdir_private(base, options.trusted_owner) || !atomic_json(`${base}/.coordinator`, adapter.process_identity()))) return failure('plugin_package_marker_failed');
+		if (!local && action != 'plugin-read' && (!mkdir_private(base, options.trusted_owner) || !atomic_json(`${base}/.coordinator`, adapter.process_identity()))) return failure('plugin_package_marker_failed');
 		if (index(['plugin-package-drain','plugin-package-resume','plugin-package-remove'], action) >= 0) {
 			let result = failure('plugin_id_invalid');
 			for (let id in slice(argv, 1)) {
@@ -470,11 +731,13 @@ function management(action, argv, root, options) {
 		}
 		const path = argv[1];
 		if (!adapter.private_file(path) || fs.lstat(path).size > 65536) return failure('plugin_private_request_required');
-		const input = read_json(path)?.request;
+		if (input == null) input = read_json(path)?.request;
 		if (type(input) != 'object' || !valid_id(input.id) || type(input.action) != 'string' ||
 			(input.instance != null && !valid_id(input.instance)) || (input.params != null && type(input.params) != 'object')) return failure('plugin_request_invalid');
+		host?.release();
 		host = create(root, { ...options, instance: input.instance ?? 'default' });
 		const item = host.found[input.id];
+		if (local != (item?.manifest?.actions?.[input.action]?.lock == 'plugin')) return failure('plugin_revision_changed');
 		if (action == 'plugin-drain') {
 			if (input.action != 'unload' || input.confirm != true) return failure('plugin_confirmation_or_revision_required');
 			if (input.revision != (item?.revision ?? 'absent')) return failure('plugin_confirmation_or_revision_required');
@@ -503,7 +766,7 @@ function management(action, argv, root, options) {
 		}
 		host.acquire({ [input.id]: true });
 		return process_dispatch(input, item, adapter);
-	}, () => guarded(() => host?.release(), () => { if (action != 'plugin-read') fs.unlink(`${base}/.coordinator`); lock.close(); }));
+	}, () => guarded(() => host?.release(), () => { if (!local && action != 'plugin-read') fs.unlink(`${base}/.coordinator`); lock.close(); }));
 };
 
 export function execute(argv, root, options) {

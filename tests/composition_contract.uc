@@ -123,7 +123,7 @@ try {
 		" function state() { return fs.lstat(path) == null ? { running: true, drains: 0, resumes: 0 } : json(fs.readfile(path)); };\n" +
 		" function save(value) { if (!fs.writefile(path, sprintf('%J', value))) die('fixture_write_failed'); };\n" +
 		" function drain(previous) { const current = state(); previous = previous ?? { running: current.running, instance: ctx.instance }; current.running = false; current.drains++; save(current); return { ok: true, result: previous }; };\n" +
-		" function resume(previous) { if (previous.instance != ctx.instance) die('fixture_instance_handoff_mismatch'); const current = state(); current.running = previous.running; current.resumes++; save(current); return { ok: true, result: current }; };\n" +
+		" function resume(previous) { if (previous.instance != ctx.instance) die('fixture_instance_handoff_mismatch'); const current = state(); current.running = previous.running; current.resumes++; save(current); if (ctx.config.fail_resume) die('fixture_resume_failed'); return { ok: true, result: current }; };\n" +
 		" return { drain, resume, inspect: () => ({ ok: true, result: state() }) };\n};\n";
 	install('resource', 'resource.control', resource_source, { lifecycle: { scope: 'instance',
 		drain: { service: 'resource.control', method: 'drain' }, resume: { service: 'resource.control', method: 'resume' } } });
@@ -149,7 +149,7 @@ try {
 	result = request({ id: 'echo', action: 'update', params: { step: 50 } });
 	check(result.error == 'plugin_action_not_allowed' && states.echo.writes == null && states.echo.count == 2, 'read admission cannot invoke a write action');
 	result = request({ id: 'echo', action: 'update', confirm: true, revision: sprintf('%064d', 0) }, 'plugin-call');
-	check(result.error == 'plugin_confirmation_or_revision_required' && states.echo.writes == null, 'stale revision is rejected before executing a write');
+	check(result.error == 'plugin_confirmation_or_revision_required' && states.echo.writes == null, `stale revision is rejected before executing a write: ${sprintf('%J', result)}`);
 	result = change('echo', 'update', { step: 3 });
 	check(result.ok && result.result.count == 5 && states.echo.writes == 1, 'confirmed action executes with current code revision');
 	const disabled = clone(profile); disabled.enabled.echo = false;
@@ -238,6 +238,51 @@ try {
 	check(request({ id: 'shared-provider', action: 'inspect' }).error == 'plugin_disabled:shared-provider', 'successful unload disables the default instance');
 	result = request({ id: 'shared-consumer', action: 'inspect', instance: 'blue' });
 	check(result.ok && result.result.instance == 'blue', 'default unload preserves an explicitly enabled named provider and its consumer');
+
+	// Private actions have their own admission, while data transactions exclude all instances.
+	lease = fs.open(adapter.paths.network_lock, 'ae', 0600);
+	check(lease.lock('xn'), 'fixture holds network mutation lock');
+	check(request({ id: 'workspace-note', action: 'config-get' }).ok, 'private reads remain available during network operations');
+	check(change('workspace-note', 'config-set', { title: 'Independent', text: 'network busy', generation: 1 }).ok, 'private writes remain available during network operations');
+	check(request({ id: 'echo', action: 'inspect' }).error == 'mutation_busy', 'default actions still use the network lock');
+	lease.close();
+	lease = fs.open(`${root}/locks/workspace-note.actions`, 'ae', 0600);
+	check(lease.lock('xn'), 'fixture holds plugin action lock');
+	check(request({ id: 'workspace-note', action: 'config-get', instance: 'alpha' }).error == 'mutation_busy', 'plugin admission excludes other instances sharing data');
+	lease.close();
+	lease = fs.open(`${root}/locks/.data.lock`, 'ae', 0600);
+	check(lease.lock('xn'), 'fixture holds backup data barrier');
+	check(request({ id: 'workspace-note', action: 'config-get' }).error == 'mutation_busy', 'backup barrier excludes private actions');
+	lease.close(); lease = null;
+	check(request({ id: 'workspace-note', action: 'config-get' }).ok, 'failed admission releases plugin locks');
+
+	function system_get() { const value = execute(['plugins-system-get'], root, options); check(value.ok, `composition read: ${sprintf('%J', value)}`); return value.result; };
+	function system_request(config, revision, apply) { return request({ config, revision, confirm: true }, apply ? 'plugins-system-apply' : 'plugins-system-validate'); };
+	const initial = system_get(), overlay_bytes = fs.readfile(adapter.paths.override);
+	const proposed = clone(initial.config);
+	proposed.config = { ...(proposed.config ?? {}), 'shared-provider': { label: 'changed' } };
+	result = system_request(proposed, initial.revision, false);
+	check(result.ok && result.result.valid && index(result.result.affected_plugins, 'shared-consumer') >= 0,
+		`composition preview includes named consumers: ${sprintf('%J', result)}`);
+	check(fs.readfile(adapter.paths.override) == overlay_bytes, 'validation does not write composition');
+	const invalid = clone(proposed); invalid.enabled['shared-provider'] = false;
+	invalid.instances = { blue: { enabled: { 'shared-provider': false } } };
+	result = system_request(invalid, initial.revision, true);
+	check(!result.ok && result.error == 'plugin_system_dependencies_invalid' && fs.readfile(adapter.paths.override) == overlay_bytes, `invalid dependency graph never writes configuration: ${sprintf('%J', result)}`);
+	check(system_request(proposed, 'stale', true).error == 'plugin_system_revision_changed', 'stale composition cannot apply');
+	result = system_request(proposed, initial.revision, true);
+	check(result.ok, `valid composition applies: ${sprintf('%J', result)}`);
+	check(system_get().revision != initial.revision && read(adapter.paths.override).config['shared-provider'].label == 'changed', 'composition authority reads back new revision and bytes');
+	const stable = system_get(), stable_bytes = fs.readfile(adapter.paths.override);
+	const failing = clone(stable.config);
+	failing.instances = { alpha: { config: { resource: { fail_resume: true } } } };
+	const alpha_before = resource_state('alpha');
+	result = system_request(failing, stable.revision, true);
+	check(result.error == 'plugin_system_apply_rolled_back' && result.result.restored, `partial resume rolls back: ${sprintf('%J', result)}`);
+	check(fs.readfile(adapter.paths.override) == stable_bytes && resource_state('alpha').running == alpha_before.running,
+		'failed resume restores exact configuration bytes and prior resource state');
+	check(resource_state('alpha').drains >= alpha_before.drains + 2, 'partially resumed new resources drain again before restoring old data');
+	check(request({ id: 'workspace-note', action: 'config-get' }).ok, 'rollback releases the data barrier');
 } catch (error) {
 	for (let host in held_hosts) try { host.release(); } catch (cleanup_error) {}
 	lease?.close(); remove(root); die(`${error.message}\n${error.stacktrace?.[0]?.context ?? ''}`);

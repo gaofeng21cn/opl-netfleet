@@ -132,6 +132,7 @@ class PluginSDKTests(unittest.TestCase):
         self.assertEqual({"link-health.document"}, set(manifest["services"]))
         self.assertEqual("link-health.document", manifest["commands"]["link-health"]["service"])
         self.assertEqual("link-health.document", manifest["actions"]["config-set"]["service"])
+        self.assertEqual("plugin", manifest["actions"]["config-set"]["lock"])
         self.assertEqual({"read": "config-get", "write": "config-set"}, manifest["configuration"])
         self.assertIn(Path("resources/page.js"), files)
         self.assertIn(Path("resources/style.css"), files)
@@ -145,6 +146,8 @@ class PluginSDKTests(unittest.TestCase):
             lambda value: value["actions"].update(load=value["actions"]["config-set"]),
             lambda value: value["actions"]["config-set"].update(service="other.document"),
             lambda value: value["actions"]["config-set"].update(access="execute"),
+            lambda value: value["actions"]["config-set"].update(lock="none"),
+            lambda value: value["actions"]["config-set"].update(unknown=True),
             lambda value: value["configuration"].update(write="config-get"),
             lambda value: value["configuration"].update(read="missing"),
             lambda value: value["configuration"].update(read=[]),
@@ -289,7 +292,7 @@ class PluginSDKTests(unittest.TestCase):
                 package = self.root / f"package-{kind}"
                 SDK.package_source(source, package, "Apache-2.0", 1)
                 definition = self.extract_hook(package, "")
-                self.assertIn("EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.0)", definition)
+                self.assertIn("EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.1)", definition)
                 dependencies = re.search(r"DEPENDS:=(.*)", definition).group(1).split()
                 expected = ["+opl-netfleet-kernel"]
                 expected += (["+" + name for name in manifest["package_dependencies"]] if kind == "service"

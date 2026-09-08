@@ -37,7 +37,7 @@ class OpenWrtVmTests(unittest.TestCase):
                 before = fixtures.stage_plugin(ROOT / "examples/plugins" / identity, root / f"{identity}-before", "0.1.0")
                 after = fixtures.stage_plugin(ROOT / "examples/plugins" / identity, root / f"{identity}-after", "0.1.1")
                 self.assertNotEqual(before["revision"], after["revision"])
-                self.assertIn("opl-netfleet-kernel>=0.8.0", before["dependencies"])
+                self.assertIn("opl-netfleet-kernel>=0.8.1", before["dependencies"])
                 self.assertNotIn("opl-netfleet-kernel", before["dependencies"])
                 for kind in ("pre-install", "post-install", "pre-deinstall", "post-deinstall", "pre-upgrade", "post-upgrade"):
                     hook = before["scripts"][kind].read_text()

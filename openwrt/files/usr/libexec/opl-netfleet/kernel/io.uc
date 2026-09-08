@@ -19,8 +19,7 @@ export function mkdir_private(path, owner) {
 	if (fs.lstat(path) == null && !fs.mkdir(path, 0700)) return false;
 	return trusted(path, 'directory', owner);
 };
-export function atomic_json(path, value) {
-	const text = sprintf('%J\n', value);
+export function atomic_text(path, text) {
 	const directory = fs.mkdtemp(`${path}.XXXXXX`);
 	if (directory == null) return false;
 	const name = `${directory}/value.json`;
@@ -32,4 +31,7 @@ export function atomic_json(path, value) {
 	fs.unlink(name);
 	fs.rmdir(directory);
 	return ok == true;
+};
+export function atomic_json(path, value) {
+	return atomic_text(path, sprintf('%J\n', value));
 };

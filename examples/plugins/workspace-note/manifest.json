@@ -17,8 +17,8 @@
     "workspace-note": {"service": "workspace-note.document", "method": "inspect", "access": "read"}
   },
   "actions": {
-    "config-get": {"service": "workspace-note.document", "method": "read", "access": "read"},
-    "config-set": {"service": "workspace-note.document", "method": "save", "access": "write"}
+    "config-get": {"service": "workspace-note.document", "method": "read", "access": "read", "lock": "plugin"},
+    "config-set": {"service": "workspace-note.document", "method": "save", "access": "write", "lock": "plugin"}
   },
   "configuration": {"read": "config-get", "write": "config-set"},
   "ui": [{"id": "note", "title": "Workspace note", "module": "resources/page.js"}]

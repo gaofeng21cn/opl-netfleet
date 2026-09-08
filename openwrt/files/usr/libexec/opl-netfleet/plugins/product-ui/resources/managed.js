@@ -12,6 +12,12 @@ function errorLabel(code) {
 	if (code === 'plugin_load_failed_rolled_back') return '插件加载失败，已恢复未加载状态';
 	if (typeof code === 'string' && code.endsWith('_rolled_back')) return errorLabel(code.slice(0, -12)) + '；已恢复更新前版本和运行状态';
 	return ({
+		plugin_data_busy: '插件数据正在读写，请稍后重试',
+		plugin_system_revision_changed: '服务组合或插件版本已变化，请关闭后重新读取',
+		plugin_system_dependencies_invalid: '组合依赖不完整，请先修正校验结果',
+		plugin_system_recovery_required: '组合恢复尚未确认，请检查相关插件状态',
+		plugin_system_apply: '组合应用失败',
+		plugin_system_invalid: '服务组合格式无效',
 		plugin_package_maintenance: '插件正在安装或维护',
 		plugin_kernel_maintenance: '内核正在更新，请稍后重试',
 		plugin_disabled: '插件未启用',
@@ -324,6 +330,45 @@ function loadComponents(controller) {
 	return controller.componentsRead;
 }
 
+function compositionDialog(controller) {
+	const output = E('p', { 'role': 'status' }, '正在读取服务组合…');
+	const editor = E('textarea', { 'rows': 16, 'aria-label': '服务组合配置', 'style': 'width:100%;box-sizing:border-box;font-family:monospace' }, '');
+	let revision, preview = null, busy = false, closed = false;
+	const apply = button('应用组合', async function() {
+		if (busy || !preview || preview.text !== editor.value) return;
+		busy = true; apply.disabled = true; validate.disabled = true;
+		try {
+			await api.systemApply({ revision, config: preview.config, confirm: true });
+			if (!closed) { output.textContent = '组合已应用，插件页面会自动更新。'; editor.disabled = true; }
+			await loadComponents(controller);
+		} catch (error) { if (!closed) output.textContent = errorLabel(error.message || String(error)); }
+		finally { busy = false; preview = null; if (!closed) validate.disabled = false; }
+	}, true);
+	const validate = button('校验并预览影响', async function() {
+		if (busy || !revision) return;
+		busy = true; apply.disabled = true; validate.disabled = true; preview = null;
+		try {
+			const config = JSON.parse(editor.value), text = editor.value;
+			const result = await api.systemValidate({ revision, config });
+			if (closed || editor.value !== text) return;
+			if (result.valid) {
+				preview = { config, text };
+				output.textContent = '校验通过。受影响插件：' + (result.affected_plugins.join('、') || '无') + '。点击“应用组合”确认保存并交接相关资源。';
+				apply.disabled = false;
+			} else output.textContent = result.errors.map(item => [item.instance, item.service, item.error].filter(Boolean).join(' · ')).join('\n');
+		} catch (error) { if (!closed) output.textContent = errorLabel(error.message || String(error)); }
+		finally { busy = false; if (!closed) validate.disabled = false; }
+	}, true);
+	editor.addEventListener?.('input', function() { preview = null; apply.disabled = true; });
+	const close = button('关闭', function() { closed = true; editor.value = ''; ui.hideModal(); });
+	ui.showModal('服务组合与实例', [E('p', {}, '维护服务提供者、插件开关与实例配置。先校验依赖和影响，再应用。'), editor, output,
+		E('div', { 'class': 'right' }, [validate, ' ', apply, ' ', close])]);
+	return api.systemGet().then(function(result) {
+		if (closed) return;
+		revision = result.revision; editor.value = JSON.stringify(result.config, null, 2); validate.disabled = false; output.textContent = '已读取当前私有组合配置。';
+	}).catch(function(error) { if (!closed) output.textContent = errorLabel(error.message || String(error)); });
+}
+
 function pluginDialog(controller, plugin) {
 	const output = E('pre', { 'style': 'max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere' }, '');
 	const status = E('p', {}, '正在读取');
@@ -346,10 +391,13 @@ function pluginDialog(controller, plugin) {
 			if (actions.indexOf(action) >= 0) values = JSON.parse(params.value);
 			if (!values || typeof values !== 'object' || Array.isArray(values)) throw new Error('参数必须是 JSON 对象');
 		} catch (error) { status.textContent = error.message; return; }
-		const writing = ['load', 'reload', 'unload'].indexOf(action) >= 0 || (plugin.actions || {})[action] === 'write';
+			const definition = (plugin.actions || {})[action];
+			const access = typeof definition === 'string' ? definition : definition && definition.access;
+			const writing = ['load', 'reload', 'unload'].indexOf(action) >= 0 || access === 'write';
 		const execute = function() {
 			busy(true);
-			const request = { id: plugin.id, action: action, revision: revision, confirm: writing, params: values };
+				const request = { id: plugin.id, action: action, revision: revision, confirm: writing, params: values };
+				if (plugin.instance) request.instance = plugin.instance;
 			return (writing ? api.pluginCall(request) : api.pluginRead(request)).then(show).catch(function(error) {
 				status.textContent = errorLabel(error.message || String(error));
 			}).finally(function() { busy(false); if (writing) loadComponents(controller); });
@@ -449,7 +497,7 @@ function componentsPage(controller) {
 	if (!controller.liveDataReady) check.setAttribute('title', '等待设备实时状态恢复');
 	else if (active) check.setAttribute('title', '设备正在执行操作');
 	const content = [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h3', {}, '软件与更新'), E('div', { 'class': 'netfleet-inline-actions' }, [
-		refresh, check
+		refresh, check, button('服务组合', function() { return compositionDialog(controller); }, active || controller.context?.readOnly === true)
 	]) ]), operationNode(controller, 'packages') ];
 	if (controller.componentsError) content.push(E('p', { 'class': 'is-warning', 'role': 'alert' }, '组件信息未能确认：' + errorLabel(controller.componentsError.message)));
 	if (!snapshot) {

@@ -50,7 +50,8 @@ export function descriptor_error(value, id) {
 			!method_name(command.method) || index(['read','write'], command.access) < 0) return 'plugin_manifest_invalid';
 		if (value.actions != null && type(value.actions) != 'object') return 'plugin_manifest_invalid';
 		for (let name, action in value.actions ?? {}) if (!valid_id(name) || index(['get','load','unload','reload'], name) >= 0 ||
-			type(action) != 'object' || length(keys(action)) != 3 || value.services[action.service] == null || !method_name(action.method) ||
+				type(action) != 'object' || length(filter(keys(action), key => index(['service','method','access','lock'], key) < 0)) || value.services[action.service] == null || !method_name(action.method) ||
+				index(['network','plugin'], action.lock ?? 'network') < 0 ||
 			index(['read','write'], action.access) < 0) return 'plugin_manifest_invalid';
 		if (value.lifecycle != null) {
 			if (type(value.lifecycle) != 'object' || value.lifecycle.drain == null || value.lifecycle.resume == null) return 'plugin_manifest_invalid';

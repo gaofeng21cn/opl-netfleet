@@ -12,6 +12,9 @@ function declare(options) {
 }
 
 const calls = {
+	systemGet: declare({ object: 'opl-netfleet.plugins', method: 'system_get' }),
+	systemValidate: declare({ object: 'opl-netfleet.plugins', method: 'system_validate', params: [ 'request' ] }),
+	systemApply: declare({ object: 'opl-netfleet.plugins', method: 'system_apply', params: [ 'request' ] }),
 	pluginsList: declare({ object: 'opl-netfleet.plugins', method: 'plugins_list' }),
 	pluginRead: declare({ object: 'opl-netfleet.plugins', method: 'plugin_read', params: [ 'request' ] }),
 	pluginCall: declare({ object: 'opl-netfleet.plugins', method: 'plugin_call', params: [ 'request' ] }),
@@ -127,6 +130,9 @@ function transferWrite(method, value) {
 }
 
 return baseclass.extend({
+	systemGet: function() { return execute('systemGet'); },
+	systemValidate: function(request) { return executeRequest('systemValidate', request); },
+	systemApply: function(request) { return withRpcTimeout(300, function() { return executeRequest('systemApply', request); }); },
 	compatibilityGet: function() { return execute('compatibilityGet'); },
 	compatibilityCa: function() { return execute('compatibilityCa'); },
 	compatibilityApply: function(request) { return executeRequest('compatibilityApply', request); },

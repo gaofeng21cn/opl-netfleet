@@ -122,7 +122,8 @@ def validate_service(manifest, source):
     actions = manifest.get("actions", {})
     if not isinstance(actions, dict) or any(
             not valid_id(name) or name in LIFECYCLE
-            or not validate_method(action, {"service", "method", "access"})
+            or not validate_method(action, {"service", "method", "access"} | ({"lock"} if isinstance(action, dict) and "lock" in action else set()))
+            or action.get("lock", "network") not in ("network", "plugin")
             or action["service"] not in services or action["access"] not in ("read", "write")
             for name, action in actions.items()):
         raise ValueError("invalid service action")
@@ -310,7 +311,7 @@ define Package/{package}
   CATEGORY:=Network
   TITLE:=NetFleet plugin: {plugin_id}
   DEPENDS:={dependencies}
-  EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.0)
+  EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.1)
   PKGARCH:=all
 endef
 

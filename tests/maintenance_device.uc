@@ -30,6 +30,16 @@ const before = get();
 check(before.ok && before.result.supported, "native maintenance is available");
 const baseline_revision = before.result.revision;
 const baseline_profile = current_profile();
+const private_system = '/etc/opl-netfleet/system.json';
+const original_system = fs.readfile(private_system);
+const plugin_directory = '/etc/opl-netfleet/plugin-data';
+if (fs.lstat(plugin_directory) == null) check(fs.mkdir(plugin_directory, 0700), 'private plugin data directory');
+const plugin_document = `${plugin_directory}/maintenance-fixture.json`;
+check(fs.writefile(plugin_document, '{"instance":"review","text":"saved"}') && fs.chmod(plugin_document, 0600), 'plugin document fixture');
+const composition_config = original_system == null ? { schema: 'opl-netfleet-system.v1', bindings: {}, enabled: {} } : json(original_system);
+composition_config.config = { ...(composition_config.config ?? {}), models: { fixture: 'saved' } };
+composition_config.instances = { ...(composition_config.instances ?? {}), review: { config: { models: { fixture: 'review' } } } };
+check(fs.writefile(private_system, sprintf('%J', composition_config)) && fs.chmod(private_system, 0600), 'private composition fixture');
 if (ARGV[0] == "stopped") {
 	check(before.result.core.running == false, "stopped fixture precondition");
 	const exported = backup_export();
@@ -44,6 +54,8 @@ if (ARGV[0] == "stopped") {
 	report(invoke(backup_restore, { backup: exported.result.backup, confirm: true }), "stopped restore");
 	check(get().result.core.running == false && current_profile() == baseline_profile, "stopped restore does not start core");
 	check(diagnostics().result.controller_available == false, "diagnostics works without controller");
+	fs.unlink(plugin_document);
+	if (original_system == null) fs.unlink(private_system); else fs.writefile(private_system, original_system);
 	lock.close();
 	print("maintenance_stopped_ok\n");
 	exit(0);
@@ -74,6 +86,8 @@ check(uci.commit("netfleet") && fs.chmod("/etc/config/netfleet", 0600), "fixture
 const exported = backup_export();
 report(exported, "backup export");
 const archive = exported.result.backup;
+check(archive.format == 'netfleet-backup-v2' && archive.composition.config.instances.review.config.models.fixture == 'review', 'backup includes instance composition');
+check(length(filter(archive.files, file => file.path == 'plugin-data/maintenance-fixture.json')) == 1, 'backup includes plugin private data');
 check(length(filter(archive.files, file => file.path == "policy-sources/base-v1.json")) == 1, "0644 packaged baseline is backed up");
 check(index(sprintf("%J", archive), "private-option") >= 0, "unexposed UCI fields exported");
 check(length(filter(archive.files, file => file.path == "native/run/config.yaml" || index(file.path, "ownership") >= 0)) == 0, "backup excludes runtime ownership");
@@ -81,7 +95,14 @@ const digest = sha256("/etc/config/netfleet");
 let unsafe = cloned(archive);
 unsafe.files[0].path = "../../etc/shadow";
 check(!invoke(backup_restore, { backup: unsafe, confirm: true }).ok && sha256("/etc/config/netfleet") == digest, "invalid backup rejected before mutation");
+check(fs.writefile(plugin_document, '{"text":"changed"}'), 'change private plugin data');
 report(invoke(backup_restore, { backup: archive, confirm: true }), "active backup round trip");
+check(json(fs.readfile(plugin_document)).text == 'saved' && json(fs.readfile(private_system)).instances.review.config.models.fixture == 'review', 'restore reads back private plugin data and composition');
+const legacy = cloned(archive); legacy.format = 'netfleet-backup-v1'; delete legacy.composition;
+legacy.files = filter(legacy.files, file => index(file.path, 'plugin-data/') != 0);
+const private_digest = sha256(private_system), plugin_digest = sha256(plugin_document);
+report(invoke(backup_restore, { backup: legacy, confirm: true }), 'legacy backup import');
+check(sha256(private_system) == private_digest && sha256(plugin_document) == plugin_digest, 'legacy backup preserves current plugin composition and data');
 check(current_profile() == baseline_profile && get().result.core.running, "active profile and core preserved");
 check(cursor().get("netfleet", "mixin", "maintenance_preserve_test") == "private-option", "unexposed UCI field retained");
 
@@ -95,6 +116,7 @@ push(failing.files, { path: "native/mixin.json", encoding: "base64", content: b6
 const failed = invoke(backup_restore, { backup: failing, confirm: true });
 check(!failed.ok && failed.result?.rollback?.ok == true, `failed activation restores inputs: ${failed.error}`);
 check(get().result.core.running && current_profile() == baseline_profile, "failed restore recovers prior owner");
+check(sha256(private_system) == private_digest && sha256(plugin_document) == plugin_digest, 'failed restore preserves prior plugin bytes');
 report(invoke(core_action, { action: "reload", confirm: true }), "core reload");
 report(invoke(core_action, { action: "restart", confirm: true }), "core restart");
 check(current_profile() == baseline_profile, "core maintenance preserves profile selection");
@@ -109,6 +131,8 @@ cleanup.delete("netfleet", "mixin", "maintenance_preserve_test");
 check(cleanup.commit("netfleet") && fs.chmod("/etc/config/netfleet", 0600), "fixture field removed");
 check(fs.chmod(packaged_baseline, baseline_mode), "baseline mode restored");
 fs.unlink(envelope);
+fs.unlink(plugin_document);
+if (original_system == null) fs.unlink(private_system); else fs.writefile(private_system, original_system);
 lock.close();
 print("maintenance_device_ok\n");
 

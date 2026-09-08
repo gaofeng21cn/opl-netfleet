@@ -742,7 +742,7 @@ ucode "$main" status >"$work/refresh-status.json"
 
 : >"$metrics/status.ms"
 stage=status_profile
-for sample in $(seq 1 5); do
+for sample in $(seq 1 30); do
 	status_started_ms=$(date +%s%3N)
 	ucode "$main" status >"$work/status.json" 2>"$work/status.stderr"
 	status_finished_ms=$(date +%s%3N)
@@ -750,8 +750,8 @@ for sample in $(seq 1 5); do
 	printf '%s\n' "$((status_finished_ms - status_started_ms))" >>"$metrics/status.ms"
 done
 sort -n "$metrics/status.ms" >"$metrics/status.sorted"
-status_p50_ms=$(sed -n '3p' "$metrics/status.sorted")
-status_p95_ms=$(sed -n '5p' "$metrics/status.sorted")
+status_p50_ms=$(sed -n '15p' "$metrics/status.sorted")
+status_p95_ms=$(sed -n '29p' "$metrics/status.sorted")
 
 stage=supervisor_idle_profile
 ucode "$supervisor" >"$work/supervisor.log" 2>&1 &
@@ -759,7 +759,7 @@ supervisor_pid=$!
 sleep 1
 supervisor_ticks_start=$(awk '{print $14 + $15}' "/proc/$supervisor_pid/stat")
 supervisor_started=$(date +%s)
-sleep 3
+sleep 60
 supervisor_ticks_end=$(awk '{print $14 + $15}' "/proc/$supervisor_pid/stat")
 supervisor_finished=$(date +%s)
 supervisor_rss_kib=$(awk '/^VmRSS:/ {print $2}' "/proc/$supervisor_pid/status")
@@ -871,7 +871,7 @@ supervisor_cpu_milli_percent=$(awk -v ticks="$supervisor_ticks" -v elapsed="$sup
 stage=complete
 qualification=$work/qualification.json
 qualification_temporary=$qualification.tmp
-printf '{"ok":true,"source_commit":"%s","source_tree":"%s","checks":{"ucode_runtime":true,"mihomo_runtime":true,"connections_readback":true,"config_get":true,"config_validate":true,"config_save_inactive":true,"config_apply_saved":true,"config_apply_active":true,"config_apply_rollback":true,"compile_staged":true,"multi_provider_topology":true,"enable_readback":true,"select_readback":true,"direct_history_isolated":true,"subscription_refresh_unchanged":true,"subscription_refresh_changed":true,"subscription_refresh_provider_lkg":true,"subscription_refresh_rollback":true,"direct_fallback":true,"supervisor_native_recovery":true,"supervisor_lan_ingress_passthrough":true,"supervisor_lock_retry":true,"supervisor_dns_ingress_passthrough":true,"disable_native":true},"metrics":{"compile_ms":%s,"enable_ms":%s,"select_auto_ms":%s,"disable_ms":%s,"status_samples":5,"status_p50_ms":%s,"status_p95_ms":%s,"supervisor_window_seconds":%s,"supervisor_cpu_milli_percent":%s,"supervisor_rss_kib":%s},"runtime":{"openwrt_ucode":true,"mihomo_version":"v1.19.30","yq_version":"v4.53.6","nikki_fixture":"synthetic_lifecycle_only"}}\n' \
+printf '{"ok":true,"source_commit":"%s","source_tree":"%s","checks":{"ucode_runtime":true,"mihomo_runtime":true,"connections_readback":true,"config_get":true,"config_validate":true,"config_save_inactive":true,"config_apply_saved":true,"config_apply_active":true,"config_apply_rollback":true,"compile_staged":true,"multi_provider_topology":true,"enable_readback":true,"select_readback":true,"direct_history_isolated":true,"subscription_refresh_unchanged":true,"subscription_refresh_changed":true,"subscription_refresh_provider_lkg":true,"subscription_refresh_rollback":true,"direct_fallback":true,"supervisor_native_recovery":true,"supervisor_lan_ingress_passthrough":true,"supervisor_lock_retry":true,"supervisor_dns_ingress_passthrough":true,"disable_native":true},"metrics":{"compile_ms":%s,"enable_ms":%s,"select_auto_ms":%s,"disable_ms":%s,"status_samples":30,"status_p50_ms":%s,"status_p95_ms":%s,"supervisor_window_seconds":%s,"supervisor_cpu_milli_percent":%s,"supervisor_rss_kib":%s},"runtime":{"openwrt_ucode":true,"mihomo_version":"v1.19.30","yq_version":"v4.53.6","nikki_fixture":"synthetic_lifecycle_only"}}\n' \
 	"$source_commit" "$source_tree" "$compile_ms" "$enable_ms" "$select_ms" "$disable_ms" \
 	"$status_p50_ms" "$status_p95_ms" "$supervisor_elapsed" "$supervisor_cpu_milli_percent" "$supervisor_rss_kib" \
 	>"$qualification_temporary"

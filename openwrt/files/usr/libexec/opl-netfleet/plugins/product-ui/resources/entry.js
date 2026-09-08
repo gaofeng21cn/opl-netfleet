@@ -1,6 +1,20 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 const reads = new Set(['status', 'events', 'connections', 'pluginsList', 'pluginRead', 'configGet', 'configValidate', 'networkGet', 'networkValidate', 'maintenanceGet', 'profileGet', 'backupExport', 'diagnosticsGet', 'dashboardGet', 'componentsGet', 'operationGet', 'nativeSetupGet', 'subscriptionsGet', 'migrationGet', 'onboardingGet', 'compatibilityGet', 'compatibilityCa']);
+const names = ['api', 'product', 'managed', 'compatibility', 'management', 'config', 'product-pages'];
+let factories;
+
+function loadFactories() {
+  if (!factories) {
+    const parameters = ['baseclass', 'ui', 'poll', 'rpc', 'fs', 'request', 'resourceUrl', 'netfleet', 'api', 'product', 'managed', 'compatibility', 'management', 'netfleetConfig'];
+    factories = Promise.all(names.map(async name => {
+      const response = await fetch(new URL(name + '.js', import.meta.url));
+      if (!response.ok) throw new Error('product_ui_resource_unavailable:' + name);
+      return new Function(...parameters, await response.text());
+    })).then(values => ({ parameters, values })).catch(error => { factories = null; throw error; });
+  }
+  return factories;
+}
 
 export async function mountPage(context, pageId) {
   const resourceUrl = name => new URL(name, import.meta.url).href;
@@ -14,17 +28,12 @@ export async function mountPage(context, pageId) {
       return target[name](...params);
     };
   } });
-  const names = ['api', 'product', 'managed', 'compatibility', 'management', 'config', 'product-pages'];
-  const sources = await Promise.all(names.map(async name => {
-    const response = await fetch(resourceUrl(name + '.js'), { signal: context.signal, cache: 'no-store' });
-    if (!response.ok) throw new Error('product_ui_resource_unavailable:' + name);
-    return response.text();
-  }));
+  const loaded = await loadFactories();
   if (context.signal.aborted) return;
   const bindings = { baseclass, ui, poll, rpc, fs, request, resourceUrl };
   // These installed LuCI modules share one revision and one page scope.
   for (let index = 0; index < names.length; index++) {
-    const exported = new Function(...Object.keys(bindings), sources[index])(...Object.values(bindings));
+    const exported = loaded.values[index](...loaded.parameters.map(name => bindings[name]));
     let value = typeof exported === 'function' ? new exported() : exported;
     if (names[index] === 'api') { value = guard(value); bindings.netfleet = value; }
     bindings[names[index] === 'config' ? 'netfleetConfig' : names[index]] = value;
