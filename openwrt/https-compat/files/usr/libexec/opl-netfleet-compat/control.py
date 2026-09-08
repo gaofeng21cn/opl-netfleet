@@ -66,12 +66,14 @@ def ancestor_holds_lock(path):
 @contextmanager
 def mutation_lock():
     with MUTATION_LOCK.open("a") as lock:
+        owned = True
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             if not ancestor_holds_lock(MUTATION_LOCK):
                 raise ValueError("mutation_busy") from None
-        yield
+            owned = False
+        yield lock if owned else None
 
 
 def read(path, fallback=None):
@@ -283,7 +285,29 @@ def save_state(state, previous):
     atomic(STATE, {**state, "events": events, "last_tick": time.monotonic()})
 
 
-def tick():
+def probe_without_network_lock(lock, work):
+    if lock is None:
+        return work()
+    paths = (CONFIG, TRUST, STATE, EFFECTIVE, CA / "mitmproxy-ca-cert.pem",
+             Path("/etc/opl-netfleet/native/run/config.yaml"), Path("/etc/config/netfleet"),
+             Path("/var/run/opl-netfleet-core/ownership.json"))
+    def identity():
+        return tuple(path.read_bytes() if path.exists() else None for path in paths), snapshot()
+    before = identity()
+    fcntl.flock(lock, fcntl.LOCK_UN)
+    try:
+        result = work()
+    finally:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError("mutation_busy") from None
+    if identity() != before:
+        raise ValueError("compatibility_probe_stale")
+    return result
+
+
+def tick(lock=None):
     config = validate(read(CONFIG, DEFAULT))
     previous = read(STATE, {})
     now = time.monotonic()
@@ -312,7 +336,7 @@ def tick():
             gateway.prepare(network["interfaces"], network.get("dscp_bypass", []))
     except (OSError, ValueError, subprocess.SubprocessError):
         network, reason = {}, "native_gateway_unavailable"
-    health = engine_health(probe=True)
+    health = probe_without_network_lock(lock, lambda: engine_health(probe=True))
     expected = hashlib.sha256(EFFECTIVE.read_bytes()).hexdigest() if EFFECTIVE.exists() else None
     healthy = (not reason and health.get("ready") and health.get("processing_chain") is True
                and health.get("transparent_chain") is True and health.get("revision") == expected)
@@ -361,7 +385,7 @@ def tick():
                and (rule["match"] == "exact" or rule["id"] in observed)
                and rule_states.get(rule["id"], {}).get("intercepting") is not True
                and now - rule_states.get(rule["id"], {}).get("last_probe", -100) >= 10]
-    probes = asyncio.run(probe_rules(pending)) if pending else {}
+    probes = probe_without_network_lock(lock, lambda: asyncio.run(probe_rules(pending))) if pending else {}
     for rule in active["rules"]:
         if not rule["enabled"] or rule["strategy"] != "h2":
             continue
@@ -393,7 +417,7 @@ def tick():
         save_state(state, previous)
         return
     target_rules = [rule for rule in active["rules"] if rule["enabled"] and rule["strategy"] == "h2"]
-    targets = asyncio.run(resolve_targets(target_rules))
+    targets = probe_without_network_lock(lock, lambda: asyncio.run(resolve_targets(target_rules)))
     pairs = {(device, rule["port"], destination) for rule in target_rules
              for device in rule["devices"] for destination in targets[rule["id"]]}
     candidates = []
@@ -511,10 +535,10 @@ def main():
         return status()
     if action == "ca":
         return {"pem": (CA / "mitmproxy-ca-cert.pem").read_text(), "sha256": ca_fingerprint()}
-    with mutation_lock():
+    with mutation_lock() as lock:
         RUN.mkdir(parents=True, exist_ok=True, mode=0o700)
         if action == "tick":
-            tick()
+            tick(lock)
             return {"reconciled": True}
         if action == "prepare":
             prepare_ca()

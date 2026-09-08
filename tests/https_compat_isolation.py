@@ -8,9 +8,33 @@ import unittest
 
 sys.path.insert(0, "/usr/libexec/opl-netfleet-compat")
 import isolation
+import control
 
 
 class Isolation(unittest.TestCase):
+    def test_probe_releases_network_lock_and_rejects_stale_results(self):
+        from unittest.mock import patch
+        import tempfile
+        import fcntl
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = {name: root / name for name in ("CONFIG", "TRUST", "STATE", "EFFECTIVE")}
+            for path in paths.values():
+                path.write_text("{}")
+            with patch.multiple(control, **paths, CA=root), patch.object(control, "snapshot", return_value={"core_pid": 123}):
+                with (root / "network.lock").open("w") as lock:
+                    fcntl.flock(lock, fcntl.LOCK_EX)
+                    def probe():
+                        with (root / "network.lock").open("a") as concurrent:
+                            fcntl.flock(concurrent, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        return "observed"
+                    self.assertEqual(control.probe_without_network_lock(lock, probe), "observed")
+                    def changed_probe():
+                        probe()
+                        paths["CONFIG"].write_text('{"enabled":false}')
+                    with self.assertRaisesRegex(ValueError, "compatibility_probe_stale"):
+                        control.probe_without_network_lock(lock, changed_probe)
+
     def test_restricted_process_and_resource_failure(self):
         if not Path("/tmp/netfleet-compat-vm-authorized").exists():
             self.skipTest("disposable VM required")

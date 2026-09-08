@@ -338,7 +338,7 @@ compatibility_snapshot = function() {
 		condition?.left?.["&"]?.[0]?.ct?.key == "mark" && condition?.left?.["&"]?.[1] == 16777216 &&
 		guard[1] != null && "return" in guard[1];
 	return { ok: true, result: { backend: "native-mihomo", ready: result.result?.ready == true,
-		compatibility_ownership_guard: ownership_guard,
+		compatibility_ownership_guard: ownership_guard, core_pid: process_state().pid, engine_pid: engine?.pid,
 		router_proxy: enabled("proxy", "router_proxy"), lan_proxy: enabled("proxy", "lan_proxy"),
 		ipv4_proxy: enabled("proxy", "ipv4_proxy"), ipv6_proxy: enabled("proxy", "ipv6_proxy"),
 		interfaces: interfaces, custom_lan_access: custom, preserve_source_port: true,

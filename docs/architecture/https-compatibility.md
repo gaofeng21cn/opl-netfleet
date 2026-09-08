@@ -70,7 +70,9 @@ OpenWrt SDK、依赖目录、APK 签名私钥、输出目录和源码 ref。依�
 
 私有配置和稳定 CA 位于 `/etc/opl-netfleet/compatibility`，运行状态与有效规则位于
 `/var/run/opl-netfleet-compat`。原生 gateway 的现有观察进程每两秒调用 tick；引擎由
-procd 托管。引擎使用专用 `netfleet-compat` 用户，配置、信任记录与状态仍由 root 管理；
+procd 托管。后台 tick 在引擎健康、上游探测与 DNS 等待期间释放全局 mutation 锁；
+重新取得锁后核对配置、信任、状态、有效配置及基础运行身份，变化时丢弃该次结果，
+不续租也不覆盖新的用户意图。引擎使用专用 `netfleet-compat` 用户，配置、信任记录与状态仍由 root 管理；
 引擎仅可读取有效规则与本插件 CA，健康 socket 位于独立可写子目录。启动前必须落实
 cgroup v2 的内存、CPU 与进程数限制，并设置文件描述符及单文件大小限制；缺少所需
 控制器时拒绝启动引擎，接管继续旁路。该约束提供进程资源与文件权限隔离，不是完整
