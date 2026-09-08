@@ -92,6 +92,7 @@ class Compatibility:
                                      "revision": self.revision, "active_requests": sum(client in clients for client in self.active.values()),
                                      "active_connections": len(self.clients), "processing_chain": processing,
                                      "transparent_chain": transparent,
+                                     "local_probes": dict(self.probe.results) if self.probe else {},
                                      "clients_by_address": dict(Counter(self.clients.values())),
                                      "clients_by_device": dict(Counter(self.client_devices.values())),
                                      "unassigned_connections": len(self.clients.keys() - self.client_devices.keys()),

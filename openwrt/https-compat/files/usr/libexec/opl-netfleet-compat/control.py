@@ -152,7 +152,7 @@ def prepare_ca():
 def engine_health(probe=False):
     # A busy event loop can delay one socket reply while the data plane is healthy.
     # Recheck the full chain once; this function never renews the kernel lease.
-    for _ in range(2 if probe else 1):
+    for attempt in range(2 if probe else 1):
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
                 connection.settimeout(1.8 if probe else 0.4)
@@ -161,6 +161,10 @@ def engine_health(probe=False):
                 with connection.makefile("rb") as stream:
                     value = json.loads(stream.readline(65536))
                     if value.get("service") == "netfleet-https-compat":
+                        probes = value.get("local_probes", {})
+                        failed = [item for item in probes.values() if item.get("ok") is False]
+                        if probe and attempt == 0 and failed and all(item.get("reason") == "timeout" for item in failed):
+                            continue
                         return value
         except (OSError, ValueError):
             pass
@@ -275,13 +279,15 @@ def status():
             "active_requests": health.get("active_requests"), "rules": health.get("rules", {}),
             "recovery": state.get("recovery", {}), "ca_sha256": fingerprint,
             "rule_recovery": state.get("rule_recovery", {}),
+            "local_probes": state.get("local_probes", {}),
             "trust": verified_trust(config, read(TRUST, {}), fingerprint), "events": state.get("events", [])[-100:]}
 
 
 def save_state(state, previous):
     events = previous.get("events", [])
     if (state.get("reason"), state.get("intercepting")) != (previous.get("reason"), previous.get("intercepting")):
-        events = [*events, {"at": int(time.time()), "reason": state.get("reason"), "intercepting": state.get("intercepting", False)}][-100:]
+        events = [*events, {"at": int(time.time()), "reason": state.get("reason"), "intercepting": state.get("intercepting", False),
+                           "local_probes": state.get("local_probes", {})}][-100:]
     for identity, current in state.get("rule_recovery", {}).items():
         old = previous.get("rule_recovery", {}).get(identity, {})
         if (current.get("reason"), current.get("intercepting")) != (old.get("reason"), old.get("intercepting")):
@@ -318,7 +324,8 @@ def tick(lock=None):
     now = time.monotonic()
     if now - previous.get("last_tick", now) > 10:
         previous["recovery"] = advance(previous.get("recovery"), requested=config["enabled"],
-                                        healthy=False, reason="management_lease_expired", now=now)
+                                        healthy=False, reason="management_lease_expired", now=now,
+                                        count_failure=previous.get("recovery", {}).get("intercepting") is True)
     if not config["enabled"]:
         gateway.bypass()
         health = engine_health()
@@ -359,16 +366,18 @@ def tick(lock=None):
     if starting:
         reason = 'engine_starting'
     recovery = advance(previous.get("recovery"), requested=True, healthy=bool(healthy), reason=reason, now=now,
-                       count_failure=not starting and network.get("ready") is True and not network.get("reason") and reason != "engine_config_pending")
+                       count_failure=previous.get("recovery", {}).get("intercepting") is True
+                       and not starting and network.get("ready") is True and not network.get("reason") and reason != "engine_config_pending")
     last_pid = previous.get("engine_pid")
     if health.get("pid") and last_pid and health["pid"] != last_pid:
-        if previous.get("recovery", {}).get("healthy") is True:
+        if previous.get("recovery", {}).get("intercepting") is True:
             recovery["faults"] = [stamp for stamp in recovery.get("faults", []) if now - 600 <= stamp <= now] + [now]
         recovery["latched"] = recovery.get("latched", False) or len(recovery["faults"]) >= 3
         recovery["intercepting"] = False
         recovery["healthy_since"] = now if healthy else None
         recovery["reason"] = "manual_recovery_required" if recovery["latched"] else "engine_restarted"
-    state = {**previous, "recovery": recovery, "reason": recovery["reason"], "intercepting": False}
+    state = {**previous, "recovery": recovery, "reason": recovery["reason"], "intercepting": False,
+             "local_probes": health.get("local_probes", {})}
     state["engine_pid"] = health.get("pid", last_pid)
     if health.get('ready') and health.get('pid'):
         state['ready_engine_pid'] = health['pid']

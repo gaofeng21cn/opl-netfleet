@@ -1,5 +1,6 @@
 """Execute the production isolation launcher in a disposable OpenWrt guest."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -12,6 +13,44 @@ import control
 
 
 class Isolation(unittest.TestCase):
+    def test_module_recovery_counts_outages_after_readmission(self):
+        from contextlib import ExitStack
+        from unittest.mock import patch
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory)
+            paths = {name: root / name for name in ('CONFIG', 'TRUST', 'STATE', 'EFFECTIVE')}
+            stack.enter_context(patch.multiple(control, **paths))
+            config = {**control.DEFAULT, 'enabled': True}
+            paths['CONFIG'].write_text(json.dumps(config))
+            paths['TRUST'].write_text('{}')
+            paths['EFFECTIVE'].write_text(json.dumps(config))
+            stack.enter_context(patch.object(control.device_identity, 'resolve', return_value=({}, {})))
+            stack.enter_context(patch.object(control, 'probe_without_network_lock', side_effect=lambda lock, work: work()))
+            stack.enter_context(patch.object(control, 'snapshot', return_value={'ready': True, 'reason': None}))
+            stack.enter_context(patch.object(control, 'ca_fingerprint', return_value=None))
+            stack.enter_context(patch.object(control.gateway, 'prepare'))
+            stack.enter_context(patch.object(control.gateway, 'bypass'))
+            execute = stack.enter_context(patch.object(control.subprocess, 'run'))
+            health = stack.enter_context(patch.object(control, 'engine_health'))
+            state = {'engine_pid': 123, 'recovery': {'healthy': True, 'healthy_since': 900,
+                                                   'intercepting': True, 'faults': []}}
+            for now, healthy, count in ((1000, False, 1), (1002, True, 1), (1004, False, 1),
+                                        (1006, True, 1), (1010, False, 1), (1012, True, 1),
+                                        (1042, True, 1), (1044, False, 2), (1046, True, 2),
+                                        (1076, True, 2), (1078, False, 3)):
+                state['last_tick'] = now
+                paths['STATE'].write_text(json.dumps(state))
+                health.return_value = {'ready': True, 'pid': 123, 'processing_chain': healthy,
+                                       'transparent_chain': healthy,
+                                       'revision': hashlib.sha256(paths['EFFECTIVE'].read_bytes()).hexdigest()}
+                with patch.object(control.time, 'monotonic', return_value=now):
+                    control.tick()
+                state = json.loads(paths['STATE'].read_text())
+                self.assertEqual(len(state['recovery']['faults']), count, (now, state))
+                self.assertEqual(state['recovery']['latched'], count == 3, (now, state))
+            execute.assert_not_called()
+
     def test_cold_start_grace_expires_and_never_masks_a_ready_engine_failure(self):
         from contextlib import ExitStack
         from unittest.mock import patch

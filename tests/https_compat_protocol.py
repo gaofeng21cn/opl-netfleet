@@ -427,6 +427,10 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
     async def test_local_processing_probe(self):
         result = await asyncio.wait_for(self.health(probe=True), 2)
         self.assertTrue(result["processing_chain"])
+        self.assertEqual(set(result['local_probes']), {'processing', 'ipv4', 'ipv6'})
+        probe = result['local_probes']['processing']
+        self.assertEqual((probe['ok'], probe['stage'], probe['reason']), (True, 'http', None))
+        self.assertLess(probe['duration_ms'], probe['timeout_ms'])
         self.assertEqual(result["active_connections"], 0)
         self.assertEqual(result["rules"], {})
 

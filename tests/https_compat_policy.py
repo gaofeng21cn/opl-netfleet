@@ -81,6 +81,22 @@ with open(sys.argv[1], 'a') as file:
             self.assertEqual(control.engine_health(probe=True), health)
             self.assertEqual(socket_factory.call_count, 1)
 
+    def test_local_probe_timeout_rechecks_once_but_protocol_failure_does_not(self):
+        healthy = {"service": "netfleet-https-compat", "ready": True,
+                   "processing_chain": True, "transparent_chain": True, "local_probes": {}}
+        for reason, retries in (("timeout", 2), ("tls_failed", 1), ("response_invalid", 1)):
+            with self.subTest(reason=reason), patch.object(control.socket, "socket") as factory:
+                failed = {**healthy, "processing_chain": False,
+                          "local_probes": {"processing": {"ok": False, "reason": reason}}}
+                reader = factory.return_value.__enter__.return_value.makefile.return_value.__enter__.return_value
+                reader.readline.side_effect = [json.dumps(failed).encode(), json.dumps(healthy).encode()]
+                self.assertEqual(control.engine_health(probe=True), healthy if retries == 2 else failed)
+                self.assertEqual(factory.call_count, retries)
+                reader.readline.side_effect = [json.dumps(failed).encode()] * 2
+                factory.reset_mock()
+                self.assertEqual(control.engine_health(probe=True), failed)
+                self.assertEqual(factory.call_count, retries)
+
     def test_recovery_window_disable_and_manual_reset(self):
         state = None
         now = 0

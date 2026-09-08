@@ -3,6 +3,7 @@ from pathlib import Path
 import secrets
 import socket
 import ssl
+import time
 
 from h2.config import H2Configuration
 from h2.connection import H2Connection
@@ -17,11 +18,15 @@ class LocalProbe:
     def __init__(self, ca_dir):
         self.ca_dir = Path(ca_dir)
         self.server = None
+        self.client_context = None
+        self.results = {}
 
     async def start(self):
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(self.ca_dir / "probe-cert.pem", self.ca_dir / "probe-key.pem")
         context.set_alpn_protocols(["h2"])
+        self.client_context = ssl.create_default_context(cafile=str(self.ca_dir / "mitmproxy-ca-cert.pem"))
+        self.client_context.set_alpn_protocols(["http/1.1"])
         self.server = await asyncio.start_server(self.serve, ["127.0.0.1", "::1"], TLS_PORT, ssl=context)
 
     async def serve(self, reader, writer):
@@ -54,6 +59,8 @@ class LocalProbe:
     async def check(self, family=None):
         writer = None
         sock = None
+        started, stage, reason, ok = time.monotonic(), "connect", None, False
+        name = "ipv6" if family == socket.AF_INET6 else "ipv4" if family == socket.AF_INET else "processing"
         try:
             async with asyncio.timeout(1.4):
                 host = "::1" if family == socket.AF_INET6 else "127.0.0.1"
@@ -63,6 +70,7 @@ class LocalProbe:
                     writer.write(f"CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n\r\n".encode())
                     await writer.drain()
                     if not (await reader.readuntil(b"\r\n\r\n")).startswith(b"HTTP/1.1 200 "):
+                        reason = "connect_response_invalid"
                         return False
                 else:
                     sock = socket.socket(family, socket.SOCK_STREAM)
@@ -71,18 +79,29 @@ class LocalProbe:
                     await asyncio.get_running_loop().sock_connect(sock, (host, TLS_PORT))
                     reader, writer = await asyncio.open_connection(sock=sock)
                     sock = None  # StreamWriter owns the socket now.
-                context = ssl.create_default_context(cafile=str(self.ca_dir / "mitmproxy-ca-cert.pem"))
-                context.set_alpn_protocols(["http/1.1"])
-                await writer.start_tls(context, server_hostname="localhost")
+                stage = "tls"
+                await writer.start_tls(self.client_context, server_hostname="localhost")
+                stage = "http"
                 nonce = secrets.token_hex(16).encode()
                 writer.write(b"GET /" + nonce + f" HTTP/1.1\r\nHost: {authority}\r\nConnection: close\r\n\r\n".encode())
                 await writer.drain()
                 headers = await reader.readuntil(b"\r\n\r\n")
                 body = await reader.readexactly(32)
-                return headers.startswith(b"HTTP/1.1 200 ") and b"x-netfleet-protocol: h2\r\n" in headers.lower() and body == nonce
-        except (OSError, ValueError, asyncio.TimeoutError, asyncio.IncompleteReadError):
+                ok = headers.startswith(b"HTTP/1.1 200 ") and b"x-netfleet-protocol: h2\r\n" in headers.lower() and body == nonce
+                reason = None if ok else "response_invalid"
+                return ok
+        except asyncio.TimeoutError:
+            reason = "timeout"
+            return False
+        except ssl.SSLError:
+            reason = "tls_failed"
+            return False
+        except (OSError, ValueError, asyncio.IncompleteReadError):
+            reason = "connection_failed"
             return False
         finally:
+            self.results[name] = {"ok": ok, "stage": stage, "reason": reason,
+                                  "duration_ms": round((time.monotonic() - started) * 1000), "timeout_ms": 1400}
             if sock:
                 sock.close()
             if writer:
