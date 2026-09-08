@@ -339,6 +339,14 @@ rollback = function(before, work, names, versions, old, install_started, already
 	atomic_json(`${work}/rollback.json`, { errors: errors, identity: identity, private_inputs: inputs, runtime_restored: runtime });
 	return errors[0] ?? null;
 };
+function core_space_available(bytes, work) {
+	for (let location in ["/usr/libexec", work]) {
+		const available_kb = capture(`df -Pk ${q(location)} | awk 'NR == 2 { print $4 }'`);
+		if (type(bytes) != "int" || bytes <= 0 || !match(available_kb ?? "", /^[0-9]+$/) || int(available_kb) * 1024 < bytes)
+			return false;
+	}
+	return true;
+}
 upgrade = function(request, work, candidates) {
 	const names = request.component == "netfleet" ? product_packages() : [PACKAGES[2]];
 	const versions = installed();
@@ -355,6 +363,12 @@ upgrade = function(request, work, candidates) {
 		if (newer(versions[name], candidates[name])) candidates[name] = versions[name];
 	}
 	if (!length(filter(names, name => newer(candidates[name], versions[name])))) return;
+	if (request.component == "mihomo") {
+		const metadata = parsed(`apk --no-network query --from none -X ${q(request.feed)} --all-matches --format json --fields name,version,installed-size mihomo-meta`);
+		const candidate = filter(metadata ?? [], row => row.name == PACKAGES[2] && row.version == candidates[PACKAGES[2]])[0];
+		if (type(candidate?.["installed-size"]) != "int" || candidate["installed-size"] <= 0) fail("candidate_changed");
+		if (!core_space_available(candidate["installed-size"], work)) fail("insufficient_update_space");
+	}
 	const space = capture(`df -Pk ${q(ROOT)} | awk 'NR == 2 { print $4 }'`);
 	const footprint = capture(`du -sk ${q(`${work}/code`)} | awk '{print $1}'`);
 	if (!match(space ?? "", /^[0-9]+$/) || !match(footprint ?? "", /^[0-9]+$/) || int(space) < int(footprint) * 3 + 8192) fail("insufficient_update_space");
@@ -380,11 +394,7 @@ upgrade = function(request, work, candidates) {
 	if (!run_command(`apk --no-network --repositories-file /dev/null --simulate add ${join(" ", map(next, q))}`, work)) fail("package_validation_failed");
 	if (request.component == "mihomo") {
 		const bytes = parsed(`apk adbdump --format json ${q(next[0])}`)?.info?.["installed-size"];
-		for (let location in ["/usr/libexec", work]) {
-			const available_kb = capture(`df -Pk ${q(location)} | awk 'NR == 2 { print $4 }'`);
-			if (type(bytes) != "int" || bytes <= 0 || !match(available_kb ?? "", /^[0-9]+$/) || int(available_kb) * 1024 < bytes)
-				fail("insufficient_update_space");
-		}
+		if (!core_space_available(bytes, work)) fail("insufficient_update_space");
 	}
 	const before_status = parsed(`ucode ${q(MAIN)} status`)?.result;
 	const unconfigured = fs.lstat("/etc/opl-netfleet/policy.json") == null && !service_running(SERVICE);
