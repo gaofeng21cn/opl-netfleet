@@ -22,7 +22,8 @@ finish() {
 	rm -f /root/netfleet-component-space-fixture
 	if [ "$rc" -ne 0 ]; then
 		echo "Component qualification failed at: $stage" >&2
-		for file in "$work"/*-result.json "$work"/*.log /etc/opl-netfleet/package-transactions/*/log; do
+		ubus call service list '{"name":"opl-netfleet-update-recovery"}' >&2
+		for file in "$work"/*-result.json "$work"/*.log /tmp/opl-netfleet-operation-packages.json /etc/opl-netfleet/package-transactions/*/log; do
 			[ ! -f "$file" ] || { echo "--- $file" >&2; tail -50 "$file" >&2; }
 		done
 	fi
@@ -210,6 +211,7 @@ rpc_ready
 [ "$(pidof rpcd)" != "$rpcd_before" ]
 unchanged
 stage=durable_terminal_reconcile
+terminal_core_pid=$(pidof mihomo)
 transaction=/etc/opl-netfleet/package-transactions
 saved_id=$(jsonfilter -i "$transaction/request.json" -e '@.id')
 test "$(jsonfilter -i "$transaction/$saved_id/journal.json" -e '@.phase')" = complete
@@ -223,6 +225,7 @@ for attempt in $(seq 1 90); do
 	sleep 1
 done
 test ! -e "$transaction/pending.json"
+[ "$(pidof mihomo)" = "$terminal_core_pid" ]
 unchanged
 # A lost volatile progress record must not prevent the next operation.
 request components_check

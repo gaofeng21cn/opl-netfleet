@@ -7,12 +7,13 @@ const end = index(source, "rollback = function(", start);
 if (start < 0 || end < 0) die("recovery implementation unavailable");
 const implementation = substr(source, start, end - start);
 const harness = `
-let now = 0, sets = 0, starts = 0, chosen = "old", broken = false, changed = false;
+let now = 0, sets = 0, starts = 0, chosen = "old", broken = false, changed = false, running = false;
 let restore_services;
 const SERVICE = "test-core", MAIN = "test-main", KIND = "native-mihomo";
 function time() { return now; }
 function system(command) { now++; return 0; }
 function run_command(command, work) { starts++; return true; }
+function service_running(name) { return running; }
 function same_inputs(before) { return !changed; }
 function api_secret() { return "test"; }
 function controller_version(secret, timeout) { return now >= 1 ? "test" : null; }
@@ -27,8 +28,8 @@ const cases = `
 const before = {core: true, supervisor: true, active: true, selections: {group: "desired"}};
 check(restore_services(before, "/unused"), "eventually ready runtime must recover");
 check(now == 7 && sets == 1 && starts == 2, "wait for providers, gateway and probe without restarting repeatedly");
-now = 7; sets = 0; starts = 0;
-check(restore_services(before, "/unused") && sets == 0, "already restored selections must not be rewritten");
+now = 7; sets = 0; starts = 0; running = true;
+check(restore_services(before, "/unused") && sets == 0 && starts == 0, "already restored runtime must not be restarted or selections rewritten");
 now = 7; broken = true;
 check(!restore_services(before, "/unused") && now == 52, "persistent probe failure must time out");
 now = 7; broken = false; changed = true;

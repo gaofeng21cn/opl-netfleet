@@ -277,7 +277,7 @@ stop_services = function(work) {
 };
 restore_services = function(before, work) {
 	const deadline = time() + 45;
-	if (before.core && !run_command(`NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/${SERVICE} start`, work)) return false;
+	if (before.core && !service_running(SERVICE) && !run_command(`NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/${SERVICE} start`, work)) return false;
 	if (before.core) {
 		let ready = false;
 		while (time() < deadline) {
@@ -296,7 +296,7 @@ restore_services = function(before, work) {
 		}
 		if (!ready) return false;
 	}
-	if (before.supervisor && !run_command("NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet start", work)) return false;
+	if (before.supervisor && !service_running("opl-netfleet") && !run_command("NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet start", work)) return false;
 	if (before.unconfigured) return !before.core && same_inputs(before);
 	// Controller readiness precedes provider loading, gateway attachment and working DNS.
 	while (time() < deadline) {
@@ -456,6 +456,7 @@ recover = function() {
 	if (fs.lstat(PENDING) == null) return { recovered: false };
 	const pending = private_file(PENDING) ? read_json(PENDING) : null;
 	if (!match(pending?.id ?? "", /^[a-f0-9]{32}$/)) fail("update_recovery_state_invalid");
+	operation.begin("packages", "rolling_back", { id: pending.id, subject: "netfleet" });
 	const work = `${ROOT}/${pending.id}`;
 	const state = private_file(`${work}/journal.json`) ? read_json(`${work}/journal.json`) : null;
 	if (!state || state.before?.backend != KIND || !private_directory(work) || type(state.inputs) != "object" ||
@@ -467,12 +468,14 @@ recover = function() {
 		if (type(expected) != "object" || type(state.names) != "array") fail("update_recovery_state_invalid");
 		for (let name in state.names) if (current?.[name] != expected[name]) fail("rollback_identity_mismatch");
 		if (!same_inputs(state.before) || !restore_services(state.before, work)) fail("rollback_runtime_failed");
-		fs.unlink(PENDING); system("sync"); return { recovered: true };
+		fs.unlink(PENDING); system("sync");
+		operation.finish(state.phase == "complete", state.phase == "complete" ? null : "update_interrupted_rolled_back",
+			state.phase == "rolled_back" ? { rollback: { ok: true } } : null);
+		return { recovered: true };
 	}
 	const before = state.before, old = state.old, names = state.names, versions = state.versions;
 	if (type(old) != "array" || type(names) != "array" || type(versions) != "object") fail("update_recovery_state_invalid");
 	for (let path in old) if (index(path, `${work}/old/`) != 0 || !run_command(`apk verify ${q(path)}`, work)) fail("rollback_package_unavailable");
-	operation.begin("packages", "rolling_back", { id: pending.id, subject: "netfleet" });
 	journal(work, { ...state, phase: "recovering" });
 	if (!recovery_stop(work)) fail("rollback_stop_failed");
 	if (!run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work) ||
