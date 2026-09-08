@@ -58,6 +58,13 @@ unchanged() {
 	assert_json "$work/probe-result.json" '@.ok' true
 	assert_json "$work/probe-result.json" '@.result.ok' true
 	[ ! -e /tmp/opl-netfleet-package-upgrade-state ]
+	[ -e /tmp/netfleet-setup-fixture/client-ready ]
+	ip netns exec nf-setup-client nslookup -type=A www.gstatic.com 192.168.1.1 >>"$work/client.log" 2>&1
+	for address in 198.18.1.2 '[fd77:a::2]'; do
+		ip netns exec nf-setup-client curl -fsS --noproxy '*' --max-time 10 \
+			--cacert /tmp/local-probe.crt --resolve "netfleet-probe.test:19443:$address" \
+			https://netfleet-probe.test:19443/generate_204
+	done
 }
 wait_operation() {
 	wanted=$1
@@ -216,6 +223,21 @@ for name in $product_packages; do
 done
 rpc_ready
 unchanged
+stage=component_failed_package_hook_rollback
+printf '%s\n' "$feed_url/components-fixtures/bad-hook/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
+request components_update "$current"
+assert_json "$work/operation-result.json" '@.result.packages.state' failed
+assert_json "$work/operation-result.json" '@.result.packages.error' package_install_failed_rolled_back
+assert_json "$work/operation-result.json" '@.result.packages.recovery' restored
+cmp /etc/apk/world "$work/update-world"
+for name in $product_packages; do
+	expected=$(package_version "$name" current)
+	[ "$name" != opl-netfleet-plugin-dashboard ] || expected=$independent
+	apk list --manifest | grep -Fqx "$name $expected"
+done
+apk --no-network --simulate add opl-netfleet luci-app-netfleet >>"$work/post-hook-reconcile.log" 2>&1
+rpc_ready
+unchanged
 stage=core_update
 printf '%s\n' "$feed_url/components-fixtures/good/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
 uclient-fetch -q -O "$work/mihomo-meta-$core_old.apk" "$feed_url/components-fixtures/good/mihomo-meta-$core_old.apk"
@@ -250,4 +272,4 @@ unchanged
 stage=complete
 # Remove the explicit root introduced by the independent-plugin test; the product still needs it.
 apk --no-network --repositories-file /dev/null del opl-netfleet-plugin-dashboard >"$work/independent-root-remove.log" 2>&1
-printf '%s\n' '{"ok":true,"checks":{"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"installer_complete_product_upgrade":true,"component_preserves_newer_independent_plugin":true,"component_world_preserved":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"
+printf '%s\n' '{"ok":true,"checks":{"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"installer_complete_product_upgrade":true,"component_preserves_newer_independent_plugin":true,"component_world_preserved":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_failed_package_hook_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"

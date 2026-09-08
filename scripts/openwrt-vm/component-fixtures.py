@@ -66,7 +66,14 @@ def build(candidate, output, baseline=None):
                         "-out", str(private_key)], check=True, capture_output=True)
         subprocess.run(["openssl", "pkey", "-in", str(private_key), "-pubout", "-out", str(public_key)],
                        check=True, capture_output=True)
-        for kind in ("good", "bad", "bad-core"):
+        incompatible_root = scratch / "incompatible-compatibility"
+        incompatible_root.mkdir()
+        run("mkpkg", "--files", incompatible_root, "--sign-key", private_key,
+            "--output", output / "incompatible-compatibility.apk",
+            "--info", "name:opl-netfleet-https-compat", "--info", "version:0.1.7-r1",
+            "--info", "arch:noarch", "--info", "description:Dependency rejection fixture",
+            "--info", "license:MIT", "--info", "depends:opl-netfleet")
+        for kind in ("good", "bad", "bad-core", "bad-hook"):
             (output / kind).mkdir()
             for archive in candidate.glob("*.apk"):
                 shutil.copy2(archive, output / kind / archive.name)
@@ -115,6 +122,15 @@ def build(candidate, output, baseline=None):
                 independent_version = f"{base}-r{int(release) + 2}"
                 package_versions[name]["independent"] = independent_version
                 package(independent_version, "independent")
+            if name == "opl-netfleet-plugin-configuration":
+                # A real APK lifecycle failure, independent of a broken core binary.
+                original_scripts = list(script_args)
+                failed_hook = scratch / "failed-pre-upgrade"
+                failed_hook.write_text("#!/bin/sh\nexit 1\n")
+                script_args = [f"pre-upgrade:{failed_hook}" if value.startswith("pre-upgrade:") else value
+                               for value in script_args]
+                package(following, "bad-hook")
+                script_args = original_scripts
             if name == "opl-netfleet-plugin-mihomo":
                 init = root / "etc/init.d/opl-netfleet-core"
                 source = init.read_text()
@@ -127,22 +143,27 @@ def build(candidate, output, baseline=None):
                 core.write_text("#!/bin/sh\nexit 1\n")
                 core.chmod(0o755)
             package(following, "bad-core" if name == "mihomo-meta" else "bad")
-        for kind in ("old", "good", "bad", "bad-core", "independent"):
+        for kind in ("old", "good", "bad", "bad-core", "bad-hook", "independent"):
             run("--allow-untrusted", "mkndx", "--output", output / kind / "packages.adb",
                 "--sign", private_key, *sorted((output / kind).glob("*.apk")))
         if baseline is not None:
             legacy_dir = output / "legacy"
             legacy_dir.mkdir()
             shutil.copy2(baseline / "baseline.pem", legacy_dir / "baseline.pem")
-            legacy = {"artifacts": []}
+            legacy = {"artifacts": [], "system_dependencies": []}
             for archive in sorted(baseline.glob("*.apk")):
                 target = legacy_dir / archive.name
                 shutil.copy2(archive, target)
                 run("verify", "--keys-dir", legacy_dir, target)
                 metadata = json.loads(run("adbdump", "--format", "json", target))
                 name = metadata["info"]["name"]
-                if name not in ("opl-netfleet", "luci-app-netfleet"):
-                    raise SystemExit("Legacy fixture must contain only the monolith and LuCI")
+                if name not in ("opl-netfleet", "luci-app-netfleet", "opl-netfleet-https-compat"):
+                    raise SystemExit("Legacy fixture contains an unsupported package")
+                if name == "opl-netfleet-https-compat":
+                    legacy["system_dependencies"] = [
+                        dependency for dependency in metadata["info"].get("depends", [])
+                        if dependency != "opl-netfleet"
+                    ]
                 legacy["artifacts"].append({"name": target.name, "package": name,
                                             "version": metadata["info"]["version"],
                                             "sha256": hashlib.sha256(target.read_bytes()).hexdigest()})
@@ -151,7 +172,7 @@ def build(candidate, output, baseline=None):
                     legacy_root.mkdir()
                     run("--allow-untrusted", "extract", "--destination", legacy_root, target)
                     legacy["build"] = json.loads((legacy_root / "usr/share/opl-netfleet/build.json").read_text())
-            if {item["package"] for item in legacy["artifacts"]} != {"opl-netfleet", "luci-app-netfleet"}:
+            if not {"opl-netfleet", "luci-app-netfleet"}.issubset(item["package"] for item in legacy["artifacts"]):
                 raise SystemExit("Legacy fixture requires the monolith and LuCI APKs")
             legacy["key_sha256"] = hashlib.sha256((legacy_dir / "baseline.pem").read_bytes()).hexdigest()
     (output / "fixture.json").write_text(json.dumps({

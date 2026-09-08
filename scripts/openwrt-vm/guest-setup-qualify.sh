@@ -33,6 +33,16 @@ finish() {
 	trap - EXIT INT TERM
 	set +e
 	if [ "$rc" -ne 0 ]; then
+		ip -j addr show >"$work/failed-addresses.log"
+		ip -6 route show table all >"$work/failed-ipv6-routes.log"
+		ip -6 neigh show >"$work/failed-neighbors.log"
+		ip -6 rule show >"$work/failed-ipv6-rules.log"
+		sysctl net.ipv6.conf.all.forwarding >"$work/failed-forwarding.log"
+		curl -gfsS --noproxy '*' --max-time 2 'http://[fd77:a::2]:19091/version' >"$work/failed-upstream-ipv6.log" 2>&1
+		nft list chain inet fw4 forward_lan >"$work/failed-forward-lan.log"
+		nft list chain inet fw4 accept_to_wan >"$work/failed-accept-wan.log"
+		ip netns exec nf-setup-upstream ip -6 route show table all >"$work/failed-upstream-routes.log"
+		nft list ruleset >"$work/failed-nft.log"
 		secret=$(uci -q get netfleet.mixin.api_secret)
 		for endpoint in proxies providers/proxies; do
 			curl -fsS --noproxy '*' --max-time 3 -H "Authorization: Bearer $secret" \
@@ -46,6 +56,9 @@ finish() {
 	for pid in $helper_pids; do kill "$pid" >/dev/null 2>&1; done
 	ubus call network.interface.wan remove >/dev/null 2>&1
 	ip netns del nf-setup-upstream >/dev/null 2>&1
+	ip netns del nf-setup-client >/dev/null 2>&1
+	ip link del nf-setup-lan >/dev/null 2>&1
+	ip -6 addr del fd77:9::1/64 dev br-lan >/dev/null 2>&1
 	ip link del nf-setup-uplink >/dev/null 2>&1
 	nft delete table ip netfleet_setup_fixture >/dev/null 2>&1
 	if [ "$rc" -eq 0 ] && { [ "$stage" != complete ] || [ ! -s "$work/qualification.json" ]; }; then rc=1; fi
@@ -85,6 +98,19 @@ package_identity() {
 direct_probe() {
 	curl -fsS --noproxy '*' --connect-timeout 2 --max-time 8 \
 		--cacert /tmp/local-probe.crt "https://192.168.1.2:$probe_port/generate_204"
+	if [ -e "$work/client-ready" ]; then
+		ip netns exec nf-setup-client nslookup -type=A www.gstatic.com 192.168.1.1 >>"$work/client-dns.log" 2>&1
+		ip netns exec nf-setup-client curl -fsS --noproxy '*' --max-time 8 \
+			http://198.18.1.2:19091/version >>"$work/client-ipv4.log"
+		ip netns exec nf-setup-client curl -gfsS --noproxy '*' --max-time 8 \
+			'http://[fd77:a::2]:19091/version' >>"$work/client-ipv6.log"
+		ip netns exec nf-setup-client curl -fsS --noproxy '*' --max-time 10 \
+			--cacert /tmp/local-probe.crt --resolve netfleet-probe.test:19443:198.18.1.2 \
+			https://netfleet-probe.test:19443/generate_204
+		ip netns exec nf-setup-client curl -fsS --noproxy '*' --max-time 10 \
+			--cacert /tmp/local-probe.crt --resolve 'netfleet-probe.test:19443:[fd77:a::2]' \
+			https://netfleet-probe.test:19443/generate_204
+	fi
 }
 package_transaction() {
 	(
@@ -122,7 +148,6 @@ native_restored() {
 	cmp "$work/legacy-before.routes" "$work/legacy-after.routes"
 }
 legacy_native_migration() {
-	uclient-fetch -q -O "$work/legacy-fixture.json" "$feed_url/components-fixtures/fixture.json"
 	[ -n "$(jsonfilter -i "$work/legacy-fixture.json" -e '@.legacy.key_sha256')" ] || return 0
 	stage=legacy_native_prepare
 	uclient-fetch -q -O /etc/apk/keys/netfleet-legacy-fixture.pem \
@@ -152,10 +177,11 @@ legacy_native_migration() {
 		product_packages="$product_packages $name"
 	done <"$work/current-files.txt"
 	# Fetch and retain the old product's dependencies before taking it offline.
+	legacy_dependencies=$(jsonfilter -i "$work/legacy-fixture.json" -e '@.legacy.system_dependencies[*]')
 	(
 		exec 9>"$lock"
 		flock 9
-		apk --timeout 300 add mihomo-meta yq unzip 9>&-
+		apk --no-network add mihomo-meta yq unzip $legacy_dependencies 9>&-
 	) >>"$work/packages.log" 2>&1
 	tar -czf "$work/legacy-private.tar.gz" -C / etc/config/netfleet etc/opl-netfleet
 	stage=legacy_native_baseline_install
@@ -184,6 +210,13 @@ legacy_native_migration() {
 	stage=legacy_native_failed_upgrade
 	uclient-fetch -q -O /etc/apk/keys/netfleet-component-fixture.pem \
 		"$feed_url/components-fixtures/component-fixture.pem"
+	uclient-fetch -q -O "$candidate/incompatible-compatibility.apk" \
+		"$feed_url/components-fixtures/incompatible-compatibility.apk"
+	apk --no-network verify "$candidate/incompatible-compatibility.apk" >>"$work/packages.log" 2>&1
+	if package_transaction --simulate add $current_packages "$candidate/incompatible-compatibility.apk"; then
+		echo 'unsupported legacy engine was accepted' >&2
+		exit 1
+	fi
 	bad_version=$(jsonfilter -i "$work/legacy-fixture.json" -e '@.package_versions["opl-netfleet-plugin-mihomo"].bad')
 	bad_file=opl-netfleet-plugin-mihomo-$bad_version.apk
 	uclient-fetch -q -O "$candidate/$bad_file" "$feed_url/components-fixtures/bad/$bad_file"
@@ -201,9 +234,16 @@ legacy_native_migration() {
 	direct_probe
 
 	stage=legacy_native_formal_package_rollback
+	if apk info -e opl-netfleet-https-compat >/dev/null 2>&1; then
+		# The legacy engine owns its own lock. Run its normal removal before the
+		# product transaction takes that lock, with the engine already bypassed.
+		! nft list table inet netfleet_compat >/dev/null 2>&1
+		timeout 60 apk --no-network del opl-netfleet-https-compat >>"$work/packages.log" 2>&1 || true
+		! apk info -e opl-netfleet-https-compat >/dev/null 2>&1
+	fi
 	# Old pre-upgrade hooks import removed monolith modules. Run normal remove
 	# and install hooks, then restore the private snapshot with the old owner.
-	package_transaction del $product_packages
+	package_transaction del $product_packages || true
 	[ ! -e "$main" ]
 	[ -z "$(pidof mihomo 2>/dev/null || true)" ]
 	! nft list table inet netfleet >/dev/null 2>&1
@@ -228,6 +268,9 @@ legacy_native_migration() {
 	package_transaction add $current_packages
 	package_identity
 	native_restored
+	while read -r expected filename name version; do
+		[ "$name" != opl-netfleet-https-compat ] || apk list --manifest | grep -Fqx "$name $version"
+	done <"$work/legacy-files.txt"
 	[ ! -e /usr/libexec/opl-netfleet/adapters/runtime.uc ]
 	[ -f /usr/libexec/opl-netfleet/adapters/openwrt.uc ]
 	[ ! -e /tmp/opl-netfleet-package-upgrade-state ]
@@ -237,6 +280,10 @@ legacy_native_migration() {
 	dependency_packages=$(printf '%s\n' "$product_packages" | tr ' ' '\n' | grep -vE '^(|opl-netfleet|luci-app-netfleet)$')
 	package_transaction del $dependency_packages mihomo-meta yq unzip
 	legacy_checks=',"legacy_native_upgrade":true,"legacy_native_failed_upgrade_direct_usable":true,"legacy_native_formal_package_rollback":true,"legacy_native_private_state_and_routes_restored":true'
+	if apk info -e opl-netfleet-https-compat >/dev/null 2>&1; then
+		legacy_checks="$legacy_checks,\"legacy_native_optional_engine_preserved\":true"
+		timeout 60 apk --no-network del opl-netfleet-https-compat >>"$work/packages.log" 2>&1
+	fi
 }
 setup_request() {
 	ucode -e '
@@ -272,7 +319,7 @@ printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
 : >"$work/packages.log"
 for attempt in 1 2 3; do
 	apk --timeout 120 update >>"$work/packages.log" 2>&1 || true
-	if apk --timeout 120 add curl flock coreutils-timeout ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket \
+	if apk --timeout 120 add curl flock coreutils-timeout ip-full socat kmod-veth kmod-nft-tproxy kmod-nft-socket \
 		ucode-mod-fs ucode-mod-uci ucode-mod-ubus ucode-mod-uloop >>"$work/packages.log" 2>&1; then
 		break
 	fi
@@ -295,6 +342,12 @@ if [ -n "$feed_url" ]; then
 	[ -s /etc/apk/keys/opl-netfleet-apk.pem ]
 	[ "$(cat /etc/apk/repositories.d/opl-netfleet.list)" = "$feed_url/packages.adb" ]
 	package_identity
+	# Resolve old engine dependencies before the isolated upstream owns DNS.
+	uclient-fetch -q -O "$work/legacy-fixture.json" "$feed_url/components-fixtures/fixture.json"
+	legacy_dependencies=$(jsonfilter -i "$work/legacy-fixture.json" -e '@.legacy.system_dependencies[*]')
+	if [ -n "$legacy_dependencies" ]; then
+		apk --timeout 300 add $legacy_dependencies >>"$work/packages.log" 2>&1
+	fi
 else
 	gzip -dc /tmp/mihomo-linux-arm64-v1.19.30.gz >"$work/bin/mihomo"
 	chmod 0755 "$work/bin/mihomo"
@@ -341,8 +394,10 @@ ip link set nf-setup-uplink up
 ip netns exec nf-setup-upstream ip link set lo up
 ip netns exec nf-setup-upstream ip link set nf-setup-peer up
 ip netns exec nf-setup-upstream ip addr add 198.18.1.2/30 dev nf-setup-peer
+ip netns exec nf-setup-upstream ip -6 addr add fd77:a::2/64 dev nf-setup-peer nodad
 ip netns exec nf-setup-upstream ip route add default via 198.18.1.1
-ubus call network add_dynamic '{"name":"wan","proto":"static","device":"nf-setup-uplink","ipaddr":["198.18.1.1/30"],"dns":["198.18.1.2"]}' >"$work/wan-result.json"
+ip netns exec nf-setup-upstream ip -6 route add default via fd77:a::1
+ubus call network add_dynamic '{"name":"wan","proto":"static","device":"nf-setup-uplink","ipaddr":["198.18.1.1/30"],"ip6addr":["fd77:a::1/64"],"dns":["198.18.1.2"]}' >"$work/wan-result.json"
 ubus call network.interface.wan up >>"$work/wan-result.json"
 for attempt in 1 2 3 4 5; do
 	[ "$(ubus call network.interface.wan status | jsonfilter -e '@.up')" != true ] || break
@@ -362,6 +417,9 @@ uci set firewall.nfsetup.forward=ACCEPT
 uci set firewall.nfsetup_forward=forwarding
 uci set firewall.nfsetup_forward.src=nfsetup
 uci set firewall.nfsetup_forward.dest=lan
+uci set firewall.nfsetup_client=forwarding
+uci set firewall.nfsetup_client.src=lan
+uci set firewall.nfsetup_client.dest=nfsetup
 /etc/init.d/firewall reload >"$work/firewall.log" 2>&1
 nft -f - <<EOF
 table ip netfleet_setup_fixture {
@@ -382,15 +440,36 @@ ip netns exec nf-setup-upstream dnsmasq --keep-in-foreground --port=53 \
 	--pid-file="$work/dns.pid" >"$work/dns.log" 2>&1 &
 helper_pids="$helper_pids $!"
 cat >"$work/helper.json" <<'EOF'
-{"mixed-port":1081,"allow-lan":true,"bind-address":"198.18.1.2","external-controller":"198.18.1.2:19091","mode":"direct","log-level":"warning","ipv6":false,"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"192.168.1.2"}}
+{"mixed-port":1081,"allow-lan":true,"bind-address":"*","external-controller":"[::]:19091","mode":"direct","log-level":"warning","ipv6":true,"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"192.168.1.2"}}
 EOF
 ip netns exec nf-setup-upstream "$work/bin/nf-setup-proxy" -d "$work" -f "$work/helper.json" >"$work/helper.log" 2>&1 &
+helper_pids="$helper_pids $!"
+ip netns exec nf-setup-upstream socat 'TCP6-LISTEN:19443,ipv6only=0,reuseaddr,fork' \
+	"TCP4:192.168.1.2:$probe_port" >"$work/tls-endpoint.log" 2>&1 &
 helper_pids="$helper_pids $!"
 for attempt in $(seq 1 15); do
 	if curl -fsS --socks5-hostname 198.18.1.2:1081 --max-time 4 https://www.gstatic.com/generate_204 >/dev/null; then break; fi
 	[ "$attempt" -lt 15 ] || exit 1
 	sleep 1
 done
+ip netns add nf-setup-client
+ip netns exec nf-setup-client ip link add nf-setup-client type veth peer name nf-setup-lan netns 1
+ip link set nf-setup-lan master br-lan
+ip link set nf-setup-lan up
+ip -6 addr add fd77:9::1/64 dev br-lan nodad
+ip netns exec nf-setup-client ip link set lo up
+ip netns exec nf-setup-client ip link set nf-setup-client up
+ip netns exec nf-setup-client ip addr add 192.168.1.20/24 dev nf-setup-client
+ip netns exec nf-setup-client ip -6 addr add fd77:9::2/64 dev nf-setup-client nodad
+ip netns exec nf-setup-client ip route add default via 192.168.1.1
+ip netns exec nf-setup-client ip -6 route add default via fd77:9::1
+for attempt in $(seq 1 10); do
+	if ip netns exec nf-setup-client curl -gfsS --noproxy '*' --max-time 2 \
+		'http://[fd77:a::2]:19091/version' >>"$work/client-ready.log" 2>&1; then break; fi
+	[ "$attempt" -lt 10 ] || exit 1
+	sleep 1
+done
+touch "$work/client-ready"
 direct_probe
 
 stage=setup_read_only
@@ -538,7 +617,7 @@ if [ -n "$feed_url" ]; then
 	[ -z "$(ip -4 route show table 11900 2>/dev/null || true)" ]
 	[ -z "$(ip -6 route show table 11900 2>/dev/null || true)" ]
 	direct_probe
-	package_checks=',"signed_package_install":true,"installed_build_identity":true,"native_package_upgrade":true,"upgrade_preserves_private_state":true,"upgrade_gateway_ready":true,"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true,"package_remove_clean":true,"remove_preserves_private_sources":true'
+	package_checks=',"signed_package_install":true,"installed_build_identity":true,"native_package_upgrade":true,"upgrade_preserves_private_state":true,"upgrade_gateway_ready":true,"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_failed_package_hook_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true,"package_remove_clean":true,"remove_preserves_private_sources":true'
 fi
 
 stage=complete

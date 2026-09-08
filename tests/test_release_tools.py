@@ -460,18 +460,24 @@ class ReleaseToolsTests(unittest.TestCase):
                     'NETFLEET_APK_REPOSITORY_FILE': str(repository),
                     'NETFLEET_APK_LOG': str(log),
                 }
-            for installed in ('', 'opl-netfleet', 'luci-app-netfleet', 'opl-netfleet luci-app-netfleet'):
+            for installed in ('', 'opl-netfleet', 'luci-app-netfleet', 'opl-netfleet opl-netfleet-kernel',
+                              'opl-netfleet luci-app-netfleet opl-netfleet-kernel'):
                 with self.subTest(installed=installed):
                     log.write_text('')
                     result = subprocess.run(
                         [str(INSTALLER)], env={**env, 'NETFLEET_INSTALLED': installed},
                         text=True, capture_output=True, check=False,
                     )
+                    if installed == 'opl-netfleet':
+                        self.assertNotEqual(0, result.returncode)
+                        self.assertIn('legacy monolith migration requires', result.stderr)
+                        self.assertEqual('', log.read_text())
+                        continue
                     self.assertEqual(0, result.returncode, result.stderr)
                     expected = ['--timeout 300 update',
                                 '--no-network query --from none -X https://fixture.invalid/release/packages.adb '
                                 '--format json --fields depends opl-netfleet']
-                    if installed != 'opl-netfleet luci-app-netfleet':
+                    if 'luci-app-netfleet' not in installed or 'opl-netfleet ' not in installed:
                         expected.append('--timeout 300 add opl-netfleet luci-app-netfleet')
                     expected.append('--timeout 300 upgrade opl-netfleet luci-app-netfleet '
                                     'opl-netfleet-kernel opl-netfleet-plugin-dashboard opl-netfleet-plugin-selection')
@@ -495,7 +501,7 @@ class ReleaseToolsTests(unittest.TestCase):
             )
             fetcher.chmod(0o755)
             apk = bin_dir / 'apk'
-            apk.write_text('#!/bin/sh\nprintf called >>"$NETFLEET_APK_LOG"\n')
+            apk.write_text('#!/bin/sh\n[ "$1" != info ] || exit 1\nprintf called >>"$NETFLEET_APK_LOG"\n')
             apk.chmod(0o755)
             uci = bin_dir / 'uci'
             uci.write_text('#!/bin/sh\nprintf "%s\\n" "subscription:fixture"\n')

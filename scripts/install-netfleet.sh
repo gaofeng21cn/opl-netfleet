@@ -14,6 +14,11 @@ command -v apk >/dev/null 2>&1 || die 'OpenWrt APK package manager is required'
 command -v uci >/dev/null 2>&1 || die 'OpenWrt UCI is required'
 command -v jsonfilter >/dev/null 2>&1 || die 'OpenWrt jsonfilter is required'
 
+# Layout migrations need their own rollback qualification, including optional packages.
+if apk info -e opl-netfleet >/dev/null 2>&1 && ! apk info -e opl-netfleet-kernel >/dev/null 2>&1; then
+	die 'legacy monolith migration requires a qualified package transaction; installed packages were not changed'
+fi
+
 feed_base=${NETFLEET_FEED_BASE:-https://github.com/gaofeng21cn/opl-netfleet/releases/latest/download}
 feed_base=${feed_base%/}
 case "$feed_base" in

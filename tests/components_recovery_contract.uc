@@ -3,7 +3,7 @@ import * as fs from "fs";
 const path = ARGV[0] ?? replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet/plugins/components/lib/control.uc");
 const source = fs.readfile(path);
 const start = index(source, "restore_services = function(");
-const end = index(source, "upgrade = function(", start);
+const end = index(source, "rollback = function(", start);
 if (start < 0 || end < 0) die("recovery implementation unavailable");
 const implementation = substr(source, start, end - start);
 const harness = `
@@ -35,4 +35,48 @@ now = 7; broken = false; changed = true;
 check(!restore_services(before, "/unused") && now == 7, "changed private configuration must fail immediately");
 `;
 loadstring(harness + implementation + cases)();
+const recovery_start = index(source, "rollback = function(");
+const recovery_end = index(source, "upgrade = function(", recovery_start);
+const recovery = substr(source, recovery_start, recovery_end - recovery_start);
+loadstring(`
+let rollback, stops = 0, starts = 0, commands = [], world_calls = 0, saved;
+let package_ok = false, world_ok = true, identity_ok = true, runtime_ok = true, input_ok = true, bytes_ok = true;
+const UPGRADE_STATE = "/unused", fs = {unlink: path => true};
+function q(value) { return value; }
+function stop_services(work) { stops++; return true; }
+function run_command(command, work) { push(commands, command); return index(command, "apk ") != 0 || package_ok; }
+function restore_world(names, before, work) { world_calls++; if (!world_ok) die("world unavailable"); return true; }
+function installed() { return {package: identity_ok ? "old" : "new"}; }
+function input_identity(paths) { return {code: bytes_ok ? "old" : "partial"}; }
+function same_inputs(before) { return input_ok; }
+function restore_services(before, work) { starts++; return runtime_ok; }
+function atomic_json(path, value) { saved = value; return true; }
+function check(value, message) { if (!value) die(message); }
+` + recovery + `
+const before = {world: {}, runtime_paths: ["code"], runtime_inputs: {code: "old"}};
+check(rollback(before, "/unused", ["package"], {package: "old"}, ["old.apk"], true) == "rollback_install_failed",
+    "nonzero package result remains an error");
+check(starts == 1 && world_calls == 1 && saved.runtime_restored,
+    "package errors must not skip world or runtime restoration");
+package_ok = true; world_ok = false;
+rollback(before, "/unused", ["package"], {package: "old"}, ["old.apk"], true);
+check(starts == 2 && saved.runtime_restored, "world exceptions must not skip runtime restoration");
+world_ok = true; identity_ok = false;
+let previous_stops = stops;
+rollback(before, "/unused", ["package"], {package: "old"}, ["old.apk"], true);
+check(starts == 2 && stops == previous_stops + 2 && !saved.runtime_restored,
+    "wrong package identity must stay stopped and still run final cleanup");
+identity_ok = true; runtime_ok = false;
+previous_stops = stops;
+rollback(before, "/unused", ["package"], {package: "old"}, ["old.apk"], true);
+check(stops == previous_stops + 2 && !saved.runtime_restored, "failed restart must clean again");
+runtime_ok = true;
+bytes_ok = false;
+let previous_starts = starts;
+rollback(before, "/unused", ["package"], {package: "old"}, ["old.apk"], true);
+check(starts == previous_starts && !saved.runtime_restored, "version equality must not hide partially restored runtime files");
+bytes_ok = true;
+check(rollback(before, "/unused", ["package"], {package: "old"}, ["old.apk"], true) == null,
+    "verified successful rollback remains successful");
+`)();
 print("components_recovery_contract_ok\n");

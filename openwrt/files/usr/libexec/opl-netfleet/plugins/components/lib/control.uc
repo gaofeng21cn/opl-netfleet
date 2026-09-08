@@ -2,7 +2,7 @@ import * as fs from "fs";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, restore_world, feed, newer, available, update_process, progress, get, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, restore_services, recover, journal, upgrade, command;
+let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, restore_world, feed, newer, available, update_process, progress, get, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, restore_services, rollback, recover, journal, upgrade, command;
 
 const dashboard_resource = context.use("dashboard.control").resource;
 const operation = context.use("events.operation");
@@ -258,7 +258,9 @@ service_running = function(name) {
 	return false;
 };
 stop_services = function(work) {
-	if (!run_command("/etc/init.d/opl-netfleet stop", work) || !run_command(`/etc/init.d/${SERVICE} stop`, work)) return false;
+	// A scheduler stop error must not prevent the data-plane owner from cleaning up.
+	run_command("/etc/init.d/opl-netfleet stop", work);
+	run_command(`/etc/init.d/${SERVICE} stop`, work);
 	for (let attempt = 0; attempt < 20; attempt++) {
 		if (!service_running("opl-netfleet") && !service_running(SERVICE)) {
 			return KIND != "native-mihomo" || parsed("ucode /usr/libexec/opl-netfleet/main.uc native-gateway-status")?.result?.clean == true;
@@ -300,6 +302,36 @@ restore_services = function(before, work) {
 		system("sleep 1");
 	}
 	return false;
+};
+rollback = function(before, work, names, versions, old, install_started) {
+	const errors = [];
+	function attempt(code, action) {
+		try { if (action()) return true; } catch (error) {}
+		push(errors, code);
+		return false;
+	}
+	const stopped = attempt("rollback_stop_failed", () => stop_services(work));
+	if (stopped) {
+		if (install_started) fs.unlink(UPGRADE_STATE);
+		attempt("rollback_configuration_failed", () => run_command(`tar -xf ${q(`${work}/private.tar`)} -C /`, work));
+		if (install_started) {
+			attempt("rollback_install_failed", () => run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(old, q))}`, work));
+			attempt("rollback_world_failed", () => restore_world(names, before.world, work));
+		}
+	}
+	// APK may complete the requested change and still report earlier script failures.
+	// Reconcile before deciding whether the old runtime can be restored.
+	const restored = installed();
+	const identity = restored != null && !length(filter(names, name => restored[name] != versions[name])) &&
+		attempt("rollback_identity_mismatch", () => sprintf("%J", input_identity(before.runtime_paths)) == sprintf("%J", before.runtime_inputs));
+	const inputs = attempt("rollback_configuration_failed", () => same_inputs(before));
+	if (!identity) push(errors, "rollback_identity_mismatch");
+	const runtime = identity && inputs && attempt("rollback_runtime_failed", () => restore_services(before, work));
+	if (!runtime) {
+		attempt("rollback_stop_failed", () => stop_services(work));
+	}
+	atomic_json(`${work}/rollback.json`, { errors: errors, identity: identity, private_inputs: inputs, runtime_restored: runtime });
+	return errors[0] ?? null;
 };
 upgrade = function(request, work, candidates) {
 	const names = request.component == "netfleet" ? product_packages() : [PACKAGES[2]];
@@ -353,6 +385,10 @@ upgrade = function(request, work, candidates) {
 	if (before_status == null && !unconfigured) fail("runtime_readback_failed");
 	const paths = private_paths();
 	const before = { backend: KIND, core_enabled: capture(`/etc/init.d/${SERVICE} enabled`) != null, supervisor_enabled: capture("/etc/init.d/opl-netfleet enabled") != null, active: before_status?.active ?? false, unconfigured: unconfigured, core: service_running(SERVICE), supervisor: service_running("opl-netfleet"), selections: {}, paths: paths, inputs: input_identity(paths), world: package_world() };
+	before.runtime_paths = filter(["/usr/libexec/opl-netfleet", "/usr/libexec/opl-netfleet-plugin-package",
+		"/usr/share/opl-netfleet", "/etc/init.d/opl-netfleet", `/etc/init.d/${SERVICE}`,
+		...(request.component == "mihomo" ? ["/usr/libexec/mihomo"] : [])], path => fs.lstat(path) != null);
+	before.runtime_inputs = input_identity(before.runtime_paths);
 	if (before.core) {
 		const all = proxies(api_secret(), 2)?.proxies;
 		if (all == null || !probe_ok()) fail("runtime_precondition_failed");
@@ -384,15 +420,8 @@ upgrade = function(request, work, candidates) {
 	} catch (failure) { error = error_code(failure); }
 	if (error == null) { journal(work, { ...read_json(`${work}/journal.json`), phase: "complete" }); fs.unlink(PENDING); system("sync"); return; }
 	operation.update("rolling_back");
-	if (!stop_services(work)) fail("rollback_stop_failed");
-	// A pre-existing marker was rejected before mutation; only our install could create it.
-	if (install_started) fs.unlink(UPGRADE_STATE);
-	if (!run_command(`tar -xf ${q(`${work}/private.tar`)} -C /`, work)) fail("rollback_configuration_failed");
-	if (install_started && !run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(old, q))}`, work)) fail("rollback_install_failed");
-	if (install_started && !restore_world(names, before.world, work)) fail("rollback_world_failed");
-	const restored = installed();
-	for (let name in names) if (restored?.[name] != versions[name]) fail("rollback_identity_mismatch");
-	if (!restore_services(before, work)) fail("rollback_runtime_failed");
+	const recovery_error = rollback(before, work, names, versions, old, install_started);
+	if (recovery_error != null) fail(recovery_error);
 	journal(work, { ...read_json(`${work}/journal.json`), phase: "rolled_back" });
 	fs.unlink(PENDING); system("sync");
 	fail(`${error}_rolled_back`);
@@ -424,19 +453,12 @@ recover = function() {
 	for (let path in old) if (index(path, `${work}/old/`) != 0 || !run_command(`apk verify ${q(path)}`, work)) fail("rollback_package_unavailable");
 	operation.begin("packages", "rolling_back", { id: pending.id, subject: "netfleet" });
 	journal(work, { ...state, phase: "recovering" });
-	if (!stop_services(work)) fail("rollback_stop_failed");
-	fs.unlink(UPGRADE_STATE);
-	if (!run_command(`tar -xf ${q(`${work}/private.tar`)} -C /`, work)) fail("rollback_configuration_failed");
-	run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(old, q))}`, work);
-	if (!restore_world(names, before.world, work)) fail("rollback_world_failed");
-	const restored = installed();
-	for (let name in names) if (restored?.[name] != versions[name]) fail("rollback_identity_mismatch");
-	if (!same_inputs(before)) fail("rollback_configuration_failed");
+	const recovery_error = rollback(before, work, names, versions, old, true);
+	if (recovery_error != null) fail(recovery_error);
 	if (!run_command(`/etc/init.d/${SERVICE} ${before.core_enabled ? "enable" : "disable"}`, work) ||
-		!run_command(`/etc/init.d/opl-netfleet ${before.supervisor_enabled ? "enable" : "disable"}`, work) ||
-		!restore_services(before, work)) fail("rollback_runtime_failed");
+		!run_command(`/etc/init.d/opl-netfleet ${before.supervisor_enabled ? "enable" : "disable"}`, work)) fail("rollback_runtime_failed");
 	journal(work, { ...state, phase: "rolled_back" });
-	fs.unlink(PENDING); system("sync"); operation.finish(true, null, null);
+	fs.unlink(PENDING); system("sync"); operation.finish(false, "update_interrupted_rolled_back", { rollback: { ok: true } });
 	return { recovered: true };
 };
 
