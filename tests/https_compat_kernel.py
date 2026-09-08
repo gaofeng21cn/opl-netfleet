@@ -91,7 +91,7 @@ with socket.create_connection((sys.argv[3],int(sys.argv[1])),timeout=3,source_ad
         gateway.renew(candidates)
         self.assertTrue(gateway.status()["intercepting"])
         response = await self.request()
-        self.assertTrue(response["h2"])
+        self.assertTrue(response["h2"], response)
         self.assertEqual(self.received[-1]["source_port"], response["source_port"])
         # The same destination IP with a different SNI must preserve the origin certificate.
         self.assertFalse((await self.request(host="other.example", ca=self.directory / "upstream.pem"))["h2"])
@@ -105,7 +105,8 @@ with socket.create_connection((sys.argv[3],int(sys.argv[1])),timeout=3,source_ad
         self.assertFalse((await self.request())["h2"])
         self.proxy.send_signal(signal.SIGCONT)
         gateway.renew(candidates)
-        self.assertTrue((await self.request())["h2"])
+        response = await self.request()
+        self.assertTrue(response["h2"], response)
         self.proxy.kill()
         await self.proxy.wait()
         await asyncio.sleep(10.5)
