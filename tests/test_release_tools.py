@@ -501,7 +501,7 @@ class ReleaseToolsTests(unittest.TestCase):
             )
             fetcher.chmod(0o755)
             apk = bin_dir / 'apk'
-            apk.write_text('#!/bin/sh\nprintf called >>"$NETFLEET_APK_LOG"\n')
+            apk.write_text('#!/bin/sh\n[ "$1" != info ] || exit 1\nprintf called >>"$NETFLEET_APK_LOG"\n')
             apk.chmod(0o755)
             uci = bin_dir / 'uci'
             uci.write_text('#!/bin/sh\nprintf "%s\\n" "subscription:fixture"\n')
