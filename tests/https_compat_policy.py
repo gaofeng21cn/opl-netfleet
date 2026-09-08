@@ -20,7 +20,7 @@ import control
 
 
 class Decisions(unittest.TestCase):
-    def test_engine_restart_grace_precedes_lease_expiry(self):
+    def test_engine_restart_threshold_is_shorter_than_lease(self):
         self.assertLess(ENGINE_RESTART_GRACE_SECONDS, LEASE_SECONDS)
 
     @unittest.skipUnless(sys.platform == "linux" and os.geteuid() == 0, "requires Linux root fdinfo")
