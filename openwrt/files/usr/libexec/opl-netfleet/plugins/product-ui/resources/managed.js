@@ -333,7 +333,51 @@ function loadComponents(controller) {
 function compositionDialog(controller) {
 	const output = E('p', { 'role': 'status' }, '正在读取服务组合…');
 	const editor = E('textarea', { 'rows': 16, 'aria-label': '服务组合配置', 'style': 'width:100%;box-sizing:border-box;font-family:monospace' }, '');
-	let revision, preview = null, busy = false, closed = false;
+	let revision, preview = null, busy = false, closed = false, snapshot;
+	const form = E('div', {}), instance = E('select', { 'aria-label': '组合实例' }, []);
+	function draft() { return JSON.parse(editor.value); }
+	function edit(change) {
+		try {
+			const value = draft(); change(value); editor.value = JSON.stringify(value, null, 2);
+			preview = null; apply.disabled = true; renderForm();
+		} catch (error) { output.textContent = '请先修正高级 JSON：' + String(error.message || error); }
+	}
+	function renderForm() {
+		if (!snapshot || closed) return;
+		let config;
+		try { config = draft(); } catch (error) { form.textContent = '高级 JSON 无效，修正后可继续使用表单。'; return; }
+		const name = instance.value || 'default', defaults = snapshot.defaults || {};
+		const local = name === 'default' ? config : config.instances?.[name] || {};
+		const inherited = name === 'default' ? defaults : { enabled: { ...defaults.enabled, ...config.enabled }, bindings: { ...defaults.bindings, ...config.bindings } };
+		function update(field, key, value) {
+			edit(config => {
+				const target = name === 'default' ? config : (config.instances ||= {})[name] ||= {};
+				if (value === '') { if (target[field]) delete target[field][key]; }
+				else (target[field] ||= {})[key] = value;
+			});
+		}
+		const rows = [];
+		for (const plugin of snapshot.plugins || []) {
+			const selected = local.enabled?.[plugin.id];
+			const enable = E('select', { 'aria-label': '插件开关 ' + plugin.id, change: event => update('enabled', plugin.id, event.target.value === '' ? '' : event.target.value === 'true') },
+				[E('option', { value: '' }, '继承（' + (inherited.enabled?.[plugin.id] ? '启用' : '停用') + '）'), E('option', { value: 'true' }, '启用'), E('option', { value: 'false' }, '停用')]);
+			enable.value = selected == null ? '' : String(selected);
+			rows.push(E('div', {}, [E('label', {}, [plugin.id + ' ', enable])]));
+		}
+		const services = new Map();
+		for (const plugin of snapshot.plugins || []) for (const service of plugin.services || []) {
+			if (!services.has(service.name)) services.set(service.name, []);
+			services.get(service.name).push({ plugin: plugin.id, ...service });
+		}
+		for (const [service, providers] of services) {
+			const select = E('select', { 'aria-label': '服务提供者 ' + service, change: event => update('bindings', service, event.target.value) },
+				[E('option', { value: '' }, '继承（' + (inherited.bindings?.[service] || '未绑定') + '）'), ...providers.map(provider => E('option', { value: provider.plugin }, provider.plugin + ' · v' + provider.version))]);
+			select.value = local.bindings?.[service] || '';
+			rows.push(E('div', {}, [E('label', {}, [service + ' ', select])]));
+		}
+		form.replaceChildren(...rows);
+	}
+	instance.addEventListener?.('change', renderForm);
 	const apply = button('应用组合', async function() {
 		if (busy || !preview || preview.text !== editor.value) return;
 		busy = true; apply.disabled = true; validate.disabled = true;
@@ -359,13 +403,15 @@ function compositionDialog(controller) {
 		} catch (error) { if (!closed) output.textContent = errorLabel(error.message || String(error)); }
 		finally { busy = false; if (!closed) validate.disabled = false; }
 	}, true);
-	editor.addEventListener?.('input', function() { preview = null; apply.disabled = true; });
+	editor.addEventListener?.('input', function() { preview = null; apply.disabled = true; renderForm(); });
 	const close = button('关闭', function() { closed = true; editor.value = ''; ui.hideModal(); });
-	ui.showModal('服务组合与实例', [E('p', {}, '维护服务提供者、插件开关与实例配置。先校验依赖和影响，再应用。'), editor, output,
+	ui.showModal('服务组合与实例', [E('p', {}, '维护服务提供者、插件开关与实例配置。先校验依赖和影响，再应用。'), instance, form, E('details', {}, [E('summary', {}, '高级 JSON（实例配置与完整覆盖）'), editor]), output,
 		E('div', { 'class': 'right' }, [validate, ' ', apply, ' ', close])]);
 	return api.systemGet().then(function(result) {
 		if (closed) return;
-		revision = result.revision; editor.value = JSON.stringify(result.config, null, 2); validate.disabled = false; output.textContent = '已读取当前私有组合配置。';
+		snapshot = result; revision = result.revision; editor.value = JSON.stringify(result.config, null, 2);
+		instance.replaceChildren(...['default', ...Object.keys(result.config.instances || {})].map(name => E('option', { value: name }, name === 'default' ? '默认实例' : name)));
+		instance.value = 'default'; renderForm(); validate.disabled = false; output.textContent = '已读取当前私有组合配置。';
 	}).catch(function(error) { if (!closed) output.textContent = errorLabel(error.message || String(error)); });
 }
 

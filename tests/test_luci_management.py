@@ -708,7 +708,7 @@ assert.equal(serviceCalls.at(-1)[1].action, 'config-set');
 const owner = controller(), calls = [];
 owner.components = { supported: true, feed: {}, components: [], dependencies: [], extensions: [] };
 const managed = module('managed.js', {
-  systemGet: async () => ({ revision: 'current', config: { schema: 'opl-netfleet-system.v1', bindings: {}, enabled: {} } }),
+  systemGet: async () => ({ revision: 'current', config: { schema: 'opl-netfleet-system.v1', bindings: {}, enabled: {} }, defaults: { enabled: { note: true }, bindings: { 'note.store': 'note' } }, plugins: [{ id: 'note', services: [{ name: 'note.store', version: 1 }] }] }),
   systemValidate: async value => { calls.push(['validate', value]); return { valid: true, affected_plugins: ['note'] }; },
   systemApply: async value => { calls.push(['apply', value]); return { applied: true }; },
   componentsGet: async () => owner.components,
@@ -716,6 +716,11 @@ const managed = module('managed.js', {
 fire(button(managed.components(owner), '服务组合')); await tick();
 const editor = find(modal.content, node => node.tag === 'textarea');
 assert(button(modal.content, '应用组合').disabled);
+const enabled = find(modal.content, node => node.attrs?.['aria-label'] === '插件开关 note');
+fire(enabled, 'change', { value: 'false' });
+assert.equal(JSON.parse(editor.value).enabled.note, false);
+fire(find(modal.content, node => node.attrs?.['aria-label'] === '插件开关 note'), 'change', { value: '' });
+assert.equal(JSON.parse(editor.value).enabled.note, undefined, 'inherit removes the override');
 fire(button(modal.content, '校验并预览影响')); await tick();
 assert.equal(calls.length, 1); assert(text(modal.content).includes('note'));
 editor.value = JSON.stringify({ schema: 'opl-netfleet-system.v1', bindings: {}, enabled: { note: true } });

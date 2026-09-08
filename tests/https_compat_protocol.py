@@ -105,12 +105,12 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
             "--set", f"confdir={self.directory / 'ca'}", "--set", "flow_detail=0",
             "--set", f"ssl_verify_upstream_trusted_ca={trusted_ca}",
             "--set", f"netfleet_config={self.directory / 'config.json'}",
-            "--set", f"netfleet_socket={self.directory / 'engine.sock'}",
+            "--set", f"netfleet_socket={self.directory / 'engine/engine.sock'}",
             *extra,
             stdout=self.log, stderr=self.log)
         self.addAsyncCleanup(self.stop_proxy)
         for _ in range(100):
-            if (self.directory / "engine.sock").exists():
+            if (self.directory / "engine/engine.sock").exists():
                 break
             if self.proxy.returncode is not None:
                 self.fail((self.directory / "proxy.log").read_text())
@@ -142,7 +142,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(self.upstream, 3)
 
     async def health(self, probe=False):
-        reader, writer = await asyncio.open_unix_connection(str(self.directory / "engine.sock"))
+        reader, writer = await asyncio.open_unix_connection(str(self.directory / "engine/engine.sock"))
         writer.write(b"probe\n" if probe else b"status\n")
         await writer.drain()
         data = json.loads(await reader.readline())
@@ -162,7 +162,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["protocol"], "h2")
         self.assertEqual(self.received, [], "recovery must not send a business request")
-        reader, writer = await asyncio.open_unix_connection(str(self.directory / "engine.sock"))
+        reader, writer = await asyncio.open_unix_connection(str(self.directory / "engine/engine.sock"))
         writer.write(json.dumps({"command": "probe_upstreams", "revision": "stale", "rules": []}).encode() + b"\n")
         await writer.drain()
         self.assertEqual(json.loads(await reader.readline())["probes"], {})
