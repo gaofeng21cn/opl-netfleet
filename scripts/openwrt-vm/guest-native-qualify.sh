@@ -466,6 +466,8 @@ wait_clean
 stage=operating_modes
 ucode /tmp/tests/operating_mode_device.uc >"$work/operating-modes.log" 2>&1
 direct_probe >"$work/direct-after-modes.log" 2>&1
+/etc/init.d/opl-netfleet-core stop
+wait_clean
 stage=core_failure
 /etc/init.d/opl-netfleet-core start
 wait_ready
