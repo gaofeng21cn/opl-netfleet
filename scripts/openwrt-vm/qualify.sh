@@ -346,7 +346,9 @@ e2fsck -pf "$work/root.ext4" || fsck_result=$?
 [ "$fsck_result" -le 1 ] || exit 1
 root_size=256M
 disk_size=512M
-if [ "$lane_mode" = compatibility ]; then root_size=512M; disk_size=768M; fi
+# Core update qualification keeps archives, an extracted core and rollback bytes.
+# Its explicit disk-fill fixture still verifies rejection before stopping the core.
+case "$lane_mode" in all|setup|compatibility) root_size=512M; disk_size=768M ;; esac
 resize2fs "$work/root.ext4" "$root_size"
 qemu-img resize -f raw "$work/openwrt.img" "$disk_size" >/dev/null
 sgdisk -e -a 1 -d 2 -n "2:$root_start:+$root_size" -u "2:$root_uuid" -t 2:8300 "$work/openwrt.img" >/dev/null
