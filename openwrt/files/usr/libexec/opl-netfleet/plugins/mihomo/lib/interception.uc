@@ -17,7 +17,7 @@ return function(context) {
 				result = { ok: false, error: 'lease_request_unavailable' };
 			else {
 				const script = `${context.root}/plugins/${context.id}/resources/interception.py`;
-				const pipe = fs.popen(`timeout -k 1 2 /usr/bin/python3 ${quote(script)} ${quote(path)} 2>/dev/null`);
+				const pipe = fs.popen(`timeout -k 1 2 /usr/bin/python3 -B ${quote(script)} ${quote(path)} 2>/dev/null`);
 				if (pipe == null) result = { ok: false, error: 'lease_owner_unavailable' };
 				else {
 					const raw = pipe.read('all'), status = pipe.close();
