@@ -75,7 +75,7 @@ proxy_providers = function(secret, timeout_seconds) {
 test_group_path = function(secret, group, checks) {
 	const latency = checks?.latency;
 	if (!secret || type(group) != "string" || !length(group) || type(latency?.url) != "string" ||
-		type(latency.timeout_ms) != "int" || latency.timeout_ms < 100 || latency.timeout_ms > 10000 ||
+		type(latency.timeout_ms) != "int" || latency.timeout_ms < 100 || latency.timeout_ms > 30000 ||
 		type(latency.expected_status) != "int") return false;
 	const path = `/proxies/${url_path_segment(group)}/delay?url=${url_path_segment(latency.url)}` +
 		`&timeout=${latency.timeout_ms}&expected=${latency.expected_status}`;
