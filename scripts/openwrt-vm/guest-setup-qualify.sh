@@ -148,7 +148,6 @@ native_restored() {
 	cmp "$work/legacy-before.routes" "$work/legacy-after.routes"
 }
 legacy_native_migration() {
-	uclient-fetch -q -O "$work/legacy-fixture.json" "$feed_url/components-fixtures/fixture.json"
 	[ -n "$(jsonfilter -i "$work/legacy-fixture.json" -e '@.legacy.key_sha256')" ] || return 0
 	stage=legacy_native_prepare
 	uclient-fetch -q -O /etc/apk/keys/netfleet-legacy-fixture.pem \
@@ -182,7 +181,7 @@ legacy_native_migration() {
 	(
 		exec 9>"$lock"
 		flock 9
-		apk --timeout 300 add mihomo-meta yq unzip $legacy_dependencies 9>&-
+		apk --no-network add mihomo-meta yq unzip $legacy_dependencies 9>&-
 	) >>"$work/packages.log" 2>&1
 	tar -czf "$work/legacy-private.tar.gz" -C / etc/config/netfleet etc/opl-netfleet
 	stage=legacy_native_baseline_install
@@ -343,6 +342,12 @@ if [ -n "$feed_url" ]; then
 	[ -s /etc/apk/keys/opl-netfleet-apk.pem ]
 	[ "$(cat /etc/apk/repositories.d/opl-netfleet.list)" = "$feed_url/packages.adb" ]
 	package_identity
+	# Resolve old engine dependencies before the isolated upstream owns DNS.
+	uclient-fetch -q -O "$work/legacy-fixture.json" "$feed_url/components-fixtures/fixture.json"
+	legacy_dependencies=$(jsonfilter -i "$work/legacy-fixture.json" -e '@.legacy.system_dependencies[*]')
+	if [ -n "$legacy_dependencies" ]; then
+		apk --timeout 300 add $legacy_dependencies >>"$work/packages.log" 2>&1
+	fi
 else
 	gzip -dc /tmp/mihomo-linux-arm64-v1.19.30.gz >"$work/bin/mihomo"
 	chmod 0755 "$work/bin/mihomo"
