@@ -261,7 +261,7 @@ stop_services = function(work) {
 };
 restore_services = function(before, work) {
 	const deadline = time() + 45;
-	if (before.core && !run_command(`/etc/init.d/${SERVICE} start`, work)) return false;
+	if (before.core && !service_running(SERVICE) && !run_command(`/etc/init.d/${SERVICE} start`, work)) return false;
 	if (before.core) {
 		let ready = false;
 		while (time() < deadline) {
@@ -280,7 +280,7 @@ restore_services = function(before, work) {
 		}
 		if (!ready) return false;
 	}
-	if (before.supervisor && !run_command("/etc/init.d/opl-netfleet start", work)) return false;
+	if (before.supervisor && !service_running("opl-netfleet") && !run_command("/etc/init.d/opl-netfleet start", work)) return false;
 	if (before.unconfigured) return !before.core && same_inputs(before);
 	// Controller readiness precedes provider loading, gateway attachment and working DNS.
 	while (time() < deadline) {
