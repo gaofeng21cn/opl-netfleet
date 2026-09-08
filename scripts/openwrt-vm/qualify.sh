@@ -369,7 +369,10 @@ image_elapsed_ms=$((image_elapsed_ms + $(now_ms) - image_started_ms))
 boot_started_ms=$(now_ms)
 
 vm_memory=512
-[ "$lane_mode" != compatibility ] || vm_memory=768
+# The compatibility engine is qualified against the supported Home target
+# class. Its measured TLS workload can exceed 600 MiB alongside OpenWrt's
+# base services, so the VM must provide the same 2 GiB headroom as Home.
+[ "$lane_mode" != compatibility ] || vm_memory=2048
 qemu-system-aarch64 \
 	-accel hvf \
 	-machine virt \
