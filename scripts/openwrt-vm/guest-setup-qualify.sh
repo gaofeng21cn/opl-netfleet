@@ -35,6 +35,12 @@ finish() {
 	if [ "$rc" -ne 0 ]; then
 		ip -j addr show >"$work/failed-addresses.log"
 		ip -6 route show table all >"$work/failed-ipv6-routes.log"
+		ip -6 neigh show >"$work/failed-neighbors.log"
+		ip -6 rule show >"$work/failed-ipv6-rules.log"
+		sysctl net.ipv6.conf.all.forwarding >"$work/failed-forwarding.log"
+		curl -gfsS --noproxy '*' --max-time 2 'http://[fd77:a::2]:19091/version' >"$work/failed-upstream-ipv6.log" 2>&1
+		nft list chain inet fw4 forward_lan >"$work/failed-forward-lan.log"
+		nft list chain inet fw4 accept_to_wan >"$work/failed-accept-wan.log"
 		ip netns exec nf-setup-upstream ip -6 route show table all >"$work/failed-upstream-routes.log"
 		nft list ruleset >"$work/failed-nft.log"
 		secret=$(uci -q get netfleet.mixin.api_secret)
