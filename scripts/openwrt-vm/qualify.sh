@@ -24,6 +24,15 @@ qemu_version=${NETFLEET_QEMU_VERSION:?}
 package_archive=${NETFLEET_PACKAGE_ARCHIVE:-}
 package_manifest_sha=${NETFLEET_PACKAGE_MANIFEST_SHA256:-}
 lane_mode=${NETFLEET_VM_LANE:-all}
+package_mirror=${NETFLEET_VM_PACKAGE_MIRROR:-}
+if [ -n "$package_mirror" ]; then
+	python3 - "$package_mirror" <<'PY'
+import re, sys
+match = re.fullmatch(r'http://192\.168\.1\.2:([0-9]{1,5})', sys.argv[1])
+if not match or not 1 <= int(match[1]) <= 65535:
+    raise SystemExit('VM package mirror must be a port on the isolated guest host alias')
+PY
+fi
 case "$lane_mode" in all|native|setup|migration|runtime|package|compatibility) ;; *) echo 'Unknown VM lane' >&2; exit 1 ;; esac
 [ "$lane_mode" != package ] || [ -n "$package_archive" ] || { echo 'Package lane requires candidate' >&2; exit 1; }
 if { [ -z "$package_archive" ] && [ -n "$package_manifest_sha" ]; } ||
@@ -446,6 +455,10 @@ done
 boot_elapsed_ms=$((boot_elapsed_ms + $(now_ms) - boot_started_ms))
 runner_arch=$(uname -m)
 guest_arch=$(ssh $ssh_common root@127.0.0.1 uname -m)
+if [ -n "$package_mirror" ]; then
+	# Only the disposable guest's upstream package transport changes; APK still verifies signatures.
+	ssh $ssh_common root@127.0.0.1 "sed -i 's|https://downloads.openwrt.org|$package_mirror|g' /etc/apk/repositories.d/distfeeds.list"
+fi
 stage=transfer
 transfer_started_ms=$(now_ms)
 tar -cf - -C "$workspace/scripts" deploy-openwrt-remote.sh \
@@ -568,6 +581,7 @@ python3 - "$receipt" "$source_commit" "$source_tree" "$version" "$image_sha" \
 	"$total_elapsed_ms" "$lane_mode" "$package_manifest_sha" <<'PY'
 import json
 from pathlib import Path
+import os
 import sys
 
 work = Path(sys.argv[6])
@@ -621,6 +635,7 @@ value = {
     "runtime_assets": {
         "mihomo_sha256": sys.argv[7],
         "yq_sha256": sys.argv[8],
+        "package_transport": "local_mirror" if os.environ.get("NETFLEET_VM_PACKAGE_MIRROR") else "origin",
     },
     "platform": {
         "runner_arch": sys.argv[9],
