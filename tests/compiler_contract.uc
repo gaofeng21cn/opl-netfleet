@@ -484,6 +484,25 @@ if (validate(cache_override_policy).ok) {
 	exit(1);
 }
 
+const method_policy = json(sprintf("%J", policy));
+for (let probe in method_policy.fail_open.probes) probe.head_expected_status = 404;
+if (!validate(method_policy).ok) die("explicit HEAD status rejected");
+const method_result = compile(profile, method_policy, "source", "recovery", "policy", providers);
+if (!method_result.ok) die("method-specific policy failed compilation");
+let method_groups = 0;
+for (let group in method_result.profile["proxy-groups"]) {
+ if (group.type == "fallback") {
+  if (group["expected-status"] != 404) die("fallback lost HEAD expected status");
+  method_groups++;
+ }
+}
+if (method_groups == 0 || method_policy.fail_open.probes[0].expected_status != policy.fail_open.probes[0].expected_status)
+ die("GET and HEAD status must remain independent");
+for (let invalid in [null, "404", 99, 600]) {
+ method_policy.fail_open.probes[0].head_expected_status = invalid;
+ if (validate(method_policy).ok) die("invalid HEAD expected status accepted");
+}
+
 print("multi_capability_compiler_ok\n");
 
 release_services();

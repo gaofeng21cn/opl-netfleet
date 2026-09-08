@@ -75,12 +75,24 @@ proxy_providers = function(secret, timeout_seconds) {
 test_group_path = function(secret, group, checks) {
 	const latency = checks?.latency;
 	if (!secret || type(group) != "string" || !length(group) || type(latency?.url) != "string" ||
-		type(latency.timeout_ms) != "int" || latency.timeout_ms < 100 || latency.timeout_ms > 10000 ||
+		type(latency.timeout_ms) != "int" || latency.timeout_ms < 100 || latency.timeout_ms > 30000 ||
 		type(latency.expected_status) != "int") return false;
 	const path = `/proxies/${url_path_segment(group)}/delay?url=${url_path_segment(latency.url)}` +
 		`&timeout=${latency.timeout_ms}&expected=${latency.expected_status}`;
+	const state_path = `/proxies/${url_path_segment(group)}`;
+	const snapshot = api_json(secret, state_path, 2);
+	if (type(snapshot) != "object") return false;
+	const before = snapshot.extra?.[latency.url]?.history;
+	const previous_time = type(before) == "array" && length(before) ? before[length(before) - 1]?.time : null;
 	const result = api_json(secret, path, int((latency.timeout_ms + 999) / 1000) + 3);
-	return type(result?.delay) == "int" && result.delay >= 0;
+	// URLTest can return a delay despite an unexpected HTTP status, or 503
+	// for a successful sub-millisecond test rounded to zero. Consult URL health.
+	const health = api_json(secret, state_path, 2)?.extra?.[latency.url];
+	if (health?.alive != true) return false;
+	if (type(result?.delay) == "int" && result.delay >= 0) return true;
+	const history = health?.history;
+	const latest = type(history) == "array" && length(history) ? history[length(history) - 1] : null;
+	return type(latest?.time) == "string" && latest.time != previous_time && latest.delay == 0;
 };
 
 nonempty_string = function(value) {

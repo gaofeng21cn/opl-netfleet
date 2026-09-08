@@ -32,6 +32,8 @@
 官方 OpenWrt armsr/armv8 镜像。一次性镜像可以扩容，原缓存镜像及设备磁盘不改写。
 receipt 绑定精确 commit/tree、runner/guest 架构、QEMU、accelerator 和阶段结果；
 不能用测试文件存在或 VM 启动替代完整 qualification。
+固定规则集由宿主机按 lock 下载和缓存，随校验过的载荷传入 VM；运行夹具再次核对
+大小与摘要，避免网络故障演练中重新依赖公网下载。
 
 默认完整 suite 在独立 VM 中验证原生运行、首次设置和 Nikki 迁移；软件包候选增加独立
 安装 lane。`--diagnostic` 只用于定位单条路径，不能授权部署。管理、组件和传输子阶段

@@ -141,11 +141,10 @@ ruleset_index=0
 while :; do
 	ruleset_id=$(jsonfilter -i /etc/opl-netfleet/rulesets.lock.json -e "@.rulesets[$ruleset_index].id" 2>/dev/null || true)
 	[ -n "$ruleset_id" ] || break
-	ruleset_url=$(jsonfilter -i /etc/opl-netfleet/rulesets.lock.json -e "@.rulesets[$ruleset_index].url")
 	ruleset_size=$(jsonfilter -i /etc/opl-netfleet/rulesets.lock.json -e "@.rulesets[$ruleset_index].size_bytes")
 	ruleset_sha=$(jsonfilter -i /etc/opl-netfleet/rulesets.lock.json -e "@.rulesets[$ruleset_index].sha256")
 	ruleset_path=/etc/nikki/run/rulesets/$ruleset_id.mrs
-	curl -fsSL --connect-timeout 10 --max-time 90 "$ruleset_url" -o "$ruleset_path"
+	cp "/tmp/runtime-rulesets/$ruleset_id.mrs" "$ruleset_path"
 	[ "$(wc -c <"$ruleset_path" | tr -d ' ')" = "$ruleset_size" ]
 	[ "$(sha256sum "$ruleset_path" | awk '{print $1}')" = "$ruleset_sha" ]
 	ruleset_index=$((ruleset_index + 1))
