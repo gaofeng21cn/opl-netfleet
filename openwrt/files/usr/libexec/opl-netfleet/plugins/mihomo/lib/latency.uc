@@ -70,7 +70,7 @@ measure = function(secret, group, checks) {
 	}
 	let result = null;
 	try {
-		result = json(process);
+		result = json(process.read("all"));
 	} catch (error) {
 		result = null;
 	}
