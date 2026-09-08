@@ -35,7 +35,8 @@ class MvpLayoutTests(unittest.TestCase):
                     f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", "all",
                 ], cwd=source, capture_output=True, text=True, check=True)
                 definition = result.stdout.split("__BEGIN__\n", 1)[1].split("__END__", 1)[0]
-                floor = "EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.1)"
+                minimum = "0.8.8" if package in ("opl-netfleet-plugin-product-ui", "luci-app-netfleet") else "0.8.1"
+                floor = f"EXTRA_DEPENDS:=opl-netfleet-kernel (>={minimum})"
                 self.assertEqual(required, floor in definition, package)
 
     def test_payload_revision_matches_runtime_directory_order_and_content(self):

@@ -258,7 +258,7 @@ maintain_action = function(policy, evidence) {
 		});
 		return;
 	}
-	operation_begin("selection", "preparing", { subject: root, total: length(automatic_names), completed: 0 });
+	operation_begin("selection", "preparing", { subject: root, total: length(automatic_names), completed: 0, parent_id: ARGV[3] });
 	automatic_select_action(policy, root, evidence, ARGV[1] ?? "scheduled", ARGV[2] ?? "supervisor");
 };
 

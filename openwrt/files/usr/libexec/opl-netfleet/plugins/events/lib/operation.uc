@@ -22,7 +22,7 @@ process_identity = function(pid) {
 
 public_snapshot = function(value) {
 	if (value == null) return null;
-	return { id: value.id, kind: value.kind, state: value.state, phase: value.phase,
+	return { id: value.id, parent_id: value.parent_id ?? null, kind: value.kind, state: value.state, phase: value.phase,
 		started_at: value.started_at, updated_at: value.updated_at, finished_at: value.finished_at,
 		completed: value.completed, total: value.total, subject: value.subject, error: value.error, recovery: value.recovery ?? null };
 };
@@ -57,7 +57,8 @@ begin = function(kind, phase, details) {
 	const owner = process_identity("self");
 	const now = int(time());
 	const id = type(details?.id) == "string" && match(details.id, /^[A-Za-z0-9_-]+$/) ? details.id : `${kind}-${now}-${owner?.pid ?? 0}`;
-	current = { id: id, kind: kind, state: "running", phase: phase,
+	const parent_id = type(details?.parent_id) == "string" && match(details.parent_id, /^subscription-[A-Za-z0-9_-]+$/) ? details.parent_id : null;
+	current = { id: id, parent_id: parent_id, kind: kind, state: "running", phase: phase,
 		started_at: now, updated_at: now, finished_at: null, completed: 0, total: 0, subject: null, error: null,
 		owner: owner };
 	details_update(details);

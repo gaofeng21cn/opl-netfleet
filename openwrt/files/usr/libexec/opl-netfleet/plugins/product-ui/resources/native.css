@@ -1685,12 +1685,26 @@
 .netfleet-native table.table tr.is-inspected > td { background: var(--nf-accent-soft); }
 .netfleet-native table.table tr.is-inspected > td:first-child { box-shadow: inset 3px 0 var(--nf-accent); }
 .netfleet-native :is(td, dd, time) { font-variant-numeric: tabular-nums; }
-.netfleet-native .netfleet-operating-mode { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0; margin: 0 0 24px; padding: 16px 0; border: 0; border-bottom: 1px solid var(--nf-border); }
-.netfleet-native .netfleet-operating-mode legend { padding: 0; font-size: 15px; font-weight: 600; }
-.netfleet-native .netfleet-mode-options { display: flex; flex: 1 1 480px; flex-wrap: wrap; gap: 8px 24px; min-width: 0; }
-.netfleet-native .netfleet-mode-options label { display: flex; align-items: center; gap: 8px; min-height: 40px; cursor: pointer; }
-.netfleet-native .netfleet-mode-options input { flex: 0 0 auto; margin: 0; }
+.netfleet-native .netfleet-operating-mode { min-width: 0; margin: 0 0 24px; padding: 24px; border: 1px solid var(--nf-border); border-radius: 6px; background: var(--nf-surface, #fff); }
+.netfleet-native .netfleet-mode-heading h3 { margin: 0; padding: 0; border: 0; font-size: 18px; }
+.netfleet-native .netfleet-mode-heading p { margin: 6px 0 20px; color: var(--nf-muted); }
+.netfleet-native .netfleet-operating-mode fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.netfleet-native .netfleet-mode-legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.netfleet-native .netfleet-mode-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.netfleet-native .netfleet-mode-option { display: flex; align-items: flex-start; gap: 12px; padding: 18px; border: 1px solid var(--nf-border); border-radius: 6px; cursor: pointer; }
+.netfleet-native .netfleet-mode-option.is-selected { border-color: var(--nf-accent); background: var(--nf-accent-soft); box-shadow: inset 0 0 0 1px var(--nf-accent); }
+.netfleet-native .netfleet-mode-option:focus-within { outline: 2px solid var(--nf-accent); outline-offset: 3px; }
+.netfleet-native .netfleet-mode-options input { flex: 0 0 auto; margin: 4px 0 0; accent-color: var(--nf-accent); }
+.netfleet-native .netfleet-mode-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.netfleet-native .netfleet-mode-description { color: var(--nf-muted); font-size: 13px; line-height: 1.6; }
+.netfleet-native .netfleet-mode-current { color: var(--nf-accent); font-size: 12px; font-weight: 600; }
+.netfleet-native .netfleet-mode-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 18px; color: var(--nf-muted); font-size: 13px; }
 .netfleet-native .netfleet-operating-mode button { min-width: 112px; min-height: 40px; }
+.netfleet-native .netfleet-operating-mode fieldset:disabled .netfleet-mode-option { cursor: default; opacity: .7; }
+@media (max-width: 760px) {
+ .netfleet-native .netfleet-operating-mode { padding: 18px; }
+ .netfleet-native .netfleet-mode-options { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+}
 @media (prefers-reduced-motion: no-preference) { .netfleet-native :is(button, a, td) { transition: background-color 140ms ease, color 140ms ease; } }
 @media (max-width: 1150px) {
 	.netfleet-native .netfleet-master-detail.has-detail { grid-template-columns: minmax(0, 1fr); }

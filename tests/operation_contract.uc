@@ -86,6 +86,11 @@ finish(false, "https://example.invalid/?token=private");
 check(get("packages").error == "operation_failed", "error details cannot expose credentials");
 check(begin("../../outside", "downloading") == null && get("../../outside") == null, "only known operation paths are addressable");
 
+begin("selection", "checking", { parent_id: "subscription-123-45" });
+check(get("selection").parent_id == "subscription-123-45", "selection retains explicit parent identity");
+begin("selection", "checking");
+check(get("selection").parent_id == null, "standalone selection has no parent");
+
 if (previous == null) fs.unlink(path); else fs.writefile(path, previous);
 if (previous_packages == null) fs.unlink(package_path); else fs.writefile(package_path, previous_packages);
 if (previous_selection == null) fs.unlink(selection_path); else fs.writefile(selection_path, previous_selection);

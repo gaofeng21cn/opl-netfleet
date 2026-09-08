@@ -428,17 +428,30 @@ function operatingModeControls(owner) {
 	const current = owner.status.operating_mode ?? null;
 	const selected = owner.modeDraft ?? current;
 	const disabled = owner.busy || owner.refreshing || owner.modeSwitching || !owner.liveDataReady || owner.context.readOnly;
-	return E('fieldset', { 'class': 'netfleet-operating-mode', 'disabled': disabled || null }, [
-		E('legend', {}, '网络运行模式'),
-		E('div', { 'class': 'netfleet-mode-options' }, Object.keys(OPERATING_MODES).map(function(mode) {
-			return E('label', {}, [
-				E('input', { 'type': 'radio', 'name': 'netfleet-operating-mode', 'value': mode, 'checked': mode === selected || null,
-					'change': function() { owner.modeDraft = mode; owner.redraw(); } }),
-				E('span', {}, OPERATING_MODES[mode])
-			]);
-		})),
-		E('button', { 'class': 'btn cbi-button cbi-button-action', 'disabled': disabled || !selected || selected === current || null,
-			'click': function() { return owner.runMode(selected, current); } }, owner.modeSwitching ? '正在切换…' : '切换模式')
+	const descriptions = {
+		openwrt: '停止代理与网络接管，使用 OpenWrt 原生网络。',
+		mihomo: '保留 Mihomo 代理，暂停 NetFleet 自动选优与调度。',
+		netfleet: '运行代理、自动选优与故障恢复，由 NetFleet 统一管理。'
+	};
+	return E('section', { 'class': 'netfleet-operating-mode', 'aria-label': '网络运行模式' }, [
+		E('div', { 'class': 'netfleet-mode-heading' }, [ E('h3', {}, '网络运行模式'), E('p', {}, '选择网络接管方式，确认后生效') ]),
+		E('fieldset', { 'disabled': disabled || null }, [
+			E('legend', { 'class': 'netfleet-mode-legend' }, '选择运行模式'),
+			E('div', { 'class': 'netfleet-mode-options' }, Object.keys(OPERATING_MODES).map(function(mode) {
+				return E('label', { 'class': 'netfleet-mode-option' + (mode === selected ? ' is-selected' : '') }, [
+					E('input', { 'type': 'radio', 'name': 'netfleet-operating-mode', 'value': mode, 'checked': mode === selected || null,
+						'change': function() { owner.modeDraft = mode; owner.redraw(); } }),
+					E('span', { 'class': 'netfleet-mode-copy' }, [ E('strong', {}, OPERATING_MODES[mode]),
+						E('span', { 'class': 'netfleet-mode-description' }, descriptions[mode]),
+						mode === current ? E('span', { 'class': 'netfleet-mode-current' }, '当前运行') : E('span', { 'aria-hidden': 'true' }, '') ])
+				]);
+			})),
+			E('div', { 'class': 'netfleet-mode-footer' }, [
+				E('span', { 'role': 'status' }, owner.modeSwitching ? '正在应用，请稍候…' : selected && selected !== current ? '待切换至' + operatingModeLabel(selected) : current ? '当前模式已生效' : '当前运行模式暂不可确认'),
+				E('button', { 'type': 'button', 'class': 'btn cbi-button cbi-button-action', 'disabled': disabled || !selected || selected === current || null,
+					'click': function() { return owner.runMode(selected, current); } }, owner.modeSwitching ? '正在切换…' : '切换模式')
+			])
+		])
 	]);
 }
 
@@ -1270,7 +1283,7 @@ const productController = {
 
 		let content;
 		if (this.currentView === 'exits') content = exitsPage(this.status);
-		else if (this.currentView === 'providers') content = [ managed.operationNode(this, 'subscription') ].concat(providersPage(this.status, this));
+		else if (this.currentView === 'providers') content = providersPage(this.status, this);
 		else if (this.currentView === 'regions') content = regionsPage(this.status, this);
 		else if (this.currentView === 'config') content = [ netfleetConfig.render(this) ];
 		else if (this.currentView === 'components') content = [ managed.components(this) ];
@@ -1285,7 +1298,7 @@ const productController = {
 		if (this.currentView === 'events')
 			content.splice(1, 0, product.diagnosis(this, regionalDisplayName));
 		if (this.currentView !== 'components' && this.currentView !== 'config')
-			content.unshift(managed.operationNode(this, 'selection'));
+			content.unshift(managed.operationNode(this, 'selection'), managed.operationNode(this, 'subscription'));
 
 		let sourceName = '设备实时 RPC';
 		let freshness = '刚刚更新';

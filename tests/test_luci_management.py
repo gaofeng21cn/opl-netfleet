@@ -456,6 +456,30 @@ assert.equal(owner.components.dashboard.checked_at, 100);
 assert(owner.componentsError);
 """)
 
+    def test_subscription_selection_is_one_operation_feedback(self):
+        self.run_js(r"""
+const managed = module('managed.js', {});
+const owner = controller();
+owner.operations = {
+ subscription: { id: 'subscription-1', state: 'running', phase: 'selecting', started_at: 100, total: 3, completed: 3 },
+ selection: { id: 'selection-1', parent_id: 'subscription-1', state: 'running', phase: 'checking', started_at: 110, total: 2, completed: 0 }
+};
+assert(managed.operationNode(owner, 'selection').attrs.hidden);
+const progress = text(managed.operationNode(owner, 'subscription'));
+assert(progress.includes('机场订阅更新') && progress.includes('检查节点健康') && progress.includes('0 / 2 个出口'));
+assert(!progress.includes('检查更新源'));
+owner.operations.selection.state = 'succeeded';
+assert(!text(managed.operationNode(owner, 'subscription')).includes('完成于'));
+owner.operations.subscription.state = 'failed';
+owner.operations.subscription.error = 'protected_probe_failed';
+assert(text(managed.operationNode(owner, 'subscription')).includes('执行失败'));
+assert(managed.operationNode(owner, 'selection').attrs.hidden);
+owner.operations.selection.parent_id = null;
+assert(!managed.operationNode(owner, 'selection').attrs.hidden, 'independent selection must remain visible');
+owner.operations.selection.parent_id = 'subscription-old';
+assert(!managed.operationNode(owner, 'selection').attrs.hidden, 'unrelated operation must not be merged');
+""")
+
     def test_operation_results_dismiss_without_changing_owner_or_hiding_new_work(self):
         self.run_js(r"""
 const records = new Map();

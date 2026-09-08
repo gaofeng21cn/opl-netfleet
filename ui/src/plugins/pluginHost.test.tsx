@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
-import { createPageHost, createScope, pluginPages, resourceUrl, type PluginContext, type PluginsSnapshot } from '../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/plugin-host.js';
+import { createPageHost, createScope, pluginPages, pluginNavigation, resourceUrl, type PluginContext, type PluginsSnapshot } from '../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/plugin-host.js';
 import { PluginApplication } from './PluginApplication';
 
 const snapshot = (revision = 'revision-1'): PluginsSnapshot => ({ plugins: [{ id: 'example', revision, enabled: true, runtime: 'ucode', ui: [{ id: 'settings', title: '独立配置', module: 'resources/page.js' }], configuration: { read: 'settings_get', write: 'settings_save' } }] });
@@ -178,10 +178,13 @@ it('loads and replaces independent LuCI pages without product status or onboardi
   let options: any;
   const source = readFileSync(new URL('../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/view/netfleet/overview.js', import.meta.url), 'utf8');
   const shell = new Function('view', 'poll', 'api', 'E', 'window', 'document', 'MutationObserver', 'L', source)({ extend: (value: any) => value }, poll, client, createNode, { addEventListener() {}, removeEventListener() {} }, { body: {} }, class { observe() {} disconnect() {} }, { hasViewPermission: () => permitted });
-  shell.render([{ pluginPages, resourceUrl, createPageHost: (value: any) => { options = value; return host; } }, { snapshot: snapshot() }]);
+  shell.render([{ pluginPages, pluginNavigation, resourceUrl, createPageHost: (value: any) => { options = value; return host; } }, { snapshot: snapshot() }]);
   expect(options.readOnly()).toBe(false);
   permitted = false;
   expect(options.readOnly()).toBe(true);
+  expect(host.show).not.toHaveBeenCalled();
+  expect(shell.current).toBe('plugins');
+  shell.navigate(page().id);
   expect(host.show).toHaveBeenCalledOnce();
   client.pluginsList.mockResolvedValueOnce(snapshot('revision-2'));
   await shell.refreshPlugins();
@@ -190,4 +193,21 @@ it('loads and replaces independent LuCI pages without product status or onboardi
   await shell.refreshPlugins();
   expect(host.dispose).toHaveBeenCalled();
   expect(shell.pages).toEqual([]);
+});
+
+
+it('keeps extension discovery separate from declared product navigation and independent of snapshot order', () => {
+  const extensions = snapshot().plugins;
+  const product = { id: 'product-ui', revision: 'r1', ui: [
+    { id: 'overview', title: '概览', module: 'resources/overview.js', navigation: 'primary' as const },
+    { id: 'events', title: '事件', module: 'resources/events.js', navigation: 'primary' as const }
+  ] };
+  for (const plugins of [[...extensions, product], [product, ...extensions]]) {
+    const navigation = pluginNavigation(pluginPages({ plugins }));
+    expect(navigation.defaultId).toBe('plugin:product-ui:overview');
+    expect(navigation.primary.map(page => page.page.id)).toEqual(['overview', 'events']);
+    expect(navigation.groups.flatMap(group => group.pages).map(page => page.title)).toEqual(['独立配置']);
+  }
+  expect(pluginNavigation(pluginPages({ plugins: extensions })).defaultId).toBe('plugins');
+  expect(pluginNavigation(pluginPages({ plugins: extensions.map(plugin => ({ ...plugin, enabled: false })) })).groups).toEqual([]);
 });

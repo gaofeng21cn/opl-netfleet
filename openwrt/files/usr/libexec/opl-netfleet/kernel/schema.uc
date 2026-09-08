@@ -22,8 +22,9 @@ function contributions_error(value) {
 			if (type(page) != 'object' || !valid_id(page.id) || pages[page.id] || type(page.title) != 'string' ||
 				!length(page.title) || length(page.title) > 120 || match(page.title, /[[:cntrl:]]/) || type(page.module) != 'string' ||
 				!match(page.module, /^resources\/[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*\.js$/) ||
-				index(['host', 'instance'], page.scope ?? 'instance') < 0) return 'plugin_ui_invalid';
-			for (let key in keys(page)) if (index(['id', 'title', 'module', 'scope'], key) < 0) return 'plugin_ui_invalid';
+				index(['host', 'instance'], page.scope ?? 'instance') < 0 ||
+				index(['primary', 'plugin'], page.navigation ?? 'plugin') < 0) return 'plugin_ui_invalid';
+			for (let key in keys(page)) if (index(['id', 'title', 'module', 'scope', 'navigation'], key) < 0) return 'plugin_ui_invalid';
 			pages[page.id] = true;
 		}
 	}

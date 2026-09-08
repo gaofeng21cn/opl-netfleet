@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-netfleet
-PKG_VERSION:=0.8.3
+PKG_VERSION:=0.8.4
 PKG_RELEASE:=1
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=OPL NetFleet
@@ -15,7 +15,7 @@ define Package/luci-app-netfleet
   CATEGORY:=LuCI
   TITLE:=OPL NetFleet status and recovery interface
   DEPENDS:=+luci-base +opl-netfleet-kernel
-  EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.1)
+  EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.8)
   PKGARCH:=all
 endef
 

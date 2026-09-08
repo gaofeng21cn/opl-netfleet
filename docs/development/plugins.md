@@ -132,7 +132,10 @@ revision 与显式确认，并受网络 mutation 锁保护。`get/load/unload/re
 
 ## 贡献浏览器页面
 
-`ui` 中的每页声明唯一 `id`、标题和 `resources/` 下的 `.js` 模块。模块导出
+`ui` 中的每页声明唯一 `id`、标题和 `resources/` 下的 `.js` 模块。
+`navigation` 缺省为 `plugin`，页面自动出现在宿主的“插件”目录；同插件的多页面和具名
+实例分别列出。只有承担产品主导航的页面声明 `navigation: "primary"`，并用 manifest
+中的顺序指定主导航顺序。普通扩展不需要修改宿主或产品插件，也不自动成为首页。模块导出
 `mount(context)`，可以异步完成并返回清理函数。完整示例的
 [page.js](../../examples/plugins/workspace-note/resources/page.js) 使用原生 DOM，可替换为
 自己的界面框架与构建产物。

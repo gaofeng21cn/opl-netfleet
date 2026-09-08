@@ -135,12 +135,12 @@ wait_active_runtime = function(manifest) {
 	return { ok: false, error: "owner_readback_failed", readback: readback };
 };
 
-run_refresh_selection = function(requested) {
+run_refresh_selection = function(requested, parent_id) {
 	const trigger = requested == "scheduled" ? "scheduled" : "refresh";
 	const initiator = event_initiator(requested, requested == "scheduled" ? "scheduled" : null);
 	const output = `${REFRESH_DIR}/selection.json`;
 	const error_output = `${REFRESH_DIR}/selection.stderr`;
-	const exit_code = system(`ucode ${shell_quote(MAIN_PATH)} maintain ${shell_quote(trigger)} ${shell_quote(initiator)} >${shell_quote(output)} 2>${shell_quote(error_output)}`);
+	const exit_code = system(`ucode ${shell_quote(MAIN_PATH)} maintain ${shell_quote(trigger)} ${shell_quote(initiator)} ${shell_quote(parent_id ?? "")} >${shell_quote(output)} 2>${shell_quote(error_output)}`);
 	const response = read_json(output);
 	return {
 		ok: exit_code == 0 && response?.ok == true,
@@ -356,8 +356,8 @@ refresh_action = function(policy, section, initiator) {
 			subscriptions: subscriptions
 		});
 	}
-	operation_update("selecting");
-	const selection = run_refresh_selection(requested);
+	const operation = operation_update("selecting");
+	const selection = run_refresh_selection(requested, operation?.id);
 	operation_update("verifying");
 	const final_readback = runtime_readback(COMPILED_PROFILE, manifest);
 	const final_probes = protected_probes(policy);

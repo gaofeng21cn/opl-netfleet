@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, LockKeyhole, Network, Puzzle, RefreshCw } from 'lucide-react';
-import { createPageHost, pluginPages, resourceUrl, type PluginApi, type PluginPage, type PluginsSnapshot } from '../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/plugin-host.js';
+import { createPageHost, pluginPages, pluginNavigation, pluginHostStyles, resourceUrl, type PluginApi, type PluginPage, type PluginsSnapshot } from '../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/plugin-host.js';
 
 export interface PluginClient extends PluginApi { pluginsList(): Promise<PluginsSnapshot> }
 
@@ -28,7 +28,10 @@ export function PluginApplication({ client, readOnly = false, initialPlugins }: 
   const [loading, setLoading] = useState(!initialPlugins);
   const reading = useRef(false);
   const pages = useMemo(() => pluginPages(snapshot), [snapshot]);
-  const selected = pages.find(page => page.id === selection?.id) || pages[0];
+  const model = useMemo(() => pluginNavigation(pages), [pages]);
+  const current = selection?.id === 'plugins' || pages.some(page => page.id === selection?.id) ? selection!.id : model.defaultId;
+  const selected = pages.find(page => page.id === current);
+  const group = model.groups.find(value => value.pages.some(page => page.id === current));
   const navigate = useCallback((id: string, state?: Record<string, unknown>) => setSelection({ id, state }), []);
   const refresh = useCallback(async () => {
     if (reading.current) return;
@@ -46,13 +49,14 @@ export function PluginApplication({ client, readOnly = false, initialPlugins }: 
     const timer = setInterval(() => void refresh(), 5000);
     return () => clearInterval(timer);
   }, [refresh]);
-  const navigation = pages.map(page => <button className={selected?.id === page.id ? 'is-active' : ''} type="button" key={page.id} onClick={() => navigate(page.id)}><Puzzle aria-hidden="true" /><span>{page.title}</span></button>);
-  return <div className="nf-app">
+  const navigation = <>{model.primary.map(page => <button className={selected?.id === page.id ? 'is-active' : ''} type="button" key={page.id} onClick={() => navigate(page.id)}><Puzzle aria-hidden="true" /><span>{page.title}</span></button>)}<button type="button" className={!selected || group ? 'is-active' : ''} onClick={() => navigate('plugins')}><Puzzle aria-hidden="true" /><span>插件</span></button></>;
+  return <div className="nf-app"><style>{pluginHostStyles}</style>
     <aside className="nf-sidebar"><div className="nf-brand"><Network aria-hidden="true" /><span><strong>OPL</strong> NetFleet</span></div><nav className="nf-nav" aria-label="NetFleet 导航">{navigation}</nav></aside>
     <div className="nf-stage"><header className="nf-toolbar"><span /><div className="nf-toolbar-actions">{readOnly && <span className="nf-readonly-badge"><LockKeyhole aria-hidden="true" />只读</span>}<button type="button" title="刷新插件" disabled={loading} onClick={() => void refresh()}><RefreshCw aria-hidden="true" className={loading ? 'is-spinning' : ''} /><span>刷新</span></button></div></header>
-      <main className="nf-main"><div className="nf-page-heading"><h1>{selected?.title || 'NetFleet'}</h1></div>
+      <main className="nf-main"><div className="nf-page-heading"><h1>{selected?.title || '插件'}</h1></div>
         {error && <div className="nf-alert" role="alert"><AlertCircle aria-hidden="true" /><span>{error}</span></div>}
-        {selected ? <PluginPageView key={selected.id} page={selected} client={client} readOnly={readOnly || !!error} onNavigate={navigate} state={selection?.state} /> : <p role="status">{loading ? '正在读取插件…' : '暂无已启用的界面插件'}</p>}
+        {group && <nav className="netfleet-plugin-subnav" aria-label="插件页面"><button type="button" onClick={() => navigate('plugins')}>← 插件</button>{group.pages.map(page => <button type="button" key={page.id} aria-current={page.id === current ? 'page' : undefined} onClick={() => navigate(page.id)}>{page.title}</button>)}</nav>}
+        {selected ? <PluginPageView key={selected.id} page={selected} client={client} readOnly={readOnly || !!error} onNavigate={navigate} state={selection?.state} /> : <div className="nf-plugin-directory"><p>从已启用的插件中打开配置页面。安装、启停和卸载请进入组件与更新。</p>{model.groups.map(group => <section key={group.id}><h2>{group.title}{group.instance && group.instance !== 'default' ? ` · ${group.instance}` : ''}</h2>{group.pages.map(page => <button type="button" key={page.id} onClick={() => navigate(page.id)}>{page.title}</button>)}</section>)}{!model.groups.length && <p role="status">{loading ? '正在读取插件…' : '暂无已启用的插件配置页'}</p>}</div>}
       </main>
     </div>
     <nav className="nf-mobile-nav nf-plugin-mobile-nav" aria-label="NetFleet 移动导航">{navigation}</nav>

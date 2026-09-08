@@ -4,12 +4,24 @@ const identifier = /^[a-z][a-z0-9_-]{0,63}$/;
 const modulePath = /^resources\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.js$/;
 const sharedEvents = new Map();
 
+export const pluginHostStyles = `
+.netfleet-plugin-shell > .cbi-tabmenu { margin-bottom: 24px; }
+.netfleet-plugin-directory, .nf-plugin-directory { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
+.nf-plugin-directory > p { grid-column: 1 / -1; }
+.netfleet-plugin-directory > section, .nf-plugin-directory > section { margin: 0; padding: 20px; background: var(--nf-surface, #fff); border: 1px solid var(--nf-border, #ddd); border-radius: 6px; }
+.netfleet-plugin-directory h3, .nf-plugin-directory h2 { margin: 0 0 16px; padding: 0; border: 0; font-size: 17px; }
+.netfleet-plugin-directory button, .nf-plugin-directory button, .netfleet-plugin-subnav button { margin: 0 8px 8px 0; min-height: 40px; }
+.netfleet-plugin-subnav { margin: 16px 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.netfleet-plugin-subnav [aria-current=page] { font-weight: 600; }
+`;
+
 export function pluginPages(snapshot) {
   const pages = [];
   const seen = new Set();
-  for (const plugin of snapshot?.plugins || []) {
+  for (const plugin of [...(snapshot?.plugins || [])].sort((a, b) => `${a.id}:${a.instance || ''}`.localeCompare(`${b.id}:${b.instance || ''}`))) {
     if (!identifier.test(plugin.id) || plugin.enabled === false || plugin.available === false || plugin.state === 'unavailable' || !plugin.revision) continue;
     for (const page of plugin.ui || []) {
+      if (!['primary', 'plugin'].includes(page.navigation ?? 'plugin')) continue;
       if (!identifier.test(page.id) || typeof page.title !== 'string' || !page.title.trim() || !modulePath.test(page.module)) continue;
       const instance = plugin.instance && plugin.instance !== 'default' ? plugin.instance : null;
       if (instance && !identifier.test(instance)) continue;
@@ -20,6 +32,22 @@ export function pluginPages(snapshot) {
     }
   }
   return pages;
+}
+
+// Navigation is shared by the LuCI and React hosts; business pages remain plugin-owned.
+export function pluginNavigation(pages) {
+  const primary = pages.filter(item => item.page.navigation === 'primary');
+  const groups = [];
+  for (const item of pages.filter(item => item.page.navigation !== 'primary')) {
+    const key = `${item.plugin.id}:${item.plugin.instance || 'default'}`;
+    let group = groups.find(value => value.id === key);
+    if (!group) {
+      group = { id: key, title: item.plugin.label || item.plugin.id, instance: item.plugin.instance, pages: [] };
+      groups.push(group);
+    }
+    group.pages.push(item);
+  }
+  return { primary, groups, defaultId: primary[0]?.id || 'plugins' };
 }
 
 export function resourceUrl(contribution) {

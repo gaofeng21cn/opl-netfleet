@@ -152,8 +152,9 @@ def validate_contributions(manifest, source, service_plugin):
     page_ids = set()
     for page in pages:
         if (not isinstance(page, dict) or not {"id", "title", "module"} <= set(page)
-                or set(page) - {"id", "title", "module", "scope"}
+                or set(page) - {"id", "title", "module", "scope", "navigation"}
                 or page.get("scope", "instance") not in ("host", "instance")
+                or page.get("navigation", "plugin") not in ("primary", "plugin")
                 or not valid_id(page["id"]) or page["id"] in page_ids
                 or not isinstance(page["title"], str) or not 1 <= len(page["title"]) <= 120
                 or any(ord(char) < 32 or ord(char) == 127 for char in page["title"])):
@@ -293,6 +294,7 @@ def makefile(manifest, license_id, release, revision):
         requirements.extend(manifest.get("package_dependencies", []))
     else:
         requirements.extend(["netfleet-plugin-api-v1", *manifest["dependencies"]])
+    kernel_minimum = "0.8.8" if any("navigation" in page for page in manifest.get("ui", [])) else "0.8.1"
     dependencies = " ".join("+" + name for name in dict.fromkeys(requirements))
     resources = (f"\t$(INSTALL_DIR) $(1)/www/luci-static/resources/netfleet/plugins/{plugin_id}/{revision}/resources\n"
                  f"\t$(CP) ./files/resources/. $(1)/www/luci-static/resources/netfleet/plugins/{plugin_id}/{revision}/resources/\n"
@@ -311,7 +313,7 @@ define Package/{package}
   CATEGORY:=Network
   TITLE:=NetFleet plugin: {plugin_id}
   DEPENDS:={dependencies}
-  EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.1)
+  EXTRA_DEPENDS:=opl-netfleet-kernel (>={kernel_minimum})
   PKGARCH:=all
 endef
 

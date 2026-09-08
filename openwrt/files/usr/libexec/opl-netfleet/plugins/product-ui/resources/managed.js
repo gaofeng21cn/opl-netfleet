@@ -190,13 +190,17 @@ function notify(title, content, severity) {
 
 function operationNode(controller, kind) {
 	const operation = controller.operations && controller.operations[kind];
+	const subscription = controller.operations?.subscription;
+	const selection = controller.operations?.selection;
+	const related = subscription && selection?.parent_id === subscription.id;
 	const pending = kind === 'subscription' && controller.subscriptionRequest || kind === 'selection' && controller.selectionRequest;
 	const disconnected = controller.operationError && (pending || isRunning(operation));
 	const attrs = { 'class': 'netfleet-operation', 'data-netfleet-operation': kind, 'role': 'status', 'aria-live': 'polite' };
+	if (kind === 'selection' && related && !controller.selectionRequest) return E('div', Object.assign(attrs, { 'hidden': true }));
 	if (!operation && !pending) return E('div', Object.assign(attrs, { 'hidden': true }));
 	const active = operation ? isRunning(operation) : pending;
 	const state = disconnected ? '连接中断，执行结果尚未确认' : !operation ? '等待设备接收' :
-		({ queued: '已提交，等待设备执行', running: PHASE_LABELS[operation.phase] || '处理中', succeeded: '已完成', failed: '执行失败', interrupted: '执行已中断，结果尚未确认' })[operation.state] || '等待设备确认';
+		({ queued: '已提交，等待设备执行', running: kind === 'selection' ? ({ preparing: '准备测速', checking: '检查节点健康', selecting: '测速与选优', verifying: '验证业务连通性' })[operation.phase] || PHASE_LABELS[operation.phase] || '处理中' : PHASE_LABELS[operation.phase] || '处理中', succeeded: '已完成', failed: '执行失败', interrupted: '执行已中断，结果尚未确认' })[operation.state] || '等待设备确认';
 	const started = operation && operation.started_at || (kind === 'selection' ? controller.selectionStartedAt : controller.subscriptionStartedAt);
 	const end = active ? Date.now() / 1000 : operation && operation.finished_at;
 	const elapsed = started && end >= started ? Math.floor(end - started) : null;
@@ -209,6 +213,11 @@ function operationNode(controller, kind) {
 		const label = kind === 'subscription' ? '已处理 ' : kind === 'selection' ? '已完成 ' : '已完成 ';
 		const unit = kind === 'subscription' ? ' 个机场' : kind === 'selection' ? ' 个出口' : ' 个文件';
 		details.push(E('span', {}, label + Number(operation.completed || 0) + ' / ' + Number(operation.total) + unit));
+	}
+	if (kind === 'subscription' && related && operation.phase === 'selecting') {
+		details.push(E('span', {}, ({ preparing: '准备测速', checking: '检查节点健康', selecting: '测量候选并选优', verifying: '验证业务连通性' })[selection.phase] || '测速与选优'));
+		if (selection.total > 0) details.push(E('span', {}, '已完成 ' + Number(selection.completed || 0) + ' / ' + Number(selection.total) + ' 个出口'));
+		if (selection.error) details.push(E('span', { 'class': 'is-warning' }, errorLabel(selection.error)));
 	}
 	if (!active) details.push(E('span', {}, operation.finished_at ? resultTime(operation.finished_at) : operation.updated_at ? resultTime(operation.updated_at, '记录更新于') + '（完成时间未记录）' : '完成时间未记录'));
 	if (elapsed != null) details.push(E('span', {}, (active ? '已耗时 ' : '耗时 ') + (elapsed < 60 ? elapsed + ' 秒' : Math.floor(elapsed / 60) + ' 分 ' + elapsed % 60 + ' 秒')));

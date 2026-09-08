@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet
-PKG_VERSION:=0.8.7
+PKG_VERSION:=0.8.8
 PKG_RELEASE:=1
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=OPL NetFleet
@@ -370,7 +370,7 @@ define Package/opl-netfleet-plugin-$(1)
   VERSION:=$(shell python3 ./plugin-packages.py version $(1))-r$(PKG_RELEASE)
   REPLACES:=opl-netfleet
   DEPENDS:=+opl-netfleet-kernel $(shell python3 ./plugin-packages.py dependencies $(1))
-  EXTRA_DEPENDS:=$(if $(filter product-ui maintenance,$(1)),opl-netfleet-kernel (>=0.8.1))
+  EXTRA_DEPENDS:=$(if $(filter product-ui,$(1)),opl-netfleet-kernel (>=0.8.8)$(comma) luci-app-netfleet (>=0.8.4),$(if $(filter maintenance,$(1)),opl-netfleet-kernel (>=0.8.1)))
   PKGARCH:=all
 endef
 
