@@ -22,7 +22,7 @@ finish() {
 	rm -f /root/netfleet-component-space-fixture
 	if [ "$rc" -ne 0 ]; then
 		echo "Component qualification failed at: $stage" >&2
-		for file in "$work"/*-result.json "$work"/*.log /tmp/opl-netfleet-components/*/log; do
+		for file in "$work"/*-result.json "$work"/*.log /etc/opl-netfleet/package-transactions/*/log; do
 			[ ! -f "$file" ] || { echo "--- $file" >&2; tail -50 "$file" >&2; }
 		done
 	fi

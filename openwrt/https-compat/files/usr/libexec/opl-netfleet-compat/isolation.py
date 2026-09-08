@@ -15,7 +15,9 @@ BUDGETS = {"memory.max": str(192 * 1024 * 1024), "memory.swap.max": "0",
 
 def account():
     user, group = pwd.getpwnam(ACCOUNT), grp.getgrnam(ACCOUNT)
-    if user.pw_uid == 0 or group.gr_gid == 0 or user.pw_gid != group.gr_gid:
+    if (user.pw_uid == 0 or group.gr_gid == 0 or user.pw_gid != group.gr_gid
+            or any(item.pw_uid == user.pw_uid and item.pw_name != ACCOUNT for item in pwd.getpwall())
+            or any(item.gr_gid == group.gr_gid and item.gr_name != ACCOUNT for item in grp.getgrall())):
         raise ValueError("engine_identity_invalid")
     return user.pw_uid, group.gr_gid
 
@@ -42,6 +44,8 @@ def prepare(base, run):
                 os.fchown(stream.fileno(), 0, gid)
                 stream.write(path.read_bytes())
             temporary.replace(target)
+        os.chown(target, 0, gid)
+        os.chmod(target, 0o640)
     effective = run / "effective.json"
     if effective.is_symlink() or effective.stat().st_uid != 0:
         raise ValueError("engine_config_unsafe")
@@ -66,6 +70,7 @@ def constrain():
     if CGROUP.is_symlink():
         raise ValueError("engine_cgroup_unsafe")
     CGROUP.mkdir(exist_ok=True)
+    os.chmod(CGROUP, 0o755)
     if (CGROUP / "cgroup.procs").read_text().strip():
         raise ValueError("engine_already_running")
     for name, value in BUDGETS.items():

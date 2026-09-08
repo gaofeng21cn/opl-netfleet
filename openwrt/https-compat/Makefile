@@ -9,7 +9,7 @@ PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)
 include $(INCLUDE_DIR)/package.mk
 
 define Package/opl-netfleet-https-compat
-  USERID:=netfleet-compat=453:netfleet-compat=453
+  USERID:=netfleet-compat:netfleet-compat
   SECTION:=net
   CATEGORY:=Network
   TITLE:=NetFleet optional HTTPS compatibility engine
@@ -36,6 +36,8 @@ define Package/opl-netfleet-https-compat/install
 	$(INSTALL_DIR) $(1)/usr/lib/opl-netfleet-compat/vendor
 	$(CP) $(PKG_BUILD_DIR)/vendor/. $(1)/usr/lib/opl-netfleet-compat/vendor/
 	$(CP) ./files/. $(1)/
+	chmod 0644 $(1)/usr/libexec/opl-netfleet-compat/*.py $(1)/usr/libexec/opl-netfleet-compat/extension.json
+	chmod 0755 $(1)/usr/libexec/opl-netfleet-compat $(1)/usr/lib/opl-netfleet-compat
 	chmod 0755 $(1)/etc/init.d/opl-netfleet-compat $(1)/usr/libexec/opl-netfleet-compat/mitmdump
 endef
 

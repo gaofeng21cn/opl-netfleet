@@ -2,7 +2,7 @@ import * as fs from "fs";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, restore_world, feed, newer, available, update_process, progress, get, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, restore_services, upgrade, command;
+let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, restore_world, feed, newer, available, update_process, progress, get, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, restore_services, recover, journal, upgrade, command;
 
 const dashboard_resource = context.use("dashboard.control").resource;
 const operation = context.use("events.operation");
@@ -21,7 +21,8 @@ const q = context.use("platform.process").shell_quote;
 const api_secret = context.use("platform.credentials").api_secret;
 const sha256 = context.use("platform.storage").sha256;
 
-const ROOT = "/tmp/opl-netfleet-components";
+const ROOT = "/etc/opl-netfleet/package-transactions";
+const PENDING = `${ROOT}/pending.json`;
 const CACHE = `${ROOT}/checked.json`;
 const REQUEST = `${ROOT}/request.json`;
 const REPOSITORY = "/etc/apk/repositories.d/opl-netfleet.list";
@@ -117,6 +118,8 @@ progress = function() {
 	const state = operation.get("packages");
 	const request = private_file(REQUEST) ? read_json(REQUEST) : null;
 	const process = update_process();
+	const pending = private_file(PENDING) ? read_json(PENDING) : null;
+	if (pending && process?.running != true) return { id: pending.id, kind: "packages", state: "interrupted", phase: "rolling_back", error: "previous_update_incomplete", recovery: "required" };
 	if (request != null && state?.id != request.id) {
 		const running = process?.running == true;
 		return { id: request.id, kind: "packages", state: running ? "queued" : "interrupted", phase: "preparing", started_at: request.started_at,
@@ -151,10 +154,11 @@ get = function() {
 };
 start = function(action, component, version) {
 	if (!directory(ROOT)) fail("unsafe_update_directory");
+	if (fs.lstat(PENDING) != null) fail("previous_update_incomplete");
 	if (update_process()?.running == true) fail("mutation_busy");
 	if (feed() == null) fail("feed_not_configured");
 	if (action == "update" && (index(["netfleet", "mihomo"], component) < 0 || !version_valid(version))) fail("invalid_component_request");
-	if (action == "update" && fs.lstat(UPGRADE_STATE) != null) fail("previous_update_incomplete");
+	if (action == "update" && (fs.lstat(PENDING) != null || fs.lstat(UPGRADE_STATE) != null)) fail("previous_update_incomplete");
 	// Only the latest completed transaction is retained; unfinished recovery is never removed.
 	const previous = private_file(REQUEST) ? read_json(REQUEST) : null;
 	if (previous && match(previous.id ?? "", /^[a-f0-9]{32}$/)) {
@@ -218,7 +222,7 @@ archive = function(name, version, path, work, fallback_version, source) {
 	return target;
 };
 private_paths = function() {
-	return filter(["/etc/config/netfleet", "/etc/opl-netfleet/policy.json", "/etc/opl-netfleet/backend.json",
+	return filter(["/etc/config/netfleet", "/etc/opl-netfleet/policy.json", "/etc/opl-netfleet/backend.json", "/etc/opl-netfleet/system.json",
 		`${ROOT_DIR}/profiles`, `${ROOT_DIR}/subscriptions`, `${ROOT_DIR}/mixin.json`, `${ROOT_DIR}/mixin.yaml`,
 		...(KIND == "nikki-mihomo" ? ["/etc/config/nikki"] : [])], path => fs.lstat(path) != null);
 };
@@ -259,7 +263,7 @@ stop_services = function(work) {
 };
 restore_services = function(before, work) {
 	const deadline = time() + 45;
-	if (before.core && !run_command(`/etc/init.d/${SERVICE} start`, work)) return false;
+	if (before.core && !run_command(`NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/${SERVICE} start`, work)) return false;
 	if (before.core) {
 		let ready = false;
 		while (time() < deadline) {
@@ -278,7 +282,7 @@ restore_services = function(before, work) {
 		}
 		if (!ready) return false;
 	}
-	if (before.supervisor && !run_command("/etc/init.d/opl-netfleet start", work)) return false;
+	if (before.supervisor && !run_command("NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet start", work)) return false;
 	if (before.unconfigured) return !before.core && same_inputs(before);
 	// Controller readiness precedes provider loading, gateway attachment and working DNS.
 	while (time() < deadline) {
@@ -339,7 +343,7 @@ upgrade = function(request, work, candidates) {
 	const unconfigured = fs.lstat("/etc/opl-netfleet/policy.json") == null && !service_running(SERVICE);
 	if (before_status == null && !unconfigured) fail("runtime_readback_failed");
 	const paths = private_paths();
-	const before = { active: before_status?.active ?? false, unconfigured: unconfigured, core: service_running(SERVICE), supervisor: service_running("opl-netfleet"), selections: {}, paths: paths, inputs: input_identity(paths), world: package_world() };
+	const before = { backend: KIND, core_enabled: capture(`/etc/init.d/${SERVICE} enabled`) != null, supervisor_enabled: capture("/etc/init.d/opl-netfleet enabled") != null, active: before_status?.active ?? false, unconfigured: unconfigured, core: service_running(SERVICE), supervisor: service_running("opl-netfleet"), selections: {}, paths: paths, inputs: input_identity(paths), world: package_world() };
 	if (before.core) {
 		const all = proxies(api_secret(), 2)?.proxies;
 		if (all == null || !probe_ok()) fail("runtime_precondition_failed");
@@ -351,10 +355,13 @@ upgrade = function(request, work, candidates) {
 			!run_command(`${q(`${extracted}/usr/libexec/mihomo`)} -t -d ${q(RUN_DIR)} -f ${q(`${RUN_DIR}/config.yaml`)}`, work)) fail("core_config_incompatible");
 	}
 	if (!atomic_json(`${work}/before.json`, before) || !run_command(`tar -cf ${q(`${work}/private.tar`)} -C / ${join(" ", map(paths, path => q(substr(path, 1))))}`, work)) fail("update_state_write_failed");
+	journal(work, { phase: "prepared", before, names, versions, old, next, inputs: input_identity([`${work}/private.tar`, `${work}/code`, ...old, ...next]) });
+	if (!atomic_json(PENDING, { id: request.id }) || system("sync") != 0) fail("update_state_write_failed");
 	let error = null;
 	let install_started = false;
 	try {
 		operation.update("installing");
+		journal(work, { ...read_json(`${work}/journal.json`), phase: "installing" });
 		if (!stop_services(work)) fail("runtime_stop_failed");
 		install_started = true;
 		if (!run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(next, q))}`, work)) fail("package_install_failed");
@@ -365,7 +372,7 @@ upgrade = function(request, work, candidates) {
 		if (!same_inputs(before)) fail("private_configuration_changed");
 		if (!restore_services(before, work)) fail("runtime_verification_failed");
 	} catch (failure) { error = error_code(failure); }
-	if (error == null) return;
+	if (error == null) { journal(work, { ...read_json(`${work}/journal.json`), phase: "complete" }); fs.unlink(PENDING); system("sync"); return; }
 	operation.update("rolling_back");
 	if (!stop_services(work)) fail("rollback_stop_failed");
 	// A pre-existing marker was rejected before mutation; only our install could create it.
@@ -376,16 +383,55 @@ upgrade = function(request, work, candidates) {
 	const restored = installed();
 	for (let name in names) if (restored?.[name] != versions[name]) fail("rollback_identity_mismatch");
 	if (!restore_services(before, work)) fail("rollback_runtime_failed");
+	journal(work, { ...read_json(`${work}/journal.json`), phase: "rolled_back" });
+	fs.unlink(PENDING); system("sync");
 	fail(`${error}_rolled_back`);
 };
 
+
+journal = function(work, value) {
+	if (!atomic_json(`${work}/journal.json`, value) || system("sync") != 0) fail("update_state_write_failed");
+};
+recover = function() {
+	if (fs.lstat(PENDING) == null) return { recovered: false };
+	const pending = private_file(PENDING) ? read_json(PENDING) : null;
+	if (!match(pending?.id ?? "", /^[a-f0-9]{32}$/)) fail("update_recovery_state_invalid");
+	const work = `${ROOT}/${pending.id}`;
+	const state = private_file(`${work}/journal.json`) ? read_json(`${work}/journal.json`) : null;
+	if (!state || state.before?.backend != KIND || !private_directory(work) || type(state.inputs) != "object") fail("update_recovery_state_invalid");
+	for (let path, digest in state.inputs) if (index(path, `${work}/`) != 0 || sha256(path) != digest) fail("update_recovery_artifact_changed");
+	if (index(["complete", "rolled_back"], state.phase) >= 0) {
+		if (!restore_services(state.before, work)) fail("rollback_runtime_failed");
+		fs.unlink(PENDING); system("sync"); return { recovered: true };
+	}
+	const before = state.before, old = state.old, names = state.names, versions = state.versions;
+	if (type(old) != "array" || type(names) != "array" || type(versions) != "object") fail("update_recovery_state_invalid");
+	for (let path in old) if (index(path, `${work}/old/`) != 0 || !run_command(`apk verify ${q(path)}`, work)) fail("rollback_package_unavailable");
+	operation.begin("packages", "rolling_back", { id: pending.id, subject: "netfleet" });
+	journal(work, { ...state, phase: "recovering" });
+	if (!stop_services(work)) fail("rollback_stop_failed");
+	fs.unlink(UPGRADE_STATE);
+	if (!run_command(`tar -xf ${q(`${work}/private.tar`)} -C /`, work)) fail("rollback_configuration_failed");
+	run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(old, q))}`, work);
+	if (!restore_world(names, before.world, work)) fail("rollback_world_failed");
+	const restored = installed();
+	for (let name in names) if (restored?.[name] != versions[name]) fail("rollback_identity_mismatch");
+	if (!same_inputs(before)) fail("rollback_configuration_failed");
+	if (!run_command(`/etc/init.d/${SERVICE} ${before.core_enabled ? "enable" : "disable"}`, work) ||
+		!run_command(`/etc/init.d/opl-netfleet ${before.supervisor_enabled ? "enable" : "disable"}`, work) ||
+		!restore_services(before, work)) fail("rollback_runtime_failed");
+	journal(work, { ...state, phase: "rolled_back" });
+	fs.unlink(PENDING); system("sync"); operation.finish(true, null, null);
+	return { recovered: true };
+};
 
 command = function(argv) {
 	const ARGV = [substr(argv[0], 11), ...slice(argv, 1)];
 
 let response;
 try {
-	if (ARGV[0] == "get") response = { ok: true, result: get() };
+	if (ARGV[0] == "recover") response = { ok: true, result: recover() };
+	else if (ARGV[0] == "get") response = { ok: true, result: get() };
 	else if (ARGV[0] == "operation") response = { ok: true, result: { subscription: operation.get("subscription"), selection: operation.get("selection"), packages: progress() } };
 	else if (ARGV[0] == "check" || ARGV[0] == "update") response = { ok: true, result: start(ARGV[0], ARGV[1], ARGV[2]) };
 	else if (ARGV[0] == "run") {
@@ -401,7 +447,7 @@ try {
 	} else response = { ok: false, error: "unknown_component_action" };
 } catch (error) {
 	const reason = error_code(error);
-	if (ARGV[0] == "run") operation.finish(false, reason,
+	if (ARGV[0] == "run" || ARGV[0] == "recover") operation.finish(false, reason,
 		match(reason, /_rolled_back$/) ? { rollback: { ok: true } } :
 		match(reason, /^rollback_(stop|configuration|install|identity|runtime|world)_/) ? { rollback: { ok: false } } : null);
 	response = { ok: false, error: reason };

@@ -1,0 +1,23 @@
+#!/bin/sh /etc/rc.common
+USE_PROCD=1
+START=94
+STOP=06
+
+start_service() {
+	local root=/etc/opl-netfleet/package-transactions id work
+	[ -f "$root/pending.json" ] || return 0
+	[ "$(stat -c '%u:%a' "$root")" = 0:700 ] || return 1
+	[ "$(stat -c '%u:%a' "$root/pending.json")" = 0:600 ] || return 1
+	id=$(jsonfilter -i "$root/pending.json" -e '@.id')
+	[ "${#id}" = 32 ] || return 1
+	case "$id" in *[!a-f0-9]*) return 1 ;; esac
+	work="$root/$id"
+	[ ! -L "$work" ] && [ "$(stat -c '%u:%a' "$work")" = 0:700 ] || return 1
+	[ -f "$work/code/main.uc" ] || return 1
+	procd_open_instance recovery
+	procd_set_param command /usr/bin/flock -w 10 /var/lock/opl-netfleet-deploy.lock /usr/bin/ucode "$work/code/main.uc" components-recover
+	procd_set_param stdout 0
+	procd_set_param stderr 0
+	procd_set_param term_timeout 30
+	procd_close_instance
+}

@@ -341,6 +341,11 @@ define PluginFiles/configuration
 	$(INSTALL_DATA) ./files/etc/opl-netfleet/rulesets.lock.json $(1)/etc/opl-netfleet/rulesets.lock.json
 endef
 
+define PluginFiles/components
+	$(INSTALL_DIR) $(1)/etc/init.d
+	$(INSTALL_BIN) ./files/etc/init.d/opl-netfleet-update-recovery $(1)/etc/init.d/opl-netfleet-update-recovery
+endef
+
 define PluginFiles/maintenance
 	$(INSTALL_DIR) $(1)/usr/libexec
 	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet-transfer $(1)/usr/libexec/opl-netfleet-transfer

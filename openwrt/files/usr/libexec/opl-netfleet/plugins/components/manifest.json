@@ -46,6 +46,11 @@
       "service": "components.control",
       "method": "command",
       "access": "write"
+    },
+    "components-recover": {
+      "service": "components.control",
+      "method": "command",
+      "access": "write"
     }
   },
   "package_dependencies": [

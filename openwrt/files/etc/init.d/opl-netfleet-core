@@ -20,6 +20,7 @@ gateway_action() {
 }
 
 start_service() {
+	[ ! -f /etc/opl-netfleet/package-transactions/pending.json ] || [ "${NETFLEET_PACKAGE_RESTORE:-0}" = 1 ] || return 0
 	[ ! -e /tmp/opl-netfleet-package-upgrade-state ] || [ "${NETFLEET_PACKAGE_RESTORE:-0}" = 1 ] || return 0
 	/usr/libexec/opl-netfleet-plugin-package mihomo ready >/dev/null || return 0
 	gateway_action prepare || return 1
