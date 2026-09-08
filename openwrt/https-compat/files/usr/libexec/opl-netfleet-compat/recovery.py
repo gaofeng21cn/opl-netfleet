@@ -3,6 +3,8 @@
 
 HEALTH_INTERVAL = 2
 LEASE_SECONDS = 10
+# Restart the local engine before the kernel lease can expire.
+ENGINE_RESTART_GRACE_SECONDS = 8
 RECOVERY_SECONDS = 30
 FAULT_WINDOW = 600
 FAULT_LIMIT = 3

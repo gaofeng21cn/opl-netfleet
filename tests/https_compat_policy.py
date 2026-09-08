@@ -13,13 +13,16 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "openwrt/https-compat/files/usr/libexec/opl-netfleet-compat"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/resources"))
-from recovery import advance
+from recovery import ENGINE_RESTART_GRACE_SECONDS, LEASE_SECONDS, advance
 from policy import select, validate
 from routing import admission, egress_policy
 import control
 
 
 class Decisions(unittest.TestCase):
+    def test_engine_restart_grace_precedes_lease_expiry(self):
+        self.assertLess(ENGINE_RESTART_GRACE_SECONDS, LEASE_SECONDS)
+
     @unittest.skipUnless(sys.platform == "linux" and os.geteuid() == 0, "requires Linux root fdinfo")
     def test_only_actual_ancestor_lock_can_be_inherited(self):
         with tempfile.TemporaryDirectory() as directory:

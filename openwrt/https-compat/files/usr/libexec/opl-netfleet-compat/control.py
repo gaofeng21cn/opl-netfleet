@@ -21,7 +21,7 @@ import gateway
 import isolation
 import identity as device_identity
 from policy import validate
-from recovery import advance
+from recovery import ENGINE_RESTART_GRACE_SECONDS, advance
 
 
 BASE = Path("/etc/opl-netfleet/compatibility")
@@ -387,7 +387,8 @@ def tick(lock=None):
                 or health.get("transparent_chain") is not True):
             since = previous.get("unhealthy_since", now)
             state["unhealthy_since"] = since
-            if now - since >= 10 and not starting and not recovery["latched"] and network.get("ready"):
+            if (now - since >= ENGINE_RESTART_GRACE_SECONDS and not starting
+                    and not recovery["latched"] and network.get("ready")):
                 # Failed start attempts count even when no ready engine was ever observed.
                 recovery["faults"] = [stamp for stamp in recovery.get("faults", []) if now - 600 <= stamp <= now] + [now]
                 recovery["latched"] = len(recovery["faults"]) >= 3
