@@ -97,13 +97,13 @@ class Source(unittest.TestCase):
             first = identity.sync(config)
         self.assertEqual(first["config_revision"], state["config_revision"])
         row = {**row, "addresses": ["2001:db8::5678"]}
-        with patch.object(identity, "unifi", return_value=[row]), patch.object(identity.time, "monotonic", return_value=now + 30):
+        with patch.object(identity, "unifi", return_value=[row]), patch.object(identity.time, "monotonic", return_value=now + 31):
             changed = identity.sync(config)
         self.assertEqual(changed["devices"][0]["addresses"], row["addresses"])
-        with patch.object(identity, "unifi", side_effect=TimeoutError()), patch.object(identity.time, "monotonic", return_value=now + 60):
+        with patch.object(identity, "unifi", side_effect=TimeoutError()), patch.object(identity.time, "monotonic", return_value=now + 62):
             failed = identity.sync(config)
         self.assertEqual(failed["reason"], "controller_timeout")
-        with patch.object(identity.time, "monotonic", return_value=now + 151):
+        with patch.object(identity.time, "monotonic", return_value=now + 152):
             expired = identity.status(config)
         self.assertFalse(expired["source_ready"])
         self.assertEqual(expired["devices"][0]["addresses"], [])
