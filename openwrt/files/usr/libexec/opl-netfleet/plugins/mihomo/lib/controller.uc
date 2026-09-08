@@ -31,7 +31,9 @@ api_json = function(secret, path, timeout_seconds) {
 	}
 	let result = null;
 	try {
-		result = json(process);
+		// A trailing newline after an exact 1024-byte JSON chunk is rejected
+		// by ucode stream parsing. Parse the complete controller response.
+		result = json(process.read("all"));
 	} catch (error) {
 		result = null;
 	}

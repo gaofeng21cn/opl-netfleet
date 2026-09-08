@@ -78,4 +78,31 @@ with tempfile.TemporaryDirectory(prefix='netfleet-path-health-') as directory:
             core.wait(timeout=10)
             server.shutdown()
             server.server_close()
+# Controller JSON can end exactly at ucode's 1024-byte stream boundary.
+# The newline belongs to the same valid response, not a second JSON value.
+class BoundaryHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        if '/delay?' in self.path:
+            self.wfile.write(b'{"delay":1}\n')
+            return
+        value = {'extra': {probe: {'alive': True, 'history': []}}, 'padding': ''}
+        body = json.dumps(value)
+        value['padding'] = 'a' * (1024 - len(body.encode()))
+        body = json.dumps(value).encode()
+        assert len(body) == 1024
+        self.wfile.write(body + b'\n')
+
+    def log_message(self, *_args):
+        pass
+
+boundary = http.server.ThreadingHTTPServer(('127.0.0.1', 0), BoundaryHandler)
+threading.Thread(target=boundary.serve_forever, daemon=True).start()
+try:
+    subprocess.run([args.ucode, str(Path(__file__).with_name('path_controller_device.uc')),
+                    f'http://127.0.0.1:{boundary.server_port}', probe, 'true'], check=True)
+finally:
+    boundary.shutdown()
+    boundary.server_close()
 print('real Mihomo probe method and sub-millisecond health checks passed')
