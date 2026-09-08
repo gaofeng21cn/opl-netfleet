@@ -435,6 +435,10 @@ class ReleaseToolsTests(unittest.TestCase):
                 '  case " $NETFLEET_INSTALLED " in *" $3 "*) exit 0 ;; *) exit 1 ;; esac\n'
                 'fi\n'
                 'printf "%s\\n" "$*" >>"$NETFLEET_APK_LOG"\n'
+                'if [ "$*" = "--timeout 300 update" ]; then\n'
+                '  attempts=$(grep -c -- "--timeout 300 update" "$NETFLEET_APK_LOG")\n'
+                '  [ "$attempts" -gt "${NETFLEET_INDEX_FAILURES:-0}" ] || exit 1\n'
+                'fi\n'
                 'case " $* " in *" query "*) cat "$NETFLEET_FIXTURE_FEED/product.json" ;; esac\n'
             )
             apk.chmod(0o755)
@@ -449,6 +453,9 @@ class ReleaseToolsTests(unittest.TestCase):
                 '        print("\\n".join(row["depends"]))\n'
             )
             jsonfilter.chmod(0o755)
+            sleeper = bin_dir / 'sleep'
+            sleeper.write_text('#!/bin/sh\nexit 0\n')
+            sleeper.chmod(0o755)
             log = root / 'apk.log'
             env = {
                     **os.environ,
@@ -484,6 +491,24 @@ class ReleaseToolsTests(unittest.TestCase):
                     self.assertEqual(expected, log.read_text().splitlines())
             self.assertEqual((feed / 'opl-netfleet-apk.pem').read_bytes(), (keys / 'opl-netfleet-apk.pem').read_bytes())
             self.assertEqual('https://fixture.invalid/release/packages.adb\n', repository.read_text())
+            for failures in (1, 3):
+                with self.subTest(index_failures=failures):
+                    log.write_text('')
+                    result = subprocess.run(
+                        [str(INSTALLER)], env={**env, 'NETFLEET_INSTALLED': '',
+                                             'NETFLEET_INDEX_FAILURES': str(failures)},
+                        text=True, capture_output=True, check=False,
+                    )
+                    commands = log.read_text().splitlines()
+                    self.assertEqual(min(failures + 1, 3), commands.count('--timeout 300 update'))
+                    if failures == 1:
+                        self.assertEqual(0, result.returncode, result.stderr)
+                        self.assertEqual(1, commands.count('--timeout 300 add opl-netfleet luci-app-netfleet'))
+                        self.assertEqual(1, sum(' upgrade ' in item for item in commands))
+                    else:
+                        self.assertNotEqual(0, result.returncode)
+                        self.assertIn('package indexes unavailable', result.stderr)
+                        self.assertEqual(['--timeout 300 update'] * 3, commands)
 
     def test_feed_bootstrap_rejects_invalid_key_before_package_mutation(self):
         with tempfile.TemporaryDirectory() as directory:

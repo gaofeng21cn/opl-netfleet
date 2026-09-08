@@ -72,7 +72,11 @@ chmod 0644 "$repository_staged"
 mv -f "$key_staged" "$key_target"
 mv -f "$repository_staged" "$repository_file"
 
-apk --timeout 300 update
+for index_attempt in 1 2 3; do
+	if apk --timeout 300 update; then break; fi
+	[ "$index_attempt" -lt 3 ] || die 'package indexes unavailable; packages were not changed'
+	sleep "$((index_attempt * 2))"
+done
 # Read the candidate product composition so newly added plugins are included too.
 apk --no-network query --from none -X "$feed_base/packages.adb" \
 	--format json --fields depends opl-netfleet >"$work/product.json"

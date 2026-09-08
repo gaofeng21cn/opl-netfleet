@@ -352,7 +352,11 @@ if [ -n "$feed_url" ]; then
 		legacy_dependencies=$(cat "$work/legacy-dependencies.txt")
 	fi
 	if [ -n "$legacy_dependencies" ]; then
-		apk --timeout 300 add $legacy_dependencies >>"$work/packages.log" 2>&1
+		for dependency_attempt in 1 2 3; do
+			if apk --timeout 300 add $legacy_dependencies >>"$work/packages.log" 2>&1; then break; fi
+			[ "$dependency_attempt" -lt 3 ] || exit 1
+			sleep "$((dependency_attempt * 2))"
+		done
 	fi
 else
 	gzip -dc /tmp/mihomo-linux-arm64-v1.19.30.gz >"$work/bin/mihomo"
