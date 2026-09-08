@@ -312,7 +312,8 @@ rollback = function(before, work, names, versions, old, install_started) {
 	// APK may complete the requested change and still report earlier script failures.
 	// Reconcile before deciding whether the old runtime can be restored.
 	const restored = installed();
-	const identity = restored != null && !length(filter(names, name => restored[name] != versions[name]));
+	const identity = restored != null && !length(filter(names, name => restored[name] != versions[name])) &&
+		attempt("rollback_identity_mismatch", () => sprintf("%J", input_identity(before.runtime_paths)) == sprintf("%J", before.runtime_inputs));
 	const inputs = attempt("rollback_configuration_failed", () => same_inputs(before));
 	if (!identity) push(errors, "rollback_identity_mismatch");
 	const runtime = identity && inputs && attempt("rollback_runtime_failed", () => restore_services(before, work));
@@ -371,6 +372,10 @@ upgrade = function(request, work, candidates) {
 	if (before_status == null && !unconfigured) fail("runtime_readback_failed");
 	const paths = private_paths();
 	const before = { active: before_status?.active ?? false, unconfigured: unconfigured, core: service_running(SERVICE), supervisor: service_running("opl-netfleet"), selections: {}, paths: paths, inputs: input_identity(paths), world: package_world() };
+	before.runtime_paths = filter(["/usr/libexec/opl-netfleet", "/usr/libexec/opl-netfleet-plugin-package",
+		"/usr/share/opl-netfleet", "/etc/init.d/opl-netfleet", `/etc/init.d/${SERVICE}`,
+		...(request.component == "mihomo" ? ["/usr/libexec/mihomo"] : [])], path => fs.lstat(path) != null);
+	before.runtime_inputs = input_identity(before.runtime_paths);
 	if (before.core) {
 		const all = proxies(api_secret(), 2)?.proxies;
 		if (all == null || !probe_ok()) fail("runtime_precondition_failed");
