@@ -338,6 +338,13 @@ with open('/var/lock/opl-netfleet-deploy.lock', 'a') as lock:
         self.assertFalse(after_resume["intercepting"])
         old_packages = list(Path("/tmp/compat-runtime/rollback").glob("opl-netfleet-https-compat-*.apk"))
         if packages and old_packages:
+            import hashlib
+            predecessor = old_packages[0].parent
+            old_manifest = json.loads((predecessor / "compat-manifest.json").read_text())
+            self.assertEqual(old_packages[0].name, old_manifest["artifact"])
+            self.assertEqual(hashlib.sha256(old_packages[0].read_bytes()).hexdigest(), old_manifest["sha256"])
+            self.command("cp", str(predecessor / "compat-public-key.pem"), "/etc/apk/keys/compat-predecessor.pem")
+            self.command("apk", "verify", str(old_packages[0]))
             async def replace_engine(package):
                 operation = await asyncio.create_subprocess_exec("flock", "/var/lock/opl-netfleet-deploy.lock",
                     "apk", "--no-network", "add", str(package),
