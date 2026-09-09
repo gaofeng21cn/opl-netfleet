@@ -15,7 +15,9 @@ function reason(value) {
 		extension_package_unknown: '模块安装版本尚未确认',
 		ca_not_ready: 'CA 未就绪，当前旁路',
 		lease_expired: '接管许可已到期', maintenance: '组件维护中，当前旁路', no_verified_targets: '没有已验证的接入目标',
-		manual_recovery_required: '反复恢复后仍故障，等待人工恢复', rules_bypassed: '目标规则当前旁路，详见规则状态',
+		manual_recovery_required: '故障锁定，等待人工恢复', rules_bypassed: '目标规则当前旁路，详见规则状态',
+		management_lease_expired: '管理循环中断，接管许可已到期', engine_restarted: '引擎已重启，健康观察中',
+		health_socket_timeout: '本地健康接口超时', health_socket_unavailable: '本地健康接口不可达', health_response_invalid: '本地健康接口返回无效',
 		historical_failure: '旧版本未记录具体原因', upstream_probe_timeout: '上游恢复探测超时', upstream_certificate_failed: '上游证书验证失败',
 		engine_probe_unavailable: '转发引擎暂未完成恢复探测',
 		upstream_h2_not_negotiated: '上游未协商 HTTP/2',
@@ -326,17 +328,29 @@ function render(controller) {
 		rows.forEach(row => Array.from(row.children).forEach((cell, index) => cell.setAttribute('data-label', headers[index])));
 		return E('div', { 'class': 'netfleet-config-table' }, E('table', {}, [ E('thead', {}, E('tr', {}, headers.map(function(title) { return E('th', {}, title); }))), E('tbody', {}, rows.length ? rows : E('tr', {}, E('td', { 'colspan': headers.length }, empty || '暂无记录'))) ]));
 	}
+	function probeTable(probes) {
+		return table([ '路径', '结果', '阶段', '耗时 / 时限' ], Object.entries(probes || {}).map(function([name, probe]) {
+			return E('tr', {}, [ E('td', {}, ({ processing: '协议转换', ipv4: 'IPv4 透明入口', ipv6: 'IPv6 透明入口' })[name] || name),
+				E('td', {}, probe.ok ? '通过' : probe.reason === 'timeout' ? '超时' : reason(probe.reason || '未通过')),
+				E('td', {}, ({ connect: '建立连接', tls: 'TLS 握手', http: 'HTTP 往返' })[probe.stage] || probe.stage || '未知'),
+				E('td', {}, Number.isFinite(probe.duration_ms) ? probe.duration_ms + ' ms' + (Number.isFinite(probe.timeout_ms) ? ' / ' + probe.timeout_ms + ' ms' : '') : '未知') ]);
+		}), '尚无本地验证记录');
+	}
+	const failure = state.last_failure || (state.events || []).slice().reverse().find(event => !event.rule &&
+		(event.failure || Object.values(event.local_probes || {}).some(probe => probe.ok === false)));
+	const lastFailure = failure && (failure.failure || failure);
 	const diagnostics = () => controller.compatibilityLive === false ? [ E('p', {}, '诊断记录不缓存，请等待当前状态读取成功。') ] : [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h4', {}, '诊断'), E('div', { 'class': 'netfleet-inline-actions' }, [
 		state.recovery && state.recovery.latched ? button('恢复模块', function() { return mutate(controller, 'compatibilityProbe', { operation: 'recover' }); }, busy || !state.requested) : '',
 		button('导出诊断', function() { download('netfleet-compatibility-diagnostic.json', JSON.stringify({ requested: state.requested, intercepting: state.intercepting,
-			reason: state.reason, active_connections: state.active_connections, recovery: state.recovery,
+			reason: state.reason, active_connections: state.active_connections, recovery: state.recovery, last_failure: state.last_failure, engine_restart: state.engine_restart,
 			local_probes: state.local_probes, rule_recovery: state.rule_recovery, events: state.events, results: Object.values(state.rules || {}) }, null, 2)); }) ]) ]),
-		E('h4', {}, '本地转发链'),
-		table([ '路径', '最近结果', '阶段', '耗时' ], Object.entries(state.local_probes || {}).map(function([name, probe]) {
-			return E('tr', {}, [ E('td', {}, ({ processing: '协议转换', ipv4: 'IPv4 透明入口', ipv6: 'IPv6 透明入口' })[name] || name),
-				E('td', {}, probe.ok ? '通过' : probe.reason === 'timeout' ? '超时' : reason(probe.reason || '未通过')), E('td', {}, ({ connect: '建立连接', tls: 'TLS 握手', http: 'HTTP 往返' })[probe.stage] || probe.stage || '未知'),
-				E('td', {}, Number.isFinite(probe.duration_ms) ? probe.duration_ms + ' ms' : '未知') ]);
-		}), '尚无本地验证记录'),
+		E('h4', {}, '最近模块故障'),
+		lastFailure ? E('p', {}, [ reason(lastFailure.reason), lastFailure.health_error ? ' · ' + reason(lastFailure.health_error) : '',
+			E('small', {}, lastFailure.at ? new Date(lastFailure.at * 1000).toLocaleString() : '发生时间未记录') ]) : E('p', {}, '尚无具体故障记录'),
+		lastFailure ? probeTable(lastFailure.local_probes) : '',
+		E('p', {}, '故障窗口内记录 ' + ((state.recovery || {}).faults || []).length + ' 次独立故障；本次恢复已尝试重启 ' + ((state.engine_restart || {}).attempts || 0) + ' 次。重启尝试不计作新故障。'),
+		state.recovery && state.recovery.latched ? E('p', {}, '模块已停止自动恢复；下方验证结果仅为最近记录，不能表示当前正在接管。') : '',
+		E('h4', {}, '本地转发链 · 最近验证'), probeTable(state.local_probes),
 		E('h4', {}, '目标恢复'),
 		table([ '目标', '最近故障', '恢复探测', '操作' ], config.rules.map(function(rule) {
 			const recovery = (state.rule_recovery || {})[rule.id] || {};

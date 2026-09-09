@@ -3,7 +3,6 @@ import sys
 sys.dont_write_bytecode = True
 
 import fcntl
-import asyncio
 from contextlib import contextmanager
 import hashlib
 import json
@@ -12,7 +11,6 @@ from pathlib import Path
 import re
 import socket
 import subprocess
-import tarfile
 import time
 
 sys.path.insert(0, "/usr/lib/opl-netfleet-compat/vendor")
@@ -112,11 +110,14 @@ def revision():
 
 
 def ca_fingerprint():
-    from cryptography import x509
-    from cryptography.hazmat.primitives import hashes
+    import ssl
     path = CA / "mitmproxy-ca-cert.pem"
     try:
-        return x509.load_pem_x509_certificate(path.read_bytes()).fingerprint(hashes.SHA256()).hex()
+        der = ssl.PEM_cert_to_DER_cert(path.read_text())
+        # Parse X.509 with the system TLS library before trusting its fingerprint.
+        # Status reads must not import the certificate-signing runtime.
+        ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT).load_verify_locations(cadata=der)
+        return hashlib.sha256(der).hexdigest()
     except (OSError, ValueError):
         return None
 
@@ -152,6 +153,14 @@ def prepare_ca():
 def engine_health(probe=False):
     # A busy event loop can delay one socket reply while the data plane is healthy.
     # Recheck the full chain once; this function never renews the kernel lease.
+    health_error = "health_response_invalid"
+    started = time.monotonic()
+    before = isolation.health_counters() if probe else {}
+    def with_diagnostic(value):
+        after = isolation.health_counters() if probe else {}
+        return {**value, "health_diagnostic": {"elapsed_ms": round((time.monotonic() - started) * 1000),
+                "resource_delta": {key: after[key] - old for key, old in before.items()
+                                   if key in after and after[key] >= old}}}
     for attempt in range(2 if probe else 1):
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
@@ -165,9 +174,10 @@ def engine_health(probe=False):
                         failed = [item for item in probes.values() if item.get("ok") is False]
                         if probe and attempt == 0 and failed and all(item.get("reason") == "timeout" for item in failed):
                             continue
-                        return value
-        except (OSError, ValueError):
-            pass
+                        return with_diagnostic(value) if probe and (value.get("processing_chain") is not True or value.get("transparent_chain") is not True) else value
+        except (OSError, ValueError) as error:
+            health_error = "health_socket_timeout" if isinstance(error, TimeoutError) else (
+                "health_response_invalid" if isinstance(error, ValueError) else "health_socket_unavailable")
     connections, pid, starting = None, None, False
     try:
         result = subprocess.run(["ubus", "call", "service", "list", '{"name":"opl-netfleet-compat"}'],
@@ -184,8 +194,8 @@ def engine_health(probe=False):
                 starting = 0 <= age < 60
     except (OSError, ValueError, IndexError, subprocess.SubprocessError):
         pass
-    return {"ready": False, "active_requests": None, "active_connections": connections, "rules": {},
-            "pid": pid, "starting": starting}
+    return with_diagnostic({"ready": False, "active_requests": None, "active_connections": connections, "rules": {},
+                   "pid": pid, "starting": starting, "health_error": health_error})
 
 
 def snapshot():
@@ -217,6 +227,7 @@ def effective(config, trust, fingerprint, source=None):
 
 
 async def probe_rules(rules):
+    import asyncio
     writer = None
     try:
         request = {"command": "probe_upstreams", "revision": hashlib.sha256(EFFECTIVE.read_bytes()).hexdigest(),
@@ -239,6 +250,7 @@ async def probe_rules(rules):
 
 
 async def resolve_targets(rules):
+    import asyncio
     async def resolve(rule):
         if rule["match"] == "suffix":
             return rule["id"], ["0.0.0.0/0", "::/0"]
@@ -278,6 +290,7 @@ def status():
                                    0 if health.get("active_connections") == 0 else None for device in config["devices"]},
             "active_requests": health.get("active_requests"), "rules": health.get("rules", {}),
             "recovery": state.get("recovery", {}), "ca_sha256": fingerprint,
+            "last_failure": state.get("last_failure"), "engine_restart": state.get("engine_restart", {}),
             "rule_recovery": state.get("rule_recovery", {}),
             "local_probes": state.get("local_probes", {}),
             "trust": verified_trust(config, read(TRUST, {}), fingerprint), "events": state.get("events", [])[-100:]}
@@ -287,7 +300,8 @@ def save_state(state, previous):
     events = previous.get("events", [])
     if (state.get("reason"), state.get("intercepting")) != (previous.get("reason"), previous.get("intercepting")):
         events = [*events, {"at": int(time.time()), "reason": state.get("reason"), "intercepting": state.get("intercepting", False),
-                           "local_probes": state.get("local_probes", {})}][-100:]
+                           "local_probes": state.get("local_probes", {}), "failure": state.get("last_failure"),
+                           "engine_restart": state.get("engine_restart", {})}][-100:]
     for identity, current in state.get("rule_recovery", {}).items():
         old = previous.get("rule_recovery", {}).get(identity, {})
         if (current.get("reason"), current.get("intercepting")) != (old.get("reason"), old.get("intercepting")):
@@ -318,11 +332,14 @@ def probe_without_network_lock(lock, work):
     return result
 
 
-def tick(lock=None):
+def tick(lock=None, delayed_by_mutation=False):
+    import asyncio
     config = validate(read(CONFIG, DEFAULT))
     previous = read(STATE, {})
     now = time.monotonic()
-    if now - previous.get("last_tick", now) > 10:
+    if now - previous.get("last_tick", now) > 10 and not delayed_by_mutation:
+        if previous.get("recovery", {}).get("intercepting") is True:
+            previous["last_failure"] = {"at": int(time.time()), "reason": "management_lease_expired"}
         previous["recovery"] = advance(previous.get("recovery"), requested=config["enabled"],
                                         healthy=False, reason="management_lease_expired", now=now,
                                         count_failure=previous.get("recovery", {}).get("intercepting") is True)
@@ -338,6 +355,11 @@ def tick(lock=None):
     if previous.get("maintenance"):
         gateway.bypass()
         save_state({**previous, "intercepting": False, "reason": "maintenance"}, previous)
+        return
+    if previous.get("recovery", {}).get("latched"):
+        # Manual recovery is required: no recurring full network/handshake work.
+        gateway.bypass()
+        save_state({**previous, "intercepting": False, "reason": "manual_recovery_required"}, previous)
         return
     source, previous["identity_sync"] = probe_without_network_lock(lock,
         lambda: device_identity.resolve(config, previous.get("identity_sync"), schedule=True))
@@ -370,7 +392,7 @@ def tick(lock=None):
                        and not starting and network.get("ready") is True and not network.get("reason") and reason != "engine_config_pending")
     last_pid = previous.get("engine_pid")
     if health.get("pid") and last_pid and health["pid"] != last_pid:
-        if previous.get("recovery", {}).get("intercepting") is True:
+        if previous.get("recovery", {}).get("intercepting") is True and (not recovery["faults"] or recovery["faults"][-1] != now):
             recovery["faults"] = [stamp for stamp in recovery.get("faults", []) if now - 600 <= stamp <= now] + [now]
         recovery["latched"] = recovery.get("latched", False) or len(recovery["faults"]) >= 3
         recovery["intercepting"] = False
@@ -378,6 +400,10 @@ def tick(lock=None):
         recovery["reason"] = "manual_recovery_required" if recovery["latched"] else "engine_restarted"
     state = {**previous, "recovery": recovery, "reason": recovery["reason"], "intercepting": False,
              "local_probes": health.get("local_probes", {})}
+    if not healthy and not starting:
+        state["last_failure"] = {"at": int(time.time()), "reason": reason, "health_error": health.get("health_error"),
+                                 "local_probes": health.get("local_probes", {}), "engine_pid": health.get("pid"),
+                                 "health_diagnostic": health.get("health_diagnostic")}
     state["engine_pid"] = health.get("pid", last_pid)
     if health.get('ready') and health.get('pid'):
         state['ready_engine_pid'] = health['pid']
@@ -387,13 +413,14 @@ def tick(lock=None):
                 or health.get("transparent_chain") is not True):
             since = previous.get("unhealthy_since", now)
             state["unhealthy_since"] = since
+            restart = previous.get("engine_restart", {})
             if (now - since >= ENGINE_RESTART_GRACE_SECONDS and not starting
-                    and not recovery["latched"] and network.get("ready")):
-                # Failed start attempts count even when no ready engine was ever observed.
-                recovery["faults"] = [stamp for stamp in recovery.get("faults", []) if now - 600 <= stamp <= now] + [now]
-                recovery["latched"] = len(recovery["faults"]) >= 3
-                if recovery["latched"]:
-                    state["reason"] = recovery["reason"] = "manual_recovery_required"
+                    and not recovery["latched"] and network.get("ready")
+                    and now >= restart.get("next_at", 0)):
+                # Recovery attempts belong to the existing outage, not a new fault.
+                attempts = min(restart.get("attempts", 0) + 1, 1000000)
+                delay = min(60, ENGINE_RESTART_GRACE_SECONDS * 2 ** min(attempts - 1, 3))
+                state["engine_restart"] = {"attempts": attempts, "next_at": now + delay}
                 state["unhealthy_since"] = now
                 save_state(state, previous)
                 subprocess.run(["ubus", "call", "service", "signal", json.dumps({"name": "opl-netfleet-compat", "instance": "engine", "signal": 9})],
@@ -403,6 +430,7 @@ def tick(lock=None):
             state.pop("unhealthy_since", None)
         save_state(state, previous)
         return
+    state.pop("engine_restart", None)
     active = effective(config, read(TRUST, {}), ca_fingerprint(), source)
     if network.get("egress") is not None:
         active["egress"] = network["egress"]
@@ -548,14 +576,17 @@ def main():
     action = sys.argv[1]
     if action == "watch":
         isolation.constrain_manager()
+        mutation_wait_at = None
         while True:
             started = time.monotonic()
             try:
                 gateway.start_worker()
                 with mutation_lock() as lock:
-                    tick(lock)
+                    tick(lock, delayed_by_mutation=mutation_wait_at is not None and 0 <= started - mutation_wait_at < 10)
+                    mutation_wait_at = None
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
                 reason = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[a-z_]+', str(error)) else 'compatibility_controller_failed'
+                mutation_wait_at = time.monotonic() if reason == 'mutation_busy' else None
                 if reason not in ('mutation_busy', 'compatibility_probe_stale'):
                     try:
                         with mutation_lock():
@@ -604,6 +635,7 @@ def main():
                 raise ValueError("ca_not_prepared")
             with destination.open("xb") as output:
                 os.chmod(destination, 0o600)
+                import tarfile
                 with tarfile.open(fileobj=output, mode="w:gz") as archive:
                     for path in (CONFIG, TRUST, CA):
                         if path.exists():
@@ -621,7 +653,9 @@ def main():
             instances = json.loads(service.stdout).get("opl-netfleet-compat", {}).get("instances", {})
             saved = previous.get("suspended") or {"revision": revision(), "requested": read(CONFIG, DEFAULT)["enabled"],
                                                   "running": any(item.get("running") for item in instances.values())}
-            save_state({**previous, "suspended": saved, "maintenance": True, "intercepting": False, "reason": "maintenance"}, previous)
+            recovery = {**previous.get("recovery", {}), "intercepting": False, "healthy_since": None}
+            save_state({**previous, "recovery": recovery, "suspended": saved, "maintenance": True,
+                        "intercepting": False, "reason": "maintenance"}, previous)
             drain()
             gateway.remove()
             if instances:
@@ -633,13 +667,15 @@ def main():
             if saved.get("running") and saved.get("requested") and saved.get("revision") == revision() and read(CONFIG, DEFAULT)["enabled"]:
                 previous.pop("maintenance", None)
                 previous.pop("suspended", None)
-                previous.pop("recovery", None)
-                save_state({**previous, "intercepting": False, "reason": "recovering"}, previous)
+                recovery = {**previous.get("recovery", {}), "intercepting": False, "healthy_since": None}
+                reason = "manual_recovery_required" if recovery.get("latched") else "recovering"
+                save_state({**previous, "recovery": recovery, "intercepting": False, "reason": reason}, previous)
                 subprocess.run([SERVICE, "start"], check=True, capture_output=True, timeout=3)
             return {"intercepting": False}
         if action in ("drain", "remove"):
             previous = read(STATE, {})
-            save_state({**previous, "maintenance": True, "intercepting": False, "reason": "maintenance"}, previous)
+            recovery = {**previous.get("recovery", {}), "intercepting": False, "healthy_since": None}
+            save_state({**previous, "recovery": recovery, "maintenance": True, "intercepting": False, "reason": "maintenance"}, previous)
             result = drain(None if sys.argv[2:] == ["--wait"] else 30)
             if action == "remove":
                 gateway.remove()
@@ -662,6 +698,7 @@ def main():
                 else:
                     state.pop("recovery", None)
                     state.pop("unhealthy_since", None)
+                    state.pop("engine_restart", None)
                     state.pop("maintenance", None)
                 atomic(STATE, state)
             return status()

@@ -140,6 +140,52 @@ else:
             await asyncio.sleep(1)
         wire = await self.request()
         self.assertTrue(wire["h2"], {"wire": wire, "engine": self.owner.health()})
+        # A normal owner transaction can outlast the lease. The kernel must
+        # bypass during the lock, then fresh health can readmit without an outage.
+        faults_before = self.owner.call("get")["recovery"]["faults"]
+        holder = await asyncio.create_subprocess_exec(sys.executable, "-c", """import fcntl, time
+with open('/var/lock/opl-netfleet-deploy.lock', 'a') as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    print('locked', flush=True)
+    time.sleep(14)
+""", stdout=asyncio.subprocess.PIPE)
+        try:
+            self.assertEqual(await asyncio.wait_for(holder.stdout.readline(), 10), b'locked\n')
+            await asyncio.sleep(11)
+            self.assertFalse((await self.request(ca=self.directory / "upstream.pem"))["h2"])
+            await asyncio.wait_for(holder.wait(), 6)
+        finally:
+            if holder.returncode is None:
+                holder.kill()
+                await holder.wait()
+        deadline = time.monotonic() + 15
+        while not self.owner.call("get")["intercepting"]:
+            self.assertLess(time.monotonic(), deadline, self.owner.call("get"))
+            await asyncio.sleep(1)
+        self.assertEqual(self.owner.call("get")["recovery"]["faults"], faults_before)
+
+        # Keep one real local processing outage across multiple procd restarts.
+        # Our independent fault table survives the engine's listener rebuild.
+        self.command("nft", "add", "table", "inet", "netfleet_processing_fault")
+        self.command("nft", "add", "chain", "inet", "netfleet_processing_fault", "output",
+                     "{ type filter hook output priority 0; policy accept; }")
+        self.command("nft", "add", "rule", "inet", "netfleet_processing_fault", "output",
+                     "oifname", "lo", "tcp", "dport", "18444", "reject", "with", "tcp", "reset")
+        try:
+            await asyncio.sleep(26)
+            failed = self.owner.call("get")
+            self.assertFalse(failed["intercepting"], failed)
+            self.assertFalse(failed["recovery"]["latched"], failed)
+            self.assertEqual(len(failed["recovery"]["faults"]), len(faults_before) + 1, failed)
+            self.assertGreaterEqual(failed["engine_restart"]["attempts"], 2, failed)
+            self.assertFalse((await self.request(ca=self.directory / "upstream.pem"))["h2"])
+        finally:
+            self.command("nft", "delete", "table", "inet", "netfleet_processing_fault")
+        deadline = time.monotonic() + 60
+        while not self.owner.call("get")["intercepting"]:
+            self.assertLess(time.monotonic(), deadline, self.owner.call("get"))
+            await asyncio.sleep(1)
+        self.assertTrue((await self.request())["h2"])
         self.assertFalse((await self.request(source_port=41641, ca=self.directory / "upstream.pem"))["h2"])
         self.assertTrue(self.owner.health(probe=True)["transparent_chain"])
         # The explicit probe stays healthy when only the transparent ingress fails.
@@ -283,6 +329,13 @@ else:
         self.assertTrue(state["recovery"]["latched"], state)
         self.assertFalse(state["intercepting"])
         self.assertFalse((await self.request(ca=self.directory / "upstream.pem"))["h2"])
+        suspended = self.owner.call("suspend", internal=True)
+        self.owner.call("resume", suspended, internal=True)
+        await asyncio.sleep(3)
+        after_resume = self.owner.call("get")
+        self.assertTrue(after_resume["recovery"]["latched"], after_resume)
+        self.assertEqual(after_resume["last_failure"], state["last_failure"])
+        self.assertFalse(after_resume["intercepting"])
         self.owner.call("probe", {"revision": state["revision"], "operation": "recover"})
         deadline = time.monotonic() + 45
         while not self.owner.call("get")["intercepting"]:

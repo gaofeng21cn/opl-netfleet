@@ -963,6 +963,31 @@ assert.equal(calls.at(-1).action, 'bound', 'compatibility refresh must not rerea
 assert(calls.some(call => call.action === 'bound'));
 """)
 
+    def test_compatibility_retains_failure_when_current_probes_pass(self):
+        self.run_js(r"""
+const owner = controller();
+owner.compatibilityTab = 'diagnostics';
+owner.compatibility = { installed: true, requested: true, intercepting: false, reason: 'manual_recovery_required',
+  config: { rules: [], devices: [] }, recovery: { latched: true, faults: [1] }, engine_restart: { attempts: 4 },
+  local_probes: { processing: { ok: true, duration_ms: 200, stage: 'http' } },
+  last_failure: { at: 42, reason: 'processing_chain_failed', health_error: 'health_socket_timeout',
+    local_probes: { processing: { ok: false, reason: 'timeout', stage: 'http', duration_ms: 1510, timeout_ms: 1400 } } } };
+const manager = module('compatibility.js', {});
+let root = manager.render(owner);
+assert(text(root).includes('本地健康接口超时'));
+assert(text(root).includes('1510 ms / 1400 ms'));
+assert(text(root).includes('1 次独立故障'));
+assert(text(root).includes('4 次'));
+assert(button(root, '恢复模块'));
+owner.compatibility.events = [{ ...owner.compatibility.last_failure }];
+delete owner.compatibility.last_failure;
+root = manager.render(owner);
+assert(text(root).includes('1510 ms / 1400 ms'), 'old engine event still explains the failure');
+owner.compatibilityLive = false;
+root = manager.render(owner);
+assert(!text(root).includes('1510 ms'), 'failure diagnostics are never restored from display cache');
+""")
+
     def test_compatibility_cached_content_is_not_write_authority(self):
         self.run_js(r"""
 const owner = controller();

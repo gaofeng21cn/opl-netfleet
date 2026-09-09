@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import socket
 import ssl
+import subprocess
 import sys
 import tempfile
 import time
@@ -152,7 +153,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         sys.path.insert(0, str(ADDON.parent))
         import control
         with patch.object(control, "RUN", self.directory), patch.object(control, "EFFECTIVE", self.directory / "config.json"), \
-                patch.object(control.asyncio, "open_connection", side_effect=AssertionError("controller must not connect to upstream")):
+             patch.object(asyncio, "open_connection", side_effect=AssertionError("controller must not connect to upstream")):
             return await control.probe_rules(json.loads((self.directory / "config.json").read_text())["rules"])
 
     async def test_upstream_recovery_uses_engine_socket(self):
@@ -215,6 +216,34 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         else:
             await send({"type": "http.response.body", "body": json.dumps({"bytes": len(body),
                         "sha256": hashlib.sha256(body).hexdigest()}).encode()})
+
+    async def test_status_fingerprint_uses_system_tls_without_signing_imports(self):
+        pem = self.directory / "ca/mitmproxy-ca-cert.pem"
+        expected = x509.load_pem_x509_certificate(pem.read_bytes()).fingerprint(hashes.SHA256()).hex()
+        code = """import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import control
+control.CA = Path(sys.argv[2])
+print(control.ca_fingerprint())
+assert 'cryptography' not in sys.modules
+assert 'asyncio' not in sys.modules
+assert 'tarfile' not in sys.modules
+"""
+        def fingerprint():
+            result = subprocess.run([sys.executable, "-B", "-c", code, str(ADDON.parent), str(pem.parent)],
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return result.stdout.strip()
+        self.assertEqual(fingerprint(), expected)
+        original = pem.read_bytes()
+        try:
+            for damaged in (b"", b"not a certificate", b"-----BEGIN CERTIFICATE-----\nYWJj\n-----END CERTIFICATE-----\n"):
+                pem.write_bytes(damaged)
+                self.assertEqual(fingerprint(), "None")
+        finally:
+            pem.write_bytes(original)
+        self.assertEqual(fingerprint(), expected)
 
     async def test_h1_to_h2_upload_errors_and_stream(self):
         body = b"netfleet-test\x00" * (1024 * 1024)

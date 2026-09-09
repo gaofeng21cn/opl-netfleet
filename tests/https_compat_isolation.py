@@ -13,6 +13,55 @@ import control
 
 
 class Isolation(unittest.TestCase):
+    def test_maintenance_preserves_latches_and_restarts_health_observation(self):
+        from contextlib import ExitStack, nullcontext
+        from unittest.mock import patch
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            paths = {name: Path(directory) / name for name in ('CONFIG', 'STATE', 'RUN')}
+            stack.enter_context(patch.multiple(control, **paths))
+            stack.enter_context(patch.object(control, 'mutation_lock', side_effect=nullcontext))
+            stack.enter_context(patch.object(control, 'drain'))
+            stack.enter_context(patch.object(control.gateway, 'remove'))
+            stack.enter_context(patch.object(control.time, 'monotonic', return_value=1000))
+            execute = stack.enter_context(patch.object(control.subprocess, 'run'))
+            execute.return_value.stdout = json.dumps({'opl-netfleet-compat': {'instances': {'engine': {'running': True}}}})
+            request = Path(directory) / 'request.json'
+            for latched in (True, False):
+                paths['CONFIG'].write_text(json.dumps({**control.DEFAULT, 'enabled': True}))
+                recovery = {'healthy': True, 'healthy_since': 900, 'intercepting': not latched,
+                            'faults': [980, 990], 'latched': latched}
+                state = {'recovery': recovery, 'rule_recovery': {'site': {'latched': True}},
+                         'last_failure': {'at': 42, 'reason': 'processing_chain_failed'}}
+                paths['STATE'].write_text(json.dumps(state))
+                with patch.object(control.sys, 'argv', ['control.py', 'suspend']):
+                    saved = control.main()
+                request.write_text(json.dumps({'request': saved}))
+                # A repeated drain during package replacement remains idempotent.
+                with patch.object(control.sys, 'argv', ['control.py', 'suspend']):
+                    self.assertEqual(control.main(), saved)
+                execute.reset_mock()
+                with patch.object(control.sys, 'argv', ['control.py', 'resume', str(request)]):
+                    control.main()
+                restored = json.loads(paths['STATE'].read_text())
+                self.assertNotIn('maintenance', restored)
+                self.assertEqual(restored['recovery']['latched'], latched)
+                self.assertEqual(restored['recovery']['faults'], [980, 990])
+                self.assertFalse(restored['recovery']['intercepting'])
+                self.assertIsNone(restored['recovery']['healthy_since'])
+                self.assertEqual(restored['last_failure'], state['last_failure'])
+                self.assertEqual(restored['rule_recovery'], state['rule_recovery'])
+                self.assertEqual(restored['reason'], 'manual_recovery_required' if latched else 'recovering')
+                execute.assert_called_once()
+                # A user's later disable takes priority over the saved lifecycle request.
+                paths['CONFIG'].write_text(json.dumps({**control.DEFAULT, 'enabled': False}))
+                execute.reset_mock()
+                before = paths['STATE'].read_bytes()
+                with patch.object(control.sys, 'argv', ['control.py', 'resume', str(request)]):
+                    control.main()
+                execute.assert_not_called()
+                self.assertEqual(paths['STATE'].read_bytes(), before)
+
     def test_module_recovery_counts_outages_after_readmission(self):
         from contextlib import ExitStack
         from unittest.mock import patch
@@ -85,8 +134,88 @@ class Isolation(unittest.TestCase):
                         self.assertEqual(state['recovery']['faults'], [])
                     else:
                         self.assertEqual(execute.call_count, 2)
-                        self.assertEqual(len(state['recovery']['faults']), 1)
+                        self.assertEqual(len(state['recovery']['faults']), 0)
+                        self.assertEqual(state['engine_restart']['attempts'], 1)
             self.assertEqual(bypass.call_count, 3)
+
+    def test_restart_attempts_cannot_latch_one_continuous_outage(self):
+        from contextlib import ExitStack
+        from unittest.mock import patch
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            paths = {name: Path(directory) / name for name in ('CONFIG', 'TRUST', 'STATE', 'EFFECTIVE')}
+            stack.enter_context(patch.multiple(control, **paths))
+            paths['CONFIG'].write_text(json.dumps({**control.DEFAULT, 'enabled': True}))
+            paths['TRUST'].write_text('{}')
+            paths['EFFECTIVE'].write_text('{}')
+            state = {'last_tick': 999, 'engine_pid': 123, 'ready_engine_pid': 123,
+                     'recovery': {'healthy': True, 'intercepting': True, 'faults': []}}
+            stack.enter_context(patch.object(control.device_identity, 'resolve', return_value=({}, {})))
+            stack.enter_context(patch.object(control, 'probe_without_network_lock', side_effect=lambda lock, work: work()))
+            stack.enter_context(patch.object(control, 'snapshot', return_value={'ready': True, 'reason': None}))
+            for name in ('prepare', 'bypass'):
+                stack.enter_context(patch.object(control.gateway, name))
+            execute = stack.enter_context(patch.object(control.subprocess, 'run'))
+            health = stack.enter_context(patch.object(control, 'engine_health'))
+            restart_times = []
+            for now in range(1000, 1121, 2):
+                state['last_tick'] = now
+                paths['STATE'].write_text(json.dumps(state))
+                # A crash and PID replacement in the same cycle count only once.
+                health.return_value = {'ready': False, 'starting': False, 'pid': 124,
+                                       'health_error': 'health_socket_timeout'}
+                before = execute.call_count
+                with patch.object(control.time, 'monotonic', return_value=now):
+                    control.tick()
+                state = json.loads(paths['STATE'].read_text())
+                self.assertEqual(len(state['recovery']['faults']), 1, (now, state))
+                self.assertFalse(state['recovery']['latched'])
+                self.assertFalse(state['intercepting'])
+                self.assertEqual(state['last_failure']['health_error'], 'health_socket_timeout')
+                if execute.call_count > before:
+                    restart_times.append(now)
+            self.assertEqual(restart_times, [1008, 1016, 1032, 1064])
+            self.assertEqual(state['engine_restart']['attempts'], 4)
+
+    def test_known_lock_wait_requires_fresh_health_but_is_not_an_outage(self):
+        from contextlib import ExitStack
+        from unittest.mock import patch
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            paths = {name: Path(directory) / name for name in ('CONFIG', 'TRUST', 'STATE', 'EFFECTIVE')}
+            stack.enter_context(patch.multiple(control, **paths))
+            config = {**control.DEFAULT, 'enabled': True}
+            paths['CONFIG'].write_text(json.dumps(config))
+            paths['TRUST'].write_text('{}')
+            paths['EFFECTIVE'].write_text(json.dumps(config))
+            stack.enter_context(patch.object(control.time, 'monotonic', return_value=1000))
+            stack.enter_context(patch.object(control.device_identity, 'resolve', return_value=({}, {})))
+            stack.enter_context(patch.object(control, 'probe_without_network_lock', side_effect=lambda lock, work: work()))
+            network = stack.enter_context(patch.object(control, 'snapshot', return_value={'ready': True, 'reason': None}))
+            for name in ('prepare', 'bypass'):
+                stack.enter_context(patch.object(control.gateway, name))
+            stack.enter_context(patch.object(control, 'ca_fingerprint', return_value=None))
+            health = stack.enter_context(patch.object(control, 'engine_health'))
+            for waiting, healthy in ((True, True), (False, True), (True, False)):
+                with self.subTest(waiting=waiting, healthy=healthy):
+                    state = {'last_tick': 950, 'engine_pid': 123, 'ready_engine_pid': 123,
+                             'recovery': {'healthy': True, 'healthy_since': 900, 'intercepting': True, 'faults': []}}
+                    paths['STATE'].write_text(json.dumps(state))
+                    health.return_value = {'ready': True, 'pid': 123, 'processing_chain': healthy,
+                                           'transparent_chain': healthy, 'revision': hashlib.sha256(paths['EFFECTIVE'].read_bytes()).hexdigest()}
+                    control.tick(delayed_by_mutation=waiting)
+                    state = json.loads(paths['STATE'].read_text())
+                    self.assertEqual(len(state['recovery']['faults']), 0 if waiting and healthy else 1)
+                    self.assertEqual(state['recovery']['intercepting'], waiting and healthy)
+                    self.assertFalse(state['recovery']['latched'])
+            self.assertEqual(health.call_count, 3)
+            self.assertEqual(network.call_count, 3)
+            state['recovery']['latched'] = True
+            paths['STATE'].write_text(json.dumps(state))
+            health.reset_mock(); network.reset_mock()
+            control.tick()
+            health.assert_not_called(); network.assert_not_called()
+            self.assertEqual(json.loads(paths['STATE'].read_text())['reason'], 'manual_recovery_required')
 
     def test_gateway_session_deadline_and_recovery_with_cpu_budget(self):
         if not Path('/tmp/netfleet-compat-vm-authorized').exists():

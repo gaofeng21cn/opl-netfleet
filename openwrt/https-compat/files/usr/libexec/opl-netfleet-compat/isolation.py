@@ -103,6 +103,16 @@ def constrain():
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
 
+def health_counters():
+    try:
+        cpu = dict(line.split() for line in (CGROUP / "cpu.stat").read_text().splitlines())
+        memory = dict(line.split() for line in (CGROUP / "memory.events").read_text().splitlines())
+        return {"cpu_usage_usec": int(cpu["usage_usec"]), "cpu_throttled_usec": int(cpu["throttled_usec"]),
+                "cpu_throttled_periods": int(cpu["nr_throttled"]), "oom_kills": int(memory["oom_kill"])}
+    except (OSError, ValueError, KeyError):
+        return {}
+
+
 def status():
     try:
         values = {name: (CGROUP / name).read_text().strip() for name in BUDGETS}
