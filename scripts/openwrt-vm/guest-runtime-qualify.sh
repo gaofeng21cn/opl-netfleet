@@ -89,10 +89,10 @@ for dependency_attempt in 1 2 3; do
 	package_result=true
 	if command -v apk >/dev/null 2>&1; then
 		apk --timeout 300 update >>"$work/package-manager.log" 2>&1 || true
-		apk --timeout 300 add curl flock coreutils-date $legacy_dependencies >>"$work/package-manager.log" 2>&1 || package_result=false
+		apk --timeout 300 add curl flock coreutils-date coreutils-timeout ucode-mod-socket $legacy_dependencies >>"$work/package-manager.log" 2>&1 || package_result=false
 	else
 		opkg update >>"$work/package-manager.log" 2>&1 || true
-		opkg install curl flock coreutils-date >>"$work/package-manager.log" 2>&1 || package_result=false
+		opkg install curl flock coreutils-date coreutils-timeout ucode-mod-socket >>"$work/package-manager.log" 2>&1 || package_result=false
 	fi
 	if [ "$package_result" = true ] &&
 		command -v curl >/dev/null 2>&1 &&
