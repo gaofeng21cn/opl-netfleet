@@ -51,7 +51,7 @@ export function pluginNavigation(pages) {
     }
     group.pages.push(item);
   }
-  return { primary, groups, directoryId: primary.find(item => item.page.directory === true)?.id || 'plugins', defaultId: primary[0]?.id || 'plugins' };
+  return { primary, groups, directoryId: primary.find(item => item.page.id === 'components')?.id || 'plugins', defaultId: primary[0]?.id || 'plugins' };
 }
 
 // Only installed page identities enter the URL; drafts and device data stay in memory.

@@ -215,12 +215,12 @@ it('keeps extension discovery separate from declared product navigation and inde
 it('restores installed instance pages and uses a declared directory without product IDs', () => {
   const inventory = { plugins: [...snapshot().plugins, { id: 'workbench', revision: 'r1', ui: [
     { id: 'start', title: '概览', module: 'resources/start.js', navigation: 'primary' as const },
-    { id: 'extensions', title: '插件与更新', module: 'resources/extensions.js', navigation: 'primary' as const, directory: true }
+    { id: 'components', title: '插件与更新', module: 'resources/extensions.js', navigation: 'primary' as const }
   ] }, { ...snapshot().plugins[0], instance: 'lab' }] };
   const pages = pluginPages(inventory);
-  expect(pluginNavigation(pages).directoryId).toBe('plugin:workbench:extensions');
+  expect(pluginNavigation(pages).directoryId).toBe('plugin:workbench:components');
   expect(pageFromHash(pageHash('plugin:example:lab:settings'), pages)).toBe('plugin:example:lab:settings');
-  expect(pageFromHash(pageHash('plugins'), pages)).toBe('plugin:workbench:extensions');
+  expect(pageFromHash(pageHash('plugins'), pages)).toBe('plugin:workbench:components');
   for (const hash of ['#/netfleet/%E0%A4', '#/netfleet/https://elsewhere', pageHash('plugin:removed:settings')])
     expect(pageFromHash(hash, pages)).toBe('plugin:workbench:start');
   expect(pluginNavigation(pluginPages(snapshot())).directoryId).toBe('plugins');

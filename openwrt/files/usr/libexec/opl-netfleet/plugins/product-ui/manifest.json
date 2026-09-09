@@ -13,7 +13,7 @@
     {"id": "providers", "title": "机场", "module": "resources/pages/providers.js", "scope": "host", "navigation": "primary"},
     {"id": "regions", "title": "地区", "module": "resources/pages/regions.js", "scope": "host", "navigation": "primary"},
     {"id": "config", "title": "配置", "module": "resources/pages/config.js", "scope": "host", "navigation": "primary"},
-    {"id": "components", "directory": true, "title": "插件与更新", "module": "resources/pages/components.js", "scope": "host", "navigation": "primary"},
+    {"id": "components", "title": "插件与更新", "module": "resources/pages/components.js", "scope": "host", "navigation": "primary"},
     {"id": "events", "title": "诊断", "module": "resources/pages/events.js", "scope": "host", "navigation": "primary"}
   ],
   "package_dependencies": [

@@ -7,7 +7,7 @@ export interface PluginDefinition {
   runtime?: string;
   state?: string;
   instance?: string;
-  ui?: Array<{ id: string; title: string; module: string; navigation?: "primary" | "plugin"; directory?: boolean }>;
+  ui?: Array<{ id: string; title: string; module: string; navigation?: "primary" | "plugin" }>;
   configuration?: { read: string; write: string };
 }
 export interface PluginsSnapshot { plugins: PluginDefinition[] }
