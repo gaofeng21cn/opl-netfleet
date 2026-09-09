@@ -716,6 +716,7 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 				region: region_id,
 				display_name: region_display,
 				name: aggregate,
+				candidate_groups: filter(candidate_groups, candidate => candidate.region == region_id),
 				primary_name: layer_names.primary ?? null,
 				reserve_name: layer_names.reserve ?? null,
 				members: aggregate_members

@@ -638,6 +638,8 @@ ucode -e '
  import { readfile, writefile } from "fs";
  const policy = json(readfile(ARGV[0]));
  policy.providers.beta.role = "primary";
+ policy.capabilities.follower = { display_name: "Follower", display_order: 20, enabled: true, mode: "automatic", prefer_region_from: "standard" };
+ policy.bindings["AI 出口"] = { capability: "follower", kind: "entry" };
  policy.provider_regions.alpha[1].filter = "No matching Singapore node";
  writefile(ARGV[0], sprintf("%J", policy));
 ' /etc/opl-netfleet/policy.json
@@ -647,6 +649,9 @@ run_timed empty_enable ucode "$main" enable vm
 run_timed empty_select ucode "$main" select standard singapore vm region
 [ "$(jsonfilter -i "$work/empty_select.json" -e '@.result.selected_leaf')" = 'Beta Singapore 01' ]
 [ "$(jsonfilter -i "$work/empty_select.json" -e '@.result.data_path')" = manual_region ]
+run_timed empty_follower_select ucode "$main" select follower singapore vm region
+[ "$(jsonfilter -i "$work/empty_follower_select.json" -e '@.result.selected_leaf')" = 'Beta Singapore 01' ]
+[ "$(jsonfilter -i "$work/empty_follower_select.json" -e '@.result.data_path')" = manual_region ]
 
 # With every Singapore candidate empty, the outer direct guard still works,
 # but the manual transaction must reject it and restore the healthy selection.
@@ -953,7 +958,7 @@ supervisor_cpu_milli_percent=$(awk -v ticks="$supervisor_ticks" -v elapsed="$sup
 stage=complete
 qualification=$work/qualification.json
 qualification_temporary=$qualification.tmp
-printf '{"ok":true,"source_commit":"%s","source_tree":"%s","checks":{"ucode_runtime":true,"mihomo_runtime":true,"connections_readback":true,"config_get":true,"config_validate":true,"config_save_inactive":true,"config_apply_saved":true,"config_apply_active":true,"config_apply_rollback":true,"compile_staged":true,"multi_provider_topology":true,"enable_readback":true,"select_readback":true,"direct_history_isolated":true,"manual_region_empty_candidate":true,"manual_region_all_empty_rollback":true,"subscription_refresh_unchanged":true,"subscription_refresh_changed":true,"subscription_refresh_provider_lkg":true,"subscription_refresh_rollback":true,"direct_fallback":true,"supervisor_native_recovery":true,"supervisor_lan_ingress_passthrough":true,"supervisor_lock_retry":true,"supervisor_dns_ingress_passthrough":true,"disable_native":true},"metrics":{"compile_ms":%s,"enable_ms":%s,"select_auto_ms":%s,"disable_ms":%s,"status_samples":30,"status_p50_ms":%s,"status_p95_ms":%s,"supervisor_window_seconds":%s,"supervisor_cpu_milli_percent":%s,"supervisor_rss_kib":%s,"supervisor_rss_warm_kib":%s,"supervisor_rss_peak_kib":%s},"runtime":{"openwrt_ucode":true,"mihomo_version":"v1.19.30","yq_version":"v4.53.6","nikki_fixture":"synthetic_lifecycle_only"}}\n' \
+printf '{"ok":true,"source_commit":"%s","source_tree":"%s","checks":{"ucode_runtime":true,"mihomo_runtime":true,"connections_readback":true,"config_get":true,"config_validate":true,"config_save_inactive":true,"config_apply_saved":true,"config_apply_active":true,"config_apply_rollback":true,"compile_staged":true,"multi_provider_topology":true,"enable_readback":true,"select_readback":true,"direct_history_isolated":true,"manual_region_empty_candidate":true,"manual_region_shared_follower":true,"manual_region_all_empty_rollback":true,"subscription_refresh_unchanged":true,"subscription_refresh_changed":true,"subscription_refresh_provider_lkg":true,"subscription_refresh_rollback":true,"direct_fallback":true,"supervisor_native_recovery":true,"supervisor_lan_ingress_passthrough":true,"supervisor_lock_retry":true,"supervisor_dns_ingress_passthrough":true,"disable_native":true},"metrics":{"compile_ms":%s,"enable_ms":%s,"select_auto_ms":%s,"disable_ms":%s,"status_samples":30,"status_p50_ms":%s,"status_p95_ms":%s,"supervisor_window_seconds":%s,"supervisor_cpu_milli_percent":%s,"supervisor_rss_kib":%s,"supervisor_rss_warm_kib":%s,"supervisor_rss_peak_kib":%s},"runtime":{"openwrt_ucode":true,"mihomo_version":"v1.19.30","yq_version":"v4.53.6","nikki_fixture":"synthetic_lifecycle_only"}}\n' \
 	"$source_commit" "$source_tree" "$compile_ms" "$enable_ms" "$select_ms" "$disable_ms" \
 	"$status_p50_ms" "$status_p95_ms" "$supervisor_elapsed" "$supervisor_cpu_milli_percent" "$supervisor_rss_kib" "$supervisor_rss_warm" "$supervisor_rss_peak" \
 	>"$qualification_temporary"
