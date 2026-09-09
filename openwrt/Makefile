@@ -21,7 +21,7 @@ define Package/opl-netfleet-kernel
   LICENSE:=Apache-2.0
   PROVIDES:=netfleet-plugin-api-v1
   REPLACES:=opl-netfleet
-  DEPENDS:=+ucode +ucode-mod-fs +flock +coreutils-timeout
+  DEPENDS:=+ucode +ucode-mod-fs +ucode-mod-socket +flock +coreutils-timeout
   PKGARCH:=all
 endef
 
