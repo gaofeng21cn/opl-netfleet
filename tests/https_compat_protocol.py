@@ -89,7 +89,6 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
                   "devices": [{"id": "mac", "name": "Test Mac", "addresses": [self.DEVICE]}],
                   "rules": [{"id": "test", "name": "Wire test", "enabled": True, "devices": ["mac"],
                              "domain": "localhost", "match": "exact", "port": self.upstream_port, "strategy": "h2"}]}
-        (self.directory / "config.json").write_text(json.dumps(policy))
         self.log = (self.directory / "proxy.log").open("wb")
         self.addCleanup(self.log.close)
         (self.directory / 'engine').mkdir()
@@ -99,8 +98,11 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         if self._testMethodName == 'test_invalid_upstream_certificate_is_rejected':
             (self.directory / 'ca/upstream-trust.pem').write_bytes((self.directory / 'ca/mitmproxy-ca-cert.pem').read_bytes())
         self.engine_port = self.proxy_port if self.MODE == 'transparent' else free_port()
-        if self.MODE == 'transparent':
-            policy['egress'] = {'port_range': [41642, 60999], 'excluded_ports': [41641]}
+        if hasattr(self, 'egress'):
+            policy['egress'] = self.egress
+        if self._testMethodName == 'test_wildcard_source_binds_configured_port_range':
+            policy['egress'] = {'port_range': [10240, 10255]}
+        (self.directory / 'config.json').write_text(json.dumps(policy))
         text, mapping = haproxy.configuration(policy, self.directory, 'a' * 64, port=self.engine_port)
         (self.directory / 'haproxy.cfg').write_text(text)
         (self.directory / 'haproxy-rules.json').write_text(json.dumps(mapping))
@@ -196,6 +198,13 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result['test']['ok'], result)
         self.assertEqual(result['test']['reason'], 'upstream_h2_not_negotiated')
         self.assertEqual(self.received, [])
+
+    async def test_wildcard_source_binds_configured_port_range(self):
+        # A range outside Linux's ephemeral defaults exposes skipped wildcard bind().
+        response = await self.client.get(self.url + '/source-range')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.received[-1]['version'], '2')
+        self.assertTrue(10240 <= self.received[-1]['source_port'] <= 10255, self.received[-1])
 
     async def application(self, scope, receive, send):
         if scope["type"] == "websocket":

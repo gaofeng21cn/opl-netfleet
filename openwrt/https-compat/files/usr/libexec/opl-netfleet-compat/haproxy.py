@@ -129,6 +129,7 @@ frontend ingress
         backend = f'{name}_convert' if config['enabled'] and rule['strategy'] == 'h2' and rule['id'] not in blocked else 'passthrough'
         lines += [f"  use_backend {backend} if {name}_source {name}_domain {{ dst_port {rule['port']} }} !{{ req.ssl_alpn -m str h2 }}"]
     lines += ['  default_backend passthrough', '''backend passthrough
+  use-server v4 if { dst -m ip 0.0.0.0/0 }
   use-server v6 if { dst -m ip ::/0 }''',
               f'  server v4 0.0.0.0:0{source[4]}', f'  server v6 [::]:0{source[6]}',
               f'''backend loopback_convert
@@ -166,6 +167,7 @@ frontend {name}_http
   option abortonclose
   option http-no-delay
   http-reuse safe
+  use-server v4 if {{ dst -m ip 0.0.0.0/0 }}
   use-server v6 if {{ dst -m ip ::/0 }}''']
             for family, address in ((4, '0.0.0.0'), (6, '[::]')):
                 lines += [f'  server v{family} {address}:0 ssl alpn {protocol} proto {"h2" if protocol == "h2" else "h1"} verify required ca-file {ca}/upstream-trust.pem sni ssl_fc_sni{source[family]}']

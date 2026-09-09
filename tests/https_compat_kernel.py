@@ -48,12 +48,10 @@ class Kernel(Protocol):
         self.addCleanup(self.command, "ip", "addr", "del", "198.51.100.10/32", "dev", "lo")
         # Only this isolated veth is admitted to the QEMU router's input policy.
         self.command("nft", "insert", "rule", "inet", "fw4", "input", "iifname", "nfcompat0", "accept")
+        self.egress = gateway.egress({"rules": ["SRC-PORT,41641,DIRECT"]})
         await super().asyncSetUp()
         self.ca_bundle = self.directory / "client-ca.pem"
         self.ca_bundle.write_bytes((self.directory / "upstream.pem").read_bytes() + (self.directory / "ca/mitmproxy-ca-cert.pem").read_bytes())
-        self.egress = gateway.egress({"rules": ["SRC-PORT,41641,DIRECT"]})
-        policy_path = self.directory / "config.json"
-        policy_path.write_text(json.dumps({**json.loads(policy_path.read_text()), "egress": self.egress}))
         self.assertTrue((await self.health())["ready"])
         gateway.prepare(["nfcompat0"], uid=pwd.getpwnam("netfleet-compat").pw_uid, owner="kernel-test",
                         excluded_ports=self.egress["excluded_ports"])

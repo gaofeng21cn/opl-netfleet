@@ -42,6 +42,8 @@ MAKE_FLAGS += TARGET=linux-musl CC="$(TARGET_CC)" LD="$(TARGET_CC)" \
 define Package/opl-netfleet-https-compat/install
 	$(CP) ./files/. $(1)/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/haproxy $(1)/usr/libexec/opl-netfleet-compat/haproxy
+	$(INSTALL_DIR) $(1)/usr/share/licenses/opl-netfleet-https-compat
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/LICENSE $(PKG_BUILD_DIR)/doc/gpl.txt $(PKG_BUILD_DIR)/doc/lgpl.txt $(1)/usr/share/licenses/opl-netfleet-https-compat/
 	chmod 0644 $(1)/usr/libexec/opl-netfleet-compat/*.py $(1)/usr/libexec/opl-netfleet-compat/extension.json
 	chmod 0755 $(1)/usr/libexec/opl-netfleet-compat $(1)/etc/init.d/opl-netfleet-compat
 endef

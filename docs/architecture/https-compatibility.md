@@ -71,7 +71,7 @@ TLS 旁路采用同一行为。简单数字 `SRC-PORT` 规则由 gateway 提取�
 
 `opl-netfleet-https-compat` 是独立可选包。HAProxy 3.2.21 从固定校验和的源码编译，
 仅在插件私有路径安装，保留上游 GPL/LGPL 许可；不替换设备的通用 HAProxy 软件。
-两处限定适配负责 Linux IPv6 原始目的地址和 h2-only 后端的严格 ALPN 准入；
+限定适配负责 Linux IPv6 原始目的地址、通配源地址的端口绑定和 h2-only 后端的严格 ALPN 准入；
 握手未协商 h2 时，在发送业务正文之前失败。控制器只使用 Python 标准库，证书由
 OpenSSL 工具管理，不分发 mitmproxy、cryptography 或完整抓包依赖。
 构建入口 `scripts/https-compat/build-package.sh` 的参数依次为 OpenWrt SDK、APK

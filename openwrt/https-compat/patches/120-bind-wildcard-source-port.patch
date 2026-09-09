@@ -1,0 +1,13 @@
+--- a/src/proto_tcp.c
++++ b/src/proto_tcp.c
+@@ -311,7 +311,9 @@ int tcp_bind_socket(int fd, int flags, struct sockaddr_storage *local, struct sock
+ 		}
+ 	}
+ 	else {
+-		if (is_inet_addr(local)) {
++		/* A wildcard source still needs bind() when a port was explicitly
++		 * selected, including a port allocated from source's sport_range. */
++		if (is_inet_addr(local) || get_host_port(local)) {
+ 			ret = bind(fd, (struct sockaddr *)local, get_addr_len(local));
+ 			if (ret < 0)
+ 				return 1;
