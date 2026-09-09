@@ -283,6 +283,8 @@ def health(run):
     info = dict(line.split(': ', 1) for line in command(run, 'show info').splitlines() if ': ' in line)
     rows = list(csv.DictReader(io.StringIO(command(run, 'show stat').removeprefix('# '))))
     ingress = next(row for row in rows if row['pxname'] == 'ingress' and row['svname'] == 'FRONTEND')
+    probes = next(row for row in rows if row['pxname'] == 'loopback_convert' and row['svname'] == 'BACKEND')
+    connections = max(0, int(ingress['scur']) - int(probes['scur']))
     mapping = json.loads((run / 'haproxy-rules.json').read_bytes())
     rules, events = {}, []
     for row in rows:
@@ -296,9 +298,9 @@ def health(run):
         if errors:
             events.append({'id': errors, 'rule': identity, 'reason': 'upstream_transport_failed'})
     return {'service': 'netfleet-https-compat', 'ready': True, 'pid': int(info['Pid']),
-            'revision': info['description'], 'active_connections': int(ingress['scur']),
+            'revision': info['description'], 'active_connections': connections,
             'active_requests': sum(rule['active_requests'] for rule in rules.values()),
-            'unassigned_connections': int(ingress['scur']), 'rules': rules, 'failure_events': events,
+            'unassigned_connections': connections, 'rules': rules, 'failure_events': events,
             'engine': 'haproxy', 'engine_version': info['Version']}
 
 
