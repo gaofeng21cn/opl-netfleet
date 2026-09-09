@@ -1,0 +1,26 @@
+From: NetFleet HTTPS compatibility
+Subject: Require negotiated h2 for h2-only private engine backends
+
+--- a/src/ssl_sock.c
++++ b/src/ssl_sock.c
+@@ -5674,6 +5674,20 @@
+ 
+ 
+ reneg_ok:
++	/* NetFleet's h2-only backends must negotiate h2 before sending any body.
++	 * A forced H2 mux alone can send a preface after an ALPN-less handshake.
++	 * This private engine does not change the router's general HAProxy.
++	 */
++	if (srv && srv->ssl_ctx.alpn_len == 3 &&
++	    memcmp(srv->ssl_ctx.alpn_str, "\002h2", 3) == 0) {
++		const unsigned char *selected = NULL;
++		unsigned int selected_len = 0;
++		SSL_get0_alpn_selected(ctx->ssl, &selected, &selected_len);
++		if (selected_len != 2 || memcmp(selected, "h2", 2) != 0) {
++			conn->err_code = CO_ER_SSL_HANDSHAKE;
++			goto out_error;
++		}
++	}
+ 
+ #ifdef SSL_MODE_ASYNC
+ 	/* ASYNC engine API doesn't support moving read/write

@@ -11,7 +11,6 @@ ip route replace default via 192.168.1.2
 printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
 apk update >&2
 apk add python3 python3-pip libstdcpp ca-bundle coreutils-timeout ip-full conntrack scapy openssl-util kmod-veth kmod-nft-tproxy kmod-nft-socket curl ucode-mod-fs ucode-mod-uci ucode-mod-ubus ucode-mod-uloop >&2
-vendor=/tmp/compat-runtime/vendor
 if [ -f /tmp/compat-runtime/compat-manifest.json ]; then
  test -n "$feed_url"
  python3 - "$commit" "$tree" <<'PY'
@@ -35,11 +34,10 @@ PY
  apk verify /tmp/compat-runtime/*.apk >&2
  apk add /tmp/compat-runtime/*.apk >&2
  apk info -e opl-netfleet opl-netfleet-https-compat luci-app-netfleet >&2
- vendor=/usr/lib/opl-netfleet-compat/vendor
 else
- mkdir -p /usr/lib/opl-netfleet-compat /usr/libexec /etc/opl-netfleet
- ln -s "$vendor" /usr/lib/opl-netfleet-compat/vendor
+ mkdir -p /usr/libexec /etc/opl-netfleet
  cp -R /tmp/openwrt/https-compat/files/. /
+ cp /tmp/compat-runtime/haproxy /usr/libexec/opl-netfleet-compat/haproxy
  cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
 cp /tmp/openwrt/files/usr/libexec/opl-netfleet-plugin-package /usr/libexec/
 chmod 0755 /usr/libexec/opl-netfleet-plugin-package
@@ -56,14 +54,13 @@ IPKG_INSTROOT=
 . /lib/functions.sh
 compat_gid=$(group_add_next netfleet-compat)
 user_exists netfleet-compat || user_add netfleet-compat "" "$compat_gid"
-chmod 0755 /usr/libexec/opl-netfleet-compat /usr/lib/opl-netfleet-compat
+chmod 0755 /usr/libexec/opl-netfleet-compat
 chmod 0644 /usr/libexec/opl-netfleet-compat/*.py /usr/libexec/opl-netfleet-compat/extension.json
-export PYTHONPATH="$vendor"
-launcher=/usr/libexec/opl-netfleet-compat/mitmdump
+launcher=/usr/libexec/opl-netfleet-compat/haproxy
 chmod 0755 "$launcher"
-"$launcher" --version >&2
-python3 -m pip install --break-system-packages --target /tmp/compat-test-deps hypercorn==0.18.0 httpx==0.28.1 >&2
-export PYTHONPATH="$vendor:/tmp/compat-test-deps"
+"$launcher" -vv >&2
+python3 -m pip install --break-system-packages --target /tmp/compat-test-deps cryptography hypercorn==0.18.0 httpx==0.28.1 >&2
+export PYTHONPATH="/tmp/compat-test-deps"
 export PATH=/usr/libexec/opl-netfleet-compat:$PATH
 if [ ! -f /usr/libexec/opl-netfleet/plugins/device-identity/manifest.json ]; then
  cp -R /tmp/plugins/device-identity /usr/libexec/opl-netfleet/plugins/
@@ -75,7 +72,7 @@ python3 /tmp/tests/https_compat_protocol.py >&2
 touch /tmp/netfleet-compat-vm-authorized
 python3 /tmp/tests/https_compat_lease.py >&2
 python3 /tmp/tests/https_compat_kernel.py >&2
-chmod 0755 /etc/init.d/opl-netfleet-compat /usr/libexec/opl-netfleet-compat/mitmdump
+chmod 0755 /etc/init.d/opl-netfleet-compat /usr/libexec/opl-netfleet-compat/haproxy
 python3 /tmp/tests/https_compat_isolation.py >&2
 python3 /tmp/tests/https_compat_controller.py >&2
 python3 /tmp/tests/device_identity_device.py >&2
@@ -92,7 +89,7 @@ metrics = {'engine_memory_peak_bytes': int((group / 'memory.peak').read_text()),
 assert metrics['engine_oom_kill'] == 0, metrics
 Path('/tmp/compat-resources.json').write_text(json.dumps(metrics))
 PY
-du -sk "$vendor" >&2
+du -sk /usr/libexec/opl-netfleet-compat >&2
 if [ -f /tmp/compat-runtime/compat-manifest.json ]; then
  sha256sum /etc/opl-netfleet/compatibility/ca/mitmproxy-ca.pem >/tmp/compat-ca.sha256
  python3 - <<'PY'
@@ -126,7 +123,7 @@ PY
  apk del opl-netfleet-https-compat >&2
  sha256sum -c /tmp/compat-ca.sha256 >&2
  ! nft list table inet netfleet_compat 2>/dev/null
- test ! -x /usr/libexec/opl-netfleet-compat/mitmdump
+ test ! -x /usr/libexec/opl-netfleet-compat/haproxy
  if [ -f /tmp/compat-runtime/device-identity-manifest.json ]; then
   apk del opl-netfleet-plugin-device-identity >&2
   test ! -f /usr/libexec/opl-netfleet/plugins/device-identity/control

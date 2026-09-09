@@ -117,8 +117,11 @@ def snapshot():
 
 def prepare(network):
     global _epoch
-    _epoch = network["epoch"]
-    return call("prepare", epoch=_epoch)
+    if _epoch == network['epoch']:
+        return None
+    result = call('prepare', epoch=network['epoch'])
+    _epoch = network['epoch']
+    return result
 
 
 def renew(candidates):

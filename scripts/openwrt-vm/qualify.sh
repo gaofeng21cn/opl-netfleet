@@ -548,7 +548,7 @@ if [ "$lane_mode" = compatibility ]; then
 	if [ -n "${NETFLEET_COMPAT_PACKAGE:-}" ]; then
 		COPYFILE_DISABLE=1 tar -cf "$work/compat-runtime.tar" -C "$NETFLEET_COMPAT_PACKAGE" .
 	else
-		COPYFILE_DISABLE=1 tar -cf "$work/compat-runtime.tar" -C "${NETFLEET_COMPAT_RUNTIME:?}" vendor
+		COPYFILE_DISABLE=1 tar -cf "$work/compat-runtime.tar" -C "${NETFLEET_COMPAT_RUNTIME:?}" haproxy
 	fi
 	compat_runtime_sha=$(sha256_file "$work/compat-runtime.tar")
 	ssh $ssh_common root@127.0.0.1 'cat >/tmp/compat-runtime.tar' <"$work/compat-runtime.tar"

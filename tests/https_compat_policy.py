@@ -53,59 +53,26 @@ with open(sys.argv[1], 'a') as file:
             finally:
                 holder.communicate("\n", timeout=3)
 
-    def test_health_rechecks_full_chain_after_socket_timeout(self):
-        health = {"service": "netfleet-https-compat", "ready": True,
-                  "processing_chain": True, "transparent_chain": True}
-        with patch.object(control.socket, "socket") as socket_factory:
-            connection = socket_factory.return_value.__enter__.return_value
-            reader = connection.makefile.return_value.__enter__.return_value
-            reader.readline.side_effect = [TimeoutError(), json.dumps(health).encode()]
-            result = control.engine_health(probe=True)
-            self.assertEqual({key: result[key] for key in health}, health)
-            self.assertEqual(connection.sendall.call_args_list[0].args, (b"probe\n",))
-            self.assertEqual(connection.sendall.call_args_list[1].args, (b"probe\n",))
-            self.assertEqual(socket_factory.call_count, 2)
-
-    def test_persistent_health_failure_remains_bounded(self):
-        with patch.object(control.socket, "socket") as socket_factory, patch.object(control.subprocess, "run") as service:
-            socket_factory.return_value.__enter__.return_value.connect.side_effect = TimeoutError()
-            service.return_value.returncode = 1
-            self.assertFalse(control.engine_health(probe=True)["ready"])
-            self.assertEqual(socket_factory.call_count, 2)
-            socket_factory.reset_mock()
-            self.assertFalse(control.engine_health()["ready"])
-            self.assertEqual(socket_factory.call_count, 1)
-
-    def test_explicit_processing_failure_is_not_retried(self):
-        health = {"service": "netfleet-https-compat", "ready": True,
-                  "processing_chain": False, "transparent_chain": True}
-        with patch.object(control.socket, "socket") as socket_factory:
-            connection = socket_factory.return_value.__enter__.return_value
-            connection.makefile.return_value.__enter__.return_value.readline.return_value = json.dumps(health).encode()
-            result = control.engine_health(probe=True)
-            self.assertEqual({key: result[key] for key in health}, health)
-            self.assertIn('health_diagnostic', result)
-            self.assertEqual(socket_factory.call_count, 1)
-
-    def test_local_probe_timeout_rechecks_once_but_protocol_failure_does_not(self):
-        healthy = {"service": "netfleet-https-compat", "ready": True,
-                   "processing_chain": True, "transparent_chain": True, "local_probes": {}}
-        for reason, retries in (("timeout", 2), ("tls_failed", 1), ("response_invalid", 1)):
-            with self.subTest(reason=reason), patch.object(control.socket, "socket") as factory:
-                failed = {**healthy, "processing_chain": False,
-                          "local_probes": {"processing": {"ok": False, "reason": reason}}}
-                reader = factory.return_value.__enter__.return_value.makefile.return_value.__enter__.return_value
-                reader.readline.side_effect = [json.dumps(failed).encode(), json.dumps(healthy).encode()]
-                result = control.engine_health(probe=True)
-                expected = healthy if retries == 2 else failed
-                self.assertEqual({key: result[key] for key in expected}, expected)
-                self.assertEqual(factory.call_count, retries)
-                reader.readline.side_effect = [json.dumps(failed).encode()] * 2
-                factory.reset_mock()
-                result = control.engine_health(probe=True)
-                self.assertEqual({key: result[key] for key in failed}, failed)
-                self.assertIn('health_diagnostic', result)
-                self.assertEqual(factory.call_count, retries)
+    def test_health_revalidates_on_pid_revision_age_and_failure(self):
+        value = {'service': 'netfleet-https-compat', 'ready': True, 'pid': 123, 'revision': 'a' * 64}
+        with patch.object(control.haproxy, 'health', return_value=value) as health, \
+             patch.object(control.haproxy, 'probe', return_value={'ok': True}) as full, \
+             patch.object(control.subprocess, 'run') as probe, patch.object(control.isolation, 'account', return_value=(1000, 1000)), \
+             patch.object(control, '_verified_engine', None), patch.object(control.time, 'monotonic') as now:
+            probe.return_value.stdout = '{"ok":true}'
+            for timestamp in (100, 102, 104):
+                now.return_value = timestamp
+                self.assertTrue(control.engine_health(probe=True)['transparent_chain'])
+            self.assertEqual(sum(len(call.args) == 1 for call in full.call_args_list), 1)
+            now.return_value = 160
+            self.assertTrue(control.engine_health(probe=True)['transparent_chain'])
+            self.assertEqual(sum(len(call.args) == 1 for call in full.call_args_list), 2)
+            value['pid'] = 124
+            self.assertTrue(control.engine_health(probe=True)['transparent_chain'])
+            self.assertEqual(sum(len(call.args) == 1 for call in full.call_args_list), 3)
+            health.side_effect = TimeoutError()
+            self.assertFalse(control.engine_health(probe=True)['ready'])
+            self.assertIsNone(control._verified_engine)
 
     def test_recovery_window_disable_and_manual_reset(self):
         state = None

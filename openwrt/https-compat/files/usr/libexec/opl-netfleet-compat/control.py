@@ -13,7 +13,7 @@ import socket
 import subprocess
 import time
 
-sys.path.insert(0, "/usr/lib/opl-netfleet-compat/vendor")
+import haproxy
 
 import gateway
 import isolation
@@ -123,61 +123,59 @@ def ca_fingerprint():
 
 
 def prepare_ca():
-    from mitmproxy.certs import CertStore
-    from cryptography import x509
-    from cryptography.hazmat.primitives import serialization
-    CA.mkdir(parents=True, exist_ok=True, mode=0o700)
-    # A partial or damaged existing authority must not silently replace a trusted root.
-    if (CA / "mitmproxy-ca-cert.pem").exists() and not (CA / "mitmproxy-ca.pem").exists():
-        raise ValueError("ca_private_key_missing")
-    store = CertStore.from_store(CA, "mitmproxy", 2048)
-    entry = store.get_cert("localhost", [x509.DNSName("localhost")])
-    (CA / "probe-cert.pem").write_bytes(entry.cert.to_pem())
-    (CA / "probe-key.pem").write_bytes(entry.privatekey.private_bytes(serialization.Encoding.PEM,
-        serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
-    bundle = Path("/etc/ssl/certs/ca-certificates.crt").read_bytes()
-    (CA / "upstream-trust.pem").write_bytes(bundle + (CA / "mitmproxy-ca-cert.pem").read_bytes())
-    for path in CA.iterdir():
-        if path.is_file():
-            os.chmod(path, 0o600)
-            with path.open("rb") as stream:
-                os.fsync(stream.fileno())
-    for directory in (CA, BASE, BASE.parent):
-        descriptor = os.open(directory, os.O_RDONLY)
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
+    haproxy.prepare_ca(CA)
+
+
+_verified_engine = None
+
+
+def reconcile_engine(health):
+    """Only replace a configuration after removing admission and draining its connections."""
+    expected = hashlib.sha256(EFFECTIVE.read_bytes()).hexdigest()
+    if health.get('revision') == expected:
+        return False
+    gateway.bypass()
+    if health.get('ready') and health.get('active_connections') == 0:
+        # procd owns the replacement. This signal targets only the confirmed engine instance.
+        subprocess.run(['ubus', 'call', 'service', 'signal', json.dumps({
+            'name': 'opl-netfleet-compat', 'instance': 'engine', 'signal': 15})],
+            check=True, capture_output=True, timeout=1)
+    return True
 
 
 def engine_health(probe=False):
-    # A busy event loop can delay one socket reply while the data plane is healthy.
-    # Recheck the full chain once; this function never renews the kernel lease.
-    health_error = "health_response_invalid"
-    started = time.monotonic()
-    before = isolation.health_counters() if probe else {}
+    global _verified_engine
+    health_error = 'health_socket_unavailable'
+    try:
+        value = haproxy.health(RUN)
+        identity = (value['pid'], value['revision'])
+        now = time.monotonic()
+        full_due = _verified_engine is None or _verified_engine[:2] != identity or now - _verified_engine[2] >= 60
+        proofs = dict(_verified_engine[3]) if not full_due else {}
+        def check(name, work):
+            try:
+                proofs[name] = work()
+            except (OSError, ValueError):
+                proofs[name] = {'ok': False, 'reason': 'local_conversion_failed'}
+        if probe:
+            if full_due:
+                check('private_ingress', lambda: haproxy.probe(RUN))
+            uid = isolation.account()[0]
+            for family in (4, 6):
+                check('transparent_ipv' + str(family), lambda family=family: haproxy.probe(RUN, family, socket_uid=uid))
+            if all(item.get('ok') for item in proofs.values()):
+                _verified_engine = (*identity, now if full_due else _verified_engine[2], proofs)
+            else:
+                _verified_engine = None
+        return {**value, 'processing_chain': proofs.get('private_ingress', {}).get('ok') is True,
+                'transparent_chain': all(proofs.get('transparent_ipv' + str(family), {}).get('ok') is True for family in (4, 6)),
+                'local_probes': proofs}
+    except (OSError, ValueError, KeyError, StopIteration, subprocess.SubprocessError) as error:
+        health_error = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[a-z_]+', str(error)) else (
+            'health_socket_timeout' if isinstance(error, TimeoutError) else 'health_chain_unavailable')
+        _verified_engine = None
     def with_diagnostic(value):
-        after = isolation.health_counters() if probe else {}
-        return {**value, "health_diagnostic": {"elapsed_ms": round((time.monotonic() - started) * 1000),
-                "resource_delta": {key: after[key] - old for key, old in before.items()
-                                   if key in after and after[key] >= old}}}
-    for attempt in range(2 if probe else 1):
-        try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-                connection.settimeout(1.8 if probe else 0.4)
-                connection.connect(str(RUN / "engine/engine.sock"))
-                connection.sendall(b"probe\n" if probe else b"status\n")
-                with connection.makefile("rb") as stream:
-                    value = json.loads(stream.readline(65536))
-                    if value.get("service") == "netfleet-https-compat":
-                        probes = value.get("local_probes", {})
-                        failed = [item for item in probes.values() if item.get("ok") is False]
-                        if probe and attempt == 0 and failed and all(item.get("reason") == "timeout" for item in failed):
-                            continue
-                        return with_diagnostic(value) if probe and (value.get("processing_chain") is not True or value.get("transparent_chain") is not True) else value
-        except (OSError, ValueError) as error:
-            health_error = "health_socket_timeout" if isinstance(error, TimeoutError) else (
-                "health_response_invalid" if isinstance(error, ValueError) else "health_socket_unavailable")
+        return value
     connections, pid, starting = None, None, False
     try:
         result = subprocess.run(["ubus", "call", "service", "list", '{"name":"opl-netfleet-compat"}'],
@@ -228,25 +226,22 @@ def effective(config, trust, fingerprint, source=None):
 
 async def probe_rules(rules):
     import asyncio
-    writer = None
+    request = RUN / 'probe-request.json'
+    atomic(request, {'rules': rules, 'egress': read(EFFECTIVE, {}).get('egress')})
     try:
-        request = {"command": "probe_upstreams", "revision": hashlib.sha256(EFFECTIVE.read_bytes()).hexdigest(),
-                   "rules": [{key: rule[key] for key in ("id", "domain", "port", "address") if key in rule} for rule in rules]}
-        async with asyncio.timeout(1.8):
-            reader, writer = await asyncio.open_unix_connection(str(RUN / "engine/engine.sock"))
-            writer.write(json.dumps(request).encode() + b"\n")
-            await writer.drain()
-            response = json.loads(await reader.readline())
-            if response.get("service") == "netfleet-https-compat" and response.get("revision") == request["revision"]:
-                probes = response.get("probes", {})
-                if isinstance(probes, dict) and all(isinstance(probes.get(rule["id"]), dict) for rule in rules):
-                    return probes
-    except (OSError, ValueError, asyncio.TimeoutError):
-        pass
+        process = await asyncio.create_subprocess_exec(sys.executable, '-B', str(Path(haproxy.__file__)),
+            'upstreams', str(request), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        try:
+            output, _ = await asyncio.wait_for(process.communicate(), timeout=2)
+            if process.returncode == 0:
+                return json.loads(output)
+        finally:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
     finally:
-        if writer:
-            writer.close()
-    return {rule["id"]: {"ok": False, "at": int(time.time()), "reason": "engine_probe_unavailable"} for rule in rules}
+        request.unlink(missing_ok=True)
+    return {rule['id']: {'ok': False, 'at': int(time.time()), 'reason': 'engine_probe_unavailable'} for rule in rules}
 
 
 async def resolve_targets(rules):
@@ -376,6 +371,9 @@ def tick(lock=None, delayed_by_mutation=False):
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         reason = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[a-z_]+', str(error)) else "native_gateway_unavailable"
     health = probe_without_network_lock(lock, lambda: engine_health(probe=True))
+    if health.get('ready') and reconcile_engine(health):
+        save_state({**previous, 'intercepting': False, 'reason': 'engine_config_pending'}, previous)
+        return
     starting = health.get('starting') and health.get('pid') != previous.get('ready_engine_pid')
     expected = hashlib.sha256(EFFECTIVE.read_bytes()).hexdigest() if EFFECTIVE.exists() else None
     healthy = (not reason and health.get("ready") and health.get("processing_chain") is True
@@ -435,6 +433,8 @@ def tick(lock=None, delayed_by_mutation=False):
     if network.get("egress") is not None:
         active["egress"] = network["egress"]
     rule_states = dict(previous.get("rule_recovery", {}))
+    if previous.get('engine_pid') != health.get('pid'):
+        rule_states = {key: {**value, 'last_error': 0} for key, value in rule_states.items()}
     observed = {**previous.get("observed", {}), **health.get("observed", {})}
     state["observed"] = observed
     pending = [{**rule, **observed.get(rule["id"], {})} for rule in active["rules"] if rule["enabled"] and rule["strategy"] == "h2"
@@ -464,7 +464,7 @@ def tick(lock=None, delayed_by_mutation=False):
             current["last_probe"] = -100
         rule_states[rule["id"]] = current
         if not current["intercepting"]:
-            rule["strategy"] = "bypass"
+            active.setdefault("blocked_rules", []).append(rule["id"])
     state["rule_recovery"] = rule_states
     if read(EFFECTIVE) != active:
         gateway.bypass()
@@ -472,7 +472,7 @@ def tick(lock=None, delayed_by_mutation=False):
         state["reason"] = "rules_recovering"
         save_state(state, previous)
         return
-    target_rules = [rule for rule in active["rules"] if rule["enabled"] and rule["strategy"] == "h2"]
+    target_rules = [rule for rule in active["rules"] if rule["enabled"] and rule["strategy"] == "h2" and rule["id"] not in active.get("blocked_rules", [])]
     targets = probe_without_network_lock(lock, lambda: asyncio.run(resolve_targets(target_rules)))
     pairs = {(device, rule["port"], destination) for rule in target_rules
              for device in rule["devices"] for destination in targets[rule["id"]]}
@@ -604,16 +604,11 @@ def main():
                 time.sleep(max(0.05, 2 - (time.monotonic() - started)))
     if action == "run":
         isolation.prepare(BASE, RUN)
+        config = haproxy.prepare(EFFECTIVE, RUN)
+        os.chown(config, 0, isolation.account()[1])
+        os.chmod(config, 0o640)
         isolation.constrain()
-        engine_ca = RUN / "ca"
-        os.execv("/usr/libexec/opl-netfleet-compat/mitmdump", ["mitmdump", "--mode", "transparent@18443",
-            "--mode", "regular@127.0.0.1:18444", "-s", "/usr/libexec/opl-netfleet-compat/addon.py",
-            "--set", f"confdir={engine_ca}", "--set", "upstream_cert=false", "--set", "connection_strategy=lazy",
-            "--set", "block_global=false",
-            "--set", "netfleet_local_probe=true",
-            "--set", f"ssl_verify_upstream_trusted_ca={engine_ca / 'upstream-trust.pem'}",
-            "--set", f"netfleet_socket={RUN / 'engine/engine.sock'}",
-            "--set", f"netfleet_config={EFFECTIVE}", "--set", "flow_detail=0", "--set", "termlog_verbosity=error"])
+        os.execv(haproxy.BINARY, [haproxy.BINARY, '-db', '-f', str(config)])
     if action == "get":
         return status()
     if action == "ca":

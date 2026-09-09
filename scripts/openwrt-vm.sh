@@ -16,7 +16,7 @@ Options:
   --ref <git-ref>   Source ref to qualify (default: origin/main)
   --packages <dir>  Also install and qualify the exact APK candidate directory
   --diagnostic <lane>  Run native, setup, migration, runtime, package, or compatibility diagnostics
-  --compat-runtime <dir>  Isolated musl dependency payload for compatibility diagnostics
+  --compat-runtime <dir>  Isolated musl engine binary for compatibility diagnostics
   --compat-package <dir>  Signed optional APK candidate; requires --packages
   --plugin-packages <dir>  Signed plugin tests in the full suite or native diagnostic lane
   --output <path>   Qualification receipt path outside the repository
@@ -83,7 +83,7 @@ while (($#)); do
 done
 
 [[ -n "$output" ]] || die "--output is required"
-[[ "$diagnostic" != compatibility || -d "$compat_runtime/vendor/mitmproxy" || -f "$compat_package/compat-manifest.json" ]] || die "compatibility diagnostic requires --compat-runtime or --compat-package"
+[[ "$diagnostic" != compatibility || -x "$compat_runtime/haproxy" || -f "$compat_package/compat-manifest.json" ]] || die "compatibility diagnostic requires --compat-runtime or --compat-package"
 [[ -z "$compat_package" || "$diagnostic" == compatibility && -n "$packages" ]] || die "--compat-package requires compatibility diagnostic and --packages"
 [[ "$diagnostic" == compatibility || -z "$compat_runtime" ]] || die "compatibility payload is diagnostic-only"
 [[ -z "$plugin_packages" || "$diagnostic" == all || "$diagnostic" == native ]] || die "plugin packages require the full suite or native diagnostic lane"

@@ -1,0 +1,44 @@
+From: NetFleet HTTPS compatibility
+Subject: Read Linux IPv6 REDIRECT original destination as well as IPv4
+
+Linux exposes IP6T_SO_ORIGINAL_DST at SOL_IPV6 using option 80 (the same
+number as SO_ORIGINAL_DST at SOL_IP). Preserve the existing TPROXY guard
+and getsockname fallback. This binary belongs only to the optional plugin;
+it does not replace a router's general HAProxy installation.
+
+--- a/src/sock_inet.c
++++ b/src/sock_inet.c
+@@ -55,7 +55,7 @@
+ 	.addrcmp = sock_inet6_addrcmp,
+ 	.bind = sock_inet_bind_receiver,
+ 	.get_src = sock_get_src,
+-	.get_dst = sock_get_dst,
++	.get_dst = sock_inet_get_dst,
+ 	.set_port = sock_inet_set_port,
+ };
+ 
+@@ -142,8 +142,7 @@
+ }
+ 
+ /*
+- * Retrieves the original destination address for the socket <fd> which must be
+- * of family AF_INET (not AF_INET6), with <dir> indicating if we're a listener
++ * Retrieves the original destination address for the socket <fd> of family AF_INET or AF_INET6, with <dir> indicating if we're a listener
+  * (=0) or an initiator (!=0). In the case of a listener, if the original
+  * destination address was translated, the original address is retrieved. It
+  * returns 0 in case of success, -1 in case of error. The socket's source
+@@ -174,10 +173,12 @@
+ 		 */
+ # if defined(IP_TRANSPARENT)
+ 		len = sizeof(val);
+-		if (getsockopt(fd, IPPROTO_IP, IP_TRANSPARENT, &val, &len) == 0 && val)
++		if (getsockopt(fd, sa->sa_family == AF_INET6 ? IPPROTO_IPV6 : IPPROTO_IP,
++		               sa->sa_family == AF_INET6 ? IPV6_TRANSPARENT : IP_TRANSPARENT, &val, &len) == 0 && val)
+ 			return ret;
+ # endif
+-		if (getsockopt(fd, IPPROTO_IP, SO_ORIGINAL_DST, sa, &salen) == 0)
++		if (getsockopt(fd, sa->sa_family == AF_INET6 ? IPPROTO_IPV6 : IPPROTO_IP,
++		               SO_ORIGINAL_DST, sa, &salen) == 0)
+ 			return 0;
+ #endif
+ 		return ret;

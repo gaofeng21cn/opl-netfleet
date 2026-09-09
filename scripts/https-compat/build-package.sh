@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 sdk=${1:?OpenWrt SDK path required}
-runtime=${2:?musl runtime path required}
-key=${3:?APK signing key required}
-output=${4:?output directory required}
-ref=${5:-HEAD}
+key=${2:?APK signing key required}
+output=${3:?output directory required}
+ref=${4:-HEAD}
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 commit=$(git -C "$repo" rev-parse "$ref^{commit}")
 tree=$(git -C "$repo" rev-parse "$commit^{tree}")
 test -f "$sdk/Makefile"
-test -f "$runtime/vendor/mitmproxy-12.2.3.dist-info/METADATA"
 test -f "$key"
 mkdir -p "$output"
 work=$(mktemp -d)
@@ -50,7 +48,7 @@ make -C "$sdk" -j"$jobs" package/toolchain/compile package/feeds/base/openssl/co
   CONFIG_OPENSSL_ENGINE= CONFIG_OPENSSL_ENGINE_BUILTIN_DEVCRYPTO= \
   CONFIG_PACKAGE_libopenssl-devcrypto= CONFIG_PACKAGE_libopenssl-afalg= \
   CONFIG_PACKAGE_libopenssl-padlock= NO_DEPS=1 V=s
-make -C "$sdk" "package/$package/compile" NETFLEET_COMPAT_RUNTIME="$runtime" NO_DEPS=1 V=s
+make -C "$sdk" -j"$jobs" "package/$package/download" "package/$package/compile" NO_DEPS=1 V=s
 mapfile -t packages < <(find "$sdk/bin/packages" -type f -name "$package-*.apk")
 test "${#packages[@]}" = 1
 cp "${packages[0]}" "$output/"
@@ -67,6 +65,6 @@ from pathlib import Path
 output, commit, tree, name = sys.argv[1:]
 path = Path(output)
 (path / 'compat-manifest.json').write_text(json.dumps({'source_commit': commit, 'source_tree': tree,
-    'architecture': 'aarch64_generic', 'python': '3.13', 'mitmproxy': '12.2.3',
+    'architecture': 'aarch64_generic', 'engine': 'haproxy', 'engine_version': '3.2.21',
     'artifact': name, 'sha256': hashlib.sha256((path / name).read_bytes()).hexdigest()}, sort_keys=True) + '\n')
 PY

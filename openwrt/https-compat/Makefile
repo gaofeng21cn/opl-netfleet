@@ -1,10 +1,15 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet-https-compat
-PKG_VERSION:=0.3.3
+PKG_VERSION:=0.4.0
 PKG_RELEASE:=1
-PKG_LICENSE:=MIT
-PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)
+PKG_LICENSE:=MIT GPL-2.0-or-later LGPL-2.1-only
+HAPROXY_VERSION:=3.2.21
+PKG_SOURCE:=haproxy-$(HAPROXY_VERSION).tar.gz
+PKG_SOURCE_URL:=https://www.haproxy.org/download/3.2/src/
+PKG_HASH:=0cb8818a26c5f888e0cb1c40f1b3acb9fb952527d1733f769ce688fedd680339
+PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
+PKG_BUILD_PARALLEL:=1
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -13,8 +18,8 @@ define Package/opl-netfleet-https-compat
   SECTION:=net
   CATEGORY:=Network
   TITLE:=NetFleet optional HTTPS compatibility engine
-  DEPENDS:=@aarch64 +opl-netfleet-plugin-https-compat +opl-netfleet-plugin-mihomo +python3 +libc +libstdcpp +libgcc +libopenssl +ca-bundle +coreutils-timeout
-  EXTRA_DEPENDS:=python3 (~3.13), opl-netfleet-plugin-https-compat (>=0.8.3)
+  DEPENDS:=+opl-netfleet-plugin-https-compat +opl-netfleet-plugin-mihomo +python3-light +python3-asyncio +python3-ctypes +python3-openssl +python3-urllib +libopenssl +libpthread +libatomic +openssl-util +ca-bundle +coreutils-timeout
+  EXTRA_DEPENDS:=opl-netfleet-plugin-https-compat (>=0.8.3)
 endef
 
 define Package/opl-netfleet-https-compat/description
@@ -23,22 +28,21 @@ define Package/opl-netfleet-https-compat/description
 endef
 
 define Build/Prepare
-	test "$(ARCH_PACKAGES)" = aarch64_generic
-	test -f "$(NETFLEET_COMPAT_RUNTIME)/vendor/mitmproxy-12.2.3.dist-info/METADATA"
-	$(INSTALL_DIR) $(PKG_BUILD_DIR)/vendor
-	$(CP) $(NETFLEET_COMPAT_RUNTIME)/vendor/. $(PKG_BUILD_DIR)/vendor/
+	$(INSTALL_DIR) $(PKG_BUILD_DIR)
+	$(TAR) -C $(PKG_BUILD_DIR) --strip-components=1 -xzf $(DL_DIR)/$(PKG_SOURCE)
+	$(Build/Patch)
 endef
 
-define Build/Compile
-endef
+MAKE_FLAGS += TARGET=linux-musl CC="$(TARGET_CC)" LD="$(TARGET_CC)" \
+	CFLAGS="$(TARGET_CFLAGS)" LDFLAGS="$(TARGET_LDFLAGS)" \
+	USE_OPENSSL=1 USE_THREAD=1 USE_LUA= USE_PCRE= USE_PCRE2= \
+	USE_ZLIB= USE_SLZ= USE_SYSTEMD= USE_QUIC= USE_PROMEX=
 
 define Package/opl-netfleet-https-compat/install
-	$(INSTALL_DIR) $(1)/usr/lib/opl-netfleet-compat/vendor
-	$(CP) $(PKG_BUILD_DIR)/vendor/. $(1)/usr/lib/opl-netfleet-compat/vendor/
 	$(CP) ./files/. $(1)/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/haproxy $(1)/usr/libexec/opl-netfleet-compat/haproxy
 	chmod 0644 $(1)/usr/libexec/opl-netfleet-compat/*.py $(1)/usr/libexec/opl-netfleet-compat/extension.json
-	chmod 0755 $(1)/usr/libexec/opl-netfleet-compat $(1)/usr/lib/opl-netfleet-compat
-	chmod 0755 $(1)/etc/init.d/opl-netfleet-compat $(1)/usr/libexec/opl-netfleet-compat/mitmdump
+	chmod 0755 $(1)/usr/libexec/opl-netfleet-compat $(1)/etc/init.d/opl-netfleet-compat
 endef
 
 define Package/opl-netfleet-https-compat/preinst
@@ -62,7 +66,7 @@ define Package/opl-netfleet-https-compat/postinst
 #!/bin/sh
 if [ -z "$$IPKG_INSTROOT" ]; then
  # Reproducible packages can retain a stale timestamp-and-size Python cache.
- find /usr/libexec/opl-netfleet-compat /usr/lib/opl-netfleet-compat/vendor -type f -name '*.py[co]' -exec rm -f {} + || exit 1
+ find /usr/libexec/opl-netfleet-compat -type f -name '*.py[co]' -exec rm -f {} + || exit 1
  /usr/libexec/opl-netfleet-plugin-package https-compat postinst
 fi
 exit 0
