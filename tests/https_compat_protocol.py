@@ -101,7 +101,9 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         if hasattr(self, 'egress'):
             policy['egress'] = self.egress
         if self._testMethodName == 'test_wildcard_source_binds_configured_port_range':
-            policy['egress'] = {'port_range': [10240, 10255]}
+            lower, upper = map(int, Path('/proc/sys/net/ipv4/ip_local_port_range').read_text().split())
+            self.source_range = [lower + 128, min(lower + 255, upper)]
+            policy['egress'] = {'port_range': self.source_range}
         (self.directory / 'config.json').write_text(json.dumps(policy))
         text, mapping = haproxy.configuration(policy, self.directory, 'a' * 64, port=self.engine_port)
         (self.directory / 'haproxy.cfg').write_text(text)
@@ -200,11 +202,50 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.received, [])
 
     async def test_wildcard_source_binds_configured_port_range(self):
-        # A range outside Linux's ephemeral defaults exposes skipped wildcard bind().
-        response = await self.client.get(self.url + '/source-range')
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(self.received[-1]['version'], '2')
-        self.assertTrue(10240 <= self.received[-1]['source_port'] <= 10255, self.received[-1])
+        # Conversion and passthrough share the kernel's tuple allocation;
+        # independent server port pools can select the same occupied tuple.
+        for _ in range(4):
+            for host, protocol in (('localhost', '2'), ('other.example', '1.1')):
+                response = await self.client.get(f'https://{host}:{self.upstream_port}/source-range')
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(self.received[-1]['version'], protocol)
+                self.assertTrue(self.source_range[0] <= self.received[-1]['source_port'] <= self.source_range[1], self.received[-1])
+
+    async def test_certificate_renewal_drains_and_preserves_root(self):
+        import control
+        ca = self.directory / 'ca'
+        private, public = (ca / 'mitmproxy-ca.pem').read_bytes(), (ca / 'mitmproxy-ca-cert.pem').read_bytes()
+        root = x509.load_pem_x509_certificate(public)
+        root_key = serialization.load_pem_private_key(private, password=None)
+        leaf = x509.load_pem_x509_certificate((ca / 'probe-cert.pem').read_bytes())
+        now = datetime.now(timezone.utc)
+        expiring = (x509.CertificateBuilder().subject_name(leaf.subject).issuer_name(root.subject)
+                    .public_key(leaf.public_key()).serial_number(x509.random_serial_number())
+                    .not_valid_before(now - timedelta(days=1)).not_valid_after(now + timedelta(days=1))
+                    .sign(root_key, hashes.SHA256()))
+        (ca / 'probe-cert.pem').write_bytes(expiring.public_bytes(serialization.Encoding.PEM))
+        real_run, signals = subprocess.run, []
+        def execute(args, **kwargs):
+            if args[0] == 'ubus':
+                signals.append(json.loads(args[-1]))
+                return subprocess.CompletedProcess(args, 0)
+            return real_run(args, **kwargs)
+        effective = self.directory / 'config.json'
+        health = {'ready': True, 'pid': self.proxy.pid, 'active_connections': 1,
+                  'revision': hashlib.sha256(effective.read_bytes()).hexdigest()}
+        with patch.multiple(control, CA=ca, EFFECTIVE=effective, _certificate_check=None), \
+             patch.object(control.gateway, 'bypass') as bypass, \
+             patch.object(control.subprocess, 'run', side_effect=execute):
+            self.assertTrue(control.reconcile_engine(health))
+            bypass.assert_called_once()
+            self.assertEqual(signals, [])
+            health['active_connections'] = 0
+            self.assertTrue(control.reconcile_engine(health))
+            self.assertEqual(signals, [{'name': 'opl-netfleet-compat', 'instance': 'engine', 'signal': 15}])
+            haproxy.prepare_ca(ca, self.directory / 'upstream.pem')
+            self.assertFalse(control.certificate_refresh_required({**health, 'pid': health['pid'] + 1}))
+        self.assertEqual((ca / 'mitmproxy-ca.pem').read_bytes(), private)
+        self.assertEqual((ca / 'mitmproxy-ca-cert.pem').read_bytes(), public)
 
     async def application(self, scope, receive, send):
         if scope["type"] == "websocket":

@@ -127,12 +127,24 @@ def prepare_ca():
 
 
 _verified_engine = None
+_certificate_check = None
+
+
+def certificate_refresh_required(health):
+    global _certificate_check
+    now = time.monotonic()
+    identity = (health.get('pid'), (CA / 'probe-cert.pem').stat().st_mtime_ns)
+    if _certificate_check is None or _certificate_check[0] != identity or now >= _certificate_check[1]:
+        result = subprocess.run(['openssl', 'x509', '-in', str(CA / 'probe-cert.pem'),
+                                 '-checkend', '604800', '-noout'], capture_output=True, timeout=2)
+        _certificate_check = (identity, now + 3600, result.returncode != 0)
+    return _certificate_check[2]
 
 
 def reconcile_engine(health):
     """Only replace a configuration after removing admission and draining its connections."""
     expected = hashlib.sha256(EFFECTIVE.read_bytes()).hexdigest()
-    if health.get('revision') == expected:
+    if health.get('revision') == expected and not certificate_refresh_required(health):
         return False
     gateway.bypass()
     if health.get('ready') and health.get('active_connections') == 0:
@@ -603,6 +615,7 @@ def main():
             else:
                 time.sleep(max(0.05, 2 - (time.monotonic() - started)))
     if action == "run":
+        prepare_ca()
         isolation.prepare(BASE, RUN)
         config = haproxy.prepare(EFFECTIVE, RUN)
         os.chown(config, 0, isolation.account()[1])

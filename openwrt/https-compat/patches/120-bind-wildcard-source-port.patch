@@ -1,13 +1,28 @@
 --- a/src/proto_tcp.c
 +++ b/src/proto_tcp.c
-@@ -311,7 +311,9 @@ int tcp_bind_socket(int fd, int flags, struct sockaddr_storage *local, struct sock
- 		}
- 	}
- 	else {
+@@ -315 +315 @@
 -		if (is_inet_addr(local)) {
-+		/* A wildcard source still needs bind() when a port was explicitly
-+		 * selected, including a port allocated from source's sport_range. */
 +		if (is_inet_addr(local) || get_host_port(local)) {
- 			ret = bind(fd, (struct sockaddr *)local, get_addr_len(local));
- 			if (ret < 0)
- 				return 1;
+@@ -457 +457,21 @@
+-		if (src->sport_range) {
++		if (src->sport_range && !is_inet_addr(&src->source_addr)) {
++			/* NetFleet admits ranges inside Linux's ephemeral range.
++			 * connect() must choose a free tuple across all backends,
++			 * not independently reuse each server's first port.
++			 * Unsupported options fail without widening the range.
++			 * IP_LOCAL_PORT_RANGE requires Linux 6.3 or later. */
++			struct sockaddr_storage sa = src->source_addr;
++			uint32_t range = src->sport_range->ports[0] |
++				((uint32_t)src->sport_range->ports[src->sport_range->size - 1] << 16);
++			set_host_port(&sa, 0);
++			ret = 1;
++			if (setsockopt(fd, IPPROTO_IP, 51 /* IP_LOCAL_PORT_RANGE */,
++			               &range, sizeof(range)) == 0 &&
++			    setsockopt(fd, IPPROTO_IP, IP_BIND_ADDRESS_NO_PORT,
++			               &one, sizeof(one)) == 0 &&
++			    bind(fd, (struct sockaddr *)&sa, get_addr_len(&sa)) == 0)
++				ret = 0;
++			if (ret)
++				conn->err_code = CO_ER_CANT_BIND;
++		}
++		else if (src->sport_range) {

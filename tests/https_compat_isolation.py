@@ -85,6 +85,7 @@ class Isolation(unittest.TestCase):
             stack.enter_context(patch.object(control, 'probe_without_network_lock', side_effect=lambda lock, work: work()))
             stack.enter_context(patch.object(control, 'snapshot', return_value={'ready': True, 'reason': None}))
             stack.enter_context(patch.object(control, 'ca_fingerprint', return_value=None))
+            stack.enter_context(patch.object(control, 'certificate_refresh_required', return_value=False))
             stack.enter_context(patch.object(control.gateway, 'prepare'))
             stack.enter_context(patch.object(control.gateway, 'bypass'))
             execute = stack.enter_context(patch.object(control.subprocess, 'run'))
