@@ -18,6 +18,7 @@ def request(action, background=False):
         json.dump({"request": {"id": "device-identity", "action": action, "params": {}}}, stream)
     try:
         if background:
+            _workers[:] = [worker for worker in _workers if worker.poll() is None]
             # The existing tick supplies scheduling; the worker has no polling loop.
             worker = subprocess.Popen(["sh", "-c", 'timeout 7 ucode "$1" plugin-read "$2" >/dev/null 2>&1; rm -f "$2"',
                                        "identity-sync", OWNER, path], stdin=subprocess.DEVNULL,

@@ -2,6 +2,7 @@ import copy
 import os
 import sys
 import tempfile
+import subprocess
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -14,6 +15,20 @@ IDENTITY = {"binding": "1" * 64, "mac": "02:00:00:00:00:01"}
 
 
 class IdentityConsumer(unittest.TestCase):
+    def test_finished_sync_workers_are_reaped_and_not_retained(self):
+        finished = subprocess.Popen([sys.executable, "-c", "pass"])
+        finished.wait(timeout=5)
+        with tempfile.TemporaryDirectory() as directory:
+            # Run the real background launcher; a missing owner exits immediately.
+            with patch.object(control.device_identity, "_workers", [finished]), \
+                    patch.object(control.device_identity, "RUN", Path(directory)), \
+                    patch.object(control.device_identity, "OWNER", "/missing-test-owner"):
+                control.device_identity.request("sync", background=True)
+                workers = control.device_identity._workers
+                self.assertEqual(len(workers), 1)
+                self.assertIsNot(workers[0], finished)
+                workers[0].wait(timeout=10)
+
     def test_real_plugin_startup_budget_and_hung_source_bypass(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
