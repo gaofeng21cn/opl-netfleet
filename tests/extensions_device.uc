@@ -1,7 +1,13 @@
 import * as fs from "fs";
 import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
 import { create as create_adapter } from "/usr/libexec/opl-netfleet/adapters/openwrt.uc";
-const host = create("/usr/libexec/opl-netfleet", { adapter: create_adapter() });
+const baseline = create("/usr/libexec/opl-netfleet", { adapter: create_adapter() });
+const system = baseline.system;
+baseline.release();
+// This contract explicitly exercises the installed optional management plugin.
+// Keep the production default disabled and enable only this in-memory host.
+system.enabled['https-compat'] = true;
+const host = create("/usr/libexec/opl-netfleet", { adapter: create_adapter(), system });
 const compatibility = host.use("https-compat.control");
 const dashboard = host.use("dashboard.control");
 const descriptor_error = host.use("models.extensions").descriptor_error;
