@@ -54,7 +54,7 @@ def schedule_sync():
     with os.fdopen(fd, "w") as stream:
         json.dump({"request": {"id": "device-identity", "action": "sync", "params": {}}}, stream)
     try:
-        worker = subprocess.Popen(["ucode", OWNER, "plugin-read", path], stdin=subprocess.DEVNULL,
+        worker = subprocess.Popen(["nice", "-n", "15", "ucode", OWNER, "plugin-read", path], stdin=subprocess.DEVNULL,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         worker.deadline, worker.request_path, worker.owns_session = now + 7, path, True
         _workers.append(worker)

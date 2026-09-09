@@ -27,15 +27,18 @@ class IdentityConsumer(unittest.TestCase):
                     patch.object(control.device_identity, "RUN", Path(directory)), \
                     patch.object(control.device_identity, "OWNER", "/missing-test-owner"), \
                     patch.object(control.device_identity, "_next_sync", 0), \
-                    patch.dict(os.environ, {"PATH": directory}):
+                    patch.dict(os.environ, {"PATH": directory + os.pathsep + os.defpath}):
                 executable = Path(directory) / 'ucode'
-                executable.write_text(f"#!{sys.executable}\npass\n")
+                priority = Path(directory) / 'priority'
+                executable.write_text(f"#!{sys.executable}\nimport os\nfrom pathlib import Path\n"
+                                      f"Path({str(priority)!r}).write_text(str(os.getpriority(os.PRIO_PROCESS, 0)))\n")
                 executable.chmod(0o700)
                 control.device_identity.schedule_sync()
                 workers = control.device_identity._workers
                 self.assertEqual(len(workers), 1)
                 self.assertIsNot(workers[0], finished)
                 workers[0].wait(timeout=10)
+                self.assertGreaterEqual(int(priority.read_text()), 15)
 
     def test_sync_timeout_kills_descendants_and_does_not_retry_each_tick(self):
         for leader_exits in (False, True):
@@ -50,7 +53,7 @@ class IdentityConsumer(unittest.TestCase):
                 with patch.object(control.device_identity, "RUN", root / "run"), \
                         patch.object(control.device_identity, "_workers", []), \
                         patch.object(control.device_identity, "_next_sync", 0), \
-                        patch.dict(os.environ, {"PATH": directory}):
+                        patch.dict(os.environ, {"PATH": directory + os.pathsep + os.defpath}):
                     control.device_identity.schedule_sync()
                     worker = control.device_identity._workers[0]
                     try:

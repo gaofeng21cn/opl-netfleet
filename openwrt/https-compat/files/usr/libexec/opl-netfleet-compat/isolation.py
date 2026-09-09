@@ -82,6 +82,9 @@ def group_limits(path, budgets):
 
 
 def constrain_manager():
+    # A half-core quota shared across CPUs permits background children to
+    # exhaust it in parallel before a deadline-bound controller can run.
+    os.sched_setaffinity(0, {min(os.sched_getaffinity(0))})
     group_limits(CGROUP.with_name("netfleet-compat-manager"), {
         **BUDGETS, "memory.max": str(96 * 1024 * 1024), "pids.max": "16", "cpu.max": "50000 100000"})
     resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))

@@ -238,8 +238,10 @@ sys.path.insert(0, '/usr/libexec/opl-netfleet-compat')
 import gateway, isolation
 isolation.constrain_manager()
 assert Path('/sys/fs/cgroup/netfleet-compat-manager/cpu.max').read_text().strip() == '50000 100000'
+assert len(os.sched_getaffinity(0)) == 1
 gateway.start_worker()
 worker = gateway._worker.pid
+assert os.sched_getaffinity(worker) == os.sched_getaffinity(0)
 assert gateway.status()['intercepting'] is False
 assert gateway.status()['intercepting'] is False
 assert gateway._worker.pid == worker
