@@ -6,14 +6,12 @@ export function CompatibilityView({ extension, onBack }: { extension?: Extension
   const [tab, setTab] = useState('rules');
   const previewReason = '请在设备 LuCI 中操作';
   return <section className="nf-compatibility">
-    <div className="nf-section-heading"><div><h2>HTTPS 兼容</h2><small>{extension?.installed_version || '未安装'}</small></div>
-      <div className="nf-components-actions"><button type="button" onClick={onBack}><ArrowLeft aria-hidden="true" />返回组件列表</button>
-        <button type="button" disabled title={previewReason}><ExternalLink aria-hidden="true" />软件包管理</button></div>
+    <div className="nf-section-heading"><div><h2>HTTPS 兼容</h2><small>为选定设备和网站转换 HTTP/1.1 → HTTP/2；应用继续使用原网址。</small></div>
+      <div className="nf-components-actions"><button type="button" onClick={onBack}><ArrowLeft aria-hidden="true" />返回组件列表</button></div>
     </div>
     <div className="nf-form-row">
       <label><input type="checkbox" disabled title={previewReason} />启用 HTTPS 兼容</label>
       <div role="status"><strong>运行状态未读取</strong></div>
-      <button type="button" disabled title={previewReason} aria-label="刷新兼容状态"><RefreshCw aria-hidden="true" /></button>
     </div>
     <div className="nf-compat-tabs" role="tablist" aria-label="HTTPS 兼容管理">
       {[['rules', '规则'], ['devices', '设备与信任'], ['diagnostics', '诊断']].map(([id, label]) =>
@@ -26,17 +24,22 @@ export function CompatibilityView({ extension, onBack }: { extension?: Extension
       </>}
       {tab === 'devices' && <>
         <div className="nf-section-heading"><h3>设备与信任</h3><button type="button" disabled title={previewReason}>新增设备</button></div>
-        <div className="nf-form-row"><span>地址来源</span><div role="status"><strong>状态未读取</strong></div>
+        <details><summary>高级：设备地址来源</summary><div className="nf-form-row"><span>地址来源</span><div role="status"><strong>按需读取地址来源</strong></div>
           <div className="nf-components-actions"><button type="button" disabled title={previewReason}>管理来源</button>
-            <button type="button" disabled title={previewReason}><RefreshCw aria-hidden="true" />同步</button></div></div>
+            <button type="button" disabled title={previewReason}><RefreshCw aria-hidden="true" />同步</button></div></div></details>
         <div className="nf-table-wrap"><table><thead><tr>{['设备', '系统信任', '应用', '操作'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody><tr><td colSpan={4}>尚未读取接入设备</td></tr></tbody></table></div>
         <div className="nf-components-actions"><button type="button" disabled title={previewReason}><Download aria-hidden="true" />下载公开 CA</button><button type="button" disabled title={previewReason}><Download aria-hidden="true" />macOS 接入工具</button></div>
       </>}
       {tab === 'diagnostics' && <>
-        <div className="nf-section-heading"><h3>诊断</h3><div className="nf-components-actions"><button type="button" disabled title={previewReason}>连接验证</button><button type="button" disabled title={previewReason}><Download aria-hidden="true" />导出诊断</button></div></div>
+        <div className="nf-section-heading"><h3>诊断</h3><div className="nf-components-actions"><button type="button" disabled title={previewReason}><Download aria-hidden="true" />导出诊断</button></div></div>
+        <h3>本地转发链</h3><p>尚未读取本地验证记录</p><h3>目标恢复</h3>
         <div className="nf-table-wrap"><table><thead><tr>{['目标', '最近故障', '恢复探测', '操作'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody><tr><td colSpan={4}>尚未读取诊断记录</td></tr></tbody></table></div>
         <h3>兼容事件</h3><p>尚未读取兼容事件</p>
+        <small>{extension?.installed_version || '未读取安装版本'}</small>
+        <button type="button" disabled title={previewReason}><ExternalLink aria-hidden="true" />软件包管理</button>
       </>}
     </div>
+    <div className="nf-section-heading" role="status"><small>尚未读取设备状态 · 本页为参考界面，管理操作在设备 LuCI 中完成</small>
+      <button type="button" disabled title={previewReason} aria-label="刷新兼容状态"><RefreshCw aria-hidden="true" />刷新状态</button></div>
   </section>;
 }

@@ -926,8 +926,85 @@ assert(!text(root).includes('fixture-secret'));
 fire(button(root, '编辑'));
 fire(find(modal.content, node => node.tag === 'select'), 'change', { value: '02:00:00:00:00:01' });
 await fire(button(modal.content, '保存'));
-assert.equal(calls.at(-1).action, 'get');
+assert.equal(calls.at(-1).action, 'bound', 'compatibility refresh must not reread another plugin');
 assert(calls.some(call => call.action === 'bound'));
+""")
+
+    def test_compatibility_cached_content_is_not_write_authority(self):
+        self.run_js(r"""
+const owner = controller();
+owner.compatibilityLive = false;
+owner.compatibility = { installed: true, requested: true, intercepting: false, reason: 'engine_unavailable',
+  config: { rules: [{ id: 'site', name: 'Site', domain: 'service.example', port: 443, strategy: 'h2', enabled: true, devices: ['mac'] }],
+    devices: [{ id: 'mac', name: 'Mac', addresses: ['192.0.2.2'] }] },
+  rules: {}, trust: {}, rule_recovery: { site: { intercepting: true } } };
+let reads = 0, rejectRead;
+const api = { compatibilityGet: () => { reads++; return new Promise((_, reject) => { rejectRead = reject; }); },
+  pluginRead: () => { throw new Error('tab must not load another plugin'); } };
+const manager = module('compatibility.js', api);
+let root = manager.render(owner);
+assert(button(root, '新增规则').disabled);
+assert(text(root).includes('Site'));
+assert(!text(root).includes('正在接管'), 'module bypass overrides stale rule interception');
+await fire(button(root, '设备与信任'));
+root = manager.render(owner);
+assert(text(root).includes('Mac'));
+assert(button(root, '新增设备').disabled);
+assert.equal(reads, 0);
+const pending = manager.refresh(owner);
+assert.equal(manager.refresh(owner), pending, 'refresh is single-flight');
+rejectRead(new Error('offline'));
+await pending;
+root = manager.render(owner);
+assert(text(root).includes('Mac'));
+assert(text(root).includes('刷新失败'));
+assert(button(root, '新增设备').disabled);
+assert.equal(reads, 1);
+""")
+
+    def test_compatibility_disposal_ignores_late_read(self):
+        self.run_js(r"""
+const owner = controller();
+let disposed = false, complete, redraws = 0;
+owner.disposed = () => disposed;
+owner.redraw = () => { redraws++; };
+const manager = module('compatibility.js', { compatibilityGet: () => new Promise(resolve => { complete = resolve; }) });
+const pending = manager.refresh(owner);
+disposed = true;
+complete({ requested: true });
+await pending;
+assert.equal(owner.compatibility, undefined);
+assert.equal(redraws, 1, 'late results must not redraw a departed page');
+await manager.refresh(owner);
+assert.equal(redraws, 1);
+""")
+
+    def test_compatibility_display_cache_is_bounded_and_redacted(self):
+        self.run_js(r"""
+const source = fs.readFileSync(path.join(resources, '../../https-compat/resources/display.js'), 'utf8');
+const { displayCache } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+const values = new Map();
+const storage = () => ({ getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) });
+const cache = displayCache('device-a:revision-a', storage);
+const state = { installed: true, requested: true, revision: 'PRIVATE_REVISION', ca_key: 'PRIVATE_KEY',
+  config: { rules: [{ id: 'site', name: 'Site', domain: 'service.example', devices: ['mac'] }],
+    devices: [{ id: 'mac', name: 'Mac', addresses: [], identity: { binding: 'PRIVATE_BINDING' } }] },
+  device_addresses: { mac: ['2001:db8::2'] }, address_source: { config: { password: 'PRIVATE_PASSWORD' } },
+  trust: { mac: { verified: true, runtimes: { codex_app: true }, token: 'PRIVATE_TOKEN' } },
+  events: [{ body: 'PRIVATE_BODY' }] };
+cache.write(state, Date.now(), 'devices');
+assert(!values.get('device-a:revision-a').includes('PRIVATE_'));
+const cached = cache.read();
+assert.equal(cached.tab, 'devices');
+assert.deepEqual(cached.state.config.devices[0].addresses, ['2001:db8::2']);
+assert.equal(cached.state.revision, undefined);
+assert.equal(displayCache('device-b:revision-a', storage).read(), null);
+assert.equal(displayCache('device-a:revision-b', storage).read(), null);
+values.set('device-a:revision-a', '{');
+assert.equal(cache.read(), null);
+values.set('device-a:revision-a', 'x'.repeat(128 * 1024 + 1));
+assert.equal(cache.read(), null);
+assert.doesNotThrow(() => displayCache('disabled', () => { throw Error('disabled'); }).write(state, Date.now(), 'rules'));
 """)
 
     def test_unmanaged_compatibility_preserves_revision_bound_disable(self):
@@ -952,7 +1029,7 @@ assert(text(root).includes('兼容引擎未就绪'));
 assert(button(root, '新增规则').disabled);
 await fire(button(root, '诊断'));
 root = compatibility.render(owner);
-assert(button(root, '连接验证').disabled);
+assert(!button(root, '连接验证'), 'status-only RPC must not be presented as a connection test');
 assert(!button(root, '导出诊断').disabled);
 assert(!button(root, '恢复模块'));
 const toggle = find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox');
