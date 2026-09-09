@@ -15,11 +15,13 @@ _epoch = None
 _worker = None
 _watching = False
 _snapshot = None
+_renewal = None
 
 
 def invalidate_snapshot():
-    global _snapshot
+    global _snapshot, _renewal
     _snapshot = None
+    _renewal = None
 
 
 def stop_worker():
@@ -141,12 +143,20 @@ def prepare(network):
 
 
 def renew(candidates):
-    return call("renew", epoch=_epoch, candidates=candidates)
+    global _renewal
+    now = time.monotonic()
+    key = (_epoch, tuple(sorted(tuple(row) for row in candidates)))
+    if _watching and _renewal is not None and key == _renewal[1] and 0 <= now - _renewal[0] < 4:
+        return _renewal[2]
+    result = call("renew", epoch=_epoch, candidates=candidates)
+    _renewal = (now, key, result) if _watching else None
+    return result
 
 
 def bypass():
-    global _epoch
+    global _epoch, _renewal
     _epoch = None
+    _renewal = None
     return call("bypass")
 
 
@@ -155,6 +165,7 @@ def status():
 
 
 def remove():
-    global _epoch
+    global _epoch, _renewal
     _epoch = None
+    _renewal = None
     return call("remove")

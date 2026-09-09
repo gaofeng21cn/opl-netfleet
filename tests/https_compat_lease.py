@@ -91,6 +91,29 @@ class SnapshotPreview(unittest.TestCase):
         sys.path.insert(0, str(runtime))
         self.addCleanup(sys.path.pop, 0)
 
+    def test_changed_targets_epoch_bypass_and_deadline_always_reach_owner(self):
+        import gateway
+        with patch.multiple(gateway, _watching=True, _snapshot=None, _renewal=None, _epoch='a'), \
+             patch.object(gateway, 'call', return_value={'leases': 1}) as call, \
+             patch.object(gateway.time, 'monotonic', return_value=100) as clock:
+            a = [('192.0.2.1', '198.51.100.1', 443)]
+            b = [('192.0.2.2', '198.51.100.1', 443)]
+            gateway.renew(a)
+            clock.return_value = 102
+            gateway.renew(a)
+            self.assertEqual(call.call_count, 1)
+            gateway.renew(b)
+            self.assertEqual(call.call_count, 2)
+            gateway._epoch = 'b'
+            gateway.renew(b)
+            self.assertEqual(call.call_count, 3)
+            clock.return_value = 106
+            gateway.renew(b)
+            self.assertEqual(call.call_count, 4)
+            gateway.bypass()
+            gateway.renew(b)
+            self.assertEqual(call.call_count, 6)
+
     def test_renew_rejection_discards_preview_and_next_snapshot_is_fresh(self):
         import gateway
         with patch.multiple(gateway, _watching=True, _worker=object(), _snapshot=None), \

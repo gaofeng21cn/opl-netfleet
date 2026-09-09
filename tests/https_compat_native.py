@@ -127,6 +127,28 @@ else:
     raise AssertionError('lifecycle direct egress must be blocked')
 """)
         config = json.loads((self.directory / "config.json").read_text())
+        # Keep the production address synchronizer in the same manager budget
+        # during native traffic tests; separate source tests missed contention.
+        def source_call(action, params=None):
+            main = ['ucode', '/usr/libexec/opl-netfleet/main.uc']
+            listed = json.loads(subprocess.check_output([*main, 'plugins-list']))['result']['plugins']
+            plugin = next(row for row in listed if row['id'] == 'device-identity')
+            path = self.directory / 'source-request.json'
+            path.write_text(json.dumps({'request': {'id': plugin['id'], 'action': action,
+                'revision': plugin['revision'], 'confirm': True, 'params': params or {}}}))
+            command = 'plugin-read' if action in ('get', 'sync') else 'plugin-call'
+            result = json.loads(subprocess.check_output([*main, command, str(path)]))
+            self.assertTrue(result['ok'], result)
+            return result['result']
+        source_call('load')
+        source = source_call('get')
+        source_call('configure', {'config_revision': source['config_revision'],
+            'config': {'enabled': True, 'source': 'local', 'interfaces': ['nfcompat0']}})
+        source = source_call('sync')
+        self.assertTrue(source['source_ready'], source)
+        client = json.loads(subprocess.check_output(['ip', '-n', 'netfleet-compat-test', '-j', 'link', 'show', 'nfcompat1']))[0]['address']
+        config['devices'].append({'id': 'address-sync', 'name': 'Address synchronization',
+            'addresses': [], 'identity': {'binding': source['binding'], 'mac': client}})
         saved = self.owner.call("apply", {"revision": self.owner.call("get")["revision"], "config": config})
         self.ca_bundle.write_bytes((self.directory / "upstream.pem").read_bytes() + self.owner.call("ca")["pem"].encode())
         self.owner.call("probe", {"revision": saved["revision"], "operation": "trust_record", "device": "mac",
@@ -169,7 +191,7 @@ else:
             before, started = resources(), time.monotonic()
             latencies = []
             if workload == 'idle':
-                await asyncio.sleep(20)
+                await asyncio.sleep(40)
             else:
                 for _ in range(10):
                     request_started = time.monotonic()
