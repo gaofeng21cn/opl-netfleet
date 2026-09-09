@@ -95,6 +95,44 @@ class InstalledIdentity(unittest.TestCase):
             bound = call("compatibility-apply", {"revision": compat["revision"], "config": desired})
             self.assertTrue(bound["trust"]["dynamic"]["verified"])
             self.assertIn("2001:db8::2", bound["device_addresses"]["dynamic"])
+            # Exercise recurring consumption and real background discovery under the production CPU/PID limits.
+            import textwrap
+            runner = root / "bounded-consumer.py"
+            runner.write_text(textwrap.dedent("""\
+                import json, sys, time
+                from pathlib import Path
+                sys.path.insert(0, '/usr/libexec/opl-netfleet-compat')
+                import identity, gateway, isolation
+                cgroup = Path('/sys/fs/cgroup/netfleet-identity-test')
+                isolation.group_limits(cgroup, {**isolation.BUDGETS, 'memory.max': str(96*1024*1024), 'pids.max': '16'})
+                config = json.loads(sys.argv[1])
+                Path('/var/run/opl-netfleet-device-identity/attempt.json').unlink(missing_ok=True)
+                def counters():
+                    return dict(line.split() for line in (cgroup/'cpu.stat').read_text().splitlines())
+                before = counters(); started = time.monotonic(); progress = {}; reads = 0
+                gateway.start_worker()
+                while time.monotonic() - started < 36:
+                    source, progress = identity.resolve(config, progress, schedule=True)
+                    assert source['source_ready'], source
+                    assert '2001:db8::2' in source['devices'][0]['addresses'], source
+                    gateway.snapshot()
+                    reads += 1
+                    time.sleep(2)
+                for worker in identity._workers: worker.wait(timeout=8)
+                elapsed = time.monotonic() - started
+                cpu = (int(counters()['usage_usec']) - int(before['usage_usec'])) / elapsed / 10000
+                assert cpu < 20, ('excessive_idle_cpu', cpu)
+                assert int((cgroup/'pids.events').read_text().split()[1]) == 0, 'process_limit_hit'
+                source = json.loads(Path('/var/run/opl-netfleet-device-identity/attempt.json').read_text())
+                assert source['reason'] is None, source
+                assert source['monotonic'] > started + 20, 'background_not_refreshed'
+                print(json.dumps({'seconds': elapsed, 'cpu_one_core_pct': cpu, 'reads': reads, 'background_sync': True}))
+                gateway.stop_worker()
+                """))
+            bounded = subprocess.run(['python3', '-B', str(runner), json.dumps(desired)], capture_output=True, text=True, timeout=55)
+            self.assertEqual(bounded.returncode, 0, (bounded.stdout, bounded.stderr))
+            print(bounded.stdout, flush=True)
+            Path('/sys/fs/cgroup/netfleet-identity-test').rmdir()
             command("ip", "-n", namespace, "-6", "addr", "del", "2001:db8::2/64", "dev", peer)
             command("ip", "-n", namespace, "-6", "addr", "add", "2001:db8::3/64", "dev", peer, "nodad")
             candidate("2001:db8::3")

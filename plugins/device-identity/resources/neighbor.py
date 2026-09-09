@@ -51,5 +51,7 @@ def observe(interfaces, targets):
     import scapy.layers.l2  # noqa: F401
     import scapy.sendrecv  # noqa: F401
 
+    if len(interfaces) == 1:
+        return probe(*interfaces[0], targets)
     with ThreadPoolExecutor(max_workers=4) as workers:
         return [item for result in workers.map(lambda row: probe(*row, targets), interfaces) for item in result]

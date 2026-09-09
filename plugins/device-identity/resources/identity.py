@@ -329,6 +329,23 @@ def status(config):
             "last_success": cache.get("at") if same else None, "devices": devices}
 
 
+def publish(config):
+    """Owner-published read contract; never expose configuration or credentials."""
+    cache = read(RUN / "cache.json", {})
+    now = time.monotonic()
+    valid = (read(BASE / "loaded.json", False) is True and config["enabled"]
+             and cache.get("revision") == revision(config)
+             and 0 <= now - cache.get("monotonic", -TTL) < TTL)
+    rows = []
+    for row in cache.get("devices", []) if valid else []:
+        expires = {ip: min(expiry, cache["monotonic"] + TTL) for ip in row["addresses"]
+                   if now < (expiry := row.get("address_expires", {}).get(ip, cache["monotonic"] + row["ttl"]))
+                   <= now + TTL}
+        rows.append({"mac": row["mac"], "address_expires": expires})
+    atomic(RUN / "evidence.json", {"schema": 1, "binding": binding(config),
+           "sampled_monotonic": cache.get("monotonic", now), "source_ready": bool(valid), "devices": rows})
+
+
 def sync(config, force=False):
     if not config["enabled"]:
         return status(config)
@@ -355,6 +372,7 @@ def sync(config, force=False):
     except (OSError, http.client.HTTPException, subprocess.SubprocessError):
         attempt["reason"] = "source_unavailable"
     atomic(RUN / "attempt.json", attempt)
+    publish(config)
     return status(config)
 
 
@@ -372,6 +390,7 @@ def dispatch(action, params):
             raise ValueError("identity_mutation_busy")
         config = read(BASE / "config.json", DEFAULT)
         if action in ("load", "unload"):
+            (RUN / "evidence.json").unlink(missing_ok=True)
             if action == "load" and not (BASE / "revision-key.json").exists():
                 atomic(BASE / "revision-key.json", os.urandom(32).hex())
             atomic(BASE / "loaded.json", action == "load")
@@ -389,6 +408,7 @@ def dispatch(action, params):
             config = validate(params.get("config"), config)
         else:
             raise ValueError("unknown_identity_action")
+        (RUN / "evidence.json").unlink(missing_ok=True)
         atomic(BASE / "config.json", config)
         return status(config)
 

@@ -1,4 +1,7 @@
 import copy
+import json
+import time
+import importlib.util
 import os
 import sys
 import tempfile
@@ -23,25 +26,51 @@ class IdentityConsumer(unittest.TestCase):
             with patch.object(control.device_identity, "_workers", [finished]), \
                     patch.object(control.device_identity, "RUN", Path(directory)), \
                     patch.object(control.device_identity, "OWNER", "/missing-test-owner"):
-                control.device_identity.request("sync", background=True)
+                control.device_identity.schedule_sync()
                 workers = control.device_identity._workers
                 self.assertEqual(len(workers), 1)
                 self.assertIsNot(workers[0], finished)
                 workers[0].wait(timeout=10)
 
-    def test_real_plugin_startup_budget_and_hung_source_bypass(self):
+    def test_real_publication_revocation_expiry_and_no_reader_process(self):
+        spec = importlib.util.spec_from_file_location("address_source", Path(__file__).resolve().parents[1] / "plugins/device-identity/resources/identity.py")
+        owner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(owner)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            executable = root / "ucode"
-            for delay, ready in ((1.1, True), (4, False)):
-                executable.write_text(f"#!{sys.executable}\nimport time\ntime.sleep({delay})\n"
-                                      "print('{\"ok\":true,\"result\":{\"source_ready\":true,\"devices\":[]}}')\n")
-                executable.chmod(0o700)
-                with patch.dict(os.environ, {"PATH": directory}), patch.object(control.device_identity, "RUN", root / "run"):
-                    result = control.device_identity.request("resolve")
-                self.assertEqual(result["source_ready"], ready)
-                self.assertEqual(result["devices"], [])
-                self.assertEqual(list((root / "run").iterdir()), [])
+            evidence = root / "source" / "evidence.json"
+            with patch.object(owner, "BASE", root / "base"), patch.object(owner, "RUN", evidence.parent), \
+                    patch.object(control.device_identity, "EVIDENCE", evidence), \
+                    patch.object(control.device_identity, "TRUSTED_UID", os.getuid()):
+                owner.dispatch("load", {})
+                config = {"enabled": True, "source": "local", "interfaces": ["eth0"]}
+                state = owner.dispatch("get", {})
+                owner.dispatch("configure", {"config_revision": state["config_revision"], "config": config})
+                now = time.monotonic()
+                row = {"mac": IDENTITY["mac"], "name": "Mac", "addresses": ["2001:db8::2"],
+                       "ttl": 120, "reason": None, "address_expires": {"2001:db8::2": now + 60}}
+                with patch.object(owner, "local", return_value=[row]):
+                    owner.dispatch("sync", {})
+                with patch.object(control.device_identity.subprocess, "Popen", side_effect=AssertionError("read spawned process")):
+                    value, _ = control.device_identity.resolve(self.config)
+                self.assertTrue(value["source_ready"])
+                self.assertEqual(value["devices"][0]["addresses"], ["2001:db8::2"])
+                raw = evidence.read_text()
+                self.assertNotIn("password", raw)
+                for changed in ("expired", "writable", "symlink", "invalid"):
+                    evidence.write_text(raw); evidence.chmod(0o600)
+                    if changed == "expired":
+                        d = json.loads(raw); d["sampled_monotonic"] -= 121; evidence.write_text(json.dumps(d))
+                    elif changed == "writable": evidence.chmod(0o666)
+                    elif changed == "symlink":
+                        target = root / "other"; target.write_text(raw); evidence.unlink(); evidence.symlink_to(target)
+                    else: evidence.write_text("{}")
+                    self.assertFalse(control.device_identity.published()["source_ready"], changed)
+                    evidence.unlink()
+                evidence.write_text(raw); evidence.chmod(0o600)
+                owner.dispatch("unload", {})
+                self.assertFalse(evidence.exists())
+                self.assertFalse(control.device_identity.published()["source_ready"])
 
     def setUp(self):
         self.config = {"schema": 1, "enabled": True, "devices": [
@@ -89,7 +118,7 @@ class IdentityConsumer(unittest.TestCase):
 
     def test_manual_devices_do_not_invoke_optional_plugin(self):
         self.config["devices"][0] = {"id": "mac", "name": "Mac", "addresses": ["192.0.2.2"]}
-        with patch.object(control.device_identity, "request") as call:
+        with patch.object(control.device_identity, "schedule_sync") as call:
             control.device_identity.resolve(self.config, schedule=True)
         call.assert_not_called()
 
