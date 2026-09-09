@@ -7,7 +7,7 @@ export interface PluginDefinition {
   runtime?: string;
   state?: string;
   instance?: string;
-  ui?: Array<{ id: string; title: string; module: string; navigation?: "primary" | "plugin" }>;
+  ui?: Array<{ id: string; title: string; module: string; navigation?: "primary" | "plugin"; directory?: boolean }>;
   configuration?: { read: string; write: string };
 }
 export interface PluginsSnapshot { plugins: PluginDefinition[] }
@@ -39,7 +39,7 @@ export interface PluginContext {
 }
 export interface PluginModule { mount(context: PluginContext): void | (() => unknown) | Promise<void | (() => unknown)> }
 export function pluginPages(snapshot: PluginsSnapshot | null): PluginPage[];
-export function pluginNavigation(pages: PluginPage[]): { primary: PluginPage[]; groups: Array<{ id: string; title: string; instance?: string; pages: PluginPage[] }>; defaultId: string };
+export function pluginNavigation(pages: PluginPage[]): { primary: PluginPage[]; groups: Array<{ id: string; title: string; instance?: string; pages: PluginPage[] }>; defaultId: string; directoryId: string };
 export function resourceUrl(page: PluginPage): string;
 export function createScope(events?: Map<string, Set<(value: unknown) => void>>, report?: (error: unknown) => void): PluginScope;
 export function createPageHost(options: { api: PluginApi; readOnly?: boolean | (() => boolean); loadModule?: (url: string) => Promise<PluginModule>; onError?: (error: unknown) => void; navigate?: (id: string, state?: Record<string, unknown>) => void }): {
@@ -48,3 +48,6 @@ export function createPageHost(options: { api: PluginApi; readOnly?: boolean | (
 };
 
 export const pluginHostStyles: string;
+
+export function pageHash(id: string): string;
+export function pageFromHash(hash: string, pages: PluginPage[]): string;

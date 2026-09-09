@@ -17,7 +17,7 @@ return view.extend({
     this.snapshot = initial[1].snapshot || { plugins: [] };
     this.error = initial[1].error || null;
     this.pages = this.module.pluginPages(this.snapshot);
-    this.current = this.module.pluginNavigation(this.pages).defaultId;
+    this.current = this.module.pageFromHash(window.location.hash, this.pages);
     this.root = E('div', { 'class': 'netfleet-plugin-shell' });
     this.pageContainer = null;
     this.host = this.module.createPageHost({
@@ -31,10 +31,15 @@ return view.extend({
         ]));
       }
     });
+    this.locationChanged = function() {
+      const id = self.module.pageFromHash(window.location.hash, self.pages);
+      if (id !== self.current) { self.current = id; self.navigationState = undefined; self.redraw(); }
+    };
+    window.addEventListener('hashchange', this.locationChanged);
     this.redraw();
     this.pluginPoll = function() { return self.refreshPlugins(); };
     poll.add(this.pluginPoll, 5);
-    const dispose = function() { poll.remove(self.pluginPoll); void self.host.dispose(); };
+    const dispose = function() { window.removeEventListener('hashchange', self.locationChanged); poll.remove(self.pluginPoll); void self.host.dispose(); };
     window.addEventListener('pagehide', dispose, { once: true });
     this.observer = new MutationObserver(function() {
       if (self.root.isConnected) self.wasConnected = true;
@@ -46,9 +51,14 @@ return view.extend({
     return this.root;
   },
   navigate: function(id, state) {
+    if (id === 'plugins') id = this.module.pluginNavigation(this.pages).directoryId;
     if (id !== 'plugins' && !this.pages.some(function(page) { return page.id === id; })) return;
+    if (id === this.current && state === undefined) return;
     this.current = id;
     this.navigationState = state;
+    const hash = this.module.pageHash(id);
+    if (window.location.hash !== hash) window.location.hash = hash;
+    this.pageContainer = null;
     this.redraw();
   },
   refreshPlugins: function() {
@@ -80,7 +90,7 @@ return view.extend({
         void this.host.show(selected, this.pageContainer, this.navigationState);
       } else {
         void this.host.dispose();
-        this.pageContainer.appendChild(E('p', {}, '从已启用的插件中打开配置页面。安装、启停和卸载请进入组件与更新。'));
+        this.pageContainer.appendChild(E('p', {}, '选择插件打开配置页面。'));
         this.pageContainer.appendChild(E('div', { 'class': 'netfleet-plugin-directory' }, navigation.groups.map(function(group) {
           return E('section', { 'class': 'cbi-section' }, [ E('h3', {}, group.title + (group.instance && group.instance !== 'default' ? ' · ' + group.instance : '')),
             E('div', {}, group.pages.map(function(page) { return E('button', { 'type': 'button', 'class': 'btn cbi-button', 'click': function() { self.navigate(page.id); } }, page.title); })) ]);
@@ -88,22 +98,23 @@ return view.extend({
         if (!navigation.groups.length) this.pageContainer.appendChild(E('p', { 'role': 'status' }, '暂无已启用的插件配置页'));
       }
     }
+    const extensionSelected = selected && selected.page.navigation !== 'primary';
     const tabs = E('ul', { 'class': 'cbi-tabmenu' }, navigation.primary.map(function(page) {
-      return E('li', { 'class': page.id === self.current ? 'cbi-tab' : 'cbi-tab-disabled' }, E('a', {
-        'href': '#', 'click': function(event) { event.preventDefault(); self.navigate(page.id); }
+      return E('li', { 'class': (page.id === self.current || extensionSelected && page.id === navigation.directoryId) ? 'cbi-tab' : 'cbi-tab-disabled' }, E('a', {
+        'href': self.module.pageHash(page.id), 'aria-current': page.id === self.current ? 'page' : null, 'click': function(event) { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return; event.preventDefault(); self.navigate(page.id); }
       }, page.title));
     }));
-    tabs.appendChild(E('li', { 'class': !selected || selected.page.navigation !== 'primary' ? 'cbi-tab' : 'cbi-tab-disabled' }, E('a', { 'href': '#', 'click': function(event) { event.preventDefault(); self.navigate('plugins'); } }, '插件')));
+    if (navigation.directoryId === 'plugins') tabs.appendChild(E('li', { 'class': !selected || selected.page.navigation !== 'primary' ? 'cbi-tab' : 'cbi-tab-disabled' }, E('a', { 'href': '#', 'click': function(event) { event.preventDefault(); self.navigate('plugins'); } }, '插件')));
     const group = navigation.groups.find(function(value) { return value.pages.some(function(page) { return page.id === self.current; }); });
     const subnav = group ? E('nav', { 'class': 'netfleet-plugin-subnav', 'aria-label': '插件页面' }, [
-      E('button', { 'type': 'button', 'class': 'btn cbi-button', 'click': function() { self.navigate('plugins'); } }, '← 插件'),
+      E('button', { 'type': 'button', 'class': 'btn cbi-button', 'click': function() { self.navigate(navigation.directoryId); } }, navigation.directoryId === 'plugins' ? '← 插件' : '← 插件与更新'),
       ...group.pages.map(function(page) { return E('button', { 'type': 'button', 'class': 'btn cbi-button', 'aria-current': page.id === self.current ? 'page' : null, 'click': function() { self.navigate(page.id); } }, page.title); })
     ]) : E('span');
     const warning = this.error ? E('div', { 'class': 'alert-message warning', 'role': 'alert' }, [
       E('p', {}, '插件清单读取失败：' + String(this.error.message || this.error)),
       E('button', { 'class': 'btn cbi-button', 'type': 'button', 'click': function() { return self.refreshPlugins(); } }, '重新读取')
     ]) : E('span');
-    this.root.replaceChildren(E('style', {}, this.module.pluginHostStyles), E('h2', {}, 'NetFleet'), tabs, subnav, warning, this.pageContainer);
+    this.root.replaceChildren(E('style', {}, this.module.pluginHostStyles), E('div', { 'class': 'netfleet-shell-brand' }, 'NetFleet'), tabs, subnav, warning, this.pageContainer);
   },
   handleSaveApply: null,
   handleSave: null,

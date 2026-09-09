@@ -832,6 +832,14 @@ function createPage(storage, api, notifications) {
 	assert(providerDetailToggle && providerDetailToggle.attrs['aria-expanded'] === 'false');
 	providerDetailToggle.attrs.click();
 	assert.strictEqual(providerDetail.hidden, false);
+    const providerTable = findNode(root, node => String(node.attrs.class || '').includes('netfleet-provider-table'));
+    const headers = findNode(providerTable, node => node.tag === 'thead').children[0].children;
+    const cells = findNode(providerTable, node => node.tag === 'tbody').children[0].children;
+    assert.deepStrictEqual(headers.map(nodeText), ['机场','定位','可用资源','本轮测速','订阅状态','剩余流量','到期时间']);
+    assert.strictEqual(cells.length, headers.length);
+    assert.strictEqual(nodeText(cells[4]), '缓存已更新');
+    assert(nodeText(cells[6]).includes('2027'));
+
 	assert.strictEqual(providerDetailToggle.attrs['aria-expanded'], 'true');
 	assert(nodeText(providerDetail).includes('订阅更新时间'));
 	assert(nodeText(providerDetail).includes('cccccccccccc'));
@@ -885,9 +893,10 @@ function createPage(storage, api, notifications) {
 	page.currentView = 'events';
     page.redraw();
     const eventPageText = nodeText(findNode(root, node => node.attrs.class === 'netfleet-page-content'));
-    assert(eventPageText.indexOf('选路事件') < eventPageText.indexOf('诊断状态'));
-    assert(eventPageText.indexOf('诊断状态') < eventPageText.indexOf('当前活动连接'));
-    assert(!eventPageText.includes('当前规则命中链'));
+    assert(eventPageText.includes('选路事件'));
+    assert(!eventPageText.includes('Mihomo 原始日志'));
+    assert(!eventPageText.includes('当前活动连接'));
+    page.diagnosticSection = 'core'; page.redraw();
     const diagnosticMetrics = findNode(findNode(root, node => node.attrs.class === 'netfleet-page-content'), function(node) {
         return node.tag === 'div' && String(node.attrs.class || '') === 'netfleet-metrics';
     });
@@ -896,11 +905,13 @@ function createPage(storage, api, notifications) {
         return node.tag === 'div' && String(node.attrs.class || '').includes('netfleet-diagnostic-note');
     });
     assert(diagnosticNote && nodeText(diagnosticNote).includes('原始日志：临时窗口'));
+    page.diagnosticSection = 'website'; page.redraw();
     const connectionDetails = findNode(root, function(node) {
         return node.tag === 'details' && String(node.attrs.class || '').includes('netfleet-connection-details');
     });
     assert(connectionDetails && connectionDetails.attrs.open === undefined, 'current connections must stay collapsed by default');
     assert(nodeText(connectionDetails).includes('详细规则命中链、连接流量和实时代理组观察请使用 Zashboard'));
+    page.diagnosticSection = 'events'; page.redraw();
     let body = findNode(root, function(node) { return node.tag === 'tbody' && node.children.length === 20; });
     assert.strictEqual(body.children.length, 20, 'first page must contain 20 events');
     const pagination = findNode(root, function(node) {
@@ -1008,7 +1019,7 @@ const controller = {
         { id: 'switzerland', available_provider_count: 0, available_node_count: 0 }
     ], runtime: {} },
     busy: false, liveDataReady: true, redraw: function() {}, showConfigWizard: function() {},
-    discardConfig: function() {}, validateConfig: function() {}, previewConfigChanges: function() {},
+    discardConfig: function() {}, previewConfigChanges: function() {},
     saveConfig: function() {}, confirmConfigApply: function() {}
 };
 
@@ -1018,8 +1029,8 @@ const japanInput = find(root, function(node) { return node.tag === 'input' && no
 assert(japanInput);
 assert(find(root, function(node) { return node.tag === 'input' && node.attrs.value === '瑞士'; }), 'configured regions must remain removable even when currently unavailable');
 let save = find(root, function(node) { return node.tag === 'button' && text(node) === '保存配置'; });
-assert(save && save.attrs.disabled === true);
-let apply = find(root, function(node) { return node.tag === 'button' && text(node) === '应用配置'; });
+assert(!save, 'active policy offers one apply action rather than an unusable save button');
+let apply = find(root, function(node) { return node.tag === 'button' && text(node) === '应用更改'; });
 assert(apply && apply.attrs.disabled === true);
 
 controller.configSection = 'providers';
@@ -1039,7 +1050,7 @@ assert(!text(root).includes('null'));
 
 controller.configDraft.regions[0].display_name = '日本线路';
 root = config.render(controller);
-apply = find(root, function(node) { return node.tag === 'button' && text(node) === '应用配置'; });
+apply = find(root, function(node) { return node.tag === 'button' && text(node) === '应用更改'; });
 assert(apply && apply.attrs.disabled !== true);
 assert(config.changeText({ scope: 'region', id: 'japan', field: 'display_name', before: '日本', after: '日本线路' }, controller).includes('日本线路'));
 assert(text(config.wizard(controller, 0)).includes('环境与恢复'));
@@ -1047,7 +1058,7 @@ assert(text(config.wizard(controller, 0)).includes('环境与恢复'));
 controller.configDraft = config.clone(controller.config);
 controller.configDraft.active = false;
 root = config.render(controller);
-apply = find(root, function(node) { return node.tag === 'button' && text(node) === '应用配置'; });
+apply = find(root, function(node) { return node.tag === 'button' && text(node) === '应用并接管'; });
 assert(apply && apply.attrs.disabled !== true, 'inactive saved config must remain applicable');
 """
         result = subprocess.run(

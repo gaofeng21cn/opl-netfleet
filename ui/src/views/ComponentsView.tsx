@@ -57,6 +57,7 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
   loading: boolean;
   onRead(): void;
 }) {
+  const [section, setSection] = useState('plugins');
   const [detail, setDetail] = useState<string | null>(null);
   if (detail === 'https-compat') return <CompatibilityView extension={snapshot?.extensions?.find(item => item.id === detail)} onBack={() => setDetail(null)} />;
   const feed = snapshot?.feed;
@@ -66,7 +67,8 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
   const packageFailed = operation && ['failed', 'interrupted'].includes(operation.state);
   const sameFeedFailure = packageFailed && operation.error === feed?.error && (!feed?.checked_at || feed.checked_at >= operation.started_at && feed.checked_at <= (operation.finished_at || 0));
   return <div className="nf-components">
-    <div className="nf-section-heading"><h2>软件与更新</h2><div className="nf-components-actions">
+    <nav className="nf-subtabs" aria-label="插件与更新分类">{[['plugins', '功能插件'], ['software', '基础组件']].map(([id, label]) => <button type="button" key={id} aria-current={section === id ? 'page' : undefined} onClick={() => setSection(id)}>{label}</button>)}</nav>
+    <div className="nf-section-heading"><h2>{section === 'software' ? '基础组件' : '功能插件'}</h2><div className="nf-components-actions">
       <button type="button" onClick={onRead} disabled={loading} title="刷新设备组件状态" aria-label="刷新设备组件状态"><RefreshCw aria-hidden="true" className={loading ? 'is-spinning' : ''} /></button>
       <button type="button" disabled title={previewReason}><RefreshCw aria-hidden="true" />检查更新</button>
     </div></div>
@@ -79,11 +81,11 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
       {dashboard?.managed && dashboard.error && <ResultNotice scope={scope} slot="dashboard" identity={String(dashboard.checked_at || 0)} title="面板检查" warning>
         <span>{componentError(dashboard.error)}</span><span>{resultTime(dashboard.checked_at, '检查于') || '检查时间未记录'}</span>
       </ResultNotice>}
-      <div className="nf-component-checks" role="status">
+      <div className="nf-component-checks" role="status" hidden={section !== 'software'}>
         <span>{!snapshot.supported ? '软件包：当前安装方式不支持包管理' : !feed?.configured ? '软件包：未配置更新源' : `软件包：${feed.error ? '上次检查失败 · ' : ''}${checkedTime(feed.checked_at, feed.error)}`}</span>
         {dashboard && <span>{!dashboard.managed ? componentError(dashboard.reason || 'dashboard_managed_externally') : `面板：${dashboard.error ? '上次检查失败 · ' : ''}${checkedTime(dashboard.checked_at, dashboard.error)}`}</span>}
       </div>
-      <div className="nf-table-wrap nf-software-table"><table><thead><tr>{['软件', '当前版本', '更新与操作'].map(label => <th key={label}>{label}</th>)}</tr></thead>
+      <div className="nf-table-wrap nf-software-table" hidden={section !== 'software'}><table><thead><tr>{['软件', '当前版本', '更新与操作'].map(label => <th key={label}>{label}</th>)}</tr></thead>
         <tbody>{snapshot.components.map(component => {
           const mismatch = component.id === 'mihomo' && component.installed_version && component.running_version && coreVersion(component.installed_version) !== coreVersion(component.running_version);
           const hasUpdate = component.update_available || component.id === 'netfleet' && luci?.update_available;
@@ -100,8 +102,8 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
               {component.id === 'luci' ? <small>由 NetFleet 更新入口管理</small> : canUpdate && <button type="button" disabled title={previewReason}><Download aria-hidden="true" />{mismatch ? '更新软件包' : '更新'}</button>}</td>
           </tr>;
         })}{dashboard && <DashboardRow dashboard={dashboard} />}</tbody></table></div>
-      {snapshot.extensions?.some(extension => extension.kind === 'optional') && <section className="nf-component-modules">
-        <div className="nf-section-heading"><h2>功能模块</h2><span>安装与升级由 OpenWrt 软件包管理</span></div>
+      {snapshot.extensions?.some(extension => extension.kind === 'optional') && <section className="nf-component-modules" hidden={section !== 'plugins'}>
+        <div className="nf-section-heading"><h2>功能插件</h2><span>安装与升级由 OpenWrt 软件包管理</span></div>
         <div className="nf-table-wrap"><table><thead><tr>{['模块', '安装版本', '状态', '操作'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>
           {snapshot.extensions.filter(extension => extension.kind === 'optional').map(extension => <ExtensionRow key={extension.id} extension={extension} onManage={() => setDetail(extension.id)} />)}
         </tbody></table></div>

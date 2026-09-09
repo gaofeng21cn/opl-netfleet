@@ -24,8 +24,8 @@ const nav: NavigationItem[] = [
   { id: 'providers', label: '机场', icon: PlaneTakeoff },
   { id: 'regions', label: '地区', icon: Globe2 },
   { id: 'config', label: '配置', icon: Settings },
-  { id: 'components', label: '组件与更新', icon: Package },
-  { id: 'events', label: '事件与诊断', icon: BellRing },
+  { id: 'components', label: '插件与更新', icon: Package },
+  { id: 'events', label: '诊断', icon: BellRing },
 ];
 
 interface ShellProps {

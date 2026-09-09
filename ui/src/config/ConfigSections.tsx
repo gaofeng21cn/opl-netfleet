@@ -236,12 +236,12 @@ export function SafetySection({ draft, onChange }: SectionProps) {
 
 export const sectionMeta = [
   { id: 'foundation' as const, label: '基础接入', icon: Network },
-  { id: 'network' as const, label: '网络接入', icon: Waypoints },
   { id: 'providers' as const, label: '机场', icon: RefreshCw },
   { id: 'regions' as const, label: '地区映射', icon: CheckCircle2 },
   { id: 'exits' as const, label: '出口策略', icon: Gauge },
   { id: 'routing' as const, label: '业务规则', icon: Route },
   { id: 'automation' as const, label: '自动运行', icon: RefreshCw },
   { id: 'safety' as const, label: '安全与恢复', icon: ShieldCheck },
+  { id: 'network' as const, label: '网络接入', icon: Waypoints },
   { id: 'files' as const, label: '配置文件与备份', icon: Files },
 ];

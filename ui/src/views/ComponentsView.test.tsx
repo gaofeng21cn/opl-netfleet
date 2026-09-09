@@ -79,7 +79,7 @@ it('projects optional package versions and dependencies without duplicating reso
   value.extensions = [extension(), extension({ id: 'zashboard', label: 'Zashboard', kind: 'resource' })];
   const html = render(value);
   expect(html.match(/<tr>/g)).toHaveLength(7);
-  expect(html).toContain('功能模块');
+  expect(html).toContain('功能插件');
   expect(html.match(/<strong>Zashboard<\/strong>/g)).toHaveLength(1);
   const row = html.split('<tr>').find(part => part.includes('<strong>HTTPS 兼容</strong>'))!.split('</tr>')[0];
   expect(row).toContain('0.2.0-r1');

@@ -5,7 +5,11 @@ const modulePath = /^resources\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.js$/;
 const sharedEvents = new Map();
 
 export const pluginHostStyles = `
-.netfleet-plugin-shell > .cbi-tabmenu { margin-bottom: 24px; }
+.netfleet-shell-brand { font-weight: 700; font-size: 15px; padding: 0 0 12px; }
+.netfleet-plugin-shell > .cbi-tabmenu { display: flex; flex-wrap: wrap; gap: 4px; padding: 0; margin: 0 0 20px; }
+.netfleet-plugin-shell > .cbi-tabmenu > li { margin: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; }
+.netfleet-plugin-shell > .cbi-tabmenu > li > a { display: block; padding: 9px 14px; border-bottom: 3px solid transparent; }
+.netfleet-plugin-shell > .cbi-tabmenu > .cbi-tab > a { border-bottom-color: var(--primary, #5e72e4); color: var(--primary, #5e72e4); background: var(--primary-color-low, rgba(94,114,228,.1)); }
 .netfleet-plugin-directory, .nf-plugin-directory { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
 .nf-plugin-directory > p { grid-column: 1 / -1; }
 .netfleet-plugin-directory > section, .nf-plugin-directory > section { margin: 0; padding: 20px; background: var(--nf-surface, #fff); border: 1px solid var(--nf-border, #ddd); border-radius: 6px; }
@@ -47,7 +51,19 @@ export function pluginNavigation(pages) {
     }
     group.pages.push(item);
   }
-  return { primary, groups, defaultId: primary[0]?.id || 'plugins' };
+  return { primary, groups, directoryId: primary.find(item => item.page.directory === true)?.id || 'plugins', defaultId: primary[0]?.id || 'plugins' };
+}
+
+// Only installed page identities enter the URL; drafts and device data stay in memory.
+export function pageHash(id) { return '#/netfleet/' + encodeURIComponent(id); }
+export function pageFromHash(hash, pages) {
+  const fallback = pluginNavigation(pages).defaultId;
+  if (!String(hash || '').startsWith('#/netfleet/')) return fallback;
+  try {
+    const id = decodeURIComponent(hash.slice('#/netfleet/'.length));
+    if (id === 'plugins') return pluginNavigation(pages).directoryId;
+    return pages.some(page => page.id === id) ? id : fallback;
+  } catch (_) { return fallback; }
 }
 
 export function resourceUrl(contribution) {

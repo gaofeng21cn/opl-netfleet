@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
-import { createPageHost, createScope, pluginPages, pluginNavigation, resourceUrl, type PluginContext, type PluginsSnapshot } from '../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/plugin-host.js';
+import { createPageHost, createScope, pageHash, pageFromHash, pluginPages, pluginNavigation, resourceUrl, type PluginContext, type PluginsSnapshot } from '../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/plugin-host.js';
 import { PluginApplication } from './PluginApplication';
 
 const snapshot = (revision = 'revision-1'): PluginsSnapshot => ({ plugins: [{ id: 'example', revision, enabled: true, runtime: 'ucode', ui: [{ id: 'settings', title: '独立配置', module: 'resources/page.js' }], configuration: { read: 'settings_get', write: 'settings_save' } }] });
@@ -177,8 +177,8 @@ it('loads and replaces independent LuCI pages without product status or onboardi
   let permitted = true;
   let options: any;
   const source = readFileSync(new URL('../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/view/netfleet/overview.js', import.meta.url), 'utf8');
-  const shell = new Function('view', 'poll', 'api', 'E', 'window', 'document', 'MutationObserver', 'L', source)({ extend: (value: any) => value }, poll, client, createNode, { addEventListener() {}, removeEventListener() {} }, { body: {} }, class { observe() {} disconnect() {} }, { hasViewPermission: () => permitted });
-  shell.render([{ pluginPages, pluginNavigation, resourceUrl, createPageHost: (value: any) => { options = value; return host; } }, { snapshot: snapshot() }]);
+  const shell = new Function('view', 'poll', 'api', 'E', 'window', 'document', 'MutationObserver', 'L', source)({ extend: (value: any) => value }, poll, client, createNode, { location: { hash: '' }, addEventListener() {}, removeEventListener() {} }, { body: {} }, class { observe() {} disconnect() {} }, { hasViewPermission: () => permitted });
+  shell.render([{ pluginPages, pluginNavigation, pageHash, pageFromHash, resourceUrl, createPageHost: (value: any) => { options = value; return host; } }, { snapshot: snapshot() }]);
   expect(options.readOnly()).toBe(false);
   permitted = false;
   expect(options.readOnly()).toBe(true);
@@ -210,4 +210,18 @@ it('keeps extension discovery separate from declared product navigation and inde
   }
   expect(pluginNavigation(pluginPages({ plugins: extensions })).defaultId).toBe('plugins');
   expect(pluginNavigation(pluginPages({ plugins: extensions.map(plugin => ({ ...plugin, enabled: false })) })).groups).toEqual([]);
+});
+
+it('restores installed instance pages and uses a declared directory without product IDs', () => {
+  const inventory = { plugins: [...snapshot().plugins, { id: 'workbench', revision: 'r1', ui: [
+    { id: 'start', title: '概览', module: 'resources/start.js', navigation: 'primary' as const },
+    { id: 'extensions', title: '插件与更新', module: 'resources/extensions.js', navigation: 'primary' as const, directory: true }
+  ] }, { ...snapshot().plugins[0], instance: 'lab' }] };
+  const pages = pluginPages(inventory);
+  expect(pluginNavigation(pages).directoryId).toBe('plugin:workbench:extensions');
+  expect(pageFromHash(pageHash('plugin:example:lab:settings'), pages)).toBe('plugin:example:lab:settings');
+  expect(pageFromHash(pageHash('plugins'), pages)).toBe('plugin:workbench:extensions');
+  for (const hash of ['#/netfleet/%E0%A4', '#/netfleet/https://elsewhere', pageHash('plugin:removed:settings')])
+    expect(pageFromHash(hash, pages)).toBe('plugin:workbench:start');
+  expect(pluginNavigation(pluginPages(snapshot())).directoryId).toBe('plugins');
 });

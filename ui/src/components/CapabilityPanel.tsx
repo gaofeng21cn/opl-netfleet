@@ -11,7 +11,7 @@ export function CapabilityPanel({ snapshot, capability, compact = false }: { sna
         <span className="nf-capability-icon"><Globe2 aria-hidden="true" /></span>
         <div><h2>{capabilityName(capability)}</h2><span>{capability.base_groups?.join('、') || capability.base_group || '未绑定'}</span></div>
       </div>
-      <div className="nf-route-block">
+      <details className="nf-route-block"><summary>完整节点链路</summary>
         <span className="nf-field-label">当前路由链</span>
         <div className="nf-route" aria-label="当前路由链">
           {route.map((step, index) => (
@@ -20,7 +20,7 @@ export function CapabilityPanel({ snapshot, capability, compact = false }: { sna
             </span>
           ))}
         </div>
-      </div>
+      </details>
       <dl className="nf-capability-metrics">
         <div><dt>当前延迟</dt><dd className={capability.alive ? 'is-ok' : 'is-warning'}>{delay(capability.reason?.delay_ms)}</dd></div>
         <div><dt>健康状态</dt><dd><span className={`nf-health-dot ${capability.alive ? '' : 'is-bad'}`} />{capability.alive ? '健康' : '不可用'}</dd></div>

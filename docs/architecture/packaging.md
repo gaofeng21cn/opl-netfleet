@@ -85,7 +85,7 @@ NetFleet 定向升级不升级或替换它；核心更新是独立显式操作�
 
 ## 设备端组件维护
 
-LuCI 的“组件与更新”由设备包管理 owner 提供已安装 NetFleet、LuCI 和 Mihomo 的包版本，
+LuCI 的“插件与更新”由设备包管理 owner 提供已安装 NetFleet、LuCI 和 Mihomo 的包版本，
 Mihomo 实际运行版本另从控制接口读取，不把磁盘文件版本当作运行版本。关键依赖来自 APK
 安装数据库；版本检查不混入常规网络状态读取。显式“检查更新”刷新签名 Feed，结果只表示
 该 Feed 当前可用版本，不声称它是 Mihomo 上游最新版本。
