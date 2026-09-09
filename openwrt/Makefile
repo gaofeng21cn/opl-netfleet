@@ -110,6 +110,7 @@ if [ -f "$$maintenance/.kernel-plugins" ]; then
 	[ -z "$$plugins" ] || ucode /usr/libexec/opl-netfleet/main.uc plugin-package-resume $$plugins || exit 1
 	rm -f "$$maintenance/.kernel-plugins" || exit 1
 fi
+[ ! -x /etc/init.d/rpcd ] || /etc/init.d/rpcd restart
 exit 0
 endef
 

@@ -11,7 +11,7 @@ respond() {
 
 case "$1" in
 	list)
-			printf '%s\n' '{"plugins_list":{},"plugin_read":{"request":"Table"},"plugin_call":{"request":"Table"},"system_get":{},"system_validate":{"request":"Table"},"system_apply":{"request":"Table"}}'
+			printf '%s\n' '{"plugins_list":{},"plugin_read":{"request":{}},"plugin_call":{"request":{}},"system_get":{},"system_validate":{"request":{}},"system_apply":{"request":{}}}'
 		;;
 	call)
 		case "$2" in

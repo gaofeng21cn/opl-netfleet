@@ -427,7 +427,7 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertIn('ucode "$main" enable luci 9>&-', rpcd)
         self.assertIn('ucode "$main" disable luci 9>&-', rpcd)
         self.assertIn('"onboarding_get":{}', rpcd)
-        self.assertIn('"onboarding_apply":{"request":"Table"}', rpcd)
+        self.assertIn('"onboarding_apply":{"request":{}}', rpcd)
         self.assertIn('"probe":{}', rpcd)
         self.assertIn('config_request onboarding-apply 1', rpcd)
         self.assertIn('respond_owner ucode "$main" onboarding-get', rpcd)
