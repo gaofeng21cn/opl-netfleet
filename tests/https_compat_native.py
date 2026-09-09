@@ -332,9 +332,16 @@ with open('/var/lock/opl-netfleet-deploy.lock', 'a') as lock:
         first = next(item["rule"] for item in rules["nftables"] if "rule" in item)
         self.command("nft", "delete", "rule", "inet", "netfleet", "mangle_prerouting_lan", "handle", str(first["handle"]))
         try:
-            await asyncio.sleep(5)
-            state = self.owner.call("get")
-            self.assertFalse(state["intercepting"], state)
+            # Renewal is throttled independently of the two-second health
+            # cycle. Bound withdrawal by the ten-second kernel lease contract,
+            # not a fixed sleep that races the next renewal attempt.
+            deadline = time.monotonic() + 10
+            while True:
+                state = self.owner.call("get")
+                if not state["intercepting"] and state["reason"] == "native_ownership_guard_missing":
+                    break
+                self.assertLess(time.monotonic(), deadline, state)
+                await asyncio.sleep(.2)
             self.assertEqual(state["reason"], "native_ownership_guard_missing")
             self.assertFalse((await self.request(ca=self.directory / "upstream.pem"))["h2"])
         finally:
