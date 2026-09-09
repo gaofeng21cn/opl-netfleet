@@ -97,6 +97,7 @@ def configuration(effective, run, revision, *, port=18443, probe_port=18445):
   description {revision}
   tune.ssl.cachesize 128
   tune.ssl.ssl-ctx-cache-size 128
+  tune.ssl.default-dh-param 2048
   stats socket {sockets}/engine.sock mode 600 level admin
 defaults
   mode tcp

@@ -138,17 +138,13 @@ else:
                 break
             self.assertLess(time.monotonic(), deadline, state)
             await asyncio.sleep(1)
-        import haproxy, control
-        trace_setup = haproxy.command(control.RUN, 'show trace;trace ssl sink buf0;trace ssl level developer;trace ssl verbosity complete;trace ssl start now')
         wire = await self.request()
-        haproxy.command(control.RUN, 'trace ssl stop now')
         if not wire['h2']:
             import csv, io, haproxy, control
             stats = list(csv.DictReader(io.StringIO(haproxy.command(control.RUN, 'show stat').removeprefix('# '))))
             fields = ('pxname', 'svname', 'scur', 'stot', 'req_tot', 'econ', 'eresp', 'status', 'hrsp_2xx', 'hrsp_5xx')
             print('wire_failure_diagnostic=' + json.dumps({
                 'map': haproxy.command(control.RUN, f'show map {control.RUN}/rules.map'),
-                'trace_setup': trace_setup, 'trace': haproxy.command(control.RUN, 'show events buf0'),
                 'stats': [{key: row.get(key) for key in fields} for row in stats],
                 'errors': haproxy.command(control.RUN, 'show errors')}), flush=True)
         self.assertTrue(wire["h2"], {"wire": wire, "engine": self.owner.health()})

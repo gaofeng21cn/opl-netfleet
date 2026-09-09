@@ -104,6 +104,8 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
             lower, upper = map(int, Path('/proc/sys/net/ipv4/ip_local_port_range').read_text().split())
             self.source_range = [lower + 128, min(lower + 255, upper)]
             policy['egress'] = {'port_range': self.source_range}
+        if self._testMethodName == 'test_generated_certificate_uses_current_tls_security_level':
+            policy['rules'][0]['domain'] = 'wire.example'
         (self.directory / 'config.json').write_text(json.dumps(policy))
         text, mapping = haproxy.configuration(policy, self.directory, 'a' * 64, port=self.engine_port)
         (self.directory / 'haproxy.cfg').write_text(text)
@@ -247,6 +249,13 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(control.certificate_refresh_required({**health, 'pid': health['pid'] + 1}))
         self.assertEqual((ca / 'mitmproxy-ca.pem').read_bytes(), private)
         self.assertEqual((ca / 'mitmproxy-ca-cert.pem').read_bytes(), public)
+
+    async def test_generated_certificate_uses_current_tls_security_level(self):
+        # localhost uses the configured probe leaf; a new SNI exercises the
+        # generated SSL context, including the platform's OpenSSL policy.
+        response = await self.client.get(f'https://wire.example:{self.upstream_port}/generated')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers['x-upstream-protocol'], '2')
 
     async def test_rule_bypass_and_recovery_preserve_engine_and_active_stream(self):
         effective = json.loads((self.directory / 'config.json').read_bytes())
