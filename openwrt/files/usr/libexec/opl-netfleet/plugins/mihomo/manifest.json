@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "mihomo",
   "label": "Mihomo backend",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "api_version": 1,
   "package": "opl-netfleet-plugin-mihomo",
   "services": {
@@ -12,7 +12,8 @@
       "requires": {
         "platform.runtime": 1,
         "platform.process": 1,
-        "platform.storage": 1
+        "platform.storage": 1,
+        "mihomo.gateway": 1
       }
     },
     "mihomo.controller": {
@@ -53,7 +54,11 @@
     "mihomo.interception": {
       "version": 1,
       "module": "lib/interception.uc",
-      "requires": { "mihomo.gateway": 1, "platform.files": 1, "platform.process": 1 }
+      "requires": {
+        "mihomo.gateway": 1,
+        "platform.files": 1,
+        "platform.process": 1
+      }
     },
     "mihomo.artifacts": {
       "version": 1,
@@ -166,6 +171,7 @@
     "mihomo",
     "ucode-mod-ubus",
     "ucode-mod-uloop",
+    "ucode-mod-socket",
     "curl",
     "ca-bundle",
     "coreutils-timeout",

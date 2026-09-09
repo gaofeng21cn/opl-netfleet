@@ -10,7 +10,7 @@ test "$(readlink /var)" = tmp
 ip route replace default via 192.168.1.2
 printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
 apk update >&2
-apk add python3 python3-pip libstdcpp ca-bundle coreutils-timeout ip-full conntrack scapy openssl-util kmod-veth kmod-nft-tproxy kmod-nft-socket curl ucode-mod-fs ucode-mod-uci ucode-mod-ubus ucode-mod-uloop >&2
+apk add python3 python3-pip libstdcpp ca-bundle coreutils-timeout ip-full conntrack scapy openssl-util kmod-veth kmod-nft-tproxy kmod-nft-socket curl ucode-mod-fs ucode-mod-uci ucode-mod-socket ucode-mod-ubus ucode-mod-uloop >&2
 vendor=/tmp/compat-runtime/vendor
 if [ -f /tmp/compat-runtime/compat-manifest.json ]; then
  test -n "$feed_url"
