@@ -21,6 +21,11 @@ NEW = "2001:db8::1234"
 
 
 class Source(unittest.TestCase):
+    def test_status_import_does_not_load_network_probe_stack(self):
+        script = ("import runpy,sys; runpy.run_path(sys.argv[1]); "
+                  "assert 'http.client' not in sys.modules; assert 'neighbor' not in sys.modules")
+        subprocess.run([sys.executable, "-c", script, str(ROOT / "plugins/device-identity/resources/identity.py")], check=True)
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -165,7 +170,7 @@ class Source(unittest.TestCase):
         def addresses(confirmed):
             with patch.object(identity, "ip_command", side_effect=[[], [link]]), \
                     patch.object(identity, "connection_addresses", return_value=[NEW, "2001:db8::99"]), \
-                    patch.object(identity, "observe", return_value=confirmed) as observed:
+                    patch("neighbor.observe", return_value=confirmed) as observed:
                 result = identity.sync(config, force=True)
                 self.assertEqual(observed.call_args.args[0], [("observe0", "fe80::fe", "02:00:00:00:00:fe")])
                 return result
@@ -190,13 +195,13 @@ class Source(unittest.TestCase):
         with patch.object(identity, "ip_command", side_effect=lambda *args: [] if args[0] == "neigh" else [link]), \
                 patch.object(identity, "connection_addresses", return_value=candidates):
             with patch.object(identity.time, "monotonic", return_value=1000), \
-                    patch.object(identity, "observe", return_value=[(watched, MAC)]):
+                    patch("neighbor.observe", return_value=[(watched, MAC)]):
                 first = identity.sync(config, force=True)
             self.assertEqual(first["devices"][0]["expires_in"], 120)
             # Keep the watched address outside this batch; no new proof may extend its TTL.
             identity.atomic(identity.RUN / "cursor.json", 1)
             with patch.object(identity.time, "monotonic", return_value=1030), \
-                    patch.object(identity, "observe", return_value=[]):
+                    patch("neighbor.observe", return_value=[]):
                 later = identity.sync(config, force=True)
             self.assertEqual(later["devices"][0]["addresses"], [watched])
             self.assertEqual(later["devices"][0]["expires_in"], 90)

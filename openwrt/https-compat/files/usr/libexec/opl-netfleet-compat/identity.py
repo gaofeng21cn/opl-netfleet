@@ -24,7 +24,8 @@ def request(action, background=False):
                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
             _workers.append(worker)
             return
-        result = subprocess.run(["ucode", OWNER, "plugin-read", path], capture_output=True, timeout=0.8)
+        # Include the host's package checks and process startup on router hardware.
+        result = subprocess.run(["ucode", OWNER, "plugin-read", path], capture_output=True, timeout=3)
         value = json.loads(result.stdout)
         if not value.get("ok"):
             return {"source_ready": False, "reason": "identity_source_unavailable", "devices": []}

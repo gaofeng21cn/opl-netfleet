@@ -2,7 +2,6 @@
 import fcntl
 import hashlib
 import hmac
-import http.client
 from http.cookies import SimpleCookie
 import ipaddress
 import json
@@ -12,7 +11,6 @@ from pathlib import Path
 import re
 import signal
 import socket
-import ssl
 import subprocess
 import sys
 import tempfile
@@ -21,7 +19,6 @@ from urllib.parse import urlsplit, quote
 import xml.etree.ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from neighbor import observe
 
 BASE = Path("/etc/opl-netfleet/device-identity")
 RUN = Path("/var/run/opl-netfleet-device-identity")
@@ -127,6 +124,9 @@ def revision(config):
 
 
 def request(config, path, method="GET", body=None, cookie=None):
+    import http.client
+    import ssl
+
     url = urlsplit(config["endpoint"])
     pin = config.get("certificate_sha256")
     context = ssl.create_default_context()
@@ -205,6 +205,8 @@ def ip_command(*args):
 
 
 def local(config, now):
+    from neighbor import observe
+
     devices = {}
     observed_at = time.monotonic()
     neighbours = ip_command("neigh", "show")[:1024]
@@ -334,6 +336,9 @@ def sync(config, force=False):
     elapsed = time.monotonic() - previous.get("monotonic", -INTERVAL)
     if not force and previous.get("revision") == revision(config) and 0 <= elapsed < INTERVAL:
         return status(config)
+    import http.client
+    import ssl
+
     attempt = {"revision": revision(config), "at": time.time(), "monotonic": time.monotonic(), "reason": None}
     atomic(RUN / "attempt.json", attempt)
     try:

@@ -1,5 +1,7 @@
 import copy
+import os
 import sys
+import tempfile
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -12,6 +14,20 @@ IDENTITY = {"binding": "1" * 64, "mac": "02:00:00:00:00:01"}
 
 
 class IdentityConsumer(unittest.TestCase):
+    def test_real_plugin_startup_budget_and_hung_source_bypass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "ucode"
+            for delay, ready in ((1.1, True), (4, False)):
+                executable.write_text(f"#!{sys.executable}\nimport time\ntime.sleep({delay})\n"
+                                      "print('{\"ok\":true,\"result\":{\"source_ready\":true,\"devices\":[]}}')\n")
+                executable.chmod(0o700)
+                with patch.dict(os.environ, {"PATH": directory}), patch.object(control.device_identity, "RUN", root / "run"):
+                    result = control.device_identity.request("resolve")
+                self.assertEqual(result["source_ready"], ready)
+                self.assertEqual(result["devices"], [])
+                self.assertEqual(list((root / "run").iterdir()), [])
+
     def setUp(self):
         self.config = {"schema": 1, "enabled": True, "devices": [
             {"id": "mac", "name": "Mac", "addresses": [], "identity": IDENTITY}], "rules": [

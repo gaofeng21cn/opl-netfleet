@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-plugin.v1",
   "id": "device-identity",
   "label": "设备地址来源",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "api_version": 1,
   "package": "opl-netfleet-plugin-device-identity",
   "dependencies": ["python3", "ca-bundle", "ip-full", "conntrack", "scapy"],
