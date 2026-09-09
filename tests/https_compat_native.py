@@ -129,6 +129,9 @@ else:
         config = json.loads((self.directory / "config.json").read_text())
         # Keep the production address synchronizer in the same manager budget
         # during native traffic tests; separate source tests missed contention.
+        self.command('ip', '-6', 'addr', 'add', 'fe80::c0/64', 'dev', 'nfcompat0', 'nodad')
+        self.command('ip', '-n', 'netfleet-compat-test', '-6', 'addr', 'add', 'fe80::c1/64',
+                     'dev', 'nfcompat1', 'nodad')
         def source_call(action, params=None):
             main = ['ucode', '/usr/libexec/opl-netfleet/main.uc']
             listed = json.loads(subprocess.check_output([*main, 'plugins-list']))['result']['plugins']
