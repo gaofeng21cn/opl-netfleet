@@ -206,7 +206,7 @@ lan_runtime_state = function(dns_probe_url) {
 	const dns_tcp_wildcard = dns_port != null && sockets.tcp[dns_port] == true;
 	const dns_udp_wildcard = dns_port != null && sockets.udp[dns_port] == true;
 	const dns_hijack_rule_present = dns_port != null &&
-		length(filter(chains.lan_dns_hijack ?? [], expr => expr.redir?.port == dns_port)) > 0;
+		length(filter(chains.lan_dns_hijack ?? [], expr => expr.redirect?.port == dns_port)) > 0;
 	const dns_query_ok = KIND == "native-mihomo" ?
 		(dns_enabled && dns_udp_wildcard && native_dns_ready(dns_port)) : dns_query_ready(dns_probe_url);
 	if (native_expected != null) {

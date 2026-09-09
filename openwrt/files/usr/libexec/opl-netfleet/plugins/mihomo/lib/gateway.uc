@@ -123,7 +123,7 @@ render_profile = function() {
 		return { ok: false, error: "gateway_listeners_required" };
 	// Reserved local health query traverses the resolver without an upstream dependency.
 	profile.dns["nameserver-policy"] = { ...(profile.dns["nameserver-policy"] ?? {}),
-		"health.opl-netfleet.invalid": "rcode://name_error" };
+		"+.health.opl-netfleet.invalid": "rcode://name_error" };
 	profile["external-controller-unix"] = `${RUN}/controller.sock`;
 	return { ok: true, result: { profile: profile } };
 };
