@@ -139,6 +139,14 @@ else:
             self.assertLess(time.monotonic(), deadline, state)
             await asyncio.sleep(1)
         wire = await self.request()
+        if not wire['h2']:
+            import csv, io, haproxy, control
+            stats = list(csv.DictReader(io.StringIO(haproxy.command(control.RUN, 'show stat').removeprefix('# '))))
+            fields = ('pxname', 'svname', 'scur', 'stot', 'req_tot', 'econ', 'eresp', 'status', 'hrsp_2xx', 'hrsp_5xx')
+            print('wire_failure_diagnostic=' + json.dumps({
+                'map': haproxy.command(control.RUN, f'show map {control.RUN}/rules.map'),
+                'stats': [{key: row.get(key) for key in fields} for row in stats],
+                'errors': haproxy.command(control.RUN, 'show errors')}), flush=True)
         self.assertTrue(wire["h2"], {"wire": wire, "engine": self.owner.health()})
         # Measure the whole running plugin without polling its management API.
         # These synthetic VM results are not WAN throughput or Home measurements.
