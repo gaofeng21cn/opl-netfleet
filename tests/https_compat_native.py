@@ -63,8 +63,8 @@ class Native(Kernel):
         self.addAsyncCleanup(self.stop_origin)
         self.command("ubus", "call", "network", "add_dynamic", json.dumps({"name": "nfcompat", "proto": "static", "device": "nfcompat0", "ipaddr": ["10.77.0.1/24"], "ip6addr": ["2001:db8:77::1/64"]}))
         self.addCleanup(self.command, "ubus", "call", "network.interface.nfcompat", "remove")
-        # Documentation prefixes are classified as private and miss mitmproxy's
-        # default block_global rejection. This source exists only on the VM veth.
+        # Include a globally classified IPv6 source as well as documentation
+        # prefixes. This address exists only on the isolated VM veth.
         self.global_source = "2000:77::2"
         self.assertTrue(ipaddress.ip_address(self.global_source).is_global)
         self.command("ip", "-n", "netfleet-compat-test", "-6", "addr", "add", self.global_source + "/128", "dev", "nfcompat1", "nodad")
@@ -170,7 +170,7 @@ with open('/var/lock/opl-netfleet-deploy.lock', 'a') as lock:
         self.command("nft", "add", "chain", "inet", "netfleet_processing_fault", "output",
                      "{ type filter hook output priority 0; policy accept; }")
         self.command("nft", "add", "rule", "inet", "netfleet_processing_fault", "output",
-                     "oifname", "lo", "tcp", "dport", "18444", "reject", "with", "tcp", "reset")
+                     "oifname", "lo", "tcp", "dport", "18445", "reject", "with", "tcp", "reset")
         try:
             await asyncio.sleep(26)
             failed = self.owner.call("get")

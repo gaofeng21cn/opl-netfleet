@@ -203,6 +203,7 @@ class Isolation(unittest.TestCase):
             for name in ('prepare', 'bypass'):
                 stack.enter_context(patch.object(control.gateway, name))
             stack.enter_context(patch.object(control, 'ca_fingerprint', return_value=None))
+            stack.enter_context(patch.object(control, 'certificate_refresh_required', return_value=False))
             health = stack.enter_context(patch.object(control, 'engine_health'))
             for waiting, healthy in ((True, True), (False, True), (True, False)):
                 with self.subTest(waiting=waiting, healthy=healthy):
