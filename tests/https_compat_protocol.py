@@ -182,6 +182,21 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
             result['processing_chain'] = True
         return result
 
+    async def test_upstream_probe_requires_h2_without_business_request(self):
+        context = ssl.create_default_context(cafile=str(self.directory / 'upstream.pem'))
+        with patch.object(haproxy.ssl, 'create_default_context', return_value=context):
+            result = await haproxy.probe_upstreams({'rules': [{'id': 'test', 'domain': 'localhost', 'port': self.upstream_port}]})
+        self.assertTrue(result['test']['ok'], result)
+        self.assertEqual(self.received, [])
+
+    async def test_upstream_recovery_rejects_h1(self):
+        context = ssl.create_default_context(cafile=str(self.directory / 'upstream.pem'))
+        with patch.object(haproxy.ssl, 'create_default_context', return_value=context):
+            result = await haproxy.probe_upstreams({'rules': [{'id': 'test', 'domain': 'localhost', 'port': self.upstream_port}]})
+        self.assertFalse(result['test']['ok'], result)
+        self.assertEqual(result['test']['reason'], 'upstream_h2_not_negotiated')
+        self.assertEqual(self.received, [])
+
     async def application(self, scope, receive, send):
         if scope["type"] == "websocket":
             await receive()

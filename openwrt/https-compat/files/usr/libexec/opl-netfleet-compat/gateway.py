@@ -129,6 +129,8 @@ def renew(candidates):
 
 
 def bypass():
+    global _epoch
+    _epoch = None
     return call("bypass")
 
 
@@ -137,4 +139,6 @@ def status():
 
 
 def remove():
+    global _epoch
+    _epoch = None
     return call("remove")

@@ -46,7 +46,7 @@ def validate(config):
             raise ValueError("invalid_device_identity")
         if not isinstance(entries, list) or not entries and binding is None:
             raise ValueError("device_address_required")
-        if not all(isinstance(address, str) for address in entries):
+        if not all(isinstance(address, str) and "%" not in address for address in entries):
             raise ValueError("invalid_device_address")
         parsed = [str(ipaddress.ip_address(address)) for address in entries]
         if len(set(parsed)) != len(parsed) or addresses.intersection(parsed):

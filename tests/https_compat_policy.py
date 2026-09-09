@@ -161,6 +161,12 @@ with open(sys.argv[1], 'a') as file:
                 control.atomic(control.STATE, state)
             self.assertEqual(recovery["last_error"], 4)
 
+    def test_scoped_ipv6_cannot_inject_engine_configuration(self):
+        candidate = {'schema': 1, 'enabled': False, 'devices': [
+            {'id': 'client', 'name': 'Client', 'addresses': ['fe80::1%zone\nfrontend injected']}], 'rules': []}
+        with self.assertRaisesRegex(ValueError, 'invalid_device_address'):
+            validate(candidate)
+
     def test_match_precedence_and_conflict(self):
         base = {"name": "Rule", "devices": ["mac"], "enabled": True, "port": 443}
         config = validate({"schema": 1, "enabled": True, "devices": [{"id": "mac", "name": "Mac", "addresses": ["192.0.2.2"]}],

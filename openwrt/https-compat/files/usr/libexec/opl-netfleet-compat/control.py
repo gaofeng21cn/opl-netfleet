@@ -159,16 +159,16 @@ def engine_health(probe=False):
                 proofs[name] = {'ok': False, 'reason': 'local_conversion_failed'}
         if probe:
             if full_due:
-                check('private_ingress', lambda: haproxy.probe(RUN))
+                check('processing', lambda: haproxy.probe(RUN))
             uid = isolation.account()[0]
             for family in (4, 6):
-                check('transparent_ipv' + str(family), lambda family=family: haproxy.probe(RUN, family, socket_uid=uid))
+                check('ipv' + str(family), lambda family=family: haproxy.probe(RUN, family, socket_uid=uid))
             if all(item.get('ok') for item in proofs.values()):
                 _verified_engine = (*identity, now if full_due else _verified_engine[2], proofs)
             else:
                 _verified_engine = None
-        return {**value, 'processing_chain': proofs.get('private_ingress', {}).get('ok') is True,
-                'transparent_chain': all(proofs.get('transparent_ipv' + str(family), {}).get('ok') is True for family in (4, 6)),
+        return {**value, 'processing_chain': proofs.get('processing', {}).get('ok') is True,
+                'transparent_chain': all(proofs.get('ipv' + str(family), {}).get('ok') is True for family in (4, 6)),
                 'local_probes': proofs}
     except (OSError, ValueError, KeyError, StopIteration, subprocess.SubprocessError) as error:
         health_error = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[a-z_]+', str(error)) else (
@@ -274,7 +274,7 @@ def status():
         reason = "draining" if health.get("active_connections") else "disabled"
     elif not fingerprint:
         reason = "ca_not_ready"
-    return {"installed": True, "revision": revision(), "config": config, "requested": config["enabled"],
+    return {"installed": True, "engine": {"name": "HAProxy", "version": health.get("engine_version")}, "revision": revision(), "config": config, "requested": config["enabled"],
             **kernel, "isolation": isolation.status(), "reason": reason, "active_connections": health.get("active_connections"),
             "address_source": source,
             "device_addresses": {device["id"]: next((item["addresses"] for item in active["devices"] if item["id"] == device["id"]), [])

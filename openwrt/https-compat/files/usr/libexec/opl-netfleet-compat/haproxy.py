@@ -3,6 +3,7 @@ import csv
 import hashlib
 import http.client
 import io
+import json
 import ipaddress
 import os
 from pathlib import Path
@@ -49,6 +50,8 @@ def prepare_ca(directory, system_ca=Path('/etc/ssl/certs/ca-certificates.crt')):
                     '-keyout', root / 'key', '-out', root / 'cert')
             write_private(private, (root / 'cert').read_bytes() + (root / 'key').read_bytes())
             write_private(public, (root / 'cert').read_bytes())
+    if openssl('x509', '-in', private, '-outform', 'DER') != openssl('x509', '-in', public, '-outform', 'DER'):
+        raise ValueError('ca_certificate_mismatch')
     cert = openssl('x509', '-in', public, '-pubkey', '-noout')
     if cert != openssl('pkey', '-in', private, '-pubout'):
         raise ValueError('ca_key_mismatch')
@@ -172,13 +175,13 @@ frontend {name}_http
 def prepare(effective_path, run):
     data = effective_path.read_bytes()
     revision = hashlib.sha256(data).hexdigest()
-    config, rules = configuration(__import__('json').loads(data), run, revision)
+    config, rules = configuration(json.loads(data), run, revision)
     path = run / 'haproxy.cfg'
     temporary = path.with_suffix('.new')
     write_private(temporary, config.encode())
     subprocess.run([BINARY, '-c', '-f', str(temporary)], check=True, capture_output=True, timeout=5)
     temporary.replace(path)
-    write_private(run / 'haproxy-rules.json', __import__('json').dumps(rules).encode())
+    write_private(run / 'haproxy-rules.json', json.dumps(rules).encode())
     return path
 
 
@@ -229,14 +232,14 @@ def probe(run, family=None, socket_uid=None):
         response.begin()
         if response.status != 200 or response.getheader('X-Upstream-Protocol') != 'h2' or response.read(128) != nonce.encode():
             raise ValueError('probe_conversion_failed')
-    return {'ok': True, 'elapsed_ms': round((time.monotonic() - started) * 1000, 2)}
+    return {'ok': True, 'stage': 'http', 'reason': None, 'duration_ms': round((time.monotonic() - started) * 1000, 2), 'timeout_ms': 1400}
 
 
 def health(run):
     info = dict(line.split(': ', 1) for line in command(run, 'show info').splitlines() if ': ' in line)
     rows = list(csv.DictReader(io.StringIO(command(run, 'show stat').removeprefix('# '))))
     ingress = next(row for row in rows if row['pxname'] == 'ingress' and row['svname'] == 'FRONTEND')
-    mapping = __import__('json').loads((run / 'haproxy-rules.json').read_bytes())
+    mapping = json.loads((run / 'haproxy-rules.json').read_bytes())
     rules, events = {}, []
     for row in rows:
         name = row['pxname'].removesuffix('_h2')
@@ -244,7 +247,7 @@ def health(run):
             continue
         identity = mapping[name]
         rules[identity] = {'requests': int(row.get('req_tot') or 0), 'active_requests': int(row['scur']),
-                           'upstream_protocol': 'h2' if int(row.get('connect') or 0) > 0 else None}
+                           'upstream_protocol': 'h2' if sum(int(row.get('hrsp_' + group) or 0) for group in ('2xx', '3xx', '4xx')) > 0 else None}
         errors = int(row.get('econ') or 0) + int(row.get('eresp') or 0)
         if errors:
             events.append({'id': errors, 'rule': identity, 'reason': 'upstream_transport_failed'})
@@ -263,26 +266,43 @@ async def probe_upstreams(request):
     async def check(rule):
         writer = None
         sock = None
+        started = time.monotonic()
         try:
             async with asyncio.timeout(1.4):
                 loop = asyncio.get_running_loop()
                 records = await loop.getaddrinfo(rule['domain'], rule['port'], type=socket.SOCK_STREAM)
                 if not records:
                     raise OSError('no_address')
-                # The same unprivileged engine identity and admitted source-port interval apply.
-                family, kind, protocol, _, address = records[0]
-                sock = socket.socket(family, kind, protocol)
-                sock.setblocking(False)
-                if ports:
-                    sock.setsockopt(socket.IPPROTO_IP, 51, struct.pack('I', (ports[1] << 16) | ports[0]))
-                await loop.sock_connect(sock, address)
+                # Try both address families within the same bounded probe. One unavailable
+                # AAAA answer must not permanently hide an otherwise reachable target.
+                last_error = OSError('no_address')
+                for family, kind, protocol, _, address in records[:4]:
+                    sock = socket.socket(family, kind, protocol)
+                    sock.setblocking(False)
+                    if ports:
+                        sock.setsockopt(socket.IPPROTO_IP, 51, struct.pack('I', (ports[1] << 16) | ports[0]))
+                    try:
+                        await asyncio.wait_for(loop.sock_connect(sock, address), timeout=0.4)
+                        break
+                    except (OSError, asyncio.TimeoutError) as error:
+                        last_error = error
+                        sock.close()
+                        sock = None
+                if sock is None:
+                    raise last_error
                 reader, writer = await asyncio.open_connection(sock=sock, ssl=context, server_hostname=rule['domain'])
                 sock = None
                 ok = writer.get_extra_info('ssl_object').selected_alpn_protocol() == 'h2'
                 return rule['id'], {'ok': ok, 'at': int(time.time()),
-                                    'reason': None if ok else 'upstream_h2_unavailable'}
-        except (OSError, ValueError, asyncio.TimeoutError):
-            return rule['id'], {'ok': False, 'at': int(time.time()), 'reason': 'upstream_tls_or_connect_failed'}
+                                    'reason': None if ok else 'upstream_h2_not_negotiated', 'duration_ms': round((time.monotonic() - started) * 1000, 2)}
+        except (OSError, ValueError, asyncio.TimeoutError) as error:
+            reason = ('upstream_certificate_failed' if isinstance(error, ssl.SSLCertVerificationError) else
+                      'upstream_tls_failed' if isinstance(error, ssl.SSLError) else
+                      'upstream_probe_timeout' if isinstance(error, TimeoutError) else
+                      'upstream_dns_failed' if isinstance(error, socket.gaierror) else
+                      'upstream_connection_refused' if isinstance(error, ConnectionRefusedError) else
+                      'upstream_connect_failed')
+            return rule['id'], {'ok': False, 'at': int(time.time()), 'reason': reason, 'duration_ms': round((time.monotonic() - started) * 1000, 2)}
         finally:
             if writer:
                 writer.close()
