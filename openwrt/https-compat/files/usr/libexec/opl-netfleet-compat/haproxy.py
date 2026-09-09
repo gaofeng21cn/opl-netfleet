@@ -7,6 +7,7 @@ import json
 import ipaddress
 import os
 from pathlib import Path
+import re
 import secrets
 import socket
 import ssl
@@ -156,8 +157,9 @@ frontend health_endpoint
         if rule['strategy'] != 'h2':
             continue
         name = f'r{number}'
+        observation = f'  tcp-request content set-var(proc.{name}_sni) req.ssl_sni,lower\n' if rule['match'] == 'suffix' else ''
         lines += [f'''backend {name}_convert
-  server local {sockets}/{name}.sock send-proxy-v2
+{observation}  server local {sockets}/{name}.sock send-proxy-v2
 frontend {name}_http
   mode http
   option http-no-delay
@@ -286,7 +288,13 @@ def health(run):
     probes = next(row for row in rows if row['pxname'] == 'loopback_convert' and row['svname'] == 'BACKEND')
     connections = max(0, int(ingress['scur']) - int(probes['scur']))
     mapping = json.loads((run / 'haproxy-rules.json').read_bytes())
-    rules, events = {}, []
+    rules, events, observed = {}, [], {}
+    if mapping:
+        values = command(run, ';'.join(f'get var proc.{name}_sni' for name in mapping))
+        for line in values.splitlines():
+            match = re.fullmatch(r'proc\.(r[0-9]+)_sni: type=str value=<([a-z0-9.-]{1,253})>', line)
+            if match and match[1] in mapping:
+                observed[mapping[match[1]]] = {'domain': match[2]}
     for row in rows:
         name = row['pxname'].removesuffix('_h2')
         if row['svname'] != 'BACKEND' or name not in mapping or not row['pxname'].endswith('_h2'):
@@ -300,7 +308,7 @@ def health(run):
     return {'service': 'netfleet-https-compat', 'ready': True, 'pid': int(info['Pid']),
             'revision': info['description'], 'active_connections': connections,
             'active_requests': sum(rule['active_requests'] for rule in rules.values()),
-            'unassigned_connections': connections, 'rules': rules, 'failure_events': events,
+            'unassigned_connections': connections, 'rules': rules, 'failure_events': events, 'observed': observed,
             'engine': 'haproxy', 'engine_version': info['Version']}
 
 

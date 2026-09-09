@@ -78,7 +78,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         config.certfile = str(self.directory / "upstream.pem")
         config.keyfile = str(self.directory / "upstream.key")
         config.alpn_protocols = ["h2", "http/1.1"]
-        if self._testMethodName in ("test_h2_required_upstream_h1_is_not_replayed", "test_upstream_recovery_rejects_h1"):
+        if self._testMethodName in ("test_h2_required_upstream_h1_is_not_replayed", "test_upstream_recovery_rejects_h1", "test_suffix_failure_retains_probe_hostname"):
             config.alpn_protocols = ["http/1.1"]
         config.accesslog = None
         config.errorlog = None
@@ -106,6 +106,8 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
             policy['egress'] = {'port_range': self.source_range}
         if self._testMethodName == 'test_generated_certificate_uses_current_tls_security_level':
             policy['rules'][0]['domain'] = 'wire.example'
+        if self._testMethodName == 'test_suffix_failure_retains_probe_hostname':
+            policy['rules'][0].update(domain='example', match='suffix')
         (self.directory / 'config.json').write_text(json.dumps(policy))
         text, mapping = haproxy.configuration(policy, self.directory, 'a' * 64, port=self.engine_port)
         (self.directory / 'haproxy.cfg').write_text(text)
@@ -256,6 +258,15 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get(f'https://wire.example:{self.upstream_port}/generated')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers['x-upstream-protocol'], '2')
+
+    async def test_suffix_failure_retains_probe_hostname(self):
+        for domain in ('wire.example', 'other.example'):
+            response = await self.client.post(f'https://{domain}:{self.upstream_port}/never-upload', content=b'private-body')
+            self.assertIn(response.status_code, (502, 503))
+            health = await self.health()
+            self.assertEqual(health['observed'], {'test': {'domain': domain}})
+            self.assertTrue(health['failure_events'])
+        self.assertEqual(self.received, [])
 
     async def test_rule_bypass_and_recovery_preserve_engine_and_active_stream(self):
         effective = json.loads((self.directory / 'config.json').read_bytes())
