@@ -20,6 +20,28 @@ import control
 
 
 class Decisions(unittest.TestCase):
+    def test_interactive_lock_waits_for_owner_without_stealing_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'mutation.lock'
+            holder = subprocess.Popen([sys.executable, '-c', """import fcntl, sys, time
+with open(sys.argv[1], 'a') as file:
+    fcntl.flock(file, fcntl.LOCK_EX)
+    print('locked', flush=True)
+    sys.stdin.read(1)
+    time.sleep(0.15)
+""", str(path)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(holder.stdout.readline().strip(), 'locked')
+                with patch.object(control, 'MUTATION_LOCK', path):
+                    with self.assertRaisesRegex(ValueError, 'mutation_busy'):
+                        with control.mutation_lock(wait_seconds=0.05):
+                            self.fail('must not acquire a lock owned by another process')
+                    holder.stdin.write('\n'); holder.stdin.flush()
+                    with control.mutation_lock(wait_seconds=1):
+                        holder.wait(timeout=3)
+            finally:
+                holder.communicate(timeout=3)
+
     def test_engine_restart_threshold_is_shorter_than_lease(self):
         self.assertLess(ENGINE_RESTART_GRACE_SECONDS, LEASE_SECONDS)
 

@@ -63,15 +63,26 @@ def ancestor_holds_lock(path):
 
 
 @contextmanager
-def mutation_lock():
+def mutation_lock(wait_seconds=0):
     with MUTATION_LOCK.open("a") as lock:
         owned = True
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            if not ancestor_holds_lock(MUTATION_LOCK):
-                raise ValueError("mutation_busy") from None
-            owned = False
+            if ancestor_holds_lock(MUTATION_LOCK):
+                owned = False
+            else:
+                deadline = time.monotonic() + wait_seconds
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise ValueError("mutation_busy") from None
+                    time.sleep(min(0.02, remaining))
+                    try:
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        continue
         yield lock if owned else None
 
 
@@ -635,7 +646,7 @@ def main():
         return status()
     if action == "ca":
         return {"pem": (CA / "mitmproxy-ca-cert.pem").read_text(), "sha256": ca_fingerprint()}
-    with mutation_lock() as lock:
+    with mutation_lock(wait_seconds=2) as lock:
         RUN.mkdir(parents=True, exist_ok=True, mode=0o700)
         if action == "tick":
             tick(lock)
