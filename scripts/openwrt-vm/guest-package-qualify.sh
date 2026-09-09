@@ -31,6 +31,7 @@ finish() {
 			"$fixture/package-status.json" \
 			"$fixture/package-info.after" \
 			"$fixture/package-rpcd-direct.json" "$fixture/package-rpcd-ubus.txt" \
+			"$fixture/kernel-rpc-old.txt" "$fixture/kernel-rpc-after.txt" "$fixture/kernel-rpc-object.json" \
 			"$fixture/package-helper-primary.log" "$fixture/package-helper-reserve.log" \
 			"$fixture"/lifecycle-*.json "$fixture"/lifecycle-*.log \
 			/tmp/opl-netfleet-onboarding/*.json /etc/opl-netfleet/policy.json \
@@ -522,9 +523,32 @@ for package_name in opl-netfleet-plugin-dashboard opl-netfleet-kernel; do
 	package_transaction "$candidate/$package_name-$package_old.apk"
 	"$real_apk" list --manifest | grep -Fqx "$package_name $package_old"
 	lifecycle_restored lifecycle-before
+	if [ "$package_name" = opl-netfleet-kernel ]; then
+		cat >/usr/libexec/rpcd/opl-netfleet.plugins <<'RPC_OLD'
+#!/bin/sh
+if [ "$1" = list ]; then printf '%s\n' '{"plugins_list":{}}'; fi
+RPC_OLD
+		chmod 0755 /usr/libexec/rpcd/opl-netfleet.plugins
+		/etc/init.d/rpcd restart
+		for attempt in 1 2 3 4 5 6 7 8 9 10; do
+			ubus -v list opl-netfleet.plugins >"$fixture/kernel-rpc-old.txt" 2>/dev/null && break
+			sleep 1
+		done
+		[ -s "$fixture/kernel-rpc-old.txt" ]
+		! grep -Fq '"plugin_read"' "$fixture/kernel-rpc-old.txt"
+	fi
 	package_transaction "$candidate/$package_name-$package_current.apk"
 	"$real_apk" list --manifest | grep -Fqx "$package_name $package_current"
 	lifecycle_restored lifecycle-before
+	if [ "$package_name" = opl-netfleet-kernel ]; then
+		for attempt in 1 2 3 4 5 6 7 8 9 10; do
+			ubus -v list opl-netfleet.plugins >"$fixture/kernel-rpc-after.txt" 2>/dev/null && grep -Fq '"plugin_read"' "$fixture/kernel-rpc-after.txt" && break
+			sleep 1
+		done
+		grep -Eq '"request"[[:space:]]*:[[:space:]]*"Table"' "$fixture/kernel-rpc-after.txt"
+		ubus call opl-netfleet.plugins plugin_read '{"request":{"id":"qualification-absent","action":"read"}}' >"$fixture/kernel-rpc-object.json"
+		[ "$(jsonfilter -i "$fixture/kernel-rpc-object.json" -e '@.error')" = plugin_not_installed ]
+	fi
 	if [ "$package_name" = opl-netfleet-plugin-dashboard ]; then
 		[ "$(cat /var/run/nikki/mihomo.pid)" = "$core_before" ]
 		[ "$(ubus call service list '{"name":"opl-netfleet"}' |
@@ -558,28 +582,6 @@ done
 grep -Fq '"select_region"' "$fixture/rpc-methods-after.txt"
 grep -Eq '"request"[[:space:]]*:[[:space:]]*"Table"' "$fixture/rpc-methods-after.txt"
 [ "$(cat /var/run/nikki/mihomo.pid)" = "$core_before" ]
-
-stage=kernel_rpc_upgrade
-cat >/usr/libexec/rpcd/opl-netfleet.plugins <<'RPC_OLD'
-#!/bin/sh
-if [ "$1" = list ]; then printf '%s\n' '{"plugins_list":{}}'; fi
-RPC_OLD
-chmod 0755 /usr/libexec/rpcd/opl-netfleet.plugins
-/etc/init.d/rpcd restart
-for attempt in 1 2 3 4 5 6 7 8 9 10; do
-	ubus -v list opl-netfleet.plugins >"$fixture/kernel-rpc-old.txt" 2>/dev/null && break
-	sleep 1
-done
-[ -s "$fixture/kernel-rpc-old.txt" ]
-! grep -Fq '"plugin_read"' "$fixture/kernel-rpc-old.txt"
-owner_locked "$real_apk" fix --reinstall opl-netfleet-kernel >>"$fixture/package-manager.log" 2>&1
-for attempt in 1 2 3 4 5 6 7 8 9 10; do
-	ubus -v list opl-netfleet.plugins >"$fixture/kernel-rpc-after.txt" 2>/dev/null && grep -Fq '"plugin_read"' "$fixture/kernel-rpc-after.txt" && break
-	sleep 1
-done
-grep -Eq '"request"[[:space:]]*:[[:space:]]*"Table"' "$fixture/kernel-rpc-after.txt"
-ubus call opl-netfleet.plugins plugin_read '{"request":{"id":"qualification-absent","action":"read"}}' >"$fixture/kernel-rpc-object.json"
-[ "$(jsonfilter -i "$fixture/kernel-rpc-object.json" -e '@.error')" = plugin_not_installed ]
 
 stage=optional_management_removal
 ! "$real_apk" info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1
