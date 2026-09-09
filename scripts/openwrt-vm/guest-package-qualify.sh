@@ -180,6 +180,14 @@ mv "$saved_runtime/configuration" /etc/opl-netfleet
 mv "$saved_runtime/package-helper" /usr/libexec/opl-netfleet-plugin-package
 rmdir "$saved_runtime"
 
+# The preceding source-runtime lane loads all plugin sources for contracts.
+# First package installation starts without the optional management plugin;
+# keep its unowned fixture sources out of the installed-file assertions.
+! "$real_apk" info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1
+cmp /usr/libexec/opl-netfleet/plugins/https-compat/manifest.json \
+	/tmp/openwrt/files/usr/libexec/opl-netfleet/plugins/https-compat/manifest.json
+mv /usr/libexec/opl-netfleet/plugins/https-compat "$fixture/optional-management-source"
+
 # Source deployments predate package ownership and exercise APK's protected
 # /etc path migration. The configuration plugin must promote only these package
 # baselines while leaving the user policy outside its write set.
@@ -286,7 +294,7 @@ while read -r expected path extra; do
 	[ -n "$expected" ] || continue
 	[ -z "${extra:-}" ]
 	case "$path" in
-		usr/libexec/opl-netfleet/plugins/https-compat/*|www/luci-static/resources/netfleet/plugins/https-compat*)
+		usr/libexec/opl-netfleet/plugins/https-compat/*|www/luci-static/resources/netfleet/plugins/https-compat/*)
 			if ! apk info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1; then [ ! -e "/$path" ]; continue; fi ;;
 	esac
 	[ -f "/$path" ] || { echo "Package file missing: /$path" >&2; exit 1; }
