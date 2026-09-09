@@ -149,9 +149,8 @@ else:
             'config': {'enabled': True, 'source': 'local', 'interfaces': ['nfcompat0']}})
         source = source_call('sync')
         self.assertTrue(source['source_ready'], source)
-        client = json.loads(subprocess.check_output(['ip', '-n', 'netfleet-compat-test', '-j', 'link', 'show', 'nfcompat1']))[0]['address']
         config['devices'].append({'id': 'address-sync', 'name': 'Address synchronization',
-            'addresses': [], 'identity': {'binding': source['binding'], 'mac': client}})
+            'addresses': [], 'identity': {'binding': source['binding'], 'mac': '02:ff:ff:ff:ff:fe'}})
         saved = self.owner.call("apply", {"revision": self.owner.call("get")["revision"], "config": config})
         self.ca_bundle.write_bytes((self.directory / "upstream.pem").read_bytes() + self.owner.call("ca")["pem"].encode())
         self.owner.call("probe", {"revision": saved["revision"], "operation": "trust_record", "device": "mac",
