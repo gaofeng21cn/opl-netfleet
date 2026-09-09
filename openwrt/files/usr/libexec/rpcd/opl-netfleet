@@ -44,6 +44,16 @@ select_automatic() {
 	respond_owner ucode "$main" select "$capability" auto luci 9>&-
 }
 
+select_region() {
+	payload=$(cat)
+	capability=$(jsonfilter -s "$payload" -e '@.capability' 2>/dev/null || true)
+	region=$(jsonfilter -s "$payload" -e '@.region' 2>/dev/null || true)
+	case "$capability" in ""|*[!A-Za-z0-9._-]*) printf '%s\n' '{"ok":false,"error":"invalid_capability"}'; exit 0 ;; esac
+	case "$region" in ""|*[!A-Za-z0-9._-]*) printf '%s\n' '{"ok":false,"error":"invalid_region"}'; exit 0 ;; esac
+	lock_mutation
+	respond_owner ucode "$main" select "$capability" "$region" luci region 9>&-
+}
+
 config_request() {
 	action=$1
 	mutating=$2
@@ -92,7 +102,7 @@ component_update() {
 
 case "$1" in
 	list)
-		printf '%s\n' '{"components_get":{},"components_check":{},"components_recover":{},"components_update":{"component":"String","version":"String"},"operation_get":{},"native_setup_get":{},"native_setup_apply":{"request":"Table"},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":"Table"},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":"Table"},"onboarding_get":{},"onboarding_apply":{"request":"Table"},"status":{},"events":{},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":"Table"},"config_save":{"request":"Table"},"config_apply":{"request":"Table"},"enable":{},"select_auto":{"capability":"String"},"refresh":{},"disable":{},"network_get":{},"network_validate":{"request":"Table"},"network_apply":{"request":"Table"},"maintenance_get":{},"profile_get":{"id":"String"},"profile_save":{"request":"Table"},"profile_delete":{"request":"Table"},"backup_export":{},"backup_restore":{"request":"Table"},"core_action":{"request":"Table"},"diagnostics_get":{},"dashboard_check":{},"dashboard_update":{"version":"String"}}'
+		printf '%s\n' '{"components_get":{},"components_check":{},"components_recover":{},"components_update":{"component":"String","version":"String"},"operation_get":{},"native_setup_get":{},"native_setup_apply":{"request":"Table"},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":"Table"},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":"Table"},"onboarding_get":{},"onboarding_apply":{"request":"Table"},"status":{},"events":{},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":"Table"},"config_save":{"request":"Table"},"config_apply":{"request":"Table"},"enable":{},"select_auto":{"capability":"String"},"select_region":{"capability":"String","region":"String"},"refresh":{},"disable":{},"network_get":{},"network_validate":{"request":"Table"},"network_apply":{"request":"Table"},"maintenance_get":{},"profile_get":{"id":"String"},"profile_save":{"request":"Table"},"profile_delete":{"request":"Table"},"backup_export":{},"backup_restore":{"request":"Table"},"core_action":{"request":"Table"},"diagnostics_get":{},"dashboard_check":{},"dashboard_update":{"version":"String"}}'
 		;;
 	call)
 		case "$2" in
@@ -176,6 +186,9 @@ case "$1" in
 					;;
 			enable)
 				enable_current_policy
+				;;
+			select_region)
+				select_region
 				;;
 			select_auto)
 				select_automatic

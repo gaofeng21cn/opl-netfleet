@@ -61,6 +61,7 @@
           "config_apply",
           "enable",
           "select_auto",
+          "select_region",
           "refresh",
           "disable",
           "network_apply",

@@ -446,8 +446,12 @@
 }
 
 .netfleet-native .netfleet-summary-link {
-	min-height: 36px;
-	padding: 0 13px;
+	min-height: 32px;
+	padding: 4px 0 !important;
+	background: transparent !important;
+	border: 0 !important;
+	box-shadow: none !important;
+	color: var(--nf-accent) !important;
 	white-space: nowrap;
 }
 
@@ -1712,3 +1716,23 @@
 }
 
 .netfleet-native .netfleet-measurement-note { display: block; margin-top: 4px; color: var(--nf-muted); font-size: 12px; line-height: 1.5; }
+
+/* Region controls share the same hierarchy on exits and comparison pages. */
+.netfleet-native .netfleet-summary-link:hover { text-decoration: underline; }
+.netfleet-native .netfleet-selection-summary { padding: 0 0 20px; margin-bottom: 20px; border-bottom: 1px solid var(--nf-border); }
+.netfleet-native .netfleet-selection-summary h3 { margin: 0; padding: 0; }
+.netfleet-native .netfleet-selection-summary p { margin: 6px 0; }
+.netfleet-native .netfleet-selection-exits { display: flex; flex-wrap: wrap; gap: 16px 32px; margin-top: 16px; }
+.netfleet-native .netfleet-selection-exits > div { flex: 1 1 260px; min-width: 0; }
+.netfleet-native .netfleet-selection-note { color: var(--nf-muted); font-size: 13px; margin: 12px 0; }
+.netfleet-native .netfleet-selection-note.is-manual { color: var(--nf-accent); }
+.netfleet-native .netfleet-region-choice { white-space: nowrap; flex-shrink: 0; }
+.netfleet-native.netfleet-region-dialog { max-width: 640px; }
+.netfleet-native .netfleet-choice-field { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 12px; align-items: center; margin: 16px 0; }
+.netfleet-native .netfleet-choice-field select { width: 100%; min-width: 0; }
+.netfleet-native .netfleet-data-table small { display: block; }
+
+.netfleet-native .netfleet-page-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin: -8px 0 18px; }
+.netfleet-native .netfleet-region-choice:not(:disabled) { color: var(--nf-accent) !important; background: var(--nf-surface) !important; border: 1px solid var(--nf-accent) !important; }
+.netfleet-native .netfleet-region-choice:not(:disabled):hover { background: var(--nf-accent-soft) !important; }
+.netfleet-native .netfleet-overview-facts > div { grid-template-columns: minmax(100px, auto) minmax(0, 1fr); }

@@ -273,3 +273,13 @@ LuCI 同步 mutation 与 rpcd/uhttpd execution timeout 使用 300 秒有界预�
 
 字段的用户解释、库存计数、空态和展示排序由[状态呈现](ui-state.md)维护；
 历史聚合由[显示证据](evidence.md)维护。
+
+### 手动地区操作
+
+`select_region` 接受稳定 `capability` 和 `region` ID，在同一 mutation lock 内调用现有
+`select` 事务。owner 只接受当前 active manifest 对该能力授权的地区 ID，拒绝组显示名、
+`auto` 和直连控制值；写入前仍验证 policy、运行态及保护探针。
+status 每个已编译 capability 的 `selectable_regions` 来自 active manifest，
+`can_select_region` 结合当前 policy 开关及 owner 可写状态；UI 不从全局地区目录推断权限。
+`manual_region_id` 来自当前可见 selector，用于区分用户保持地区与实际故障路径。
+恢复自动使用已有 `select_auto` 根能力接口，遵守[选择合同](selection.md)。

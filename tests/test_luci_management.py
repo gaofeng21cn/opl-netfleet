@@ -87,11 +87,11 @@ function module(name, api) {
 function configModule(management) {
     return new Function('baseclass', 'ui', 'management', 'E', 'compatibility', fs.readFileSync(path.join(resources, 'config.js'), 'utf8'))(baseclass, ui, management, E, { render: () => null });
 }
-function modesModule(api) {
+function modesModule(api, selectionRunner) {
     const source = fs.readFileSync(path.join(resources, 'product-pages.js'), 'utf8');
     const exports = source.slice(0, source.lastIndexOf('return baseclass.extend({')) +
         'return { regions: regionsPage, controls: operatingModeControls, controller: productController, summary: statusSummary, health: pathHealthLabel, region: currentRegion, mode: modeName };';
-    return new Function('baseclass', 'ui', 'netfleet', 'E', 'managed', exports)(baseclass, ui, api, E, { notify: ui.addNotification });
+    return new Function('baseclass', 'ui', 'netfleet', 'E', 'managed', exports)(baseclass, ui, api, E, { notify: ui.addNotification, runSelection: selectionRunner });
 }
 function networkState() {
     return { available: true, backend: 'native-mihomo', revision: 'network-r1', running: true,
@@ -695,6 +695,39 @@ const direct = { data_path: 'passthrough', alive: true, user_mode: 'native_profi
 assert.equal(modes.health(direct), '已直连');
 assert.equal(modes.region({}, direct), '直连');
 assert.equal(modes.mode(direct), '原生直连');
+""")
+
+    def test_region_choice_uses_capability_authority_and_live_readback(self):
+        self.run_js(r"""
+const calls = [];
+const modes = modesModule({ selectRegion: async (...args) => { calls.push(args); return { selected: 'sg' }; } },
+    async (owner, request) => { owner.busy = true; try { await request(); await owner.refreshData(); } finally { owner.busy = false; } });
+const owner = controller(); Object.assign(owner, modes.controller);
+owner.redraw = () => {};
+owner.context = { readOnly: false };
+owner.status = { runtime: {}, regions: [{id:'jp',display_name:'日本'}, {id:'sg',display_name:'新加坡'}], capabilities: [
+    { id:'standard', display_name:'常规出口', enabled:true, can_select_region:true, selectable_regions:['jp','sg'], region_id:'jp' },
+    { id:'ai', display_name:'AI 出口', enabled:true, can_select_region:true, selectable_regions:['jp'], region_id:'jp' }
+] };
+owner.refreshData = async () => { owner.refreshes++; owner.status.capabilities[0].user_mode = 'manual_region'; };
+owner.chooseRegion(null, 'sg');
+assert.equal(modal.title, '指定地区');
+assert.deepEqual(all(modal.content, n => n.tag === 'select')[0].children.map(n => n.attrs.value), ['standard']);
+assert(text(modal.content).includes('整轮后台自动选优暂停'));
+await fire(button(modal.content, '确认切换'));
+assert.deepEqual(calls, [['standard','sg']]);
+assert.equal(owner.refreshes, 1);
+assert.equal(owner.status.capabilities[0].user_mode, 'manual_region');
+owner.chooseRegion('standard');
+owner.liveDataReady = false;
+await fire(button(modal.content, '确认切换'));
+assert.equal(calls.length, 1, 'freshness lost after opening modal must reject submission');
+modal = null;
+owner.chooseRegion('standard');
+assert.equal(modal, null, 'cached read cannot open a mutation');
+owner.liveDataReady = true; owner.context.readOnly = true;
+owner.chooseRegion('standard');
+assert.equal(modal, null);
 """)
 
     def test_dynamic_plugin_management_uses_current_identity_and_confirmation(self):

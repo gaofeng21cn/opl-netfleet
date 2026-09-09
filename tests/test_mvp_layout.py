@@ -772,7 +772,7 @@ function createPage(storage, api, notifications) {
     page.status.regions = [ { id: 'hk', display_name: '🇭🇰 香港' } ];
     page.currentView = 'exits';
     page.redraw();
-    const runningMetrics = findNode(root.children[1], function(node) {
+    const runningMetrics = findNode(findNode(root, node => node.attrs.class === 'netfleet-page-content'), function(node) {
         return node.tag === 'div' && String(node.attrs.class || '').includes('netfleet-metrics is-five');
     });
     assert(runningMetrics && runningMetrics.children.length === 5, 'running metrics must use the balanced five-item layout');
@@ -781,8 +781,8 @@ function createPage(storage, api, notifications) {
     assert(nodeText(root).includes('Netflix'));
 	assert(nodeText(root).includes('Steam'));
 	assert(!nodeText(root).includes('接管的原始策略组'));
-	assert(String(root.children[2].attrs.class).includes('netfleet-source'), 'data source must follow page content');
-	assert(String(root.children[3].attrs.class).includes('cbi-page-actions'), 'actions must follow data source');
+	assert(String(root.children[3].attrs.class).includes('netfleet-source'), 'data source must follow page content');
+	assert(String(root.children[1].attrs.class).includes('netfleet-page-actions'), 'page actions must precede content');
 
 	page.status.providers = [ {
 		id: 'primary', display_name: 'Alpha 正式机场', subscription_section: 'primary', selected: true,
@@ -803,14 +803,14 @@ function createPage(storage, api, notifications) {
 	} ];
 	page.currentView = 'providers';
 	page.redraw();
-	const providerPageText = nodeText(root.children[1]);
+	const providerPageText = nodeText(findNode(root, node => node.attrs.class === 'netfleet-page-content'));
 	assert(providerPageText.includes('1 / 1 正常'));
 	assert(providerPageText.includes('资源数：当前可用 / 已加载'));
 	assert(providerPageText.includes('47/50 节点 · 订阅 52 条'));
 	assert(!providerPageText.includes('3/4 节点'));
 	assert(providerPageText.includes('缓存已更新'));
 	assert(providerPageText.includes('管理订阅'));
-	const subscriptionLink = findNode(root.children[1], function(node) {
+	const subscriptionLink = findNode(findNode(root, node => node.attrs.class === 'netfleet-page-content'), function(node) {
 		return node.tag === 'button' && nodeText(node) === '管理订阅';
 	});
 	assert(subscriptionLink && subscriptionLink.attrs.class === 'netfleet-inline-link');
@@ -879,15 +879,15 @@ function createPage(storage, api, notifications) {
 
 	page.currentView = 'events';
     page.redraw();
-    const eventPageText = nodeText(root.children[1]);
+    const eventPageText = nodeText(findNode(root, node => node.attrs.class === 'netfleet-page-content'));
     assert(eventPageText.indexOf('选路事件') < eventPageText.indexOf('诊断状态'));
     assert(eventPageText.indexOf('诊断状态') < eventPageText.indexOf('当前活动连接'));
     assert(!eventPageText.includes('当前规则命中链'));
-    const diagnosticMetrics = findNode(root.children[1], function(node) {
+    const diagnosticMetrics = findNode(findNode(root, node => node.attrs.class === 'netfleet-page-content'), function(node) {
         return node.tag === 'div' && String(node.attrs.class || '') === 'netfleet-metrics';
     });
     assert(diagnosticMetrics && diagnosticMetrics.children.length === 4, 'diagnostic metrics must contain only four live states');
-    const diagnosticNote = findNode(root.children[1], function(node) {
+    const diagnosticNote = findNode(findNode(root, node => node.attrs.class === 'netfleet-page-content'), function(node) {
         return node.tag === 'div' && String(node.attrs.class || '').includes('netfleet-diagnostic-note');
     });
     assert(diagnosticNote && nodeText(diagnosticNote).includes('原始日志：临时窗口'));

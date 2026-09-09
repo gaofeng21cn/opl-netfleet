@@ -33,6 +33,9 @@ function errorLabel(code) {
 		plugin_api_incompatible: '插件接口版本与当前 NetFleet 不兼容',
 		plugin_backend_unsupported: '插件不适用于当前后端',
 		plugin_dependency_missing: '插件运行依赖缺失',
+		region_not_authorized: '此出口不再允许使用该地区，请刷新后重新选择',
+		protected_probe_failed: '业务连通性验证未通过，请查看当前路径与诊断信息',
+		manual_region_readback_failed: '指定地区的实际节点未能确认，切换未完成',
 		plugin_not_loaded: '请先加载插件',
 		plugin_manifest_invalid: '插件声明无效',
 		plugin_files_unsafe: '插件文件权限或入口无效',
@@ -276,21 +279,23 @@ function readOperations(controller) {
 	return controller.operationRead;
 }
 
-function runSelection(controller, request) {
+function runSelection(controller, request, title) {
+	title = title || '测速与自动选优';
 	controller.busy = true;
 	controller.selectionRequest = true;
 	controller.selectionStartedAt = Math.floor(Date.now() / 1000);
 	controller.previousSelectionId = controller.operations && controller.operations.selection && controller.operations.selection.id;
 	controller.operations = Object.assign({}, controller.operations, { selection: null });
-	ui.showModal('测速与自动选优', [ E('div', { 'class': 'netfleet-native' }, [ operationNode(controller, 'selection'),
+	ui.showModal(title, [ E('div', { 'class': 'netfleet-native' }, [ operationNode(controller, 'selection'),
 		E('div', { 'class': 'right' }, button('收起进度', ui.hideModal)) ]) ]);
 	controller.redraw();
 	readOperations(controller);
 	return Promise.resolve().then(request).then(function(result) {
-		return completedRead(controller, result, '测速与自动选优', function() { return controller.refreshData(true); });
+		return completedRead(controller, result, title, function() { return controller.refreshData(true); });
 	}).catch(function(error) {
 		const uncertain = error && (error.netfleetKind === 'request_aborted' || /timeout|XHR|network/i.test(error.message || ''));
 		notify(null, E('p', {}, uncertain ? '连接中断，设备可能仍在测速；结果尚未确认。' : failure(error)), uncertain ? 'warning' : 'error');
+		return controller.refreshData(true).catch(function() {});
 	}).finally(function() {
 		controller.selectionRequest = false;
 		controller.busy = false;

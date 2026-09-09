@@ -706,3 +706,6 @@
   .nf-search { max-width: 100%; }
   .nf-search input { width: 160px; }
 }
+
+.nf-region-preview { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 0; }
+.nf-region-preview select { max-width: 100%; }

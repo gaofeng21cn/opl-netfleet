@@ -76,7 +76,7 @@ function TableTools({ query, onQuery, sort, onSort, selectedOnly, onSelectedOnly
   return <div className="nf-table-tools">
     <label className="nf-search"><Search aria-hidden="true" /><input aria-label={`搜索${label}`} placeholder={`搜索${label}`} value={query} onChange={e => onQuery(e.target.value)} /></label>
     <select aria-label={`${label}排序`} value={sort} onChange={e => onSort(e.target.value)}>
-      <option value="default">默认排序</option><option value="name">名称</option><option value="latest">最近最优</option><option value="average">平均最优</option>
+      <option value="default">默认排序</option><option value="name">名称</option><option value="latest">最近测量最快</option><option value="average">历史平均最低</option>
     </select>
     <label><input type="checkbox" checked={selectedOnly} onChange={e => onSelectedOnly(e.target.checked)} />仅当前使用</label>
   </div>;
@@ -129,7 +129,7 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
       <div className={`nf-master-detail ${focused ? 'has-detail' : ''}`}>
       <div className="nf-table-wrap">
         <table className="nf-provider-table">
-          <thead><tr><th>机场</th><th>定位</th><th>可用资源</th><th>本轮测速</th><th>历史最近</th><th>平均最优</th><th>订阅状态</th><th>剩余流量</th><th>到期时间</th></tr></thead>
+          <thead><tr><th>机场</th><th>定位</th><th>可用资源</th><th>本轮测速</th><th>历史最近</th><th>历史平均最低</th><th>订阅状态</th><th>剩余流量</th><th>到期时间</th></tr></thead>
           <tbody>{providers.map((provider) => {
             const subscription = subscriptionFor(snapshot, provider);
             const section = provider.subscription_section || '';
@@ -157,8 +157,8 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
         <p>{role(focused.role)} · {billing(focused.billing)}</p>
         <h3>运行质量</h3><dl className="nf-inspector-facts">
           <div><dt>可用资源</dt><dd>{availabilityMeasured ? providerNodes(focused, focusedSubscription) : snapshot.active ? '暂不可读' : '未接管'}</dd></div>
-          <div><dt>最近最优</dt><dd>{delay(focused.last_best_delay_ms ?? focused.best_delay_ms)}</dd></div>
-          <div><dt>平均最优</dt><dd>{averageDelay(focused.average_best_delay_ms, focused.delay_sample_count)}</dd></div>
+          <div><dt>最近测量最快</dt><dd>{delay(focused.last_best_delay_ms ?? focused.best_delay_ms)}</dd></div>
+          <div><dt>历史平均最低</dt><dd>{averageDelay(focused.average_best_delay_ms, focused.delay_sample_count)}</dd></div>
           <div><dt>有效测量</dt><dd>{focused.delay_sample_count == null ? '统计暂不可读' : `${focused.delay_sample_count} 次`}</dd></div>
           {focused.delay_sampled_at && <div><dt>最后测量</dt><dd>{sampledAt(focused.delay_sampled_at)}</dd></div>}
         </dl>
@@ -197,7 +197,7 @@ export function RegionTable({ snapshot, full = false }: { snapshot: StatusSnapsh
       <p className="nf-table-caption">当前 {sortRegionsForDisplay(snapshot).length} 个地区可用 · 显示 {regions.length} 个</p>
       <div className="nf-table-wrap">
         <table>
-          <thead><tr><th>地区</th><th>可用机场</th><th>可用节点</th><th>本轮测速</th><th>历史最近</th><th>平均最优</th><th>有效测量</th><th>模式</th></tr></thead>
+          <thead><tr><th>地区</th><th>可用机场</th><th>可用节点</th><th>本轮测速</th><th>历史最近</th><th>历史平均最低</th><th>有效测量</th><th>模式</th></tr></thead>
           <tbody>{regions.map((region) => (
             <tr className={region.selected ? 'is-selected' : ''} key={region.id}>
               <td><span className="nf-table-name">{regionName(snapshot, region.id)}</span>{region.selected && <small>当前使用</small>}</td>

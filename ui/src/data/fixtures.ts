@@ -54,6 +54,7 @@ const healthy: StatusSnapshot = {
   capabilities: [
     {
       id: 'standard', display_name: '海外加速', enabled: true, compiled: true, mode: 'automatic', user_mode: 'automatic',
+      can_select_region: true, selectable_regions: ['japan', 'singapore', 'hong_kong', 'taiwan', 'united_states'],
       base_group: 'OUTBOUND', base_groups: ['OUTBOUND'], data_path: 'preferred', provider_id: 'alpha', region_id: 'japan',
       role: 'primary', leaf: 'JP-Tokyo-02', alive: true, region_switch_margin_ms: 150, leaf_switch_margin_ms: 150,
       fail_open_stages: [
@@ -64,6 +65,7 @@ const healthy: StatusSnapshot = {
     },
     {
       id: 'ai-compatible', display_name: 'AI 出口', enabled: true, compiled: true, mode: 'automatic', user_mode: 'automatic',
+      can_select_region: true, selectable_regions: ['japan', 'singapore', 'taiwan', 'united_states'],
       base_group: 'AI-OUTBOUND', base_groups: ['AI-OUTBOUND', 'CLAUDE-OUTBOUND'], data_path: 'preferred', provider_id: 'beta',
       region_id: 'singapore', role: 'primary', leaf: 'SG-Singapore-01', alive: true, prefer_region_from: 'standard',
       excluded_regions: ['hong_kong'],

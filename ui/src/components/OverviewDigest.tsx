@@ -74,8 +74,8 @@ export function OverviewDigest({
           <strong className="nf-overview-count">{availabilityMeasured ? availableProviders.length : '未测量'}<small>{availabilityMeasured ? ` / ${status.providers.length} 可用` : ' NetFleet 未接管'}</small></strong>
           <dl className="nf-overview-facts">
             <div><dt>当前使用</dt><dd>{joined(selectedProviders.map((provider) => providerName(status, provider.id)))}</dd></div>
-            <div><dt>最近最优</dt><dd>{fastestProvider ? `${providerName(status, fastestProvider.id)} · ${delay(fastestProvider.last_best_delay_ms ?? fastestProvider.best_delay_ms)}` : '未测量'}</dd></div>
-            <div><dt>平均最优</dt><dd>{fastestAverageProvider ? `${providerName(status, fastestAverageProvider.id)} · ${averageDelay(fastestAverageProvider.average_best_delay_ms, fastestAverageProvider.delay_sample_count)}` : '样本不足'}</dd></div>
+            <div><dt>最近测量最快</dt><dd>{fastestProvider ? `${providerName(status, fastestProvider.id)} · ${delay(fastestProvider.last_best_delay_ms ?? fastestProvider.best_delay_ms)}` : '未测量'}</dd></div>
+            <div><dt>历史平均最低</dt><dd>{fastestAverageProvider ? `${providerName(status, fastestAverageProvider.id)} · ${averageDelay(fastestAverageProvider.average_best_delay_ms, fastestAverageProvider.delay_sample_count)}` : '样本不足'}</dd></div>
           </dl>
         </article>
 
@@ -84,8 +84,8 @@ export function OverviewDigest({
           <strong className="nf-overview-count">{availabilityMeasured ? availableRegions.length : '未测量'}<small>{availabilityMeasured ? ' 个当前可用' : ' NetFleet 未接管'}</small></strong>
           <dl className="nf-overview-facts">
             <div><dt>当前使用</dt><dd>{joined(selectedRegions.map((region) => regionName(status, region.id)))}</dd></div>
-            <div><dt>最近最优</dt><dd>{fastestRegion ? `${regionName(status, fastestRegion.id)} · ${delay(fastestRegion.last_best_delay_ms)}` : '未测量'}</dd></div>
-            <div><dt>平均最优</dt><dd>{fastestAverageRegion ? `${regionName(status, fastestAverageRegion.id)} · ${averageDelay(fastestAverageRegion.average_best_delay_ms, fastestAverageRegion.delay_sample_count)}` : '样本不足'}</dd></div>
+            <div><dt>最近测量最快</dt><dd>{fastestRegion ? `${regionName(status, fastestRegion.id)} · ${delay(fastestRegion.last_best_delay_ms)}` : '未测量'}</dd></div>
+            <div><dt>历史平均最低</dt><dd>{fastestAverageRegion ? `${regionName(status, fastestAverageRegion.id)} · ${averageDelay(fastestAverageRegion.average_best_delay_ms, fastestAverageRegion.delay_sample_count)}` : '样本不足'}</dd></div>
           </dl>
         </article>
 

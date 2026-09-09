@@ -1,4 +1,5 @@
 #!/usr/bin/ucode
+import { readfile } from "fs";
 import { use, release as release_services } from "./services.uc";
 
 const choose_automatic = use("selection.algorithm").choose_automatic;
@@ -159,9 +160,9 @@ if (!result.ok || result.region_id != "fast") {
 result = choose_automatic([
 	candidate("near-node", "p1", "near", 49, 10, "primary"),
 	candidate("current-node", "p2", "current", 93, 10, "primary")
-], policy, "standard", "current", null, true);
-if (!result.ok || result.region_id != "near" || result.changed_region != true) {
-	print("explicit_reselection_kept_slower_region\n"); exit(1);
+], policy, "standard", "current");
+if (!result.ok || result.region_id != "current" || result.changed_region != false) {
+	print("remeasure_did_not_keep_healthy_region\n"); exit(1);
 }
 
 const capability_margin = json(sprintf("%J", policy));
@@ -259,4 +260,39 @@ if (!result.ok || result.region_id != "near" || result.reason != "followed_capab
 
 print("selection_contract_ok\n");
 
+{
+const factory = loadstring(readfile(replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet/plugins/selection/lib/control.uc")))();
+let writes=0, restored=0, failed=false, out=null;
+const policy={main:{enabled:true},capabilities:{standard:{enabled:true}}};
+const entry={name:"Exit",mode:"automatic",region_groups:[{name:"Singapore",region:"sg"}],candidate_groups:[{}]};
+const manifest={generated_groups:{standard:entry}};
+const services={
+ "events.output":{fail:(action,error,detail)=>die(error),ok:(action,result)=>{out=result;}},
+ "events.operation":{begin:()=>{},update:()=>{}},
+ "events.record":{decision_event:()=>({}),record_events:()=>true},
+ "mihomo.artifacts":{load_manifest:()=>manifest},
+ "mihomo.controller":{protected_probes:()=>({ok:true}),proxies:()=>({proxies:{Exit:{now:"Automatic"}}}),select:()=>{restored++;return true;}},
+ "mihomo.paths":{activate_manual_choice:()=>{writes++;return failed?{ok:false,error:"protected_probe_failed"}:{ok:true,leaf:"node",data_path:"manual_region"};},refresh_data_fallback:()=>true},
+ "models.activation":{is_active:()=>true},
+ "selection.algorithm":use("selection.algorithm"),
+ "platform.profile":{current_profile:()=>"active"},
+ "platform.credentials":{api_secret:()=>"fixture"},
+};
+function run(region) { return factory({argv:["select","standard",region,"luci","region"],use:name=>services[name]??{}}).select_action(policy,{}); }
+run("sg"); if(writes!=1 || out.selected!="Singapore")die("manual region not activated");
+for(let region in ["auto","DIRECT","Singapore","missing"]) { let denied=false;try{run(region);}catch(e){denied=true;} if(!denied||writes!=1)die("unauthorized write"); }
+failed=true;try{run("sg");}catch(e){} if(restored!=1)die("failed activation not restored");
+policy.capabilities.standard.enabled=false;try{run("sg");}catch(e){}if(writes!=2)die("disabled capability written");
+policy.capabilities.standard.enabled=true;
+let kept_current=false;
+services["models.selection-view"]={public_candidates:items=>items};
+services["models.ordering"]={automatic_capability_order:()=>["standard"],automatic_provider_sources:()=>[]};
+services["mihomo.latency"]={measure_providers:()=>true};
+services["mihomo.paths"].selection_group=()=>"Selector";
+services["mihomo.paths"].reset_candidate_groups=()=>true;
+services["selection.round"]={automatic_round:(p,m,e,n,s,b,st,pm,pr,shared)=>{kept_current=b;return {ok:false,error:"no_candidates"};}};
+factory({argv:[],use:name=>services[name]??{}}).automatic_select_action(policy,"standard",{},"manual","luci");
+if(kept_current!=true)die("manual remeasure bypassed region stickiness");
+
+}
 release_services();

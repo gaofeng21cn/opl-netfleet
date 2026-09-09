@@ -471,7 +471,11 @@ const manual_result = build(policy, manifest, manual_state, evidence, {
 if (manual_result.capabilities[0].data_path != "manual_region" ||
 	manual_result.capabilities[0].user_mode != "manual_region" ||
 	manual_result.capabilities[0].region_id != "north" ||
-	manual_result.selection?.automation_paused != true) {
+	manual_result.selection?.automation_paused != true ||
+	manual_result.capabilities[0].manual_region_id != "north" ||
+	manual_result.capabilities[0].can_select_region != true ||
+	join(",", manual_result.capabilities[0].selectable_regions) != "north,south" ||
+	filter(manual_result.regions, region => region.id == "north")[0].selected != true) {
 	print("manual_region_status_failed\n");
 	exit(1);
 }

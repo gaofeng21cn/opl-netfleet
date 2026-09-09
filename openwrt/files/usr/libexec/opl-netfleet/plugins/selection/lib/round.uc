@@ -71,7 +71,7 @@ function measurement_key(entry, group, state, providers, target) {
 };
 
 automatic_round = function(policy, manifest, manifest_entry, capability, secret, keep_current,
-	freshness_baseline, provider_measurement_ok, preferred_region, shared, reselect) {
+	freshness_baseline, provider_measurement_ok, preferred_region, shared) {
 	const before = freshness_baseline ?? proxies(secret);
 	// Mihomo caches an empty-fallback selected during provider startup for up to
 	// ten seconds. Clear each automatic leaf group through the controller before
@@ -115,7 +115,7 @@ automatic_round = function(policy, manifest, manifest_entry, capability, secret,
 	const candidates = automatic_candidates(manifest, provider_quotas(policy), measured_state,
 		provider_state, capability, latency_round);
 	const decision = choose_automatic(candidates, policy, capability,
-		keep_current ? current_region(manifest_entry, measured_state) : null, preferred_region, reselect);
+		keep_current ? current_region(manifest_entry, measured_state) : null, preferred_region);
 	return {
 		ok: decision.ok == true,
 		error: decision.error,

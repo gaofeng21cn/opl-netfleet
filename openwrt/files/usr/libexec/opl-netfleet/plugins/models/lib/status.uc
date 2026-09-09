@@ -604,7 +604,7 @@ build = function(policy, manifest, state, evidence, owner) {
 					}
 				}
 			}
-			if (name == automatic_capability_id && runtime.data_path == "preferred" &&
+			if (name == automatic_capability_id && (runtime.data_path == "preferred" || runtime.data_path == "manual_region") &&
 				group.name == runtime.selected_group) {
 				if (provider != null) provider.selected = true;
 				if (region != null) region.selected = true;
@@ -663,6 +663,11 @@ build = function(policy, manifest, state, evidence, owner) {
 			compiled: true,
 			mode: entry?.mode ?? policy.capabilities?.[name]?.mode ?? "manual",
 			user_mode: runtime.user_mode,
+			manual_region_id: region_by_group(entry, runtime.visible_choice)?.region ?? null,
+			selectable_regions: map(entry?.region_groups ?? [], region => region.region),
+			can_select_region: policy.main.enabled == true && capability_policy.enabled == true &&
+				owner.active == true && owner.netfleet_present == true && owner.backend_enabled == true &&
+				owner.mihomo_running == true && state?.proxies != null && length(entry?.region_groups ?? []) > 0,
 			visible_choice: runtime.visible_choice,
 			group: entry?.name ?? null,
 			base_group: entry?.base_group ?? null,

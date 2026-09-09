@@ -62,7 +62,7 @@ NetFleet 自动选择在 enable 初次决定、用户明确触发或 supervisor 
 
 1. **资格过滤**：先排除 capability 不匹配、未获授权地区、组内 latency URLTest 未通过、没有真实叶子身份的候选和明确 `exhausted` 的候选；Mihomo 按真实类型确认的 `compatible/direct/reject/global/pass/block` 控制面终端不是叶子；不得按节点显示名判断类型。叶子必须属于当前组成员，并在 manifest 绑定 source 的 `/providers/proxies` 中唯一存在且对测速 URL 健康，delay `unavailable` 不能伪装成通过；delay API 返回数值仍须由该 URL 的健康记录确认，历史补齐也只读取该 URL 的本轮新记录。保护业务 check 在变更前后验证当前路径，并在 active artifact 内继续作为 fallback 健康目标，但不把业务 URL 的耗时或状态混入速度排序。
 2. **地区代表**：每个授权地区取本轮 `available=true` 且 `latency=ok` 候选中最小 `delay_ms` 的叶子；同地区代表的同速比较复用下述 quota 与稳定身份顺序；跨地区比较在同速时还比较稳定 region ID，具体确定顺序由 `selection.algorithm` 服务的 `best_region` 定义。
-3. **地区切换**：手动“重新选优”直接采用本轮最快合格地区；后台周期选优与订阅自动更新在当前地区代表仍合格时，只有替代地区代表满足 `current_delay_ms - alternative_delay_ms >= selection.region_switch_margin_ms`（默认 150）才切换；当前地区没有合格代表时直接选最快合格地区。业务 status 只决定是否合格，不参与差值。
+3. **地区切换**：“重新选优”、后台周期选优与订阅自动更新在当前地区代表仍合格时，只有替代地区代表满足 `current_delay_ms - alternative_delay_ms >= selection.region_switch_margin_ms`（默认 150）才切换；当前地区没有合格代表时直接选最快合格地区。业务 status 只决定是否合格，不参与差值。
 4. **机场与节点**：地区确定后，在当前故障层的合格 `(provider,node)` 中按 `delay_ms` 升序；只有 delay 完全相同才读取显式 quota tie-break（已知剩余量大的优先），再按稳定 provider ID、node ID 排序。`subscription|buyout` 不得覆盖真实 delay；`primary|reserve` 只决定当前候选层，primary 阶段无合格结果时才进入 reserve，不能把 reserve 当成隐含速度权重。
 5. **能力组合**：每个 capability 先按自己的授权范围和门槛过滤候选。automatic capability 形成一个无环依赖图：唯一根能力先选择；跟随能力只在根能力地区对自身仍合格时复用该地区，否则选择自身同轮最快合格地区。依赖来自 `prefer_region_from`，engine 不按 `standard`、AI、地区或机场名称分支。
 6. **回退**：automatic 选择中 primary 候选全部失败后才进入 reserve。运行时 path probe 失败先由 Mihomo 在 manifest 列出的 primary tier 机场中选择，主用层全部失败后进入 manifest 列出的 reserve tier，最后由外层 guard 进入 `DIRECT`。显式 enable/select 事务失败则先把 active capability guard 切到 `DIRECT`，以 selector/runtime readback 建立即时安全护栏，再恢复 Recovery Profile owner/runtime，原生恢复失败才进入所选后端 passthrough。保护域名结果始终独立报告。任何选择写入失败或业务回读失败都先恢复此前健康 selector，否则走同一事务恢复顺序。
@@ -71,6 +71,15 @@ NetFleet 自动选择在 enable 初次决定、用户明确触发或 supervisor 
 
 调度、启动等待、运行失联和事务恢复统一由[运行与恢复](runtime-and-recovery.md)定义；
 本文件只定义每轮输入与选择。配置结构由[产品对象](domain-model.md#配置解耦合同)定义。
+
+### 手动保持地区
+
+用户指定地区复用 `select` 的已授权地区选择事务：仅改变指定 capability 的可见 selector，
+地区内节点仍由 Mihomo 选择；提交需真实叶子与保护探针回读，失败恢复此前健康选择。
+选择保存在 Mihomo 当前运行态，不写持久 policy；重新应用配置或启用时重新按策略决定。
+任一自动 capability 处于手动地区或直连时，整轮后台自动选优暂停，其他出口保持当前选择。
+“恢复自动选优”显式恢复整轮 automatic capability；“重新选优”遵守地区切换门槛，
+较快的测量不自动构成切换理由。指定地区不受跨地区切换门槛限制。
 
 ### 配置如何保持可替换
 

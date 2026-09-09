@@ -92,7 +92,7 @@ automatic_select_action = function(policy, capability, evidence, trigger, initia
 		const parent = policy.capabilities?.[name]?.prefer_region_from;
 		const preferred_region = parent == null ? null : results[parent]?.decision?.region_id;
 		const result = automatic_round(policy, manifest, manifest.generated_groups[name], name, secret,
-			baseline_probes.ok, state, provider_measurement_ok, preferred_region, shared, trigger == "manual");
+			baseline_probes.ok, state, provider_measurement_ok, preferred_region, shared);
 		results[name] = result;
 		if (!result.ok) {
 			const decision = result.decision ?? { error: result.error };
@@ -184,11 +184,13 @@ select_action = function(policy, evidence) {
 		fail("select", "usage", "select <capability> <exact-member>");
 	}
 	operation_begin("selection", "preparing", { subject: capability, total: 1, completed: 0 });
-	if (choice == "auto") {
+	if (choice == "auto" && ARGV[4] != "region") {
 		automatic_select_action(policy, capability, evidence, "manual", ARGV[3]);
 		return;
 	}
 	const manifest = load_manifest();
+	if (ARGV[4] == "region" && (policy.capabilities?.[capability]?.enabled != true || !length(filter(manifest?.generated_groups?.[capability]?.region_groups ?? [],
+		entry => entry.region == choice)))) fail("select", "region_not_authorized", null);
 	const allowed = manual_member(manifest, capability, choice);
 	if (!allowed.ok) {
 		fail("select", allowed.error, null);

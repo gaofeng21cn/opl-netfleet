@@ -553,13 +553,13 @@ function overviewDigest(status, events, navigate) {
 
 	const providerFacts = [
 		overviewFact('当前使用', joined(selectedProviders.map(function(provider) { return providerName(status, provider.id); }))),
-		overviewFact('最近最优', fastestProvider ? providerName(status, fastestProvider.id) + ' · ' + delay(fastestProvider.last_best_delay_ms ?? fastestProvider.best_delay_ms) : '未测量'),
-		overviewFact('平均最优', fastestAverageProvider ? providerName(status, fastestAverageProvider.id) + ' · ' + averageDelay(fastestAverageProvider.average_best_delay_ms, fastestAverageProvider.delay_sample_count) : '样本不足')
+		overviewFact('最近测量最快', fastestProvider ? providerName(status, fastestProvider.id) + ' · ' + delay(fastestProvider.last_best_delay_ms ?? fastestProvider.best_delay_ms) : '未测量'),
+		overviewFact('历史平均最低', fastestAverageProvider ? providerName(status, fastestAverageProvider.id) + ' · ' + averageDelay(fastestAverageProvider.average_best_delay_ms, fastestAverageProvider.delay_sample_count) : '样本不足')
 	];
 	const regionFacts = [
 		overviewFact('当前使用', joined(selectedRegions.map(function(region) { return regionName(status, region.id); }))),
-		overviewFact('最近最优', fastestRegion ? regionName(status, fastestRegion.id) + ' · ' + delay(fastestRegion.last_best_delay_ms) : '未测量'),
-		overviewFact('平均最优', fastestAverageRegion ? regionName(status, fastestAverageRegion.id) + ' · ' + averageDelay(fastestAverageRegion.average_best_delay_ms, fastestAverageRegion.delay_sample_count) : '样本不足')
+		overviewFact('最近测量最快', fastestRegion ? regionName(status, fastestRegion.id) + ' · ' + delay(fastestRegion.last_best_delay_ms) : '未测量'),
+		overviewFact('历史平均最低', fastestAverageRegion ? regionName(status, fastestAverageRegion.id) + ' · ' + averageDelay(fastestAverageRegion.average_best_delay_ms, fastestAverageRegion.delay_sample_count) : '样本不足')
 	];
 	const decision = latest ? [
 		E('time', {}, finite(latest.at) ? new Date(Number(latest.at) * 1000).toLocaleString() : '未提供'),
@@ -619,7 +619,41 @@ function overviewDigest(status, events, navigate) {
 	return result;
 }
 
-function capabilityPanel(status, capability) {
+function regionChoiceBlocked(controller, capability, region) {
+	if (!controller || controller.context?.readOnly) return '当前为只读模式';
+	if (!controller.liveDataReady || controller.refreshing) return '等待读取设备当前状态';
+	if (controller.busy) return '已有操作正在执行';
+	const choices = capability ? [capability] : controller.status.capabilities || [];
+	return choices.some(function(item) {
+		return item.can_select_region === true && (item.selectable_regions || []).some(function(id) { return !region || id === region; });
+	}) ? null : '当前没有可切换的授权地区';
+}
+
+function regionChoiceButton(controller, capability, region) {
+	const blocked = regionChoiceBlocked(controller, capability, region);
+	return E('button', { 'type': 'button', 'class': 'btn cbi-button netfleet-region-choice',
+		'disabled': blocked ? true : null, 'title': blocked || '手动保持指定地区，地区内节点继续由核心选择',
+		'click': function() { controller.chooseRegion(capability?.id, region); }
+	}, region ? '改用此地区' : '指定地区');
+}
+
+function selectionExplanation(status, capability) {
+	const manual = capability.user_mode === 'manual_region';
+	const message = manual ? '手动保持 ' + regionName(status, capability.manual_region_id || capability.region_id) + ' · 后台自动选优已暂停' :
+		capability.user_mode === 'automatic' ? (status.selection?.automation_paused ? '自动路径保持中 · 后台选优暂停 · 切换门槛 ' : '自动选优 · 地区切换门槛 ') + delay(capability.region_switch_margin_ms ?? status.selection?.region_switch_margin_ms) : modeName(capability);
+	return E('p', { 'class': 'netfleet-selection-note' + (manual ? ' is-manual' : '') }, message);
+}
+
+function selectionToolbar(status, controller) {
+	return E('section', { 'class': 'netfleet-selection-summary' }, [
+		E('div', {}, [ E('h3', {}, '地区选择'), E('p', {}, '测速排名供比较；实际出口还受地区资格、主备用层级和切换门槛约束。') ]),
+		E('div', { 'class': 'netfleet-selection-exits' }, (status.capabilities || []).filter(function(item) { return item.enabled; }).map(function(item) {
+			return E('div', {}, [ E('strong', {}, capabilityName(item) + ' · ' + currentRegion(status, item)), selectionExplanation(status, item), regionChoiceButton(controller, item) ]);
+		}))
+	]);
+}
+
+function capabilityPanel(status, capability, controller) {
 	const businessRoutes = capability.business_routes || [];
 	const defaultRoutes = businessRoutes.filter(function(item) { return item.default_route === 'capability'; });
 	const optionalRoutes = businessRoutes.filter(function(item) { return item.default_route === 'direct'; });
@@ -665,7 +699,8 @@ function capabilityPanel(status, capability) {
 			E('div', {}, [
 				E('h3', {}, capabilityName(capability)),
 				E('p', {}, reasonText(status, capability))
-			])
+			]),
+			regionChoiceButton(controller, capability)
 		]),
 		E('div', { 'class': 'netfleet-exit-current' }, [
 			E('dl', { 'class': 'netfleet-current-route' }, [
@@ -682,6 +717,7 @@ function capabilityPanel(status, capability) {
 			]),
 			E('dl', {}, [ E('dt', {}, '选择方式'), E('dd', {}, modeName(capability)) ])
 		]),
+		selectionExplanation(status, capability),
 		business.length ? E('div', { 'class': 'netfleet-business-routing' }, [
 			E('h4', {}, '业务路由')
 		].concat(business)) : null,
@@ -706,9 +742,9 @@ function seconds(value) {
 	return Number(value) >= 60 && Number(value) % 60 === 0 ? String(Number(value) / 60) + ' 分钟' : String(Number(value)) + ' 秒';
 }
 
-function exitsPage(status) {
+function exitsPage(status, controller) {
 	const content = [];
-	(status.capabilities || []).forEach(function(capability) { content.push(capabilityPanel(status, capability)); });
+	(status.capabilities || []).forEach(function(capability) { content.push(capabilityPanel(status, capability, controller)); });
 	const automation = status.selection && status.selection.automation || {};
 	content.push(section('运行口径', '全部读取自当前设备策略，不参与前端决策。', [ metricGrid([
 		[ '自动选优周期', seconds(automation.selection_interval_seconds) ],
@@ -787,7 +823,7 @@ function tableTools(label, state, update, defaultLabel) {
 		E('input', { 'type': 'search', 'aria-label': '搜索' + label, 'placeholder': '搜索' + label, 'value': state.query || '',
 			'input': function(event) { state.query = event.target.value; update(); } }),
 		E('select', { 'aria-label': label + '排序', 'change': function(event) { state.sort = event.target.value; update(); } },
-			[ ['default', defaultLabel || '默认排序'], ['name', '名称'], ['latest', '最近最优'], ['average', '平均最优'] ].map(function(item) {
+			[ ['default', defaultLabel || '默认排序'], ['name', '名称'], ['latest', '最近测量最快'], ['average', '历史平均最低'] ].map(function(item) {
 				return E('option', { 'value': item[0], 'selected': (state.sort || 'default') === item[0] ? true : null }, item[1]);
 			})),
 		E('label', {}, [ E('input', { 'type': 'checkbox', 'checked': state.selectedOnly || null,
@@ -858,8 +894,8 @@ function providersPage(status, controller) {
 			E('p', {}, (provider.role === 'reserve' ? '备用' : '主用') + ' · ' + (provider.billing === 'buyout' ? '买断制' : '订阅制')),
 			E('h4', {}, '运行质量'), facts([
 				[ '可用资源', availabilityMeasured ? providerNodes(provider, subscription) : status.active ? '暂不可读' : '未接管' ],
-				[ '最近最优', delay(provider.last_best_delay_ms ?? provider.best_delay_ms) ],
-				[ '平均最优', averageDelay(provider.average_best_delay_ms, provider.delay_sample_count) ],
+				[ '最近测量最快', delay(provider.last_best_delay_ms ?? provider.best_delay_ms) ],
+				[ '历史平均最低', averageDelay(provider.average_best_delay_ms, provider.delay_sample_count) ],
 				[ '有效测量', finite(provider.delay_sample_count) ? provider.delay_sample_count + ' 次' : '统计暂不可读' ],
 				[ '最后测量', sampledAt(provider.delay_sampled_at) ]
 			]), E('h4', {}, '订阅与用量'), facts([
@@ -912,7 +948,7 @@ function providersPage(status, controller) {
 	});
 	const update = function() {
 		const visible = tableItems(providers, state, function(provider) { return providerName(status, provider.id); });
-		list.replaceChildren(simpleTable([ '机场', '定位', '可用资源', '本轮测速', '历史最近', '平均最优', '订阅状态', '剩余流量', '到期时间' ],
+		list.replaceChildren(simpleTable([ '机场', '定位', '可用资源', '本轮测速', '历史最近', '历史平均最低', '订阅状态', '剩余流量', '到期时间' ],
 			visible.map(function(provider) { return rows[providers.indexOf(provider)]; }), '没有匹配的机场', 'netfleet-data-table netfleet-provider-table'));
 	};
 	update();
@@ -963,7 +999,8 @@ function regionsPage(status, controller) {
 			E('td', {}, [ finite(region.delay_sample_count) ? String(Number(region.delay_sample_count)) + ' 次' : '统计暂不可读',
 				region.delay_sampled_at ? E('small', {}, sampledAt(region.delay_sampled_at)) : '' ])
 		], [
-			E('td', {}, ({ automatic: '自动选优', manual: '手动选择', manual_only: '仅手动' })[region.mode] || text(region.mode, '未知'))
+			E('td', {}, ({ automatic: '自动选优', manual: '手动选择', manual_only: '仅手动' })[region.mode] || text(region.mode, '未知')),
+			E('td', {}, regionChoiceButton(controller, null, region.id))
 		]));
 	});
 	const list = E('div');
@@ -971,11 +1008,11 @@ function regionsPage(status, controller) {
 	const update = function() {
 		const visible = tableItems(regions, state, function(region) { return regionName(status, region.id); });
 		caption.replaceChildren('当前 ' + regions.length + ' 个地区可用 · 显示 ' + visible.length + ' 个');
-		list.replaceChildren(simpleTable([ '地区', '可用机场', '可用节点', '本轮测速', '历史最近', '平均最优', '有效测量', '模式' ],
+		list.replaceChildren(simpleTable([ '地区', '可用机场', '可用节点', '本轮测速', '历史最近', '历史平均最低', '有效测量', '参与方式', '操作' ],
 			visible.map(function(region) { return rows[regions.indexOf(region)]; }), '没有匹配的地区', 'netfleet-data-table'));
 	};
 	update();
-	return [ E('section', {}, [ tableTools('地区', state, update, '本轮测速（从低到高）'), caption, list ]) ];
+	return [ selectionToolbar(status, controller), E('section', {}, [ tableTools('地区', state, update, '本轮测速（从低到高）'), caption, list ]) ];
 }
 
 function displayEventName(events, kind, id) {
@@ -1276,12 +1313,12 @@ const productController = {
 			E('button', buttonAttrs({ 'class': 'btn cbi-button', 'click': function() { return self.currentView === 'components' ? managed.loadComponents(self) : self.refreshData(); } }, false), this.busy || this.refreshing ? '正在读取…' : '刷新')
 		];
 		if ([ 'overview', 'exits', 'regions' ].includes(this.currentView) && actions.can_select_auto === true)
-			buttons.push(E('button', buttonAttrs({ 'class': 'btn cbi-button cbi-button-action', 'click': function() { self.confirmAction('select'); } }, true), '重新选优'));
+			buttons.push(E('button', buttonAttrs({ 'class': 'btn cbi-button cbi-button-action', 'click': function() { self.confirmAction('select'); } }, true), this.status.selection?.automation_paused ? '恢复自动选优' : '重新选优'));
 		if (this.currentView === 'providers' && actions.can_refresh === true)
 			buttons.push(E('button', buttonAttrs({ 'class': 'btn cbi-button cbi-button-action', 'click': function() { self.confirmAction('refresh'); } }, true), '立即更新订阅'));
 
 		let content;
-		if (this.currentView === 'exits') content = exitsPage(this.status);
+		if (this.currentView === 'exits') content = exitsPage(this.status, this);
 		else if (this.currentView === 'providers') content = providersPage(this.status, this);
 		else if (this.currentView === 'regions') content = regionsPage(this.status, this);
 		else if (this.currentView === 'config') content = [ netfleetConfig.render(this) ];
@@ -1321,7 +1358,7 @@ const productController = {
 			'class': 'netfleet-dashboard-link', 'type': 'button', 'disabled': true,
 			'title': dashboardReady(this.status) ? '正在读取连接信息' : dashboardUnavailableReason(this.status)
 		}, 'Zashboard ↗');
-		this.root.replaceChildren(pageHeading(title, this.status, dashboard), E('div', {}, content), source, E('div', { 'class': 'cbi-page-actions' }, buttons));
+		this.root.replaceChildren(pageHeading(title, this.status, dashboard), E('div', { 'class': 'netfleet-page-actions' }, buttons), E('div', { 'class': 'netfleet-page-content' }, content), source);
 	},
 
 	openDashboard: function() {
@@ -1609,10 +1646,44 @@ const productController = {
 			confirmed ? '当前：' + actual : '切换结果尚未确认；当前：' + actual), failure || !confirmed ? 'warning' : 'info');
 	},
 
+	chooseRegion: function(capabilityId, regionId) {
+		const self = this;
+		if (regionChoiceBlocked(this, null, regionId)) return;
+		const capabilities = (this.status.capabilities || []).filter(function(item) {
+			return item.can_select_region && (!regionId || (item.selectable_regions || []).includes(regionId));
+		});
+		let capability = capabilities.find(function(item) { return item.id === capabilityId; }) || capabilities[0];
+		let region = regionId || capability.manual_region_id || capability.region_id;
+		const details = E('div');
+		const submit = E('button', { 'type': 'button', 'class': 'btn cbi-button-action', 'click': function() {
+			if (regionChoiceBlocked(self, capability, region) || !(capability.selectable_regions || []).includes(region)) return;
+			return managed.runSelection(self, function() { return netfleet.selectRegion(capability.id, region); }, '切换并保持地区');
+		}}, '确认切换');
+		function render() {
+			const options = capability.selectable_regions || [];
+			if (!options.includes(region)) region = options[0];
+			details.replaceChildren(
+				E('label', { 'class': 'netfleet-choice-field' }, [ E('span', {}, '出口'), E('select', { 'change': function(event) {
+					capability = capabilities.find(function(item) { return item.id === event.target.value; }); render();
+				}}, capabilities.map(function(item) { return E('option', { 'value': item.id, 'selected': item.id === capability.id ? true : null }, capabilityName(item)); })) ]),
+				E('p', { 'class': 'netfleet-selection-note' }, '当前路径：' + route(self.status, capability).join(' → ')),
+				E('label', { 'class': 'netfleet-choice-field' }, [ E('span', {}, '保持地区'), E('select', { 'change': function(event) { region = event.target.value; render(); } }, options.map(function(id) {
+					return E('option', { 'value': id, 'selected': id === region ? true : null }, regionName(self.status, id));
+				})) ]),
+				E('p', {}, '仅切换此出口，其他出口保持当前路径。地区内继续自动选择节点；整轮后台自动选优暂停，直到恢复自动选优。重新应用配置或启用时会按策略重新选择。'),
+				E('p', {}, '切换后验证业务连通性；验证失败则恢复此前健康选择。')
+			);
+			submit.disabled = !region || !!regionChoiceBlocked(self, capability, region);
+		}
+		render();
+		ui.showModal('指定地区', [ E('div', { 'class': 'netfleet-native netfleet-region-dialog' }, [details,
+			E('div', { 'class': 'right' }, [ E('button', { 'type': 'button', 'class': 'btn', 'click': ui.hideModal }, '取消'), ' ', submit ]) ]) ]);
+	},
+
 	confirmAction: function(action) {
 		const self = this;
 		const copy = {
-			select: [ '重新自动选优', '将按依赖顺序执行一轮有界测速和原子选择，并恢复后台周期选优。', '开始选优' ],
+			select: this.status.selection?.automation_paused ? [ '恢复自动选优', '将解除各自动出口的手动保持，重新测速，并按地区切换门槛恢复整轮自动选优。', '恢复自动选优' ] : [ '重新选优', '将统一测速，再按各出口资格和地区切换门槛选择。当前地区健康时，小幅延迟差异不会导致换区；如需立即改用某地区，请使用“指定地区”。', '开始选优' ],
 			refresh: [ '立即更新机场订阅', '将更新当前配置相关的机场；内容未变化时不重载。使用中的内容变化后会重启核心并重新选优，已有连接可能中断；失败的机场保留旧缓存。', '开始更新' ]
 			}[action];
 		ui.showModal(copy[0], [

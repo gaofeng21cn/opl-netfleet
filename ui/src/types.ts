@@ -35,6 +35,9 @@ export interface Capability {
   compiled: boolean;
   mode: string;
   user_mode?: string | null;
+  manual_region_id?: string | null;
+  selectable_regions?: string[];
+  can_select_region?: boolean;
   base_group?: string | null;
   base_groups?: string[];
   data_path: string;

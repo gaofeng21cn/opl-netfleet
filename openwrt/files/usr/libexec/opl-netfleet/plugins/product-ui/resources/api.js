@@ -54,6 +54,7 @@ const calls = {
 	configSave: declare({ object: 'opl-netfleet', method: 'config_save', params: [ 'request' ] }),
 	configApply: declare({ object: 'opl-netfleet', method: 'config_apply', params: [ 'request' ] }),
 	enable: declare({ object: 'opl-netfleet', method: 'enable' }),
+	selectRegion: declare({ object: 'opl-netfleet', method: 'select_region', params: [ 'capability', 'region' ] }),
 	selectAuto: declare({ object: 'opl-netfleet', method: 'select_auto', params: [ 'capability' ] }),
 	refresh: declare({ object: 'opl-netfleet', method: 'refresh' }),
 	disable: declare({ object: 'opl-netfleet', method: 'disable' })
@@ -186,6 +187,12 @@ return baseclass.extend({
 	},
 	enable: function() {
 		return withRpcTimeout(300, function() { return execute('enable'); });
+	},
+	selectRegion: function(capability, region) {
+		return withRpcTimeout(300, function() { return calls.selectRegion(capability, region).then(function(response) {
+			if (!response || response.ok !== true) throw new Error(response?.error || 'operation_failed');
+			return response.result;
+		}); });
 	},
 	selectAuto: function(capability) {
 		return withRpcTimeout(300, function() { return calls.selectAuto(capability).then(function(response) {
