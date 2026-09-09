@@ -606,10 +606,13 @@ def main():
     action = sys.argv[1]
     if action == "watch":
         isolation.constrain_manager()
+        import signal
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
         mutation_wait_at = None
         while True:
             started = time.monotonic()
             try:
+                device_identity.reap_sync()
                 gateway.start_worker()
                 with mutation_lock() as lock:
                     tick(lock, delayed_by_mutation=mutation_wait_at is not None and 0 <= started - mutation_wait_at < 10)

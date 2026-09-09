@@ -25,12 +25,50 @@ class IdentityConsumer(unittest.TestCase):
             # Run the real background launcher; a missing owner exits immediately.
             with patch.object(control.device_identity, "_workers", [finished]), \
                     patch.object(control.device_identity, "RUN", Path(directory)), \
-                    patch.object(control.device_identity, "OWNER", "/missing-test-owner"):
+                    patch.object(control.device_identity, "OWNER", "/missing-test-owner"), \
+                    patch.object(control.device_identity, "_next_sync", 0), \
+                    patch.dict(os.environ, {"PATH": directory}):
+                executable = Path(directory) / 'ucode'
+                executable.write_text(f"#!{sys.executable}\npass\n")
+                executable.chmod(0o700)
                 control.device_identity.schedule_sync()
                 workers = control.device_identity._workers
                 self.assertEqual(len(workers), 1)
                 self.assertIsNot(workers[0], finished)
                 workers[0].wait(timeout=10)
+
+    def test_sync_timeout_kills_descendants_and_does_not_retry_each_tick(self):
+        for leader_exits in (False, True):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory); marker = root / "child"
+                executable = root / "ucode"
+                child = "import time; from pathlib import Path; p=Path(" + repr(str(marker)) + "); \nwhile True: p.write_text(str(time.monotonic())); time.sleep(.02)"
+                executable.write_text(f"#!{sys.executable}\nimport subprocess,time\n"
+                                      f"subprocess.Popen([{sys.executable!r}, '-c', {child!r}])\n"
+                                      + ("time.sleep(.05)\n" if leader_exits else "time.sleep(30)\n"))
+                executable.chmod(0o700)
+                with patch.object(control.device_identity, "RUN", root / "run"), \
+                        patch.object(control.device_identity, "_workers", []), \
+                        patch.object(control.device_identity, "_next_sync", 0), \
+                        patch.dict(os.environ, {"PATH": directory}):
+                    control.device_identity.schedule_sync()
+                    worker = control.device_identity._workers[0]
+                    try:
+                        deadline = time.monotonic() + 2
+                        while not marker.exists() and time.monotonic() < deadline:
+                            time.sleep(.02)
+                        self.assertTrue(marker.exists())
+                        if leader_exits: time.sleep(.1)
+                        else: worker.deadline = 0
+                        control.device_identity.reap_sync()
+                        stopped = marker.read_text(); time.sleep(.1)
+                        self.assertEqual(stopped, marker.read_text(), 'descendant survived')
+                        self.assertFalse(control.device_identity._workers)
+                        self.assertFalse(list((root / "run").iterdir()))
+                        for _ in range(3): control.device_identity.resolve(self.config, {}, schedule=True)
+                        self.assertFalse(control.device_identity._workers, 'failed tick bypassed retry interval')
+                    finally:
+                        control.device_identity.reap_sync(force=True)
 
     def test_real_publication_revocation_expiry_and_no_reader_process(self):
         spec = importlib.util.spec_from_file_location("address_source", Path(__file__).resolve().parents[1] / "plugins/device-identity/resources/identity.py")

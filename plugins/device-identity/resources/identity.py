@@ -352,6 +352,7 @@ def sync(config, force=False):
     previous = read(RUN / "attempt.json", {})
     elapsed = time.monotonic() - previous.get("monotonic", -INTERVAL)
     if not force and previous.get("revision") == revision(config) and 0 <= elapsed < INTERVAL:
+        publish(config)
         return status(config)
     import http.client
     import ssl

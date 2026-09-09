@@ -1,4 +1,6 @@
 """Read address evidence through the registered plugin without sharing private files."""
+import atexit
+import signal
 import json
 import os
 from pathlib import Path
@@ -12,22 +14,49 @@ import time
 OWNER = "/usr/libexec/opl-netfleet/main.uc"
 RUN = Path("/var/run/opl-netfleet-compat")
 _workers = []
+_next_sync = 0
 TRUSTED_UID = 0
 EVIDENCE = Path("/var/run/opl-netfleet-device-identity/evidence.json")
 
 
+def reap_sync(force=False):
+    now = time.monotonic()
+    for worker in list(_workers):
+        if not force and worker.poll() is None and now < worker.deadline:
+            continue
+        # The host invokes nested shells and a plugin process. Kill the session's
+        # process group even if its leader has already exited.
+        if getattr(worker, "owns_session", False):
+            try:
+                os.killpg(worker.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        worker.wait(timeout=2)
+        path = getattr(worker, "request_path", None)
+        if path:
+            Path(path).unlink(missing_ok=True)
+        _workers.remove(worker)
+
+
+atexit.register(lambda: reap_sync(force=True))
+
+
 def schedule_sync():
-    RUN.mkdir(parents=True, exist_ok=True, mode=0o700)
-    _workers[:] = [worker for worker in _workers if worker.poll() is None]
-    if _workers:
+    global _next_sync
+    reap_sync()
+    now = time.monotonic()
+    if _workers or now < _next_sync:
         return
+    # Keep the attempt clock independent of successful health-state commits.
+    _next_sync = now + 30
+    RUN.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd, path = tempfile.mkstemp(prefix="identity-", suffix=".json", dir=RUN)
     with os.fdopen(fd, "w") as stream:
         json.dump({"request": {"id": "device-identity", "action": "sync", "params": {}}}, stream)
     try:
-        worker = subprocess.Popen(["sh", "-c", 'timeout 7 ucode "$1" plugin-read "$2" >/dev/null 2>&1; rm -f "$2"',
-                                   "identity-sync", OWNER, path], stdin=subprocess.DEVNULL,
+        worker = subprocess.Popen(["ucode", OWNER, "plugin-read", path], stdin=subprocess.DEVNULL,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        worker.deadline, worker.request_path, worker.owns_session = now + 7, path, True
         _workers.append(worker)
     except OSError:
         Path(path).unlink(missing_ok=True)
@@ -78,6 +107,8 @@ def resolve(config, previous=None, schedule=False):
         return {}, previous or {}
     now = time.monotonic()
     progress = dict(previous or {})
+    if schedule:
+        reap_sync()
     if schedule and not 0 <= now - progress.get("last_sync", -30) < 30:
         schedule_sync()
         progress["last_sync"] = now

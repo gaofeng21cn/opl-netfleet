@@ -223,6 +223,17 @@ class Source(unittest.TestCase):
             self.assertEqual(current["addresses"], ["2001:db8::2"])
             self.assertEqual(current["expires_in"], 89)
 
+    def test_raw_solicitation_matches_independent_protocol_decoder(self):
+        from scapy.layers.inet6 import IPv6, ICMPv6ND_NS, ICMPv6NDOptSrcLLAddr, in6_chksum
+        from scapy.layers.l2 import Ether
+        from neighbor import solicitation
+        p = Ether(solicitation("fe80::fe", MAC, NEW))
+        self.assertEqual(p[IPv6].dst, "ff02::1:ff00:1234")
+        self.assertEqual(p[IPv6].hlim, 255)
+        self.assertEqual(p[ICMPv6ND_NS].tgt, NEW)
+        self.assertEqual(p[ICMPv6NDOptSrcLLAddr].lladdr, MAC)
+        self.assertEqual(in6_chksum(58, p[ICMPv6ND_NS], bytes(p[ICMPv6ND_NS])), 0)
+
     def test_neighbor_reply_validation(self):
         from scapy.layers.inet6 import IPv6, ICMPv6ND_NA, ICMPv6NDOptDstLLAddr
         from scapy.layers.l2 import Ether
@@ -231,14 +242,14 @@ class Source(unittest.TestCase):
         source, destination = "fe80::fe", "02:00:00:00:00:fe"
         packet = Ether(src=MAC, dst=destination) / IPv6(src="fe80::1", dst=source, hlim=255) / \
                  ICMPv6ND_NA(tgt=NEW, S=1, R=0) / ICMPv6NDOptDstLLAddr(lladdr=MAC)
-        self.assertEqual(advertisement(Ether(bytes(packet)), [NEW], destination, source), (NEW, MAC))
+        self.assertEqual(advertisement(bytes(packet), [NEW], destination, source), (NEW, MAC))
         for layer, field, value in ((IPv6, "hlim", 64), (IPv6, "dst", "fe80::99"),
                                     (ICMPv6ND_NA, "tgt", "2001:db8::99"), (ICMPv6ND_NA, "S", 0),
                                     (ICMPv6ND_NA, "R", 1), (ICMPv6ND_NA, "cksum", 1),
                                     (ICMPv6NDOptDstLLAddr, "lladdr", destination), (Ether, "dst", MAC)):
             changed = packet.copy()
             setattr(changed[layer], field, value)
-            self.assertIsNone(advertisement(Ether(bytes(changed)), [NEW], destination, source), (layer, field))
+            self.assertIsNone(advertisement(bytes(changed), [NEW], destination, source), (layer, field))
 
 
 if __name__ == "__main__":
