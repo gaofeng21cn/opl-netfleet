@@ -354,6 +354,8 @@ def probe_without_network_lock(lock, work):
 
 def tick(lock=None, delayed_by_mutation=False):
     import asyncio
+    if delayed_by_mutation:
+        gateway.invalidate_snapshot()
     config = validate(read(CONFIG, DEFAULT))
     previous = read(STATE, {})
     now = time.monotonic()

@@ -158,6 +158,12 @@ else:
                                   (line.split() for line in (root / 'cpu.stat').read_text().splitlines())},
                                 'memory_current': int((root / 'memory.current').read_text())}
             return result
+        # Include a realistic populated base set: an empty VM ruleset hid the
+        # cost of repeatedly rendering the whole gateway table on small routers.
+        elements = ', '.join(f'198.18.{number // 256}.{number % 256}' for number in range(8192))
+        subprocess.run(['nft', '-f', '-'], input='add set inet netfleet compatibility_scale_test '
+                       '{ type ipv4_addr; elements = { ' + elements + ' }; }\n',
+                       text=True, check=True, capture_output=True)
         measurements = {}
         for workload in ('idle', '10_small_https_requests'):
             before, started = resources(), time.monotonic()
@@ -178,6 +184,7 @@ else:
                            for name, values in after.items()}}
         Path('/tmp/compat-performance.json').write_text(json.dumps(measurements))
         print('compatibility_performance=' + json.dumps(measurements), flush=True)
+        self.command('nft', 'delete', 'set', 'inet', 'netfleet', 'compatibility_scale_test')
         # A normal owner transaction can outlast the lease. The kernel must
         # bypass during the lock, then fresh health can readmit without an outage.
         faults_before = self.owner.call("get")["recovery"]["faults"]

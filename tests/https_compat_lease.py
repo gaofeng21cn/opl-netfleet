@@ -83,5 +83,50 @@ class Lease(unittest.TestCase):
                 self.assertFalse(interception.listener_owned(os.getppid(), os.getuid()))
 
 
+class SnapshotPreview(unittest.TestCase):
+    def setUp(self):
+        runtime = Path('/usr/libexec/opl-netfleet-compat')
+        if not runtime.exists():
+            runtime = Path(__file__).resolve().parents[1] / 'openwrt/https-compat/files/usr/libexec/opl-netfleet-compat'
+        sys.path.insert(0, str(runtime))
+        self.addCleanup(sys.path.pop, 0)
+
+    def test_renew_rejection_discards_preview_and_next_snapshot_is_fresh(self):
+        import gateway
+        with patch.multiple(gateway, _watching=True, _worker=object(), _snapshot=None), \
+             patch.object(gateway, 'worker_response') as response, \
+             patch.object(gateway.time, 'monotonic', return_value=100):
+            response.return_value = {'ok': True, 'result': {'ready': True, 'epoch': 'old'}}
+            self.assertEqual(gateway.snapshot()['epoch'], 'old')
+            self.assertEqual(gateway.snapshot()['epoch'], 'old')
+            self.assertEqual(response.call_count, 1)
+            response.return_value = {'ok': False, 'error': 'lease_gateway_changed'}
+            with self.assertRaisesRegex(ValueError, 'lease_gateway_changed'):
+                gateway.renew([])
+            self.assertIsNone(gateway._snapshot)
+            response.return_value = {'ok': True, 'result': {'ready': True, 'epoch': 'new'}}
+            self.assertEqual(gateway.snapshot()['epoch'], 'new')
+            self.assertEqual(response.call_count, 3)
+
+    def test_expiry_failure_and_independent_reads_are_not_cached(self):
+        import gateway
+        with patch.multiple(gateway, _watching=True, _snapshot=None), \
+             patch.object(gateway, 'call') as call, patch.object(gateway.time, 'monotonic') as now:
+            now.return_value = 100
+            call.return_value = {'ready': True, 'epoch': 'old'}
+            gateway.snapshot()
+            now.return_value = 110
+            call.return_value = {'ready': False, 'reason': 'native_gateway_not_ready'}
+            self.assertFalse(gateway.snapshot()['ready'])
+            self.assertIsNone(gateway._snapshot)
+            gateway.snapshot()
+            self.assertEqual(call.call_count, 3)
+            gateway._watching = False
+            call.return_value = {'ready': True, 'epoch': 'new'}
+            gateway.snapshot()
+            gateway.snapshot()
+            self.assertEqual(call.call_count, 5)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

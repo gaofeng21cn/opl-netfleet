@@ -14,10 +14,17 @@ PORT = 18443
 _epoch = None
 _worker = None
 _watching = False
+_snapshot = None
+
+
+def invalidate_snapshot():
+    global _snapshot
+    _snapshot = None
 
 
 def stop_worker():
     global _worker
+    invalidate_snapshot()
     worker, _worker = _worker, None
     if worker is None:
         return
@@ -96,6 +103,7 @@ def call(action, **params):
             stop_worker()
             raise
         if not response.get('ok'):
+            invalidate_snapshot()
             raise ValueError(response.get('error', 'lease_operation_failed'))
         return response['result']
     with tempfile.TemporaryDirectory(prefix="netfleet-lease-") as directory:
@@ -112,7 +120,15 @@ def call(action, **params):
 
 
 def snapshot():
-    return call("snapshot")
+    global _snapshot
+    now = time.monotonic()
+    if _watching and _snapshot is not None and 0 <= now - _snapshot[0] < 10:
+        return _snapshot[1]
+    value = call("snapshot")
+    # This is only the controller's preview. Renew always asks the backend to
+    # validate its live network and epoch before it can extend a kernel lease.
+    _snapshot = (now, value) if _watching and value.get('ready') and not value.get('reason') else None
+    return value
 
 
 def prepare(network):
