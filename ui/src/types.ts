@@ -56,7 +56,18 @@ export interface Capability {
   reason?: CapabilityReason;
 }
 
+export interface MeasurementEntry {
+  provider_id: string;
+  region_id: string;
+  ok: boolean;
+  delay_ms: number | null;
+  quota_state: string;
+  reason: string | null;
+  measurement_reason: string | null;
+}
+
 export interface Measurement {
+  entries?: MeasurementEntry[];
   sampled_at: number;
   best_delay_ms: number | null;
   measured_count: number;

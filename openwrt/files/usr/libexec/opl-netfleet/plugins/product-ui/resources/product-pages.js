@@ -845,13 +845,47 @@ function tableItems(items, state, name) {
 	return rows;
 }
 
-function measurementCell(value) {
-	const labels = { group_unavailable: '组未加载', latency_health_failed: '测速目标未通过', no_verified_leaf: '节点身份或测速未通过', delay_unavailable: '无本轮延迟', quota_exhausted: '配额耗尽', measurement_unavailable: '测量不可用' };
-	if (!value) return E('td', {}, '尚无选优记录');
-	const reasons = Object.entries(value.exclusions || {}).map(function(item) { return (labels[item[0]] || '测量不可用') + ' ' + item[1] + ' 组'; }).join(' · ');
-	return E('td', { 'title': sampledAt(value.sampled_at) }, [
-		E('span', {}, delay(value.best_delay_ms, '本轮无有效测速')),
-		E('small', { 'class': 'netfleet-measurement-note' }, reasons || value.measured_count + ' 组测速通过')
+const measurementReasons = {
+  "quota_exhausted": "流量已耗尽，不参与选优",
+  "group_unavailable": "候选线路尚未加载",
+  "group_members_unavailable": "候选线路的节点列表不可读",
+  "selected_leaf_unavailable": "候选线路未选中有效成员",
+  "no_proxy_leaf": "候选线路未选中代理节点",
+  "provider_nodes_unavailable": "机场的节点清单不可读",
+  "leaf_not_in_provider": "所选节点不在该机场的节点清单中",
+  "leaf_identity_ambiguous": "机场内存在同名节点，无法确认归属",
+  "leaf_type_unavailable": "所选节点缺少类型信息",
+  "group_latency_failed": "候选线路的测速健康记录为失败（未提供底层错误）",
+  "group_latency_unrecorded": "候选线路缺少该测速目标的健康记录",
+  "leaf_latency_failed": "所选节点的测速健康记录为失败（未提供底层错误）",
+  "leaf_latency_unrecorded": "所选节点缺少该测速目标的健康记录",
+  "delay_unavailable": "未取得本轮新增的有效延迟记录",
+  "latency_health_failed": "未取得候选线路的测速成功记录；旧记录未保留细节",
+  "no_verified_leaf": "未能确认节点归属或测速健康；旧记录未保留细节",
+  "measurement_unavailable": "未取得有效测速，记录未提供具体原因"
+};
+function measurementCell(value, status) {
+	if (!value) return E('td', {}, '尚无测速记录');
+	const entries = value.entries || [];
+	const exhausted = (value.exclusions || {}).quota_exhausted || 0;
+	const unmeasured = entries.filter(function(entry) { return !entry.ok && entry.quota_state !== 'exhausted'; }).length;
+	const explanation = function(reason) { return measurementReasons[reason || 'measurement_unavailable'] || '未取得有效测速，原因暂无法解释'; };
+	const details = [ E('summary', {}, '查看测速详情' + (entries.length ? '（' + entries.length + ' 项）' : '')),
+		E('p', {}, '每项对应一个机场在一个地区的候选线路，不代表节点数。测速结果不等于业务保护检查结果。') ];
+	if (entries.length) details.push(E('ul', {}, entries.map(function(entry) {
+		const content = [ E('strong', {}, providerName(status, entry.provider_id) + ' · ' + regionName(status, entry.region_id)),
+			E('div', {}, entry.ok ? '测速成功 · ' + delay(entry.delay_ms) : explanation(entry.measurement_reason)) ];
+		if (entry.quota_state === 'exhausted') content.push(E('div', {}, measurementReasons.quota_exhausted));
+		return E('li', {}, content);
+	})));
+	else details.push(E('p', {}, '此记录没有逐项详情。' + Object.entries(value.exclusions || {}).map(function(item) {
+		return explanation(item[0]) + '：' + item[1] + ' 项';
+	}).join('；')));
+	return E('td', { 'class': 'netfleet-measurement' }, [
+		E('span', {}, delay(value.best_delay_ms, '未取得有效测速')),
+		E('small', { 'class': 'netfleet-measurement-note' }, value.measured_count + ' 项测速成功' + (exhausted ? ' · ' + exhausted + ' 项流量耗尽' : '') + (unmeasured ? ' · ' + unmeasured + ' 项无有效结果' : '')),
+		E('small', { 'class': 'netfleet-measurement-note' }, '采样于 ' + sampledAt(value.sampled_at)),
+		E('details', {}, details)
 	]);
 }
 
@@ -931,7 +965,7 @@ function providersPage(status, controller) {
 				E('span', {}, countPair(provider.available_region_count, provider.region_count) + ' 地区'),
 				E('small', {}, providerNodes(provider, subscription))
 			] : status.active ? '暂不可读' : '未接管'),
-			measurementCell(provider.measurement)
+			measurementCell(provider.measurement, status)
 		].concat([
 			E('td', { 'class': subscriptionFailed(subscription) ? 'is-warning' : '' }, subscriptionState(subscription)),
 			E('td', {}, [ quota(provider), quotaMeter(provider), provider.billing === 'subscription' && provider.quota && managed.quotaResetLabel(provider.quota.reset_day) ?
@@ -943,7 +977,7 @@ function providersPage(status, controller) {
 	});
 	const update = function() {
 		const visible = tableItems(providers, state, function(provider) { return providerName(status, provider.id); });
-		list.replaceChildren(simpleTable([ '机场', '定位', '可用资源', '本轮测速', '订阅状态', '剩余流量', '到期时间' ],
+		list.replaceChildren(simpleTable([ '机场', '定位', '可用资源', '最近一次测速', '订阅状态', '剩余流量', '到期时间' ],
 			visible.map(function(provider) { return rows[providers.indexOf(provider)]; }), '没有匹配的机场', 'netfleet-data-table netfleet-provider-table'));
 	};
 	update();
@@ -987,7 +1021,7 @@ function regionsPage(status, controller) {
 			E('td', {}, [regionName(status, region.id), E('small', {}, (status.capabilities || []).filter(function(cap) { return cap.enabled && cap.region_id === region.id && ['preferred', 'manual_region'].includes(cap.data_path); }).map(capabilityName).join('、'))]),
 			E('td', {}, countPair(region.available_provider_count, region.provider_count)),
 			E('td', {}, region.node_count == null ? '节点清单暂不可读' : countPair(region.available_node_count, region.node_count)),
-			measurementCell(region.measurement)
+			measurementCell(region.measurement, status)
 		].concat([
 			E('td', {}, E('details', { 'class': 'netfleet-measurement-history' }, [ E('summary', {}, '历史测量'),
 				E('div', {}, '最近 ' + delay(region.last_best_delay_ms)),
@@ -1003,11 +1037,11 @@ function regionsPage(status, controller) {
 	const update = function() {
 		const visible = tableItems(regions, state, function(region) { return regionName(status, region.id); });
 		caption.replaceChildren('当前 ' + regions.length + ' 个地区可用 · 显示 ' + visible.length + ' 个');
-		list.replaceChildren(simpleTable([ '地区', '可用机场', '可用节点', '本轮测速', '历史测量', '参与方式', '操作' ],
+		list.replaceChildren(simpleTable([ '地区', '可用机场', '可用节点', '最近一次测速', '历史测量', '参与方式', '操作' ],
 			visible.map(function(region) { return rows[regions.indexOf(region)]; }), '没有匹配的地区', 'netfleet-data-table'));
 	};
 	update();
-	return [ selectionToolbar(status, controller), E('section', {}, [ tableTools('地区', state, update, '本轮测速（从低到高）'), caption, list ]) ];
+	return [ selectionToolbar(status, controller), E('section', {}, [ tableTools('地区', state, update, '最近一次测速（从低到高）'), caption, list ]) ];
 }
 
 function displayEventName(events, kind, id) {

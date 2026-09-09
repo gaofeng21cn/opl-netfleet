@@ -139,9 +139,23 @@ try {
 	selection.command_select(["select", "standard", "auto"]);
 	check(selected != near.name, "other URL success cannot authorize a failed speed test");
 	const rejected_entry = filter(documents.load_evidence().capabilities.standard.entries, item => item.candidate == near.name)[0];
-	check(rejected_entry.ok == false && rejected_entry.reason == 'no_verified_leaf', "excluded candidate remains visible with reason");
+	check(rejected_entry.ok == false && rejected_entry.reason == 'leaf_latency_failed' && rejected_entry.measurement_reason == 'leaf_latency_failed', "excluded candidate remains visible with reason");
 	provider_state[entry.providers.alpha.source_name].proxies[0].extra[policy.checks.latency.url].alive = true;
 	const round = use("selection.round");
+	const diagnosed = round.automatic_candidates(manifest, {alpha: {state: "exhausted"}}, state,
+		provider_state, "standard", {target: policy.checks.latency.url, results: delays});
+	check(diagnosed[0].available && diagnosed[0].reason == "quota_exhausted" && diagnosed[0].measurement_reason == null,
+		"successful measurement and exhausted quota remain separate facts");
+	const diagnose = use("models.selector").provider_group_measurement_reason;
+	const source = entry.providers.alpha.source_name, url = policy.checks.latency.url;
+	check(diagnose(state.proxies, {}, source, near.name, url) == "provider_nodes_unavailable", "missing provider inventory is explicit");
+	const saved_health = provider_state[source].proxies[0].extra;
+	provider_state[source].proxies[0].extra = {};
+	check(diagnose(state.proxies, provider_state, source, near.name, url) == "leaf_latency_unrecorded", "missing URL health is not a failed connection");
+	provider_state[source].proxies[0].extra = saved_health;
+	push(provider_state[source].proxies, clone(provider_state[source].proxies[0]));
+	check(diagnose(state.proxies, provider_state, source, near.name, url) == "leaf_identity_ambiguous", "duplicate identity is distinct from network health");
+	pop(provider_state[source].proxies);
 	const child = clone(entry);
 	policy.capabilities.secondary = {enabled: true, mode: "automatic"};
 	child.candidate_groups = map(entry.candidate_groups, group => ({...group, name: group.name + "-secondary"}));

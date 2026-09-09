@@ -14,6 +14,7 @@ const candidate_provider_leaves_ready = context.use("mihomo.paths").candidate_pr
 const wait_for_candidate_provider_leaves = context.use("mihomo.paths").wait_for_candidate_provider_leaves;
 const candidate_leaf_wait_seconds = context.use("mihomo.paths").candidate_leaf_wait_seconds;
 const candidate_group_names = context.use("mihomo.paths").candidate_group_names;
+const provider_group_measurement_reason = context.use("models.selector").provider_group_measurement_reason;
 const provider_group_leaf = context.use("models.selector").provider_group_leaf;
 const choose_automatic = context.use("selection.algorithm").choose_automatic;
 const provider_round_summary = context.use("models.selector").provider_round_summary;
@@ -26,7 +27,6 @@ automatic_candidates = function(manifest, quotas, state, provider_state, capabil
 	const groups = entry?.candidate_groups ?? [];
 	for (let i = 0; i < length(groups); i++) {
 		const group = groups[i];
-		const group_state = state?.proxies?.[group.name];
 		// Mihomo owns node-level URLTest inside each provider/region group.
 		// NetFleet compares only that group's current leaf once per round.
 		const source_name = entry?.providers?.[group.provider]?.source_name;
@@ -34,11 +34,10 @@ automatic_candidates = function(manifest, quotas, state, provider_state, capabil
 			source_name, group.name, latency_round?.target);
 		const latency = latency_round?.results?.[group.name] ??
 			{ method: "mihomo_delay", status: "unavailable", reason: "delay_test_failed" };
-		const reason = group_state == null ? "group_unavailable" :
-			group_state.extra?.[latency_round?.target]?.alive != true ? "latency_health_failed" :
-			candidate_id == null ? "no_verified_leaf" :
-			latency?.status != "ok" ? "delay_unavailable" :
-			quotas[group.provider]?.state == "exhausted" ? "quota_exhausted" : null;
+		const measurement_reason = provider_group_measurement_reason(state?.proxies, provider_state,
+			source_name, group.name, latency_round?.target) ??
+			(latency?.status != "ok" ? "delay_unavailable" : null);
+		const reason = quotas[group.provider]?.state == "exhausted" ? "quota_exhausted" : measurement_reason;
 		const available = candidate_id != null && latency?.status == "ok";
 		const candidate = {
 			capability: capability,
@@ -50,6 +49,7 @@ automatic_candidates = function(manifest, quotas, state, provider_state, capabil
 			group: group.name,
 			available: available,
 			reason: reason,
+			measurement_reason: measurement_reason,
 			quota: quotas[group.provider] ?? { state: "unknown" }
 		};
 		candidate.latency = latency;

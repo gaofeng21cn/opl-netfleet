@@ -835,7 +835,7 @@ function createPage(storage, api, notifications) {
     const providerTable = findNode(root, node => String(node.attrs.class || '').includes('netfleet-provider-table'));
     const headers = findNode(providerTable, node => node.tag === 'thead').children[0].children;
     const cells = findNode(providerTable, node => node.tag === 'tbody').children[0].children;
-    assert.deepStrictEqual(headers.map(nodeText), ['机场','定位','可用资源','本轮测速','订阅状态','剩余流量','到期时间']);
+    assert.deepStrictEqual(headers.map(nodeText), ['机场','定位','可用资源','最近一次测速','订阅状态','剩余流量','到期时间']);
     assert.strictEqual(cells.length, headers.length);
     assert.strictEqual(nodeText(cells[4]), '缓存已更新');
     assert(nodeText(cells[6]).includes('2027'));

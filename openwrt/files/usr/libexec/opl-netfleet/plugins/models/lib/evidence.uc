@@ -137,7 +137,8 @@ entries_for = function(candidates, sampled_at) {
 			role: candidate.role,
 			leaf: candidate.candidate_id,
 			quota_state: candidate?.quota?.state ?? "unknown",
-			reason: candidate.reason ?? null
+			reason: candidate.reason ?? null,
+			measurement_reason: candidate.measurement_reason ?? null
 		};
 		if (entry.ok) entry.delay_ms = candidate.latency.delay_ms;
 		push(entries, entry);
@@ -223,6 +224,9 @@ validate_entries = function(entries, prefix) {
 		if (type(entry) != "object" || type(entry.candidate) != "string" ||
 			type(entry.sampled_at) != "int" || type(entry.ok) != "bool") {
 			return `invalid ${prefix} evidence entry: ${i}`;
+		}
+		if (entry.measurement_reason != null && type(entry.measurement_reason) != "string") {
+			return `invalid ${prefix} measurement reason: ${i}`;
 		}
 		if (entry.ok && type(entry.delay_ms) != "int") {
 			return `successful ${prefix} evidence entry lacks delay: ${i}`;
