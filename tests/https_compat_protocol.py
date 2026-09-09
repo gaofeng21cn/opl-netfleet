@@ -108,6 +108,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         text, mapping = haproxy.configuration(policy, self.directory, 'a' * 64, port=self.engine_port)
         (self.directory / 'haproxy.cfg').write_text(text)
         (self.directory / 'haproxy-rules.json').write_text(json.dumps(mapping))
+        haproxy.write_rule_map(self.directory, policy, mapping)
         self.proxy = await asyncio.create_subprocess_exec(BINARY, '-db', '-f', str(self.directory / 'haproxy.cfg'),
                                                           stdout=self.log, stderr=self.log)
         self.addAsyncCleanup(self.stop_proxy)
@@ -232,7 +233,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
             return real_run(args, **kwargs)
         effective = self.directory / 'config.json'
         health = {'ready': True, 'pid': self.proxy.pid, 'active_connections': 1,
-                  'revision': hashlib.sha256(effective.read_bytes()).hexdigest()}
+                  'revision': haproxy.configuration_revision(json.loads(effective.read_bytes()))}
         with patch.multiple(control, CA=ca, EFFECTIVE=effective, _certificate_check=None), \
              patch.object(control.gateway, 'bypass') as bypass, \
              patch.object(control.subprocess, 'run', side_effect=execute):
@@ -246,6 +247,25 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(control.certificate_refresh_required({**health, 'pid': health['pid'] + 1}))
         self.assertEqual((ca / 'mitmproxy-ca.pem').read_bytes(), private)
         self.assertEqual((ca / 'mitmproxy-ca-cert.pem').read_bytes(), public)
+
+    async def test_rule_bypass_and_recovery_preserve_engine_and_active_stream(self):
+        effective = json.loads((self.directory / 'config.json').read_bytes())
+        original_revision = haproxy.configuration_revision(effective)
+        health = await self.health()
+        async with self.client.stream('GET', self.url + '/sse') as stream:
+            chunks = stream.aiter_raw()
+            self.assertEqual(await anext(chunks), b'data: first\n\n')
+            for blocked, expected_protocol in ((['test'], '1.1'), ([], '2')):
+                effective['blocked_rules'] = blocked
+                self.assertEqual(haproxy.configuration_revision(effective), original_revision)
+                haproxy.sync_rule_switches(self.directory, effective, health)
+                async with httpx.AsyncClient(proxy=f'http://127.0.0.1:{self.proxy_port}',
+                                             verify=self.client_context, trust_env=False) as client:
+                    response = await client.get(self.url + '/rule-switch')
+                    self.assertEqual(response.headers['x-upstream-protocol'], expected_protocol)
+                self.assertEqual((await self.health())['pid'], health['pid'])
+            self.finish_sse.set()
+            self.assertEqual(await anext(chunks), b'data: done\n\n')
 
     async def application(self, scope, receive, send):
         if scope["type"] == "websocket":

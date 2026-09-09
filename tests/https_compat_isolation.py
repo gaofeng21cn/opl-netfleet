@@ -86,6 +86,7 @@ class Isolation(unittest.TestCase):
             stack.enter_context(patch.object(control, 'snapshot', return_value={'ready': True, 'reason': None}))
             stack.enter_context(patch.object(control, 'ca_fingerprint', return_value=None))
             stack.enter_context(patch.object(control, 'certificate_refresh_required', return_value=False))
+            stack.enter_context(patch.object(control.haproxy, 'sync_rule_switches'))
             stack.enter_context(patch.object(control.gateway, 'prepare'))
             stack.enter_context(patch.object(control.gateway, 'bypass'))
             execute = stack.enter_context(patch.object(control.subprocess, 'run'))
@@ -100,7 +101,7 @@ class Isolation(unittest.TestCase):
                 paths['STATE'].write_text(json.dumps(state))
                 health.return_value = {'ready': True, 'pid': 123, 'processing_chain': healthy,
                                        'transparent_chain': healthy,
-                                       'revision': hashlib.sha256(paths['EFFECTIVE'].read_bytes()).hexdigest()}
+                                       'revision': control.haproxy.configuration_revision(json.loads(paths['EFFECTIVE'].read_bytes()))}
                 with patch.object(control.time, 'monotonic', return_value=now):
                     control.tick()
                 state = json.loads(paths['STATE'].read_text())
@@ -204,6 +205,7 @@ class Isolation(unittest.TestCase):
                 stack.enter_context(patch.object(control.gateway, name))
             stack.enter_context(patch.object(control, 'ca_fingerprint', return_value=None))
             stack.enter_context(patch.object(control, 'certificate_refresh_required', return_value=False))
+            stack.enter_context(patch.object(control.haproxy, 'sync_rule_switches'))
             health = stack.enter_context(patch.object(control, 'engine_health'))
             for waiting, healthy in ((True, True), (False, True), (True, False)):
                 with self.subTest(waiting=waiting, healthy=healthy):
@@ -211,7 +213,7 @@ class Isolation(unittest.TestCase):
                              'recovery': {'healthy': True, 'healthy_since': 900, 'intercepting': True, 'faults': []}}
                     paths['STATE'].write_text(json.dumps(state))
                     health.return_value = {'ready': True, 'pid': 123, 'processing_chain': healthy,
-                                           'transparent_chain': healthy, 'revision': hashlib.sha256(paths['EFFECTIVE'].read_bytes()).hexdigest()}
+                                           'transparent_chain': healthy, 'revision': control.haproxy.configuration_revision(json.loads(paths['EFFECTIVE'].read_bytes()))}
                     control.tick(delayed_by_mutation=waiting)
                     state = json.loads(paths['STATE'].read_text())
                     self.assertEqual(len(state['recovery']['faults']), 0 if waiting and healthy else 1)

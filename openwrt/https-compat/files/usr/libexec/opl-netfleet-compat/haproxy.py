@@ -117,7 +117,6 @@ frontend ingress
     rules = sorted((rule for rule in config['rules'] if rule['enabled']),
                    key=lambda rule: (rule['match'] == 'exact', len(rule['domain'])), reverse=True)
     indexed = [(number, rule) for number, rule in enumerate(rules)]
-    blocked = set(effective.get('blocked_rules', []))
     for number, rule in indexed:
         addresses = [address for device in config['devices'] if device['id'] in rule['devices'] for address in device['addresses']]
         if not addresses:
@@ -126,8 +125,11 @@ frontend ingress
         lines += [f"  acl {name}_source src {' '.join(addresses)}", f"  acl {name}_domain req.ssl_sni -i {rule['domain']}"]
         if rule['match'] == 'suffix':
             lines += [f"  acl {name}_domain req.ssl_sni -m end -i .{rule['domain']}"]
-        backend = f'{name}_convert' if config['enabled'] and rule['strategy'] == 'h2' and rule['id'] not in blocked else 'passthrough'
-        lines += [f"  use_backend {backend} if {name}_source {name}_domain {{ dst_port {rule['port']} }} !{{ req.ssl_alpn -m str h2 }}"]
+        condition = f"{name}_source {name}_domain {{ dst_port {rule['port']} }} !{{ req.ssl_alpn -m str h2 }}"
+        if config['enabled'] and rule['strategy'] == 'h2':
+            lines += [f'  use_backend {name}_convert if {condition} {{ str({name}),map_str_int({run}/rules.map,0) eq 1 }}']
+        # A blocked exact rule must still win over a broader suffix rule.
+        lines += [f'  use_backend passthrough if {condition}']
     lines += ['  default_backend passthrough', '''backend passthrough
   use-server v4 if { dst -m ip 0.0.0.0/0 }
   use-server v6 if { dst -m ip ::/0 }''',
@@ -174,10 +176,24 @@ frontend {name}_http
     return '\n'.join(lines) + '\n', {f'r{number}': rule['id'] for number, rule in indexed}
 
 
+def configuration_revision(effective):
+    structural = {key: value for key, value in effective.items() if key != 'blocked_rules'}
+    return hashlib.sha256(json.dumps(structural, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def rule_switches(effective, mapping):
+    blocked = set(effective.get('blocked_rules', []))
+    return {name: '0' if identity in blocked else '1' for name, identity in mapping.items()}
+
+
+def write_rule_map(run, effective, mapping):
+    write_private(run / 'rules.map', ''.join(f'{name} {value}\n' for name, value in rule_switches(effective, mapping).items()).encode())
+
+
 def prepare(effective_path, run):
-    data = effective_path.read_bytes()
-    revision = hashlib.sha256(data).hexdigest()
-    config, rules = configuration(json.loads(data), run, revision)
+    effective = json.loads(effective_path.read_bytes())
+    config, rules = configuration(effective, run, configuration_revision(effective))
+    write_rule_map(run, effective, rules)
     path = run / 'haproxy.cfg'
     temporary = path.with_suffix('.new')
     write_private(temporary, config.encode())
@@ -185,6 +201,31 @@ def prepare(effective_path, run):
     temporary.replace(path)
     write_private(run / 'haproxy-rules.json', json.dumps(rules).encode())
     return path
+
+
+_synchronized_rules = None
+
+
+def sync_rule_switches(run, effective, health):
+    global _synchronized_rules
+    mapping = json.loads((run / 'haproxy-rules.json').read_bytes())
+    expected = rule_switches(effective, mapping)
+    identity = (str(run), health['pid'], health['revision'], tuple(sorted(expected.items())))
+    if identity == _synchronized_rules:
+        return
+    _synchronized_rules = None
+    def read_switches():
+        return {parts[1]: parts[2] for line in command(run, f'show map {run}/rules.map').splitlines()
+                if len(parts := line.split()) == 3 and parts[0].startswith('0x')}
+    current = read_switches()
+    if current.keys() != expected.keys():
+        raise ValueError('engine_rule_map_mismatch')
+    updates = [f'set map {run}/rules.map {name} {value}' for name, value in expected.items() if current[name] != value]
+    if updates and command(run, ';'.join(updates)).strip():
+        raise ValueError('engine_rule_map_update_failed')
+    if read_switches() != expected:
+        raise ValueError('engine_rule_map_mismatch')
+    _synchronized_rules = identity
 
 
 def command(run, request):

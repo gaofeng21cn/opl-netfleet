@@ -136,13 +136,15 @@ with open(sys.argv[1], 'a') as file:
                                           "rule_recovery": {"target": admitted}})
             stack.enter_context(patch.object(control, "effective", side_effect=lambda c, *a: copy.deepcopy(c)))
             stack.enter_context(patch.object(control, "ca_fingerprint", return_value="test"))
+            stack.enter_context(patch.object(control, "certificate_refresh_required", return_value=False))
+            stack.enter_context(patch.object(control.haproxy, "sync_rule_switches"))
             stack.enter_context(patch.object(control, "snapshot", return_value={"interfaces": [], "ipv4_proxy": True, "reason": None}))
             for name in ("prepare", "bypass", "renew"):
                 stack.enter_context(patch.object(control.gateway, name))
             events = [{"id": i + 1, "rule": "target", "at": now, "reason": "upstream_connection_reset"} for i in range(4)]
             def health(**kwargs):
                 return {"ready": True, "processing_chain": True, "transparent_chain": True, "pid": 1,
-                        "revision": hashlib.sha256(control.EFFECTIVE.read_bytes()).hexdigest(), "failure_events": events}
+                        "revision": control.haproxy.configuration_revision(json.loads(control.EFFECTIVE.read_bytes())), "failure_events": events}
             stack.enter_context(patch.object(control, "engine_health", side_effect=health))
             probe = stack.enter_context(patch.object(control, "probe_rules", new_callable=AsyncMock))
             stack.enter_context(patch.object(control, "resolve_targets", new_callable=AsyncMock, return_value={"target": ["192.0.2.3"]}))

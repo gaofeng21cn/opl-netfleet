@@ -143,8 +143,10 @@ def certificate_refresh_required(health):
 
 def reconcile_engine(health):
     """Only replace a configuration after removing admission and draining its connections."""
-    expected = hashlib.sha256(EFFECTIVE.read_bytes()).hexdigest()
+    effective = read(EFFECTIVE)
+    expected = haproxy.configuration_revision(effective)
     if health.get('revision') == expected and not certificate_refresh_required(health):
+        haproxy.sync_rule_switches(RUN, effective, health)
         return False
     gateway.bypass()
     if health.get('ready') and health.get('active_connections') == 0:
@@ -387,7 +389,7 @@ def tick(lock=None, delayed_by_mutation=False):
         save_state({**previous, 'intercepting': False, 'reason': 'engine_config_pending'}, previous)
         return
     starting = health.get('starting') and health.get('pid') != previous.get('ready_engine_pid')
-    expected = hashlib.sha256(EFFECTIVE.read_bytes()).hexdigest() if EFFECTIVE.exists() else None
+    expected = haproxy.configuration_revision(read(EFFECTIVE)) if EFFECTIVE.exists() else None
     healthy = (not reason and health.get("ready") and health.get("processing_chain") is True
                and health.get("transparent_chain") is True and health.get("revision") == expected)
     if not reason:
@@ -618,6 +620,8 @@ def main():
         prepare_ca()
         isolation.prepare(BASE, RUN)
         config = haproxy.prepare(EFFECTIVE, RUN)
+        os.chown(RUN / 'rules.map', 0, isolation.account()[1])
+        os.chmod(RUN / 'rules.map', 0o640)
         os.chown(config, 0, isolation.account()[1])
         os.chmod(config, 0o640)
         isolation.constrain()

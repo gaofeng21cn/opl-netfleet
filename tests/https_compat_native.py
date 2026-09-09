@@ -140,6 +140,36 @@ else:
             await asyncio.sleep(1)
         wire = await self.request()
         self.assertTrue(wire["h2"], {"wire": wire, "engine": self.owner.health()})
+        # Measure the whole running plugin without polling its management API.
+        # These synthetic VM results are not WAN throughput or Home measurements.
+        def resources():
+            result = {}
+            for name, group in (('engine', 'netfleet-compat'), ('manager', 'netfleet-compat-manager')):
+                root = Path('/sys/fs/cgroup') / group
+                result[name] = {**{key: int(value) for key, value in
+                                  (line.split() for line in (root / 'cpu.stat').read_text().splitlines())},
+                                'memory_current': int((root / 'memory.current').read_text())}
+            return result
+        measurements = {}
+        for workload in ('idle', '10_small_https_requests'):
+            before, started = resources(), time.monotonic()
+            latencies = []
+            if workload == 'idle':
+                await asyncio.sleep(20)
+            else:
+                for _ in range(10):
+                    request_started = time.monotonic()
+                    self.assertTrue((await self.request())['h2'])
+                    latencies.append(round((time.monotonic() - request_started) * 1000, 2))
+                    await asyncio.sleep(max(0, 1 - (time.monotonic() - request_started)))
+            elapsed, after = time.monotonic() - started, resources()
+            measurements[workload] = {'seconds': round(elapsed, 3), 'request_ms': latencies,
+                'groups': {name: {'cpu_percent_of_one_core': round((values['usage_usec'] - before[name]['usage_usec']) / elapsed / 10000, 3),
+                                 'memory_current_bytes': values['memory_current'],
+                                 'throttled_periods': values.get('nr_throttled', 0) - before[name].get('nr_throttled', 0)}
+                           for name, values in after.items()}}
+        Path('/tmp/compat-performance.json').write_text(json.dumps(measurements))
+        print('compatibility_performance=' + json.dumps(measurements), flush=True)
         # A normal owner transaction can outlast the lease. The kernel must
         # bypass during the lock, then fresh health can readmit without an outage.
         faults_before = self.owner.call("get")["recovery"]["faults"]
