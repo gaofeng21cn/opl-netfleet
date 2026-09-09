@@ -189,6 +189,19 @@ if [ "\$*" = 'list chain inet nikki lan_dns_hijack' ]; then
 	printf '\t\tcounter comment "redirect to :1053"\n'
 	exit 0
 fi
+if [ "\$*" = '-j list table inet nikki' ]; then
+	"$real_nft" "\$@" | ucode -e '
+		import { readfile } from "fs";
+		const data = json(readfile("/dev/stdin"));
+		for (let item in [...data.nftables]) {
+			if (item.chain?.name == "lan_tproxy")
+				push(data.nftables, {rule: {chain: "lan_tproxy", expr: [{tproxy: {port: 7892}}]}});
+			if (item.chain?.name == "lan_dns_hijack")
+				push(data.nftables, {rule: {chain: "lan_dns_hijack", expr: [{redirect: {port: 1053}}]}});
+		}
+		printf("%J\\n", data);'
+	exit \$?
+fi
 exec "$real_nft" "\$@"
 EOF
 chmod 0755 "$bin/nft"

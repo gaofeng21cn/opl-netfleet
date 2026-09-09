@@ -81,6 +81,7 @@ def build(candidate, output, baseline=None):
         (output / "independent").mkdir()
         core_versions = {}
         package_versions = {}
+        product_packages = None
         legacy = None
         artifacts = {item["package"]: item["name"] for item in manifest["artifacts"] + manifest["dependency_artifacts"]}
         for name, filename in artifacts.items():
@@ -96,6 +97,9 @@ def build(candidate, output, baseline=None):
             root = scratch / name
             root.mkdir()
             run("--allow-untrusted", "extract", "--destination", root, archive)
+            if name == "opl-netfleet-kernel":
+                system = json.loads((root / "usr/share/opl-netfleet/system.json").read_text())
+                product_packages = sorted({"opl-netfleet", "luci-app-netfleet", *system["product_packages"]})
             script_args = []
             for kind, content in metadata.get("scripts", {}).items():
                 script = scratch / f"{name}.{kind}"
@@ -183,7 +187,7 @@ def build(candidate, output, baseline=None):
     (output / "fixture.json").write_text(json.dumps({
         "schema_version": 1, "version": version, "old_version": old_version, "bad_version": bad_version,
         "source_commit": manifest["source_commit"], "source_tree": manifest["source_tree"],
-        "product_packages": sorted(manifest["artifact_files"]),
+        "product_packages": product_packages,
         "package_versions": package_versions,
         "legacy": legacy,
         **core_versions,
