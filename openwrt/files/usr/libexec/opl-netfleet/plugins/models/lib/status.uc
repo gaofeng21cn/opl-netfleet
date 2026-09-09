@@ -94,6 +94,12 @@ candidate_by_group = function(entry, group) {
 			return groups[i];
 		}
 	}
+	// A follower uses the upstream region's groups, not its automatic groups.
+	for (let region in entry?.region_groups ?? []) {
+		for (let candidate in region.candidate_groups ?? []) {
+			if (candidate.name == group) return candidate;
+		}
+	}
 	return null;
 };
 

@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "models",
   "label": "Product models",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "api_version": 1,
   "package": "opl-netfleet-plugin-models",
   "services": {
