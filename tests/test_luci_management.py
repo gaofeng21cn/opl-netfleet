@@ -471,6 +471,26 @@ assert.equal(rows[1].attrs.class, 'cbi-rowstyle-1');
 assert(text(rows[2]).startsWith('Old'));
 """)
 
+    def test_measurement_keeps_success_quota_and_candidate_diagnostics_visible(self):
+        self.run_js(r"""
+const view = modesModule({});
+const status = {providers: [{id:'airport', display_name:'示例机场'}], regions: [{id:'region', display_name:'示例地区', available_count:1, available_provider_count:1,
+ measurement: {sampled_at:1788947164, best_delay_ms:41, measured_count:1, exclusions:{quota_exhausted:1}, entries:[
+ {provider_id:'airport',region_id:'region',ok:true,delay_ms:41,quota_state:'available'},
+ {provider_id:'other',region_id:'region',ok:false,quota_state:'exhausted',measurement_reason:'leaf_latency_unrecorded'}]}}]};
+const page = view.regions(status, {});
+const content = text(page);
+assert(content.includes('41 ms') && content.includes('1 项测速成功') && content.includes('1 项流量耗尽'));
+assert(content.includes('示例机场') && content.includes('采样于'));
+assert(content.includes('所选节点缺少该测速目标的健康记录'));
+assert(content.includes('流量已耗尽，不参与选优'));
+assert(!content.includes('未通过') && !content.includes('[object HTMLElement]'));
+const details = find(page, node => node.tag === 'details' && text(node).includes('查看测速详情'));
+assert(details && !details.open);
+details.open = true;
+assert(details.open && all(details, node => node.tag === 'li').length === 2);
+""")
+
     def test_subscription_selection_is_one_operation_feedback(self):
         self.run_js(r"""
 const managed = module('managed.js', {});

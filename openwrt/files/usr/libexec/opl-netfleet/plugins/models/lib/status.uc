@@ -16,15 +16,23 @@ const provider_group_current_leaf = context.use("models.selector").provider_grou
 
 function measurement(evidence, dimension, id) {
 	if (type(evidence?.sampled_at) != "int") return null;
-	const result = { sampled_at: evidence.sampled_at, best_delay_ms: null, measured_count: 0, exclusions: {} };
+	const result = { sampled_at: evidence.sampled_at, best_delay_ms: null, measured_count: 0, exclusions: {}, entries: [] };
 	for (let entry in evidence.entries ?? []) {
 		if (entry?.[dimension] != id) continue;
 		if (entry.ok == true && type(entry.delay_ms) == "int") {
 			result.measured_count++;
 			if (result.best_delay_ms == null || entry.delay_ms < result.best_delay_ms) result.best_delay_ms = entry.delay_ms;
 		}
-		const reason = entry.reason ?? (entry.ok ? null : "measurement_unavailable");
+		const measurement_reason = entry.measurement_reason ??
+			(entry.ok ? null : (entry.reason == "quota_exhausted" ? "measurement_unavailable" : entry.reason) ?? "measurement_unavailable");
+		const reason = entry.quota_state == "exhausted" ? "quota_exhausted" : entry.reason ?? measurement_reason;
 		if (reason != null) result.exclusions[reason] = (result.exclusions[reason] ?? 0) + 1;
+		push(result.entries, {
+			provider_id: entry.provider_id, region_id: entry.region_id,
+			ok: entry.ok == true, delay_ms: entry.ok ? entry.delay_ms : null,
+			quota_state: entry.quota_state ?? "unknown", reason: reason,
+			measurement_reason: measurement_reason
+		});
 	}
 	return result;
 }

@@ -1771,3 +1771,11 @@
 	.netfleet-native .netfleet-environment { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .netfleet-environment span { white-space: nowrap; }
+
+.netfleet-native .netfleet-measurement { min-width: 180px; }
+.netfleet-native .netfleet-measurement > small { display: block; margin: 4px 0 0; color: var(--nf-muted); font-size: 12px; }
+.netfleet-native .netfleet-measurement details { margin-top: 8px; max-width: 360px; white-space: normal; font-size: 12px; text-align: left; }
+.netfleet-native .netfleet-measurement summary { cursor: pointer; color: var(--nf-accent); }
+.netfleet-native .netfleet-measurement details p { color: var(--nf-muted); line-height: 1.6; }
+.netfleet-native .netfleet-measurement ul { margin: 8px 0; padding-left: 18px; }
+.netfleet-native .netfleet-measurement li { margin: 10px 0; line-height: 1.6; overflow-wrap: anywhere; }

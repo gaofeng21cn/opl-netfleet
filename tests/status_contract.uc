@@ -574,4 +574,17 @@ const failed_measurement = build(policy, manifest, state, recent_failure, { acti
 const failed_region = filter(failed_measurement.regions, region => region.id == 'south')[0];
 if (failed_region.measurement.best_delay_ms != null || failed_region.measurement.sampled_at != 456 ||
 	failed_region.measurement.exclusions.latency_health_failed != 1 || failed_region.last_best_delay_ms != 20) die('historical_success_masked_current_failure');
+recent_failure.capabilities.standard.entries[0].quota_state = "exhausted";
+const depleted = build(policy, manifest, state, recent_failure, { active: true, mihomo_running: true, netfleet_present: true });
+const details = filter(depleted.regions, region => region.id == 'south')[0].measurement;
+if (details.exclusions.quota_exhausted != 1 || details.exclusions.latency_health_failed != null ||
+	details.entries[0].measurement_reason != "latency_health_failed" || details.entries[0].provider_id != "beta" ||
+	details.entries[0].candidate != null || details.entries[0].leaf != null) die("historical_quota_or_private_projection_failed");
+recent_failure.capabilities.standard.entries[0].ok = true;
+recent_failure.capabilities.standard.entries[0].delay_ms = 41;
+recent_failure.capabilities.standard.entries[0].reason = "quota_exhausted";
+const measured_depleted = build(policy, manifest, state, recent_failure, { active: true, mihomo_running: true, netfleet_present: true });
+const mixed = filter(measured_depleted.regions, region => region.id == 'south')[0].measurement;
+if (mixed.measured_count != 1 || mixed.best_delay_ms != 41 || mixed.exclusions.quota_exhausted != 1 ||
+	mixed.entries[0].measurement_reason != null) die("quota_must_not_erase_successful_measurement");
 release_services();

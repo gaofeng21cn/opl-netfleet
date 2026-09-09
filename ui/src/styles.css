@@ -712,3 +712,11 @@
 .nf-subtabs { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--nf-border); padding-bottom: 8px; margin-bottom: 16px; }
 .nf-subtabs [aria-current=page] { color: var(--nf-accent); background: var(--nf-accent-soft); }
 .nf-config-group { display: block; padding: 8px 14px 4px; color: var(--nf-muted); font-size: 12px; }
+
+.nf-table-wrap .nf-measurement { min-width: 180px; }
+.nf-table-wrap .nf-measurement > small { display: block; margin: 4px 0 0; color: var(--nf-muted); font-size: 12px; }
+.nf-table-wrap .nf-measurement details { margin-top: 8px; max-width: 360px; white-space: normal; font-size: 12px; text-align: left; }
+.nf-table-wrap .nf-measurement summary { cursor: pointer; color: var(--nf-accent); }
+.nf-table-wrap .nf-measurement details p { color: var(--nf-muted); line-height: 1.6; }
+.nf-table-wrap .nf-measurement ul { margin: 8px 0; padding-left: 18px; }
+.nf-table-wrap .nf-measurement li { margin: 10px 0; line-height: 1.6; overflow-wrap: anywhere; }

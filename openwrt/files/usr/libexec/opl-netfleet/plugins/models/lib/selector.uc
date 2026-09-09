@@ -53,6 +53,28 @@ is_provider_proxy_leaf = function(provider_state, source_name, value, require_al
 		CONTROL_PROXY_TYPES[proxy_type] != true;
 };
 
+function provider_group_measurement_reason(proxy_state, provider_state, source_name, group, url) {
+	const state = proxy_state?.[group];
+	if (state == null) return "group_unavailable";
+	if (type(state.all) != "array") return "group_members_unavailable";
+	if (type(state.now) != "string" || index(state.all, state.now) < 0)
+		return "selected_leaf_unavailable";
+	if (is_control_proxy(proxy_state, state.now)) return "no_proxy_leaf";
+	const nodes = provider_state?.[source_name]?.proxies;
+	if (type(nodes) != "array") return "provider_nodes_unavailable";
+	const matches = filter(nodes, node => node.name == state.now);
+	if (length(matches) == 0) return "leaf_not_in_provider";
+	if (length(matches) > 1) return "leaf_identity_ambiguous";
+	const leaf = matches[0];
+	if (length(`${leaf.type ?? ""}`) == 0) return "leaf_type_unavailable";
+	if (CONTROL_PROXY_TYPES[lc(leaf.type)] == true) return "no_proxy_leaf";
+	if (state.extra?.[url]?.alive == false) return "group_latency_failed";
+	if (state.extra?.[url]?.alive != true) return "group_latency_unrecorded";
+	if (leaf.extra?.[url]?.alive == false) return "leaf_latency_failed";
+	if (leaf.extra?.[url]?.alive != true) return "leaf_latency_unrecorded";
+	return null;
+};
+
 provider_group_leaf_with_health = function(proxy_state, provider_state, source_name, group, require_alive, url) {
 	const group_state = proxy_state?.[group];
 	const leaf = group_state?.now ?? null;
@@ -149,5 +171,5 @@ provider_round_summary = function(entry, proxy_state, provider_state, url) {
 	};
 };
 
-return { is_control_proxy, is_proxy_leaf, provider_group_current_leaf, provider_group_leaf, provider_round_summary };
+return { provider_group_measurement_reason, is_control_proxy, is_proxy_leaf, provider_group_current_leaf, provider_group_leaf, provider_round_summary };
 };
