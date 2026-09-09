@@ -50,16 +50,21 @@ function sourceReason(value) {
 		address_identity_conflict: '地址归属冲突，冲突地址已旁路' })[value] || value || '同步正常';
 }
 
-async function readSource(controller) {
-	try {
-		controller.identitySource = await api.pluginRead({ id: 'device-identity', action: 'get', params: {} });
-		controller.identitySourceError = null;
-	} catch (error) { controller.identitySource = null; controller.identitySourceError = error; }
+function readSource(controller) {
+	if (controller.identityRead) return controller.identityRead;
+	controller.identityRead = api.pluginRead({ id: 'device-identity', action: 'get', params: {} }).then(source => {
+		if (controller.disposed?.()) return;
+		controller.identitySource = source; controller.identitySourceError = null;
+	}).catch(error => { controller.identitySourceError = error; }).finally(() => {
+		controller.identityRead = null;
+		if (!controller.disposed?.()) controller.redraw();
+	});
+	return controller.identityRead;
 }
 
 async function sourceAction(controller, action, params) {
 	const source = controller.identitySource;
-	if (!source || controller.compatibilityBusy) return;
+	if (!source || controller.identitySourceError || mutationBlocked(controller, 'compatibilityApply')) return;
 	controller.compatibilityBusy = true;
 	controller.redraw();
 	try {
@@ -73,12 +78,12 @@ async function sourceAction(controller, action, params) {
 			revision: revision, confirm: action !== 'sync', params: params || {} });
 		if (action === 'configure') await api.pluginRead({ id: 'device-identity', action: 'sync', params: {} });
 	} catch (error) { managed.notify(null, E('p', {}, '地址来源操作失败：' + error.message), 'error'); }
-	finally { controller.compatibilityBusy = false; await refresh(controller); }
+	finally { controller.compatibilityBusy = false; await Promise.all([refresh(controller), readSource(controller)]); }
 }
 
 function editSource(controller) {
 	const source = controller.identitySource;
-	if (!source || controller.compatibilityBusy) return;
+	if (!source || controller.identitySourceError || mutationBlocked(controller, 'compatibilityApply')) return;
 	const draft = Object.assign({ source: 'local', enabled: true, endpoint: '', site: 'default', username: '', certificate_sha256: '', interfaces: [] }, source.config);
 	const fields = [];
 	const rows = E('div', {});
@@ -126,21 +131,26 @@ function button(text, action, disabled) {
 
 function refresh(controller) {
 	if (controller.compatibilityRead) return controller.compatibilityRead;
-	controller.compatibilityRead = api.compatibilityGet().then(async function(state) {
+	if (controller.disposed?.()) return Promise.resolve();
+	controller.compatibilityRead = api.compatibilityGet().then(function(state) {
+		if (controller.disposed?.()) return;
 		controller.compatibility = state;
+		controller.compatibilityLive = true;
+		controller.compatibilityAt = Date.now();
 		controller.compatibilityError = null;
-		if (controller.compatibilityTab === 'devices') await readSource(controller);
-	}).catch(function(error) { controller.compatibilityError = error; }).finally(function() {
+		controller.remember?.();
+	}).catch(function(error) { controller.compatibilityError = error; controller.compatibilityLive = false; }).finally(function() {
 		controller.compatibilityRead = null;
-		if (controller.currentView === 'components' && controller.componentDetail === 'https-compat') controller.redraw();
+		if (!controller.disposed?.()) { controller.redraw(); controller.follow?.(); }
 	});
+	controller.redraw();
 	return controller.compatibilityRead;
 }
 
 function mutate(controller, method, request, revision) {
 	if (mutationBlocked(controller, method)) return Promise.resolve();
 	const expected = revision === undefined ? controller.compatibility.revision : revision;
-	if (method === 'compatibilityDisable' || method === 'compatibilityProbe' && !request.operation)
+	if (method === 'compatibilityDisable')
 		return executeMutation(controller, method, request, expected);
 	return new Promise(function(resolve) {
 		ui.showModal('确认 HTTPS 兼容变更', [
@@ -155,7 +165,7 @@ function mutate(controller, method, request, revision) {
 
 function mutationBlocked(controller, method) {
 	const state = controller.compatibility;
-	return readOnly() || controller.compatibilityBusy || !state || !state.installed || !!controller.compatibilityError ||
+	return readOnly() || controller.disposed?.() || controller.compatibilityLive === false || controller.compatibilityBusy || !state || !state.installed || !!controller.compatibilityError ||
 		state.managed === false && method !== 'compatibilityDisable';
 }
 
@@ -163,12 +173,15 @@ function executeMutation(controller, method, request, revision) {
 	if (mutationBlocked(controller, method)) return Promise.resolve();
 	controller.compatibilityBusy = true;
 	controller.redraw();
-	return api[method](Object.assign({ revision: revision }, request)).catch(function(error) {
-		managed.notify(null, E('p', {}, 'HTTPS 兼容操作失败：' + error.message), 'error');
+	controller.compatibilityLive = false;
+	let applied = false;
+	return api[method](Object.assign({ revision: revision }, request)).then(function() { applied = true; }).catch(function(error) {
+		if (!controller.disposed?.()) managed.notify(null, E('p', {}, 'HTTPS 兼容操作失败：' + error.message), 'error');
 	}).then(async function() {
 		await controller.compatibilityRead;
-		return refresh(controller);
-	}).finally(function() { controller.compatibilityBusy = false; controller.redraw(); });
+		await refresh(controller);
+		if (applied && !controller.disposed?.()) managed.notify(null, E('p', {}, controller.compatibilityError ? '操作已提交，当前状态待确认，请刷新；无需重复提交。' : '已保存，当前状态：' + label(controller.compatibility)), controller.compatibilityError ? 'warning' : 'info');
+	}).finally(function() { controller.compatibilityBusy = false; if (!controller.disposed?.()) controller.redraw(); });
 }
 
 function edit(controller, collection, item) {
@@ -204,7 +217,7 @@ function edit(controller, collection, item) {
 			} }), device.name ]);
 		})) ]));
 	else {
-		const source = controller.identitySource || state.address_source || {};
+		const source = controller.identitySourceError ? state.address_source || {} : controller.identitySource || state.address_source || {};
 		const manual = field('addresses', 'IPv4 / IPv6 地址');
 		const input = controls[controls.length - 1];
 		function manualState() { manual.hidden = !!draft.identity; input.required = !draft.identity; }
@@ -246,11 +259,26 @@ function download(name, value, type) {
 function render(controller) {
 	const state = controller.compatibility;
 	const back = button('返回组件列表', function() { controller.context.navigate('plugin:product-ui:components'); });
-	const extension = ((controller.components || {}).extensions || []).find(item => item.id === 'https-compat');
 	const heading = E('div', { 'class': 'netfleet-section-heading' }, [ E('div', {}, [ E('h3', {}, 'HTTPS 兼容'),
-		extension ? E('small', {}, extension.installed_version || '未安装') : '' ]), E('div', { 'class': 'netfleet-inline-actions' }, [ back,
-		E('a', { 'class': 'netfleet-dashboard-link', 'href': L.url('admin/system/package-manager'), 'target': '_blank', 'rel': 'noopener' }, '软件包管理') ]) ]);
-	if (!state) return E('section', { 'class': 'netfleet-compatibility' }, [ heading, E('p', {}, controller.compatibilityError ? '状态读取失败' : '正在读取'), button('刷新', function() { return refresh(controller); }) ]);
+		E('small', {}, '为选定设备和网站转换 HTTP/1.1 → HTTP/2；应用继续使用原网址。') ]), back ]);
+	const tab = ['rules', 'devices', 'diagnostics'].includes(controller.compatibilityTab) ? controller.compatibilityTab : 'rules';
+	function tabs() {
+		return E('div', { 'class': 'netfleet-compat-tabs', 'role': 'tablist', 'aria-label': 'HTTPS 兼容管理' }, [ [ 'rules', '规则' ], [ 'devices', '设备与信任' ], [ 'diagnostics', '诊断' ] ].map(function(item) {
+			return E('button', { 'type': 'button', 'role': 'tab', 'id': 'netfleet-compat-tab-' + item[0],
+				'aria-selected': tab === item[0] ? 'true' : 'false', 'aria-controls': 'netfleet-compat-panel',
+				'class': tab === item[0] ? 'is-active' : '', 'click': function() {
+					controller.compatibilityTab = item[0]; controller.remember?.(); controller.redraw();
+				} }, item[1]);
+		}));
+	}
+	const refreshButton = button('刷新状态', function() { return refresh(controller); }, !!controller.compatibilityRead);
+	refreshButton.setAttribute('aria-label', '刷新兼容状态');
+	const freshness = E('div', { 'class': 'netfleet-compat-freshness', 'role': 'status' }, [
+		E('span', {}, [ controller.compatibilityAt ? '上次读取：' + new Date(controller.compatibilityAt).toLocaleString() : '尚未读取设备状态',
+			controller.compatibilityRead ? ' · 正在刷新' : controller.compatibilityError ? ' · 刷新失败，保留上次内容' : '',
+			controller.compatibilityLive === false && state ? ' · 历史摘要，待确认当前状态' : '' ]), refreshButton ]);
+	if (!state) return E('section', { 'class': 'netfleet-compatibility' }, [ heading, tabs(),
+		E('p', { 'role': 'status' }, controller.compatibilityError ? '暂时无法读取设备，请重试。' : '正在读取已保存的规则和设备…'), freshness ]);
 	const busy = mutationBlocked(controller, 'compatibilityApply');
 	const toggleBusy = mutationBlocked(controller, state.requested ? 'compatibilityDisable' : 'compatibilityEnable');
 	function applyConfig(callback) {
@@ -258,31 +286,31 @@ function render(controller) {
 		return mutate(controller, 'compatibilityApply', { config: config }, state.revision);
 	}
 	const config = state.config || { rules: [], devices: [] };
-	const rules = config.rules.map(function(rule) {
+	const rules = tab === 'rules' ? config.rules.map(function(rule) {
 		const result = (state.rules || {})[rule.id] || {};
 		const recovery = (state.rule_recovery || {})[rule.id] || {};
-		return E('tr', {}, [
+		return E('tr', { 'data-row-key': 'rule:' + rule.id }, [
 			E('td', {}, E('input', { 'type': 'checkbox', 'aria-label': rule.name, 'checked': rule.enabled ? '' : null, 'disabled': busy ? '' : null, 'change': function(event) {
 				return applyConfig(function(config) { config.rules.find(function(value) { return value.id === rule.id; }).enabled = event.target.checked; });
 			} })), E('td', {}, [ E('strong', {}, rule.name), E('small', {}, rule.domain + ':' + rule.port) ]),
 			E('td', {}, rule.devices.map(function(id) { return (state.config.devices.find(function(device) { return device.id === id; }) || {}).name || id; }).join('、')),
 			E('td', {}, rule.strategy === 'h2' ? 'HTTP/2' : '旁路'),
 			E('td', {}, [ E('strong', { 'class': recovery.latched ? 'is-warning' : '' }, !rule.enabled ? '规则已关闭' : !state.requested ? '模块已关闭' : rule.strategy === 'bypass' ? '旁路' :
-				state.eligible_devices && !rule.devices.some(id => state.eligible_devices.includes(id)) ? '无可接管设备' : recovery.intercepting ? '正在接管' : '当前旁路'),
-				state.requested && rule.enabled && recovery.reason ? E('small', {}, reason(recovery.reason)) : '',
-				result.at ? E('small', {}, '最近 ' + (result.reason ? reason(result.reason) : result.upstream_protocol || '协议未确认') + ' · ' + new Date(result.at * 1000).toLocaleString()) : E('small', {}, '尚无转发记录') ]),
+				state.eligible_devices && !rule.devices.some(id => state.eligible_devices.includes(id)) ? '无可接管设备' : state.intercepting && recovery.intercepting ? '正在接管' : '当前旁路'),
+				state.requested && rule.enabled && (state.reason || recovery.reason) ? E('small', {}, reason(state.reason || recovery.reason)) : '',
+				result.at ? E('small', {}, '最近上游：' + (result.upstream_protocol || '协议未确认') + ' · ' + new Date(result.at * 1000).toLocaleString()) : E('small', {}, '尚无转发记录') ]),
 			E('td', {}, [ button('编辑', function() { edit(controller, 'rules', rule); }, busy), button('删除', function() {
 				return applyConfig(function(config) { config.rules = config.rules.filter(function(value) { return value.id !== rule.id; }); });
 			}, busy), recovery.latched ? button('恢复', function() { return mutate(controller, 'compatibilityProbe', { operation: 'recover', rule: rule.id }); }, busy) : '' ]) ]);
-	});
-	const devices = config.devices.map(function(device) {
+	}) : [];
+	const devices = tab === 'devices' ? config.devices.map(function(device) {
 		const trust = (state.trust || {})[device.id] || {};
 		const runtimes = trust.runtimes || {};
 		const addresses = (state.device_addresses || {})[device.id] || device.addresses;
 		const observation = ((state.address_source || {}).devices || []).find(item => device.identity && item.mac === device.identity.mac) || {};
-		return E('tr', {}, [ E('td', {}, [ E('strong', {}, device.name),
-			E('small', { 'style': 'overflow-wrap:anywhere' }, addresses.join(', ') || '当前无可用地址'),
-			E('small', {}, device.identity ? '自动跟随 · ' + device.identity.mac : '手工地址'),
+		return E('tr', { 'data-row-key': 'device:' + device.id }, [ E('td', {}, [ E('strong', {}, device.name),
+			E('details', {}, [ E('summary', {}, addresses.length + ' 个地址'), E('small', {}, addresses.join(', ') || '当前无可用地址'),
+				E('small', {}, controller.compatibilityLive === false ? '上次设备地址' : device.identity ? '自动跟随 · ' + device.identity.mac : '手工地址') ]),
 			device.identity && !addresses.length ? E('small', {}, sourceReason(observation.reason || (state.address_source || {}).reason || 'address_evidence_expired')) : '' ]),
 			E('td', {}, trust.verified ? '系统信任已验证' : '未验证'),
 			E('td', {}, E('details', {}, [ E('summary', {}, '接入验证'), E('small', {}, [ '设备标识：', E('code', {}, device.id) ]), ...[ [ 'codex_app', 'Codex App' ], [ 'codex_cli', 'CLI' ], [ 'images', '图片调用' ] ].map(function(item) {
@@ -293,18 +321,23 @@ function render(controller) {
 				config.devices = config.devices.filter(function(value) { return value.id !== device.id; });
 				config.rules = config.rules.map(function(rule) { rule.devices = rule.devices.filter(function(id) { return id !== device.id; }); return rule; }).filter(function(rule) { return rule.devices.length; });
 			}); }, busy) ]) ]);
-	});
+	}) : [];
 	function table(headers, rows, empty) {
 		rows.forEach(row => Array.from(row.children).forEach((cell, index) => cell.setAttribute('data-label', headers[index])));
 		return E('div', { 'class': 'netfleet-config-table' }, E('table', {}, [ E('thead', {}, E('tr', {}, headers.map(function(title) { return E('th', {}, title); }))), E('tbody', {}, rows.length ? rows : E('tr', {}, E('td', { 'colspan': headers.length }, empty || '暂无记录'))) ]));
 	}
-	const tab = controller.compatibilityTab || 'rules';
-	const diagnostics = [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h4', {}, '诊断'), E('div', { 'class': 'netfleet-inline-actions' }, [
-		button('连接验证', function() { return mutate(controller, 'compatibilityProbe', {}); }, busy),
+	const diagnostics = () => controller.compatibilityLive === false ? [ E('p', {}, '诊断记录不缓存，请等待当前状态读取成功。') ] : [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h4', {}, '诊断'), E('div', { 'class': 'netfleet-inline-actions' }, [
 		state.recovery && state.recovery.latched ? button('恢复模块', function() { return mutate(controller, 'compatibilityProbe', { operation: 'recover' }); }, busy || !state.requested) : '',
 		button('导出诊断', function() { download('netfleet-compatibility-diagnostic.json', JSON.stringify({ requested: state.requested, intercepting: state.intercepting,
 			reason: state.reason, active_connections: state.active_connections, recovery: state.recovery,
-			rule_recovery: state.rule_recovery, events: state.events, results: Object.values(state.rules || {}) }, null, 2)); }) ]) ]),
+			local_probes: state.local_probes, rule_recovery: state.rule_recovery, events: state.events, results: Object.values(state.rules || {}) }, null, 2)); }) ]) ]),
+		E('h4', {}, '本地转发链'),
+		table([ '路径', '最近结果', '阶段', '耗时' ], Object.entries(state.local_probes || {}).map(function([name, probe]) {
+			return E('tr', {}, [ E('td', {}, ({ processing: '协议转换', ipv4: 'IPv4 透明入口', ipv6: 'IPv6 透明入口' })[name] || name),
+				E('td', {}, probe.ok ? '通过' : probe.reason === 'timeout' ? '超时' : reason(probe.reason || '未通过')), E('td', {}, ({ connect: '建立连接', tls: 'TLS 握手', http: 'HTTP 往返' })[probe.stage] || probe.stage || '未知'),
+				E('td', {}, Number.isFinite(probe.duration_ms) ? probe.duration_ms + ' ms' : '未知') ]);
+		}), '尚无本地验证记录'),
+		E('h4', {}, '目标恢复'),
 		table([ '目标', '最近故障', '恢复探测', '操作' ], config.rules.map(function(rule) {
 			const recovery = (state.rule_recovery || {})[rule.id] || {};
 			const failure = recovery.last_failure;
@@ -315,38 +348,37 @@ function render(controller) {
 			const rule = config.rules.find(item => item.id === event.rule);
 			return E('tr', {}, [ E('td', {}, new Date(event.at * 1000).toLocaleString()), E('td', {}, rule ? rule.name : event.rule || '模块'),
 				E('td', {}, event.intercepting ? '接管' : '旁路'), E('td', {}, reason(event.reason)) ]);
-		})) ];
+		})), E('a', { 'href': L.url('admin/system/package-manager'), 'target': '_blank', 'rel': 'noopener' }, '软件包管理 ↗') ];
 	const panels = {
-		rules: [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h4', {}, '目标规则'), button('新增规则', function() { edit(controller, 'rules'); }, busy || !config.devices.length) ]),
+		rules: () => [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h4', {}, '目标规则 · ' + config.rules.length), button('新增规则', function() { edit(controller, 'rules'); }, busy || !config.devices.length) ]),
 			table([ '启用', '目标', '设备', '策略', '状态', '操作' ], rules, config.devices.length ? '暂无目标规则' : '尚无接入设备'),
 			!config.devices.length ? button('添加接入设备', function() { controller.compatibilityTab = 'devices'; controller.redraw(); edit(controller, 'devices'); }, busy) : '' ],
-		devices: [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h4', {}, '设备与信任'), button('新增设备', function() { edit(controller, 'devices'); }, busy) ]),
-			E('div', { 'class': 'netfleet-section-heading' }, [ E('span', {}, '地址来源'),
+		devices: () => [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h4', {}, '设备与信任 · ' + config.devices.length), button('新增设备', function() { edit(controller, 'devices'); }, busy) ]),
+			E('details', { 'class': 'netfleet-compat-source', 'open': controller.sourceExpanded ? '' : null, 'toggle': function(event) {
+				controller.sourceExpanded = event.target.open;
+				if (event.target.open && !controller.identitySource && !controller.identitySourceError) void readSource(controller);
+			} }, [ E('summary', {}, '高级：设备地址来源'), E('div', { 'class': 'netfleet-section-heading' }, [
 				E('div', { 'role': 'status' }, controller.identitySource ? [ E('strong', {}, controller.identitySource.config.source === 'unifi' ? 'UniFi 控制器' : 'NetFleet 本机网络'),
 					E('small', {}, sourceReason(controller.identitySource.reason)),
 					(controller.identitySource.devices || []).some(item => !item.addresses.length) ? E('small', {}, (controller.identitySource.devices || []).filter(item => !item.addresses.length).length + ' 台设备无可用地址') : '',
-					controller.identitySource.last_success ? E('small', {}, '最近同步 ' + new Date(controller.identitySource.last_success * 1000).toLocaleString()) : '' ] : '设备地址插件未安装或不可读取'),
-				E('div', { 'class': 'netfleet-inline-actions' }, [ button('管理来源', function() { editSource(controller); }, busy || !controller.identitySource),
-					button('同步', function() { return sourceAction(controller, 'sync'); }, busy || !controller.identitySource || !controller.identitySource.loaded) ]) ]),
+					controller.identitySource.last_success ? E('small', {}, '最近同步 ' + new Date(controller.identitySource.last_success * 1000).toLocaleString()) : '' ] : controller.identitySourceError ? '设备地址插件未安装或不可读取；手工地址仍可使用' : '按需读取地址来源'),
+				E('div', { 'class': 'netfleet-inline-actions' }, [ button('读取来源', function() { return readSource(controller); }, !!controller.identityRead),
+					button('管理来源', function() { editSource(controller); }, busy || !controller.identitySource || !!controller.identitySourceError),
+					button('同步', function() { return sourceAction(controller, 'sync'); }, busy || !controller.identitySource || !controller.identitySource.loaded || !!controller.identitySourceError) ]) ]) ]),
 			table([ '设备', '系统信任', '应用', '操作' ], devices, '暂无接入设备'),
 			E('div', { 'class': 'netfleet-inline-add' }, [ button('下载公开 CA', function() { return api.compatibilityCa().then(function(ca) { download('netfleet-ca.pem', ca.pem, 'application/x-pem-file'); }).catch(function(error) { managed.notify(null, E('p', {}, error.message), 'error'); }); }, busy || !state.ca_sha256),
 				state.installed ? E('a', { 'href': '/netfleet/macos-trust.py', 'download': 'netfleet-macos-trust.py' }, 'macOS 接入工具') : '' ]),
 			state.ca_sha256 ? E('details', {}, [ E('summary', {}, 'CA 指纹'), E('code', { 'class': 'netfleet-compat-fingerprint' }, state.ca_sha256) ]) : '' ],
 		diagnostics: diagnostics
 	};
-	const refreshButton = button('↻', function() { return refresh(controller); }, !!controller.compatibilityRead);
-	refreshButton.setAttribute('aria-label', '刷新兼容状态'); refreshButton.setAttribute('title', '刷新兼容状态');
 	return E('section', { 'class': 'netfleet-compatibility' }, [ heading,
 		E('div', { 'class': 'netfleet-config-row' }, [ E('label', { 'class': 'netfleet-check' }, [ E('input', { 'type': 'checkbox', 'checked': state.requested ? '' : null, 'disabled': toggleBusy ? '' : null,
 			'change': function(event) { return mutate(controller, event.target.checked ? 'compatibilityEnable' : 'compatibilityDisable', {}); } }), '启用 HTTPS 兼容' ]),
-			E('div', { 'role': 'status' }, [ E('strong', {}, label(state)), E('small', {}, reason(state.reason)),
+			E('div', { 'role': 'status' }, [ E('strong', {}, (controller.compatibilityLive === false ? '上次状态：' : '') + label(state)), state.reason ? E('small', {}, reason(state.reason)) : '',
 				controller.compatibilityBusy ? E('small', {}, '正在应用…') : '',
-				state.managed === false && state.management_reason && state.management_reason !== state.reason ? E('small', { 'class': 'is-warning' }, reason(state.management_reason)) : '' ]), refreshButton ]),
+				state.managed === false && state.management_reason && state.management_reason !== state.reason ? E('small', { 'class': 'is-warning' }, reason(state.management_reason)) : '' ]) ]),
 		controller.compatibilityError ? E('p', { 'class': 'alert-message warning' }, '状态读取失败，操作已停用') : '',
-		E('div', { 'class': 'netfleet-compat-tabs', 'role': 'tablist', 'aria-label': 'HTTPS 兼容管理' }, [ [ 'rules', '规则' ], [ 'devices', '设备与信任' ], [ 'diagnostics', '诊断' ] ].map(function(item) {
-			return E('button', { 'type': 'button', 'role': 'tab', 'aria-selected': tab === item[0] ? 'true' : 'false', 'aria-controls': 'netfleet-compat-panel',
-				'class': tab === item[0] ? 'is-active' : '', 'click': function() { controller.compatibilityTab = item[0]; controller.redraw(); if (item[0] === 'devices') refresh(controller); } }, item[1]);
-		})), E('div', { 'id': 'netfleet-compat-panel', 'role': 'tabpanel' }, panels[tab]) ]);
+		tabs(), E('div', { 'id': 'netfleet-compat-panel', 'role': 'tabpanel', 'aria-labelledby': 'netfleet-compat-tab-' + tab }, panels[tab]()), freshness ]);
 }
 
 return { render, refresh, label };

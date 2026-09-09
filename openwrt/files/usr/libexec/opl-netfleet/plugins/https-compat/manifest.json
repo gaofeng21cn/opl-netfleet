@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "https-compat",
   "label": "HTTPS compatibility",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "api_version": 1,
   "package": "opl-netfleet-plugin-https-compat",
   "services": {
