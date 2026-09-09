@@ -97,7 +97,7 @@ def build(candidate, output, baseline=None):
             root = scratch / name
             root.mkdir()
             run("--allow-untrusted", "extract", "--destination", root, archive)
-            if name == "opl-netfleet-kernel":
+            if name == "opl-netfleet":
                 system = json.loads((root / "usr/share/opl-netfleet/system.json").read_text())
                 product_packages = sorted({"opl-netfleet", "luci-app-netfleet", *system["product_packages"]})
             script_args = []
