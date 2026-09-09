@@ -66,6 +66,20 @@ if [ ! -f /usr/libexec/opl-netfleet/plugins/device-identity/manifest.json ]; the
  cp -R /tmp/plugins/device-identity /usr/libexec/opl-netfleet/plugins/
 fi
 chmod 0755 /usr/libexec/opl-netfleet/plugins/device-identity/control
+# Installation leaves this optional management plugin unloaded. Exercise the
+# same explicit load action as the plugin UI, without changing product defaults.
+python3 - <<'PY'
+import json, subprocess
+from pathlib import Path
+main = ['ucode', '/usr/libexec/opl-netfleet/main.uc']
+inventory = json.loads(subprocess.check_output([*main, 'plugins-list']))
+row = next(item for item in inventory['result']['plugins'] if item['id'] == 'https-compat' and item['instance'] == 'default')
+request = Path('/tmp/compat-plugin-load.json')
+request.write_text(json.dumps({'request': {'id': row['id'], 'action': 'load', 'revision': row['revision'], 'confirm': True}}))
+request.chmod(0o600)
+result = json.loads(subprocess.check_output([*main, 'plugin-call', str(request)]))
+assert result['ok'] and result['result']['loaded'], result
+PY
 python3 /tmp/tests/device_identity.py >&2
 python3 /tmp/tests/https_compat_identity.py >&2
 python3 /tmp/tests/https_compat_protocol.py >&2
