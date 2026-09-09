@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2, ClipboardCheck, Eye, LockKeyhole, RotateCcw, Save, WandSparkles } from 'lucide-react';
+import { CheckCircle2, Eye, LockKeyhole, RotateCcw, Save, WandSparkles } from 'lucide-react';
 import type { ConfigDraft, ConfigSectionId } from './model';
 import { configChanges, configSummary, validateConfigDraft } from './model';
 import {
@@ -93,7 +93,7 @@ export function ConfigView({ draft, savedDraft, status, client, onChange, onSave
       <nav className="nf-config-tabs" aria-label="配置分类">
         {sectionMeta.map((item) => {
           const Icon = item.icon;
-          return <button className={section === item.id ? 'is-active' : ''} type="button" key={item.id} onClick={() => { setSection(item.id); if (item.id === 'network' || item.id === 'files') setVisited({ ...visited, [item.id]: true }); }}><Icon aria-hidden="true" /><span>{item.label}</span></button>;
+          return <React.Fragment key={item.id}>{['foundation','network'].includes(item.id) && <span className="nf-config-group">{item.id === 'foundation' ? '运行策略' : '设备与文件'}</span>}<button className={section === item.id ? 'is-active' : ''} type="button" key={item.id} onClick={() => { setSection(item.id); if (item.id === 'network' || item.id === 'files') setVisited({ ...visited, [item.id]: true }); }}><Icon aria-hidden="true" /><span>{item.label}</span></button></React.Fragment>;
         })}
       </nav>
       <div className="nf-config-content">{content}
@@ -117,8 +117,7 @@ export function ConfigView({ draft, savedDraft, status, client, onChange, onSave
       <span>{dirty ? '有尚未保存的本地更改' : '本地预览与已保存状态一致'}</span>
       <div>
         <button type="button" disabled={!dirty} onClick={() => { onChange(savedDraft); setValidation(null); setMessage(null); }}><RotateCcw aria-hidden="true" />放弃更改</button>
-        <button type="button" onClick={validate}><ClipboardCheck aria-hidden="true" />校验配置</button>
-        <button type="button" onClick={() => setReview(!review)}><Eye aria-hidden="true" />{review ? '收起变更' : '查看变更'}</button>
+        <button type="button" onClick={() => { validate(); setReview(!review); }}><Eye aria-hidden="true" />{review ? '收起变更' : '校验与变更'}</button>
         <button className="nf-button-primary" type="button" disabled={!dirty} onClick={save}><Save aria-hidden="true" />{status.active ? '应用本地预览' : '保存本地预览'}</button>
       </div>
     </div>}

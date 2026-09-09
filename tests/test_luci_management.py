@@ -118,7 +118,7 @@ function controller() {
     const policy = policyConfig();
     return { busy: false, liveDataReady: true, redraw() {}, refreshes: 0, async refreshData() { this.refreshes++; },
         config: policy, configDraft: clone(policy), configSection: 'network', status: { providers: [], regions: [], runtime: {} },
-        showConfigWizard() {}, discardConfig() {}, validateConfig() {}, previewConfigChanges() {}, saveConfig() {}, confirmConfigApply() {} };
+        showConfigWizard() {}, discardConfig() {}, previewConfigChanges() {}, saveConfig() {}, confirmConfigApply() {} };
 }
 """
 
@@ -352,8 +352,8 @@ assert(!Object.hasOwn(request.routing_rules[0], 'target'));
 const wire = [];
 const rpc = { declare: options => (...args) => { wire.push({ method: options.method, args }); return Promise.resolve({ ok: true, result: { valid: true } }); } };
 const api = new Function('baseclass', 'rpc', 'fs', 'request', 'L', 'window', fs.readFileSync(path.join(resources, 'api.js'), 'utf8'))(baseclass, rpc, {}, {}, { env: { rpctimeout: 20 } }, {});
-owner.validateConfig = () => api.configValidate(config.request(owner.configDraft));
-await fire(button(config.render(owner), '校验配置'));
+owner.previewConfigChanges = () => api.configValidate(config.request(owner.configDraft));
+await fire(button(config.render(owner), '校验与变更'));
 assert.equal(wire[0].method, 'config_validate');
 assert.deepEqual(wire[0].args[0].routing_rules, [{ kind: 'ip_cidr', value: '2001:db8::/32', capability: 'standard' }]);
 """)
@@ -398,7 +398,7 @@ const initial = { id: 'zashboard', available: true, managed: true, installed_ver
 const candidate = { ...initial, available_version: 'v3.0.0', update_available: true, checked_at: 100 };
 const api = { dashboardCheck: async () => { checks++; return clone(candidate); }, dashboardUpdate: async version => { updates.push(version); return { ...candidate, installed_version: version, update_available: false }; }, coreAction: async () => { throw new Error('dashboard must not restart core'); } };
 const managed = module('managed.js', api);
-const owner = controller(); owner.components = { dashboard: clone(initial), components: [], dependencies: [], feed: { configured: false } };
+const owner = controller(); owner.componentsSection = 'software'; owner.components = { dashboard: clone(initial), components: [], dependencies: [], feed: { configured: false } };
 let root = managed.components(owner);
 assert.equal(checks, 0, 'render must not query upstream');
 assert(text(root).includes('版本未记录'));
@@ -421,7 +421,7 @@ assert.equal(owner.dashboardBusy, false);
     def test_component_checks_serialize_sources_and_preserve_partial_failure(self):
         self.run_js(r"""
 const calls = [];
-const owner = controller();
+const owner = controller(); owner.componentsSection = 'software';
 const snapshot = { supported: true, components: [], dependencies: [], feed: { configured: true, checked_at: 100 }, dashboard: { managed: true, available: true } };
 owner.components = clone(snapshot);
 const operation = { id: 'check-1', kind: 'packages', subject: 'feed', state: 'running', phase: 'checking', started_at: 100 };
@@ -466,7 +466,8 @@ const status = {regions: [region('Japan', true, 93, 20), region('Singapore', fal
 const page = view.regions(status, {});
 const rows = all(page, node => node.tag === 'tr').filter(row => all(row, node => node.tag === 'td').length);
 assert(text(rows[0]).startsWith('Singapore'));
-assert(text(rows[1]).startsWith('Japan（当前使用）'));
+assert(text(rows[1]).startsWith('Japan'));
+assert.equal(rows[1].attrs.class, 'cbi-rowstyle-1');
 assert(text(rows[2]).startsWith('Old'));
 """)
 
@@ -541,7 +542,7 @@ assert(notifications.at(-1).text.includes('收到反馈'));
     def test_closed_component_failure_keeps_current_status_and_diagnostics(self):
         self.run_js(r"""
 const managed = module('managed.js', {});
-const owner = controller();
+const owner = controller(); owner.componentsSection = 'software';
 owner.components = { supported: true, components: [], dependencies: [], feed: { configured: true, checked_at: 102, error: 'feed_check_failed' } };
 owner.operations = { packages: { id: 'feed-1', kind: 'packages', subject: 'feed', state: 'failed', error: 'feed_check_failed', started_at: 100, finished_at: 102 } };
 let root = managed.components(owner);
@@ -558,7 +559,7 @@ assert(!button(root, '检查更新').disabled, 'dismiss is not a mutation lock')
 
     def test_components_group_versions_and_keep_failures_actionable(self):
         self.run_js(r"""
-const owner = controller();
+const owner = controller(); owner.componentsSection = 'software';
 const base = { managed: true, update_available: false, reason: null, installed_version: '1.0.0-r1', available_version: '1.0.0-r1' };
 owner.components = { supported: true, architecture: 'aarch64_generic', feed: { configured: true, checked_at: 100, url: 'https://packages.example/netfleet' }, components: [
   { ...base, id: 'netfleet', label: 'NetFleet' }, { ...base, id: 'luci', label: 'LuCI 界面' },
@@ -607,8 +608,11 @@ owner.components = { supported: true, feed: { configured: false }, components: [
   extensions: [clone(extension), { ...extension, id: 'zashboard', label: 'Zashboard', kind: 'resource' }], dashboard: { available: true, managed: true } };
 const managed = module('managed.js', {});
 let root = managed.components(owner);
-assert.deepEqual(all(root, node => node.tag === 'tbody').map(node => node.children.length), [1, 1]);
-assert.equal(all(root, node => node.tag === 'strong' && text(node) === 'Zashboard').length, 1);
+assert.deepEqual(all(root, node => node.tag === 'tbody').map(node => node.children.length), [1]);
+assert.equal(all(root, node => node.tag === 'strong' && text(node) === 'Zashboard').length, 0);
+fire(button(root, '基础组件'));
+assert.equal(all(managed.components(owner), node => node.tag === 'strong' && text(node) === 'Zashboard').length, 1);
+fire(button(managed.components(owner), '功能插件'));
 let row = find(root, node => node.tag === 'tr' && text(node).includes('HTTPS 兼容'));
 assert(text(row).includes('0.2.0-r1'));
 assert(text(row).includes('可配置'));
@@ -745,7 +749,7 @@ const managed = module('managed.js', {
 let page = managed.components(owner);
 assert.equal(all(page, node => node.tag === 'strong' && node.attrs.title === plugin.package).length, 1);
 assert.equal(calls.length, 0, 'inventory must not execute plugin');
-fire(button(page, '管理'));
+fire(button(page, '运行与管理'));
 await tick();
 assert.equal(calls[0][1].action, 'get');
 fire(button(modal.content, '加载'));
@@ -782,7 +786,7 @@ const serviceManaged = module('managed.js', {
 });
 page = serviceManaged.components(owner);
 assert.equal(serviceCalls.length, 0, 'service inventory must not execute plugin');
-fire(button(page, '管理'));
+fire(button(page, '运行与管理'));
 await tick();
 assert.deepEqual(serviceCalls, [['read', {
   id: 'metrics', action: 'get', revision: 'service-r1', confirm: false, params: {},
@@ -807,7 +811,7 @@ assert.equal(serviceCalls.at(-1)[1].revision, 'service-r3', 'read after reload u
 const note = JSON.parse(fs.readFileSync(path.join(resources, '../../../../../../../../examples/plugins/workspace-note/manifest.json'), 'utf8'));
 owner.components.extensions = [{ ...note, kind: 'plugin', runtime: 'service', revision: 'note-r1', instance: 'review' }];
 page = serviceManaged.components(owner);
-fire(button(page, '管理'));
+fire(button(page, '运行与管理'));
 await tick();
 find(modal.content, node => node.tag === 'select').value = 'config-set';
 find(modal.content, node => node.tag === 'textarea').value = '{"title":"Updated","body":"Note","generation":1}';
@@ -836,11 +840,11 @@ const managed = module('managed.js', {});
 let page = managed.components(owner);
 fire(button(page, '配置'));
 assert.deepEqual(opened, ['plugin:https-compat:settings']);
-assert(button(page, '管理'));
+assert(button(page, '运行与管理'));
 plugin.enabled = false;
 page = managed.components(owner);
 assert(button(page, '配置').disabled, 'disabled management plugin must not be loaded by opening its configuration');
-assert(!button(page, '管理').disabled);
+assert(!button(page, '运行与管理').disabled);
 plugin.id = 'another-plugin'; plugin.enabled = true;
 fire(button(managed.components(owner), '配置'));
 assert.equal(opened.at(-1), 'plugin:another-plugin:settings', 'configuration navigation is manifest-driven');

@@ -478,7 +478,13 @@ function pluginDialog(controller, plugin) {
 	controls.push(button('加载', function() { run('load'); }), button('重新加载', function() { run('reload'); }),
 		button('退出', function() { run('unload'); }), button('↻', function() { run('get'); }));
 	controls[3].setAttribute('title', '刷新状态');
-	const children = [status, E('div', { 'class': 'cbi-page-actions' }, controls), output];
+	const configPages = (plugin.ui || []).map(function(page) { return button('配置 · ' + page.title, function() {
+		ui.hideModal(); controller.context.navigate('plugin:' + plugin.id + ':' + (plugin.instance && plugin.instance !== 'default' ? plugin.instance + ':' : '') + page.id);
+	}, plugin.enabled === false); });
+	const children = [E('p', {}, '版本 ' + (plugin.installed_version || plugin.version || '未记录') + (plugin.instance ? ' · 实例 ' + plugin.instance : '')), status,
+		E('div', { 'class': 'cbi-page-actions' }, configPages), E('div', { 'class': 'cbi-page-actions' }, controls),
+		E('a', { 'href': L.url('admin/system/packages'), 'target': '_blank', 'rel': 'noopener' }, '安装、更新与卸载软件包 ↗'),
+		E('details', {}, [E('summary', {}, '技术状态'), output])];
 	if (actions.length) {
 		const execute = button('执行', function() { run(selector.value); });
 		controls.push(execute);
@@ -563,9 +569,12 @@ function componentsPage(controller) {
 		active || !snapshot || !(snapshot.supported && feed.configured || dashboard && dashboard.managed));
 	if (!controller.liveDataReady) check.setAttribute('title', '等待设备实时状态恢复');
 	else if (active) check.setAttribute('title', '设备正在执行操作');
-	const content = [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h3', {}, '软件与更新'), E('div', { 'class': 'netfleet-inline-actions' }, [
-		refresh, check, button('服务组合', function() { return compositionDialog(controller); }, active || controller.context?.readOnly === true)
+	const content = [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h3', {}, controller.componentsSection === 'software' ? '基础组件' : '功能插件'), E('div', { 'class': 'netfleet-inline-actions' }, [
+		refresh, check, controller.componentsSection !== 'software' ? button('服务组合', function() { return compositionDialog(controller); }, active || controller.context?.readOnly === true) : ''
 	]) ]), operationNode(controller, 'packages') ];
+	content.unshift(E('nav', { 'class': 'netfleet-subtabs', 'aria-label': '插件与更新分类' }, [['plugins', '功能插件'], ['software', '基础组件']].map(function(item) {
+		return E('button', { 'type': 'button', 'aria-current': (controller.componentsSection || 'plugins') === item[0] ? 'page' : null, 'click': function() { controller.componentsSection = item[0]; controller.redraw(); } }, item[1]);
+	})));
 	if (controller.componentsError) content.push(E('p', { 'class': 'is-warning', 'role': 'alert' }, '组件信息未能确认：' + errorLabel(controller.componentsError.message)));
 	if (!snapshot) {
 		content.push(E('p', { 'class': controller.componentsLoading ? 'spinning' : '' }, controller.componentsLoading ? '正在读取已安装组件…' : '当前设备未提供组件管理接口，请确认 NetFleet 已更新。'));
@@ -599,7 +608,7 @@ function componentsPage(controller) {
 	if (dashboard) sourceStates.push(E('span', {}, !dashboard.managed ? errorLabel(dashboard.reason || 'dashboard_managed_externally') :
 		'面板：' + (controller.componentsChecking ? '正在检查更新…' : controller.dashboardBusy ? '正在更新资源…' :
 		(dashboardError ? '上次' + (controller.dashboardAction === 'update' ? '更新' : '检查') + '失败 · ' : '') + (resultTime(controller.dashboardResultAt || dashboard.checked_at, '最近结果') || (dashboardError ? '检查时间未记录' : '尚未检查更新')))));
-	content.push(E('div', { 'class': 'netfleet-component-checks', 'role': 'status' }, sourceStates));
+	if (controller.componentsSection === 'software') content.push(E('div', { 'class': 'netfleet-component-checks', 'role': 'status' }, sourceStates));
 	const luci = snapshot.components.find(function(item) { return item.id === 'luci'; });
 	const rows = snapshot.components.filter(function(item) { return item.id !== 'luci'; }).map(function(component) {
 		const mismatch = componentMismatch(component);
@@ -628,10 +637,10 @@ function componentsPage(controller) {
 	const moduleRows = [];
 	(snapshot.extensions || []).filter(function(extension) { return extension.kind === 'plugin'; }).forEach(function(plugin) {
 		const controls = [];
-		if (plugin.configuration && plugin.ui?.length) controls.push(button('配置', function() {
+		if (plugin.ui?.length) controls.push(button('配置', function() {
 			controller.context.navigate('plugin:' + plugin.id + ':' + (plugin.instance && plugin.instance !== 'default' ? plugin.instance + ':' : '') + plugin.ui[0].id);
 		}, active || plugin.enabled === false));
-		if (plugin.revision) controls.push(button('管理', function() { pluginDialog(controller, plugin); }, active));
+		if (plugin.revision) controls.push(button('运行与管理', function() { pluginDialog(controller, plugin); }, active));
 		moduleRows.push(E('tr', {}, [ E('td', {}, [ E('strong', { 'title': plugin.package || '' }, plugin.label), E('small', {}, plugin.runtime === 'service' ? '功能插件' : '进程插件') ]),
 			E('td', {}, E('strong', {}, plugin.installed_version || plugin.version || '未知版本')),
 			E('td', {}, plugin.reason ? errorLabel(plugin.reason) : plugin.enabled === true ? '已启用' : '可按需加载'), E('td', { 'class': 'netfleet-component-actions' },
@@ -668,13 +677,13 @@ function componentsPage(controller) {
 				dashboard.available ? E('small', {}, '已安装，可使用') : '', !dashboard.managed ? E('small', {}, errorLabel(dashboard.reason || 'dashboard_managed_externally')) : '' ]),
 			E('td', { 'class': 'netfleet-component-actions' }, [ E('div', {}, dashboard.available_version && !dashboard.error && !controller.dashboardError ? dashboard.update_available ? '候选版本 ' + dashboard.available_version : '当前更新源暂无新版' : '') ].concat(controls)) ]));
 	}
-	content.push(E('div', { 'class': 'netfleet-component-table netfleet-software-table' }, E('table', { 'class': 'table' }, [
+	if (controller.componentsSection === 'software') content.push(E('div', { 'class': 'netfleet-component-table netfleet-software-table' }, E('table', { 'class': 'table' }, [
 		E('thead', {}, E('tr', {}, ['软件', '当前版本', '更新与操作'].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, rows)
 	])));
-	if (moduleRows.length) content.push(E('section', { 'class': 'netfleet-component-modules' }, [
-		E('div', { 'class': 'netfleet-section-heading' }, [ E('h3', {}, '功能模块'), E('span', { 'class': 'netfleet-follow-note' }, '安装与升级由 OpenWrt 软件包管理') ]),
+	if (controller.componentsSection !== 'software') content.push(E('section', { 'class': 'netfleet-component-modules' }, [
+		E('div', { 'class': 'netfleet-section-heading' }, [ E('a', { 'class': 'netfleet-inline-link', 'href': L.url('admin/system/packages'), 'target': '_blank', 'rel': 'noopener' }, '安装与卸载软件包 ↗') ]),
 		E('div', { 'class': 'netfleet-component-table' }, E('table', { 'class': 'table' }, [
-			E('thead', {}, E('tr', {}, ['模块', '安装版本', '状态', '操作'].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, moduleRows)
+			E('thead', {}, E('tr', {}, ['插件', '安装版本', '状态', '操作'].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, moduleRows.length ? moduleRows : [E('tr', {}, E('td', { 'colspan': 4 }, '当前没有可管理的功能插件'))])
 		]))
 	]));
 	content.push(E('details', { 'class': 'netfleet-component-details' }, [ E('summary', {}, '技术详情：更新源与安装信息'),

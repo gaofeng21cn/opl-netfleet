@@ -26,14 +26,16 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
   refresh?: () => void;
 }) {
   const [page, setPage] = useState(0);
+  const [section, setSection] = useState('events');
   const rows = snapshot.events.slice().reverse();
   const pageCount = Math.max(1, Math.ceil(rows.length / 20));
   const currentPage = Math.min(page, pageCount - 1);
   const visibleRows = rows.slice(currentPage * 20, (currentPage + 1) * 20);
   return (
     <div className="nf-view-stack">
+      <nav className="nf-subtabs" aria-label="诊断分类">{[['events', '选路记录'], ['website', '网站诊断'], ['core', '核心与日志']].map(([id, label]) => <button type="button" key={id} aria-current={section === id ? 'page' : undefined} onClick={() => setSection(id)}>{label}</button>)}</nav>
       {error && <div className="nf-inline-warning">{error}；以下内容保留上一次成功读取结果。</div>}
-      <section className="nf-table-section">
+      {section === 'events' && <section className="nf-table-section">
         <div className="nf-section-heading"><div><h2>选路事件</h2><p>只展示设备已确认完成的事件。</p></div></div>
         <div className="nf-table-wrap"><table>
           <thead><tr><th>时间</th><th>操作</th><th>来源</th><th>出口</th><th>结果</th><th>延迟</th><th>原因</th></tr></thead>
@@ -51,15 +53,8 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
           <button type="button" aria-label="上一页" title="上一页" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}><ChevronLeft aria-hidden="true" /></button>
           <button type="button" aria-label="下一页" title="下一页" disabled={currentPage === pageCount - 1} onClick={() => setPage(currentPage + 1)}><ChevronRight aria-hidden="true" /></button>
         </nav>}
-      </section>
-      <NetworkDiagnosis status={status} connections={connections} loading={connectionsLoading} error={connectionsError} stale={stale} refresh={refresh} />
-      <section className="nf-diagnostic-strip" aria-label="诊断状态">
-        <dl><dt>设备控制接口</dt><dd className={status.runtime.controller_available ? 'is-ok' : 'is-warning'}>{status.runtime.controller_available ? '可读取' : '不可用'}</dd></dl>
-        <dl><dt>事件存储</dt><dd className={snapshot.store_valid === false ? 'is-warning' : 'is-ok'}>{snapshot.store_valid === false ? '异常' : '有效'}</dd></dl>
-        <dl><dt>决策事件</dt><dd>{snapshot.events.length} 条</dd></dl>
-        <dl><dt>当前连接</dt><dd className={connectionsError ? 'is-warning' : 'is-ok'}>{connectionsLoading ? '正在读取' : connectionsError ? '读取失败' : `${connections.connections.length} 条`}</dd></dl>
-      </section>
-      <p className="nf-management-note">原始日志：{snapshot.core_lines_persistent === false ? '核心当前保留的临时窗口，不作为持久事件记录。' : '由设备日志策略负责保留。'}</p>
+      </section>}
+      {section === 'website' && <><NetworkDiagnosis status={status} connections={connections} loading={connectionsLoading} error={connectionsError} stale={stale} refresh={refresh} />
       <section className="nf-table-section">
         <div className="nf-section-heading"><h2>当前活动连接</h2></div>
         <details className="nf-connection-details">
@@ -78,8 +73,16 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
         </table></div>
         </details>
       </section>
+      </>}
+      {section === 'core' && <>      <section className="nf-diagnostic-strip" aria-label="诊断状态">
+        <dl><dt>设备控制接口</dt><dd className={status.runtime.controller_available ? 'is-ok' : 'is-warning'}>{status.runtime.controller_available ? '可读取' : '不可用'}</dd></dl>
+        <dl><dt>事件存储</dt><dd className={snapshot.store_valid === false ? 'is-warning' : 'is-ok'}>{snapshot.store_valid === false ? '异常' : '有效'}</dd></dl>
+        <dl><dt>决策事件</dt><dd>{snapshot.events.length} 条</dd></dl>
+        <dl><dt>当前连接</dt><dd className={connectionsError ? 'is-warning' : 'is-ok'}>{connectionsLoading ? '正在读取' : connectionsError ? '读取失败' : `${connections.connections.length} 条`}</dd></dl>
+      </section>
+      <p className="nf-management-note">原始日志：{snapshot.core_lines_persistent === false ? '核心当前保留的临时窗口，不作为持久事件记录。' : '由设备日志策略负责保留。'}</p>
       <section className="nf-log-section"><h2>Mihomo 原始日志</h2><pre>{(snapshot.core_lines || []).join('\n') || '暂无相关原始日志。'}</pre></section>
-      <CoreMaintenance client={client} />
+      <CoreMaintenance client={client} /></>}
     </div>
   );
 }

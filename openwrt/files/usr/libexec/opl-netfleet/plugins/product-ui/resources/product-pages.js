@@ -433,8 +433,8 @@ function operatingModeControls(owner) {
 		mihomo: '保留 Mihomo 代理，暂停 NetFleet 自动选优与调度。',
 		netfleet: '运行代理、自动选优与故障恢复，由 NetFleet 统一管理。'
 	};
-	return E('section', { 'class': 'netfleet-operating-mode', 'aria-label': '网络运行模式' }, [
-		E('div', { 'class': 'netfleet-mode-heading' }, [ E('h3', {}, '网络运行模式'), E('p', {}, '选择网络接管方式，确认后生效') ]),
+	return E('details', { 'class': 'netfleet-operating-mode', 'aria-label': '网络运行模式', 'open': owner.modeExpanded || owner.modeSwitching || null, 'toggle': function(event) { owner.modeExpanded = event.currentTarget.open; } }, [
+		E('summary', {}, [ E('strong', {}, '网络运行模式 · ' + operatingModeLabel(current)), E('span', { 'class': 'netfleet-inline-link' }, '切换运行模式') ]),
 		E('fieldset', { 'disabled': disabled || null }, [
 			E('legend', { 'class': 'netfleet-mode-legend' }, '选择运行模式'),
 			E('div', { 'class': 'netfleet-mode-options' }, Object.keys(OPERATING_MODES).map(function(mode) {
@@ -648,7 +648,7 @@ function selectionToolbar(status, controller) {
 	return E('section', { 'class': 'netfleet-selection-summary' }, [
 		E('div', {}, [ E('h3', {}, '地区选择'), E('p', {}, '测速排名供比较；实际出口还受地区资格、主备用层级和切换门槛约束。') ]),
 		E('div', { 'class': 'netfleet-selection-exits' }, (status.capabilities || []).filter(function(item) { return item.enabled; }).map(function(item) {
-			return E('div', {}, [ E('strong', {}, capabilityName(item) + ' · ' + currentRegion(status, item)), selectionExplanation(status, item), regionChoiceButton(controller, item) ]);
+			return E('div', {}, [ E('strong', {}, capabilityName(item) + ' · ' + currentRegion(status, item)), selectionExplanation(status, item), E('p', { 'class': 'netfleet-decision-reason' }, reasonText(status, item)), regionChoiceButton(controller, item) ]);
 		}))
 	]);
 }
@@ -705,7 +705,7 @@ function capabilityPanel(status, capability, controller) {
 		E('div', { 'class': 'netfleet-exit-current' }, [
 			E('dl', { 'class': 'netfleet-current-route' }, [
 				E('dt', {}, '当前路径'),
-				E('dd', {}, route(status, capability).join(' → '))
+				E('dd', {}, [ currentRegion(status, capability), E('small', {}, currentProvider(status, capability)) ])
 			]),
 			E('dl', {}, [ E('dt', {}, '当前延迟'), E('dd', {}, delay(capability.reason && capability.reason.delay_ms)) ]),
 			E('dl', {}, [
@@ -718,13 +718,14 @@ function capabilityPanel(status, capability, controller) {
 			E('dl', {}, [ E('dt', {}, '选择方式'), E('dd', {}, modeName(capability)) ])
 		]),
 		selectionExplanation(status, capability),
+		E('details', { 'class': 'netfleet-exit-details' }, [ E('summary', {}, '节点、业务与恢复详情'), E('p', {}, route(status, capability).join(' → ')),
 		business.length ? E('div', { 'class': 'netfleet-business-routing' }, [
 			E('h4', {}, '业务路由')
 		].concat(business)) : null,
 		E('dl', { 'class': 'netfleet-exit-fallback' }, [
 			E('dt', {}, '故障退路'),
 			E('dd', {}, runtimeFallback(capability).join(' → '))
-		])
+		]) ].filter(Boolean))
 	].filter(Boolean));
 }
 
@@ -931,24 +932,18 @@ function providersPage(status, controller) {
 				E('small', {}, providerNodes(provider, subscription))
 			] : status.active ? '暂不可读' : '未接管'),
 			measurementCell(provider.measurement)
-		].concat(provider.delay_sample_count === 0 ? [E('td', { 'colspan': 2 }, '暂无有效测量')] : [
-			E('td', {}, delay(provider.last_best_delay_ms ?? provider.best_delay_ms)),
-			E('td', {}, [
-				E('span', {}, averageDelay(provider.average_best_delay_ms, provider.delay_sample_count)),
-				Number(provider.delay_sample_count) >= 2 ? E('small', {}, provider.delay_sample_count + ' 次有效测量') : ''
-			])
-		], [
-			E('td', { 'class': 'netfleet-provider-metadata' + (subscriptionFailed(subscription) ? ' is-warning' : '') }, subscriptionState(subscription)),
+		].concat([
+			E('td', { 'class': subscriptionFailed(subscription) ? 'is-warning' : '' }, subscriptionState(subscription)),
 			E('td', {}, [ quota(provider), quotaMeter(provider), provider.billing === 'subscription' && provider.quota && managed.quotaResetLabel(provider.quota.reset_day) ?
 				E('small', { 'title': '手动设置，仅供套餐参考；实际结算以机场为准' }, managed.quotaResetLabel(provider.quota.reset_day)) : '' ]),
-			E('td', { 'class': 'netfleet-provider-metadata' }, providerExpiry(provider))
+			E('td', {}, providerExpiry(provider))
 		]));
 		rows.push(row);
 		if (state.detail === provider.id) open(provider, toggle, row, false);
 	});
 	const update = function() {
 		const visible = tableItems(providers, state, function(provider) { return providerName(status, provider.id); });
-		list.replaceChildren(simpleTable([ '机场', '定位', '可用资源', '本轮测速', '历史最近', '历史平均最低', '订阅状态', '剩余流量', '到期时间' ],
+		list.replaceChildren(simpleTable([ '机场', '定位', '可用资源', '本轮测速', '订阅状态', '剩余流量', '到期时间' ],
 			visible.map(function(provider) { return rows[providers.indexOf(provider)]; }), '没有匹配的机场', 'netfleet-data-table netfleet-provider-table'));
 	};
 	update();
@@ -989,16 +984,16 @@ function regionsPage(status, controller) {
 	});
 	const rows = regions.map(function(region) {
 		return E('tr', { 'class': region.selected ? 'cbi-rowstyle-1' : '' }, [
-			E('td', {}, regionName(status, region.id) + (region.selected ? '（当前使用）' : '')),
+			E('td', {}, [regionName(status, region.id), E('small', {}, (status.capabilities || []).filter(function(cap) { return cap.enabled && cap.region_id === region.id && ['preferred', 'manual_region'].includes(cap.data_path); }).map(capabilityName).join('、'))]),
 			E('td', {}, countPair(region.available_provider_count, region.provider_count)),
 			E('td', {}, region.node_count == null ? '节点清单暂不可读' : countPair(region.available_node_count, region.node_count)),
 			measurementCell(region.measurement)
-		].concat(region.delay_sample_count === 0 ? [E('td', { 'colspan': 3 }, '暂无有效测量')] : [
-			E('td', {}, delay(region.last_best_delay_ms)),
-			E('td', {}, averageDelay(region.average_best_delay_ms, region.delay_sample_count)),
-			E('td', {}, [ finite(region.delay_sample_count) ? String(Number(region.delay_sample_count)) + ' 次' : '统计暂不可读',
-				region.delay_sampled_at ? E('small', {}, sampledAt(region.delay_sampled_at)) : '' ])
-		], [
+		].concat([
+			E('td', {}, E('details', { 'class': 'netfleet-measurement-history' }, [ E('summary', {}, '历史测量'),
+				E('div', {}, '最近 ' + delay(region.last_best_delay_ms)),
+				E('div', {}, '平均 ' + averageDelay(region.average_best_delay_ms, region.delay_sample_count)),
+				E('small', {}, (finite(region.delay_sample_count) ? region.delay_sample_count + ' 次 · ' : '') + sampledAt(region.delay_sampled_at))
+			])),
 			E('td', {}, ({ automatic: '自动选优', manual: '手动选择', manual_only: '仅手动' })[region.mode] || text(region.mode, '未知')),
 			E('td', {}, regionChoiceButton(controller, null, region.id))
 		]));
@@ -1008,7 +1003,7 @@ function regionsPage(status, controller) {
 	const update = function() {
 		const visible = tableItems(regions, state, function(region) { return regionName(status, region.id); });
 		caption.replaceChildren('当前 ' + regions.length + ' 个地区可用 · 显示 ' + visible.length + ' 个');
-		list.replaceChildren(simpleTable([ '地区', '可用机场', '可用节点', '本轮测速', '历史最近', '历史平均最低', '有效测量', '参与方式', '操作' ],
+		list.replaceChildren(simpleTable([ '地区', '可用机场', '可用节点', '本轮测速', '历史测量', '参与方式', '操作' ],
 			visible.map(function(region) { return rows[regions.indexOf(region)]; }), '没有匹配的地区', 'netfleet-data-table'));
 	};
 	update();
@@ -1090,7 +1085,7 @@ function eventsPage(status, events, connections, connectionsLoading, connections
 		[ '设备控制接口', status.runtime.controller_available ? '可读取' : '不可用' ],
 		[ '事件存储', events.store_valid === false ? '异常' : '有效' ],
 		[ '决策事件', String((events.events || []).length) + ' 条' ],
-		[ '当前连接', connectionsLoading ? '正在读取' : connectionsError ? '读取失败' : String((connections.connections || []).length) + ' 条' ]
+		[ '当前连接', connectionsLoading ? '正在读取' : connectionsError ? '读取失败' : connections.count == null ? '尚未读取' : String((connections.connections || []).length) + ' 条' ]
 	];
 	const logRetention = events.core_lines_persistent === false ? '临时窗口' : '设备保留';
 	const connectionRows = (connections.connections || []).map(function(connection) {
@@ -1189,7 +1184,7 @@ const productController = {
 		this.status = initial.status || null;
 		ensureStyles();
 		this.events = initial.events || { events: [] };
-		this.connections = { connections: [], count: 0, truncated: false };
+		this.connections = { connections: [], count: null, truncated: false };
 		this.connectionsLoading = false;
 		this.connectionsError = null;
 		this.config = initial.config;
@@ -1197,6 +1192,8 @@ const productController = {
 		this.configSection = 'foundation';
 		this.currentView = this.pageId;
 		this.eventPage = 0;
+		this.diagnosticSection = 'events';
+		this.componentsSection = 'plugins';
 		this.fetchedAt = initial.fetchedAt;
 		this.readDurationMs = initial.readDurationMs;
 		this.liveDataReady = !initial.cached;
@@ -1209,7 +1206,6 @@ const productController = {
 		this.redraw();
 		this.loadManagement();
 		if (this.currentView === 'components') managed.loadComponents(this);
-		if (this.currentView === 'events') { management.load(this, 'maintenance'); this.refreshConnections(); }
 		if (initial.cached)
 			this.initialRefresh.then(function(refresh) {
 				self.refreshing = false;
@@ -1302,7 +1298,7 @@ const productController = {
 				E('div', { 'class': 'cbi-page-actions' }, buttons));
 			return;
 		}
-		const title = ({ overview: '网络概览', exits: '出口', providers: '机场', regions: '地区', config: '配置', components: '组件与更新', events: '事件与诊断' })[this.currentView];
+		const title = ({ overview: '网络概览', exits: '出口', providers: '机场', regions: '地区', config: '配置', components: '插件与更新', events: '诊断' })[this.currentView];
 		const actions = this.status.actions || {};
 		const buttonAttrs = function(attrs, requiresLiveData) {
 			if (self.busy || self.refreshing || (requiresLiveData && (!self.liveDataReady || self.context.readOnly)))
@@ -1323,16 +1319,26 @@ const productController = {
 		else if (this.currentView === 'regions') content = regionsPage(this.status, this);
 		else if (this.currentView === 'config') content = [ netfleetConfig.render(this) ];
 		else if (this.currentView === 'components') content = [ managed.components(this) ];
-		else if (this.currentView === 'events') content = eventsPage(this.status, this.events, this.connections, this.connectionsLoading, this.connectionsError, this.eventPage, function(page) {
-			self.eventPage = page;
-			self.redraw();
-		}).concat([ management.maintenance(this) ]);
+		else if (this.currentView === 'events') {
+			const sections = eventsPage(this.status, this.events, this.connections, this.connectionsLoading, this.connectionsError, this.eventPage, function(page) {
+				self.eventPage = page; self.redraw();
+			});
+			const tabs = E('nav', { 'class': 'netfleet-subtabs', 'aria-label': '诊断分类' }, [['events', '选路记录'], ['website', '网站诊断'], ['core', '核心与日志']].map(function(item) {
+				return E('button', { 'type': 'button', 'aria-current': self.diagnosticSection === item[0] ? 'page' : null, 'click': function() {
+					if (self.diagnosticSection === item[0]) return;
+					self.diagnosticSection = item[0];
+					if (item[0] === 'website') self.refreshConnections();
+					if (item[0] === 'core') management.load(self, 'maintenance');
+					self.redraw();
+				} }, item[1]);
+			}));
+			content = [tabs].concat(this.diagnosticSection === 'website' ? [product.diagnosis(this, regionalDisplayName), sections[2]] :
+				this.diagnosticSection === 'core' ? [sections[1], sections[3], management.maintenance(this)] : [sections[0]]);
+		}
 		else content = overviewPage(this.status, this.events, function(target) {
 			self.context.navigate(target);
 		});
-		if (this.currentView === 'overview') content.splice(1, 0, operatingModeControls(this));
-		if (this.currentView === 'events')
-			content.splice(1, 0, product.diagnosis(this, regionalDisplayName));
+		if (this.currentView === 'overview') content.splice(2, 0, operatingModeControls(this));
 		if (this.currentView !== 'components' && this.currentView !== 'config')
 			content.unshift(managed.operationNode(this, 'selection'), managed.operationNode(this, 'subscription'));
 
@@ -1478,8 +1484,10 @@ const productController = {
 		return Promise.all(requests).then(function(result) {
 			self.acceptLiveData(result, Date.now() - started);
 			self.prepareDashboard();
-			if (self.currentView === 'events')
+			if (self.currentView === 'events' && self.diagnosticSection === 'website')
 				return self.refreshConnections();
+			if (self.currentView === 'events' && self.diagnosticSection === 'core')
+				return management.load(self, 'maintenance');
 		}).then(function() {
 			if (!silent)
 				managed.notify(null, E('p', {}, '设备状态已刷新。'), 'info');
@@ -1517,22 +1525,6 @@ const productController = {
 	configFailure: function(error) {
 		const details = error && error.detail && error.detail.errors;
 		return details && details.length ? details.join('；') : text(error && error.message, '设备未返回可用结果');
-	},
-
-	validateConfig: function() {
-		const self = this;
-		this.busy = true;
-		this.redraw();
-		return this.currentConfigRequest().then(function(request) {
-			return netfleet.configValidate(request);
-		}).then(function(result) {
-			managed.notify(null, E('p', {}, result.change_count ? '配置校验通过，共 ' + String(result.change_count) + ' 项变更。' : '配置校验通过，没有待处理变更。'), 'info');
-		}).catch(function(error) {
-			managed.notify(null, E('p', {}, '配置校验失败：' + self.configFailure(error)), 'error');
-		}).finally(function() {
-			self.busy = false;
-			self.redraw();
-		});
 	},
 
 	previewConfigChanges: function() {

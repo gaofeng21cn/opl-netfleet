@@ -1665,10 +1665,7 @@
 .netfleet-native .netfleet-table-tools input[type=checkbox] { margin: 0; }
 .netfleet-native .netfleet-master-detail { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
 .netfleet-native .netfleet-master-detail.has-detail { grid-template-columns: minmax(0, 1fr) 340px; }
-.netfleet-native .netfleet-master-detail.has-detail .netfleet-provider-metadata,
-.netfleet-native .netfleet-master-detail.has-detail .netfleet-provider-table th:nth-child(6),
-.netfleet-native .netfleet-master-detail.has-detail .netfleet-provider-table th:nth-child(8) { display: none; }
-.netfleet-native .netfleet-list-pane { min-width: 0; }
+.netfleet-native .netfleet-list-pane { min-width: 0; overflow-x: auto; }
 .netfleet-native .netfleet-name-link { min-height: 30px; border: 0; padding: 4px 0; background: transparent; color: var(--nf-accent); text-align: left; font: inherit; font-weight: 600; cursor: pointer; }
 .netfleet-native .netfleet-name-link:hover { text-decoration: underline; }
 .netfleet-native .netfleet-inspector { min-width: 0; padding: 0 0 20px 22px; margin-left: 20px; border-left: 1px solid var(--nf-border); }
@@ -1710,7 +1707,7 @@
  .netfleet-native .netfleet-mode-options { grid-template-columns: minmax(0, 1fr); gap: 10px; }
 }
 @media (prefers-reduced-motion: no-preference) { .netfleet-native :is(button, a, td) { transition: background-color 140ms ease, color 140ms ease; } }
-@media (max-width: 1150px) {
+@media (max-width: 1380px) {
 	.netfleet-native .netfleet-master-detail.has-detail { grid-template-columns: minmax(0, 1fr); }
 	.netfleet-native .netfleet-inspector { margin: 18px 0 0; padding: 16px 0; border-left: 0; border-top: 1px solid var(--nf-border); }
 }
@@ -1736,3 +1733,41 @@
 .netfleet-native .netfleet-region-choice:not(:disabled) { color: var(--nf-accent) !important; background: var(--nf-surface) !important; border: 1px solid var(--nf-accent) !important; }
 .netfleet-native .netfleet-region-choice:not(:disabled):hover { background: var(--nf-accent-soft) !important; }
 .netfleet-native .netfleet-overview-facts > div { grid-template-columns: minmax(100px, auto) minmax(0, 1fr); }
+
+/* Shared workbench hierarchy: actions, current evidence, then optional detail. */
+.netfleet-native .netfleet-provider-table table.table { min-width: 800px; }
+.netfleet-native .netfleet-operating-mode { padding: 14px 18px; margin-block: 16px; }
+.netfleet-native .netfleet-operating-mode > summary { display: flex; justify-content: space-between; align-items: center; gap: 16px; cursor: pointer; }
+.netfleet-native .netfleet-operating-mode[open] > summary { margin-bottom: 18px; }
+.netfleet-native .netfleet-exit-current { grid-template-columns: minmax(200px, 2fr) repeat(3, minmax(100px, 1fr)); }
+.netfleet-native .netfleet-exit-current dl { padding: 12px 18px; }
+.netfleet-native .netfleet-exit-current small { display: block; font-size: 13px; font-weight: 400; color: var(--nf-muted); margin-top: 4px; }
+.netfleet-native .netfleet-exit-details { padding: 10px 18px; border-top: 1px solid var(--nf-border); }
+.netfleet-native .netfleet-exit-details summary { cursor: pointer; color: var(--nf-muted); }
+.netfleet-native .netfleet-exit-details p { overflow-wrap: anywhere; }
+.netfleet-native .netfleet-selection-note { margin: 8px 18px 12px; }
+.netfleet-native .netfleet-selection-exits .netfleet-selection-note { margin: 6px 0; }
+.netfleet-native .netfleet-decision-reason { font-size: 13px; margin: 6px 0; }
+.netfleet-native .netfleet-subtabs { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--nf-border); margin-bottom: 18px; padding-bottom: 8px; }
+.netfleet-native .netfleet-subtabs button { font: inherit; border: 0; border-radius: 4px; padding: 8px 14px; cursor: pointer; color: var(--nf-text); background: transparent; }
+.netfleet-native .netfleet-subtabs button[aria-current=page] { color: var(--nf-accent); background: var(--nf-accent-soft); font-weight: 600; }
+.netfleet-native .netfleet-config-group { display: block; padding: 10px 16px 4px; color: var(--nf-muted); font-size: 12px; }
+.netfleet-native .btn:not(:disabled) { color: var(--nf-text); }
+.netfleet-native .btn.cbi-button-action:not(:disabled) { color: #fff; }
+.netfleet-native .btn:disabled { opacity: .5; cursor: not-allowed; }
+.netfleet-native .netfleet-page-actions { margin: 0 0 14px; padding: 0; }
+.netfleet-native .netfleet-page-heading { margin-bottom: 8px; }
+@media (max-width: 760px) {
+ .netfleet-native .netfleet-exit-current { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+ .netfleet-native .netfleet-operating-mode > summary { align-items: flex-start; }
+}
+.netfleet-native .netfleet-section-heading h3 { margin: 0; padding: 0 !important; background: transparent !important; border: 0 !important; box-shadow: none !important; font-size: 18px; }
+.netfleet-native .netfleet-section-heading .cbi-section-descr { margin: 4px 0 0; font-size: 13px; color: var(--nf-muted); }
+
+.netfleet-native .netfleet-selection-summary h3 { background: transparent !important; }
+
+@container (max-width: 960px) {
+	.netfleet-native .netfleet-config-group { flex-basis: 100%; padding: 8px 12px 2px; }
+	.netfleet-native .netfleet-environment { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.netfleet-environment span { white-space: nowrap; }

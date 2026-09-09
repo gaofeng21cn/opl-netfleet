@@ -7,13 +7,13 @@
 
 const SECTIONS = [
 	[ 'foundation', '基础接入' ],
-	[ 'network', '网络接入' ],
-	[ 'providers', '机场' ],
+		[ 'providers', '机场' ],
 	[ 'regions', '地区映射' ],
 	[ 'capabilities', '出口策略' ],
 	[ 'routing', '业务规则' ],
 	[ 'automation', '自动运行' ],
 	[ 'safety', '安全与恢复' ],
+	[ 'network', '网络接入' ],
 	[ 'files', '配置文件与备份' ]
 ];
 
@@ -497,17 +497,17 @@ function render(controller) {
 	const independent = ['network', 'files'].includes(controller.configSection);
 	return E('div', { 'class': 'netfleet-config-page' }, [
 		E('div', { 'class': 'netfleet-config-intro' }, [
-			E('div', {}, [ E('strong', {}, '设备配置'), E('span', {}, active ? '当前已接管，应用会执行受保护切换。' : '当前未接管，可先保存配置或直接应用。') ]),
+			E('div', {}, [ E('strong', {}, independent ? '设备与文件' : '运行策略'), E('span', {}, independent ? '本区独立提交，不包含运行策略草稿。' + (changed ? '运行策略仍有未保存更改。' : '') : '运行策略分类共享一份草稿。' + (active ? '应用后切换运行配置。' : '保存不接管网络。')) ]),
 			E('button', { 'class': 'btn cbi-button', 'click': function() { controller.showConfigWizard(0); } }, '首次设置向导')
 		]),
 		E('div', { 'class': 'netfleet-config-layout' }, [
-			E('nav', { 'class': 'netfleet-config-nav', 'aria-label': '配置分类' }, SECTIONS.map(function(item) {
-				return E('button', { 'class': controller.configSection === item[0] ? 'is-active' : '', 'click': function() {
+			E('nav', { 'class': 'netfleet-config-nav', 'aria-label': '配置分类' }, SECTIONS.flatMap(function(item) {
+				return [ item[0] === 'foundation' || item[0] === 'network' ? E('span', { 'class': 'netfleet-config-group' }, item[0] === 'foundation' ? '运行策略' : '设备与文件') : '', E('button', { 'aria-current': controller.configSection === item[0] ? 'page' : null, 'class': controller.configSection === item[0] ? 'is-active' : '', 'click': function() {
 					controller.configSection = item[0];
 					if (item[0] === 'network') management.load(controller, 'network');
 					if (item[0] === 'files') management.load(controller, 'maintenance');
 					controller.redraw();
-				} }, item[1]);
+				} }, item[1]) ];
 			})),
 			E('div', { 'class': 'netfleet-config-content' }, content(controller))
 		]),
@@ -515,10 +515,10 @@ function render(controller) {
 			E('span', {}, changed ? '有尚未保存的更改' : (controller.config.pending_apply ? '配置已保存，等待应用' : '设备配置与当前草稿一致')),
 			E('div', {}, [
 				E('button', { 'class': 'btn cbi-button', 'disabled': !changed || controller.busy || null, 'click': function() { controller.discardConfig(); } }, '放弃更改'),
-				E('button', { 'class': 'btn cbi-button', 'disabled': controller.busy || null, 'click': function() { controller.validateConfig(); } }, '校验配置'),
-				E('button', { 'class': 'btn cbi-button', 'disabled': controller.busy || null, 'click': function() { controller.previewConfigChanges(); } }, '查看变更'),
-				E('button', { 'class': 'btn cbi-button', 'disabled': !changed || active || controller.busy || controller.context?.readOnly || null, 'title': active ? '已接管时请直接使用“应用配置”' : '', 'click': function() { controller.saveConfig(); } }, '保存配置'),
-				E('button', { 'class': 'btn cbi-button cbi-button-action', 'disabled': !canApply || controller.busy || !controller.liveDataReady || controller.context?.readOnly || null, 'click': function() { controller.confirmConfigApply(); } }, '应用配置')
+				E('button', { 'class': 'btn cbi-button', 'disabled': controller.busy || !controller.liveDataReady || null, 'click': function() { controller.previewConfigChanges(); } }, '校验与变更'),
+				!active ? E('button', { 'class': 'btn cbi-button', 'disabled': !canApply || controller.busy || !controller.liveDataReady || controller.context?.readOnly || null, 'click': function() { controller.confirmConfigApply(); } }, '应用并接管') : '',
+				E('button', { 'class': 'btn cbi-button cbi-button-action', 'disabled': (active ? !canApply : !changed) || controller.busy || !controller.liveDataReady || controller.context?.readOnly || null,
+					'click': function() { return active ? controller.confirmConfigApply() : controller.saveConfig(); } }, active ? '应用更改' : '保存配置')
 			])
 		])
 	]);
