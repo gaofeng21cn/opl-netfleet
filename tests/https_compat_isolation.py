@@ -20,7 +20,7 @@ class Isolation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
             paths = {name: Path(directory) / name for name in ('CONFIG', 'STATE', 'RUN')}
             stack.enter_context(patch.multiple(control, **paths))
-            stack.enter_context(patch.object(control, 'mutation_lock', side_effect=nullcontext))
+            stack.enter_context(patch.object(control, 'mutation_lock', side_effect=lambda **kwargs: nullcontext()))
             stack.enter_context(patch.object(control, 'drain'))
             stack.enter_context(patch.object(control.gateway, 'remove'))
             stack.enter_context(patch.object(control.time, 'monotonic', return_value=1000))
