@@ -91,6 +91,10 @@ package_identity() {
 	while read -r expected path extra; do
 		[ -n "$expected" ] || continue
 		[ -z "${extra:-}" ]
+		case "$path" in
+			usr/libexec/opl-netfleet/plugins/https-compat/*|www/luci-static/resources/netfleet/plugins/https-compat/*)
+				if ! apk info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1; then [ ! -e "/$path" ]; continue; fi ;;
+		esac
 		[ -f "/$path" ]
 		[ "$(digest "/$path")" = "$expected" ]
 	done <"$candidate/FILES.sha256"

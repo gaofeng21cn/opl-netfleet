@@ -143,8 +143,13 @@ class MvpLayoutTests(unittest.TestCase):
         checked_in = json.loads((ROOT / "openwrt/files/usr/share/opl-netfleet/system.json").read_text())
         self.assertEqual(checked_in, system)
         self.assertEqual(set(plugins), set(system["enabled"]))
-        self.assertEqual({"opl-netfleet-kernel", *(plugin["package"] for plugin in plugins.values())},
+        self.assertEqual({"opl-netfleet-kernel", *(plugin["package"] for identity, plugin in plugins.items() if identity not in package_composition.OPTIONAL_PLUGINS)},
                          set(system["product_packages"]))
+        self.assertFalse(system["enabled"]["https-compat"])
+        defaults = subprocess.check_output(["python3", str(script), "default-ids"], text=True).split()
+        self.assertNotIn("https-compat", defaults)
+        for identity in defaults:
+            self.assertNotIn("https-compat", closure(identity))
 
     def test_default_package_installs_only_public_plugin_resources_to_web_root(self):
         with tempfile.TemporaryDirectory(prefix="netfleet-package-layout-") as temporary:

@@ -14,6 +14,7 @@ revision 和明确确认。组件页管理已安装插件的加载、重载、�
 `configuration` 引用自身配置动作，`ui` 贡献页面；清单按已配置实例投影这些声明，
 浏览器不能提交模块路径或即时绑定。默认产品既有业务 RPC 继续由功能插件在
 `opl-netfleet` 对象提供，通用插件管理不依赖该业务对象。
+状态插件包在文件替换与插件恢复完成后刷新 `rpcd` 注册，使实际 ubus 方法与已安装接口一致；该刷新不重启代理数据面。
 状态与私有配置由插件持有；进程插件回读 loaded/ready，服务插件回读启用状态与绑定依赖是否可用。
 包管理器专用 `plugin-drain` 与 `plugin-package-*` 不暴露给 RPC。
 同一管理对象提供 `system_get`、`system_validate`、`system_apply`，均要求写权限，避免
