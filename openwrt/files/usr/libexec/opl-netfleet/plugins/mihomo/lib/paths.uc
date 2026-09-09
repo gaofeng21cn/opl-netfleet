@@ -243,7 +243,19 @@ activate_manual_choice = function(secret, entry, choice, policy, verify_probes) 
 			protected_probes: probes
 		};
 	}
-	measure_latency(secret, choice, policy.checks);
+	// Measure each region layer's candidates before testing its selected path.
+	// Testing only the outer fallback can retain its uninitialized DIRECT path.
+	const region = filter(entry?.region_groups ?? [], item => item.name == choice)[0];
+	const health = policy?.fail_open?.healthcheck;
+	const probe = filter(policy?.fail_open?.probes ?? [], item => item.id == health?.path_probe_id)[0];
+	for (let layer in [region?.primary_name, region?.reserve_name]) {
+		if (layer == null) continue;
+		measure_latency(secret, layer, policy.checks);
+		if (probe != null) test_group_path(secret, layer, { latency: {
+			url: probe.url, expected_status: probe.head_expected_status ?? probe.expected_status,
+			timeout_ms: health.timeout_ms
+		} });
+	}
 	const state = proxies(secret);
 	if (state != null) state.providers = proxy_providers(secret, 1)?.providers ?? null;
 	const runtime = resolve_runtime(entry, state);
