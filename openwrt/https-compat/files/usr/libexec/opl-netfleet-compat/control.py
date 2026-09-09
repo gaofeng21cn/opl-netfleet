@@ -630,7 +630,15 @@ def main():
                             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
                                 pass
                             previous = read(STATE, {})
-                            save_state({**previous, 'intercepting': False, 'reason': reason}, previous)
+                            config = read(CONFIG, DEFAULT)
+                            recovery = advance(previous.get('recovery'), requested=config['enabled'],
+                                healthy=False, reason=reason, now=time.monotonic(),
+                                count_failure=previous.get('recovery', {}).get('intercepting') is True
+                                and reason in ('lease_service_timeout', 'lease_service_unavailable',
+                                               'compatibility_controller_failed'))
+                            save_state({**previous, 'recovery': recovery, 'intercepting': False,
+                                'reason': recovery['reason'],
+                                'last_failure': {'at': int(time.time()), 'reason': reason}}, previous)
                     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
                         # No renewal on failure; the kernel remains the expiry owner.
                         pass

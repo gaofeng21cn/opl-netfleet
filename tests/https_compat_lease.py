@@ -91,6 +91,37 @@ class SnapshotPreview(unittest.TestCase):
         sys.path.insert(0, str(runtime))
         self.addCleanup(sys.path.pop, 0)
 
+    def test_watch_rejection_resets_recovery_without_counting_base_changes(self):
+        import control
+        from contextlib import nullcontext
+        for reason, fault_count in (('native_ownership_guard_missing', 0),
+                                    ('lease_service_timeout', 1),
+                                    ('lease_service_unavailable', 1)):
+            previous = {'recovery': {'healthy': True, 'intercepting': True,
+                                    'healthy_since': 1, 'faults': []}}
+            with patch.object(sys, 'argv', ['control.py', 'watch']), \
+                 patch('signal.signal'), \
+                 patch.object(control.isolation, 'constrain_manager'), \
+                 patch.object(control.device_identity, 'reap_sync'), \
+                 patch.object(control.gateway, 'start_worker'), \
+                 patch.object(control.gateway, 'bypass', side_effect=ValueError(reason)), \
+                 patch.object(control, 'mutation_lock', side_effect=lambda: nullcontext()), \
+                 patch.object(control, 'tick', side_effect=ValueError(reason)), \
+                 patch.object(control, 'read', side_effect=lambda path, default: previous if path == control.STATE else {'enabled': True}), \
+                 patch.object(control, 'save_state') as save, \
+                 patch.object(control.time, 'monotonic', return_value=100), \
+                 patch.object(control.time, 'sleep', side_effect=SystemExit):
+                with self.assertRaises(SystemExit):
+                    control.main()
+            failed = save.call_args.args[0]['recovery']
+            self.assertFalse(failed['intercepting'])
+            self.assertIsNone(failed['healthy_since'])
+            self.assertEqual(len(failed['faults']), fault_count)
+            recovered = control.advance(failed, requested=True, healthy=True, reason=None, now=105)
+            self.assertFalse(recovered['intercepting'])
+            self.assertFalse(control.advance(recovered, requested=True, healthy=True, reason=None, now=134)['intercepting'])
+            self.assertTrue(control.advance(recovered, requested=True, healthy=True, reason=None, now=135)['intercepting'])
+
     def test_changed_targets_epoch_bypass_and_deadline_always_reach_owner(self):
         import gateway
         with patch.multiple(gateway, _watching=True, _snapshot=None, _renewal=None, _epoch='a'), \
