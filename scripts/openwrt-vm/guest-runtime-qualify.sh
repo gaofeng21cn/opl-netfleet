@@ -641,6 +641,7 @@ ucode -e '
  policy.provider_regions.alpha[1].filter = "No matching Singapore node";
  writefile(ARGV[0], sprintf("%J", policy));
 ' /etc/opl-netfleet/policy.json
+run_timed empty_disable ucode "$main" disable vm
 run_timed empty_compile ucode "$main" compile
 run_timed empty_enable ucode "$main" enable vm
 run_timed empty_select ucode "$main" select standard singapore vm region
@@ -656,6 +657,7 @@ ucode -e '
  policy.provider_regions.beta[1].filter = "No matching Singapore node";
  writefile(ARGV[0], sprintf("%J", policy));
 ' /etc/opl-netfleet/policy.json
+run_timed all_empty_disable ucode "$main" disable vm
 run_timed all_empty_compile ucode "$main" compile
 run_timed all_empty_enable ucode "$main" enable vm
 if ucode "$main" select standard singapore vm region >"$work/all_empty_select.json"; then exit 1; fi
@@ -676,6 +678,7 @@ ucode -e '
  if (current != "DIRECT") die("empty region lost its direct guard");
 '
 cp "$work/before-empty-policy.json" /etc/opl-netfleet/policy.json
+run_timed restore_empty_disable ucode "$main" disable vm
 run_timed restore_empty_compile ucode "$main" compile
 run_timed restore_empty_enable ucode "$main" enable vm
 
