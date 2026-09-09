@@ -99,3 +99,5 @@ lane 的投影，不能用它替代签名包的安装运行结果。`supervisor_
 验收还需完成独立插件读取、编辑保存、只读访问、切页、热更新和卸载。热更新必须包含一个
 静态 import 子模块：修改子模块而保持页面入口不变，确认新的 revision 目录执行新内容，
 旧页面作用域已关闭。只验证 URL 字符串或根模块重新加载不能替代这条完整模块图验收。
+
+原生 DNS 健康读取由 `tests/test_backend_health.py` 使用真实本地 UDP socket 验证：合法 NXDOMAIN、无应答超时、错误 ID、截断和非法响应。运行该测试需要 `ucode` 和 socket 模块；本地可通过 `UCODE`、`UCODE_LIB` 指定。完整 QEMU 原生链路还通过 `tests/native_runtime_integration.uc` 验证正式 gateway 生成的本地 DNS policy、真实应答及 backend 就绪结果。

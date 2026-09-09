@@ -1,8 +1,15 @@
 import * as fs from "fs";
 import { create } from "/usr/libexec/opl-netfleet/kernel/host.uc";
 import { create as create_adapter } from "/usr/libexec/opl-netfleet/adapters/openwrt.uc";
-const host = create("/usr/libexec/opl-netfleet", { adapter: create_adapter() });
-const compatibility = host.use("https-compat.control");
+const baseline = create("/usr/libexec/opl-netfleet", { adapter: create_adapter() });
+const system = baseline.system;
+baseline.release();
+// This contract explicitly exercises the installed optional management plugin.
+// Keep the production default disabled and enable only this in-memory host.
+const compatibility_installed = fs.lstat('/usr/libexec/opl-netfleet/plugins/https-compat/manifest.json') != null;
+system.enabled['https-compat'] = compatibility_installed;
+const host = create("/usr/libexec/opl-netfleet", { adapter: create_adapter(), system });
+const compatibility = compatibility_installed ? host.use("https-compat.control") : null;
 const dashboard = host.use("dashboard.control");
 const descriptor_error = host.use("models.extensions").descriptor_error;
 
@@ -17,7 +24,7 @@ const rpc = fs.popen(`sh '${rpc_path}' list`);
 const methods = json(rpc.read("all"));
 check(rpc.close() == 0, "real RPC list succeeds");
 const acl = json(fs.readfile(acl_path));
-for (let definition in [compatibility.extension, dashboard.extension]) {
+for (let definition in compatibility_installed ? [compatibility.extension, dashboard.extension] : [dashboard.extension]) {
 	check(descriptor_error(definition) == null, "shipped module descriptor validates");
 	for (let command, entry in definition.commands) {
 		check(host.command(command) != null, "adapter command registered by installed service manifest");
@@ -32,6 +39,7 @@ for (let definition in [compatibility.extension, dashboard.extension]) {
 		check(permitted, "declared access matches installed RPC ACL");
 	}
 }
+if (compatibility_installed) {
 const manifest = host.found['https-compat'].manifest;
 const plugin_rpc = fs.popen(`sh '${rpc_path}.plugins' list`);
 const plugin_methods = json(plugin_rpc.read('all'));
@@ -45,6 +53,7 @@ for (let action in ['config-get', 'config-set', 'enable', 'disable', 'probe', 'p
 	for (let key, group in acl) if (index(group?.[entry.access]?.ubus?.['opl-netfleet.plugins'] ?? [], method) >= 0) permitted = true;
 	check(permitted, "generic plugin action access matches installed ACL");
 }
+}
 const rows = host.inventory(null);
 for (let id, enabled in host.system.enabled) if (enabled)
 	check(length(filter(rows, row => row.id == id && row.runtime == "service")) == 1, "configured service plugin appears once in inventory");
@@ -52,9 +61,10 @@ const components = host.use("components.control").get();
 check(components.dashboard.installed_version == dashboard.resource().installed_version, "components reuses resource owner version");
 check(dispatch("compatibility-private-backup") == null && dispatch("compatibility-tick") == null,
 	"private operations not exposed by registry");
-check(compatibility.dispatch("run").error == "extension_action_not_allowed", "adapter cannot bypass allowlist");
+if (compatibility_installed)
+	check(compatibility.dispatch("run").error == "extension_action_not_allowed", "adapter cannot bypass allowlist");
 check(dashboard.dispatch("unknown").error == "extension_action_not_allowed", "resource adapter rejects unknown method");
-if (!compatibility.inspection().available) {
+if (compatibility_installed && !compatibility.inspection().available) {
 	check(dispatch("compatibility-get").result.installed == false, "absent optional component readable through real registry");
 	check(dispatch("compatibility-enable", "/unused").ok == false, "absent optional component cannot activate");
 }

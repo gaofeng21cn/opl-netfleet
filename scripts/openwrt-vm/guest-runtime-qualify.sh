@@ -89,10 +89,10 @@ for dependency_attempt in 1 2 3; do
 	package_result=true
 	if command -v apk >/dev/null 2>&1; then
 		apk --timeout 300 update >>"$work/package-manager.log" 2>&1 || true
-		apk --timeout 300 add curl flock coreutils-date $legacy_dependencies >>"$work/package-manager.log" 2>&1 || package_result=false
+		apk --timeout 300 add curl flock coreutils-date coreutils-timeout ucode-mod-socket $legacy_dependencies >>"$work/package-manager.log" 2>&1 || package_result=false
 	else
 		opkg update >>"$work/package-manager.log" 2>&1 || true
-		opkg install curl flock coreutils-date >>"$work/package-manager.log" 2>&1 || package_result=false
+		opkg install curl flock coreutils-date coreutils-timeout ucode-mod-socket >>"$work/package-manager.log" 2>&1 || package_result=false
 	fi
 	if [ "$package_result" = true ] &&
 		command -v curl >/dev/null 2>&1 &&
@@ -188,6 +188,19 @@ if [ "\$*" = 'list chain inet nikki lan_dns_hijack' ]; then
 	"$real_nft" "\$@" || exit
 	printf '\t\tcounter comment "redirect to :1053"\n'
 	exit 0
+fi
+if [ "\$*" = '-j list table inet nikki' ]; then
+	"$real_nft" "\$@" | ucode -e '
+		import { readfile } from "fs";
+		const data = json(readfile("/dev/stdin"));
+		for (let item in [...data.nftables]) {
+			if (item.chain?.name == "lan_tproxy")
+				push(data.nftables, {rule: {chain: "lan_tproxy", expr: [{tproxy: {port: 7892}}]}});
+			if (item.chain?.name == "lan_dns_hijack")
+				push(data.nftables, {rule: {chain: "lan_dns_hijack", expr: [{redirect: {port: 1053}}]}});
+		}
+		printf("%J\\n", data);'
+	exit \$?
 fi
 exec "$real_nft" "\$@"
 EOF

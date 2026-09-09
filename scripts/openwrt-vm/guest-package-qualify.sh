@@ -31,6 +31,7 @@ finish() {
 			"$fixture/package-status.json" \
 			"$fixture/package-info.after" \
 			"$fixture/package-rpcd-direct.json" "$fixture/package-rpcd-ubus.txt" \
+			"$fixture/kernel-rpc-old.txt" "$fixture/kernel-rpc-after.txt" "$fixture/kernel-rpc-object.json" \
 			"$fixture/package-helper-primary.log" "$fixture/package-helper-reserve.log" \
 			"$fixture"/lifecycle-*.json "$fixture"/lifecycle-*.log \
 			/tmp/opl-netfleet-onboarding/*.json /etc/opl-netfleet/policy.json \
@@ -180,6 +181,14 @@ mv "$saved_runtime/configuration" /etc/opl-netfleet
 mv "$saved_runtime/package-helper" /usr/libexec/opl-netfleet-plugin-package
 rmdir "$saved_runtime"
 
+# The preceding source-runtime lane loads all plugin sources for contracts.
+# First package installation starts without the optional management plugin;
+# keep its unowned fixture sources out of the installed-file assertions.
+! "$real_apk" info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1
+cmp /usr/libexec/opl-netfleet/plugins/https-compat/manifest.json \
+	/tmp/openwrt/files/usr/libexec/opl-netfleet/plugins/https-compat/manifest.json
+mv /usr/libexec/opl-netfleet/plugins/https-compat "$fixture/optional-management-source"
+
 # Source deployments predate package ownership and exercise APK's protected
 # /etc path migration. The configuration plugin must promote only these package
 # baselines while leaving the user policy outside its write set.
@@ -236,7 +245,7 @@ printf '%s\n' "$installed_manifest" >>"$fixture/package-manager.log"
 ucode -e '
 	import { readfile } from "fs";
 	for (let artifact in json(readfile(ARGV[0])).artifacts)
-		printf("%s %s-r%s\n", artifact.package, artifact.version, artifact.release);
+		if (artifact.package != "opl-netfleet-plugin-https-compat") printf("%s %s-r%s\n", artifact.package, artifact.version, artifact.release);
 ' "$candidate/manifest.json" >"$fixture/product-packages.txt"
 : >"$fixture/package-info.after"
 while read -r package_name package_version; do
@@ -285,6 +294,10 @@ stage=installed_bytes
 while read -r expected path extra; do
 	[ -n "$expected" ] || continue
 	[ -z "${extra:-}" ]
+	case "$path" in
+		usr/libexec/opl-netfleet/plugins/https-compat/*|www/luci-static/resources/netfleet/plugins/https-compat/*)
+			if ! apk info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1; then [ ! -e "/$path" ]; continue; fi ;;
+	esac
 	[ -f "/$path" ] || { echo "Package file missing: /$path" >&2; exit 1; }
 	[ "$(sha256sum "/$path" | awk '{print $1}')" = "$expected" ] || {
 		echo "Package file mismatch: /$path" >&2
@@ -510,9 +523,32 @@ for package_name in opl-netfleet-plugin-dashboard opl-netfleet-kernel; do
 	package_transaction "$candidate/$package_name-$package_old.apk"
 	"$real_apk" list --manifest | grep -Fqx "$package_name $package_old"
 	lifecycle_restored lifecycle-before
+	if [ "$package_name" = opl-netfleet-kernel ]; then
+		cat >/usr/libexec/rpcd/opl-netfleet.plugins <<'RPC_OLD'
+#!/bin/sh
+if [ "$1" = list ]; then printf '%s\n' '{"plugins_list":{}}'; fi
+RPC_OLD
+		chmod 0755 /usr/libexec/rpcd/opl-netfleet.plugins
+		/etc/init.d/rpcd restart
+		for attempt in 1 2 3 4 5 6 7 8 9 10; do
+			ubus -v list opl-netfleet.plugins >"$fixture/kernel-rpc-old.txt" 2>/dev/null && break
+			sleep 1
+		done
+		[ -s "$fixture/kernel-rpc-old.txt" ]
+		! grep -Fq '"plugin_read"' "$fixture/kernel-rpc-old.txt"
+	fi
 	package_transaction "$candidate/$package_name-$package_current.apk"
 	"$real_apk" list --manifest | grep -Fqx "$package_name $package_current"
 	lifecycle_restored lifecycle-before
+	if [ "$package_name" = opl-netfleet-kernel ]; then
+		for attempt in 1 2 3 4 5 6 7 8 9 10; do
+			ubus -v list opl-netfleet.plugins >"$fixture/kernel-rpc-after.txt" 2>/dev/null && grep -Fq '"plugin_read"' "$fixture/kernel-rpc-after.txt" && break
+			sleep 1
+		done
+		grep -Eq '"request"[[:space:]]*:[[:space:]]*"Table"' "$fixture/kernel-rpc-after.txt"
+		ubus call opl-netfleet.plugins plugin_read '{"request":{"id":"qualification-absent","action":"read"}}' >"$fixture/kernel-rpc-object.json"
+		[ "$(jsonfilter -i "$fixture/kernel-rpc-object.json" -e '@.error')" = plugin_not_installed ]
+	fi
 	if [ "$package_name" = opl-netfleet-plugin-dashboard ]; then
 		[ "$(cat /var/run/nikki/mihomo.pid)" = "$core_before" ]
 		[ "$(ubus call service list '{"name":"opl-netfleet"}' |
@@ -522,6 +558,44 @@ done
 "$real_apk" --no-network del opl-netfleet-plugin-dashboard opl-netfleet-kernel \
 	>>"$fixture/package-manager.log" 2>&1
 cmp /etc/apk/world "$fixture/lifecycle-world.before"
+
+stage=rpc_method_upgrade
+core_before=$(cat /var/run/nikki/mihomo.pid)
+cp /usr/libexec/rpcd/opl-netfleet "$fixture/rpcd-current"
+cat >/usr/libexec/rpcd/opl-netfleet <<'RPC_OLD'
+#!/bin/sh
+if [ "$1" = list ]; then printf '%s\n' '{"status":{}}'; else exec /tmp/netfleet-runtime-fixture/rpcd-current "$@"; fi
+RPC_OLD
+chmod 0755 /usr/libexec/rpcd/opl-netfleet
+/etc/init.d/rpcd restart
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+	ubus -v list opl-netfleet >"$fixture/rpc-methods-old.txt" 2>/dev/null && break
+	sleep 1
+done
+[ -s "$fixture/rpc-methods-old.txt" ]
+! cat "$fixture/rpc-methods-old.txt" | grep -Fq '"select_region"'
+owner_locked "$real_apk" fix --reinstall opl-netfleet-plugin-status >>"$fixture/package-manager.log" 2>&1
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+	ubus -v list opl-netfleet >"$fixture/rpc-methods-after.txt" 2>/dev/null && grep -Fq '"select_region"' "$fixture/rpc-methods-after.txt" && break
+	sleep 1
+done
+grep -Fq '"select_region"' "$fixture/rpc-methods-after.txt"
+grep -Eq '"request"[[:space:]]*:[[:space:]]*"Table"' "$fixture/rpc-methods-after.txt"
+[ "$(cat /var/run/nikki/mihomo.pid)" = "$core_before" ]
+
+stage=optional_management_removal
+! "$real_apk" info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1
+core_before=$(cat /var/run/nikki/mihomo.pid)
+owner_locked "$real_apk" add opl-netfleet-plugin-https-compat >>"$fixture/package-manager.log" 2>&1
+"$real_apk" info -e opl-netfleet-plugin-https-compat >/dev/null
+owner_locked "$real_apk" del opl-netfleet-plugin-https-compat >>"$fixture/package-manager.log" 2>&1
+! "$real_apk" info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1
+"$real_apk" info -e opl-netfleet opl-netfleet-kernel >/dev/null
+[ "$(cat /var/run/nikki/mihomo.pid)" = "$core_before" ]
+NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 sh "$candidate/install-netfleet.sh" >>"$fixture/package-manager.log" 2>&1
+! "$real_apk" info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1
+ubus call opl-netfleet probe '{}' >"$fixture/package-probe.json"
+[ "$(jsonfilter -i "$fixture/package-probe.json" -e '@.result.ok')" = true ]
 
 stage=disable
 ubus call opl-netfleet disable '{}' >"$fixture/package-disable.json"
@@ -612,5 +686,5 @@ if [ "$(jsonfilter -i "$fixture/lifecycle-fixture.json" -e '@.legacy.key_sha256'
 fi
 
 stage=complete
-printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_release":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","lifecycle":{"legacy_monolith_upgrade":%s,"legacy_source_commit":"%s","legacy_source_tree":"%s","legacy_artifacts":%s},"checks":{"manifest":true,"signing_key":true,"kernel_only_package_install":true,"kernel_only_service_lifecycle":true,"feed_bootstrap":true,"feed_install":true,"feed_install_inactive":true,"feed_upgrade_transaction":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"probe_rpc":true,"independent_plugin_upgrade":true,"independent_plugin_keeps_owners_running":true,"kernel_upgrade":true,"lifecycle_restores_routes_and_private_inputs":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
+printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_release":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","lifecycle":{"legacy_monolith_upgrade":%s,"legacy_source_commit":"%s","legacy_source_tree":"%s","legacy_artifacts":%s},"checks":{"manifest":true,"signing_key":true,"kernel_only_package_install":true,"kernel_only_service_lifecycle":true,"feed_bootstrap":true,"feed_install":true,"feed_install_inactive":true,"feed_upgrade_transaction":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"probe_rpc":true,"independent_plugin_upgrade":true,"independent_plugin_keeps_owners_running":true,"kernel_upgrade":true,"optional_management_removal":true,"rpc_method_upgrade":true,"lifecycle_restores_routes_and_private_inputs":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
 	"$source_commit" "$source_tree" "$manifest_sha" "$version" "$release" "$legacy_upgraded" "$legacy_source_commit" "$legacy_source_tree" "$legacy_artifacts"

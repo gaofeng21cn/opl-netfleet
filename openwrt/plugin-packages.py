@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parent
 PLUGIN_ROOT = ROOT / "files/usr/libexec/opl-netfleet/plugins"
 ID = re.compile(r"[a-z][a-z0-9-]*")
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
+OPTIONAL_PLUGINS = frozenset({"https-compat"})
 PACKAGE = re.compile(r"[a-z0-9][a-z0-9+_.-]*")
 
 
@@ -62,13 +63,13 @@ def composition():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("ids", "dependencies", "version", "revision", "system"))
+    parser.add_argument("command", choices=("ids", "default-ids", "dependencies", "version", "revision", "system"))
     parser.add_argument("plugin", nargs="?")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     plugins, services, graph = composition()
-    if args.command == "ids":
-        print(" ".join(plugins))
+    if args.command in ("ids", "default-ids"):
+        print(" ".join(identity for identity in plugins if args.command == "ids" or identity not in OPTIONAL_PLUGINS))
     elif args.command == "revision":
         from plugin_payload import payload_revision
 
@@ -89,8 +90,8 @@ def main():
         data = json.dumps({
             "schema": "opl-netfleet-system.v1",
             "bindings": {name: services[name][0] for name in sorted(services)},
-            "enabled": {identity: True for identity in plugins},
-            "product_packages": ["opl-netfleet-kernel", *(plugins[identity]["package"] for identity in plugins)],
+            "enabled": {identity: identity not in OPTIONAL_PLUGINS for identity in plugins},
+            "product_packages": ["opl-netfleet-kernel", *(plugins[identity]["package"] for identity in plugins if identity not in OPTIONAL_PLUGINS)],
             "scheduler": {"service": "scheduler.control", "method": "tick"},
             "environment": {"service": "platform.runtime", "method": "environment"},
         }, indent=2, sort_keys=True) + "\n"

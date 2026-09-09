@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet
-PKG_VERSION:=0.8.11
+PKG_VERSION:=0.8.12
 PKG_RELEASE:=1
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=OPL NetFleet
@@ -9,6 +9,7 @@ PKG_MAINTAINER:=OPL NetFleet
 include $(INCLUDE_DIR)/package.mk
 
 NETFLEET_PLUGINS:=$(shell python3 ./plugin-packages.py ids)
+NETFLEET_DEFAULT_PLUGINS:=$(shell python3 ./plugin-packages.py default-ids)
 ifeq ($(strip $(NETFLEET_PLUGINS)),)
   $(error NetFleet default plugin composition is invalid)
 endif
@@ -109,6 +110,7 @@ if [ -f "$$maintenance/.kernel-plugins" ]; then
 	[ -z "$$plugins" ] || ucode /usr/libexec/opl-netfleet/main.uc plugin-package-resume $$plugins || exit 1
 	rm -f "$$maintenance/.kernel-plugins" || exit 1
 fi
+[ ! -x /etc/init.d/rpcd ] || /etc/init.d/rpcd restart
 exit 0
 endef
 
@@ -116,7 +118,7 @@ define Package/opl-netfleet
   SECTION:=net
   CATEGORY:=Network
   TITLE:=OPL NetFleet default network platform
-  DEPENDS:=+opl-netfleet-kernel $(foreach plugin,$(NETFLEET_PLUGINS),+opl-netfleet-plugin-$(plugin))
+  DEPENDS:=+opl-netfleet-kernel $(foreach plugin,$(NETFLEET_DEFAULT_PLUGINS),+opl-netfleet-plugin-$(plugin))
   EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.1)$(if $(CONFIG_USE_APK),$(comma) !opl-netfleet-https-compat (<0.1.8))
   $(if $(CONFIG_USE_APK),,CONFLICTS:=opl-netfleet-https-compat (<0.1.8))
   PKGARCH:=all
@@ -418,6 +420,14 @@ for path in \
 	[ ! -f "$$path.apk-new" ] || mv -f "$$path.apk-new" "$$path" || exit 1
 done
 exec /usr/libexec/opl-netfleet-plugin-package configuration postinst
+endef
+
+define Package/opl-netfleet-plugin-status/postinst
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+/usr/libexec/opl-netfleet-plugin-package status postinst || exit 1
+# rpcd registers executable-plugin methods at startup, before later APKs may replace them.
+[ ! -x /etc/init.d/rpcd ] || /etc/init.d/rpcd restart
 endef
 
 define Package/opl-netfleet-plugin-mihomo/postrm

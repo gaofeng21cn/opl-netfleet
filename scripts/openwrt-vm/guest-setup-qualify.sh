@@ -91,6 +91,10 @@ package_identity() {
 	while read -r expected path extra; do
 		[ -n "$expected" ] || continue
 		[ -z "${extra:-}" ]
+		case "$path" in
+			usr/libexec/opl-netfleet/plugins/https-compat/*|www/luci-static/resources/netfleet/plugins/https-compat/*)
+				if ! apk info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1; then [ ! -e "/$path" ]; continue; fi ;;
+		esac
 		[ -f "/$path" ]
 		[ "$(digest "/$path")" = "$expected" ]
 	done <"$candidate/FILES.sha256"
@@ -323,7 +327,7 @@ printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
 for attempt in 1 2 3; do
 	apk --timeout 120 update >>"$work/packages.log" 2>&1 || true
 	if apk --timeout 120 add curl flock coreutils-timeout ip-full socat kmod-veth kmod-nft-tproxy kmod-nft-socket \
-		ucode-mod-fs ucode-mod-uci ucode-mod-ubus ucode-mod-uloop >>"$work/packages.log" 2>&1; then
+		ucode-mod-fs ucode-mod-uci ucode-mod-socket ucode-mod-ubus ucode-mod-uloop >>"$work/packages.log" 2>&1; then
 		break
 	fi
 	[ "$attempt" -lt 3 ] || exit 1

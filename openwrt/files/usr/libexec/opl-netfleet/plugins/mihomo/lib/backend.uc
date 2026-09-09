@@ -1,9 +1,10 @@
 import { popen } from "fs";
 import { cursor } from "uci";
+import { listeners, rules, dns_ready as native_dns_ready } from "./health.uc";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let resolve_profile, profile_exists, restart, update_subscription, provider_runtime_path, link_target, subscription_cache_path, prepare_provider_links, remove_provider_links, running, wildcard_listener, listener_port, https_hostname, dns_query_ready, lan_runtime_state, configured_value, valid_table, valid_device, no_lookup_rule, no_route, path_absent, cleanup_state, stop, make_json, test_profile_object, install_artifact, remove_artifact;
+let resolve_profile, profile_exists, restart, update_subscription, provider_runtime_path, link_target, subscription_cache_path, prepare_provider_links, remove_provider_links, running, listener_port, https_hostname, dns_query_ready, lan_runtime_state, configured_value, valid_table, valid_device, no_lookup_rule, no_route, path_absent, cleanup_state, stop, make_json, test_profile_object, install_artifact, remove_artifact;
 
 const KIND = context.use("platform.runtime").KIND;
 const UCI_PACKAGE = context.use("platform.runtime").UCI_PACKAGE;
@@ -137,11 +138,6 @@ running = function() {
 	return system("pidof mihomo >/dev/null 2>&1") == 0;
 };
 
-wildcard_listener = function(protocol, port) {
-	const flag = protocol == "udp" ? "-lnu" : "-lnt";
-	return system(`netstat ${flag} 2>/dev/null | awk '$4 == "0.0.0.0:${port}" || $4 == ":::${port}" || $4 == "[::]:${port}" { found=1 } END { exit !found }'`) == 0;
-};
-
 listener_port = function(value) {
 	const parts = split(`${value ?? ""}`, ":");
 	const value_port = parts[length(parts) - 1];
@@ -200,33 +196,34 @@ lan_runtime_state = function(dns_probe_url) {
 			error: "uci_unavailable"
 		};
 	}
-	const tproxy_tcp_wildcard = wildcard_listener("tcp", 7892);
-	const tproxy_udp_wildcard = wildcard_listener("udp", 7892);
-	const tproxy_rule_present = system(`nft list chain inet ${NFT_TABLE} lan_tproxy 2>/dev/null | grep -Fq 'tproxy to :7892'`) == 0;
-	const controller_wildcard = wildcard_listener("tcp", 9090);
+	const sockets = listeners();
+	const chains = rules(NFT_TABLE);
+	const tproxy_tcp_wildcard = sockets.tcp[7892] == true;
+	const tproxy_udp_wildcard = sockets.udp[7892] == true;
+	const tproxy_rule_present = length(filter(chains.lan_tproxy ?? [], expr => expr.tproxy?.port == 7892)) > 0;
+	const controller_wildcard = sockets.tcp[9090] == true;
 	const dns_port = listener_port(dns_listen);
-	const dns_tcp_wildcard = dns_port != null && wildcard_listener("tcp", dns_port);
-	const dns_udp_wildcard = dns_port != null && wildcard_listener("udp", dns_port);
+	const dns_tcp_wildcard = dns_port != null && sockets.tcp[dns_port] == true;
+	const dns_udp_wildcard = dns_port != null && sockets.udp[dns_port] == true;
 	const dns_hijack_rule_present = dns_port != null &&
-		system(`nft list chain inet ${NFT_TABLE} lan_dns_hijack 2>/dev/null | grep -Fq ${shell_quote(`redirect to :${dns_port}`)}`) == 0;
-	const dns_query_ok = KIND == "native-mihomo" ? null : dns_query_ready(dns_probe_url);
+		length(filter(chains.lan_dns_hijack ?? [], expr => expr.redirect?.port == dns_port)) > 0;
+	const dns_query_ok = KIND == "native-mihomo" ?
+		(dns_enabled && dns_udp_wildcard && native_dns_ready(dns_port)) : dns_query_ready(dns_probe_url);
 	if (native_expected != null) {
-		const process = popen("ucode /usr/libexec/opl-netfleet/main.uc native-gateway-status 2>/dev/null");
-		let owner = null;
-		try { owner = process == null ? null : json(process.read("all")); } catch (error) {}
-		const owner_ready = process != null && process.close() == 0 && owner?.result?.ready == true;
+		const owner = context.use("mihomo.gateway").status();
+		const owner_ready = owner?.ok == true && owner?.result?.ready == true;
 		let proxy_chains = true;
 		let dns_chains = true;
 		for (let scope in ["lan", "router"]) {
-			const proxy_present = system(`nft list chain inet netfleet ${scope}_tproxy >/dev/null 2>&1`) == 0;
-			const dns_present = system(`nft list chain inet netfleet ${scope}_dns_hijack >/dev/null 2>&1`) == 0;
+			const proxy_present = chains[`${scope}_tproxy`] != null;
+			const dns_present = chains[`${scope}_dns_hijack`] != null;
 			proxy_chains = proxy_chains && proxy_present == native_expected[scope];
 			dns_chains = dns_chains && dns_present == (native_expected[scope] && native_expected.dns);
 		}
 		// An intentionally disabled interception scope is not a failed data plane.
 		return { transparent_proxy_ready: owner_ready && allow_lan && tproxy_tcp_wildcard && tproxy_udp_wildcard && proxy_chains,
 			dashboard_lan_ready: api_listen == "0.0.0.0:9090" && controller_wildcard,
-			dns_ready: owner_ready && dns_enabled && dns_tcp_wildcard && dns_udp_wildcard && dns_chains,
+			dns_ready: owner_ready && dns_enabled && dns_tcp_wildcard && dns_udp_wildcard && dns_chains && dns_query_ok,
 			allow_lan: allow_lan, api_listen: api_listen, dns_enabled: dns_enabled, dns_listen: dns_listen,
 			dns_tcp_wildcard: dns_tcp_wildcard, dns_udp_wildcard: dns_udp_wildcard,
 			dns_hijack_rule_present: dns_hijack_rule_present, dns_query_ok: dns_query_ok,
@@ -284,10 +281,8 @@ path_absent = function(path) {
 // Observe only the selected owner's cleanup contract; mutation stays in its init service.
 cleanup_state = function() {
 	if (KIND == "native-mihomo") {
-		const child = popen("ucode /usr/libexec/opl-netfleet/main.uc native-gateway-status 2>/dev/null");
-		let response = null;
-		try { response = child == null ? null : json(child.read("all")); } catch (error) {}
-		const completed = child != null && child.close() == 0;
+		const response = context.use("mihomo.gateway").status();
+		const completed = response?.ok == true;
 		// procd can remove the instance before the old process has exited.
 		// Match the native owner's start precondition before reusing its listeners.
 		const stopped = completed && response?.ok == true && response.result?.core_running == false &&
