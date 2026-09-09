@@ -449,7 +449,12 @@ def tick(lock=None, delayed_by_mutation=False):
     rule_states = dict(previous.get("rule_recovery", {}))
     if previous.get('engine_pid') != health.get('pid'):
         rule_states = {key: {**value, 'last_error': 0} for key, value in rule_states.items()}
-    observed = {**previous.get("observed", {}), **health.get("observed", {})}
+    seen = {**previous.get("observed", {}), **health.get("observed", {})}
+    # A retained observation cannot override an edited rule's target or port.
+    observed = {rule['id']: {'domain': seen[rule['id']]['domain']} for rule in active['rules']
+                if rule['match'] == 'suffix' and isinstance(seen.get(rule['id'], {}).get('domain'), str)
+                and (seen[rule['id']]['domain'] == rule['domain']
+                     or seen[rule['id']]['domain'].endswith('.' + rule['domain']))}
     state["observed"] = observed
     pending = [{**rule, **observed.get(rule["id"], {})} for rule in active["rules"] if rule["enabled"] and rule["strategy"] == "h2"
                and (rule["match"] == "exact" or rule["id"] in observed)
