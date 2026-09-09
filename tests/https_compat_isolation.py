@@ -27,31 +27,38 @@ class Isolation(unittest.TestCase):
             execute = stack.enter_context(patch.object(control.subprocess, 'run'))
             execute.return_value.stdout = json.dumps({'opl-netfleet-compat': {'instances': {'engine': {'running': True}}}})
             request = Path(directory) / 'request.json'
-            for latched in (True, False):
+            for latched, maintenance, legacy, lifecycle in ((True, False, False, True), (False, False, False, True),
+                    (False, True, False, True), (False, True, True, True), (False, False, False, False)):
+                keep = maintenance or legacy or not lifecycle
                 paths['CONFIG'].write_text(json.dumps({**control.DEFAULT, 'enabled': True}))
                 recovery = {'healthy': True, 'healthy_since': 900, 'intercepting': not latched,
                             'faults': [980, 990], 'latched': latched}
                 state = {'recovery': recovery, 'rule_recovery': {'site': {'latched': True}},
                          'last_failure': {'at': 42, 'reason': 'processing_chain_failed'}}
+                if maintenance:
+                    state['maintenance'] = True
+                if legacy:
+                    state['suspended'] = {'revision': control.revision(), 'requested': True, 'running': True}
                 paths['STATE'].write_text(json.dumps(state))
-                with patch.object(control.sys, 'argv', ['control.py', 'suspend']):
+                request.write_text(json.dumps({'request': {'lifecycle': lifecycle}}))
+                with patch.object(control.sys, 'argv', ['control.py', 'suspend', str(request)]):
                     saved = control.main()
-                request.write_text(json.dumps({'request': saved}))
                 # A repeated drain during package replacement remains idempotent.
-                with patch.object(control.sys, 'argv', ['control.py', 'suspend']):
+                with patch.object(control.sys, 'argv', ['control.py', 'suspend', str(request)]):
                     self.assertEqual(control.main(), saved)
+                request.write_text(json.dumps({'request': saved}))
                 execute.reset_mock()
                 with patch.object(control.sys, 'argv', ['control.py', 'resume', str(request)]):
                     control.main()
                 restored = json.loads(paths['STATE'].read_text())
-                self.assertNotIn('maintenance', restored)
+                self.assertEqual(restored.get('maintenance', False), keep)
                 self.assertEqual(restored['recovery']['latched'], latched)
                 self.assertEqual(restored['recovery']['faults'], [980, 990])
                 self.assertFalse(restored['recovery']['intercepting'])
                 self.assertIsNone(restored['recovery']['healthy_since'])
                 self.assertEqual(restored['last_failure'], state['last_failure'])
                 self.assertEqual(restored['rule_recovery'], state['rule_recovery'])
-                self.assertEqual(restored['reason'], 'manual_recovery_required' if latched else 'recovering')
+                self.assertEqual(restored['reason'], 'maintenance' if keep else 'manual_recovery_required' if latched else 'recovering')
                 execute.assert_called_once()
                 # A user's later disable takes priority over the saved lifecycle request.
                 paths['CONFIG'].write_text(json.dumps({**control.DEFAULT, 'enabled': False}))

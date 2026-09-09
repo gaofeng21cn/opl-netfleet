@@ -340,7 +340,7 @@ function render(controller) {
 		(event.failure || Object.values(event.local_probes || {}).some(probe => probe.ok === false)));
 	const lastFailure = failure && (failure.failure || failure);
 	const diagnostics = () => controller.compatibilityLive === false ? [ E('p', {}, '诊断记录不缓存，请等待当前状态读取成功。') ] : [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h4', {}, '诊断'), E('div', { 'class': 'netfleet-inline-actions' }, [
-		state.recovery && state.recovery.latched ? button('恢复模块', function() { return mutate(controller, 'compatibilityProbe', { operation: 'recover' }); }, busy || !state.requested) : '',
+		(state.recovery && state.recovery.latched || state.reason === 'maintenance') ? button('恢复模块', function() { return mutate(controller, 'compatibilityProbe', { operation: 'recover' }); }, busy || !state.requested) : '',
 		button('导出诊断', function() { download('netfleet-compatibility-diagnostic.json', JSON.stringify({ requested: state.requested, intercepting: state.intercepting,
 			reason: state.reason, active_connections: state.active_connections, recovery: state.recovery, last_failure: state.last_failure, engine_restart: state.engine_restart,
 			local_probes: state.local_probes, rule_recovery: state.rule_recovery, events: state.events, results: Object.values(state.rules || {}) }, null, 2)); }) ]) ]),

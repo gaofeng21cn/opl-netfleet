@@ -130,6 +130,6 @@ return { extension, inspection, dispatch, command_compatibility_get, command_com
 	config_get: () => dispatch('get'), config_set: params => action('apply', params),
 	enable: params => action('enable', params), disable: params => action('disable', params),
 	probe: params => action('probe', params), public_ca: () => dispatch('ca'),
-	drain: () => action('suspend'), resume: state => action('resume', state)
+	drain: () => action('suspend', { lifecycle: true }), resume: state => action('resume', state)
 };
 };

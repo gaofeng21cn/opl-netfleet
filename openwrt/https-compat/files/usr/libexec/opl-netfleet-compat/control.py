@@ -648,11 +648,17 @@ def main():
             return {"intercepting": False}
         if action == "suspend":
             previous = read(STATE, {})
+            request = read(Path(sys.argv[2]), {}).get("request", {}) if len(sys.argv) > 2 else {}
             service = subprocess.run(["ubus", "call", "service", "list", '{"name":"opl-netfleet-compat"}'],
                                      check=True, capture_output=True, text=True, timeout=1)
             instances = json.loads(service.stdout).get("opl-netfleet-compat", {}).get("instances", {})
-            saved = previous.get("suspended") or {"revision": revision(), "requested": read(CONFIG, DEFAULT)["enabled"],
-                                                  "running": any(item.get("running") for item in instances.values())}
+            saved = previous.get("suspended")
+            if saved:
+                saved = {**saved, "keep_maintenance": saved.get("keep_maintenance", True) or request.get("lifecycle") is not True}
+            else:
+                saved = {"revision": revision(), "requested": read(CONFIG, DEFAULT)["enabled"],
+                         "running": any(item.get("running") for item in instances.values()),
+                         "keep_maintenance": bool(previous.get("maintenance")) or request.get("lifecycle") is not True}
             recovery = {**previous.get("recovery", {}), "intercepting": False, "healthy_since": None}
             save_state({**previous, "recovery": recovery, "suspended": saved, "maintenance": True,
                         "intercepting": False, "reason": "maintenance"}, previous)
@@ -665,10 +671,14 @@ def main():
             saved = read(Path(sys.argv[2]), {}).get("request", {})
             previous = read(STATE, {})
             if saved.get("running") and saved.get("requested") and saved.get("revision") == revision() and read(CONFIG, DEFAULT)["enabled"]:
-                previous.pop("maintenance", None)
+                keep_maintenance = saved.get("keep_maintenance", True)
+                if keep_maintenance:
+                    previous["maintenance"] = True
+                else:
+                    previous.pop("maintenance", None)
                 previous.pop("suspended", None)
                 recovery = {**previous.get("recovery", {}), "intercepting": False, "healthy_since": None}
-                reason = "manual_recovery_required" if recovery.get("latched") else "recovering"
+                reason = "maintenance" if keep_maintenance else "manual_recovery_required" if recovery.get("latched") else "recovering"
                 save_state({**previous, "recovery": recovery, "intercepting": False, "reason": reason}, previous)
                 subprocess.run([SERVICE, "start"], check=True, capture_output=True, timeout=3)
             return {"intercepting": False}

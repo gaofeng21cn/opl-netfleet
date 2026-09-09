@@ -336,6 +336,32 @@ with open('/var/lock/opl-netfleet-deploy.lock', 'a') as lock:
         self.assertTrue(after_resume["recovery"]["latched"], after_resume)
         self.assertEqual(after_resume["last_failure"], state["last_failure"])
         self.assertFalse(after_resume["intercepting"])
+        old_packages = list(Path("/tmp/compat-runtime/rollback").glob("opl-netfleet-https-compat-*.apk"))
+        if packages and old_packages:
+            async def replace_engine(package):
+                operation = await asyncio.create_subprocess_exec("flock", "/var/lock/opl-netfleet-deploy.lock",
+                    "apk", "--no-network", "add", str(package),
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                try:
+                    output, error = await asyncio.wait_for(operation.communicate(), 90)
+                    self.assertEqual(operation.returncode, 0, error.decode())
+                finally:
+                    if operation.returncode is None:
+                        operation.kill()
+                        await operation.wait()
+            # Exercise the real old controller and package hooks. No fabricated
+            # latch/state migration can prove this upgrade boundary.
+            await replace_engine(old_packages[0])
+            legacy_suspend = self.owner.call("suspend", internal=True)
+            self.assertNotIn("keep_maintenance", legacy_suspend)
+            self.assertEqual(self.owner.call("get")["reason"], "maintenance")
+            await replace_engine(packages[0])
+            await asyncio.sleep(3)
+            upgraded = self.owner.call("get")
+            self.assertTrue(upgraded["requested"])
+            self.assertFalse(upgraded["intercepting"])
+            self.assertEqual(upgraded["reason"], "maintenance")
+            self.assertFalse((await self.request(ca=self.directory / "upstream.pem"))["h2"])
         self.owner.call("probe", {"revision": state["revision"], "operation": "recover"})
         deadline = time.monotonic() + 45
         while not self.owner.call("get")["intercepting"]:
