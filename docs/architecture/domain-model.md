@@ -119,6 +119,10 @@ NetFleet 自有 policy、platform、ruleset lock、evidence、manifest 和 artif
 
 内置 `base-v1` 在海外分流前先将 Tailscale 控制/中继域名、STUN 目标端口 `3478` 以及默认 WireGuard UDP 源/目标端口 `41641` 交给 `DIRECT`。这只防止网络覆盖层的控制和 NAT 打洞流量绕道机场，不承诺对称 NAT 下一定建立直连；设备若修改 Tailscale 监听端口，目标私有配置必须同步声明对应的直连例外。
 
+新建订阅驱动的配置由共享 `configuration.onboarding-model` 使用内置 `base-v1` 草拟，订阅仅贡献节点、地区和额度。默认生成“海外加速”与“AI 出口”两个 capability，AI 排除已发现的香港地区，并优先使用海外加速当前地区（仍须满足自身资格）。绑定沿用内置策略的业务组与规则顺序；完整机场配置只作为独立的 Recovery Profile。显式导入已有 Profile 的接管流程仍保留其规则。
+
+切换已有策略到内置基线是显式配置操作，保留 provider、地区映射、自动化、恢复引用及未知字段；只替换策略来源、组绑定和两个默认出口的定义，并在提交前验证编译。订阅增删和刷新不能触发这项切换。
+
 ### RecoveryProfileRef
 
 用户明确选择并独立验证的完整原始 Profile。它只用于 enable 前置身份、事务回滚、disable、supervisor recover 和手工原生恢复，不参与正常编译、机场选优或 capability 资格。

@@ -6,6 +6,10 @@ type BusinessClient = Pick<NetFleetClient, 'status' | 'events' | 'enable' | 'dis
 
 const messages: Record<string, string> = {
   unauthorized: '本机会话已失效，请退出并重新打开应用。',
+  stop_proxy_before_policy_change: '请先停止代理，再切换业务策略。',
+  builtin_ruleset_missing: '内置规则文件缺失，请重新打开应用恢复随包资源。原策略已保留。',
+  builtin_ruleset_mismatch: '内置规则校验失败，请重新打开应用恢复随包资源。原策略已保留。',
+  builtin_policy_missing: '内置策略资源缺失，请重新构建或打开完整的应用。',
   stop_proxy_before_import: '请先停止代理，再导入基础配置。',
   stop_proxy_before_restore: '请先停止代理，再恢复备份。',
   initial_policy_needs_configuration: '无法从节点自动识别完整策略，请补充业务策略后编译。',

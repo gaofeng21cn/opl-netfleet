@@ -1,4 +1,5 @@
 #!/usr/bin/ucode
+import * as fs from "fs";
 import { use, release as release_services } from "./services.uc";
 
 const discover = use("configuration.onboarding-model").discover;
@@ -137,6 +138,18 @@ assert(model.reconcile_sources(referenced, { beta: { enabled: true } }).error ==
 assert(sprintf("%J", original) == before);
 const unknown = model.merge_provider(original, unknown_result, "alpha");
 assert(!unknown.recognized && sprintf("%J", unknown.policy) == before);
+
+const builtin_profile = json(fs.readfile(replace(sourcepath(), /[^/]+$/, "../openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json")));
+const builtin = model.draft_builtin(base_input(), builtin_profile);
+assert(builtin.ready && builtin.policy.policy_source.ref == "bundle:base-v1");
+assert(builtin.policy.bindings["AI 出口"].capability == "ai-compatible");
+assert(builtin.policy.capabilities["ai-compatible"].excluded_regions[0] == "hong_kong");
+assert(use("models.policy").validate(builtin.policy).ok);
+const builtin_one = model.draft_builtin(one_provider, builtin_profile);
+assert(builtin_one.ready && use("models.policy").validate(builtin_one.policy).ok);
+assert(model.draft(base_input()).policy.policy_source.kind == "profile");
+const switched = model.use_builtin(original, builtin_profile);
+assert(switched.private_extension.preserved && sprintf("%J", original) == before);
 
 print("onboarding_contract_ok\n");
 
