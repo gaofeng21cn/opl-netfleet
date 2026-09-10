@@ -85,3 +85,28 @@ check(rollback(before, "/unused", ["package"], {package: "old"}, ["old.apk"], tr
     "verified successful rollback remains successful");
 `)();
 print("components_recovery_contract_ok\n");
+
+// APK local paths replace world roots with checksums. Exercise administrator
+// constraints and rollback, including unrelated roots, against the real helper.
+const world_start = index(source, "restore_world = function(");
+const world_end = index(source, "feed = function(", world_start);
+loadstring(`
+let restore_world, actual, commands = [], succeeds = true;
+function q(value) { return value; }
+function run_command(command, work) { push(commands, command); return succeeds; }
+function package_world() { return actual; }
+function check(value, message) { if (!value) die(message); }
+` + substr(source, world_start, world_end - world_start) + `
+const before = {a: "a", b: "b>=2", c: "c><Q1old", unrelated: "unrelated@stable"};
+actual = {a: "a", b: "b>=2", c: "c", unrelated: "unrelated@stable"};
+check(restore_world(["a", "b", "c", "dep"], before, "/unused"), "successful update normalizes archive pins but preserves administrator constraints");
+check(index(commands[0], "a b>=2 c") >= 0 && index(commands[1], "del dep") >= 0, "restore exact roots and remove accidental dependency roots");
+actual.c = "c><Q1old";
+check(restore_world(["c"], before, "/unused", true), "rollback restores the original checksum pin");
+actual.b = "b><Q1new";
+check(!restore_world(["b"], before, "/unused"), "an unrestored version constraint must fail");
+actual = {a: "a", b: "b>=2", c: "c", unrelated: "changed"};
+check(!restore_world(["a", "b", "c"], before, "/unused"), "unrelated world roots cannot change silently");
+succeeds = false;
+check(!restore_world(["a"], before, "/unused"), "unsatisfied constraints require transaction rollback");
+`)();

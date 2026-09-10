@@ -13,6 +13,40 @@
 原生模式回读 NetFleet 核心与网关，Nikki 模式回读 Nikki；不能用旧模式的入口管理新后端。
 原生首次设置、Nikki 迁移和 Fleet 声明式部署使用各自入口，不能混用输入替代迁移。
 
+## 更新与验收窗口
+
+多个执行器操作同一设备时，从 fresh precondition 到安装、恢复、业务回读和浏览器验收，
+必须由一个执行器持有设备上的 `/var/lock/opl-netfleet-operator.lock`。Fleet 部署器和
+有限插件更新器共用该锁；独立运维或插件 canary 也须将完整命令放入同一 `flock` 窗口，
+不能只在写包或重启服务的几秒内加锁。锁被占用时返回忙，不抢占、不重启锁持有者。
+这是运维执行器的协作锁，不是阻止 root 绕过入口的权限边界，也不冻结用户的独立操作。
+验收期间若用户改变配置或运行模式，应记录该变化并重新建立可比基线。
+
+网络写入仍由原有 `/var/lock/opl-netfleet-deploy.lock` 串行。有限更新器等待组件事务
+结束后释放网络写锁，以便正常监督周期继续工作，同时保留运维窗口锁直至有界验收结束。
+不能持有网络写锁采样后声称测到了正常自动调度性能。
+
+少量默认产品插件的更新入口为：
+
+```sh
+python3 scripts/update-openwrt-plugins.py <ssh-target> \
+  --ref <qualified-commit> --packages <signed-package-directory> \
+  --rollback-dir <private-old-package-directory> --qualification <receipt.json> \
+  --plugin opl-netfleet-plugin-components --observe-seconds 120 \
+  --output <private-receipt.json>
+```
+
+`--plugin` 可重复，目录中其他包不进入安装集合；旧版归档按目标当前版本精确提供。
+`--dry-run` 只验证本地候选与资格，不联系设备。实际执行将清单、归档与已验证的组件事务
+实现送到私有暂存目录，使用目标现有组合启动同一事务 owner，不替换其他插件实现。
+目标端再次校验材料并取得恢复材料后才写包。软件更新入口和事务合同归
+[软件包架构](../architecture/packaging.md)。
+
+连接中断或更新超时后，从本机 receipt 的 `stage`、设备 `start.json` 与组件事务记录
+核对真实阶段，再决定恢复；不重新运行安装器猜测结果。观察失败不自动回退一个已经
+成功的安装：先区分业务故障、正常调度变化与其他用户操作，并使用既有恢复材料。
+目标私有暂存及终态 receipt 在完成验收后由本次执行器清理；未决事务的恢复材料不得删除。
+
 ## Canary
 
 1. 在符合[软件包支持边界](../architecture/packaging.md)的可本地恢复空白设备安装签名包，

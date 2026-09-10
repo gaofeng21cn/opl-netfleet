@@ -101,3 +101,10 @@ lane 的投影，不能用它替代签名包的安装运行结果。`supervisor_
 旧页面作用域已关闭。只验证 URL 字符串或根模块重新加载不能替代这条完整模块图验收。
 
 原生 DNS 健康读取由 `tests/test_backend_health.py` 使用真实本地 UDP socket 验证：合法 NXDOMAIN、无应答超时、错误 ID、截断和非法响应。运行该测试需要 `ucode` 和 socket 模块；本地可通过 `UCODE`、`UCODE_LIB` 指定。完整 QEMU 原生链路还通过 `tests/native_runtime_integration.uc` 验证正式 gateway 生成的本地 DNS policy、真实应答及 backend 就绪结果。
+
+有限插件更新验收覆盖精确包集合、资格与源码身份、旧版漂移、签名/架构、额外归档拒绝、
+world 约束恢复和无资源 owner 插件更新时的核心 PID。真实设备验收使用 LuCI 原生入口
+完成导航及明细展开，不能以 React fixture 或 RPC 成功替代浏览器交互。
+`observe-openwrt.uc` 只做有界状态读取与保护探针，记录状态 p50/p95、监督器/核心 PID、
+进程 CPU ticks 和 RSS；这些值不等于带宽上限或长期稳定性。操作窗口见
+[Canary 流程](../operations/canary-promotion.md)。

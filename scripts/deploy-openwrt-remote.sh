@@ -1632,6 +1632,11 @@ fi
 lock_path=$(root_path /var/lock/opl-netfleet-deploy.lock)
 mkdir -p "$(dirname "$lock_path")"
 if [ "${OPL_NETFLEET_DEPLOY_LOCKED:-}" != "1" ]; then
+	exec 8>"$(root_path /var/lock/opl-netfleet-operator.lock)"
+	if ! flock -n 8; then
+		error_code=operator_window_busy
+		exit 1
+	fi
 	exec 9>"$lock_path"
 	if ! flock -n 9; then
 		error_code=deploy_busy
@@ -1649,7 +1654,7 @@ if [ "${OPL_NETFLEET_DEPLOY_LOCKED:-}" != "1" ]; then
 	fi
 	[ "$instance" != "1" ] || set -- "$@" --instance
 	trap - EXIT
-	OPL_NETFLEET_DEPLOY_LOCKED=1 sh "$0" "$@" 9>&-
+	OPL_NETFLEET_DEPLOY_LOCKED=1 sh "$0" "$@" 8>&- 9>&-
 	exit $?
 fi
 

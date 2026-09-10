@@ -2,7 +2,7 @@ import * as fs from "fs";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, restore_world, feed, newer, available, update_process, progress, get, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, recovery_stop, restore_services, rollback, recover, journal, upgrade, command;
+let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, restore_world, feed, newer, available, update_process, progress, get, local_stage, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, recovery_stop, restore_services, rollback, recover, journal, upgrade, command;
 
 const gateway = context.use("mihomo.gateway");
 const dashboard_resource = context.use("dashboard.control").resource;
@@ -80,16 +80,20 @@ package_world = function() {
 	}
 	return result;
 };
-restore_world = function(names, before, work) {
-	// Local APK arguments add checksum-pinned world roots, including dependencies.
-	const unpinned = filter(names, name => before[name] == name);
-	if (length(unpinned) && !run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(unpinned, q))}`, work)) return false;
-	const dependencies = filter(names, name => before[name] == null);
+restore_world = function(names, before, work, rollback, changed) {
+	// Preserve explicit version/repository constraints; local archive pins describe bytes,
+	// not an administrator's desired version after an explicitly requested update.
+	const expected = {};
+	for (let name in names)
+		expected[name] = !rollback && (changed == null || index(changed, name) >= 0) && index(before[name] ?? "", `${name}><`) == 0 ? name : before[name];
+	const roots = filter(names, name => expected[name] != null);
+	if (length(roots) && !run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(roots, name => q(expected[name])))}`, work)) return false;
+	const dependencies = filter(names, name => expected[name] == null);
 	if (length(dependencies) && !run_command(`apk --no-network --repositories-file /dev/null del ${join(" ", map(dependencies, q))}`, work)) return false;
 	const after = package_world();
-	for (let name in names) {
-		if (before[name] == null && after[name] != null || before[name] == name && after[name] != name) return false;
-	}
+	for (let name in names) if (after[name] != expected[name]) return false;
+	for (let name in keys(before)) if (index(names, name) < 0 && after[name] != before[name]) return false;
+	for (let name in keys(after)) if (index(names, name) < 0 && before[name] != after[name]) return false;
 	return true;
 };
 feed = function() {
@@ -162,13 +166,42 @@ get = function() {
 		dashboard: dashboard, extensions: context.inventory(versions),
 		dependencies: map(DEPENDENCIES, name => ({ id: name, label: name, installed_version: versions?.[name], available: versions?.[name] != null })) };
 };
+local_stage = function(path) {
+	if (type(path) != "string" || !private_directory(path) || !private_file(`${path}/request.json`)) fail("unsafe_update_directory");
+	const value = read_json(`${path}/request.json`);
+	if (value?.schema != "opl-netfleet-plugin-install.v1" || type(value.packages) != "array" || !length(value.packages)) fail("invalid_plugin_install_request");
+	const versions = installed(), managed = product_packages(), names = [], candidates = {};
+	if (versions == null) fail("package_manager_unavailable");
+	const expected = { old: [], new: [] };
+	for (let item in value.packages) {
+		const name = item.name;
+		if (type(name) != "string" || !match(name, /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) || index(managed, name) < 0 || index(names, name) >= 0 ||
+			!version_valid(item.version) || !version_valid(item.before_version)) fail("invalid_plugin_install_request");
+		if (versions[name] != item.before_version) fail("installed_version_changed");
+		if (newer(item.before_version, item.version)) fail("plugin_downgrade_rejected");
+		push(names, name); candidates[name] = item.version;
+		for (let kind in ["old", "new"]) {
+			const version = kind == "old" ? item.before_version : item.version;
+			const digest = kind == "old" ? item.before_sha256 : item.sha256;
+			const file = `${name}-${version}.apk`;
+			if (!match(digest ?? "", /^[a-f0-9]{64}$/) || !private_directory(`${path}/${kind}`) ||
+				!private_file(`${path}/${kind}/${file}`) || sha256(`${path}/${kind}/${file}`) != digest) fail("plugin_archive_changed");
+			if (archive(name, version, `${path}/${kind}`, path) == null) fail("plugin_archive_invalid");
+			push(expected[kind], file);
+		}
+	}
+	for (let kind in ["old", "new"])
+		if (sprintf("%J", sort(fs.lsdir(`${path}/${kind}`) ?? [])) != sprintf("%J", sort(expected[kind]))) fail("unexpected_plugin_archive");
+	return { names, candidates, packages: value.packages };
+};
 start = function(action, component, version) {
 	if (!directory(ROOT)) fail("unsafe_update_directory");
 	if (fs.lstat(PENDING) != null) fail("previous_update_incomplete");
 	if (update_process()?.running == true) fail("mutation_busy");
-	if (feed() == null) fail("feed_not_configured");
+	const staged = action == "install" ? local_stage(component) : null;
+	if (action != "install" && feed() == null) fail("feed_not_configured");
 	if (action == "update" && (index(["netfleet", "mihomo"], component) < 0 || !version_valid(version))) fail("invalid_component_request");
-	if (action == "update" && (fs.lstat(PENDING) != null || fs.lstat(UPGRADE_STATE) != null)) fail("previous_update_incomplete");
+	if (action != "check" && (fs.lstat(PENDING) != null || fs.lstat(UPGRADE_STATE) != null)) fail("previous_update_incomplete");
 	// Only the latest completed transaction is retained; unfinished recovery is never removed.
 	const previous = private_file(REQUEST) ? read_json(REQUEST) : null;
 	if (previous && match(previous.id ?? "", /^[a-f0-9]{32}$/)) {
@@ -184,10 +217,19 @@ start = function(action, component, version) {
 	}
 	const id = replace(capture("cat /proc/sys/kernel/random/uuid"), "-", "");
 	if (!match(id ?? "", /^[a-f0-9]{32}$/)) fail("update_identity_unavailable");
-	const request = { id: id, action: action, component: component, version: version, started_at: time(), feed: feed() };
+	const request = { id: id, action: action, component: staged ? "plugins" : component, version: version, started_at: time(), feed: staged ? null : feed(), packages: staged?.packages, names: staged?.names, candidates: staged?.candidates };
 	// Keep the executing code independent of packages that will replace themselves.
 	const work = `${ROOT}/${id}`;
-	if (!directory(work) || system(`cp -R /usr/libexec/opl-netfleet ${q(`${work}/code`)}`) != 0 || !atomic_json(`${work}/code/system.json`, context.system) || !atomic_json(REQUEST, request) || !atomic_json(`${work}/request.json`, request)) fail("update_stage_failed");
+	if (!directory(work) || system(`cp -R ${q(context.root)} ${q(`${work}/code`)}`) != 0 || !atomic_json(`${work}/code/system.json`, context.system) || !atomic_json(REQUEST, request) || !atomic_json(`${work}/request.json`, request)) fail("update_stage_failed");
+	if (staged) {
+		for (let kind in ["old", "new"]) {
+			if (!directory(`${work}/${kind}`)) fail("update_stage_failed");
+			for (let file in fs.lsdir(`${component}/${kind}`))
+				if (!run_command(`cp ${q(`${component}/${kind}/${file}`)} ${q(`${work}/${kind}/${file}`)}`, work)) fail("update_stage_failed");
+		}
+		if (!atomic_json(`${work}/request.json`, { ...request, schema: "opl-netfleet-plugin-install.v1" })) fail("update_state_write_failed");
+		local_stage(work);
+	}
 	const service = { name: UPDATE_SERVICE, instances: { update: {
 		command: ["/usr/bin/flock", "-w", "10", "/var/lock/opl-netfleet-deploy.lock", "/usr/bin/ucode", `${work}/code/main.uc`, "components-run", `${work}/request.json`],
 		term_timeout: 30, stdout: false, stderr: false
@@ -322,7 +364,7 @@ rollback = function(before, work, names, versions, old, install_started, already
 		attempt("rollback_configuration_failed", () => run_command(`tar -xf ${q(`${work}/private.tar`)} -C /`, work));
 		if (install_started) {
 			attempt("rollback_install_failed", () => run_command(`apk --no-network --repositories-file /dev/null ${already_stopped ? "--force-reinstall " : ""}add ${join(" ", map(old, q))}`, work));
-			attempt("rollback_world_failed", () => restore_world(names, before.world, work));
+			attempt("rollback_world_failed", () => restore_world(names, before.world, work, true));
 		}
 	}
 	// APK may complete the requested change and still report earlier script failures.
@@ -348,21 +390,24 @@ function core_space_available(bytes, work) {
 	return true;
 }
 upgrade = function(request, work, candidates) {
-	const names = request.component == "netfleet" ? product_packages() : [PACKAGES[2]];
+	const names = request.component == "plugins" ? request.names : request.component == "netfleet" ? product_packages() : [PACKAGES[2]];
 	const versions = installed();
 	if (versions == null) fail("package_manager_unavailable");
 	if (request.component == "netfleet" && versions[COMPATIBILITY_PACKAGE] != null &&
 		version_valid(candidates[COMPATIBILITY_PACKAGE])) push(names, COMPATIBILITY_PACKAGE);
 	if (fs.lstat(UPGRADE_STATE) != null) fail("previous_update_incomplete");
 	if (request.component == "mihomo" && (KIND != "native-mihomo" || versions[PACKAGES[2]] == null)) fail("core_managed_externally");
-	if (candidates[request.component == "netfleet" ? PACKAGES[0] : PACKAGES[2]] != request.version)
+	if (request.component != "plugins" && candidates[request.component == "netfleet" ? PACKAGES[0] : PACKAGES[2]] != request.version)
 		fail("candidate_changed");
 	for (let name in names) {
 		if (!version_valid(candidates[name])) fail("candidate_changed");
 		// A plugin updated independently may be newer than the current product feed.
 		if (newer(versions[name], candidates[name])) candidates[name] = versions[name];
 	}
-	if (!length(filter(names, name => newer(candidates[name], versions[name])))) return;
+	if (!length(filter(names, name => newer(candidates[name], versions[name])))) {
+		journal(work, { phase: "complete", names, versions, candidates, no_change: true });
+		return;
+	}
 	if (request.component == "mihomo") {
 		const metadata = parsed(`apk --no-network query --from none -X ${q(request.feed)} --all-matches --format json --fields name,version,installed-size mihomo-meta`);
 		const candidate = filter(metadata ?? [], row => row.name == PACKAGES[2] && row.version == candidates[PACKAGES[2]])[0];
@@ -425,10 +470,10 @@ upgrade = function(request, work, candidates) {
 	try {
 		operation.update("installing");
 		journal(work, { ...read_json(`${work}/journal.json`), phase: "installing" });
-		if (!stop_services(work)) fail("runtime_stop_failed");
+		if (request.component != "plugins" && !stop_services(work)) fail("runtime_stop_failed");
 		install_started = true;
 		if (!run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(next, q))}`, work)) fail("package_install_failed");
-		if (!restore_world(names, before.world, work)) fail("package_world_restore_failed");
+		if (!restore_world(names, before.world, work, false, filter(names, name => versions[name] != candidates[name]))) fail("package_world_restore_failed");
 		operation.update("verifying");
 		const after = installed();
 		for (let name in names) if (after?.[name] != candidates[name]) fail("package_identity_mismatch");
@@ -509,15 +554,17 @@ try {
 	if (ARGV[0] == "recover") response = { ok: true, result: recover() };
 	else if (ARGV[0] == "get") response = { ok: true, result: get() };
 	else if (ARGV[0] == "operation") response = { ok: true, result: { subscription: operation.get("subscription"), selection: operation.get("selection"), packages: progress() } };
-	else if (ARGV[0] == "check" || ARGV[0] == "update") response = { ok: true, result: start(ARGV[0], ARGV[1], ARGV[2]) };
+	else if (ARGV[0] == "install" || ARGV[0] == "check" || ARGV[0] == "update") response = { ok: true, result: start(ARGV[0], ARGV[1], ARGV[2]) };
 	else if (ARGV[0] == "run") {
 		const request = private_file(ARGV[1]) ? read_json(ARGV[1]) : null;
 		if (request == null || !match(request.id ?? "", /^[a-f0-9]{32}$/) || ARGV[1] != `${ROOT}/${request.id}/request.json` ||
-			index(["check", "update"], request.action) < 0 || request.feed != feed()) fail("update_request_changed");
+			index(["check", "update", "install"], request.action) < 0 || (request.action != "install" && request.feed != feed())) fail("update_request_changed");
 		const work = `${ROOT}/${request.id}`;
 		operation.begin("packages", "checking", { id: request.id, subject: request.component ?? "feed" });
-		const candidates = refresh_index(request, work);
-		if (request.action == "update") upgrade(request, work, candidates);
+		const staged = request.action == "install" ? local_stage(work) : null;
+		if (staged) { request.component = "plugins"; request.names = staged.names; }
+		const candidates = staged ? staged.candidates : refresh_index(request, work);
+		if (request.action != "check") upgrade(request, work, candidates);
 		operation.finish(true, null, null);
 		response = { ok: true };
 	} else response = { ok: false, error: "unknown_component_action" };
