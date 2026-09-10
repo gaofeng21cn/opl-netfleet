@@ -592,7 +592,13 @@ owner_locked "$real_apk" del opl-netfleet-plugin-https-compat >>"$fixture/packag
 ! "$real_apk" info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1
 "$real_apk" info -e opl-netfleet opl-netfleet-kernel >/dev/null
 [ "$(cat /var/run/nikki/mihomo.pid)" = "$core_before" ]
-NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 sh "$candidate/install-netfleet.sh" >>"$fixture/package-manager.log" 2>&1
+# The active synthetic routing fixture has no public HTTPS egress. Dependencies
+# are already installed; exercise reinstall against only the signed local feed.
+mv /etc/apk/repositories.d/distfeeds.list "$fixture/distfeeds.saved"
+installer_status=0
+NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 sh "$candidate/install-netfleet.sh" >>"$fixture/package-manager.log" 2>&1 || installer_status=$?
+mv "$fixture/distfeeds.saved" /etc/apk/repositories.d/distfeeds.list
+[ "$installer_status" = 0 ]
 ! "$real_apk" info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1
 ubus call opl-netfleet probe '{}' >"$fixture/package-probe.json"
 [ "$(jsonfilter -i "$fixture/package-probe.json" -e '@.result.ok')" = true ]
