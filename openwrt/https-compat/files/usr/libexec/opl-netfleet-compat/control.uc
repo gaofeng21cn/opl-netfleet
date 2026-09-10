@@ -7,7 +7,7 @@ return function(context, options) {
     const BASE=options?.base ?? '/etc/opl-netfleet/compatibility',RUN=options?.run ?? '/var/run/opl-netfleet-compat';
     const CONFIG=BASE+'/config.json',TRUST=BASE+'/trust.json',STATE=RUN+'/state.json',EFFECTIVE=RUN+'/effective.json',CA=BASE+'/ca';
     const SERVICE='/etc/init.d/opl-netfleet-compat',DEFAULT={schema:1,enabled:false,devices:[],rules:[]};
-    const io=loadfile(root+'/io.uc')()({root});
+    const io=loadfile(root+'/io.uc')()({root,process:context.use('platform.process')});
     const policy=loadfile(root+'/policy.uc')()();
     const engine=loadfile(root+'/haproxy.uc')()(io,policy,{run:RUN,ca:CA});
     const identity=loadfile(root+'/identity.uc')()(io);
@@ -133,7 +133,7 @@ return function(context, options) {
         lock.lock('u');let result,failure;
         try {result=work();}catch(error){failure=error;}
         if(!lock.lock('xn')) die('mutation_busy');
-        if(io.canonical(map(paths,path=>fs.readfile(path)))!=io.canonical(before)) die('compatibility_probe_stale');
+        for(let i=0;i<length(paths);i++) if(fs.readfile(paths[i])!=before[i]) die('compatibility_probe_stale');
         if(failure) die(failure.message);return result;
     }
     function prepare_engine() {

@@ -20,17 +20,8 @@ return function(options) {
         if (!fs.mkdir(path, mode ?? 0700)) die('compatibility_storage_unavailable');
     }
     function command(args, timeout, input, accept_failure) {
-        let path = null, directory = null;
-        if (input != null) {
-            directory = fs.mkdtemp('/tmp/netfleet-compat-command.XXXXXX');
-            if (!directory) die('compatibility_storage_unavailable');
-            path = directory + '/input';
-            if (fs.writefile(path, input) != length(input) || !fs.chmod(path, 0600)) die('compatibility_storage_unavailable');
-        }
-        const proc = fs.popen(`timeout -k 1 ${timeout ?? 2} ${join(' ', map(args, quote))}${path ? ' < ' + quote(path) : ''} 2>/dev/null`);
-        let output = null, status = 1;
-        if (proc) { output = proc.read(2097153); status = proc.close(); }
-        if (path) { fs.unlink(path); fs.rmdir(directory); }
+        const result = options.process.capture(join(' ', map(args, quote)), timeout ?? 2, input);
+        const output = result.output, status = result.status;
         if (status == 124 || status == 137) die('compatibility_command_timeout');
         if (status != 0 && !accept_failure || output == null || length(output) > 2097152) die('compatibility_command_failed');
         return output;
@@ -51,7 +42,10 @@ return function(options) {
         if (type(value) == 'array') return '[' + join(',', map(value, canonical)) + ']';
         return sprintf('%J', value);
     }
-    function atomic(path, value) { write(path, canonical(value) + '\n', index(path, '/etc/') == 0); }
+    function atomic(path, value) {
+        const durable = index(path, '/etc/') == 0;
+        write(path, (durable ? canonical(value) : sprintf('%J', value)) + '\n', durable);
+    }
     function ancestor_lock(path) {
         const target = fs.stat(path); let pid = +fs.readlink('/proc/self');
         if (!target) return false;

@@ -56,6 +56,7 @@ cp /usr/share/opl-netfleet/netfleet.config /etc/config/netfleet
 chmod 0600 /etc/config/netfleet
 sha256sum /etc/config/netfleet >/tmp/compat-base-before.sha256
 stage=control_entry
+ucode /tmp/tests/async_process_capture.uc /usr/libexec/opl-netfleet /usr/libexec/opl-netfleet-compat >"$work/async-capture.log" 2>&1
 ucode /tmp/tests/https_native_guest.uc load >"$work/load.log" 2>&1
 ucode /tmp/tests/device_identity_native_entry.uc /usr/libexec/opl-netfleet/plugins/device-identity/control >"$work/identity.log" 2>&1
 ucode /tmp/tests/device_identity_native.uc /usr/libexec/opl-netfleet /usr/libexec/opl-netfleet/plugins/device-identity/resources/neighbor >>"$work/identity.log" 2>&1

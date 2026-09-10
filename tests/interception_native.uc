@@ -7,7 +7,7 @@ const gateway={interception_snapshot:()=>({ok:true,result:{backend:'native-mihom
 const context={root:root+'/openwrt/files/usr/libexec/opl-netfleet',id:'mihomo',use:function(name) {
     if(name=='mihomo.gateway') return gateway;
     if(name=='platform.files') return {write_private:(path,value)=>fs.writefile(path,value)};
-    if(name=='platform.process') return {shell_quote:value=>"'"+replace(`${value}`,"'","'\\''")+"'"};
+    if(name=='platform.process') return loadfile(root+'/openwrt/files/usr/libexec/opl-netfleet/plugins/platform/lib/process.uc')()({});
     die('unexpected_service');
 }};
 const api=loadfile(context.root+'/plugins/mihomo/lib/interception.uc')()(context);

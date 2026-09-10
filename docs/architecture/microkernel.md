@@ -111,7 +111,7 @@ effect 登记其实际取消函数，平台提供者负责执行机制。跨调�
 | `platform.credentials` | `api_secret`、`proxy_authentication`，凭据只在设备内用于授权调用 |
 | `platform.subscriptions` | `subscription_exists`、`subscription_display_name`、`subscription_options`、`subscription_quota`，输出规范化订阅元数据 |
 | `platform.device` | `device_name`、`upstream_ready`，报告设备身份和上游可用性 |
-| `platform.process` | `shell_quote`、`run_owner`、`run_owner_result`、`process_identity`，平台命令构造、已注册业务动作调用和真实进程身份 |
+| `platform.process` | `shell_quote`、`capture`、`run_owner`、`run_owner_result`、`process_identity`，有界命令输出、已注册业务动作调用和真实进程身份 |
 | `platform.documents` | `validate_policy` 校验候选策略与当前平台约束，`load_policy`、`load_evidence` 加载有效文档，`write_evidence` 写入 evidence；不读取 UCI |
 
 默认安装组合按能力划分包边界。`selection-algorithm` 独立提供选择算法，仅依赖纯模型；

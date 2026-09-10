@@ -3,7 +3,7 @@ const root=ARGV[0],run=ARGV[1],calls=[];
 const context={use:name=>name=='mihomo.interception'?{request:(owner,input)=>{
     push(calls,input.action);
     return {ok:true,result:input.action=='status'?{intercepting:false,leases:0}:{}};
-}}:null};
+}}:name=='platform.process'?loadfile((ARGV[2] ?? '/usr/libexec/opl-netfleet')+'/plugins/platform/lib/process.uc')()({}):null};
 const api=loadfile(root+'/control.uc')()(context,{root,base:run,run});
 function check(value,message) {if(!value) die(message);}
 let current=api.dispatch('get',{});

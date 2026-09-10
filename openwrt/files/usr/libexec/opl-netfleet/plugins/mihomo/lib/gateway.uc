@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import { cursor } from "uci";
+import { sha256 as digest_sha256 } from "digest";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
@@ -11,6 +12,7 @@ const atomic_json = context.use("platform.files").atomic_json;
 const read_json = context.use("platform.storage").read_json;
 const read_yaml = context.use("platform.storage").read_yaml;
 const shell_quote = context.use("platform.process").shell_quote;
+const capture_process = context.use("platform.process").capture;
 const sha256 = context.use("platform.storage").sha256;
 
 const BASE = "/etc/opl-netfleet/native";
@@ -24,10 +26,8 @@ const COMMAND = ["/usr/bin/mihomo", "-d", RUN, "-f", CONFIG];
 
 shell = function(command) { return system(command + " >/dev/null 2>&1") == 0; };
 capture = function(command) {
-	const p = fs.popen(command + " 2>/dev/null");
-	if (p == null) return null;
-	const out = p.read("all");
-	return p.close() == 0 ? out : null;
+	const result = capture_process(command, 5);
+	return result.status == 0 ? result.output : null;
 };
 parse = function(text) { try { return json(text); } catch (error) { return null; } };
 directory = function(path) {
@@ -79,7 +79,7 @@ status = function() {
 	const attached = state != null && state.core_pid == core.pid && table && routes_present(state);
 	return { ok: true, result: { ready: core.running && controller_ready() && attached,
 		core_running: core.running, registered: core.registered, attached: attached,
-		clean: !table && state == null, config_sha256: private_file(CONFIG) ? sha256(CONFIG) : null } };
+		clean: !table && state == null, config_sha256: private_file(CONFIG) ? digest_sha256(fs.readfile(CONFIG)) : null } };
 };
 render_profile = function() {
 	if (read_json("/etc/opl-netfleet/backend.json")?.kind != "native-mihomo")

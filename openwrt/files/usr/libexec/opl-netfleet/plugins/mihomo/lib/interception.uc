@@ -4,22 +4,13 @@ import {sha256} from 'digest';
 return function(context) {
     const gateway=context.use('mihomo.gateway'), files=context.use('platform.files');
     const quote=context.use('platform.process').shell_quote;
+    const capture=context.use('platform.process').capture;
     const policy=loadfile(`${context.root}/plugins/${context.id}/lib/interception-policy.uc`)()();
     const TABLE='netfleet_compat', PORT=18443, CLAIM='/var/run/opl-netfleet-core/interception.json';
     const paths=['/etc/opl-netfleet/native/run/config.yaml','/etc/config/netfleet','/var/run/opl-netfleet-core/ownership.json',
         '/etc/opl-netfleet/backend.json','/proc/sys/net/ipv4/ip_local_port_range'];
     function run(args,input) {
-        let directory=null, path=null;
-        if (input!=null) {
-            directory=fs.mkdtemp('/tmp/netfleet-interception.XXXXXX');
-            if (!directory) die('lease_request_unavailable');
-            path=`${directory}/input`;
-            if (!files.write_private(path,input)) {fs.unlink(path);fs.rmdir(directory);die('lease_request_unavailable');}
-        }
-        const process=fs.popen(`timeout -k 1 1 ${join(' ',map(args,quote))}${path?' < '+quote(path):''} 2>/dev/null`);
-        let output=null,status=1;
-        if (process) {output=process.read(2097153);status=process.close();}
-        if (path) {fs.unlink(path);fs.rmdir(directory);}
+        const result=capture(join(' ',map(args,quote)),1,input),output=result.output,status=result.status;
         if (status || output==null || length(output)>2097152) die('gateway_command_failed');
         return output;
     }
