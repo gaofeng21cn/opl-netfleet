@@ -48,6 +48,12 @@ if(action=='load') {
     state=request('compatibility-apply',{revision:state.revision,config});
     check(state.trust.mac?.verified===true,'confirmed_identity_lost_trust');
     printf('%J\n',state);
+} else if(action=='network-source-disable'||action=='network-source-enable') {
+    const id='device-identity',source=request('plugin-read',{id,action:'get',params:{}});
+    const row=filter(run(['plugins-list']).plugins,item=>item.id==id)[0];
+    request('plugin-call',{id,action:'configure',revision:row.revision,confirm:true,params:{config_revision:source.config_revision,
+        config:{enabled:action=='network-source-enable',source:'local',interfaces:['nfcompat0']}}});
+    request('plugin-read',{id,action:'sync',params:{}});
 } else if(action=='recover') {
     const state=run(['compatibility-get']);
     printf('%J\n',request('compatibility-probe',{revision:state.revision,operation:'recover'}));

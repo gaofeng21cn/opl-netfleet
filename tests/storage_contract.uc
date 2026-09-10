@@ -32,7 +32,8 @@ try {
 	try {
 		check(type(old_host.use("mihomo.backend").resolve_profile) == "function",
 			"backend upgrade works without a new global storage binding");
-	} finally { old_host.release(); }
+	} catch (error) { old_host.release(); die(error.message); }
+	old_host.release();
 	check(storage.read_json(path) == null, "missing file is unknown");
 	check(storage.write_text(`${workspace}/missing/child`, "value") == false, "failed text write is not success");
 	check(storage.write_text(path, "") && fs.stat(path).size == 0, "empty file is a successful complete write");

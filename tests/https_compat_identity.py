@@ -138,13 +138,13 @@ class IdentityConsumer(unittest.TestCase):
         for source in ({}, {**self.source, "source_ready": False}, {**self.source, "binding": "2" * 64},
                        {**self.source, "devices": [{**self.source["devices"][0], "expires_in": 0}]}):
             result = control.effective(self.config, self.trust, "ca", source)
-            self.assertEqual(result["rules"], [])
+            self.assertEqual(result["rules"], self.config["rules"])
             self.assertEqual(result["devices"][0]["addresses"], [])
 
     def test_manual_and_dynamic_address_conflict_is_bypassed(self):
         self.config["devices"].append({"id": "other", "name": "Other", "addresses": ["2001:db8::2"]})
         effective = control.effective(self.config, self.trust, "ca", self.source)
-        self.assertFalse(effective["rules"])
+        self.assertEqual(effective["rules"], self.config["rules"])
         self.assertFalse(effective["devices"][0]["addresses"])
         validate(effective)
 

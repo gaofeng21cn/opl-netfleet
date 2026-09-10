@@ -4,7 +4,8 @@ set -eu
 umask 077
 test -f /tmp/netfleet-compat-vm-authorized
 test -z "$(pidof mihomo 2>/dev/null || true)"
-! command -v python3 >/dev/null
+upgrade=${2:-}
+[ -n "$upgrade" ] || ! command -v python3 >/dev/null
 work=/tmp/https-native-network
 probe_port=${1:-}
 mkdir -p "$work"
@@ -187,6 +188,7 @@ cp "$work/origin.crt" "$work/client-ca.pem"
 stage=baseline_wire
 probe 4 http/1.1
 probe 6 http/1.1
+if [ -n "$upgrade" ]; then . /tmp/tests/https_native_upgrade.sh; fi
 stage=compat_enable
 ucode /tmp/tests/https_native_guest.uc network-enable >"$work/enable.log"
 cat /etc/opl-netfleet/compatibility/ca/mitmproxy-ca-cert.pem >>"$work/client-ca.pem"
@@ -224,6 +226,19 @@ for attempt in $(seq 1 95); do
     sleep 1
 done
 probe 6 h2 wire.example 2001:db8:77::22
+processes
+test "$engine_pid" = "$identity_engine_pid"
+stage=identity_evidence_loss
+ucode /tmp/tests/https_native_guest.uc network-source-disable >"$work/identity-disabled.log"
+sleep 11
+probe 4 http/1.1
+probe 6 http/1.1
+processes
+test "$engine_pid" = "$identity_engine_pid"
+ucode /tmp/tests/https_native_guest.uc network-source-enable >"$work/identity-enabled.log"
+wait_intercepting
+probe 4 h2
+probe 6 h2
 processes
 test "$engine_pid" = "$identity_engine_pid"
 stage=resources

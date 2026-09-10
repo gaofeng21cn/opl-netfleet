@@ -242,7 +242,8 @@ def effective(config, trust, fingerprint, source=None):
             owners.setdefault(address, set()).add(device["id"])
     for device in resolved:
         device["addresses"] = sorted({address for address in device["addresses"] if len(owners[address]) == 1})
-    eligible = {device["id"] for device in resolved if device["id"] in devices and device["addresses"]}
+    eligible = {device["id"] for device in resolved if device["id"] in devices
+                and (device["addresses"] or device.get("identity"))}
     # Empty manual devices are not valid engine configuration, and cannot match rules.
     return {**config, "devices": [device for device in resolved if device["addresses"] or device.get("identity")],
             "rules": [{**rule, "devices": [device for device in rule["devices"] if device in eligible]}

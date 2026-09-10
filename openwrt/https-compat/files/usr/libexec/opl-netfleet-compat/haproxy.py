@@ -120,9 +120,6 @@ frontend ingress
                    key=lambda rule: (rule['match'] == 'exact', len(rule['domain'])), reverse=True)
     indexed = [(number, rule) for number, rule in enumerate(rules)]
     for number, rule in indexed:
-        addresses = [address for device in config['devices'] if device['id'] in rule['devices'] for address in device['addresses']]
-        if not addresses:
-            continue
         name = f'r{number}'
         lines += [f"  acl {name}_source src -f {run}/sources-{name}.acl", f"  acl {name}_domain req.ssl_sni -i {rule['domain']}"]
         if rule['match'] == 'suffix':

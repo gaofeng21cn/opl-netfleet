@@ -81,7 +81,10 @@ return function(context, options) {
         const resolved=map(config.devices,device=>({...device,addresses:identity.addresses(device,source)}));
         for(let device in resolved) for(let address in device.addresses) {owners[address]??={};owners[address][device.id]=true;}
         for(let device in resolved) device.addresses=sort(uniq(filter(device.addresses,address=>length(owners[address])==1)));
-        const eligible=map(filter(resolved,device=>trusted[device.id]&&length(device.addresses)),device=>device.id);
+        // Identity evidence controls admission addresses, not engine structure.
+        // Retain a trusted binding through an empty/expired sample so its ACL
+        // can become empty without restarting other healthy connections.
+        const eligible=map(filter(resolved,device=>trusted[device.id]&&(length(device.addresses)||device.identity)),device=>device.id);
         return {...config,devices:filter(resolved,device=>length(device.addresses)||device.identity),
             rules:map(filter(config.rules,rule=>length(filter(rule.devices,id=>index(eligible,id)>=0))),
                 rule=>({...rule,devices:filter(rule.devices,id=>index(eligible,id)>=0)}))};

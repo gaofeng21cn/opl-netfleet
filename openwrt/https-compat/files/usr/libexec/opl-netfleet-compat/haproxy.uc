@@ -86,8 +86,6 @@ frontend ingress
         const mapping={};
         for(let n=0;n<length(rules);n++) {
             const rule=rules[n],name=`r${n}`;mapping[name]=rule.id;
-            const addresses=[];for(let device in config.devices) if(index(rule.devices,device.id)>=0) push(addresses,...device.addresses);
-            if(!length(addresses)) continue;
             push(lines,`  acl ${name}_source src -f ${run}/sources-${name}.acl`,`  acl ${name}_domain req.ssl_sni -i ${rule.domain}`);
             if(rule.match=='suffix') push(lines,`  acl ${name}_domain req.ssl_sni -m end -i .${rule.domain}`);
             const condition=`${name}_source ${name}_domain { dst_port ${rule.port} } !{ req.ssl_alpn -m str h2 }`;
