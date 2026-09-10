@@ -146,15 +146,24 @@ frontend ${name}_http
         if(!conn) die('health_socket_unavailable');
         const deadline=io.now()+0.4;
         let output='',remaining=request+'\n',failure;
+        function wait(events) {
+            while(io.now()<deadline) {
+                const ready=socket.poll(max(1,int((deadline-io.now())*1000)),[conn,events]);
+                // Linux EINTR: unrelated uloop child exits do not invalidate the socket.
+                if(ready==null) {if(socket.error(true)==4) continue;die('health_socket_unavailable');}
+                if((ready[0]?.[1] ?? 0)&(events|socket.POLLHUP|socket.POLLERR)) return;
+            }
+            die('health_socket_timeout');
+        }
         try {
             while(length(remaining)) {
-                if(io.now()>=deadline||!length(socket.poll(int((deadline-io.now())*1000),[conn,socket.POLLOUT]) ?? [])) die('health_socket_timeout');
+                wait(socket.POLLOUT);
                 const count=conn.send(remaining,socket.MSG_DONTWAIT|socket.MSG_NOSIGNAL);
                 if(count==null||count<1) die('health_socket_unavailable');
                 remaining=substr(remaining,count);
             }
             while(true) {
-                if(io.now()>=deadline||!length(socket.poll(int((deadline-io.now())*1000),[conn,socket.POLLIN]) ?? [])) die('health_socket_timeout');
+                wait(socket.POLLIN);
                 const part=conn.recv(65536,socket.MSG_DONTWAIT);
                 if(part==null) die('health_socket_unavailable');
                 if(!length(part)) break;
