@@ -54,3 +54,19 @@ export async function processIdentity(pid) {
   const match = /^\s*(\d+)\s+(\w+\s+\w+\s+\d+\s+[\d:]+\s+\d+)\s+(.+)$/.exec(result.stdout.trim());
   return result.code === 0 && match ? { pid, uid: Number(match[1]), start: match[2].replace(/\s+/g, ' '), command: match[3] } : null;
 }
+
+// Preserve the kernel's ordered file identities and second-level SHA-256 exactly.
+export async function codeDigest(root, directory, files) {
+  assert(typeof directory === 'string' && Array.isArray(files) && files.length > 0, 'invalid_code_digest');
+  const base = await fs.realpath(root), dir = await fs.realpath(directory);
+  assert(dir === base || inside(base, dir), 'code_digest_outside_root');
+  const digest = crypto.createHash('sha256');
+  for (const file of files) {
+    assert(typeof file === 'string', 'invalid_code_digest');
+    const resolved = await fs.realpath(file);
+    assert(inside(dir, resolved) && (await fs.lstat(file)).isFile(), 'code_digest_outside_root');
+    const hash = crypto.createHash('sha256').update(await fs.readFile(file)).digest('hex');
+    digest.update(`${hash}  ${path.relative(dir, resolved)}\n`);
+  }
+  return digest.digest('hex');
+}

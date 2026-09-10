@@ -1,7 +1,7 @@
 # Fleet 部署事务
 
 本节描述现有面向 Nikki 的 Fleet deployment bundle 安装入口；原生首次设置与后端迁移
-使用[运行文档的设备端事务](../architecture/runtime-and-recovery.md#首次设置与迁移)，不能把该四文件 bundle 或 host 部署器作为原生独立安装的前置条件。
+使用[运行文档的设备端事务](../platform/openwrt.md#首次设置与迁移)，不能把该四文件 bundle 或 host 部署器作为原生独立安装的前置条件。
 
 ## 按设备当前状态选择入口
 
@@ -13,7 +13,7 @@
 | 按 private Instance 复现 Nikki 环境 | 本文 Fleet 入口，消费生成的四文件 deployment bundle |
 
 软件包身份、候选与旧包获取、失败回滚及中断边界统一见
-[设备端组件维护](../architecture/packaging.md#设备端组件维护)。已经运行原生后端的设备
+[设备端组件维护](../platform/openwrt.md#设备端组件维护)。已经运行原生后端的设备
 不通过应用 Nikki bundle 或启动 Nikki 完成更新。部署前必须读取所选后端、已安装代码
 身份、当前操作和运行状态；请求超时后先回读操作结果与 owner，再决定是否继续。
 

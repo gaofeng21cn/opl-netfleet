@@ -34,7 +34,7 @@
 ## 文档生命周期
 
 - 每个语义主题只有一个当前 owner：设计理念和长期目标归 `docs/product/whitepaper.md`，能力规划与平台归属归 `docs/product/capabilities.md`，当前产品合同按主题归 `docs/architecture/`（接口、状态呈现、显示证据各自独立），平台机制事实归 `docs/platform/`，开发操作与验证归 `docs/development/`，UI 视觉合同归 `docs/design/ui.md`，通用部署流程归 `docs/operations/`，操作入口归 `README.md`，贡献与治理规则归 `AGENTS.md`。白皮书和 proposal 不得冒充当前实现，其他位置只允许摘要和链接，不复制当前叙事。
-- 文档分三层：功能规划回答提供哪些能力和哪些平台应当具备，详细设计回答对象、状态、界面内容与交互如何成立，跨平台实现回答某个平台用哪些机制落地、如何构建和验收。详细设计与 `docs/design/ui.md` 只写不依赖平台即成立的事实；只能在某个平台成立的机制、特权原语、包格式和系统集成归对应平台文档，不写进共享文档，共享文档也不复制平台机制。平台实现进入仓库时建立 `docs/platform/<platform>.md` 并在 `docs/README.md` 与 `docs/product/capabilities.md` 登记，未进入仓库的平台不预留文档或占位。
+- 文档分三层：功能规划回答提供哪些能力和哪些平台应当具备，详细设计回答对象、状态、界面内容与交互如何成立，跨平台实现回答某个平台用哪些机制落地、如何构建和验收。详细设计与 `docs/design/ui.md` 维护共同对象、状态、交互和结果语义；系统授权、原生菜单及平台专属接入流程归对应平台文档。三层是事实归属，不要求运行模块或目录一一对应；只能在某个平台成立的机制、特权原语、包格式和系统集成归对应平台文档，不写进共享文档，共享文档也不复制平台机制。平台实现进入仓库时建立 `docs/platform/<platform>.md` 并在 `docs/README.md` 与 `docs/product/capabilities.md` 登记，未进入仓库的平台不预留文档或占位。
 - 已形成方向但尚未实现的稳定方案归 `docs/proposals/`；实现后把当前合同吸收到 architecture、保留仍有价值的理由到 `docs/decisions/`，再删除 proposal。ADR 只记录未来仍有价值的理由、替代方案和重审条件，不记录任务状态或设备快照。
 - 活文档只描述当前事实和当前约束，不记录日期补丁、完成清单、路线图、设备快照、任务进度或按提交增量堆叠的历史。
 - 过时内容直接删除。Git history 是历史和归档，不创建 `docs/archive`、`legacy` 文档或兼容说明保存已退役行为。

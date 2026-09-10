@@ -129,5 +129,40 @@ public_source = function(source, cache) {
 	};
 };
 
-return { valid_id, quota_reset_day, valid_url, desired_source, userinfo, referenced, source_identity_input, public_source };
+// Both platform adapters supply numeric evidence; absent counters remain unknown.
+function quota_state(input) {
+	const result = { state: "unknown" };
+	if (input?.expires_at != null) result.expires_at = input.expires_at;
+	const reset = quota_reset_day(input?.reset_day);
+	if (reset != null) { result.reset_day = reset; result.reset_day_source = "manual"; }
+	const remaining = input?.available ??
+		(input?.total != null && input?.used != null ? input.total - input.used : null);
+	if (remaining != null) {
+		result.state = remaining > 0 ? "available" : "exhausted";
+		if (remaining > 0) result.remaining_bytes = remaining;
+	}
+	return result;
+}
+function normalize_sources(values, previous, imported) {
+	if (type(values) != "object" || length(keys(values)) > 100) return { ok: false, error: "invalid_subscriptions" };
+	const result = {};
+	for (let id, value in values) {
+		if (!valid_id(id) || length(id) > 64 || type(value) != "object") return { ok: false, error: "invalid_subscription" };
+		const old = previous?.[id];
+		const url = value.url ?? old?.url;
+		const name = value.name ?? old?.name ?? id;
+		if (!url && (old?.imported == true || imported?.[id] == true)) {
+			if (!safe_text(name) || !length(trim(name)) || length(name) > 128) return { ok: false, error: "invalid_subscription_name" };
+			result[id] = { name, enabled: value.enabled != false, imported: true };
+			continue;
+		}
+		const desired = desired_source({ revision: "candidate", source: { id, name, url,
+			user_agent: value.user_agent ?? old?.user_agent ?? "clash.meta" } }, old);
+		if (!desired.ok) return desired;
+		result[id] = { name: desired.source.name, url: desired.source.url,
+			user_agent: desired.source.user_agent, enabled: value.enabled != false, imported: false };
+	}
+	return { ok: true, sources: result };
+}
+return { valid_id, quota_reset_day, valid_url, desired_source, userinfo, referenced, source_identity_input, public_source, quota_state, normalize_sources };
 };

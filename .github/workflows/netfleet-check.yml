@@ -1,0 +1,59 @@
+name: NetFleet 双平台检查
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: netfleet-check-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shared:
+    name: 共享业务与双平台组合
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.0'
+      - name: 安装 UCode 构建依赖
+        run: sudo apt-get update && sudo apt-get install -y cmake pkg-config libjson-c-dev
+      - name: 构建固定 UCode 并执行严格检查
+        run: |
+          runtime="$(python3 scripts/bootstrap-ucode.py)"
+          PATH="$runtime/bin:$PATH" UCODE_LIB="$runtime/lib/ucode/*.so" scripts/check-platform.sh shared
+
+  macos:
+    name: macOS arm64 本机链路与应用构建
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.0'
+      - name: 准备构建依赖
+        run: |
+          test "$(uname -m)" = arm64
+          command -v cmake >/dev/null || brew install cmake
+          command -v pkg-config >/dev/null || brew install pkgconf
+      - name: 执行严格平台检查
+        run: |
+          runtime="$(python3 scripts/macos/bootstrap.py)"
+          PATH="$runtime/bin:$PATH" UCODE_LIB="$runtime/lib/ucode/*.so" NETFLEET_RUNTIME_ROOT="$runtime" scripts/check-platform.sh macos

@@ -1,12 +1,12 @@
 # 微内核与功能插件
 
 NetFleet 的内核负责插件发现、服务绑定、接口版本、依赖解析、调用准入和代码生命周期。
-产品数据模型、OpenWrt 配置、Mihomo 后端、订阅、编译、选择、恢复、管理、诊断和自动
+产品数据模型、平台配置、Mihomo 后端、订阅、编译、选择、恢复、管理、诊断和自动
 调度由功能插件提供。进程插件继续使用 [Plugin API v1](extensions.md)，UCode 功能插件
 使用同一安装目录与管理入口，以服务接口组合设备本地调用。
 
 当前服务声明约束依赖解析和调用入口，不是操作系统沙箱。UCode 服务在调用进程内执行，
-已安装的可信代码仍能使用进程和文件 API；进程插件的独立 procd 实例也不自动获得内存、
+已安装的可信代码仍能使用进程和文件 API；进程插件的独立进程也不自动获得内存、
 CPU 或文件系统隔离。因此独立软件包与热替换不能单独证明故障隔离，尤其不能证明可选
 插件异常不会影响宿主资源或网络。HTTPS 的接管与旁路边界由
 [HTTPS 兼容模块](https-compatibility.md)和[运行恢复](runtime-and-recovery.md)定义。
@@ -35,8 +35,7 @@ UCode 插件的 `manifest.json` 使用 `opl-netfleet-service-plugin.v1`，声明
 
 `ui` 为页面声明数组，每项包含 `id`、`title` 和 `module`；可选 `scope` 为
 `instance`（默认）或 `host`，后者只在 default 实例贡献页面。模块位于插件的
-`resources/` 内，是导出 `mount(context)` 的浏览器 ES 模块。软件包把资源投影到
-`/www/luci-static/resources/netfleet/plugins/<id>/<revision>/resources/`。宿主从当前插件清单构建
+`resources/` 内，是导出 `mount(context)` 的浏览器 ES 模块。资源投影路径由平台宿主确定，见[OpenWrt 资源布局](../platform/openwrt.md#软件包组合)。宿主从当前插件清单构建
 导航，按 revision 加载模块，传入 container、读写 API、配置动作、AbortSignal 与资源
 作用域。页面退出、插件卸载或 revision 改变时，先撤销旧页面资源再挂载新页面。
 插件可以独立使用自己的界面技术，宿主不按第三方插件 ID 硬编码页面。
@@ -44,7 +43,7 @@ UCode 插件的 `manifest.json` 使用 `opl-netfleet-service-plugin.v1`，声明
 `#/netfleet/<页面标识>` 只接受当前可用页面，失效标识返回默认页；位置不包含凭据、配置或草稿，刷新与浏览器历史只恢复页面。
 版本目录覆盖整个模块图，相对静态 import 和样式资源自然跟随同一代码代际；根模块更新
 不会复用上一版本的子模块。`product-ui` 通过同一机制提供默认网络产品的七个宿主级页面；
-LuCI 包只拥有通信、导航和页面生命周期，单独安装内核与 LuCI 也可以运行独立插件。
+提供该能力的平台宿主只拥有通信、导航和页面生命周期，业务页面由插件提供。
 
 ### 作用域与实例
 
@@ -63,8 +62,7 @@ LuCI 包只拥有通信、导航和页面生命周期，单独安装内核与 Lu
 effect 登记其实际取消函数，平台提供者负责执行机制。跨调用资源仍声明 drain/resume，
 由现有包事务协调持久资源交接。
 
-系统默认绑定保存在 `/usr/share/opl-netfleet/system.json`，管理员覆盖保存在私有
-`/etc/opl-netfleet/system.json`。提供者选择不依赖目录顺序或最后安装者。调用前解析当前
+系统默认绑定由交付物提供，管理员覆盖保存在平台指定的私有位置。提供者选择不依赖目录顺序或最后安装者。调用前解析当前
 依赖图，拒绝缺失提供者、接口不匹配和循环依赖；按依赖关系创建所需服务，未使用的插件
 不执行代码。命令路由沿用既有 CLI/RPC 名称和读写权限，浏览器不能指定模块路径。
 
@@ -76,8 +74,8 @@ effect 登记其实际取消函数，平台提供者负责执行机制。跨调�
 管理员通过 `plugins-system-get`、`plugins-system-validate` 和 `plugins-system-apply` 管理私有
 服务组合。读取返回 revision；校验只解析候选依赖图并报告受影响插件，不运行工厂；应用
 绑定原 revision，在网络锁下排空受影响资源、原子写入并恢复。失败还原原始覆盖文件与
-资源状态。私有配置可含凭据，读取与应用均限具有管理写权限的调用者。LuCI 组合编辑
-与 RPC 请求约束见[公开接口](interfaces.md#原生接入与管理)，界面不维护独立绑定状态。
+资源状态。私有配置可含凭据，读取与应用均限具有管理写权限的调用者。组合编辑
+与请求约束见[公开接口](interfaces.md#原生接入与管理)，界面不维护独立绑定状态。
 
 只访问本插件私有数据的服务动作可以声明 `lock: "plugin"`，使用跨实例共享的插件锁，
 不占用网络 mutation 锁。未声明的动作、进程插件和资源生命周期仍使用网络锁。插件私有
@@ -87,7 +85,7 @@ effect 登记其实际取消函数，平台提供者负责执行机制。跨调�
 
 ## 平台能力边界
 
-业务服务声明所需能力，不以 UCI 为依赖入口。当前 OpenWrt 平台插件按能力提供以下
+业务服务声明所需能力，不依赖特定系统的配置接口。平台插件按能力提供以下
 服务；系统绑定可以逐项选择其他提供者，依赖图只加载实际使用的能力实现。
 
 | 服务 | 责任与接口 |
@@ -101,38 +99,21 @@ effect 登记其实际取消函数，平台提供者负责执行机制。跨调�
 | `platform.process` | `shell_quote`、`run_owner`、`run_owner_result`、`process_identity`，平台命令构造、已注册业务动作调用和真实进程身份 |
 | `platform.documents` | `validate_policy` 校验候选策略与当前平台约束，`load_policy`、`load_evidence` 加载有效文档，`write_evidence` 写入 evidence；不读取 UCI |
 
-默认安装组合按能力划分包边界。`selection-algorithm` 独立提供选择算法，仅依赖纯模型；
-`selection` 提供控制流程和选路轮次。`platform` 提供运行描述、路径、进程调用和服务管理；
-`platform-storage` 提供文件、JSON/YAML 存储与产品文档，拥有 yq 依赖；`platform-openwrt`
-提供 UCI Profile、凭据、订阅事实和设备状态，拥有 UCI、ip-full 及默认 UCI 配置。
-安装算法和模型不会拉入 Mihomo、UCI 或平台包。
-
-`mihomo.profile-storage` 共享 Profile 引用解析、生成文件和 provider link 生命周期；
-OpenWrt 与 macOS 后端组合该服务，各自只持有平台核心启停与网络回读。
-订阅来源配置快照的位置由 `platform.runtime.SUBSCRIPTION_CONFIG_PATH` 提供；
-OpenWrt 对应实际 UCI 文件，macOS 的来源由桌面运行管理者事务保存，字段为空不等于来源缺失。
-
-上述能力涉及的 UCI 字段、WAN/路由探测和 CLI 路径封装在对应提供者中。共享选择控制器依赖
-profile、credentials、documents 和 paths；调度器通过 process 调用业务动作，不直接拼接
-OpenWrt 安装路径。文件工具不会因读取 JSON 而加载凭据、订阅或 UCI 实现。
+共享选择算法仅依赖纯模型；选择控制器依赖 profile、credentials、documents 和 paths，
+调度器通过 process 调用业务动作。`mihomo.profile-storage` 共享 Profile 引用解析、生成
+文件与 provider link 生命周期；后端各自管理核心启停和网络回读。字段与实际绑定见
+[平台实现](../platform/README.md)，文件读取不应无故加载凭据或平台配置实现。
 
 通用能力服务不是操作系统 API 的别名：返回值表达产品含义，后端配置仍由原 owner 保存。
 替换提供者必须保持空值、失败结果、原子写入与回读语义；不能以缓存成功代替实际写入。
 策略模型只校验 evidence 存储标识的结构；documents 校验其路径与 paths 提供者一致。
 配置加载、生成候选与备份恢复均使用该校验，恢复在写入前拒绝不匹配的路径。
-OpenWrt 仍只使用 `/etc/opl-netfleet/evidence.json`，策略不能指定另一写入位置。
+策略不能指定与平台 paths 不同的 evidence 写入位置。
 `run_owner` 继续继承调用宿主的 mutation 锁，不能绕过命令准入或启动第二个调度循环。
 
-宿主通过 `options.adapter` 注入路径、信任身份、进程调用、包查询、文件摘要、mutation 锁
-和协调者身份方法。共享内核不读取 `/proc` 或调用包管理器；OpenWrt 的 main/supervisor
-入口加载 `adapters/openwrt.uc`，适配器保留实际祖先进程锁验证。平台适配器承接进程执行，
-统一进程插件模块校验响应信封、输出大小与生命周期回读。
-
-平台能力解耦与完整宿主移植分别验证。Linux 代码租约、进程身份、APK/procd 生命周期
-及 DNS/TProxy 接管属于 OpenWrt 宿主实现。[macOS MVP](../platform/macos.md)通过独立适配器提供
-当前用户的真实文件锁、进程身份、核心和网络生命周期；不加载 OpenWrt 平台服务。
-订阅持久管理、后端设置及维护等 OpenWrt 专用服务仍包含 UCI 和本机操作。
-跨平台产品方向见[设计白皮书](../product/whitepaper.md)，插件开发使用同一服务声明与绑定合同。
+宿主通过 `options.adapter` 注入路径、信任身份、进程执行、包查询、文件摘要、mutation
+锁和协调者身份。共享内核不自行选择操作系统机制。适配器必须保持实际进程身份、锁与
+失败回读合同；支持哪些插件交付方式由平台明确声明，未支持不能用空成功响应代替。
 
 ## 热替换与资源
 
@@ -160,13 +141,12 @@ OpenWrt 仍只使用 `/etc/opl-netfleet/evidence.json`，策略不能指定另�
 
 ## 分发与验收
 
-`opl-netfleet-kernel` 提供内核与稳定入口，`opl-netfleet-plugin-*` 提供功能及各自依赖，
-`opl-netfleet` 组合默认产品。可选能力及第三方插件使用相同插件协议、包布局和安装流程。
-拆分后的旧内置实现、静态注册和直接导入随调用迁移一起删除。
+产品按平台能力组合插件，旧内置实现、静态注册和直接导入随真实调用迁移一起删除。
+平台包名与更新方式见[平台实现](../platform/README.md)。
 
 产品兼容版本限制、旧包迁移与组件失败恢复由[软件包合同](packaging.md)定义，
 不能将包依赖求解成功等同于生命周期交接完成。
 
 验证覆盖服务解析、版本与依赖错误、独立更新、在途调用排空、失败回退，以及原有
-订阅、编译、启用、选择、恢复、关闭和设备管理路径。软件包与 QEMU 验收分别绑定真实
-产物；物理设备部署继续遵守[设备准入](overview.md#准入证据)。
+订阅、编译、启用、选择、恢复、关闭和设备管理路径。平台验收分别绑定真实
+产物；部署继续遵守[准入证据](overview.md#准入证据)。

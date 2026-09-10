@@ -101,6 +101,7 @@ class Composition:
             plugin = self.plugins.get(self.bindings[name], {})
             service = (plugin.get("services") or {}).get(name)
             if service is None:
+                problems.append(f"{name} is bound to {self.bindings[name]}, which does not provide it")
                 continue
             reason = self.resolves(name, service.get("version"))
             if reason is not None:
@@ -112,7 +113,7 @@ class PlatformCompositionTests(unittest.TestCase):
     def setUp(self):
         self.api_version = kernel_api_version()
         self.openwrt = Composition(OPENWRT_SYSTEM, [SHARED_ROOT])
-        self.macos = Composition(MACOS_SYSTEM, [DESKTOP_ROOT, SHARED_ROOT])
+        self.macos = Composition(MACOS_SYSTEM, [SHARED_ROOT, DESKTOP_ROOT])
 
     def test_plugin_manifests_match_the_kernel_api(self):
         seen = 0
@@ -141,6 +142,13 @@ class PlatformCompositionTests(unittest.TestCase):
 
     def test_macos_bound_services_resolve(self):
         self.assertEqual([], self.macos.unresolved())
+
+    def test_missing_service_and_disabled_dependency_are_rejected(self):
+        self.macos.bindings["missing.interface"] = "models"
+        self.assertTrue(any("missing.interface" in problem for problem in self.macos.unresolved()))
+        del self.macos.bindings["missing.interface"]
+        self.macos.enabled["models"] = False
+        self.assertTrue(any("disabled plugin models" in problem for problem in self.macos.unresolved()))
 
     def test_macos_host_commands_are_provided_by_its_composition(self):
         invoked = sorted(set(re.findall(r"ucode\('([a-z][a-z-]+)'", MACOS_HOST.read_text())))

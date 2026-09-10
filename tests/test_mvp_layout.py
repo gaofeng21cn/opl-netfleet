@@ -39,6 +39,19 @@ class MvpLayoutTests(unittest.TestCase):
                 floor = f"EXTRA_DEPENDS:=opl-netfleet-kernel (>={minimum})"
                 self.assertEqual(required, floor in definition, package)
 
+    def test_platform_quota_adapter_requires_shared_quota_model(self):
+        with tempfile.TemporaryDirectory(prefix="netfleet-quota-dependency-") as temporary:
+            root = Path(temporary)
+            (root / "include").mkdir()
+            (root / "rules.mk").touch()
+            (root / "include/package.mk").touch()
+            harness = root / "metadata.mk"
+            harness.write_text("$(info __BEGIN__)\n$(info $(Package/opl-netfleet-plugin-platform-openwrt))\n$(info __END__)\nall:;@:\n")
+            result = subprocess.run(["make", "--no-print-directory", "-f", str(ROOT / "openwrt/Makefile"),
+                                     "-f", str(harness), f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", "all"],
+                                    cwd=ROOT / "openwrt", capture_output=True, text=True, check=True)
+            self.assertIn("opl-netfleet-plugin-models (>=0.7.8)", result.stdout)
+
     def test_payload_revision_matches_runtime_directory_order_and_content(self):
         with tempfile.TemporaryDirectory(prefix="netfleet-payload-revision-") as temporary:
             root = Path(temporary)

@@ -3,6 +3,32 @@
 本文负责选择和执行仓库已有验证入口。它不记录通过次数、设备快照或测试完成状态；
 当前行为由架构 owner 定义，具体测试以源码入口为准。
 
+## 双平台修改与集成
+
+日常开发使用 `scripts/check-fast.sh`，缺少工具会明确列出未执行项；集成使用
+`scripts/check-platform.sh shared`，要求 Python、Bun、Node、UCode 与 fs/socket 模块齐备，
+缺失直接失败。两者复用同一套源码检查，不维护第二份用例名单。
+
+| 改动 | 必需验证 |
+| --- | --- |
+| 共享模型、编译、选择、恢复或服务合同 | 严格 shared 检查；两端受影响的真实调用；改变 OpenWrt 行为时取得同源码 QEMU 资格 |
+| 平台实现、宿主和系统集成 | 对应平台完整入口；共享服务签名变化再覆盖另一端 |
+| 共同界面词汇、状态或交互 | UI 测试与两个渲染入口；实际页面交互不能由 fixture 成功代替 |
+| 仅文档归属 | 回读唯一 owner、相对链接与锚点、示例及空白检查 |
+
+`.github/workflows/netfleet-check.yml` 在 main 提交与 PR 中执行 Linux shared 检查和
+macOS arm64 完整检查。Linux 的 `scripts/bootstrap-ucode.py` 与 macOS 构建器读取同一
+UCode 固定源码身份，Linux 使用系统 json-c 构建测试运行时；只写用户缓存。Linux shared
+检查不声称已经运行 OpenWrt 的 UCI/procd 合同，后者必须通过下文 QEMU 入口。
+macOS 完整入口为 `scripts/check-platform.sh macos`，复用 shared 检查、真实 Mihomo 隔离
+链路、进程崩溃回收、React 客户端、应用构建和 helper 自检。HTTPS 资格探针需要公网访问，
+不安装 helper、不修改系统网络。远端 CI 不发布安装包，也不部署设备。
+
+共享源码目前位于 `openwrt/files/usr/libexec/opl-netfleet`，不能按目录名判断修改仅影响
+OpenWrt。新平台差异首先落到现有能力接口及组合根；平台适配器不重写业务算法或策略合并。
+公共模型使用同一组正例、负例和输入不变性用例；适配器另验证真实存储、运行与失败恢复，
+不要求两个操作系统生成逐字相同的路径、时间格式或错误原语。
+
 ## 源码与 UI
 
 在仓库根目录运行 `scripts/check-fast.sh`，它检查 Git 空白错误、Python source/package/UI

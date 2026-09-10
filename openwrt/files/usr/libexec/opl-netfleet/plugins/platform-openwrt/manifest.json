@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "platform-openwrt",
   "label": "OpenWrt configuration and device",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "api_version": 1,
   "package": "opl-netfleet-plugin-platform-openwrt",
   "services": {
@@ -36,5 +36,8 @@
     }
   },
   "commands": {},
-  "package_dependencies": ["ucode-mod-uci", "ip-full"]
+  "package_dependencies": [
+    "ucode-mod-uci",
+    "ip-full"
+  ]
 }

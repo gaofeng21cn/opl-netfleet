@@ -7,7 +7,7 @@ cd "$root"
 git diff --check
 python3 -m unittest tests.test_mvp_layout tests.test_platform_composition tests.test_openwrt_vm tests.test_release_tools tests.test_native_lifecycle tests.test_backend_health tests.test_luci_management tests.test_plugin_sdk tests.test_plugin_update
 
-if command -v ucode >/dev/null 2>&1; then
+if command -v "${UCODE:-ucode}" >/dev/null 2>&1; then
 	./scripts/check-mvp.sh
 else
 	printf '%s\n' 'ucode unavailable; source UCode contracts deferred to OpenWrt/QEMU qualification.' >&2

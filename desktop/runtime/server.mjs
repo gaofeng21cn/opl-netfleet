@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { CoreOwner } from './core.mjs';
 import { NetworkOwner } from './network.mjs';
-import { privateDir, atomicJSON, readJSON, object, assert, run, requestBody } from './io.mjs';
+import { privateDir, atomicJSON, readJSON, object, assert, run, requestBody, codeDigest } from './io.mjs';
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const bundledWebRoot = path.join(desktopRoot, 'web');
@@ -60,33 +60,23 @@ async function ucode(action, args = []) {
   return value?.result ?? value;
 }
 async function parse(value) { return core.parseProfile(value); }
-function normalizedSubscriptions(values, previous = state.subscriptions, caches = {}) {
-  assert(object(values) && Object.keys(values).length <= 100, 'invalid_subscriptions');
-  const subscriptions = {};
-  for (const [id, item] of Object.entries(values)) {
-    assert(/^[A-Za-z0-9_]{1,64}$/.test(id) && object(item), 'invalid_subscription');
-    const old = previous[id];
-    const url = item.url ?? old?.url;
-    if (url) { const parsed = new URL(url); assert(['http:', 'https:'].includes(parsed.protocol) && !parsed.username && !parsed.password, 'invalid_subscription_url'); }
-    assert(url || old?.imported || object(caches[id]), 'subscription_url_required');
-    subscriptions[id] = { name: String(item.name ?? old?.name ?? id).slice(0, 128), ...(url ? { url } : {}),
-      enabled: item.enabled !== false, imported: !url && (old?.imported === true || object(caches[id])), quota: old?.quota ?? { state: 'unknown' }, updatedAt: old?.updatedAt, nodeCount: old?.nodeCount };
-  }
-  return subscriptions;
+async function normalizedSubscriptions(values, previous = state.subscriptions, caches = {}, policy = null, reconcile = false) {
+  const candidate = path.join(stateDir, 'candidate-sources.json');
+  await atomicJSON(candidate, { sources: values, previous, imported: Object.fromEntries(Object.keys(caches).map(id => [id, object(caches[id])])), policy, reconcile });
+  let planned;
+  try { planned = await ucode('desktop-sources', [candidate]); }
+  finally { await fs.unlink(candidate).catch(() => {}); }
+  const sources = Object.fromEntries(Object.entries(planned.sources).map(([id, value]) => [id, {
+    ...value, quota: previous[id]?.quota, subscriptionUserinfo: previous[id]?.subscriptionUserinfo,
+    updatedAt: previous[id]?.updatedAt, nodeCount: previous[id]?.nodeCount }]));
+  return { sources, policy: planned.policy };
 }
 async function replaceSubscriptions(values) {
   assert(!(await core.status()).running, 'stop_proxy_before_subscription_change');
-  const subscriptions = normalizedSubscriptions(values);
-  const policy = await readJSON(path.join(stateDir, 'policy.json'));
+  const current = await readJSON(path.join(stateDir, 'policy.json'));
+  const { sources: subscriptions, policy } = await normalizedSubscriptions(values, state.subscriptions, {}, current, true);
   const changes = {};
-  if (policy) {
-    for (const id of Object.keys(policy.providers)) {
-      if (!subscriptions[id]) { delete policy.providers[id]; delete policy.provider_regions[id]; }
-      else policy.providers[id].enabled = subscriptions[id].enabled;
-    }
-    assert(Object.values(policy.providers).some(provider => provider.enabled !== false), 'last_provider_required');
-    await validatePolicy(policy); changes['policy.json'] = policy;
-  }
+  if (policy) { await validatePolicy(policy); changes['policy.json'] = policy; }
   for (const id of Object.keys(state.subscriptions)) if (!subscriptions[id]) changes[`backend/subscriptions/${id}.yaml`] = null;
   const next = { ...state, subscriptions }; changes['state.json'] = next;
   await fileTransaction(changes); state = next;
@@ -98,7 +88,7 @@ async function replaceSubscriptions(values) {
 }
 async function downloadSubscription(item) {
   let response;
-  try { response = await fetch(item.url, { headers: { 'User-Agent': 'Clash.Meta' }, signal: AbortSignal.timeout(45000) }); }
+  try { response = await fetch(item.url, { headers: { 'User-Agent': item.user_agent || 'clash.meta' }, signal: AbortSignal.timeout(45000) }); }
   catch { throw new Error('subscription_download_failed'); }
   assert(response.ok, 'subscription_download_failed');
   const chunks = []; let size = 0;
@@ -106,15 +96,8 @@ async function downloadSubscription(item) {
   const profile = await parse(Buffer.concat(chunks).toString('utf8'));
   assert(Array.isArray(profile.proxies) && profile.proxies.length > 0, 'subscription_has_no_nodes');
   await core.validate({ proxies: profile.proxies, rules: ['MATCH,DIRECT'] });
-  const quota = {};
-  for (const part of (response.headers.get('subscription-userinfo') ?? '').split(';')) {
-    const [key, raw] = part.trim().split('='); const number = Number(raw);
-    if (['upload', 'download', 'total', 'expire'].includes(key) && Number.isFinite(number) && number >= 0) quota[key] = number;
-  }
-  const remaining = quota.total > 0 ? quota.total - (quota.upload ?? 0) - (quota.download ?? 0) : null;
-  const availability = remaining === null ? { state: 'unknown' } : { state: remaining > 0 ? 'available' : 'exhausted', remaining_bytes: Math.max(0, remaining) };
-  if (quota.expire > 0) availability.expires_at = new Date(quota.expire * 1000).toISOString();
-  return { profile, metadata: { quota: availability, updatedAt: new Date().toISOString(), nodeCount: profile.proxies.length } };
+  return { profile, metadata: { quota: undefined, subscriptionUserinfo: response.headers.get('subscription-userinfo'),
+    updatedAt: new Date().toISOString(), nodeCount: profile.proxies.length } };
 }
 async function updateSubscription(id) {
   assert(/^[A-Za-z0-9_]{1,64}$/.test(id), 'invalid_subscription_id');
@@ -126,7 +109,7 @@ async function updateSubscription(id) {
   state = await readJSON(statePath);
   return { ok: true, result: { id, updated: true } };
 }
-async function discoverCandidate(profile, subscriptions, caches = {}) {
+async function discoverCandidate(profile, subscriptions, caches = {}, section = null) {
   const sources = [];
   for (const [id, item] of Object.entries(subscriptions)) {
     if (!item.enabled) continue;
@@ -136,7 +119,7 @@ async function discoverCandidate(profile, subscriptions, caches = {}) {
   }
   const candidate = path.join(stateDir, 'candidate-discovery.json');
   await atomicJSON(candidate, { current_profile: 'file:Original.json', current_profile_object: profile,
-    subscriptions: sources, target: 'macos', evidence_path: path.join(stateDir, 'evidence.json') });
+    subscriptions: sources, section, policy: await readJSON(path.join(stateDir, 'policy.json')), target: 'macos', evidence_path: path.join(stateDir, 'evidence.json') });
   try { return await ucode('desktop-discover', [candidate]); }
   finally { await fs.unlink(candidate).catch(() => {}); }
 }
@@ -145,7 +128,7 @@ async function prepareSubscription(input) {
   const id = input.id ?? `airport_${crypto.randomBytes(6).toString('hex')}`;
   assert(/^[A-Za-z0-9_]{1,64}$/.test(id), 'invalid_subscription_id');
   const old = state.subscriptions[id];
-  const item = normalizedSubscriptions({ [id]: { ...old, ...input.subscription, enabled: old?.enabled ?? true } })[id];
+  const item = (await normalizedSubscriptions({ [id]: { ...old, ...input.subscription, enabled: old?.enabled ?? true } })).sources[id];
   assert(item.url, 'subscription_url_required');
   assert(!Object.entries(state.subscriptions).some(([key, value]) => key !== id && value.url === item.url), 'subscription_already_exists');
   const downloaded = await downloadSubscription(item);
@@ -156,20 +139,9 @@ async function prepareSubscription(input) {
     profile = { proxies: profile.proxies, 'proxy-groups': [{ name: 'Proxy', type: 'select', proxies: profile.proxies.map(node => node.name) }], rules: ['MATCH,Proxy'] };
   }
   await core.validate(profile);
-  const discovery = await discoverCandidate(profile, subscriptions, { [id]: downloaded.profile });
-  const currentPolicy = await readJSON(path.join(stateDir, 'policy.json'));
-  let policy = currentPolicy;
-  const recognized = Boolean(discovery.policy?.providers?.[id]);
-  if (recognized) {
-    if (!policy) policy = discovery.policy;
-    else {
-      policy = structuredClone(policy);
-      policy.providers[id] ??= discovery.policy.providers[id];
-      policy.provider_regions[id] ??= discovery.policy.provider_regions[id];
-      for (const [region, value] of Object.entries(discovery.policy.regions)) policy.regions[region] ??= value;
-    }
-    await validatePolicy(policy);
-  }
+  const discovery = await discoverCandidate(profile, subscriptions, { [id]: downloaded.profile }, id);
+  const { policy, recognized } = discovery;
+  if (policy) await validatePolicy(policy);
   const next = { ...state, subscriptions, configured: Boolean(policy) };
   const changes = { 'state.json': next, [`backend/subscriptions/${id}.yaml`]: downloaded.profile };
   if (first) changes['backend/profiles/Original.json'] = profile;
@@ -187,7 +159,7 @@ async function configure(input, caches = null) {
   assert(Array.isArray(profile.proxies) && profile.proxies.length > 0 || object(profile['proxy-providers']), 'profile_has_no_nodes');
   if (input.policy !== undefined && input.policy !== null) await validatePolicy(input.policy);
   const next = structuredClone(state);
-  if (input.subscriptions !== undefined) next.subscriptions = normalizedSubscriptions(input.subscriptions, caches ? {} : state.subscriptions, caches ?? {});
+  if (input.subscriptions !== undefined) next.subscriptions = (await normalizedSubscriptions(input.subscriptions, caches ? {} : state.subscriptions, caches ?? {})).sources;
   const changes = { 'backend/profiles/Original.json': profile, 'policy.json': input.policy ?? null };
   // Native recovery configuration and its imported node cache have separate roles.
   if (caches) {
@@ -253,7 +225,7 @@ async function snapshot() {
   const networkState = await network.status();
   const actualMode = runtime.running ? (state.profile === 'file:OPL-NetFleet.json' ? 'netfleet' : 'mihomo') : networkState.clean !== false && !networkState.recoveryRequired ? 'direct' : 'unconfirmed';
   const subscriptions = Object.fromEntries(Object.entries(state.subscriptions).map(([id, value]) => [id, {
-    name: value.name, enabled: value.enabled, imported: value.imported, quota: value.quota, hasUrl: Boolean(value.url),
+    name: value.name, enabled: value.enabled, imported: value.imported, hasUrl: Boolean(value.url),
     updatedAt: value.updatedAt ?? null, nodeCount: value.nodeCount ?? null }]));
   let status = null, events = null, config = null, configError = null, error = null;
   if (await readJSON(path.join(stateDir, 'policy.json'))) {
@@ -360,6 +332,7 @@ function redact(text) {
 }
 async function rpc({ method, params = {} }) {
   switch (method) {
+    case 'code.digest': return { digest: await codeDigest(codeRoot, params.directory, params.files) };
     case 'state.get': return state;
     case 'state.patch': {
       const allowed = ['profile', 'enabled', 'scheduler']; assert(Object.keys(params).every(key => allowed.includes(key)), 'state_patch_rejected');
@@ -383,7 +356,7 @@ async function rpc({ method, params = {} }) {
     default: throw new Error('unknown_platform_method');
   }
 }
-function respond(response, status, value) { response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); response.end(JSON.stringify(value)); }
+function respond(response, status, value) { const body = JSON.stringify(value); response.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); response.end(body); }
 async function shutdown() {
   await core.stop(); const cleanup = await network.detach({ close: true }); assert(cleanup.ok, cleanup.status ?? 'network_cleanup_failed');
   await saveState({ enabled: false, mode: 'direct', scheduler: { enabled: false, running: false } });
