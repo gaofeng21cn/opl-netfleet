@@ -37,6 +37,7 @@ def prepare(cache):
         commands = [
             ['cmake', '-S', str(source), '-B', str(destination / 'build'), '-DCMAKE_BUILD_TYPE=Release',
              f'-DCMAKE_INSTALL_PREFIX={runtime}', '-DCMAKE_INSTALL_LIBDIR=lib',
+             '-DCMAKE_INSTALL_RPATH=$ORIGIN/../lib',
              *[f'-D{name}_SUPPORT=OFF' for name in disabled]],
             ['cmake', '--build', str(destination / 'build'), '--parallel', '2'],
             ['cmake', '--install', str(destination / 'build')],
