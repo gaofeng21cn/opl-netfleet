@@ -12,11 +12,12 @@ test -f "$key"
 mkdir -p "$output"
 work=$(mktemp -d)
 package=opl-netfleet-https-compat
-for name in "$package" opl-netfleet mihomo-meta; do
+identity_package=opl-netfleet-plugin-device-identity
+for name in "$package" "$identity_package" opl-netfleet mihomo-meta; do
   test ! -e "$sdk/package/$name"
 done
 restore() {
-  rm -rf "$sdk/package/$package" "$sdk/package/opl-netfleet" "$sdk/package/mihomo-meta"
+  rm -rf "$sdk/package/$package" "$sdk/package/$identity_package" "$sdk/package/opl-netfleet" "$sdk/package/mihomo-meta"
   for name in private-key.pem public-key.pem .config; do
     rm -f "$sdk/$name"
     test ! -f "$work/$name" || cp -p "$work/$name" "$sdk/$name"
@@ -27,9 +28,10 @@ trap restore EXIT
 for name in private-key.pem public-key.pem .config; do
   test ! -f "$sdk/$name" || cp -p "$sdk/$name" "$work/$name"
 done
-git -C "$repo" archive "$commit" openwrt scripts/verify-native-runtime.py | tar -xf - -C "$work"
+git -C "$repo" archive "$commit" openwrt plugins/device-identity scripts/netfleet-plugin.py scripts/verify-native-runtime.py | tar -xf - -C "$work"
 cp -R "$work/openwrt/https-compat" "$sdk/package/$package"
 cp "$work/openwrt/native/atomic-replace.c" "$sdk/package/$package/src/"
+python3 "$work/scripts/netfleet-plugin.py" package-source "$work/plugins/device-identity" "$sdk/package/$identity_package" --license Apache-2.0
 mkdir -p "$sdk/package/opl-netfleet"
 cp "$work/openwrt/Makefile" "$sdk/package/opl-netfleet/"
 cp "$work/openwrt/plugin-packages.py" "$sdk/package/opl-netfleet/"
@@ -49,6 +51,8 @@ make -C "$sdk" -j"$jobs" package/toolchain/compile package/feeds/base/openssl/co
   CONFIG_PACKAGE_libopenssl-devcrypto= CONFIG_PACKAGE_libopenssl-afalg= \
   CONFIG_PACKAGE_libopenssl-padlock= NO_DEPS=1 V=s
 make -C "$sdk" -j"$jobs" "package/$package/download" "package/$package/compile" NO_DEPS=1 V=s
+make -C "$sdk" "package/$identity_package/clean" V=s
+make -C "$sdk" -j"$jobs" "package/$identity_package/compile" NO_DEPS=1 V=s
 mapfile -t packages < <(find "$sdk/bin/packages" -type f -name "$package-*.apk")
 test "${#packages[@]}" = 1
 cp "${packages[0]}" "$output/"
@@ -56,17 +60,25 @@ cp "$sdk/public-key.pem" "$output/compat-public-key.pem"
 mkdir -p "$work/trusted"
 cp "$sdk/public-key.pem" "$work/trusted/compat-public-key.pem"
 artifact="$output/${packages[0]##*/}"
+mapfile -t identity_packages < <(find "$sdk/bin/packages" -type f -name "$identity_package-*.apk")
+test "${#identity_packages[@]}" = 1
+cp "${identity_packages[0]}" "$output/"
+identity_artifact="$output/${identity_packages[0]##*/}"
 "$sdk/staging_dir/host/bin/apk" adbsign --allow-untrusted --reset-signatures \
   --sign-key "$sdk/private-key.pem" "$artifact"
 "$sdk/staging_dir/host/bin/apk" verify --keys-dir "$work/trusted" "$artifact"
-python3 "$work/scripts/verify-native-runtime.py" --apk "$sdk/staging_dir/host/bin/apk" "$artifact" >"$output/native-runtime.json"
-python3 - "$output" "$commit" "$tree" "${packages[0]##*/}" <<'PY'
+"$sdk/staging_dir/host/bin/apk" adbsign --allow-untrusted --reset-signatures --sign-key "$sdk/private-key.pem" "$identity_artifact"
+"$sdk/staging_dir/host/bin/apk" verify --keys-dir "$work/trusted" "$identity_artifact"
+python3 "$work/scripts/verify-native-runtime.py" --apk "$sdk/staging_dir/host/bin/apk" "$artifact" "$identity_artifact" >"$output/native-runtime.json"
+python3 - "$output" "$commit" "$tree" "${packages[0]##*/}" "${identity_packages[0]##*/}" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
-output, commit, tree, name = sys.argv[1:]
+output, commit, tree, name, identity = sys.argv[1:]
 path = Path(output)
 (path / 'compat-manifest.json').write_text(json.dumps({'source_commit': commit, 'source_tree': tree,
     'architecture': 'aarch64_generic', 'engine': 'haproxy', 'engine_version': '3.2.21',
     'artifact': name, 'sha256': hashlib.sha256((path / name).read_bytes()).hexdigest(),
     'native_runtime': {'name': 'native-runtime.json', 'sha256': hashlib.sha256((path / 'native-runtime.json').read_bytes()).hexdigest()}}, sort_keys=True) + '\n')
+(path / 'device-identity-manifest.json').write_text(json.dumps({'source_commit': commit, 'source_tree': tree,
+    'artifact': identity, 'sha256': hashlib.sha256((path / identity).read_bytes()).hexdigest()}, sort_keys=True) + '\n')
 PY

@@ -43,11 +43,8 @@ function reason(value) {
 
 function sourceReason(value) {
 	return ({ source_disabled: '地址同步已关闭', identity_source_unavailable: '地址来源不可用',
-		address_evidence_expired: '地址证据已过期，当前旁路', controller_authentication_failed: '控制器登录失败',
-		controller_access_denied: '控制器拒绝读取', controller_certificate_untrusted: '控制器证书尚未信任',
-		controller_certificate_changed: '控制器证书指纹不符', controller_ipv6_data_missing: '控制器未返回完整 IPv6 信息',
-		controller_timeout: '控制器读取超时', controller_request_failed: '控制器请求失败',
-		controller_response_invalid: '控制器返回格式不符', source_unavailable: '地址来源暂不可达',
+		address_evidence_expired: '地址证据已过期，当前旁路', source_not_supported: '请配置 NetFleet 本地地址来源',
+		source_unavailable: '地址来源暂不可达', source_timeout: '本地地址观察超时',
 		local_observation_interface_unavailable: '局域网观察接口未就绪', local_connections_invalid: '本机连接信息读取失败',
 		address_identity_conflict: '地址归属冲突，冲突地址已旁路' })[value] || value || '同步正常';
 }

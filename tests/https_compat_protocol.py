@@ -193,7 +193,12 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
             writer.close()
 
     async def health(self, probe=False):
-        result = await asyncio.to_thread(haproxy.health, self.directory)
+        if os.environ.get('NETFLEET_NATIVE_RENDERER') == '1':
+            raw = await asyncio.to_thread(subprocess.check_output, [
+                'ucode', str(ROOT / 'tests/https_native_wire_render.uc'), str(ENGINE.parent), str(self.directory), 'health'])
+            result = json.loads(raw)
+        else:
+            result = await asyncio.to_thread(haproxy.health, self.directory)
         if probe:
             result['local_probes'] = {'private_ingress': await asyncio.to_thread(haproxy.probe, self.directory)}
             result['processing_chain'] = True

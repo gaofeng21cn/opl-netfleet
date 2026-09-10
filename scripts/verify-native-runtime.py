@@ -10,6 +10,16 @@ import tempfile
 
 RUNTIME = re.compile(r"(?:^|[/\s'\"])(?:python(?:[0-9.]+)?|pypy(?:[0-9.]+)?|node(?:js)?)(?=$|[/\s'\"])")
 FORBIDDEN_DEP = re.compile(r"^(?:python[0-9]*(?:-|$)|pypy|node(?:-|$)|libpython)")
+UCODE_STRING = re.compile(r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|`(?:\\.|[^`\\])*`")
+
+
+def runtime_caller(line, ucode=False):
+    if line.lstrip().startswith(('#', '//')) and not line.startswith('#!'):
+        return False
+    # Identifiers such as `nodes.map(node => node.name)` are not executables.
+    if ucode and not line.startswith('#!'):
+        return any(RUNTIME.search(value[1:-1]) for value in UCODE_STRING.findall(line))
+    return bool(RUNTIME.search(line))
 
 
 def inspect_payload(root):
@@ -32,9 +42,7 @@ def inspect_payload(root):
                 raise ValueError(f'Python-linked binary: {relative}')
         elif path.suffix == '.uc' or data.startswith(b'#!'):
             for line in data.decode('utf-8').splitlines():
-                if line.lstrip().startswith(('#', '//')) and not line.startswith('#!'):
-                    continue
-                if RUNTIME.search(line):
+                if runtime_caller(line, ucode=path.suffix == '.uc'):
                     raise ValueError(f'non-native runtime caller: {relative}')
         checked += 1
     return checked
@@ -52,7 +60,7 @@ def inspect_apk(apk, archive):
         if FORBIDDEN_DEP.match(re.split(r'[<>=~]', dependency)[0]):
             raise ValueError(f'non-native package dependency: {dependency}')
     for script in metadata.get('scripts', {}).values():
-        if any(RUNTIME.search(line) for line in script.splitlines() if not line.lstrip().startswith('#')):
+        if any(runtime_caller(line) for line in script.splitlines()):
             raise ValueError('package lifecycle invokes a non-native runtime')
     with tempfile.TemporaryDirectory(prefix='netfleet-native-payload-') as temporary:
         run('--allow-untrusted', 'extract', '--destination', temporary, archive)

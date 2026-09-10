@@ -952,9 +952,8 @@ const api = { compatibilityGet: async () => clone(owner.compatibility),
     if (request.action === 'load') source = { ...source, loaded: true, ready: true, config_revision: 'private-r1' };
     else {
       assert.equal(request.params.config_revision, 'private-r1', 'first configure uses revision returned by load');
-      assert.equal(request.params.config.password, 'fixture-secret');
-      const { password, ...config } = request.params.config;
-      source = { ...source, config, config_revision: 'private-r2', credential_present: true };
+      assert.deepEqual(request.params.config, { source: 'local', enabled: true, interfaces: ['br-lan'] });
+      source = { ...source, config: request.params.config, config_revision: 'private-r2' };
     }
     return clone(source);
   }, compatibilityApply: async request => {
@@ -967,15 +966,12 @@ owner.identitySource = clone(source);
 const compatibility = module('compatibility.js', api);
 let root = compatibility.render(owner);
 fire(button(root, '管理来源'));
-fire(find(modal.content, node => node.tag === 'select'), 'change', { value: 'unifi' });
 fire(find(modal.content, node => node.tag === 'input' && node.type === 'checkbox'), 'change', { checked: true });
 const field = label => find(find(modal.content, node => node.tag === 'label' && text(node).startsWith(label)), node => node.tag === 'input');
-fire(field('UniFi 控制器'), 'input', { value: 'https://controller.example' });
-fire(field('Network 只读账号'), 'input', { value: 'viewer' });
-const password = field('密码');
-fire(password, 'input', { value: 'fixture-secret' });
+assert(!find(modal.content, node => node.tag === 'input' && node.type === 'password'));
+assert(!text(modal.content).includes('UniFi 控制器'));
+fire(field('局域网观察接口'), 'input', { value: 'br-lan' });
 await fire(button(modal.content, '保存并验证'));
-assert.equal(password.value, '');
 assert.deepEqual(calls.filter(call => ['load', 'configure', 'sync'].includes(call.action)).map(call => call.action), ['load', 'configure', 'sync']);
 assert.equal(owner.identitySource.source_ready, true);
 root = compatibility.render(owner);

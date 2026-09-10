@@ -5,6 +5,10 @@ commit=${1:?}
 tree=${2:?}
 feed_url=${3:-}
 
+if [ -f /tmp/compat-runtime/native-runtime.json ]; then
+ exec sh /tmp/guest-compatibility-native-qualify.sh "$commit" "$tree" "$feed_url"
+fi
+
 test "$(uname -m)" = aarch64
 test "$(readlink /var)" = tmp
 ip route replace default via 192.168.1.2
