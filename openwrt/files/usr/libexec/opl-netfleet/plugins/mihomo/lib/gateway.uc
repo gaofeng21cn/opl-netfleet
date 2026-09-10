@@ -74,7 +74,8 @@ routes_present = function(state) {
 status = function() {
 	const core = process_state();
 	const state = ownership();
-	const table = shell("nft list table inet netfleet");
+	const tables = parse(capture("nft -j list tables"));
+	const table = length(filter(tables?.nftables ?? [], row => row.table?.family == "inet" && row.table?.name == "netfleet")) > 0;
 	const attached = state != null && state.core_pid == core.pid && table && routes_present(state);
 	return { ok: true, result: { ready: core.running && controller_ready() && attached,
 		core_running: core.running, registered: core.registered, attached: attached,

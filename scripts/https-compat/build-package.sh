@@ -27,8 +27,9 @@ trap restore EXIT
 for name in private-key.pem public-key.pem .config; do
   test ! -f "$sdk/$name" || cp -p "$sdk/$name" "$work/$name"
 done
-git -C "$repo" archive "$commit" openwrt | tar -xf - -C "$work"
+git -C "$repo" archive "$commit" openwrt scripts/verify-native-runtime.py | tar -xf - -C "$work"
 cp -R "$work/openwrt/https-compat" "$sdk/package/$package"
+cp "$work/openwrt/native/atomic-replace.c" "$sdk/package/$package/src/"
 mkdir -p "$sdk/package/opl-netfleet"
 cp "$work/openwrt/Makefile" "$sdk/package/opl-netfleet/"
 cp "$work/openwrt/plugin-packages.py" "$sdk/package/opl-netfleet/"
@@ -36,7 +37,6 @@ cp "$work/openwrt/plugin_payload.py" "$sdk/package/opl-netfleet/"
 cp -R "$work/openwrt/files" "$sdk/package/opl-netfleet/"
 cp -R "$work/openwrt/mihomo-meta" "$sdk/package/mihomo-meta"
 (cd "$sdk" && ./scripts/feeds install -p base openssl ca-bundle)
-(cd "$sdk" && ./scripts/feeds update -i packages && ./scripts/feeds install -p packages python3)
 cp "$key" "$sdk/private-key.pem"
 chmod 0600 "$sdk/private-key.pem"
 "$sdk/staging_dir/host/bin/openssl" ec -in "$sdk/private-key.pem" -pubout >"$sdk/public-key.pem"
@@ -59,6 +59,7 @@ artifact="$output/${packages[0]##*/}"
 "$sdk/staging_dir/host/bin/apk" adbsign --allow-untrusted --reset-signatures \
   --sign-key "$sdk/private-key.pem" "$artifact"
 "$sdk/staging_dir/host/bin/apk" verify --keys-dir "$work/trusted" "$artifact"
+python3 "$work/scripts/verify-native-runtime.py" --apk "$sdk/staging_dir/host/bin/apk" "$artifact" >"$output/native-runtime.json"
 python3 - "$output" "$commit" "$tree" "${packages[0]##*/}" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
@@ -66,5 +67,6 @@ output, commit, tree, name = sys.argv[1:]
 path = Path(output)
 (path / 'compat-manifest.json').write_text(json.dumps({'source_commit': commit, 'source_tree': tree,
     'architecture': 'aarch64_generic', 'engine': 'haproxy', 'engine_version': '3.2.21',
-    'artifact': name, 'sha256': hashlib.sha256((path / name).read_bytes()).hexdigest()}, sort_keys=True) + '\n')
+    'artifact': name, 'sha256': hashlib.sha256((path / name).read_bytes()).hexdigest(),
+    'native_runtime': {'name': 'native-runtime.json', 'sha256': hashlib.sha256((path / 'native-runtime.json').read_bytes()).hexdigest()}}, sort_keys=True) + '\n')
 PY

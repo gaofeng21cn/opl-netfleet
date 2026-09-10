@@ -187,7 +187,34 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
     elif feed_bootstrap is not None:
         fail("legacy release must not declare a feed bootstrap")
 
+    native_runtime = manifest.get("native_runtime")
+    if native_runtime is not None:
+        if package_format != "apk" or not isinstance(native_runtime, dict) or native_runtime.get("name") != "native-runtime.json":
+            fail("native runtime receipt identity is invalid")
+        receipt_path = files.get("native-runtime.json")
+        if receipt_path is None or require_digest(native_runtime.get("sha256"), "native runtime receipt") != digest(receipt_path):
+            fail("native runtime receipt bytes do not match manifest")
+        receipt = json.loads(receipt_path.read_text())
+        if not isinstance(receipt, dict) or receipt.get("ok") is not True or not isinstance(receipt.get("packages"), list):
+            fail("native runtime receipt is invalid")
+        entries = receipt["packages"]
+        if len(entries) != len(artifacts):
+            fail("native runtime receipt does not cover the release")
+        expected = {item["package"]: (item["name"], item["sha256"]) for item in artifacts}
+        checked: set[str] = set()
+        for item in entries:
+            if not isinstance(item, dict):
+                fail("native runtime receipt package is invalid")
+            package = item.get("package")
+            if not isinstance(package, str) or package in checked or package not in expected:
+                fail("native runtime receipt package identity is invalid")
+            if (item.get("artifact"), item.get("sha256")) != expected[package]:
+                fail("native runtime receipt package bytes differ from release")
+            checked.add(package)
+
     expected_names = {"manifest.json", "FILES.sha256", *artifact_files.values(), *dependency_names}
+    if native_runtime is not None:
+        expected_names.add("native-runtime.json")
     if package_format == "apk":
         expected_names.add("opl-netfleet-apk.pem")
         if feed_index is not None:

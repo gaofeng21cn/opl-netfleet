@@ -12,7 +12,7 @@ from contextlib import ExitStack
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "openwrt/https-compat/files/usr/libexec/opl-netfleet-compat"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/resources"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests/reference/https-gateway"))
 from recovery import ENGINE_RESTART_GRACE_SECONDS, LEASE_SECONDS, advance
 from policy import select, validate
 from routing import admission, egress_policy

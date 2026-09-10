@@ -2,7 +2,6 @@
 import fcntl
 import hashlib
 import hmac
-from http.cookies import SimpleCookie
 import ipaddress
 import json
 import math
@@ -15,7 +14,6 @@ import subprocess
 import sys
 import tempfile
 import time
-from urllib.parse import urlsplit, quote
 import xml.etree.ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -74,7 +72,7 @@ def address(value):
 
 
 def validate(value, previous=None):
-    if not isinstance(value, dict) or value.get("source") not in ("local", "unifi") or type(value.get("enabled")) is not bool:
+    if not isinstance(value, dict) or value.get("source") != "local" or type(value.get("enabled")) is not bool:
         raise ValueError("invalid_source_config")
     result = {"enabled": value["enabled"], "source": value["source"]}
     if value["source"] == "local":
@@ -85,32 +83,6 @@ def validate(value, previous=None):
         if value["enabled"] and not interfaces:
             raise ValueError("source_interface_required")
         return {**result, "interfaces": sorted(set(interfaces))}
-    endpoint = value.get("endpoint", "")
-    if not isinstance(endpoint, str):
-        raise ValueError("invalid_controller_url")
-    url = urlsplit(endpoint)
-    if (url.scheme != "https" or not url.hostname or url.username or url.password or url.query or url.fragment
-            or url.path not in ("", "/") or len(endpoint) > 256):
-        raise ValueError("invalid_controller_url")
-    port = url.port
-    if port is not None and not 1 <= port <= 65535:
-        raise ValueError("invalid_controller_url")
-    site = value.get("site", "default")
-    username = value.get("username", "")
-    pin = value.get("certificate_sha256", "")
-    if not isinstance(site, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", site):
-        raise ValueError("invalid_controller_site")
-    if not isinstance(username, str) or not 1 <= len(username) <= 128:
-        raise ValueError("controller_username_required")
-    if not isinstance(pin, str) or pin and not re.fullmatch(r"[0-9a-fA-F]{64}", pin):
-        raise ValueError("invalid_controller_fingerprint")
-    result.update(endpoint=endpoint.rstrip("/"), site=site, username=username, certificate_sha256=pin.lower())
-    password = value.get("password")
-    if password is None and previous and all(result.get(key) == previous.get(key) for key in ("source", "endpoint", "site", "username", "certificate_sha256")):
-        password = previous.get("password")
-    if not isinstance(password, str) or not 1 <= len(password) <= 1024:
-        raise ValueError("controller_password_required")
-    return {**result, "password": password}
 
 
 def binding(config):
@@ -121,80 +93,6 @@ def revision(config):
     # A public revision must not act as an offline password verifier.
     key = read(BASE / "revision-key.json")
     return hmac.new(bytes.fromhex(key), json.dumps(config, sort_keys=True).encode(), hashlib.sha256).hexdigest() if key else None
-
-
-def request(config, path, method="GET", body=None, cookie=None):
-    import http.client
-    import ssl
-
-    url = urlsplit(config["endpoint"])
-    pin = config.get("certificate_sha256")
-    context = ssl.create_default_context()
-    if pin:
-        # Pinning replaces CA validation only for this explicitly enrolled controller.
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-    connection = http.client.HTTPSConnection(url.hostname, url.port or 443, context=context, timeout=1.5)
-    try:
-        connection.connect()
-        if pin and hashlib.sha256(connection.sock.getpeercert(binary_form=True)).hexdigest() != pin:
-            raise ValueError("controller_certificate_changed")
-        headers = {"Accept": "application/json"}
-        if cookie:
-            headers["Cookie"] = cookie
-        if body is not None:
-            headers["Content-Type"] = "application/json"
-        connection.request(method, path, json.dumps(body).encode() if body is not None else None, headers)
-        response = connection.getresponse()
-        raw = response.read(MAX_BODY + 1)
-        if len(raw) > MAX_BODY:
-            raise ValueError("controller_response_too_large")
-        cookies = SimpleCookie()
-        for key, value in response.getheaders():
-            if key.lower() == "set-cookie":
-                cookies.load(value)
-        # Never follow redirects or include response bodies in diagnostics.
-        return response.status, raw, "; ".join(f"{key}={value.value}" for key, value in cookies.items())
-    finally:
-        connection.close()
-
-
-def unifi(config, now):
-    session = read(RUN / "session.json", {})
-    cookie = session.get("cookie") if session.get("revision") == revision(config) else None
-    path = f"/proxy/network/v2/api/site/{quote(config['site'], safe='')}/clients/active?includeTrafficUsage=false&includeUnifiDevices=false"
-    status, raw, _ = request(config, path, cookie=cookie) if cookie else (401, None, None)
-    if status == 401:
-        status, _, cookie = request(config, "/api/auth/login", "POST", {"username": config["username"], "password": config["password"], "rememberMe": False})
-        if status != 200 or not cookie:
-            raise ValueError("controller_authentication_failed")
-        atomic(RUN / "session.json", {"revision": revision(config), "cookie": cookie})
-        status, raw, _ = request(config, path, cookie=cookie)
-    if status in (401, 403):
-        raise ValueError("controller_access_denied")
-    if status != 200:
-        raise ValueError("controller_request_failed")
-    rows = json.loads(raw)
-    if not isinstance(rows, list) or len(rows) > 1024:
-        raise ValueError("controller_response_invalid")
-    devices = []
-    for row in rows:
-        if not isinstance(row, dict):
-            raise ValueError("controller_response_invalid")
-        try:
-            identity = mac(row.get("mac"))
-        except ValueError:
-            continue
-        seen = row.get("last_seen")
-        ipv6 = row.get("ipv6_address")
-        if type(seen) not in (float, int) or seen > now + 5 or now - seen >= TTL:
-            continue
-        complete = isinstance(ipv6, list) and all(isinstance(ip, str) for ip in ipv6)
-        addresses = [address(ip) for ip in [row.get("ip"), *(ipv6 if complete else [])]] if complete else []
-        devices.append({"mac": identity, "name": str(row.get("hostname") or row.get("name") or identity)[:128],
-                        "addresses": sorted({ip for ip in addresses if ip}), "ttl": min(TTL, max(0, TTL - (now - seen))),
-                        "reason": None if complete else "controller_ipv6_data_missing"})
-    return devices
 
 
 def ip_command(*args):
@@ -306,12 +204,13 @@ def unique_devices(devices):
 
 
 def status(config):
+    supported = config.get("source") == "local"
     loaded = read(BASE / "loaded.json", False) is True
     cache = read(RUN / "cache.json", {})
     same = cache.get("revision") == revision(config)
     now = time.monotonic()
     age = now - cache.get("monotonic", -TTL)
-    fresh = loaded and config["enabled"] and same and 0 <= age < TTL
+    fresh = supported and loaded and config["enabled"] and same and 0 <= age < TTL
     devices = []
     for row in cache.get("devices", []) if same else []:
         remaining = {ip: expiry - now for ip in row["addresses"]
@@ -322,10 +221,9 @@ def status(config):
                         "reason": row["reason"] if fresh and (remaining or row["reason"]) else "address_evidence_expired"})
     error = read(RUN / "attempt.json", {})
     error = error if error.get("revision") == revision(config) else {}
-    reason = "source_disabled" if not loaded or not config["enabled"] else error.get("reason") or (None if fresh else "address_evidence_expired")
+    reason = "source_not_supported" if not supported else "source_disabled" if not loaded or not config["enabled"] else error.get("reason") or (None if fresh else "address_evidence_expired")
     return {"loaded": loaded, "ready": loaded, "source_ready": bool(fresh), "config_revision": revision(config), "binding": binding(config),
-            "config": {key: value for key, value in config.items() if key != "password"},
-            "credential_present": bool(config.get("password")), "reason": reason, "last_attempt": error.get("at"),
+            "config": {"source": config.get("source"), "enabled": config["enabled"], "interfaces": config.get("interfaces", [])}, "reason": reason, "last_attempt": error.get("at"),
             "last_success": cache.get("at") if same else None, "devices": devices}
 
 
@@ -333,7 +231,7 @@ def publish(config):
     """Owner-published read contract; never expose configuration or credentials."""
     cache = read(RUN / "cache.json", {})
     now = time.monotonic()
-    valid = (read(BASE / "loaded.json", False) is True and config["enabled"]
+    valid = (config.get("source") == "local" and read(BASE / "loaded.json", False) is True and config["enabled"]
              and cache.get("revision") == revision(config)
              and 0 <= now - cache.get("monotonic", -TTL) < TTL)
     rows = []
@@ -347,6 +245,9 @@ def publish(config):
 
 
 def sync(config, force=False):
+    if config.get("source") != "local":
+        (RUN / "evidence.json").unlink(missing_ok=True)
+        return status(config)
     if not config["enabled"]:
         return status(config)
     previous = read(RUN / "attempt.json", {})
@@ -354,23 +255,18 @@ def sync(config, force=False):
     if not force and previous.get("revision") == revision(config) and 0 <= elapsed < INTERVAL:
         publish(config)
         return status(config)
-    import http.client
-    import ssl
-
     attempt = {"revision": revision(config), "at": time.time(), "monotonic": time.monotonic(), "reason": None}
     atomic(RUN / "attempt.json", attempt)
     try:
-        devices = unique_devices((unifi if config["source"] == "unifi" else local)(config, time.time()))
+        devices = unique_devices(local(config, time.time()))
         if len(devices) > 256:
             raise ValueError("too_many_source_devices")
         atomic(RUN / "cache.json", {**attempt, "devices": devices})
-    except ssl.SSLCertVerificationError:
-        attempt["reason"] = "controller_certificate_untrusted"
     except (socket.timeout, TimeoutError):
-        attempt["reason"] = "controller_timeout"
+        attempt["reason"] = "source_timeout"
     except ValueError as error:
-        attempt["reason"] = str(error) if re.fullmatch(r"[a-z_]+", str(error)) else "controller_response_invalid"
-    except (OSError, http.client.HTTPException, subprocess.SubprocessError):
+        attempt["reason"] = str(error) if re.fullmatch(r"[a-z_]+", str(error)) else "source_response_invalid"
+    except (OSError, subprocess.SubprocessError):
         attempt["reason"] = "source_unavailable"
     atomic(RUN / "attempt.json", attempt)
     publish(config)

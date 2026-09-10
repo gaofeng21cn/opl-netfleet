@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "mihomo",
   "label": "Mihomo backend",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "api_version": 1,
   "package": "opl-netfleet-plugin-mihomo",
   "services": {
@@ -172,6 +172,7 @@
     "ucode-mod-ubus",
     "ucode-mod-uloop",
     "ucode-mod-socket",
+    "ucode-mod-digest",
     "curl",
     "ca-bundle",
     "coreutils-timeout",

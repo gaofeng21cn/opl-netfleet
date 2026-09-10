@@ -10,12 +10,17 @@ const KIND = context.use("platform.runtime").KIND;
 const shell_quote = context.use("platform.process").shell_quote;
 const files = context.use("platform.files");
 
-const OWNER = "/usr/libexec/opl-netfleet-compat/control.py";
+const OWNER = "/usr/libexec/opl-netfleet-compat/control.uc";
+let implementation;
+function native_owner() {
+	implementation ??= loadfile(OWNER)()(context);
+	return implementation;
+}
 const DECLARATION = "/usr/libexec/opl-netfleet-compat/extension.json";
 
 const extension = {
 	id: "https-compat", label: "HTTPS 兼容", api_version: API_VERSION, kind: "optional",
-	package: "opl-netfleet-https-compat", dependencies: ["python3-light", "python3-asyncio", "python3-ctypes", "python3-openssl", "python3-urllib", "openssl-util", "ca-bundle", "coreutils-timeout"],
+	package: "opl-netfleet-https-compat", dependencies: ["ucode-mod-digest", "ucode-mod-socket", "ucode-mod-uloop", "openssl-util", "ca-bundle", "coreutils-timeout"],
 	permission_class: "network_interception", ui: ["components", "diagnostics"],
 	commands: {
 		"compatibility-get": { method: "get", access: "read", backends: ["native-mihomo", "nikki-mihomo"] },
@@ -48,15 +53,9 @@ dispatch = function(action, envelope) {
 		installed: false, requested: false, intercepting: false, reason: "component_not_installed",
 		revision: null, config: { schema: 1, enabled: false, devices: [], rules: [] }, trust: {}, rules: {}, events: []
 	} } : { ok: false, error: "compatibility_component_not_installed" };
-	const limit = action == 'suspend' ? 35 : 10;
-	const command = `timeout -k 1 ${limit} /usr/bin/python3 ${OWNER} ${shell_quote(action)}` + (envelope ? ` ${shell_quote(envelope)}` : "");
-	const process = fs.popen(command + " 2>/dev/null");
-	if (process == null) return { ok: false, error: "compatibility_owner_unavailable" };
-	const raw = process.read("all");
-	const status = process.close();
-	if (status == 124 || status == 137) return { ok: false, error: 'compatibility_owner_timeout' };
 	try {
-		const response = json(raw);
+        const input = envelope ? json(fs.readfile(envelope))?.request ?? {} : {};
+        const response = { ok: true, result: native_owner().dispatch(action, input) };
 		if (action == "get" && response?.ok == true && type(response.result) == "object") {
 			const installed = inspection();
 			response.result.managed = installed.api_version == API_VERSION && installed.error == null && KIND == "native-mihomo";
@@ -64,7 +63,7 @@ dispatch = function(action, envelope) {
 				KIND != "native-mihomo" ? "extension_backend_unsupported" : null);
 		}
 		return response;
-	} catch (error) { return { ok: false, error: "compatibility_owner_no_response" }; }
+	} catch (error) { return { ok: false, error: match(error.message ?? "", /^[a-z_]+$/) ? error.message : "compatibility_owner_no_response" }; }
 };
 
 command_compatibility_get = function(argv) {
@@ -126,7 +125,16 @@ function action(name, params) {
 	return result;
 };
 
-return { extension, inspection, dispatch, command_compatibility_get, command_compatibility_ca, command_compatibility_apply, command_compatibility_enable, command_compatibility_disable, command_compatibility_probe,
+function internal(argv) {
+    const action = { 'compatibility-engine-prepare': 'prepare-engine', 'compatibility-drain': 'drain',
+        'compatibility-tick': 'tick' }[argv[0]];
+    if (argv[0] == 'compatibility-private-backup' && length(argv) == 2)
+        return { ok: true, result: native_owner().dispatch('private-backup', { path: argv[1] }) };
+    if (argv[0] == 'compatibility-watch') return native_owner().watch();
+    if (!action || length(argv) != 1) return { ok: false, error: 'compatibility_action_invalid' };
+    return { ok: true, result: native_owner().dispatch(action, {}) };
+}
+return { internal, extension, inspection, dispatch, command_compatibility_get, command_compatibility_ca, command_compatibility_apply, command_compatibility_enable, command_compatibility_disable, command_compatibility_probe,
 	config_get: () => dispatch('get'), config_set: params => action('apply', params),
 	enable: params => action('enable', params), disable: params => action('disable', params),
 	probe: params => action('probe', params), public_ca: () => dispatch('ca'),

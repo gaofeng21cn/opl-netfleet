@@ -86,7 +86,7 @@ async function sourceAction(controller, action, params) {
 function editSource(controller) {
 	const source = controller.identitySource;
 	if (!source || controller.identitySourceError || mutationBlocked(controller, 'compatibilityApply')) return;
-	const draft = Object.assign({ source: 'local', enabled: true, endpoint: '', site: 'default', username: '', certificate_sha256: '', interfaces: [] }, source.config);
+	const draft = { source: 'local', enabled: !!source.config.enabled, interfaces: source.config.interfaces || [] };
 	const fields = [];
 	const rows = E('div', {});
 	function field(key, label, type) {
@@ -98,23 +98,15 @@ function editSource(controller) {
 	}
 	function showFields() {
 		fields.length = 0;
-		rows.replaceChildren(...(draft.source === 'local' ? [ field('interfaces', '局域网观察接口') ] : [
-			field('endpoint', 'UniFi 控制器 HTTPS 地址'), field('site', '站点'), field('username', 'Network 只读账号'),
-			field('password', source.credential_present ? '新密码（留空保留）' : '密码', 'password'),
-			field('certificate_sha256', '控制器证书 SHA-256（系统信任时留空）') ]));
+		rows.replaceChildren(field('interfaces', '局域网观察接口'));
 	}
 	showFields();
 	ui.showModal('设备地址来源', [
 		E('label', { 'class': 'netfleet-check' }, [ E('input', { 'type': 'checkbox', 'checked': draft.enabled ? '' : null,
 			'change': function(event) { draft.enabled = event.target.checked; } }), '自动同步设备地址' ]),
-		E('label', { 'class': 'netfleet-config-row' }, [ E('span', {}, '来源'), E('select', { 'class': 'cbi-input-select',
-			'change': function(event) { draft.source = event.target.value; showFields(); }
-		}, [ [ 'local', 'NetFleet 本机网络' ], [ 'unifi', 'UniFi 控制器（可选）' ] ].map(item => E('option', { 'value': item[0], 'selected': draft.source === item[0] ? '' : null }, item[1]))) ]),
+		E('p', {}, '由 NetFleet 局域网观察接口确认设备地址，不连接其他设备的管理面。'),
 		rows, E('div', { 'class': 'right' }, [ button('取消', ui.hideModal), button('保存并验证', function() {
 			const config = Object.assign({}, draft);
-			if (!config.password) delete config.password;
-			fields.forEach(input => { if (input.type === 'password') input.value = ''; });
-			delete draft.password;
 			ui.hideModal();
 			return sourceAction(controller, 'configure', { config_revision: source.config_revision, config: config });
 		}) ]) ]);
@@ -242,6 +234,12 @@ function edit(controller, collection, item) {
 		if (collection === 'rules' && !draft.devices.length) {
 			managed.notify(null, E('p', {}, '请选择至少一台接入设备'), 'warning'); return;
 		}
+		if (collection === 'rules') {
+            try {
+                if (/[\s/:@?#\\]/.test(draft.domain)) throw new Error('invalid_domain');
+                draft.domain = new URL('https://' + draft.domain).hostname.replace(/\.+$/, '');
+            } catch (_) { managed.notify(null, E('p', {}, '请输入有效域名，不包含 URL 路径或端口'), 'warning'); return; }
+        }
 		const index = config[collection].findIndex(function(value) { return value.id === draft.id; });
 		if (item) config[collection][index] = draft;
 		else config[collection].push(draft);
@@ -298,7 +296,7 @@ function render(controller) {
 			E('td', {}, rule.devices.map(function(id) { return (state.config.devices.find(function(device) { return device.id === id; }) || {}).name || id; }).join('、')),
 			E('td', {}, rule.strategy === 'h2' ? 'HTTP/2' : '旁路'),
 			E('td', {}, [ E('strong', { 'class': recovery.latched ? 'is-warning' : '' }, !rule.enabled ? '规则已关闭' : !state.requested ? '模块已关闭' : rule.strategy === 'bypass' ? '旁路' :
-				state.eligible_devices && !rule.devices.some(id => state.eligible_devices.includes(id)) ? '无可接管设备' : state.intercepting && recovery.intercepting ? '正在接管' : '当前旁路'),
+				state.eligible_devices && !rule.devices.some(id => state.eligible_devices.includes(id)) ? '无可接管设备' : state.intercepting && recovery.admitted ? '正在接管' : '当前旁路'),
 				state.requested && rule.enabled && (state.reason || recovery.reason) ? E('small', {}, reason(state.reason || recovery.reason)) : '',
 				result.at ? E('small', {}, '最近上游：' + (result.upstream_protocol || '协议未确认') + ' · ' + new Date(result.at * 1000).toLocaleString()) : E('small', {}, '尚无转发记录') ]),
 			E('td', {}, [ button('编辑', function() { edit(controller, 'rules', rule); }, busy), button('删除', function() {
@@ -373,7 +371,7 @@ function render(controller) {
 				controller.sourceExpanded = event.target.open;
 				if (event.target.open && !controller.identitySource && !controller.identitySourceError) void readSource(controller);
 			} }, [ E('summary', {}, '高级：设备地址来源'), E('div', { 'class': 'netfleet-section-heading' }, [
-				E('div', { 'role': 'status' }, controller.identitySource ? [ E('strong', {}, controller.identitySource.config.source === 'unifi' ? 'UniFi 控制器' : 'NetFleet 本机网络'),
+			E('div', { 'role': 'status' }, controller.identitySource ? [ E('strong', {}, 'NetFleet 本机网络'),
 					E('small', {}, sourceReason(controller.identitySource.reason)),
 					(controller.identitySource.devices || []).some(item => !item.addresses.length) ? E('small', {}, (controller.identitySource.devices || []).filter(item => !item.addresses.length).length + ' 台设备无可用地址') : '',
 					controller.identitySource.last_success ? E('small', {}, '最近同步 ' + new Date(controller.identitySource.last_success * 1000).toLocaleString()) : '' ] : controller.identitySourceError ? '设备地址插件未安装或不可读取；手工地址仍可使用' : '按需读取地址来源'),

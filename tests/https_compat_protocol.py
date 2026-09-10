@@ -109,7 +109,15 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         if self._testMethodName == 'test_suffix_failure_retains_probe_hostname':
             policy['rules'][0].update(domain='example', match='suffix')
         (self.directory / 'config.json').write_text(json.dumps(policy))
-        text, mapping = haproxy.configuration(policy, self.directory, 'a' * 64, port=self.engine_port)
+        if os.environ.get('NETFLEET_NATIVE_RENDERER') == '1':
+            native = json.loads(subprocess.check_output([
+                'ucode', str(ROOT / 'tests/https_native_wire_render.uc'),
+                str(ENGINE.parent), str(self.directory), str(self.engine_port)], text=True))
+            text, mapping = native['text'], native['mapping']
+            # The reference stays test-only; each wire fixture must retain protocol semantics.
+            self.assertEqual((text, mapping), haproxy.configuration(policy, self.directory, 'a' * 64, port=self.engine_port))
+        else:
+            text, mapping = haproxy.configuration(policy, self.directory, 'a' * 64, port=self.engine_port)
         (self.directory / 'haproxy.cfg').write_text(text)
         (self.directory / 'haproxy-rules.json').write_text(json.dumps(mapping))
         haproxy.write_rule_map(self.directory, policy, mapping)

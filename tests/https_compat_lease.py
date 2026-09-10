@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 RESOURCES = Path('/usr/libexec/opl-netfleet/plugins/mihomo/resources')
 if not RESOURCES.exists():
-    RESOURCES = Path(__file__).resolve().parents[1] / 'openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/resources'
+    RESOURCES = Path(__file__).resolve().parents[1] / 'tests/reference/https-gateway'
 sys.path.insert(0, str(RESOURCES))
 sys.dont_write_bytecode = True
 import interception

@@ -13,7 +13,7 @@ import pwd
 from https_compat_protocol import Protocol
 
 resources = Path('/usr/libexec/opl-netfleet/plugins/mihomo/resources')
-sys.path.insert(0, str(resources if resources.exists() else Path(__file__).resolve().parents[1] / "openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/resources"))
+sys.path.insert(0, str(resources if resources.exists() else Path(__file__).resolve().parents[1] / "tests/reference/https-gateway"))
 sys.dont_write_bytecode = True
 import interception as gateway
 

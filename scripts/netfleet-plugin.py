@@ -352,6 +352,12 @@ def package_source(source, destination, license_id, release):
 
     result = {"id": manifest["id"], "package": manifest["package"], "package_source": str(destination)}
 
+    native_identity = source.resolve() == (ROOT / "plugins/device-identity").resolve()
+    if native_identity:
+        # The official address plugin compiles its bounded native helpers. The
+        # Python reference implementation remains host-side and is never staged.
+        files = [Path("control"), Path("manifest.json"), Path("resources/identity.uc")]
+
     def populate(target):
         (target / "files").mkdir(mode=0o755)
         for relative in files:
@@ -361,7 +367,15 @@ def package_source(source, destination, license_id, release):
             output.chmod(0o755 if (source / relative).stat().st_mode & 0o111 else 0o644)
         validate(target / "files")
         revision = PAYLOAD.payload_revision(target / "files")
-        (target / "Makefile").write_text(makefile(manifest, license_id, release, revision), encoding="utf-8")
+        if native_identity:
+            shutil.copytree(ROOT / "openwrt/device-identity/src", target / "src")
+            shutil.copyfile(ROOT / "openwrt/native/atomic-replace.c", target / "src/atomic-replace.c")
+            template = (ROOT / "openwrt/device-identity/Makefile").read_text()
+            template = re.sub(r"(?m)^PKG_VERSION:=.*$", f"PKG_VERSION:={manifest['version']}", template)
+            template = re.sub(r"(?m)^PKG_RELEASE:=.*$", f"PKG_RELEASE:={release}", template)
+            (target / "Makefile").write_text(template)
+        else:
+            (target / "Makefile").write_text(makefile(manifest, license_id, release, revision), encoding="utf-8")
         result["revision"] = revision
 
     create_directory(destination, populate)

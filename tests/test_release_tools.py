@@ -69,6 +69,36 @@ def write_release(directory: Path, commit: str, tree: str, version: str = '0.4.5
     (directory / 'manifest.json').write_text(json.dumps(manifest, sort_keys=True) + '\n')
 
 class ReleaseToolsTests(unittest.TestCase):
+    def test_native_receipt_binds_all_artifacts_without_breaking_old_releases(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('release_verifier', VERIFIER)
+        verifier = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(verifier)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            commit, tree = 'a' * 40, 'b' * 40
+            write_release(root, commit, tree)
+            self.assertTrue(verifier.verify(root, commit, tree)['ok'])
+            manifest = json.loads((root / 'manifest.json').read_text())
+            packages = [{'package': item['package'], 'artifact': item['name'], 'sha256': item['sha256']}
+                        for item in manifest['artifacts']]
+            def receipt(entries):
+                path = root / 'native-runtime.json'
+                path.write_text(json.dumps({'ok': True, 'packages': entries}))
+                manifest['native_runtime'] = {'name': path.name, 'sha256': sha256(path)}
+                (root / 'manifest.json').write_text(json.dumps(manifest))
+            receipt(packages)
+            self.assertTrue(verifier.verify(root, commit, tree)['ok'])
+            receipt(packages[:-1])
+            with self.assertRaisesRegex(ValueError, 'cover'):
+                verifier.verify(root, commit, tree)
+            receipt([packages[0], *packages[:-1]])
+            with self.assertRaisesRegex(ValueError, 'identity'):
+                verifier.verify(root, commit, tree)
+            receipt([{**packages[0], 'sha256': '0' * 64}, *packages[1:]])
+            with self.assertRaisesRegex(ValueError, 'bytes differ'):
+                verifier.verify(root, commit, tree)
+
     def test_luci_release_versions_all_shell_modules_without_cross_version_urls(self):
         package = ROOT / 'openwrt/luci-app-netfleet'
         with tempfile.TemporaryDirectory() as directory:

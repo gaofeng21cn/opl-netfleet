@@ -43,7 +43,7 @@ trap restore_sdk EXIT
 for name in .config private-key.pem public-key.pem; do
   [[ ! -e "$sdk/$name" ]] || cp -p "$sdk/$name" "$backup/$name"
 done
-git -C "$repo_dir" archive "$commit" openwrt scripts/install-netfleet.sh | tar -C "$work" -xf -
+git -C "$repo_dir" archive "$commit" openwrt scripts/install-netfleet.sh scripts/verify-native-runtime.py | tar -C "$work" -xf -
 version=$(awk -F':=' '/^PKG_VERSION[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/Makefile")
 release=$(awk -F':=' '/^PKG_RELEASE[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/Makefile")
 [[ -n "$version" && -n "$release" ]] || die 'package version metadata is missing'
@@ -222,6 +222,7 @@ if [[ "$package_format" == apk ]]; then
   cp "$public_key" "$trusted_dir/opl-netfleet-apk.pem"
   "$sdk/staging_dir/host/bin/apk" verify --keys-dir "$trusted_dir" "${signed_artifacts[@]}"
   artifacts=("${signed_artifacts[@]}")
+  python3 "$work/scripts/verify-native-runtime.py" --apk "$sdk/staging_dir/host/bin/apk" "${artifacts[@]:0:${#product_packages[@]}}" >"$output/native-runtime.json"
 fi
 python3 - "$output" "$commit" "$tree" "$version" "$release" "$package_format" "$package_arch" "$build_target_arch" "$policy_schema" "$public_key" "$runtime_payload_sha256" "$files_sha256" "$bootstrap_sha256" "$core_lock" "${artifacts[@]}" <<'PY'
 import hashlib, json, re, sys
@@ -247,6 +248,8 @@ for source in artifacts:
         items.append(item)
 manifest={'schema':'opl-netfleet-package-manifest.v2','source_commit':commit,'source_tree':tree,'package_version':version,'package_release':release,'package_format':package_format,'package_arch':package_arch,'build_target_arch':build_target_arch,'policy_schema':int(policy_schema),'runtime_payload_sha256':runtime_payload_sha256,'files_manifest':{'name':'FILES.sha256','sha256':files_sha256},'artifacts':items}
 manifest['artifact_files']={item['package']: item['name'] for item in items}
+if package_format == 'apk':
+    manifest['native_runtime'] = {'name':'native-runtime.json', 'sha256':hashlib.sha256((Path(output)/'native-runtime.json').read_bytes()).hexdigest()}
 manifest['dependency_artifacts']=dependencies
 if bootstrap_sha256:
     manifest['feed_bootstrap']={'name':'install-netfleet.sh','sha256':bootstrap_sha256}

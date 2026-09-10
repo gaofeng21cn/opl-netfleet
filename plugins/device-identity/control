@@ -1,9 +1,20 @@
-#!/usr/bin/python3
-import sys
-from pathlib import Path
-
-sys.dont_write_bytecode = True
-sys.path.insert(0, str(Path(__file__).resolve().parent / "resources"))
-from identity import main
-
-main()
+#!/usr/bin/ucode
+import * as fs from 'fs';
+const action = ARGV[0], path = ARGV[1];
+try {
+    const info = fs.lstat(path);
+    if (length(ARGV) != 2 || info?.type != 'file' || info.uid != 0 || (info.mode & 077) || info.size > 65536)
+        die('invalid_identity_request');
+    const envelope = json(fs.readfile(path)).request;
+    if (envelope?.id != 'device-identity' || envelope.api_version != 1 || envelope.action != action)
+        die('invalid_identity_request');
+    const root = replace(sourcepath(), /\/control$/, '');
+    const owner = loadfile(`${root}/resources/identity.uc`)()({
+        base: '/etc/opl-netfleet/device-identity', run: '/var/run/opl-netfleet-device-identity',
+        helper: `${root}/resources/neighbor`
+    });
+    printf('%J\n', {ok: true, result: owner.dispatch(action, envelope.params ?? {})});
+} catch (error) {
+    const code = match(error.message ?? '', /^[a-z_]+$/) ? error.message : 'identity_operation_failed';
+    printf('%J\n', {ok: false, error: code}); exit(1);
+}

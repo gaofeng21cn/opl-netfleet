@@ -6,9 +6,9 @@ STOP=04
 start_service() {
 	[ -f /etc/opl-netfleet/compatibility/config.json ] || return 0
 	[ "$(jsonfilter -i /etc/opl-netfleet/compatibility/config.json -e '@.enabled')" = true ] || return 0
-	[ -f /var/run/opl-netfleet-compat/effective.json ] || /usr/bin/python3 /usr/libexec/opl-netfleet-compat/control.py prepare >/dev/null || return 1
+	/usr/bin/ucode /usr/libexec/opl-netfleet/main.uc compatibility-engine-prepare >/dev/null || return 1
 	procd_open_instance engine
-	procd_set_param command /usr/bin/python3 /usr/libexec/opl-netfleet-compat/control.py run
+	procd_set_param command /usr/libexec/opl-netfleet-compat/launcher engine
 	# Recovery owns the bounded fault window and manual latch. Keep procd from
 	# imposing a smaller restart budget that strands a healthy plugin after
 	# repeated, controlled engine failures.
@@ -18,7 +18,7 @@ start_service() {
 	procd_set_param term_timeout 5
 	procd_close_instance
 	procd_open_instance manager
-	procd_set_param command /usr/bin/python3 /usr/libexec/opl-netfleet-compat/control.py watch
+	procd_set_param command /usr/libexec/opl-netfleet-compat/launcher manager
 	procd_set_param respawn 3600 2 0
 	procd_set_param stdout 0
 	procd_set_param stderr 0
@@ -29,5 +29,5 @@ start_service() {
 
 stop_service() {
 	# rc.common would otherwise kill procd's instance even when this hook fails.
-	/usr/bin/python3 /usr/libexec/opl-netfleet-compat/control.py drain >/dev/null || exit 1
+	/usr/bin/ucode /usr/libexec/opl-netfleet/main.uc compatibility-drain >/dev/null || exit 1
 }
