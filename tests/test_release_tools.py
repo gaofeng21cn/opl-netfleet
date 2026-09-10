@@ -483,6 +483,9 @@ class ReleaseToolsTests(unittest.TestCase):
                 '        print("\\n".join(row["depends"]))\n'
             )
             jsonfilter.chmod(0o755)
+            ucode = bin_dir / 'ucode'
+            ucode.write_text('#!/bin/sh\ncat >/dev/null\nprintf \"management-load\\n\" >>\"$NETFLEET_APK_LOG\"\n')
+            ucode.chmod(0o755)
             sleeper = bin_dir / 'sleep'
             sleeper.write_text('#!/bin/sh\nexit 0\n')
             sleeper.chmod(0o755)
@@ -528,6 +531,11 @@ class ReleaseToolsTests(unittest.TestCase):
             full_add = next(item for item in commands if ' --simulate add ' in item)
             self.assertIn('opl-netfleet-https-compat opl-netfleet-plugin-device-identity', full_add)
             self.assertIn(full_add.replace(' --simulate', ''), commands)
+            self.assertEqual(commands[-1], 'management-load')
+            log.write_text('')
+            repeated = subprocess.run([str(INSTALLER)], env={**env, 'NETFLEET_INSTALLED': 'opl-netfleet opl-netfleet-kernel opl-netfleet-plugin-https-compat', 'NETFLEET_INSTALL_PROFILE': 'full'}, text=True, capture_output=True)
+            self.assertEqual(repeated.returncode, 0, repeated.stderr)
+            self.assertNotIn('management-load', log.read_text())
             self.assertEqual('https://fixture.invalid/release/compat-packages.adb\n',
                 (repository.parent / 'opl-netfleet-compat.list').read_text())
             self.assertFalse(any('enable' in item for item in commands))

@@ -41,6 +41,11 @@ case "$compat_feed" in
 esac
 case "$compat_feed" in *[[:space:]]*) die 'compatibility feed URL must not contain whitespace' ;; esac
 
+load_https=0
+if [ "$install_profile" = full ] && ! apk info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1; then
+ load_https=1
+fi
+
 work=$(mktemp -d "${TMPDIR:-/tmp}/netfleet-install.XXXXXX")
 cleanup() {
 	rm -rf -- "$work"
@@ -131,5 +136,27 @@ elif ! apk info -e opl-netfleet >/dev/null 2>&1 || ! apk info -e luci-app-netfle
 fi
 # Named upgrades leave satisfied system dependencies and newer plugins installed.
 apk --timeout 300 upgrade "$@"
+
+# First full installation exposes the optional management page without enabling
+# interception. Existing installations retain the administrator's load choice.
+if [ "$load_https" = 1 ]; then
+ ucode - "$work/load-https.json" <<'UC'
+import * as fs from 'fs';
+const main='/usr/libexec/opl-netfleet/main.uc';
+function quote(value) { return "'"+replace(value, /'/g, "'\\''")+"'"; }
+function call(args) {
+ const p=fs.popen(`ucode ${main} ${args}`),r=json(p.read('all')),rc=p.close();
+ if(rc||r?.ok!==true) die(sprintf('HTTPS management load failed: %J',r));
+ return r.result;
+}
+const row=filter(call('plugins-list').plugins,p=>p.id=='https-compat'&&p.instance=='default')[0];
+if(!row) die('HTTPS management package missing');
+if(!row.loaded) {
+ fs.writefile(ARGV[0],sprintf('%J',{request:{id:row.id,action:'load',revision:row.revision,confirm:true}}));
+ fs.chmod(ARGV[0],0600);
+ call(`plugin-call ${quote(ARGV[0])}`);
+}
+UC
+fi
 
 printf 'NetFleet packages installed from %s; open LuCI to review and confirm first takeover.\n' "$feed_base"
