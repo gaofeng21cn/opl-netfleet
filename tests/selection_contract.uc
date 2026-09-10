@@ -280,6 +280,21 @@ if (!result.ok || result.region_id != "near" || result.reason != "followed_capab
 	exit(1);
 }
 
+// Follow the same eligible node, and choose the fastest permitted alternative when excluded.
+const parent = { provider_id: "p1", candidate_id: "common", region_id: "near", delay_ms: 47 };
+result = choose_automatic([
+ candidate("common", "p1", "near", 47, 10, "primary", true, "ai-compatible"),
+ candidate("alternative", "p2", "fast", 51, 10, "primary", true, "ai-compatible")
+], policy, "ai-compatible", null, "near", parent);
+if (!result.ok || result.candidate_id != "common" || result.delay_ms != parent.delay_ms)
+ die("follower must share eligible node and delay");
+const excluded_parent = { provider_id: "p0", candidate_id: "excluded", region_id: "blocked" };
+result = choose_automatic([
+ candidate("allowed-fast", "p1", "near", 47, 10, "primary", true, "ai-compatible"),
+ candidate("allowed-slow", "p2", "fast", 51, 10, "primary", true, "ai-compatible")
+], policy, "ai-compatible", null, "blocked", excluded_parent);
+if (!result.ok || result.candidate_id != "allowed-fast") die("excluded parent must choose fastest allowed node");
+
 print("selection_contract_ok\n");
 
 {
@@ -316,5 +331,33 @@ services["selection.round"]={automatic_round:(p,m,e,n,s,b,st,pm,pr,shared)=>{kep
 factory({argv:[],use:name=>services[name]??{}}).automatic_select_action(policy,"standard",{},"manual","luci");
 if(kept_current!=true)die("manual remeasure bypassed region stickiness");
 
+}
+{
+const factory = loadfile(replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet/plugins/selection/lib/round.uc"))() ;
+let samples = 0, healthy = true;
+const state = {proxies: {shared: {all: ["common"], now: "common"}}};
+const services = {
+ "mihomo.controller": {proxies: () => state, proxy_providers: () => ({providers: {}})},
+ "mihomo.latency": {measure: () => { samples++; return {target: speed_url, results: healthy ? {shared: {status: "ok", delay_ms: 47}} : {}}; }, complete_from_fresh_history: round => round},
+ "mihomo.paths": {selection_group: entry => entry.name, reset_candidate_groups: () => true,
+  candidate_provider_leaves_ready: () => true, candidate_group_names: entry => map(entry.candidate_groups, g => g.name)},
+ "models.selector": {provider_group_leaf: () => "common", provider_group_measurement_reason: () => null, provider_round_summary: () => ({})},
+ "selection.algorithm": use("selection.algorithm"), "models.status": {resolve_runtime: () => ({region_id: "fast"})},
+ "subscriptions.facts": {provider_quotas: () => ({})}
+};
+const round = factory({use: name => services[name]}).automatic_round;
+const entry = {name: "first", providers: {p1: {source_name: "source"}}, candidate_groups: [{name: "shared", provider: "p1", region: "near", role: "primary", filter: "near"}]};
+const manifest = {generated_groups: {standard: entry, "ai-compatible": {...entry, name: "second"}}};
+const local_policy = {...policy, checks: {latency: {url: speed_url}}};
+const shared = {entries: {}, prepared: true};
+const first = round(local_policy, manifest, entry, "standard", "fixture", true, state, true, null, shared);
+const second = round(local_policy, manifest, manifest.generated_groups["ai-compatible"], "ai-compatible", "fixture", true, state, true, "near", shared, first.decision);
+if (samples != 1 || !second.ok || first.decision.candidate_id != second.decision.candidate_id || first.decision.delay_ms != second.decision.delay_ms)
+ die("two exits must share a single measured URLTest owner and delay");
+healthy = false;
+const failed_shared = {entries: {}, prepared: true};
+round(local_policy, manifest, entry, "standard", "fixture", true, state, false, null, failed_shared);
+const failed = round(local_policy, manifest, manifest.generated_groups["ai-compatible"], "ai-compatible", "fixture", true, state, false, null, failed_shared);
+if (samples != 2 || failed.ok) die("same failed measurement must not be retried under another exit name");
 }
 release_services();

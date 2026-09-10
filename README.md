@@ -108,6 +108,18 @@ macOS 本机 MVP 的构建、使用和验证见[macOS 开发指南](docs/develop
 uclient-fetch -q -O /tmp/install-netfleet.sh https://github.com/gaofeng21cn/opl-netfleet/releases/latest/download/install-netfleet.sh && sh /tmp/install-netfleet.sh
 ```
 
+需要全功能安装时，在同一安装入口选择 `NETFLEET_INSTALL_PROFILE=full`。可选包源必须提供
+签名的 `compat-packages.adb`、`compat-public-key.pem` 与对应 APK；默认与产品包源同址，
+分开托管时由 `NETFLEET_COMPAT_FEED_BASE` 指定。没有完整依赖时安装失败，不悄悄降为基础组合。
+
+```sh
+NETFLEET_INSTALL_PROFILE=full sh /tmp/install-netfleet.sh
+```
+
+全功能指安装 HTTPS 引擎和 Device identity 等可选能力。HTTPS 默认关闭，保留已配置的规则和信任，
+需要时从插件配置页一键开启。已有安装的功能开关不会因选择安装组合而改变。
+
+
 该命令只安装 APK 公钥、软件源和程序文件，不写入 policy、订阅或 Nikki mixin，也不自动接管网络。
 
 安装完成后，打开 LuCI 的“服务 -> NetFleet”。空白设备先选择“首次接入 Mihomo”，明确确认下载订阅及网络接管；使用已运行 Nikki 时直接进入发现。随后进入共享首次设置：

@@ -525,6 +525,7 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 	}
 
 	const generated_groups = {};
+	const shared_candidates = {};
 	for (let binding_index = 0; binding_index < length(generation_capabilities); binding_index++) {
 		const capability = generation_capabilities[binding_index];
 		const capability_bindings = bindings_by_capability[capability] ?? [];
@@ -589,8 +590,10 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 				}
 				push_unique(authorized_filters, filter);
 				const region_display = region_display_name(policy, mapping.region);
-				const region_group = region_group_name(capability_name, region_display, source_display);
-				if (group_index(compiled_groups, region_group) >= 0) {
+				const resource = sprintf("%J", [source.source_name, mapping.region, filter, leaf_tolerance]);
+				const existing_candidate = shared_candidates[resource];
+				const region_group = existing_candidate ?? region_group_name(capability_name, region_display, source_display);
+				if (existing_candidate == null && group_index(compiled_groups, region_group) >= 0) {
 					return { ok: false, errors: [`generated region group identity already exists: ${region_group}`] };
 				}
 				const candidate = {
@@ -608,7 +611,8 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 					candidates_by_region[mapping.region] = { primary: [], reserve: [] };
 				}
 				push(candidates_by_region[mapping.region][provider.role], region_group);
-				push(compiled_groups, {
+				shared_candidates[resource] = region_group;
+				if (existing_candidate == null) push(compiled_groups, {
 					name: region_group,
 					type: "url-test",
 					use: [source.source_name],

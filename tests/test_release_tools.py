@@ -519,6 +519,18 @@ class ReleaseToolsTests(unittest.TestCase):
                     expected.append('--timeout 300 upgrade opl-netfleet luci-app-netfleet '
                                     'opl-netfleet-kernel opl-netfleet-plugin-dashboard opl-netfleet-plugin-selection')
                     self.assertEqual(expected, log.read_text().splitlines())
+            (feed / 'compat-public-key.pem').write_bytes((feed / 'opl-netfleet-apk.pem').read_bytes())
+            log.write_text('')
+            result = subprocess.run([str(INSTALLER)], env={**env, 'NETFLEET_INSTALLED': '',
+                'NETFLEET_INSTALL_PROFILE': 'full'}, text=True, capture_output=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            commands = log.read_text().splitlines()
+            full_add = next(item for item in commands if ' --simulate add ' in item)
+            self.assertIn('opl-netfleet-https-compat opl-netfleet-plugin-device-identity', full_add)
+            self.assertIn(full_add.replace(' --simulate', ''), commands)
+            self.assertEqual('https://fixture.invalid/release/compat-packages.adb\n',
+                (repository.parent / 'opl-netfleet-compat.list').read_text())
+            self.assertFalse(any('enable' in item for item in commands))
             self.assertEqual((feed / 'opl-netfleet-apk.pem').read_bytes(), (keys / 'opl-netfleet-apk.pem').read_bytes())
             self.assertEqual('https://fixture.invalid/release/packages.adb\n', repository.read_text())
             for failures in (1, 3):

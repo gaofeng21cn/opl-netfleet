@@ -2,7 +2,7 @@
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let wait_for_group_member, selection_group, provider_source_for_group, candidate_leaf_wait_seconds, measured_group_leaf, refresh_data_fallback, wait_for_preferred_runtime, capture_previous_choice, activate_preferred_choice, region_for_choice, activate_manual_choice, activate_direct_fallback, activate_all_direct_fallbacks, candidate_group_names, reset_candidate_groups, candidate_provider_leaves_ready, wait_for_candidate_provider_leaves, restore_runtime_selections, capture_runtime_selections;
+let wait_for_group_member, selection_group, provider_source_for_group, candidate_leaf_wait_seconds, refresh_data_fallback, wait_for_preferred_runtime, capture_previous_choice, activate_preferred_choice, region_for_choice, activate_manual_choice, activate_direct_fallback, activate_all_direct_fallbacks, candidate_group_names, reset_candidate_groups, candidate_provider_leaves_ready, wait_for_candidate_provider_leaves, restore_runtime_selections, capture_runtime_selections;
 
 const proxies = context.use("mihomo.controller").proxies;
 const proxy_providers = context.use("mihomo.controller").proxy_providers;
@@ -55,33 +55,14 @@ candidate_leaf_wait_seconds = function(policy) {
 	return seconds > 30 ? 30 : seconds;
 };
 
-measured_group_leaf = function(secret, entry, group, policy) {
-	const round = measure_latency(secret, group, policy.checks);
-	const source_name = provider_source_for_group(entry, group);
-	let result = null;
-	// A completed delay request can precede the URLTest/provider health projection.
-	// Wait for the same measured leaf; do not issue another measurement or pick one.
-	const attempts = candidate_leaf_wait_seconds(policy);
-	for (let attempt = 0; attempt < attempts; attempt++) {
-		const state = proxies(secret);
-		const provider_state = proxy_providers(secret, 1)?.providers ?? null;
-		const leaf = provider_group_leaf(state?.proxies, provider_state, source_name, group, policy.checks.latency.url);
-		result = { ok: leaf != null && round?.results?.[leaf]?.status == "ok",
-			leaf: leaf, source_name: source_name, round: round, state: state, provider_state: provider_state };
-		if (result.ok || round.status != "ok") break;
-		if (attempt + 1 < attempts) system("sleep 1");
-	}
-	return result;
-};
-
 refresh_data_fallback = function(secret, entry, policy, provider_state, selected_group) {
 	// Confirm only the chosen path. Traversing all visible branches can overwrite
 	// its healthy wrapper with a failed lazy fallback during initial convergence.
 	const round = selected_group == null ? measure_latency(secret, entry.name, policy.checks) : null;
-	if (selected_group != null && (!unfix_proxy(secret, selected_group) ||
-		!test_group_path(secret, selected_group, policy.checks)))
-		return { ok: false, error: "selected_path_probe_failed", round: null, runtime: null };
+	if (selected_group != null && !unfix_proxy(secret, selected_group))
+		return { ok: false, error: "candidate_group_reset_failed", round: null, runtime: null };
 	if (selected_group != null) {
+		// The selected leaf already has this round's speed evidence. Do not remeasure it.
 		// Mihomo caches health independently for each URL. A latency test on the
 		// candidate cannot revive a selector or wrapper failed by a business URL.
 		// Refresh only the bound chain, from the inner selector to the outer guard.
@@ -166,12 +147,14 @@ capture_previous_choice = function(secret, entry, required) {
 	return { ok: true, choice: choice };
 };
 
-activate_preferred_choice = function(secret, entry, choice, policy, after_restart, verify_probes) {
+activate_preferred_choice = function(secret, entry, choice, policy, after_restart, verify_probes, measurement) {
 	const selector = selection_group(entry);
 	if (!wait_for_group_member(secret, selector, choice) || !select_proxy(secret, selector, choice)) {
 		return { ok: false, error: "selector_write_failed", choice: choice };
 	}
-	const leaf = measured_group_leaf(secret, entry, choice, policy);
+	const state = proxies(secret), provider_state = proxy_providers(secret, 1)?.providers ?? null;
+	const current = provider_group_leaf(state?.proxies, provider_state, provider_source_for_group(entry, choice), choice, policy.checks.latency.url);
+	const leaf = { ok: measurement?.group == choice && current != null && current == measurement?.candidate_id, leaf: current, provider_state };
 	if (!leaf.ok) {
 		return { ok: false, error: "selected_leaf_unavailable", choice: choice, leaf: leaf.leaf };
 	}
@@ -419,5 +402,5 @@ capture_runtime_selections = function(manifest) {
 	return { ok: true, selections: selections };
 };
 
-return { wait_for_group_member, selection_group, provider_source_for_group, candidate_leaf_wait_seconds, measured_group_leaf, refresh_data_fallback, wait_for_preferred_runtime, capture_previous_choice, activate_preferred_choice, region_for_choice, activate_manual_choice, activate_direct_fallback, activate_all_direct_fallbacks, candidate_group_names, reset_candidate_groups, candidate_provider_leaves_ready, wait_for_candidate_provider_leaves, restore_runtime_selections, capture_runtime_selections };
+return { wait_for_group_member, selection_group, provider_source_for_group, candidate_leaf_wait_seconds, refresh_data_fallback, wait_for_preferred_runtime, capture_previous_choice, activate_preferred_choice, region_for_choice, activate_manual_choice, activate_direct_fallback, activate_all_direct_fallbacks, candidate_group_names, reset_candidate_groups, candidate_provider_leaves_ready, wait_for_candidate_provider_leaves, restore_runtime_selections, capture_runtime_selections };
 };

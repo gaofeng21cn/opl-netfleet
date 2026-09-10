@@ -30,6 +30,17 @@ case "$feed_base" in
 	*[[:space:]]*) die 'feed URL must not contain whitespace' ;;
 esac
 
+install_profile=${NETFLEET_INSTALL_PROFILE:-default}
+case "$install_profile" in default|full) ;; *) die 'install profile must be default or full' ;; esac
+compat_feed=${NETFLEET_COMPAT_FEED_BASE:-$feed_base}
+compat_feed=${compat_feed%/}
+case "$compat_feed" in
+ https://*) ;;
+ http://*) [ "${NETFLEET_ALLOW_INSECURE_FEED:-0}" = 1 ] || die 'HTTP compatibility feed requires NETFLEET_ALLOW_INSECURE_FEED=1' ;;
+ *) die 'compatibility feed URL must use HTTPS' ;;
+esac
+case "$compat_feed" in *[[:space:]]*) die 'compatibility feed URL must not contain whitespace' ;; esac
+
 work=$(mktemp -d "${TMPDIR:-/tmp}/netfleet-install.XXXXXX")
 cleanup() {
 	rm -rf -- "$work"
@@ -57,6 +68,14 @@ fetch "$feed_base/$key_name" "$key_download"
 grep -Fq -- '-----BEGIN PUBLIC KEY-----' "$key_download" || die 'downloaded APK public key is invalid'
 grep -Fq -- '-----END PUBLIC KEY-----' "$key_download" || die 'downloaded APK public key is invalid'
 
+# Fetch the optional key before changing package sources. A missing full feed
+# must not silently degrade a requested full installation to the default set.
+if [ "$install_profile" = full ]; then
+ fetch "$compat_feed/compat-public-key.pem" "$work/compat-public-key.pem"
+ grep -Fq -- '-----BEGIN PUBLIC KEY-----' "$work/compat-public-key.pem" || die 'invalid compatibility public key'
+ grep -Fq -- '-----END PUBLIC KEY-----' "$work/compat-public-key.pem" || die 'invalid compatibility public key'
+fi
+
 keys_dir=${NETFLEET_APK_KEYS_DIR:-/etc/apk/keys}
 repository_file=${NETFLEET_APK_REPOSITORY_FILE:-/etc/apk/repositories.d/opl-netfleet.list}
 repository_dir=$(dirname "$repository_file")
@@ -71,6 +90,14 @@ printf '%s/packages.adb\n' "$feed_base" >"$repository_staged"
 chmod 0644 "$repository_staged"
 mv -f "$key_staged" "$key_target"
 mv -f "$repository_staged" "$repository_file"
+if [ "$install_profile" = full ]; then
+ cp "$work/compat-public-key.pem" "$keys_dir/.compat-public-key.pem.$$"
+ chmod 0644 "$keys_dir/.compat-public-key.pem.$$"
+ mv -f "$keys_dir/.compat-public-key.pem.$$" "$keys_dir/compat-public-key.pem"
+ printf '%s/compat-packages.adb\n' "$compat_feed" >"$repository_dir/.opl-netfleet-compat.list.$$"
+ chmod 0644 "$repository_dir/.opl-netfleet-compat.list.$$"
+ mv -f "$repository_dir/.opl-netfleet-compat.list.$$" "$repository_dir/opl-netfleet-compat.list"
+fi
 
 for index_attempt in 1 2 3; do
 	if apk --timeout 300 update; then break; fi
@@ -93,7 +120,13 @@ for dependency in $dependencies; do
 	esac
 done
 [ "$#" -gt 2 ] || die 'product package dependencies are missing'
-if ! apk info -e opl-netfleet >/dev/null 2>&1 || ! apk info -e luci-app-netfleet >/dev/null 2>&1; then
+if [ "$install_profile" = full ]; then
+ set -- "$@" opl-netfleet-plugin-https-compat opl-netfleet-https-compat opl-netfleet-plugin-device-identity
+ # Resolve the entire composition before installing any package. No service
+ # enable action is issued here; package hooks preserve existing user choices.
+ apk --timeout 300 --simulate add "$@" >/dev/null || die 'full installation dependencies unavailable; packages were not changed'
+ apk --timeout 300 add "$@"
+elif ! apk info -e opl-netfleet >/dev/null 2>&1 || ! apk info -e luci-app-netfleet >/dev/null 2>&1; then
 	apk --timeout 300 add opl-netfleet luci-app-netfleet
 fi
 # Named upgrades leave satisfied system dependencies and newer plugins installed.

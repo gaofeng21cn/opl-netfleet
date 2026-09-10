@@ -92,7 +92,7 @@ automatic_select_action = function(policy, capability, evidence, trigger, initia
 		const parent = policy.capabilities?.[name]?.prefer_region_from;
 		const preferred_region = parent == null ? null : results[parent]?.decision?.region_id;
 		const result = automatic_round(policy, manifest, manifest.generated_groups[name], name, secret,
-			baseline_probes.ok, state, provider_measurement_ok, preferred_region, shared);
+			baseline_probes.ok, state, provider_measurement_ok, preferred_region, shared, parent == null ? null : results[parent]?.decision);
 		results[name] = result;
 		if (!result.ok) {
 			const decision = result.decision ?? { error: result.error };
@@ -114,7 +114,7 @@ automatic_select_action = function(policy, capability, evidence, trigger, initia
 		const result = results[name];
 		operation_update("applying", { subject: name, total: length(automatic_names), completed: i });
 		const activation = activate_preferred_choice(secret, manifest.generated_groups[name],
-			result.decision.group, policy, false, false);
+			result.decision.group, policy, false, false, result.decision);
 		activations[name] = activation;
 		if (!activation.ok) {
 			const restored = baseline_probes.ok &&

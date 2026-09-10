@@ -114,6 +114,22 @@ const providers = {
 	backup: { path: "/tmp/backup.yaml", runtime_path: "/tmp/backup.yaml", display_name: "Backup机场", profile: { proxies: [{ name: "far-1" }] } }
 };
 const result = compile(profile, policy, "source", "recovery", "policy", providers);
+// Equivalent candidates share the actual URLTest owner, without expanding authorization.
+const shared_policy = json(sprintf("%J", policy));
+shared_policy.capabilities["ai-compatible"].leaf_switch_margin_ms = 150;
+const shared_result = compile(profile, shared_policy, "source", "recovery", "policy", providers);
+const shared_standard = shared_result.manifest.generated_groups.standard.candidate_groups;
+const shared_ai = shared_result.manifest.generated_groups["ai-compatible"].candidate_groups;
+if (!shared_result.ok || length(shared_ai) != 2) die("shared candidate compilation failed");
+for (let group in shared_ai) {
+ const parent = filter(shared_standard, item => item.provider == group.provider && item.region == group.region)[0];
+ if (group.region != "near" || parent?.name != group.name ||
+     length(filter(shared_result.profile["proxy-groups"], item => item.name == group.name)) != 1)
+  die("equivalent URLTest duplicated or excluded region authorized");
+ const separate = filter(result.manifest.generated_groups["ai-compatible"].candidate_groups,
+  item => item.provider == group.provider && item.region == group.region)[0];
+ if (separate?.name == parent.name) die("different leaf tolerance must retain independent URLTest");
+}
 const groups = {};
 for (let i = 0; i < length(result.profile?.["proxy-groups"] ?? []); i++) {
 	const group = result.profile["proxy-groups"][i];

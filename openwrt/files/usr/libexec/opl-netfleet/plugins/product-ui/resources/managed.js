@@ -643,7 +643,7 @@ function componentsPage(controller) {
 		if (plugin.revision) controls.push(button('运行与管理', function() { pluginDialog(controller, plugin); }, active));
 		moduleRows.push(E('tr', {}, [ E('td', {}, [ E('strong', { 'title': plugin.package || '' }, plugin.label), E('small', {}, plugin.runtime === 'service' ? '功能插件' : '进程插件') ]),
 			E('td', {}, E('strong', {}, plugin.installed_version || plugin.version || '未知版本')),
-			E('td', {}, plugin.reason ? errorLabel(plugin.reason) : plugin.enabled === true ? '已启用' : '可按需加载'), E('td', { 'class': 'netfleet-component-actions' },
+			E('td', {}, plugin.reason ? errorLabel(plugin.reason) : plugin.enabled === false ? '已停用' : plugin.runtime === 'service' ? '可用' : '可按需加载'), E('td', { 'class': 'netfleet-component-actions' },
 				controls) ]));
 	});
 	(snapshot.extensions || []).filter(function(extension) { return extension.kind === 'optional'; }).forEach(function(extension) {
@@ -683,7 +683,7 @@ function componentsPage(controller) {
 	if (controller.componentsSection !== 'software') content.push(E('section', { 'class': 'netfleet-component-modules' }, [
 		E('div', { 'class': 'netfleet-section-heading' }, [ E('a', { 'class': 'netfleet-inline-link', 'href': L.url('admin/system/packages'), 'target': '_blank', 'rel': 'noopener' }, '安装与卸载软件包 ↗') ]),
 		E('div', { 'class': 'netfleet-component-table' }, E('table', { 'class': 'table' }, [
-			E('thead', {}, E('tr', {}, ['插件', '安装版本', '状态', '操作'].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, moduleRows.length ? moduleRows : [E('tr', {}, E('td', { 'colspan': 4 }, '当前没有可管理的功能插件'))])
+			E('thead', {}, E('tr', {}, ['插件', '安装版本', '可用性', '操作'].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, moduleRows.length ? moduleRows : [E('tr', {}, E('td', { 'colspan': 4 }, '当前没有可管理的功能插件'))])
 		]))
 	]));
 	content.push(E('details', { 'class': 'netfleet-component-details' }, [ E('summary', {}, '技术详情：更新源与安装信息'),

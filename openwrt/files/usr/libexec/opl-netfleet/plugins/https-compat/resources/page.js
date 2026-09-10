@@ -47,17 +47,18 @@ export async function mount(context) {
       if (key) [...root.querySelectorAll('button,input,a,summary')].find(node => keyOf(node) === key)?.focus({ preventScroll: true });
     },
   };
-  let timer, deadline = 0;
+  let timer;
   controller.follow = () => {
     clearTimeout(timer);
+    if (document.hidden || context.signal.aborted) return;
     const state = controller.compatibility;
-    const pending = state && ((!state.requested && state.active_connections > 0) ||
-      state.requested && ['disabled', 'not_ready', 'recovering', 'rules_recovering', 'engine_config_pending', 'engine_starting', 'engine_restarted'].includes(state.reason) ||
-      state.reason === 'draining');
-    if (!pending) { deadline = 0; return; }
-    if (!deadline) deadline = Date.now() + 120000;
-    if (Date.now() < deadline && !document.hidden && !context.signal.aborted)
-      timer = setTimeout(() => void manager.refresh(controller), 3000);
+    // Availability changes asynchronously, including reasons unknown to this UI.
+    // A displayed bypass is never grounds for abandoning current-state readback.
+    const draining = state?.active_connections > 0 && !state.requested;
+    if (controller.compatibilityLive === false || state?.requested || draining) {
+      const interval = draining || state?.requested && !state.intercepting ? 3000 : 10000;
+      timer = setTimeout(() => void manager.refresh(controller), interval);
+    }
   };
   const visibility = () => { clearTimeout(timer); if (!document.hidden) void manager.refresh(controller); };
   document.addEventListener('visibilitychange', visibility);

@@ -892,6 +892,8 @@ let page = managed.components(owner);
 fire(button(page, '配置'));
 assert.deepEqual(opened, ['plugin:https-compat:settings']);
 assert(button(page, '运行与管理'));
+assert(text(page).includes('可用性'));
+assert(!text(page).includes('已启用'));
 plugin.enabled = false;
 page = managed.components(owner);
 assert(button(page, '配置').disabled, 'disabled management plugin must not be loaded by opening its configuration');
@@ -1117,6 +1119,35 @@ assert.equal(cache.read(), null);
 values.set('device-a:revision-a', 'x'.repeat(128 * 1024 + 1));
 assert.equal(cache.read(), null);
 assert.doesNotThrow(() => displayCache('disabled', () => { throw Error('disabled'); }).write(state, Date.now(), 'rules'));
+""")
+
+    def test_compatibility_page_keeps_following_bypass_and_cleans_up(self):
+        self.run_js(r"""
+const source = fs.readFileSync(path.join(resources, '../../https-compat/resources/page.js'), 'utf8')
+ .replace(/^import .*;$/gm, '').replace('export async function mount', 'async function mount')
+ .replace('import.meta.url', "'https://router.test/page.js'");
+const timers = new Map(); let serial = 0, view, dispose, refreshes = 0;
+const signal = { aborted: false };
+const dom = () => ({ append() {}, contains() { return false; }, querySelectorAll() { return []; }, replaceChildren() {}, remove() {} });
+global.document = { hidden: false, createElement: dom, addEventListener() {}, removeEventListener() {} };
+global.L.require = async () => ({});
+const manager = { render: () => ({}), refresh: async c => { view = c; refreshes++; c.follow(); } };
+const mount = new Function('createManager', 'displayCache', 'setTimeout', 'clearTimeout', source + ';return mount;')(
+ () => manager, () => ({ read: () => null, write() {} }),
+ (fn, ms) => { timers.set(++serial, {fn, ms}); return serial; }, id => timers.delete(id));
+await mount({signal, container: dom(), scope: {effect: cb => { dispose = cb; }}});
+assert.equal([...timers.values()][0].ms, 10000, 'failed or initial reads keep following');
+for (const reason of ['lan_access_not_equivalent', 'rules_bypassed', 'future_reason']) {
+ view.compatibilityLive = true; view.compatibility = {requested: true, intercepting: false, reason}; view.follow();
+ assert.equal(timers.size, 1); assert.equal([...timers.values()][0].ms, 3000);
+}
+view.compatibility.intercepting = true; view.follow();
+assert.equal([...timers.values()][0].ms, 10000, 'active traffic stats keep refreshing');
+document.hidden = true; view.follow(); assert.equal(timers.size, 0);
+document.hidden = false; view.compatibility = {requested: false, active_connections: 0}; view.follow();
+assert.equal(timers.size, 0, 'disabled and drained stays idle');
+view.compatibility.active_connections = 2; view.follow(); assert.equal(timers.size, 1);
+signal.aborted = true; dispose(); assert.equal(timers.size, 0);
 """)
 
     def test_unmanaged_compatibility_preserves_revision_bound_disable(self):

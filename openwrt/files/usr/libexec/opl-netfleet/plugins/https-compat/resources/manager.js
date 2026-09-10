@@ -34,6 +34,7 @@ function reason(value) {
 		transparent_chain_failed: '透明接管入口异常，已旁路',
 		engine_unavailable: '兼容引擎未就绪', engine_config_pending: '等待引擎载入配置',
 		engine_starting: '兼容引擎启动中，当前旁路',
+		lan_access_not_equivalent: '局域网访问策略与转发出站策略不等价，当前旁路',
 		lease_service_timeout: '网关控制链超时，当前旁路', lease_service_unavailable: '网关控制链不可用，当前旁路',
 		lease_response_too_large: '网关控制响应异常，当前旁路', compatibility_controller_failed: '兼容管理进程异常，当前旁路',
 		native_gateway_unavailable: '原生网关暂不可用', native_gateway_not_ready: '原生网关尚未就绪',

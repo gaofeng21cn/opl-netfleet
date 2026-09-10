@@ -82,3 +82,7 @@ path = Path(output)
 (path / 'device-identity-manifest.json').write_text(json.dumps({'source_commit': commit, 'source_tree': tree,
     'artifact': identity, 'sha256': hashlib.sha256((path / identity).read_bytes()).hexdigest()}, sort_keys=True) + '\n')
 PY
+
+# Optional feed is a separate composition: the default product never pulls it in.
+"$sdk/staging_dir/host/bin/apk" mkndx --root "$sdk" --keys-dir "$sdk" --allow-untrusted \
+  --output "$output/compat-packages.adb" --sign "$sdk/private-key.pem" "$artifact" "$identity_artifact"

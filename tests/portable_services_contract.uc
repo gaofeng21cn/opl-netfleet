@@ -158,7 +158,7 @@ try {
 	pop(provider_state[source].proxies);
 	const child = clone(entry);
 	policy.capabilities.secondary = {enabled: true, mode: "automatic"};
-	child.candidate_groups = map(entry.candidate_groups, group => ({...group, name: group.name + "-secondary"}));
+	child.candidate_groups = clone(entry.candidate_groups);
 	manifest.generated_groups.secondary = child;
 	for (let i = 0; i < length(child.candidate_groups); i++) {
 		const original = entry.candidate_groups[i].name, name = child.candidate_groups[i].name;

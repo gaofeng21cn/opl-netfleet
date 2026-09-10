@@ -24,6 +24,7 @@ const controller_ready = context.use("mihomo.controller").controller_ready;
 const measure_providers = context.use("mihomo.latency").measure_providers;
 const capture_previous_choice = context.use("mihomo.paths").capture_previous_choice;
 const wait_for_group_member = context.use("mihomo.paths").wait_for_group_member;
+const reset_candidate_groups = context.use("mihomo.paths").reset_candidate_groups;
 const activate_preferred_choice = context.use("mihomo.paths").activate_preferred_choice;
 const activate_manual_choice = context.use("mihomo.paths").activate_manual_choice;
 const resolve_policy_source = context.use("mihomo.policy-source").resolve;
@@ -179,13 +180,18 @@ enable_action = function(policy, evidence, quiet) {
 	}
 	const provider_measurement_ok = length(automatic_names) == 0 ? null :
 		measure_providers(secret, automatic_provider_sources(manifest, automatic_names), policy.checks);
+	const shared = {entries: {}, prepared: true};
+	for (let capability in automatic_names)
+		if (!reset_candidate_groups(secret, manifest.generated_groups[capability]))
+			fail_enable_after_switch(policy, current, "candidate_group_reset_failed", {capability});
 	for (let i = 0; i < length(automatic_names); i++) {
 		const capability = automatic_names[i];
 		const entry = manifest.generated_groups[capability];
 		const parent = policy.capabilities?.[capability]?.prefer_region_from;
 		const preferred_region = parent == null ? null : automatic_results[parent]?.decision?.region_id;
 		const result = automatic_round(policy, manifest, entry, capability, secret, false,
-			enable_freshness_baseline, provider_measurement_ok, preferred_region);
+			enable_freshness_baseline, provider_measurement_ok, preferred_region, shared,
+			parent == null ? null : automatic_results[parent]?.decision);
 		if (!result.ok) {
 			fail_enable_after_switch(policy, current, result.error, {
 				capability: capability,
@@ -200,7 +206,7 @@ enable_action = function(policy, evidence, quiet) {
 		const entry = manifest.generated_groups[capability];
 		const activation = entry.mode == "automatic" ?
 			activate_preferred_choice(secret, entry, selections[capability].selected_group,
-				policy, true, false) :
+				policy, true, false, automatic_results[capability].decision) :
 			activate_manual_choice(secret, entry, selections[capability].user_choice,
 				policy, false);
 		if (!activation.ok) {

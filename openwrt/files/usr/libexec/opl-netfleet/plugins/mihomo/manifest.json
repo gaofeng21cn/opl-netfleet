@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "mihomo",
   "label": "Mihomo backend",
-  "version": "0.8.6",
+  "version": "0.8.7",
   "api_version": 1,
   "package": "opl-netfleet-plugin-mihomo",
   "services": {

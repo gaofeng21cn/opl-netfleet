@@ -31,7 +31,7 @@ generated_group = function(manifest, capability) {
 	return manifest?.generated_groups?.[capability];
 };
 
-choose_automatic = function(candidates, policy, capability, current_region, preferred_region) {
+choose_automatic = function(candidates, policy, capability, current_region, preferred_region, preferred_candidate) {
 	const margin = region_switch_margin(policy, capability);
 	const primary = eligible_candidates(candidates, capability, policy, "primary");
 	const reserve = eligible_candidates(candidates, capability, policy, "reserve");
@@ -61,7 +61,11 @@ choose_automatic = function(candidates, policy, capability, current_region, pref
 		} else if (current != null && current.region_id == fastest.region_id) {
 			reason = "current_region_fastest";
 		}
-		const selected = best_in_region(layer, selected_region);
+		const same = preferred_candidate == null ? null : filter(layer, candidate =>
+			candidate.provider_id == preferred_candidate.provider_id &&
+			candidate.candidate_id == preferred_candidate.candidate_id &&
+			candidate.region_id == preferred_candidate.region_id)[0];
+		const selected = same ?? best_in_region(layer, selected_region);
 		if (selected != null) {
 			return {
 				ok: true,

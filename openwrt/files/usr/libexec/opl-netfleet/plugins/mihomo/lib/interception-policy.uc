@@ -27,6 +27,7 @@ return function() {
         if (gateway.compatibility_ownership_guard!==true) return 'native_ownership_guard_missing';
         if (!gateway.router_proxy || !gateway.lan_proxy) return 'router_lan_paths_differ';
         if (gateway.source_bypass) return 'source_bypass_not_equivalent';
+        if (gateway.listener_identity_ready === false) return 'engine_starting';
         if (gateway.custom_lan_access) return 'lan_access_not_equivalent';
         if (length(profile.listeners ?? []) || length(profile['sub-rules'] ?? {})) return 'custom_listeners_or_subrules';
         const safe=['DOMAIN','DOMAIN-SUFFIX','DOMAIN-KEYWORD','DOMAIN-REGEX','GEOSITE','IP-CIDR','IP-CIDR6','IP-SUFFIX','IP-ASN','GEOIP','DST-PORT','NETWORK','MATCH'];

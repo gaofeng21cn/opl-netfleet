@@ -34,10 +34,33 @@ const policy = { checks: { latency: { url: "https://speed.test/204", timeout_ms:
 function check(value, reason) { if (!value) die(reason); }
 const ready = paths.wait_for_preferred_runtime("fixture", entry, "candidate", policy, {}, false);
 check(ready.preferred && !stale, "business URL health must revive the bound path");
-check(length(calls) == 3 && calls[0].group == "candidate" && calls[1].group == "preferred" &&
- calls[2].group == "inner" && calls[1].timeout == 15000 && calls[1].expected == 404 && calls[2].expected == 200, "probe only the chosen chain in dependency order with health timeout");
+check(length(calls) == 2 && calls[0].group == "preferred" &&
+ calls[1].group == "inner" && calls[0].timeout == 15000 && calls[0].expected == 404 && calls[1].expected == 200, "probe only the chosen chain in dependency order with health timeout");
 business_failed = true; stale = true; probe_count = 0;
 const failed = paths.wait_for_preferred_runtime("fixture", entry, "candidate", policy, {}, false);
-check(failed.error == "selected_business_path_probe_failed" && failed.probe == "path" && failed.method == "HEAD" && failed.expected_status == 404 && stale && length(calls) == 5,
+check(failed.error == "selected_business_path_probe_failed" && failed.probe == "path" && failed.method == "HEAD" && failed.expected_status == 404 && stale && length(calls) == 3,
  "business failure must stop before outer probe and remain distinct from latency success");
 print("path activation contracts passed\n");
+
+const policy_factory = loadfile(`${root}/plugins/mihomo/lib/interception-policy.uc`)()();
+const starting = { backend: 'native-mihomo', ready: true, compatibility_ownership_guard: true,
+ router_proxy: true, lan_proxy: true, custom_lan_access: true, listener_identity_ready: false };
+check(policy_factory.admission({rules: []}, starting) == 'engine_starting', 'unready engine must not masquerade as a LAN policy conflict');
+starting.listener_identity_ready = true;
+check(policy_factory.admission({rules: []}, starting) == 'lan_access_not_equivalent', 'real policy conflicts remain rejected');
+starting.custom_lan_access = false;
+check(policy_factory.admission({rules: []}, starting) == null, 'ready equivalent gateway admitted');
+
+let measures = 0, selected_leaf = 'leaf';
+services['mihomo.latency'].measure = () => { measures++; return {status:'ok'}; };
+services['mihomo.controller'].proxies = () => ({proxies: {preferred: {all:['candidate']}, visible: {all:['automatic']}}});
+services['models.selector'].provider_group_leaf = () => selected_leaf;
+services['models.activation'].preferred_runtime_ready = r => r.data_path == 'preferred';
+business_failed = false; stale = false;
+const activation_paths = factory({use: name => services[name]});
+const automatic_entry = {...entry, automatic_name: 'automatic'};
+const activated = activation_paths.activate_preferred_choice('fixture', automatic_entry, 'candidate', policy, false, false, {group:'candidate', candidate_id:'leaf'});
+check(activated.ok && measures == 0, 'activation must consume measured evidence without a second speed probe');
+selected_leaf = 'changed-leaf';
+const changed = activation_paths.activate_preferred_choice('fixture', automatic_entry, 'candidate', policy, false, false, {group:'candidate', candidate_id:'leaf'});
+check(!changed.ok && changed.error == 'selected_leaf_unavailable' && measures == 0, 'changed leaf cannot inherit prior speed evidence');

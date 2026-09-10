@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "selection-algorithm",
   "label": "Selection algorithms",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "api_version": 1,
   "package": "opl-netfleet-plugin-selection-algorithm",
   "services": {

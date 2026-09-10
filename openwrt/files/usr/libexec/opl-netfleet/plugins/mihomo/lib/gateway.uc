@@ -299,6 +299,9 @@ interception_snapshot = function(listener) {
 			const fields = split(line, ":");
 			if (length(fields) >= 3 && match(fields[2], /^[0-9]+$/)) accounts[kind][fields[0]] = int(fields[2]);
 		}
+	const listener_uid = accounts.user[listener.user];
+	const listener_identity_ready = engine?.running == true && engine_group != null && listener_uid != null &&
+		listener_uid > 0 && length(credentials.user) == 4 && !length(filter(credentials.user, id => id != listener_uid));
 	let custom = false;
 	for (let kind in ["router_access_control", "lan_access_control"]) {
 		let defaults = 0;
@@ -341,7 +344,7 @@ interception_snapshot = function(listener) {
 		compatibility_ownership_guard: ownership_guard, core_pid: process_state().pid, engine_pid: engine?.pid,
 		router_proxy: enabled("proxy", "router_proxy"), lan_proxy: enabled("proxy", "lan_proxy"),
 		ipv4_proxy: enabled("proxy", "ipv4_proxy"), ipv6_proxy: enabled("proxy", "ipv6_proxy"),
-		interfaces: interfaces, custom_lan_access: custom,
+		interfaces: interfaces, custom_lan_access: custom, listener_identity_ready: listener_identity_ready,
 		source_bypass: length(uci_value("proxy", "bypass_fwmark", [])) > 0,
 		dscp_bypass: map(uci_value("proxy", "bypass_dscp", []), value => int(value)) } };
 };
