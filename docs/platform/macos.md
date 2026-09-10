@@ -27,6 +27,19 @@ macOS 提供平台路径、凭据、Profile、订阅、进程与 Mihomo 后端�
 不能把 UCI、procd、nft 或 APK 的状态解释为 macOS 状态。窗口关闭不等于停止代理；退出应用
 必须完成自身网络状态恢复。
 
+### 组合根与替换面
+
+共享业务实现在 `openwrt/files/usr/libexec/opl-netfleet`，该目录下的内核、模型、编译、选择、
+证据与恢复插件由两个平台共同消费；macOS 构建时把它复制为应用的 `Resources/shared`，再叠加
+`desktop/ucode`，因此同名路径以桌面副本为准。平台差异集中在两个组合根：
+`openwrt/files/usr/share/opl-netfleet/system.json` 与 `desktop/ucode/system.json`。
+
+`desktop/ucode` 提供 `platform-macos` 插件、桌面入口 `main.uc`、宿主适配器与文件桥。macOS
+组合根用显式重绑替换平台服务（路径、运行时、进程、Profile、凭据、订阅、文件与 Mihomo
+后端），并只绑定本平台使用的共享服务：没有 gateway、TProxy 拦截与设备部署面。桌面宿主
+调用的 owner 命令、以及每个已绑定服务的依赖闭包，由 `tests/test_platform_composition.py`
+按内核解析语义静态校验，不需要 UCode、设备或已构建应用即可发现另一平台的漂移。
+
 显式代理核心由持有桌面所有权管道的独立父进程监督，管道断开后停止并回收核心；启动时核对
 持久 PID、启动时间与命令身份，清理上次自身遗留进程，不按进程名称批量终止代理。
 

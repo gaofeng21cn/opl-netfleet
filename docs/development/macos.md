@@ -61,6 +61,20 @@ Cmd+1 至 Cmd+6 切换页面，Cmd+R 刷新本机状态；关闭窗口仍保留�
 
 ## 验证
 
+仓库根目录的 `scripts/check-fast.sh` 已包含下方前五条：共享 UI 门禁、桌面生产构建与桌面
+运行契约，并按工具可用性显式列出延期项。需要真实 Mihomo、隔离状态目录或应用包的命令
+仍需按本节单独运行，它们的验证层面见[开发验证](validation.md)。
+
+要在本机先跑一遍共享业务的 UCode 合同，把仓库自己的固定运行时接到门禁上：
+
+```sh
+runtime="$(python3 scripts/macos/bootstrap.py)"
+PATH="$runtime/bin:$PATH" UCODE_LIB="$runtime/lib/ucode/*.so" ./scripts/check-fast.sh
+```
+
+该运行时没有 OpenWrt 的 libuci 与 `/proc`，所以 `adapter_contract`、`backend_contract` 和
+`operation_contract` 会列为延期并在 QEMU lane 执行；其余合同与 UI、桌面门禁都要在本机通过。
+
 ```sh
 cd ui
 bun run typecheck

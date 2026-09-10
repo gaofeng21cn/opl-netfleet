@@ -6,10 +6,25 @@
 ## 源码与 UI
 
 在仓库根目录运行 `scripts/check-fast.sh`，它检查 Git 空白错误、Python source/package/UI
-合同，并在本机有 UCode 时调用 `scripts/check-mvp.sh`。UCode 缺失会明确提示延期，不能
-把这部分视为通过。`scripts/check-full.sh` 加入完整 fake-device 部署矩阵；前端调整使用
-`scripts/check-ui.sh`。只改文档时检查相对链接、引用资产、示例命令是否存在与
-`git diff --check`，不以 Markdown 关键词或固定文本判断语义。
+合同，并在本机有 UCode 时调用 `scripts/check-mvp.sh`，在有 Bun 时调用 `scripts/check-ui.sh`
+并构建桌面生产入口，在有 Node 时运行 macOS 桌面运行契约。每个缺失工具都会明确提示延期，
+不能把延期项视为通过。`scripts/check-full.sh` 加入完整 fake-device 部署矩阵。只改文档时
+检查相对链接、引用资产、示例命令是否存在与 `git diff --check`，不以 Markdown 关键词或
+固定文本判断语义。
+
+两个平台共用一个内核与业务插件，但各有自己的组合根：OpenWrt 读
+`openwrt/files/usr/share/opl-netfleet/system.json`，macOS 读 `desktop/ucode/system.json`
+并叠加 `desktop/ucode/plugins`。`tests/test_platform_composition.py` 按内核的服务解析语义
+静态检查两个组合根：绑定是否指向已启用且确实提供该服务的插件、依赖闭包与版本是否可解析、
+桌面宿主调用的命令是否由 macOS 组合根声明。它不需要 UCode、设备或已构建应用，因此共享
+插件新增平台依赖时会在源码门禁暴露，而不是等到某个平台运行时才失败。
+
+`UCODE` 与 `UCODE_LIB` 把共享源码门禁指向非默认位置的 UCode 运行时与模块目录，因此本机
+macOS 也能先跑共享业务合同，不必等到 QEMU。宿主原语只存在于对应平台：
+`adapter_contract.uc`、`backend_contract.uc` 与 `operation_contract.uc` 依赖 OpenWrt 的
+libuci 和 `/proc`，其他机器上由 `check-mvp.sh` 明确列为延期，不能视为通过；OpenWrt 侧
+继续由 QEMU lane 的全量 `tests/*_contract.uc` 执行，它是 `set -eu`，任何合同失败都会中断
+该阶段。
 
 算法证据的入口是 `tests/selection_contract.uc`、`tests/adapter_contract.uc` 和
 `tests/compiler_contract.uc`；三模式切换与失败恢复由 `tests/operating_mode_contract.uc` 覆盖；运行、状态和显示聚合分别由 `tests/activation_contract.uc`、
