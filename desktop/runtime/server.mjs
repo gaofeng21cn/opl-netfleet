@@ -6,6 +6,7 @@ import net from 'node:net';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { installBuiltin, verifyInstalledBuiltin } from './builtin.mjs';
 import { CoreOwner } from './core.mjs';
 import { NetworkOwner } from './network.mjs';
 import { privateDir, atomicJSON, readJSON, object, assert, run, requestBody, codeDigest } from './io.mjs';
@@ -14,6 +15,7 @@ const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const bundledWebRoot = path.join(desktopRoot, 'web');
 const webRoot = await fs.access(bundledWebRoot).then(() => bundledWebRoot, () => path.resolve(desktopRoot, '../ui/dist-desktop'));
 const sourceRoot = process.env.NETFLEET_SOURCE_ROOT ?? path.resolve(desktopRoot, '../openwrt/files/usr/libexec/opl-netfleet');
+const builtinRoot = process.env.NETFLEET_BUILTIN_ROOT ?? (await fs.access(path.resolve(desktopRoot, '../builtin')).then(() => path.resolve(desktopRoot, '../builtin'), () => path.resolve(desktopRoot, '../.build/macos/builtin')));
 const runtimeRoot = process.env.NETFLEET_RUNTIME_ROOT ?? path.join(os.homedir(), '.cache/opl-netfleet/macos/runtime');
 const option = name => { const index = process.argv.indexOf(name); return index < 0 ? null : process.argv[index + 1]; };
 const stateDir = path.resolve(option('--state') ?? path.join(os.homedir(), 'Library/Application Support/OPL NetFleet'));
@@ -52,6 +54,10 @@ const serialized = work => { const pending = queue.then(work); queue = pending.c
 async function saveState(patch) { state = { ...state, ...patch }; await atomicJSON(statePath, state); return { ok: true }; }
 async function freePort() { const server = net.createServer(); await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); }); const port = server.address().port; await new Promise(resolve => server.close(resolve)); return port; }
 async function ucode(action, args = []) {
+  // Mihomo -t parses configuration but loads file rules lazily. Check the
+  // shipped MRS bytes as well before declaring a bundle ready or starting it.
+  if (['compile', 'enable'].includes(action) && (await readJSON(path.join(stateDir, 'policy.json')))?.policy_source?.kind === 'bundle')
+    await verifyInstalledBuiltin(builtinRoot, stateDir);
   const result = await run(path.join(runtimeRoot, 'bin/ucode'), ['-L', `${runtimeRoot}/lib/ucode/*.so`, path.join(codeRoot, 'main.uc'), action, ...args], { env, timeout: 300000 });
   let value;
   try { value = JSON.parse(result.stdout.trim()); }
@@ -109,7 +115,7 @@ async function updateSubscription(id) {
   state = await readJSON(statePath);
   return { ok: true, result: { id, updated: true } };
 }
-async function discoverCandidate(profile, subscriptions, caches = {}, section = null) {
+async function discoverCandidate(profile, subscriptions, caches = {}, section = null, switchBuiltin = false) {
   const sources = [];
   for (const [id, item] of Object.entries(subscriptions)) {
     if (!item.enabled) continue;
@@ -119,7 +125,7 @@ async function discoverCandidate(profile, subscriptions, caches = {}, section = 
   }
   const candidate = path.join(stateDir, 'candidate-discovery.json');
   await atomicJSON(candidate, { current_profile: 'file:Original.json', current_profile_object: profile,
-    subscriptions: sources, section, policy: await readJSON(path.join(stateDir, 'policy.json')), target: 'macos', evidence_path: path.join(stateDir, 'evidence.json') });
+    subscriptions: sources, section, builtin: true, switch_builtin: switchBuiltin, policy: await readJSON(path.join(stateDir, 'policy.json')), target: 'macos', evidence_path: path.join(stateDir, 'evidence.json') });
   try { return await ucode('desktop-discover', [candidate]); }
   finally { await fs.unlink(candidate).catch(() => {}); }
 }
@@ -151,6 +157,15 @@ async function prepareSubscription(input) {
   try { await ucode('compile'); }
   catch { return { id, saved: true, ready: false, message: '订阅已保存，业务配置尚未编译成功。请在配置中检查并重新编译，代理仍未启动。' }; }
   return { id, saved: true, ready: true, message: `已更新 ${downloaded.profile.proxies.length} 条节点记录并编译。可在概览启动代理；本机流量接入未改变。` };
+}
+async function useBuiltin() {
+  assert(!(await core.status()).running, 'stop_proxy_before_policy_change');
+  const policy = await readJSON(path.join(stateDir, 'policy.json'));
+  assert(policy, 'initial_policy_needs_configuration');
+  const result = await discoverCandidate(null, state.subscriptions, {}, null, true);
+  await validatePolicy(result.policy);
+  await fileTransaction({ 'policy.json': result.policy }, () => ucode('compile'));
+  return { saved: true, ready: true, message: '已使用 NetFleet 内置策略：海外加速与 AI 出口独立选优。订阅和本机流量接入已保留。' };
 }
 async function configure(input, caches = null) {
   assert(!(await core.status()).running, 'stop_proxy_before_import');
@@ -198,7 +213,7 @@ async function recoverImport() {
   }
   await fs.unlink(journalPath);
 }
-async function fileTransaction(changes) {
+async function fileTransaction(changes, verify = async () => {}) {
   const before = {};
   for (const relative of Object.keys(changes)) {
     try { before[relative] = (await fs.readFile(path.join(stateDir, relative))).toString('base64'); }
@@ -210,6 +225,7 @@ async function fileTransaction(changes) {
       if (value === null) await fs.unlink(path.join(stateDir, relative)).catch(error => { if (error.code !== 'ENOENT') throw error; });
       else await atomicJSON(path.join(stateDir, relative), value);
     }
+    await verify();
     await fs.unlink(journalPath);
   } catch (error) { await recoverImport(); throw error; }
 }
@@ -242,6 +258,7 @@ async function action(input) {
   assert(object(input) && typeof input.action === 'string', 'invalid_action');
   switch (input.action) {
     case 'configure': return configure(input);
+    case 'use-builtin-policy': return useBuiltin();
     case 'subscriptions-set': return replaceSubscriptions(input.subscriptions);
     case 'subscription-prepare': return prepareSubscription(input);
     case 'save-policy': return savePolicy(input.policy);
@@ -395,6 +412,7 @@ async function main() {
     ownerPid: process.pid, helperPath: path.join(runtimeRoot, 'bin/netfleet-network-helper') });
   core = new CoreOwner({ stateDir, corePath: path.join(runtimeRoot, 'bin/mihomo'), getState: () => state, network, env });
   await core.reconcileStartup();
+  await installBuiltin(builtinRoot, stateDir);
   await saveState({});
   rpcServer = http.createServer(async (request, response) => {
     try { assert(request.method === 'POST' && request.url === '/rpc' && request.headers.authorization === `Bearer ${rpcToken}`, 'unauthorized');

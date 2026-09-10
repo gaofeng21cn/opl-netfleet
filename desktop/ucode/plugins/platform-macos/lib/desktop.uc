@@ -10,7 +10,11 @@ return function(context) {
 		if (argv[1] != null) {
 			const candidate = context.use('platform.storage').read_json(argv[1]);
 			const model = context.use('configuration.onboarding-model');
-			const discovery = model.draft(candidate);
+			const builtin = candidate.builtin == true ? context.use('platform.storage').read_json(
+				context.use('platform.paths').POLICY_SOURCE_DIR + '/base-v1.json') : null;
+			if (candidate.builtin == true && builtin == null) return { ok: false, error: 'builtin_policy_missing' };
+			if (candidate.switch_builtin == true) return { ok: true, result: { policy: model.use_builtin(candidate.policy, builtin) } };
+			const discovery = builtin != null ? model.draft_builtin(candidate, builtin) : model.draft(candidate);
 			return { ok: true, result: candidate.section == null ? discovery :
 				{ ...discovery, ...model.merge_provider(candidate.policy, discovery, candidate.section) } };
 		}

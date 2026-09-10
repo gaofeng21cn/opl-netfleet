@@ -2,6 +2,7 @@
 """Build the local macOS MVP app. No privileged installation or network takeover."""
 import argparse
 import json
+import importlib.util
 import platform
 from pathlib import Path
 import shutil
@@ -12,6 +13,9 @@ import tempfile
 from bootstrap import HERE, prepare, run, sha256, verify
 
 REPO = HERE.parents[1]
+spec = importlib.util.spec_from_file_location("builtin_assets", HERE / "builtin-assets.py")
+builtin_assets = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(builtin_assets)
 
 
 def build_icon(staging, resources):
@@ -70,6 +74,7 @@ def build(output, cache):
             shutil.copytree(source, resources / "desktop" / name,
                             ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "node_modules"))
         shutil.copytree(web, resources / "desktop/web")
+        builtin_assets.prepare_builtin(resources / "builtin", cache / "rulesets")
         shutil.copytree(REPO / "openwrt/files/usr/libexec/opl-netfleet", resources / "shared")
         (resources / "runtime/bin").mkdir(parents=True)
         for name in ("ucode", "node", "mihomo", "yq", "sha256sum"):
@@ -81,6 +86,11 @@ def build(output, cache):
                 shutil.rmtree(path) if path.is_dir() else path.unlink()
         shutil.copytree(runtime / "licenses", resources / "licenses")
         shutil.copy2(REPO / "LICENSE", resources / "licenses/OPL-NetFleet-LICENSE")
+        upstream = json.loads((resources / "builtin/rulesets.lock.json").read_text())["upstream"]
+        (resources / "licenses/meta-rules-dat-NOTICE").write_text(
+            f"MetaCubeX/meta-rules-dat rulesets ({upstream['license']})\n"
+            f"Source: https://github.com/{upstream['repository']}/tree/{upstream['commit']}\n"
+            "GPL-3.0 license text is included in mihomo-LICENSE.\n")
         shutil.copy2(HERE / "patches/ucode-darwin.patch", resources / "licenses/ucode-darwin.patch")
         for name in ("dependencies.json", "dependency-receipt.json"):
             shutil.copy2(runtime / name, resources / name)

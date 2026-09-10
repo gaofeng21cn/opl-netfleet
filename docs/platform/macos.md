@@ -59,12 +59,19 @@ macOS 提供平台路径、凭据、Profile、订阅、进程与 Mihomo 后端�
 字段保留由共享 owner 完成，macOS 不重建 policy。增强代理运行中不接受仅保存结构化配置，
 需先停止或退出增强，再保存、编译并按需启用。
 
+构建器从共享 `policy-sources/base-v1.json` 与 `rulesets.lock.json` 准备 `Resources/builtin`，
+按同一锁文件的 URL、大小和 SHA-256 获取规则，不在应用启动时联网下载。桌面 owner 取得
+状态锁并停止自身旧核心后，先验证完整规则集，再将策略投影到私有 `policy-sources`、MRS
+投影到 `backend/run/rulesets`。订阅写入不接触这些资源。
+
+`use-builtin-policy` 在核心停止时调用共享模型生成候选；受同一串行入口管理的文件事务
+在完成共享 Schema 与真实核心编译后提交，失败恢复旧 policy。升级不自动覆盖已有策略。
+
 ## 订阅来源事务
 
 桌面添加订阅由本机 owner 下载并经真实核心校验，提交前不改现有来源。来源字段校验与配额解释调用 `models.subscriptions`，地区发现和策略合并调用
-`configuration.onboarding-model`；Node 宿主不维护 provider/地区合并规则。首次添加直接使用订阅
-中的完整配置；只有节点列表时生成最小主入口配置。共享发现模型识别地区与出口，保存后自动
-编译；过程不启动核心、不修改网络接入。一个订阅只生成一个来源，不额外复制为本地导入机场；
+`configuration.onboarding-model`；Node 宿主不维护 provider/地区合并规则。首次添加调用共享内置策略草拟；
+订阅完整配置只保存在独立恢复位置，只有节点列表时为恢复生成最小主入口。保存后自动编译；过程不启动核心、不修改网络接入。一个订阅只生成一个来源，不额外复制为本地导入机场；
 合并和删除保护遵守[订阅接入合同](../architecture/management.md#订阅接入与策略归属)。
 
 来源增删、启停和地址修改须先停止核心，正常订阅更新允许在运行中使用共享更新及回退链路；

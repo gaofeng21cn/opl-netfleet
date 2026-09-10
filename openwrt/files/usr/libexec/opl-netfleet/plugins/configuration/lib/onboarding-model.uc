@@ -2,7 +2,7 @@
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let clone, push_unique, profile_group, match_entry_group, stable_subscriptions, add_blocker, derive;
+let clone, push_unique, profile_group, match_entry_group, stable_subscriptions, add_blocker, derive, apply_builtin;
 
 const region_catalog = context.use("models.regions").catalog;
 const discover_regions = context.use("models.regions").discover;
@@ -57,7 +57,7 @@ add_blocker = function(blockers, code, detail) {
 	push(blockers, { code: code, detail: detail ?? null });
 };
 
-derive = function(input, require_runtime) {
+derive = function(input, require_runtime, builtin) {
 	const REGION_CATALOG = region_catalog();
 	const blockers = [];
 	const warnings = [];
@@ -78,7 +78,7 @@ derive = function(input, require_runtime) {
 	if (input?.generated_artifacts_present == true)
 		add_blocker(blockers, "existing_generated_artifacts", null);
 
-	const entry = type(profile) == "object" ? match_entry_group(profile) : null;
+	const entry = builtin != null ? match_entry_group(builtin) : type(profile) == "object" ? match_entry_group(profile) : null;
 	if (type(profile) == "object" && entry == null) add_blocker(blockers, "entry_group_unresolved", null);
 
 	const subscriptions = stable_subscriptions(input?.subscriptions);
@@ -170,6 +170,8 @@ derive = function(input, require_runtime) {
 		}
 	} : null;
 
+	if (policy != null && builtin != null) apply_builtin(policy, builtin);
+
 	return {
 		ready: length(blockers) == 0,
 		blockers: blockers,
@@ -193,6 +195,22 @@ derive = function(input, require_runtime) {
 
 // Drafting inspects configuration and caches only; activation still uses the
 // strict runtime discovery and existing target-local enable preconditions.
+// The bundled profile owns classification; onboarding owns the default exits.
+apply_builtin = function(policy, profile) {
+	policy.policy_source = { kind: "bundle", ref: "bundle:base-v1" };
+	policy.bindings = {};
+	for (let group in profile["proxy-groups"])
+		policy.bindings[group.name] = { capability: group.name == "AI 出口" ? "ai-compatible" : "standard",
+			kind: group.name == "海外加速" || group.name == "AI 出口" ? "entry" : "policy" };
+	policy.capabilities = {
+		standard: { display_name: "海外加速", display_order: 10, enabled: true, mode: "automatic" },
+		"ai-compatible": { display_name: "AI 出口", display_order: 20, enabled: true, mode: "automatic",
+			excluded_regions: policy.regions.hong_kong != null ? ["hong_kong"] : null, prefer_region_from: "standard" }
+	};
+	return policy;
+};
+function draft_builtin(input, profile) { return { ...derive(input, false, profile), readiness: "configuration" }; }
+function use_builtin(policy, profile) { return apply_builtin(clone(policy), profile); }
 function discover(input) { return derive(input, true); }
 function draft(input) { return { ...derive(input, false), readiness: "configuration" }; }
 function merge_provider(policy, discovery, section) {
@@ -226,5 +244,5 @@ function reconcile_sources(policy, sources) {
 	}
 	return enabled > 0 ? { ok: true, policy: next } : { ok: false, error: "last_provider_required" };
 }
-return { discover, draft, merge_provider, reconcile_sources };
+return { discover, draft, draft_builtin, use_builtin, merge_provider, reconcile_sources };
 };

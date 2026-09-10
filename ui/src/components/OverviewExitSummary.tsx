@@ -16,6 +16,8 @@ const currentProvider = (snapshot: StatusSnapshot, dataPath: string, providerId?
 };
 
 export function OverviewExitSummary({ snapshot, onOpen }: { snapshot: StatusSnapshot; onOpen(): void }) {
+  const measured = snapshot.active && snapshot.runtime.netfleet_present !== false;
+  const inactiveMode = snapshot.runtime.mihomo_running === false ? '已停止' : '原生配置';
   const capabilities = snapshot.capabilities.filter((capability) => capability.enabled);
   return (
     <section className="nf-overview-exits" aria-labelledby="nf-overview-exits-title">
@@ -34,11 +36,11 @@ export function OverviewExitSummary({ snapshot, onOpen }: { snapshot: StatusSnap
         {capabilities.map((capability) => (
           <div className="nf-overview-exit-row" role="row" key={capability.id}>
             <strong role="cell"><button type="button" className="nf-name-link" onClick={onOpen}>{capabilityName(capability)}</button></strong>
-            <span role="cell">{currentRegion(snapshot, capability.data_path, capability.region_id)}</span>
-            <span role="cell">{currentProvider(snapshot, capability.data_path, capability.provider_id)}</span>
-            <span className={capability.alive ? 'is-ok' : 'is-warning'} role="cell">{delay(capability.reason?.delay_ms)}</span>
-            <span role="cell"><i className={`nf-health-dot ${capability.alive ? '' : 'is-bad'}`} />{capability.alive ? '健康' : '不可用'}</span>
-            <span role="cell">{modeName(capability)}</span>
+            <span role="cell">{measured ? currentRegion(snapshot, capability.data_path, capability.region_id) : '未接管'}</span>
+            <span role="cell">{measured ? currentProvider(snapshot, capability.data_path, capability.provider_id) : '未接管'}</span>
+            <span className={measured ? capability.alive ? 'is-ok' : 'is-warning' : undefined} role="cell">{measured ? delay(capability.reason?.delay_ms) : '未测量'}</span>
+            <span role="cell">{measured && <i className={`nf-health-dot ${capability.alive ? '' : 'is-bad'}`} />}{measured ? capability.alive ? '健康' : '不可用' : '未测量'}</span>
+            <span role="cell">{measured ? modeName(capability) : inactiveMode}</span>
           </div>
         ))}
       </div>

@@ -26,7 +26,7 @@ const nodeList = `proxies:
 `;
 const relay = http.createServer((request, response) => {
   if (request.method === 'GET' && request.url.startsWith('/subscription')) {
-    return response.writeHead(200, { 'Content-Type': 'text/yaml', 'Subscription-Userinfo': 'upload=2; download=3; total=9' }).end(nodeList);
+    return response.writeHead(200, { 'Content-Type': 'text/yaml', 'Subscription-Userinfo': 'upload=2; download=3; total=9' }).end(nodeList.replaceAll('port: 18080', `port: ${relay.address().port}`));
   }
   response.writeHead(405).end();
 });
@@ -119,6 +119,26 @@ try {
   await new Promise(resolve => setTimeout(resolve, 500));
   const crashed = await state(); assert.equal(crashed.runtime.running, false); assert.notEqual(crashed.runtime.mode, 'mihomo');
   assert.equal((await api('mode', { mode: 'direct' })).ok, true); evidence.checks.push('crashed_core_not_reported_running');
+  // Explicit cutover preserves user-owned resources and unknown fields, and
+  // validates the compiled candidate before committing the new policy.
+  const beforeSwitch = await state();
+  const custom = { ...beforeSwitch.policy, private_extension: { preserved: true } };
+  assert.equal((await api('save-policy', { policy: custom })).ok, true);
+  const cutover = await api('use-builtin-policy'); assert.equal(cutover.ok, true, JSON.stringify(cutover));
+  const switched = await state();
+  assert.equal(switched.policy.policy_source.ref, 'bundle:base-v1');
+  for (const field of ['providers', 'regions', 'provider_regions', 'automation', 'recovery_profile', 'private_extension'])
+    assert.deepEqual(switched.policy[field], custom[field]);
+  assert.equal(switched.runtime.running, false);
+  // A missing resource must leave the previous policy bytes intact.
+  assert.equal((await api('save-policy', { policy: custom })).ok, true);
+  const asset = path.join(stateDir, 'backend/run/rulesets/ai-domain.mrs');
+  await fs.rename(asset, asset + '.held');
+  try {
+    assert.equal((await api('use-builtin-policy')).ok, false);
+    assert.deepEqual((await state()).policy, custom);
+  } finally { await fs.rename(asset + '.held', asset); }
+  evidence.checks.push('explicit_builtin_cutover_preserves_resources_and_rolls_back_on_failure');
   assert.equal((await api('shutdown')).ok, true); stopped = true;
   // Subscription preparation is qualified on a second, empty owner instance so the
   // import path above keeps its own artifact and revision semantics.
@@ -134,7 +154,29 @@ try {
   assert.equal(preparedState.subscriptions[prepared.result.id].nodeCount, 3);
   const generated = JSON.parse(await fs.readFile(path.join(subscriptionStateDir, 'backend/profiles/Original.json')));
   assert.deepEqual(generated.rules, ['MATCH,Proxy']); assert.equal(generated['proxy-groups'][0].name, 'Proxy');
-  evidence.checks.push('subscription_prepare_download_discovery_compile');
+  assert.deepEqual(preparedState.policy.policy_source, { kind: 'bundle', ref: 'bundle:base-v1' });
+  assert.deepEqual(Object.keys(preparedState.policy.capabilities).sort(), ['ai-compatible', 'standard']);
+  assert.deepEqual(preparedState.policy.capabilities['ai-compatible'].excluded_regions, ['hong_kong']);
+  const compiledBuiltin = JSON.parse(await fs.readFile(path.join(subscriptionStateDir, 'backend/profiles/OPL-NetFleet.json')));
+  const bundled = JSON.parse(await fs.readFile(path.join(root, 'openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json')));
+  assert.deepEqual(compiledBuiltin.rules, bundled.rules);
+  assert.ok(compiledBuiltin['proxy-groups'].some(group => group.name === 'AI 出口'));
+  assert.equal(Object.keys(compiledBuiltin['rule-providers']).length, 20);
+  const activatedBuiltin = await api('enable');
+  assert.equal(activatedBuiltin.ok, true, JSON.stringify(activatedBuiltin));
+  const activeBuiltin = await state();
+  assert.equal(activeBuiltin.runtime.mode, 'netfleet');
+  assert.equal(activeBuiltin.status.capabilities.length, 2);
+  const ai = activeBuiltin.status.capabilities.find(item => item.id === 'ai-compatible');
+  assert.ok(ai.selectable_regions.length > 0);
+  assert.ok(!ai.selectable_regions.includes('hong_kong'));
+  const probeBuiltin = await run('/usr/bin/curl', ['--noproxy', '', '--proxy', `http://127.0.0.1:${activeBuiltin.runtime.ports.mixed}`, '--max-time', '15', '-sS', '-o', '/dev/null', '-w', '%{http_code}', 'https://www.gstatic.com/generate_204']);
+  assert.equal(probeBuiltin.stdout, '204');
+  const rulesBeforeRefresh = compiledBuiltin.rules;
+  const refreshedBuiltin = await api('refresh'); assert.equal(refreshedBuiltin.ok, true, JSON.stringify(refreshedBuiltin));
+  assert.deepEqual(JSON.parse(await fs.readFile(path.join(subscriptionStateDir, 'backend/profiles/OPL-NetFleet.json'))).rules, rulesBeforeRefresh);
+  assert.equal((await api('mode', { mode: 'direct' })).ok, true);
+  evidence.checks.push('subscription_prepare_builtin_dual_exits_real_activation_refresh_and_https');
   assert.equal((await api('subscription-prepare', { subscription: { name: '重复地址', url: submission } })).ok, false);
   assert.equal((await api('subscription-prepare', { subscription: { name: '失效地址', url: `http://127.0.0.1:${relay.address().port}/missing` } })).ok, false);
   const afterFailure = await state();
