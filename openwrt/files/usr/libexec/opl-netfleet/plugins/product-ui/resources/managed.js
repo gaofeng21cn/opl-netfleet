@@ -577,7 +577,7 @@ function componentsPage(controller) {
 	})));
 	if (controller.componentsError) content.push(E('p', { 'class': 'is-warning', 'role': 'alert' }, '组件信息未能确认：' + errorLabel(controller.componentsError.message)));
 	if (!snapshot) {
-		content.push(E('p', { 'class': controller.componentsLoading ? 'spinning' : '' }, controller.componentsLoading ? '正在读取已安装组件…' : '当前设备未提供组件管理接口，请确认 NetFleet 已更新。'));
+		if (!controller.componentsError) content.push(E('p', { 'class': 'spinning', 'role': 'status' }, '正在读取已安装组件…'));
 		return E('section', { 'class': 'cbi-section netfleet-components' }, content);
 	}
 	const packageOperation = controller.operations && controller.operations.packages;

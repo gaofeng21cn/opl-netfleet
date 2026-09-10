@@ -418,6 +418,19 @@ assert.equal(owner.components.dashboard.installed_version, 'v3.0.0');
 assert.equal(owner.dashboardBusy, false);
 """)
 
+    def test_component_first_read_is_pending_not_unsupported(self):
+        self.run_js(r"""
+const managed = module('managed.js', {});
+const owner = controller();
+let root = managed.components(owner);
+assert(text(root).includes('正在读取已安装组件'));
+assert(!text(root).includes('未提供组件管理接口'));
+owner.componentsError = new Error('read failed');
+root = managed.components(owner);
+assert(text(root).includes('组件信息未能确认'));
+assert(!text(root).includes('正在读取已安装组件'));
+""")
+
     def test_component_checks_serialize_sources_and_preserve_partial_failure(self):
         self.run_js(r"""
 const calls = [];
