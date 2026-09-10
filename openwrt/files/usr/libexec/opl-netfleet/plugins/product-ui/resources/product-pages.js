@@ -1045,12 +1045,13 @@ function regionsPage(status, controller) {
 	const caption = E('p', { 'class': 'netfleet-table-caption' });
 	const update = function() {
 		const visible = tableItems(regions, state, function(region) { return regionName(status, region.id); });
-		caption.replaceChildren('当前 ' + regions.length + ' 个地区可用 · 显示 ' + visible.length + ' 个');
-		list.replaceChildren(simpleTable([ '地区', '可用机场', '可用节点', '最近一次测速', '历史测量', '参与方式', '操作' ],
+		caption.replaceChildren('核心健康记录覆盖 ' + regions.length + ' 个地区 · 显示 ' + visible.length + ' 个');
+		list.replaceChildren(simpleTable([ '地区', '机场健康记录', '节点健康记录', '最近一次候选测速', '历史测量', '参与方式', '操作' ],
 			visible.map(function(region) { return rows[regions.indexOf(region)]; }), '没有匹配的地区', 'netfleet-data-table'));
 	};
 	update();
-	return [ selectionToolbar(status, controller), E('section', {}, [ tableTools('地区', state, update, '最近一次测速（从低到高）'), caption, list ]) ];
+	return [ selectionToolbar(status, controller), E('section', {}, [ tableTools('地区', state, update, '最近一次测速（从低到高）'), caption,
+		E('p', { 'class': 'netfleet-measurement-note' }, '健康记录为核心标记的健康数 / 已加载总数；候选测速每个机场在该地区核验一条线路。两者的测速目标与采样时间可能不同，健康数量不代表本轮测速成功数量；流量耗尽的机场仍不参与选优。'), list ]) ];
 }
 
 function displayEventName(events, kind, id) {

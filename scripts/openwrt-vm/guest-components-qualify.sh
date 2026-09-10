@@ -208,6 +208,22 @@ old_sha=$(sha256sum "$local_stage/old/$plugin-$prior.apk" | cut -d' ' -f1)
 new_sha=$(sha256sum "$local_stage/new/$plugin-$independent.apk" | cut -d' ' -f1)
 printf '{"schema":"opl-netfleet-plugin-install.v1","packages":[{"name":"%s","before_version":"%s","version":"%s","before_sha256":"%s","sha256":"%s"}]}\n' \
  "$plugin" "$prior" "$independent" "$old_sha" "$new_sha" >"$local_stage/request.json"
+# Exercise shared-model dependents and self-updating components/UI in the same
+# finite operation, including their real package hooks and resource ownership.
+for extra in opl-netfleet-plugin-models opl-netfleet-plugin-components opl-netfleet-plugin-product-ui; do
+ extra_prior=$(package_version "$extra" old)
+ extra_next=$(package_version "$extra" current)
+ install_fixture "$work/$extra-$extra_prior.apk" >>"$work/independent.log" 2>&1
+ cp "$work/$extra-$extra_prior.apk" "$local_stage/old/"
+ uclient-fetch -q -O "$local_stage/new/$extra-$extra_next.apk" "$feed_url/$extra-$extra_next.apk"
+ chmod 600 "$local_stage/old/$extra-$extra_prior.apk" "$local_stage/new/$extra-$extra_next.apk"
+ extra_old_sha=$(sha256sum "$local_stage/old/$extra-$extra_prior.apk" | cut -d' ' -f1)
+ extra_new_sha=$(sha256sum "$local_stage/new/$extra-$extra_next.apk" | cut -d' ' -f1)
+ ucode -e 'import {readfile,writefile} from "fs";
+  const value=json(readfile(ARGV[0]));
+  push(value.packages,{name:ARGV[1],before_version:ARGV[2],version:ARGV[3],before_sha256:ARGV[4],sha256:ARGV[5]});
+  writefile(ARGV[0],sprintf("%J\n",value));' "$local_stage/request.json" "$extra" "$extra_prior" "$extra_next" "$extra_old_sha" "$extra_new_sha"
+done
 core_pid_before=$(pidof mihomo)
 cp "$local_stage/old/$plugin-$prior.apk" "$local_stage/old/unexpected.apk"
 if ucode "$owner" components-install "$local_stage" >"$work/local-rejected.json"; then exit 1; fi
