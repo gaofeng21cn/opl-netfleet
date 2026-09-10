@@ -82,7 +82,7 @@ export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 apk --timeout 120 update >"$work/packages.log" 2>&1 || true
 apk --timeout 120 add curl flock ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket \
-	ucode-mod-fs ucode-mod-uci ucode-mod-socket ucode-mod-ubus >>"$work/packages.log" 2>&1
+	ucode-mod-fs ucode-mod-digest ucode-mod-uci ucode-mod-socket ucode-mod-ubus >>"$work/packages.log" 2>&1
 for executable in mihomo yq; do
 	if [ ! -e "/usr/bin/$executable" ]; then ln -s "$previous/bin/$executable" "/usr/bin/$executable"; fi
 	test -x "/usr/bin/$executable"

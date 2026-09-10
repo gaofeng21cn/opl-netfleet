@@ -59,14 +59,19 @@ for (let id, enabled in host.system.enabled) if (enabled)
 	check(length(filter(rows, row => row.id == id && row.runtime == "service")) == 1, "configured service plugin appears once in inventory");
 const components = host.use("components.control").get();
 check(components.dashboard.installed_version == dashboard.resource().installed_version, "components reuses resource owner version");
-check(dispatch("compatibility-private-backup") == null && dispatch("compatibility-tick") == null,
-	"private operations not exposed by registry");
+for(let name in ['compatibility-private-backup','compatibility-tick']) {
+	check(methods[replace(name, '-', '_')] == null, 'private CLI operations are not RPC methods');
+	if(compatibility_installed) check(compatibility.dispatch(name).error == 'extension_action_not_allowed',
+		'public plugin dispatcher rejects private lifecycle operations');
+}
 if (compatibility_installed)
 	check(compatibility.dispatch("run").error == "extension_action_not_allowed", "adapter cannot bypass allowlist");
 check(dashboard.dispatch("unknown").error == "extension_action_not_allowed", "resource adapter rejects unknown method");
 if (compatibility_installed && !compatibility.inspection().available) {
 	check(dispatch("compatibility-get").result.installed == false, "absent optional component readable through real registry");
 	check(dispatch("compatibility-enable", "/unused").ok == false, "absent optional component cannot activate");
+	check(compatibility.internal(['compatibility-tick']).error == 'compatibility_component_not_installed',
+		'absent optional engine returns a fixed error to lifecycle callers');
 }
 check(dispatch("dashboard-get").ok == true, "resource caller reaches existing owner");
 host.release();

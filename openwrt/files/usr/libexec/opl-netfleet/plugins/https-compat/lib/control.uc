@@ -126,13 +126,16 @@ function action(name, params) {
 };
 
 function internal(argv) {
+    if (fs.stat(OWNER)?.type != 'file') return { ok: false, error: 'compatibility_component_not_installed' };
+    try {
     const action = { 'compatibility-engine-prepare': 'prepare-engine', 'compatibility-drain': 'drain',
         'compatibility-tick': 'tick' }[argv[0]];
-    if (argv[0] == 'compatibility-private-backup' && length(argv) == 2)
+    if (argv[0] == 'compatibility-private-backup' && length(argv) == 2 && type(argv[1]) == 'string')
         return { ok: true, result: native_owner().dispatch('private-backup', { path: argv[1] }) };
     if (argv[0] == 'compatibility-watch') return native_owner().watch();
     if (!action || length(argv) != 1) return { ok: false, error: 'compatibility_action_invalid' };
     return { ok: true, result: native_owner().dispatch(action, {}) };
+    } catch (error) { return { ok: false, error: match(error.message ?? '', /^[a-z_]+$/) ? error.message : 'compatibility_owner_no_response' }; }
 }
 return { internal, extension, inspection, dispatch, command_compatibility_get, command_compatibility_ca, command_compatibility_apply, command_compatibility_enable, command_compatibility_disable, command_compatibility_probe,
 	config_get: () => dispatch('get'), config_set: params => action('apply', params),
