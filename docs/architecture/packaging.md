@@ -130,7 +130,7 @@ APK world 中的版本及仓库约束必须保留并验证；旧本地归档的�
 这不是第二个网络 owner，也不拥有持久运行状态；页面通过只读进度接口确认最终结果。
 组件更新的事务代码副本、候选与回退包、私有快照和阶段记录保存在 root 私有的
 `/etc/opl-netfleet/package-transactions/`。写入前保存并同步恢复材料和 pending 指针，
-组件事务 owner 才能停止服务与替换包。安装和回退 APK 的进程显式携带 `NETFLEET_PACKAGE_RESTORE=1`，
+组件事务 owner 才能停止服务与替换包。安装和回退 APK 的进程显式携带 `NETFLEET_PACKAGE_RESTORE=1`，并通过 `--preserve-env` 将该标志传入包钩子，
 允许已排空依赖的包生命周期恢复核心；该标志仅作用于事务子进程，普通启动仍受 pending 保护。
 普通失败立即回滚；进程中断或重启后，由同一
 事务代码副本执行 `components-recover`，核对快照、包签名、安装数据库和私有输入后

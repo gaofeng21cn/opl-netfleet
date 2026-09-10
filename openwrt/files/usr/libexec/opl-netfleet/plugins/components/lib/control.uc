@@ -381,7 +381,7 @@ rollback = function(before, work, names, versions, old, install_started, already
 		if (install_started) fs.unlink(UPGRADE_STATE);
 		attempt("rollback_configuration_failed", () => run_command(`tar -xf ${q(`${work}/private.tar`)} -C /`, work));
 		if (install_started) {
-			attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --no-network --repositories-file /dev/null ${already_stopped ? "--force-reinstall " : ""}add ${join(" ", map(old, q))}`, work));
+			attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null ${already_stopped ? "--force-reinstall " : ""}add ${join(" ", map(old, q))}`, work));
 			attempt("rollback_world_failed", () => restore_world(names, before.world, work, true));
 		}
 	}
@@ -494,7 +494,8 @@ upgrade = function(request, work, candidates) {
 		install_started = true;
 		// Explicit package hooks may resume drained resource owners while pending
 		// continues to block unrelated starts until this transaction is verified.
-		if (!run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --no-network --repositories-file /dev/null add ${join(" ", map(next, q))}`, work)) fail("package_install_failed");
+		// APK otherwise strips the restore flag from the hook environment.
+		if (!run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null add ${join(" ", map(next, q))}`, work)) fail("package_install_failed");
 		if (!restore_world(names, before.world, work, false, filter(names, name => versions[name] != candidates[name]))) fail("package_world_restore_failed");
 		operation.update("verifying");
 		const after = installed();
