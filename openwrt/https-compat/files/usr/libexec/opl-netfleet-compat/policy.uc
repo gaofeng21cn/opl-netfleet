@@ -1,12 +1,12 @@
 return function() {
     function identifier(value) {
-        if (type(value) != 'string' || !match(value, /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/)) die('invalid_id');
+        if (type(value) != 'string' || length(value) > 64 || !match(value, /^[A-Za-z0-9][A-Za-z0-9_-]*$/)) die('invalid_id');
         return value;
     }
     function hostname(value) {
         if (type(value) != 'string') die('invalid_domain');
         value = lc(replace(value, /\.+$/, ''));
-        if (length(value) > 253 || !length(value) || length(filter(split(value, '.'), label => !match(label, /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/)))) die('invalid_domain');
+        if (length(value) > 253 || !length(value) || length(filter(split(value, '.'), label => length(label) > 63 || !match(label, /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/)))) die('invalid_domain');
         if (iptoarr(value)) die('domain_required');
         return value;
     }

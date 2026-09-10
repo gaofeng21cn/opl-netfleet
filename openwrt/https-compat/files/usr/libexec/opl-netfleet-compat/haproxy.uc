@@ -249,8 +249,8 @@ frontend ${name}_http
         if(!ingress||!probes||!match(info.description ?? '',/^[0-9a-f]{64}$/)||!(+info.Pid>0)) die('health_response_invalid');
         const connections=max(0,+ingress.scur-(+probes.scur)),mapping=io.read(RUN+'/haproxy-rules.json',{}),rules={},events=[],observed={};
         if(length(mapping)) for(let line in split(command(join(';',map(keys(mapping),name=>`get var proc.${name}_sni`))),'\n')) {
-            const value=match(line,/^proc\.(r[0-9]+)_sni: type=str value=<([a-z0-9.-]{1,253})>$/);
-            if(value&&mapping[value[1]]) observed[mapping[value[1]]]={domain:value[2]};
+            const value=match(line,/^proc\.(r[0-9]+)_sni: type=str value=<([a-z0-9.-]+)>$/);
+            if(value&&length(value[2])<=253&&mapping[value[1]]) observed[mapping[value[1]]]={domain:value[2]};
         }
         for(let row in rows) {
             const name=replace(row.pxname,/_h2$/,'');
