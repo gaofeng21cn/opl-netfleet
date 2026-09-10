@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "components",
   "label": "Components and updates",
-  "version": "0.7.3",
+  "version": "0.7.5",
   "api_version": 1,
   "package": "opl-netfleet-plugin-components",
   "services": {
@@ -49,6 +49,11 @@
       "access": "write"
     },
     "components-recover": {
+      "service": "components.control",
+      "method": "command",
+      "access": "write"
+    },
+    "components-install": {
       "service": "components.control",
       "method": "command",
       "access": "write"

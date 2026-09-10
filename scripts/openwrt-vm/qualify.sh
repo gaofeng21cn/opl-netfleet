@@ -389,7 +389,7 @@ if [ -n "$package_mirror" ]; then
 fi
 stage=transfer
 transfer_started_ms=$(now_ms)
-tar -cf - -C "$workspace/scripts" deploy-openwrt-remote.sh \
+tar -cf - -C "$workspace/scripts" deploy-openwrt-remote.sh update-openwrt-plugins-remote.sh observe-openwrt.uc \
 	-C "$workspace/scripts/openwrt-vm" guest-qualify.sh guest-runtime-qualify.sh guest-package-qualify.sh \
 	guest-native-qualify.sh guest-setup-qualify.sh guest-migration-qualify.sh guest-components-qualify.sh \
 	guest-compatibility-qualify.sh guest-compatibility-native-qualify.sh \
@@ -398,6 +398,8 @@ tar -cf - -C "$workspace/scripts" deploy-openwrt-remote.sh \
 ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf -'
 expected_transfer=$(printf '%s\n' \
 	"$(sha256_file "$workspace/scripts/deploy-openwrt-remote.sh")" \
+	"$(sha256_file "$workspace/scripts/update-openwrt-plugins-remote.sh")" \
+	"$(sha256_file "$workspace/scripts/observe-openwrt.uc")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-runtime-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-package-qualify.sh")" \
@@ -416,7 +418,7 @@ expected_transfer=$(printf '%s\n' \
 	"$(sha256_file "$work/$mihomo_name")" \
 	"$(sha256_file "$work/$yq_name")")
 actual_transfer=$(ssh $ssh_common root@127.0.0.1 \
-	"sha256sum /tmp/deploy-openwrt-remote.sh /tmp/guest-qualify.sh /tmp/guest-runtime-qualify.sh /tmp/guest-package-qualify.sh /tmp/guest-native-qualify.sh /tmp/guest-setup-qualify.sh /tmp/guest-migration-qualify.sh /tmp/guest-components-qualify.sh /tmp/guest-compatibility-qualify.sh /tmp/guest-compatibility-native-qualify.sh /tmp/guest-maintenance-qualify.sh /tmp/guest-network-management-qualify.sh /tmp/guest-rules-dashboard-qualify.sh /tmp/guest-transfer-qualify.sh /tmp/runtime-source.tar /tmp/local-probe.crt /tmp/$mihomo_name /tmp/$yq_name | awk '{print \$1}'")
+	"sha256sum /tmp/deploy-openwrt-remote.sh /tmp/update-openwrt-plugins-remote.sh /tmp/observe-openwrt.uc /tmp/guest-qualify.sh /tmp/guest-runtime-qualify.sh /tmp/guest-package-qualify.sh /tmp/guest-native-qualify.sh /tmp/guest-setup-qualify.sh /tmp/guest-migration-qualify.sh /tmp/guest-components-qualify.sh /tmp/guest-compatibility-qualify.sh /tmp/guest-compatibility-native-qualify.sh /tmp/guest-maintenance-qualify.sh /tmp/guest-network-management-qualify.sh /tmp/guest-rules-dashboard-qualify.sh /tmp/guest-transfer-qualify.sh /tmp/runtime-source.tar /tmp/local-probe.crt /tmp/$mihomo_name /tmp/$yq_name | awk '{print \$1}'")
 [ "$actual_transfer" = "$expected_transfer" ] || {
 	echo "OpenWrt qualification source transfer mismatch" >&2
 	exit 1

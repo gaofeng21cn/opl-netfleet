@@ -342,6 +342,8 @@ NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
 - [Plugin development and installation](docs/development/plugins.md)
 - [HTTPS compatibility](docs/architecture/https-compatibility.md)
 - [UI design](docs/design/ui.md)
+- [Capabilities and platform ownership](docs/product/capabilities.md)
+- [Platform implementation layer](docs/platform/README.md)
 - [Product whitepaper](docs/product/whitepaper.md)
 - [Development and device-operation rules](AGENTS.md)
 

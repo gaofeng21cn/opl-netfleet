@@ -213,6 +213,8 @@ NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
 - [插件开发与安装](docs/development/plugins.md)
 - [HTTPS 兼容模块](docs/architecture/https-compatibility.md)
 - [UI 设计](docs/design/ui.md)
+- [能力与平台归属](docs/product/capabilities.md)
+- [平台实现层](docs/platform/README.md)
 - [产品白皮书](docs/product/whitepaper.md)
 - [开发与设备操作规则](AGENTS.md)
 

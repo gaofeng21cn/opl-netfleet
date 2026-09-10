@@ -871,11 +871,20 @@ function measurementCell(value, status) {
 	const unmeasured = entries.filter(function(entry) { return !entry.ok && entry.quota_state !== 'exhausted'; }).length;
 	const explanation = function(reason) { return measurementReasons[reason || 'measurement_unavailable'] || '未取得有效测速，原因暂无法解释'; };
 	const details = [ E('summary', {}, '查看测速详情' + (entries.length ? '（' + entries.length + ' 项）' : '')),
-		E('p', {}, '每项对应一个机场在一个地区的候选线路，不代表节点数。测速结果不等于业务保护检查结果。') ];
+		E('p', {}, '每项对应一个机场在一个地区的候选线路，不代表节点数。流量状态来自最近一次订阅更新，不随测速刷新；测速结果不等于业务保护检查结果。') ];
 	if (entries.length) details.push(E('ul', {}, entries.map(function(entry) {
-		const content = [ E('strong', {}, providerName(status, entry.provider_id) + ' · ' + regionName(status, entry.region_id)),
-			E('div', {}, entry.ok ? '测速成功 · ' + delay(entry.delay_ms) : explanation(entry.measurement_reason)) ];
-		if (entry.quota_state === 'exhausted') content.push(E('div', {}, measurementReasons.quota_exhausted));
+		const provider = (status.providers || []).find(function(item) { return item.id === entry.provider_id; });
+		const subscription = provider && (status.subscriptions || []).find(function(item) { return item.section === provider.subscription_section; });
+		const currentQuota = provider && provider.quota;
+		const content = [ E('strong', {}, providerName(status, entry.provider_id) + ' · ' + regionName(status, entry.region_id)) ];
+		if (currentQuota && currentQuota.state === 'exhausted')
+			content.push(E('div', {}, measurementReasons.quota_exhausted));
+		else if (currentQuota)
+			content.push(E('div', {}, '订阅配额记录：' + (currentQuota.state === 'available' && finite(currentQuota.remaining_bytes) ? '剩余 ' : '') + quota(provider)));
+		if (currentQuota) content.push(E('small', { 'class': 'netfleet-measurement-note' }, '订阅更新于 ' + executionAt(subscription && subscription.last_success)));
+		if (entry.quota_state === 'exhausted' && (!currentQuota || currentQuota.state !== 'exhausted'))
+			content.push(E('div', {}, '该次测速时流量已耗尽，不参与选优'));
+		content.push(E('div', {}, '该次测速记录：' + (entry.ok ? '测速成功 · ' + delay(entry.delay_ms) : explanation(entry.measurement_reason))));
 		return E('li', {}, content);
 	})));
 	else details.push(E('p', {}, '此记录没有逐项详情。' + Object.entries(value.exclusions || {}).map(function(item) {
@@ -883,7 +892,7 @@ function measurementCell(value, status) {
 	}).join('；')));
 	return E('td', { 'class': 'netfleet-measurement' }, [
 		E('span', {}, delay(value.best_delay_ms, '未取得有效测速')),
-		E('small', { 'class': 'netfleet-measurement-note' }, value.measured_count + ' 项测速成功' + (exhausted ? ' · ' + exhausted + ' 项流量耗尽' : '') + (unmeasured ? ' · ' + unmeasured + ' 项无有效结果' : '')),
+		E('small', { 'class': 'netfleet-measurement-note' }, '该次测速：' + value.measured_count + ' 项测速成功' + (exhausted ? ' · ' + exhausted + ' 项流量耗尽' : '') + (unmeasured ? ' · ' + unmeasured + ' 项无有效结果' : '')),
 		E('small', { 'class': 'netfleet-measurement-note' }, '采样于 ' + sampledAt(value.sampled_at)),
 		E('details', {}, details)
 	]);
@@ -1036,12 +1045,13 @@ function regionsPage(status, controller) {
 	const caption = E('p', { 'class': 'netfleet-table-caption' });
 	const update = function() {
 		const visible = tableItems(regions, state, function(region) { return regionName(status, region.id); });
-		caption.replaceChildren('当前 ' + regions.length + ' 个地区可用 · 显示 ' + visible.length + ' 个');
-		list.replaceChildren(simpleTable([ '地区', '可用机场', '可用节点', '最近一次测速', '历史测量', '参与方式', '操作' ],
+		caption.replaceChildren('核心健康记录覆盖 ' + regions.length + ' 个地区 · 显示 ' + visible.length + ' 个');
+		list.replaceChildren(simpleTable([ '地区', '机场健康记录', '节点健康记录', '最近一次候选测速', '历史测量', '参与方式', '操作' ],
 			visible.map(function(region) { return rows[regions.indexOf(region)]; }), '没有匹配的地区', 'netfleet-data-table'));
 	};
 	update();
-	return [ selectionToolbar(status, controller), E('section', {}, [ tableTools('地区', state, update, '最近一次测速（从低到高）'), caption, list ]) ];
+	return [ selectionToolbar(status, controller), E('section', {}, [ tableTools('地区', state, update, '最近一次测速（从低到高）'), caption,
+		E('p', { 'class': 'netfleet-measurement-note' }, '健康记录为核心标记的健康数 / 已加载总数；候选测速每个机场在该地区核验一条线路。两者的测速目标与采样时间可能不同，健康数量不代表本轮测速成功数量；流量耗尽的机场仍不参与选优。'), list ]) ];
 }
 
 function displayEventName(events, kind, id) {

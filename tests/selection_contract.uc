@@ -80,6 +80,28 @@ if (provider_group_leaf(proxy_state, provider_state, 'SOURCE-ALPHA', 'alpha-kore
 delete provider_state['SOURCE-ALPHA'].proxies[0].extra[speed_url];
 if (provider_group_leaf(proxy_state, provider_state, 'SOURCE-ALPHA', 'alpha-korea') != null) die('missing_speed_health_accepted');
 
+// A provider health check failed before the group's later successful URLTest.
+const leaf_health = { alive:false, history:[{time:'2026-09-10T01:21:17.007Z',delay:0}] };
+const group_health = { alive:true, history:[{time:'2026-09-10T01:21:26.72698878Z',delay:254}] };
+provider_state['SOURCE-ALPHA'].proxies[0].extra[speed_url] = leaf_health;
+proxy_state['alpha-korea'].extra[speed_url] = group_health;
+const diagnose = use('models.selector').provider_group_measurement_reason;
+if (provider_group_leaf(proxy_state,provider_state,'SOURCE-ALPHA','alpha-korea') != 'shared-node' ||
+	diagnose(proxy_state,provider_state,'SOURCE-ALPHA','alpha-korea',speed_url) != null) die('newer_group_success_vetoed');
+leaf_health.history[0].time = '2026-09-10T01:21:27Z';
+if (provider_group_leaf(proxy_state,provider_state,'SOURCE-ALPHA','alpha-korea') != null ||
+	diagnose(proxy_state,provider_state,'SOURCE-ALPHA','alpha-korea',speed_url) != 'leaf_latency_failed') die('newer_leaf_failure_ignored');
+leaf_health.history[0].time = '2026-09-10T01:21:26.726988780Z';
+if (provider_group_leaf(proxy_state,provider_state,'SOURCE-ALPHA','alpha-korea') != null) die('equal_timestamp_failure_ignored');
+leaf_health.history[0].time = 'not-a-time';
+if (provider_group_leaf(proxy_state,provider_state,'SOURCE-ALPHA','alpha-korea') != null) die('unknown_timestamp_failure_ignored');
+leaf_health.history[0].time = '2026-09-10T01:21:17Z';
+group_health.alive = false;
+if (provider_group_leaf(proxy_state,provider_state,'SOURCE-ALPHA','alpha-korea') != null) die('failed_group_history_accepted');
+group_health.alive = true;
+delete provider_state['SOURCE-ALPHA'].proxies[0].extra[speed_url];
+if (provider_group_leaf(proxy_state,provider_state,'SOURCE-ALPHA','alpha-korea') != null) die('missing_leaf_target_accepted');
+
 const summary_entry = {
 	providers: {
 		alpha: { source_name: "SOURCE-ALPHA" },

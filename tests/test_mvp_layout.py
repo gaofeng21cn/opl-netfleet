@@ -266,7 +266,7 @@ class MvpLayoutTests(unittest.TestCase):
             ROOT / "scripts" / "deploy-openwrt-remote.sh"
         ).read_text()
         self.assertIn("OPL_NETFLEET_DEPLOY_LOCKED=1", deployment_source)
-        self.assertIn('sh "$0" "$@" 9>&-', deployment_source)
+        self.assertRegex(deployment_source, r'sh "\$0" "\$@" (?:8>&- )?9>&-')
         for private_literal in ("192.168.",):
             self.assertNotIn(private_literal, deployment_source)
 
@@ -886,9 +886,9 @@ function createPage(storage, api, notifications) {
 	];
 	page.currentView = 'regions';
 	page.redraw();
-	assert(nodeText(root).includes('当前 2 个地区可用 · 显示 2 个'));
+	assert(nodeText(root).includes('核心健康记录覆盖 2 个地区 · 显示 2 个'));
 	findNode(root, node => node.attrs['aria-label'] === '搜索地区').attrs.input({ target: { value: '日本' } });
-	assert(nodeText(root).includes('当前 2 个地区可用 · 显示 1 个'), 'filtering must not change the availability total');
+	assert(nodeText(root).includes('核心健康记录覆盖 2 个地区 · 显示 1 个'), 'filtering must not change the health inventory total');
 
 	page.currentView = 'events';
     page.redraw();

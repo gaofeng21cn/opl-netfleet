@@ -1,13 +1,16 @@
 # NetFleet 文档
 
 本目录按语义 owner 组织文档。阅读当前实现从[架构总览](architecture/overview.md)开始；
-理解长期方向从[设计白皮书](product/whitepaper.md)开始。
+理解长期方向从[设计白皮书](product/whitepaper.md)开始；查看平台差异从
+[平台实现层](platform/README.md)开始。
 
 ## 当前事实
 
 - [`architecture/`](architecture/overview.md)：当前产品对象、选择、运行、接口、状态呈现、显示证据和打包合同。
 - [`architecture/microkernel.md`](architecture/microkernel.md)：功能服务组合、依赖绑定、插件热替换与资源交接。
 - [`architecture/device-identity.md`](architecture/device-identity.md)：网络侧设备身份、IPv6 地址更新和证据过期。
+- [`product/capabilities.md`](product/capabilities.md)：能力清单与平台归属，连接功能规划与各平台实现。
+- [`platform/`](platform/README.md)：跨平台实现层入口，以及各平台机制事实的当前 owner。
 - [`design/ui.md`](design/ui.md)：React 参考面与原生 LuCI 的视觉和交互设计合同。
 - [`operations/deployment.md`](operations/deployment.md)：按后端与设备状态选择安装、更新、迁移入口，以及 Nikki Fleet 事务。
 - [`operations/canary-promotion.md`](operations/canary-promotion.md)：通用 canary 推广与恢复流程。
