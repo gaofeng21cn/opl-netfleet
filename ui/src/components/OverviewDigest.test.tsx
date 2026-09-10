@@ -195,3 +195,16 @@ describe('概览信息层级', () => {
     expect(html).toContain('当前使用地区已无可用路径：JP 日本');
   });
 });
+
+it('核心停止时出口不冒充健康或展示内部模式', () => {
+  const status = structuredClone(fixtureScenarios.healthy.status);
+  status.active = false;
+  status.runtime.mihomo_running = false;
+  for (const capability of status.capabilities) { capability.alive = true; capability.mode = 'native_profile'; }
+  const html = renderToStaticMarkup(<OverviewExitSummary snapshot={status} onOpen={() => undefined} />);
+  expect(html).toContain('已停止');
+  expect(html).toContain('未测量');
+  expect(html).not.toContain('native_profile');
+  expect(html).not.toContain('nf-health-dot');
+  expect(html).not.toContain('78 ms');
+});
