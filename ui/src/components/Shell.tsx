@@ -29,6 +29,7 @@ const nav: NavigationItem[] = [
 ];
 
 interface ShellProps {
+  platform?: 'openwrt' | 'desktop';
   view: ViewId;
   onViewChange(view: ViewId): void;
   preview?: PreviewControls;
@@ -36,6 +37,7 @@ interface ShellProps {
   healthy: boolean;
   readOnly: boolean;
   canSelect: boolean;
+  automationPaused?: boolean;
   canDisable: boolean;
   dashboardReady: boolean;
   onRefresh(): void;
@@ -46,6 +48,7 @@ interface ShellProps {
 }
 
 export function Shell({
+  platform = 'openwrt',
   view,
   onViewChange,
   preview,
@@ -53,6 +56,7 @@ export function Shell({
   healthy,
   readOnly,
   canSelect,
+  automationPaused = false,
   canDisable,
   dashboardReady,
   onRefresh,
@@ -61,19 +65,21 @@ export function Shell({
   onOpenDashboard,
   children,
 }: ShellProps) {
+  const items = platform === 'desktop' ? nav.filter(item => item.id !== 'components') : nav;
   return (
-    <div className="nf-app">
+    <div className={`nf-app${platform === 'desktop' ? ' nf-desktop' : ''}`}>
       <aside className="nf-sidebar">
         <div className="nf-brand">
-          <Network aria-hidden="true" />
+          {platform === 'desktop' ? <img src="/logo.png" alt="" className="nf-brand-logo" /> : <Network aria-hidden="true" />}
           <span><strong>OPL</strong> NetFleet</span>
         </div>
         <nav className="nf-nav" aria-label="NetFleet 导航">
-          {nav.map((item) => {
+          {items.map((item) => {
             const Icon = item.icon;
             return (
               <button
                 className={view === item.id ? 'is-active' : ''}
+                aria-current={view === item.id ? 'page' : undefined}
                 key={item.id}
                 onClick={() => onViewChange(item.id)}
                 type="button"
@@ -86,7 +92,7 @@ export function Shell({
         </nav>
         <div className="nf-sidebar-foot">
           <span className={`nf-health-dot ${healthy ? '' : 'is-bad'}`} />
-          <div><strong>OPL NetFleet</strong><small>共享 UI</small></div>
+          <div><strong>OPL NetFleet</strong><small>{platform === 'desktop' ? 'macOS 本机' : '共享 UI'}</small></div>
         </div>
       </aside>
 
@@ -104,23 +110,23 @@ export function Shell({
                 </select>
               </label>
             </div>
-          ) : <span />}
+          ) : platform === 'desktop' ? <div className="nf-desktop-location"><span>当前 Mac</span><strong>{items.find(item => item.id === view)?.label}</strong></div> : <span />}
           <div className="nf-toolbar-actions">
-            <button type="button" onClick={onOpenDashboard} disabled={!dashboardReady} title={dashboardReady ? '在新标签页打开完整 Zashboard' : 'Zashboard 当前不可用'}>
+            {platform !== 'desktop' && <button type="button" onClick={onOpenDashboard} disabled={!dashboardReady} title={dashboardReady ? '在新标签页打开完整 Zashboard' : 'Zashboard 当前不可用'}>
               <SquareArrowOutUpRight aria-hidden="true" /><span>Zashboard</span>
-            </button>
+            </button>}
             {readOnly && <span className="nf-readonly-badge"><LockKeyhole aria-hidden="true" />实时只读</span>}
             {view !== 'components' && <button type="button" onClick={onRefresh} disabled={busy} title="刷新状态">
               <RefreshCw aria-hidden="true" className={busy ? 'is-spinning' : ''} />
               <span>刷新</span>
             </button>}
-            {!readOnly && ['overview', 'exits', 'regions'].includes(view) && <button type="button" onClick={onSelect} disabled={busy || !canSelect} title="重新自动选优">
+            {!readOnly && ['overview', 'exits', 'regions'].includes(view) && <button type="button" onClick={onSelect} disabled={busy || !canSelect} title={automationPaused ? '解除手动保持并恢复整轮自动选优' : '按切换门槛重新自动选优'}>
               <Target aria-hidden="true" />
-              <span>重新选优</span>
+              <span>{automationPaused ? '恢复自动选优' : '重新选优'}</span>
             </button>}
-            {!readOnly && view === 'overview' && <button className="is-danger" type="button" onClick={onDisable} disabled={busy || !canDisable} title="关闭 NetFleet">
+            {!readOnly && view === 'overview' && <button className="is-danger" type="button" onClick={onDisable} disabled={busy || !canDisable} title={platform === 'desktop' ? '退出增强并保留 Mihomo 原生代理' : '关闭 NetFleet'}>
               <Power aria-hidden="true" />
-              <span>关闭 NetFleet</span>
+              <span>{platform === 'desktop' ? '退出增强' : '关闭 NetFleet'}</span>
             </button>}
           </div>
         </header>
@@ -128,7 +134,7 @@ export function Shell({
       </div>
 
       <nav className="nf-mobile-nav" aria-label="NetFleet 移动导航">
-        {nav.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
           return (
             <button className={view === item.id ? 'is-active' : ''} key={item.id} onClick={() => onViewChange(item.id)} type="button">

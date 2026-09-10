@@ -8,7 +8,8 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:desktop": "vite build --config vite.desktop.config.ts"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

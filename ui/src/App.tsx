@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { automaticSelectionCopy } from './lib/selection';
 import { AlertCircle, Power, Target } from 'lucide-react';
 import { CapabilityPanel } from './components/CapabilityPanel';
 import { ConfirmDialog } from './components/ConfirmDialog';
@@ -246,7 +247,7 @@ function ProductPreview({ client, initialStatus, initialEvents, preview, fallbac
       busy={busy}
       healthy={healthy}
       readOnly={source.read_only}
-      canSelect={status.actions?.can_select_auto === true}
+      automationPaused={status?.selection?.automation_paused} canSelect={status.actions?.can_select_auto === true}
       canDisable={status.actions?.can_disable === true}
       dashboardReady={dashboardReady}
       onRefresh={() => void (view === 'events' ? Promise.all([refresh(), refreshConnections()]) : refresh())}
@@ -306,13 +307,13 @@ function ProductPreview({ client, initialStatus, initialEvents, preview, fallbac
       <DataSourceBar source={source} statusError={statusError} eventsError={eventsError} />
 
       {dialog && <ConfirmDialog
-        title={{ enable: '启用 NetFleet', select: '重新自动选优', disable: '关闭 NetFleet' }[dialog]}
+        title={{ enable: '启用 NetFleet', select: automaticSelectionCopy(Boolean(status.selection?.automation_paused)).title, disable: '关闭 NetFleet' }[dialog]}
         description={{
           enable: '将按当前设备策略重新生成待启用配置，并在网络检查和设备状态确认通过后接管网络出口。',
-          select: '将按依赖顺序执行一轮有界测速和原子选择，并恢复后台周期选优。',
+          select: automaticSelectionCopy(Boolean(status.selection?.automation_paused)).description,
           disable: '将优先恢复设备指定的原生配置；只有原生配置无法恢复时，才停止代理后端并恢复网络直通。',
         }[dialog]}
-        confirmLabel={{ enable: '确认启用', select: '开始选优', disable: '确认关闭' }[dialog]}
+        confirmLabel={{ enable: '确认启用', select: automaticSelectionCopy(Boolean(status.selection?.automation_paused)).confirmLabel, disable: '确认关闭' }[dialog]}
         danger={dialog === 'disable'}
         busy={busy}
         onCancel={() => setDialog(null)}

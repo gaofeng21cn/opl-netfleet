@@ -148,6 +148,12 @@ support. See the chosen release and the [package contract](docs/architecture/pac
 
 ## Installation
 
+The local macOS MVP shares NetFleet's core business services and React UI components,
+with a native window, application menus, and keyboard shortcuts.
+See the [macOS build and validation guide](docs/development/macos.md). System proxy and TUN
+require local administrator authorization. This is a local, ad-hoc signed build; the feed
+installation commands below apply only to OpenWrt.
+
 ### Prerequisites
 
 The target device should have:
@@ -340,10 +346,12 @@ NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
 - [Independent device management](docs/architecture/management.md)
 - [Modules and extensions](docs/architecture/extensions.md)
 - [Plugin development and installation](docs/development/plugins.md)
+- [macOS development](docs/development/macos.md)
 - [HTTPS compatibility](docs/architecture/https-compatibility.md)
 - [UI design](docs/design/ui.md)
 - [Capabilities and platform ownership](docs/product/capabilities.md)
 - [Platform implementation layer](docs/platform/README.md)
+- [macOS platform implementation](docs/platform/macos.md)
 - [Product whitepaper](docs/product/whitepaper.md)
 - [Development and device-operation rules](AGENTS.md)
 

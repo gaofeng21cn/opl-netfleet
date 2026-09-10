@@ -720,3 +720,7 @@
 .nf-table-wrap .nf-measurement details p { color: var(--nf-muted); line-height: 1.6; }
 .nf-table-wrap .nf-measurement ul { margin: 8px 0; padding-left: 18px; }
 .nf-table-wrap .nf-measurement li { margin: 10px 0; line-height: 1.6; overflow-wrap: anywhere; }
+
+.nf-region-dialog-fields { display: grid; gap: 16px; margin-top: 20px; }
+.nf-region-dialog-fields label { display: grid; gap: 8px; color: var(--nf-text); font-size: 13px; font-weight: 600; }
+.nf-region-dialog-fields select { width: 100%; min-height: 36px; padding: 0 10px; border: 1px solid var(--nf-border); border-radius: 6px; background: var(--nf-surface); color: var(--nf-text); }

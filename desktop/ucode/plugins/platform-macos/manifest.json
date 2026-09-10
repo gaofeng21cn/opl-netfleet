@@ -1,0 +1,101 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "platform-macos",
+  "label": "macOS platform owner",
+  "version": "0.1.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-platform-macos",
+  "services": {
+    "platform.process": {
+      "version": 1,
+      "module": "lib/process.uc",
+      "requires": {}
+    },
+    "platform.runtime": {
+      "version": 1,
+      "module": "lib/runtime.uc",
+      "requires": {}
+    },
+    "platform.paths": {
+      "version": 1,
+      "module": "lib/paths.uc",
+      "requires": {}
+    },
+    "platform.profile": {
+      "version": 1,
+      "module": "lib/profile.uc",
+      "requires": {}
+    },
+    "platform.credentials": {
+      "version": 1,
+      "module": "lib/credentials.uc",
+      "requires": {}
+    },
+    "platform.device": {
+      "version": 1,
+      "module": "lib/device.uc",
+      "requires": {}
+    },
+    "platform.service": {
+      "version": 1,
+      "module": "lib/service.uc",
+      "requires": {}
+    },
+    "platform.subscriptions": {
+      "version": 1,
+      "module": "lib/subscriptions.uc",
+      "requires": {}
+    },
+    "platform.files": {
+      "version": 1,
+      "module": "lib/files.uc",
+      "requires": {
+        "platform.storage": 1
+      }
+    },
+    "mihomo.backend": {
+      "version": 1,
+      "module": "lib/backend.uc",
+      "requires": {
+        "mihomo.profile-storage": 1
+      }
+    },
+    "subscriptions.store": {
+      "version": 1,
+      "module": "lib/subscriptions.uc",
+      "requires": {}
+    },
+    "events.output": {
+      "version": 1,
+      "module": "lib/output.uc",
+      "requires": {
+        "events.operation": 1
+      }
+    },
+    "desktop.control": {
+      "version": 1,
+      "module": "lib/desktop.uc",
+      "requires": {
+        "scheduler.control": 1,
+        "mihomo.backend": 1,
+        "mihomo.controller": 1,
+        "platform.storage": 1,
+        "platform.paths": 1,
+        "configuration.onboarding-model": 1
+      }
+    }
+  },
+  "commands": {
+    "desktop-tick": {
+      "service": "desktop.control",
+      "method": "command_tick",
+      "access": "write"
+    },
+    "desktop-discover": {
+      "service": "desktop.control",
+      "method": "command_discover",
+      "access": "read"
+    }
+  },
+  "package_dependencies": []
+}

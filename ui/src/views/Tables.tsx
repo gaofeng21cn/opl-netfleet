@@ -121,7 +121,7 @@ export function QuotaMeter({ provider }: { provider: Provider }) {
   return <meter className="nf-quota-meter" aria-label="剩余流量比例" min={0} max={value.total_bytes} value={value.remaining_bytes} title={`剩余 ${Math.round(value.remaining_bytes / value.total_bytes * 100)}%`} />;
 }
 
-export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnapshot; full?: boolean }) {
+export function ProviderTable({ snapshot, full = false, onManageSubscriptions }: { snapshot: StatusSnapshot; full?: boolean; onManageSubscriptions?(): void }) {
   const [expandedProviderId, setExpandedProviderId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('default');
@@ -146,7 +146,7 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
   return (
     <>
     {full && <section className="nf-policy-summary">
-      <div className="nf-section-heading"><h2>订阅更新</h2><SubscriptionsPreview status={snapshot} onResetDayChange={(id, day) => setResetDayDrafts((items) => ({ ...items, [id]: day }))} /></div>
+      <div className="nf-section-heading"><h2>订阅更新</h2><>{onManageSubscriptions ? <button type="button" className="nf-button-secondary" onClick={onManageSubscriptions}>管理订阅</button> : <SubscriptionsPreview status={snapshot} onResetDayChange={(id, day) => setResetDayDrafts((items) => ({ ...items, [id]: day }))} />}</></div>
       <div className="nf-policy-grid is-five">
         <dl><dt>自动更新</dt><dd>{refresh?.enabled ? '已启用' : '已关闭'}</dd></dl>
         <dl><dt>更新周期</dt><dd>{duration(refresh?.interval_seconds)}</dd></dl>
@@ -196,7 +196,7 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
           <div><dt>到期时间</dt><dd>{providerExpiry(focused)}</dd></div>
           {focused.billing === 'subscription' && quotaResetLabel(focusedResetDay) && <div><dt>流量重置</dt><dd>{quotaResetLabel(focusedResetDay)}{focusedSection in resetDayDrafts && '（本地草稿）'}</dd></div>}
         </dl>
-        <SubscriptionsPreview status={snapshot} onResetDayChange={(id, day) => setResetDayDrafts(items => ({ ...items, [id]: day }))} />
+        <>{onManageSubscriptions ? <button type="button" className="nf-button-secondary" onClick={onManageSubscriptions}>管理订阅</button> : <SubscriptionsPreview status={snapshot} onResetDayChange={(id, day) => setResetDayDrafts(items => ({ ...items, [id]: day }))} />}</>
         <h3>更新记录</h3><dl className="nf-inspector-facts">
           {focusedSubscription?.section && <div><dt>订阅标识</dt><dd>{focusedSubscription.section}</dd></div>}
           <div><dt>缓存版本</dt><dd>{cacheVersion(focusedSubscription)}</dd></div>
@@ -210,7 +210,7 @@ export function ProviderTable({ snapshot, full = false }: { snapshot: StatusSnap
   );
 }
 
-export function RegionTable({ snapshot, full = false }: { snapshot: StatusSnapshot; full?: boolean }) {
+export function RegionTable({ snapshot, full = false, onChooseRegion, blockedReason }: { snapshot: StatusSnapshot; full?: boolean; onChooseRegion?(region: string): void; blockedReason?: string }) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('default');
   const [selectedOnly, setSelectedOnly] = useState(false);
@@ -224,14 +224,14 @@ export function RegionTable({ snapshot, full = false }: { snapshot: StatusSnapsh
       <p className="nf-table-caption">当前 {sortRegionsForDisplay(snapshot).length} 个地区可用 · 显示 {regions.length} 个</p>
       <div className="nf-table-wrap">
         <table>
-          <thead><tr><th>地区</th><th>可用机场</th><th>可用节点</th><th>最近一次测速</th><th>历史测量</th><th>模式</th></tr></thead>
+          <thead><tr><th>地区</th><th>可用机场</th><th>可用节点</th><th>最近一次测速</th><th>历史测量</th><th>参与方式</th>{onChooseRegion && <th>操作</th>}</tr></thead>
           <tbody>{regions.map((region) => (
             <tr className={region.selected ? 'is-selected' : ''} key={region.id}>
-              <td><span className="nf-table-name">{regionName(snapshot, region.id)}</span>{region.selected && <small>当前使用</small>}</td>
+              <td><span className="nf-table-name">{regionName(snapshot, region.id)}</span>{region.selected && <small>{snapshot.capabilities.filter(item => item.enabled && item.region_id === region.id && ['preferred', 'manual_region'].includes(item.data_path)).map(item => item.display_name || item.id).join('、') || '当前使用'}</small>}</td>
               <td>{countPair(region.available_provider_count, region.provider_count)}</td>
               <td>{region.node_count == null ? '节点清单暂不可读' : countPair(region.available_node_count, region.node_count)}</td>
               <MeasurementCell value={region.measurement} snapshot={snapshot} />
-              <td><details><summary>历史测量</summary><div>最近 {delay(region.last_best_delay_ms)}</div><div>平均 {averageDelay(region.average_best_delay_ms, region.delay_sample_count)}</div><small>{region.delay_sample_count == null ? '统计暂不可读' : `${region.delay_sample_count} 次`}{full && region.delay_sampled_at && ` · ${sampledAt(region.delay_sampled_at)}`}</small></details></td><td>{mode(region.mode)}</td>
+              <td><details><summary>历史测量</summary><div>最近 {delay(region.last_best_delay_ms)}</div><div>平均 {averageDelay(region.average_best_delay_ms, region.delay_sample_count)}</div><small>{region.delay_sample_count == null ? '统计暂不可读' : `${region.delay_sample_count} 次`}{full && region.delay_sampled_at && ` · ${sampledAt(region.delay_sampled_at)}`}</small></details></td><td>{mode(region.mode)}</td>{onChooseRegion && <td><button type="button" className="nf-button-secondary" disabled={Boolean(blockedReason) || !snapshot.capabilities.some(item => item.can_select_region && item.selectable_regions?.includes(region.id))} title={blockedReason || (snapshot.capabilities.some(item => item.can_select_region && item.selectable_regions?.includes(region.id)) ? '手动保持指定地区，地区内节点继续由核心选择' : '当前没有可切换的授权地区')} onClick={() => onChooseRegion(region.id)}>改用此地区</button></td>}
             </tr>
           ))}</tbody>
         </table>
