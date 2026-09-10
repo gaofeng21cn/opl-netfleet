@@ -24,13 +24,17 @@ return function(io) {
                 const addresses=[],remaining=[];
                 if (type(row.address_expires)!='object') return unavailable;
                 for (let address,expiry in row.address_expires) {
-                    if (type(expiry)!='int'&&type(expiry)!='double'||!(expiry<=value.sampled_monotonic+120)) return unavailable;
-                    if (expiry<=now) continue;
+                    const maximum=value.sampled_monotonic+120;
+                    // JSON rounding can put a valid deadline a few binary ULPs
+                    // above this sum. Clamp it; never extend the actual TTL.
+                    if (type(expiry)!='int'&&type(expiry)!='double'||!(expiry<=maximum+0.000001)) return unavailable;
+                    const deadline=min(expiry,maximum);
+                    if (deadline<=now) continue;
                     const bytes=iptoarr(address);
                     if(!bytes||!length(filter(bytes,x=>x!=0))||index(address,'%')>=0) return unavailable;
                     if(length(bytes)==4 ? bytes[0]==127||bytes[0]>=224&&bytes[0]<=239||bytes[0]==169&&bytes[1]==254 :
                         bytes[0]==255||bytes[0]==254&&(bytes[1]&192)==128||!length(filter(slice(bytes,0,15),x=>x!=0))&&bytes[15]==1) return unavailable;
-                    push(addresses,arrtoip(bytes));push(remaining,expiry-now);
+                    push(addresses,arrtoip(bytes));push(remaining,deadline-now);
                 }
                 push(devices,{mac:row.mac,addresses:sort(addresses),expires_in:length(remaining)?min(...remaining):0});
             }

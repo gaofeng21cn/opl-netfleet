@@ -87,7 +87,9 @@ return function(options) {
             const remaining = {};
             for (let ip in row.addresses ?? []) {
                 const expiry = row.address_expires?.[ip] ?? cache.monotonic + row.ttl;
-                if (expiry > now && expiry <= cache.monotonic + TTL) remaining[ip] = expiry - now;
+                const maximum = cache.monotonic + TTL, deadline = min(expiry, maximum);
+                // Accept JSON floating-point rounding, but keep the original TTL cap.
+                if (deadline > now && expiry <= maximum + 0.000001) remaining[ip] = deadline - now;
             }
             return {mac: row.mac, name: row.name, addresses: fresh ? sort(keys(remaining)) : [], ttl: row.ttl,
                 expires_in: fresh && length(remaining) ? int(min(...values(remaining)) + 0.999999) : 0,
