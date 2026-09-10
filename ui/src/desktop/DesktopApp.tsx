@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { automaticSelectionCopy } from '../lib/selection';
 import { AlertCircle } from 'lucide-react';
 import { Shell } from '../components/Shell';
-import { OverviewDigest } from '../components/OverviewDigest';
-import { OverviewExitSummary } from '../components/OverviewExitSummary';
+import { DesktopOverview } from './DesktopOverview';
 import { CapabilityPanel } from '../components/CapabilityPanel';
 import { PolicySummary } from '../components/PolicySummary';
 import { ResultNotice } from '../components/ResultNotice';
@@ -97,7 +96,7 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
   const selectionBlocked = !connected || snapshot?.error ? '状态读取失败，请刷新后重试' : busy ? '已有操作正在执行' : !readyToSelect ? '启用 NetFleet 后可切换地区' : undefined;
   const automatic = automaticSelectionCopy(Boolean(status?.selection?.automation_paused));
   return <Shell platform="desktop" view={view} onViewChange={navigate} busy={busy} healthy={connected && !snapshot?.error} readOnly={!connected} canSelect={Boolean(readyToSelect && automaticId)} automationPaused={status?.selection?.automation_paused} canDisable={Boolean(readyToSelect)} dashboardReady={false} onRefresh={() => void refresh()} onSelect={() => setConfirmAutomatic(true)} onDisable={() => void run('退出增强并保留原生代理', () => client.disable())} onOpenDashboard={() => undefined}>
-    <div className="nf-page-heading"><div><h1>{titles[view]}</h1><p>{descriptions[view]}</p></div></div>
+    <div className={`nf-page-heading${view === 'overview' ? ' nf-desktop-overview-heading' : ''}`}><div><h1>{titles[view]}</h1>{view !== 'overview' && <p>{descriptions[view]}</p>}</div></div>
     {(readError || snapshot?.error) && <div className="nf-alert" role="alert"><AlertCircle aria-hidden="true" /><span>{readError || snapshot?.error}</span></div>}
     {progress && <section className="nf-operation" role="status" aria-live="polite"><strong>{progress.title}</strong><p className="nf-operation-detail">请求正在执行，已等待 {elapsed} 秒。完成后将重新读取本机状态。</p></section>}
     {result && <ResultNotice scope={location.origin} slot="desktop-action" identity={result.id} title={result.title} warning={result.warning}>{result.detail}</ResultNotice>}
@@ -105,8 +104,7 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
     {snapshot && <>
       {view === 'overview' && <>
         <RuntimeControls snapshot={snapshot} client={client} run={run} disabled={blocked} />
-        {!snapshot.runtime.configured && <section className="nf-desktop-welcome"><div><h2>{Object.keys(snapshot.subscriptions).length ? '订阅尚未准备完成' : '添加订阅，准备你的网络'}</h2><p>{Object.keys(snapshot.subscriptions).length ? '订阅已保存在本机，但还缺少可识别的地区或主入口。可重新准备，或导入完整配置。' : '粘贴机场订阅后自动下载、校验并生成配置。准备过程不会启动代理或接管本机流量。'}</p></div><button className="nf-button-primary" onClick={() => { navigate('providers'); setShowSubscriptions(true); }}>{Object.keys(snapshot.subscriptions).length ? '查看机场订阅' : '添加订阅'}</button></section>}
-        {status && <><OverviewExitSummary snapshot={status} onOpen={() => navigate('exits')} /><OverviewDigest status={status} events={snapshot.events || { events: [] }} onOpen={navigate} platform="desktop" /></>}
+        <DesktopOverview snapshot={snapshot} disabled={blocked} canSelect={Boolean(readyToSelect)} onSelect={capability => setSelection({ capability })} onNavigate={next => { navigate(next); if (next === 'providers') setShowSubscriptions(true); }} />
       </>}
       {view === 'exits' && (status ? <><div className="nf-capability-list is-detailed">{status.capabilities.map(capability => <CapabilityPanel key={capability.id} snapshot={status} capability={capability} disabled={!readyToSelect} onChooseRegion={() => setSelection({ capability: capability.id })} onSelectAuto={automaticId ? () => setConfirmAutomatic(true) : undefined} />)}</div><PolicySummary snapshot={status} /></> : <p className="nf-empty">添加订阅并完成准备后，这里显示业务出口。</p>)}
       <div hidden={view !== 'providers'}>
@@ -122,7 +120,7 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
         <LogsAndBackup snapshot={snapshot} disabled={blocked} client={client} run={run} />
       </div>
     </>}
-    <DataSourceBar source={{ mode: 'live', label: '本机认证服务', target_label: '当前 Mac', read_only: blocked, connected, fetched_at: fetchedAt }} statusError={readError || snapshot?.error} />
+    {view === 'events' && <DataSourceBar source={{ mode: 'live', label: '本机认证服务', target_label: '当前 Mac', read_only: blocked, connected, fetched_at: fetchedAt }} statusError={readError || snapshot?.error} />}
     {selection && status && <RegionSelectionDialog snapshot={status} initialCapability={selection.capability} initialRegion={selection.region} blockedReason={selectionBlocked} onCancel={() => setSelection(null)} onConfirm={(capability, region) => { setSelection(null); void run('切换并保持地区', () => client.selectRegion(capability, region)); }} />}
     {confirmAutomatic && <ConfirmDialog {...automatic} busy={!readyToSelect || !automaticId} onCancel={() => setConfirmAutomatic(false)} onConfirm={() => { if (!automaticId || !readyToSelect) return; setConfirmAutomatic(false); void run(automatic.title, () => client.selectAuto(automaticId)); }} />}
   </Shell>;
