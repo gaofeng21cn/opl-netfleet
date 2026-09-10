@@ -23,7 +23,7 @@ Homebrew 软件或特权服务。UCode 使用固定源码，Darwin 补丁解决�
 macOS libc 兼容断点；源码、补丁与下载摘要均保留在构建入口和依赖回执中。
 构建器检查包内动态库路径并进行本地 ad-hoc 签名；这不是 Developer ID 签名或公证。
 App 图标由仓库现有 logo 通过 macOS `sips` 与 `iconutil` 生成；侧栏使用同一品牌源文件。
-arm64 与 Intel 有独立依赖清单，某一架构构建成功不代表另一架构已经验收。
+当前持续验证仅覆盖 arm64。依赖清单中的 Intel 记录不代表已经构建或验收。
 
 ## 使用
 
@@ -61,17 +61,16 @@ Cmd+1 至 Cmd+6 切换页面，Cmd+R 刷新本机状态；关闭窗口仍保留�
 
 ## 验证
 
+严格集成入口在依赖缺失时直接失败；本机先准备固定运行时，再执行：
+
 ```sh
-cd ui
-bun run typecheck
-bun run test
-bun run build:desktop
-cd ..
-node --test desktop/tests/runtime.test.mjs
-NETFLEET_RUNTIME_ROOT="$(python3 scripts/macos/bootstrap.py)" node desktop/tests/qualification.mjs
-NETFLEET_RUNTIME_ROOT="$(python3 scripts/macos/bootstrap.py)" node desktop/tests/owner-crash.mjs
-NETFLEET_RUNTIME_ROOT="$(python3 scripts/macos/bootstrap.py)" bun desktop/tests/react-client.ts
+runtime="$(python3 scripts/macos/bootstrap.py)"
+PATH="$runtime/bin:$PATH" UCODE_LIB="$runtime/lib/ucode/*.so" NETFLEET_RUNTIME_ROOT="$runtime" scripts/check-platform.sh macos
 ```
+
+它执行共享业务、UI 和桌面运行合同、真实核心资格、owner 崩溃回收、React 客户端、应用
+构建和 helper 自检。日常局部修改可使用 `check-fast.sh`；已列为未执行的检查不能算通过。
+OpenWrt 专属的 libuci 与 `/proc` 合同仍由 QEMU 验证，详见[开发验证](validation.md)。
 
 地区选择的界面回归使用 `ui/tests/selection-preview.html`。在 `ui/` 运行
 `bunx vite --config vite.desktop.config.ts --host 127.0.0.1` 后打开该路径；测试页明确显示
@@ -90,3 +89,7 @@ DNS 或路由。回执在 `.build/macos/qualification.json`；失败保留私有
 系统代理/TUN 另需授权后的实机验收：启用前后读取系统代理、DNS、路由和 utun；通过
 实际应用访问，再分别停止核心、退出应用和切换网络，检查自身接管全部恢复。helper 的
 `--self-test` 只验证确定性的状态恢复与身份逻辑，不能代替这项实机验收。
+
+隔离资格回执还记录状态快照、编译、选优和来源操作的样本数量与 p50/p95 耗时，样本混合
+冷启动、运行和停止状态，仅用于发现控制面瓶颈，不是稳定 SLA 或吞吐测量。新增来源验证
+已有策略、不同 provider/section 身份、配额解释、最后来源删除拒绝及失败后原状态保留。

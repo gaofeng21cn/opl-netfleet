@@ -1,3 +1,6 @@
+import * as fs from "fs";
+import { create } from "../openwrt/files/usr/libexec/opl-netfleet/kernel/host.uc";
+import { create as create_adapter } from "../openwrt/files/usr/libexec/opl-netfleet/adapters/openwrt.uc";
 import { use, release as release_services } from "./services.uc";
 const KIND = use("platform.runtime").KIND;
 const UCI_PACKAGE = use("platform.runtime").UCI_PACKAGE;
@@ -43,6 +46,22 @@ check(ARTIFACT_PATH == `${root}/profiles/opl-netfleet/mvp.json` &&
 	"compiled_identity_mismatch");
 for (let ref in ["file:../escape", "file:/tmp/escape", "subscription:../alpha", "subscription:alpha/child", "other:alpha"])
 	check(resolve_profile(ref) == null, "profile_boundary_not_enforced");
+// This regression loads the OpenWrt backend, so it belongs in the platform lane.
+const source_root = fs.realpath(replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet"));
+const workspace = fs.mkdtemp("/tmp/netfleet-backend-upgrade.XXXXXX");
+check(workspace != null, "upgrade_workspace_unavailable");
+const old_system = json(fs.readfile(`${source_root}/../../share/opl-netfleet/system.json`));
+delete old_system.bindings["mihomo.profile-storage"];
+const old_host = create(source_root, { adapter: create_adapter(), trusted_owner: fs.stat(source_root).uid,
+    code_locks: false, system: old_system, override_path: `${workspace}/old-system.json`,
+    maintenance_root: `${workspace}/old-maintenance` });
+let failure;
+try {
+    if (type(old_host.use("mihomo.backend").resolve_profile) != "function")
+        die("backend upgrade requires a new global storage binding");
+} catch (error) { failure = error; }
+old_host.release(); fs.rmdir(workspace);
+if (failure) die(failure.message);
 print(`backend_contract ${kind} passed\n`);
 
 release_services();

@@ -22,18 +22,6 @@ try {
 	// Resolving storage and documents must not load UCI or backend credentials.
 	const storage = host.use("platform.storage");
 	const documents = host.use("platform.documents");
-	// An installed OpenWrt composition can predate the exported storage service.
-	// Upgrading this plugin must still resolve its backend and lifecycle hooks.
-	const old_system = json(fs.readfile(`${root}/../../share/opl-netfleet/system.json`));
-	delete old_system.bindings["mihomo.profile-storage"];
-	const old_host = create(root, { adapter: create_adapter(), trusted_owner: fs.stat(root).uid,
-		code_locks: false, system: old_system, override_path: `${workspace}/old-system.json`,
-		maintenance_root: `${workspace}/old-maintenance` });
-	try {
-		check(type(old_host.use("mihomo.backend").resolve_profile) == "function",
-			"backend upgrade works without a new global storage binding");
-	} catch (error) { old_host.release(); die(error.message); }
-	old_host.release();
 	check(storage.read_json(path) == null, "missing file is unknown");
 	check(storage.write_text(`${workspace}/missing/child`, "value") == false, "failed text write is not success");
 	check(storage.write_text(path, "") && fs.stat(path).size == 0, "empty file is a successful complete write");

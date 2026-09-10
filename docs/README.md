@@ -6,11 +6,12 @@
 
 ## 当前事实
 
-- [`architecture/`](architecture/overview.md)：当前产品对象、选择、运行、接口、状态呈现、显示证据和打包合同。
+- [`architecture/`](architecture/overview.md)：当前产品对象、选择、运行、接口、状态呈现、显示证据和交付边界。
 - [`architecture/microkernel.md`](architecture/microkernel.md)：功能服务组合、依赖绑定、插件热替换与资源交接。
 - [`architecture/device-identity.md`](architecture/device-identity.md)：网络侧设备身份、IPv6 地址更新和证据过期。
 - [`product/capabilities.md`](product/capabilities.md)：能力清单与平台归属，连接功能规划与各平台实现。
 - [`platform/`](platform/README.md)：跨平台实现层入口，以及各平台机制事实的当前 owner。
+- [`platform/openwrt.md`](platform/openwrt.md)：OpenWrt 宿主、网关、管理接口、包更新与界面机制。
 - [`platform/macos.md`](platform/macos.md)：macOS 机制事实、私有状态、流量接管与恢复边界。
 - [`design/ui.md`](design/ui.md)：React 参考面、原生 LuCI 与 macOS 客户端的视觉和交互设计合同。
 - [`operations/deployment.md`](operations/deployment.md)：按后端与设备状态选择安装、更新、迁移入口，以及 Nikki Fleet 事务。

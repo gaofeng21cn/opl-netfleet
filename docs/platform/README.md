@@ -17,8 +17,9 @@
 
 `docs/architecture/` 与 `docs/design/ui.md` 只描述不依赖平台即成立的对象、状态、决策和交互内容。
 一条事实如果只能在某个平台成立，它属于本层；一句设计只有在点名平台后才讲得通，说明它落错了层。
-平台的界面内容、文案、状态语义和操作层级与共享设计同源，仍归 `docs/design/ui.md`；
-该平台用什么宿主渲染、加载和缓存这些内容归本层。
+共同业务词汇、状态语义、页面职责和操作层级归 `docs/design/ui.md`；系统授权、原生菜单、
+窗口导航和平台专属接入流程归对应平台文档。共同合同约束结果含义，不强制两端交互逐项相同。
+文档三层不是三套运行模块，也不要求目录逐层对应；业务所有权按实际调用和依赖判断。
 
 ## 命名与登记
 
@@ -31,8 +32,5 @@
 
 | 平台 | 机制事实当前 owner | 源码 |
 | --- | --- | --- |
-| OpenWrt | `docs/architecture/`（`packaging.md`、`microkernel.md`、`runtime-and-recovery.md`、`interfaces.md`、`device-identity.md`）、`docs/operations/`、`docs/development/` | `openwrt/`、`plugins/` |
+| OpenWrt | [openwrt.md](openwrt.md)、`docs/operations/`、`docs/development/` | `openwrt/`、`plugins/` |
 | macOS | `docs/platform/macos.md`、`docs/development/macos.md` | `desktop/`、`ui/src/desktop/` |
-
-OpenWrt 的机制事实仍由表中文件拥有，此处不重复它们的内容。事实按主题迁入
-`docs/platform/openwrt.md` 时，同一批次把共享文档中的对应段落缩减为指针，不留第二份当前叙事。

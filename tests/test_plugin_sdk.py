@@ -16,6 +16,19 @@ SDK = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SDK)
 
 
+def ucode_command():
+    """Return the UCode argv prefix, including a non-default module path.
+
+    The pinned macOS runtime keeps its modules under the build root, so a
+    developer there sets UCODE_LIB instead of relying on the default search
+    path. OpenWrt and CI leave it unset and keep the plain invocation.
+    """
+    binary = os.environ.get("UCODE") or shutil.which("ucode")
+    if binary and os.environ.get("UCODE_LIB"):
+        return [binary, "-L", os.environ["UCODE_LIB"]]
+    return [binary]
+
+
 class PluginSDKTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -325,8 +338,8 @@ class PluginSDKTests(unittest.TestCase):
     @unittest.skipUnless((os.environ.get("UCODE") or shutil.which("ucode")) and sys.platform == "linux",
                          "host-info requires Linux /proc and UCode")
     def test_service_example_executes_factories_and_declared_dependency(self):
-        subprocess.run([os.environ.get("UCODE") or shutil.which("ucode"),
-                        str(ROOT / "tests/plugin_sdk_service.uc"), str(SDK.SERVICE_EXAMPLE)], check=True)
+        subprocess.run(ucode_command() + [str(ROOT / "tests/plugin_sdk_service.uc"), str(SDK.SERVICE_EXAMPLE)],
+                       check=True)
 
     @unittest.skipUnless(os.environ.get("UCODE") or shutil.which("ucode"), "UCode runtime is not installed")
     def test_complete_example_persists_without_platform_dependencies_and_rejects_stale_writes(self):
@@ -366,7 +379,7 @@ check(reopened.service.save({ title: "Updated note", text: "fresh", generation: 
 reopened.scope.dispose();
 print("portable_note_ok\\n");
 '''
-        result = subprocess.run([os.environ.get("UCODE") or shutil.which("ucode"), "-e", script,
+        result = subprocess.run(ucode_command() + ["-e", script,
                                  str(source / "lib/document.uc"), str(data)],
                                 capture_output=True, text=True)
         self.assertEqual(0, result.returncode, result.stderr)
@@ -393,7 +406,7 @@ for (let path in slice(ARGV, 1)) {
     scope.dispose();
 }
 '''
-        result = subprocess.run([os.environ.get("UCODE") or shutil.which("ucode"), "-e", script,
+        result = subprocess.run(ucode_command() + ["-e", script,
                                  str(source / "lib/document.uc"), str(original), str(linked)],
                                 capture_output=True, text=True)
         self.assertEqual(0, result.returncode, result.stderr)

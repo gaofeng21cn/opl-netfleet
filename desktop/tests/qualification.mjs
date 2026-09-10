@@ -25,8 +25,8 @@ const nodeList = `proxies:
     port: 18080
 `;
 const relay = http.createServer((request, response) => {
-  if (request.method === 'GET' && request.url === '/subscription') {
-    return response.writeHead(200, { 'Content-Type': 'text/yaml' }).end(nodeList);
+  if (request.method === 'GET' && request.url.startsWith('/subscription')) {
+    return response.writeHead(200, { 'Content-Type': 'text/yaml', 'Subscription-Userinfo': 'upload=2; download=3; total=9' }).end(nodeList);
   }
   response.writeHead(405).end();
 });
@@ -42,12 +42,21 @@ relay.on('connect', (request, client, head) => {
   upstream.on('error', () => client.destroy()); client.on('error', () => upstream.destroy()); client.on('close', () => upstream.destroy());
 });
 await new Promise(resolve => relay.listen(0, '127.0.0.1', resolve));
+const measurements = {};
+async function measured(name, work) {
+  const started = performance.now();
+  const result = await work();
+  (measurements[name] ??= []).push(Math.round(performance.now() - started));
+  return result;
+}
 async function api(action, input = {}) {
+  return measured(action, async () => {
   const response = await fetch(`${base}/api/action`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, Origin: base, 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, ...input }), signal: AbortSignal.timeout(300000) });
   return response.json();
+  });
 }
-async function state() { return (await (await fetch(`${base}/api/state`, { headers: { Authorization: `Bearer ${token}` } })).json()).result; }
+async function state() { return measured('snapshot', async () => (await (await fetch(`${base}/api/state`, { headers: { Authorization: `Bearer ${token}` } })).json()).result); }
 // Each qualification instance owns its own state directory and loopback endpoint.
 async function boot(dir) {
   const handle = spawn(process.execPath, [path.join(root, 'desktop/runtime/server.mjs'), '--state', dir], { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -132,9 +141,40 @@ try {
   assert.equal(afterFailure.runtime.configured, true); assert.equal(Object.keys(afterFailure.subscriptions).length, 1);
   assert.deepEqual(Object.keys(afterFailure.policy.providers), [prepared.result.id]);
   evidence.checks.push('subscription_failure_preserves_previous_configuration');
+  // Preserve a caller-defined provider id and unrelated policy fields across source edits.
+  const policy = structuredClone(afterFailure.policy);
+  const firstId = prepared.result.id;
+  policy.providers.business = policy.providers[firstId]; delete policy.providers[firstId];
+  policy.provider_regions.business = policy.provider_regions[firstId]; delete policy.provider_regions[firstId];
+  policy.private_extension = { preserved: true };
+  assert.equal((await api('save-policy', { policy })).ok, true);
+  const second = await api('subscription-prepare', { subscription: { name: '第二来源', url: `${submission}?second` } });
+  assert.equal(second.ok, true); assert.equal(second.result.ready, true);
+  const withSecond = await state();
+  assert.equal(withSecond.policy.providers.business.section, firstId);
+  assert.equal(withSecond.policy.providers[firstId], undefined);
+  assert.deepEqual(withSecond.policy.bindings, policy.bindings);
+  assert.deepEqual(withSecond.policy.recovery_profile, policy.recovery_profile);
+  assert.deepEqual(withSecond.policy.private_extension, policy.private_extension);
+  assert.equal(withSecond.status.providers.find(item => item.id === 'business').quota.remaining_bytes, 4);
+  const sources = { ...withSecond.subscriptions }; delete sources[second.result.id];
+  const removed = await api('subscriptions-set', { subscriptions: sources });
+  assert.equal(removed.ok, true);
+  const afterRemoval = await state();
+  assert.deepEqual(Object.keys(afterRemoval.policy.providers), ['business']);
+  assert.equal(afterRemoval.policy.providers.business.enabled, true);
+  assert.deepEqual(afterRemoval.policy.private_extension, policy.private_extension);
+  assert.equal((await api('subscriptions-set', { subscriptions: {} })).ok, false);
+  assert.deepEqual((await state()).policy, afterRemoval.policy);
+  evidence.checks.push('source_merge_preserves_policy_and_section_identity');
+  for (let sample = 0; sample < 5; sample++) await state();
   assert.equal((await api('shutdown')).ok, true); subscriptionHandle = null;
   await fs.rm(subscriptionStateDir, { recursive: true, force: true }); subscriptionStateDir = null;
   evidence.ok = true; evidence.proxyConnections = connections;
+  evidence.metrics = Object.fromEntries(Object.entries(measurements).map(([action, samples]) => {
+    const sorted = [...samples].sort((a, b) => a - b);
+    return [action, { count: sorted.length, p50_ms: sorted[Math.ceil(sorted.length * 0.5) - 1], p95_ms: sorted[Math.ceil(sorted.length * 0.95) - 1] }];
+  }));
   const output = path.join(root, '.build/macos/qualification.json'); await fs.mkdir(path.dirname(output), { recursive: true });
   await fs.writeFile(output, JSON.stringify(evidence, null, 2)); console.log(JSON.stringify(evidence));
 } finally {

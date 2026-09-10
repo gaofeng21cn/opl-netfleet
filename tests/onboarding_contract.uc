@@ -114,6 +114,30 @@ if (sprintf("%J", draft_result.policy) != sprintf("%J", equivalent.policy)) {
 	exit(1);
 }
 
+
+const model = use("configuration.onboarding-model");
+const original = discover(one_provider).policy;
+original.providers.business = original.providers.beta;
+delete original.providers.beta;
+original.provider_regions.business = original.provider_regions.beta;
+delete original.provider_regions.beta;
+original.private_extension = { preserved: true };
+const before = sprintf("%J", original);
+const merged = model.merge_provider(original, result, "alpha");
+assert(merged.recognized && merged.policy.providers.business.section == "beta" && merged.policy.providers.alpha.section == "alpha");
+assert(merged.policy.private_extension.preserved && sprintf("%J", original) == before);
+const same = model.merge_provider(merged.policy, result, "beta");
+assert(same.recognized && same.policy.providers.beta == null && length(keys(same.policy.providers)) == 2);
+const removed = model.reconcile_sources(same.policy, { beta: { enabled: true }, base: { enabled: true } });
+assert(removed.ok && removed.policy.providers.business.enabled && removed.policy.providers.alpha == null);
+assert(removed.policy.provider_regions.alpha == null && removed.policy.private_extension.preserved);
+assert(!model.reconcile_sources(same.policy, { beta: { enabled: false }, base: { enabled: true } }).ok);
+const referenced = { ...original, recovery_profile: { ref: "subscription:alpha" } };
+assert(model.reconcile_sources(referenced, { beta: { enabled: true } }).error == "subscription_referenced_by_profile");
+assert(sprintf("%J", original) == before);
+const unknown = model.merge_provider(original, unknown_result, "alpha");
+assert(!unknown.recognized && sprintf("%J", unknown.policy) == before);
+
 print("onboarding_contract_ok\n");
 
 release_services();

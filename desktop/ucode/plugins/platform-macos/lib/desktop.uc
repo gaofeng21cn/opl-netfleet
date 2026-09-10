@@ -9,7 +9,10 @@ return function(context) {
 	function command_discover(argv) {
 		if (argv[1] != null) {
 			const candidate = context.use('platform.storage').read_json(argv[1]);
-			return { ok: true, result: context.use('configuration.onboarding-model').draft(candidate) };
+			const model = context.use('configuration.onboarding-model');
+			const discovery = model.draft(candidate);
+			return { ok: true, result: candidate.section == null ? discovery :
+				{ ...discovery, ...model.merge_provider(candidate.policy, discovery, candidate.section) } };
 		}
 		const state = rpc('state.get'), backend = context.use('mihomo.backend'), storage = context.use('platform.storage');
 		const path = backend.resolve_profile(state.profile);
@@ -26,5 +29,12 @@ return function(context) {
 			target: 'macos', evidence_path: context.use('platform.paths').EVIDENCE_PATH });
 		return { ok: true, result: discovery };
 	}
-	return { command_tick, command_discover };
+	function command_sources(argv) {
+		const input = context.use('platform.storage').read_json(argv[1]);
+		const normalized = context.use('models.subscriptions').normalize_sources(input?.sources, input?.previous, input?.imported);
+		if (!normalized.ok) return normalized;
+		const planned = input?.reconcile == true ? context.use('configuration.onboarding-model').reconcile_sources(input.policy, normalized.sources) : { ok: true };
+		return planned.ok ? { ok: true, result: { sources: normalized.sources, policy: planned.policy } } : planned;
+	}
+	return { command_tick, command_discover, command_sources };
 };

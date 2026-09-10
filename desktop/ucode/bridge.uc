@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as socket from 'socket';
 
 // loadfile() factories compile imports independently. Keep the dispatcher on the
 // current VM, so every platform factory shares one command stack and held lock.
@@ -8,12 +9,40 @@ function owner() {
 }
 export function shell_quote(value) { return `'${replace(`${value}`, "'", "'\\''")}'`; }
 export function rpc(method, params) {
-	const command = `node ${shell_quote(`${getenv('NETFLEET_DESKTOP_ROOT')}/runtime/rpc.mjs`)} ${shell_quote(method)} ${shell_quote(sprintf('%J', params ?? {}))}`;
-	const pipe = fs.popen(command);
-	if (pipe == null) die('desktop_owner_unavailable');
+	const body = sprintf('%J', { method, params: params ?? {} });
+	const connection = socket.connect({ path: getenv('NETFLEET_SOCKET') }, null, null, 3000);
+	if (connection == null) die('desktop_owner_unavailable');
 	let result;
-	try { result = json(pipe.read('all')); } catch (error) { pipe.close(); die('desktop_owner_response_invalid'); }
-	if (pipe.close() != 0) die(result?.error ?? 'desktop_owner_failed');
+	try {
+		if (!connection.setopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, { sec: 120, usec: 0 }) ||
+			!connection.setopt(socket.SOL_SOCKET, socket.SO_SNDTIMEO, { sec: 120, usec: 0 })) die('desktop_socket_timeout_unavailable');
+		const request = `POST /rpc HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nAuthorization: Bearer ${getenv('NETFLEET_RPC_TOKEN')}\r\nContent-Type: application/json\r\nContent-Length: ${length(body)}\r\n\r\n${body}`;
+		let sent = 0;
+		while (sent < length(request)) {
+			const size = connection.send(substr(request, sent));
+			if (size == null || size <= 0) die('desktop_owner_unavailable');
+			sent += size;
+		}
+		let response = '';
+		const deadline = time() + 120;
+		while (true) {
+			if (time() >= deadline) die('desktop_owner_timeout');
+			const chunk = connection.recv(65536);
+			if (chunk == null) die('desktop_owner_unavailable');
+			if (!length(chunk)) break;
+			response += chunk;
+			if (length(response) > 8 * 1024 * 1024 + 8192) die('desktop_owner_response_too_large');
+		}
+		const boundary = index(response, '\r\n\r\n');
+		if (boundary < 0 || boundary > 8192) die('desktop_owner_response_invalid');
+		const headers = substr(response, 0, boundary), payload = substr(response, boundary + 4);
+		const size = match(lc(headers), /(^|\r\n)content-length: ([0-9]+)(\r\n|$)/);
+		if (size == null || int(size[2]) != length(payload) || length(payload) > 8 * 1024 * 1024 ||
+			match(lc(headers), /(^|\r\n)transfer-encoding:/)) die('desktop_owner_response_invalid');
+		try { result = json(payload); } catch (error) { die('desktop_owner_response_invalid'); }
+		if (!match(headers, /^HTTP\/1\.[01] 200 /)) die(result?.error ?? 'desktop_owner_failed');
+	} catch (error) { connection.close(); die(error.message); }
+	connection.close();
 	return result;
 }
 export function respond(value) {

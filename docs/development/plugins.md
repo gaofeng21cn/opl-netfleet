@@ -36,7 +36,7 @@ SDK 排除顶层 `.git`、`.gitignore`、`.gitattributes` 和 `.github` 开发�
 
 需要透明 TCP 转换的原生后端插件可声明依赖 `mihomo.interception` v1，通过受限
 `request(owner, input)` 申请接管；参数、单槽位限制和失效语义见
-[运行与恢复](../architecture/runtime-and-recovery.md#运行后端与原生网关)。HTTPS 是当前
+[运行与恢复](../platform/openwrt.md#运行后端网关与迁移)。HTTPS 是当前
 调用者：健康循环、协议引擎和页面位于自身插件，基础网关没有 HTTPS 定时任务。
 普通业务插件无需使用接管能力；插件准入不意味着各插件可以任意写 DNS、nft 或核心配置。
 

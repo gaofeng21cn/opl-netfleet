@@ -195,5 +195,36 @@ derive = function(input, require_runtime) {
 // strict runtime discovery and existing target-local enable preconditions.
 function discover(input) { return derive(input, true); }
 function draft(input) { return { ...derive(input, false), readiness: "configuration" }; }
-return { discover, draft };
+function merge_provider(policy, discovery, section) {
+	const recognized = discovery?.policy?.providers?.[section] != null;
+	if (!recognized) return { policy: clone(policy), recognized: false };
+	if (policy == null) return { policy: clone(discovery.policy), recognized: true };
+	const next = clone(policy);
+	// Existing business ids may differ from the subscription section.
+	for (let id, provider in next.providers)
+		if (provider.section == section) return { policy: next, recognized: true };
+	if (next.providers[section] != null) return { policy: next, recognized: false };
+	next.providers[section] = clone(discovery.policy.providers[section]);
+	next.provider_regions[section] = clone(discovery.policy.provider_regions[section]);
+	for (let id, region in discovery.policy.regions)
+		if (next.regions[id] == null) next.regions[id] = clone(region);
+	return { policy: next, recognized: true };
+}
+function reconcile_sources(policy, sources) {
+	if (policy == null) return { ok: true, policy: null };
+	for (let ref in [policy.policy_source?.ref, policy.recovery_profile?.ref]) {
+		const matched = type(ref) == "string" ? match(ref, /^subscription:(.+)$/) : null;
+		if (matched != null && sources[matched[1]] == null)
+			return { ok: false, error: "subscription_referenced_by_profile" };
+	}
+	const next = clone(policy);
+	let enabled = 0;
+	for (let id, provider in next.providers) {
+		const source = sources[provider.section];
+		if (source == null) { delete next.providers[id]; delete next.provider_regions[id]; }
+		else { provider.enabled = source.enabled != false; if (provider.enabled) enabled++; }
+	}
+	return enabled > 0 ? { ok: true, policy: next } : { ok: false, error: "last_provider_required" };
+}
+return { discover, draft, merge_provider, reconcile_sources };
 };

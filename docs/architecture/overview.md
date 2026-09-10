@@ -8,40 +8,22 @@
 
 ## 当前产品边界
 
-NetFleet 是 OpenWrt 上基于微内核的代理与网络管理平台，围绕多机场组织、业务出口、自动选优
-和安全恢复提供独立管理能力。内核负责发现、绑定、依赖、作用域和代码生命周期，业务、
-平台能力与界面通过插件组合；自有与第三方插件共用安装布局、动作和页面贡献入口。
+NetFleet 是跨平台的代理资源与业务出口管理产品，组织多个机场、地区与能力，提供共享的
+订阅语义、策略编译、选优、状态证据和安全恢复。Mihomo 负责规则执行、节点连接、组内
+健康检查与 URLTest；NetFleet 不维护第二个转发核心或选择器。
 
-macOS 提供共享业务插件的本机 MVP：桌面运行适配器替换 OpenWrt 的配置、进程和网络
-接管实现，使用相同编译与选优服务。其适用范围、权限和恢复合同见[macOS 平台实现](../platform/macos.md)；
-下述 Nikki、原生 gateway、LuCI 与设备部署细节均属于 OpenWrt。
+微内核组合功能插件；业务服务通过显式接口使用平台能力。OpenWrt 与 macOS 使用同一份
+共享业务源码，各自组合宿主、存储、进程监督和网络接管。当前平台支持范围归
+[能力表](../product/capabilities.md)，系统机制与专属交互归[平台实现](../platform/README.md)。
+代码所在目录不授予业务所有权，界面或平台适配器不能另写编译、排序与策略合并规则。
 
-宿主的平台操作显式注入内核，具名实例可以覆盖局部服务绑定与配置。当前源码有 `nikki-mihomo` 与
-`native-mihomo` 两条明确选择的后端路径。两者共用 Policy、编译、选优、证据、刷新与
-恢复事务；Mihomo 始终拥有节点连接、组内健康检查和 URLTest。
-
-Nikki 模式继续使用 Nikki 的订阅和数据面 owner。原生模式由 NetFleet 管理订阅私有输入、
-缓存和服务，正式 gateway 复用固定版本 Nikki 的配置投影与 nft 模板，管理自身命名空间的
-DNS、IPv4/IPv6 透明代理和策略路由。原生模式不继续读写 Nikki 的配置或启动其服务。
-两种模式不会并行运行代理核心，也不建立双写或运行时自动回落到另一后端。
-
-当前仓库包含 UCode 微内核与功能插件、OpenWrt package source、薄 rpcd 适配器与 LuCI 插件页面宿主，
-以及一个由 `procd` 直接监督、调用调度插件的前台 supervisor。`opl-netfleet` 聚合包安装
-默认产品；`opl-netfleet-kernel` 和各功能插件可以独立安装更新，系统配置明确绑定服务
-提供者。`product-ui` 插件贡献默认产品的七个页面，宿主负责清单发现、导航和页面资源
-生命周期；新增完整插件不需要修改宿主的静态业务入口。设备配置可在所选后端订阅、共享地区目录
-和 Policy Source 组边界内维护完整 NetFleet policy。原生订阅凭据通过独立 subscriptions
-owner 保存，不进入 policy；浏览器不管理 DNS/nft 或解析节点。Zashboard 仍是独立完整
-页面，由当前后端提供资源和 controller。没有并行刷新循环、第二选择器或 sing-box 后端。
-
-后端身份由设备私有 selector 明确选择，缺省使用 Nikki 路径，未知身份拒绝。
-空白设备通过显式原生接入建立初始环境；已有 Nikki 设备只通过绑定 revision 的迁移事务
-交接 owner。源码能力、发布包和具体设备验收是独立事实；后端实现存在不代表任意发布资产
-或设备已经通过等功能验证。入口和权限见[公开接口](interfaces.md)。
+UI 统一业务词汇、页面职责和交互语义，具体渲染按平台实现。状态由 owner 投影，界面只
+提交受限操作，不解释节点、重做规则匹配或持有第二份可写策略。插件与系统集成功能按
+真实平台能力呈现；独立插件安装、更新和完整面板不能从一个平台推定到另一个平台。
 
 ## 当前纵向链
 
-稳定入口为 `openwrt/files/usr/libexec/opl-netfleet/main.uc`，命令由微内核路由到功能插件
+各平台入口加载同一微内核，命令由微内核路由到功能插件
 声明的服务方法。服务接口、依赖与代码生命周期见[微内核与功能插件](microkernel.md)。常用运行动作是 `status`、
 `events`、`probe`、`validate`、`compile`、`enable`、`disable`、`select` 和 `refresh`；内部动作是
 `maintain`、`recover`、`resume`，以及仅供 canonical installer 调用的恢复准备与恢复动作。`refresh`
@@ -64,21 +46,19 @@ RecoveryProfileRef
 
 `validate` 可以只读校验显式 policy 路径；其他动作只读取 canonical target-local policy。
 `compile` 只生成 staged，不改变数据面。首次启用、显式自动选优和 supervisor 到期轮次复用
-同一选择入口。rpcd、LuCI 宿主及界面插件只投影 owner 状态并转发已声明的有限操作，不拥有候选资格、排序、
+同一选择入口。传输适配器、宿主及业务界面只投影 owner 状态并转发已声明的有限操作，不拥有候选资格、排序、
 探测、回滚或配置事实。
 
 ## 跨主题硬下限
 
-1. 安装、`validate` 和 `compile` 默认无数据面副作用；接入、迁移和启用必须显式确认。
-2. 启用前必须确认 WAN 已 up 且存在 IPv4 默认路由；不满足时保持原 Profile。
-3. NetFleet 未安装、未启用、崩溃或被卸载时，OpenWrt 基础联网必须仍可独立恢复。
-4. disable、事务回滚和进程级恢复优先恢复独立的 Recovery Profile；原生 runtime 仍失败时，
-   才允许所选后端 stop/cleanup 恢复网络直通。
-5. Nikki 模式使用官方数据面生命周期；原生 gateway 只清理自己持有且身份可回读的
-   DNS、nft 和路由状态，不对其他后端缓存或网络状态建立第二 writer。
-6. 每项状态和 mutation 只有一个 owner；投影不得反向成为事实源。
-7. 设备软件操作不授权重启、关机、系统升级、固件写入或依赖现场才能撤销的动作。
-8. source 测试、package 构建和设备运行分别是不同证据层，不能互相替代。
+1. 安装、发现、校验和编译不隐式改变数据面；接入、迁移和启用由明确操作触发。
+2. 启用前确认平台上游就绪，失败保持原 Profile；具体网络证据归平台实现。
+3. 基础联网与安全退出可以解除对失败增强层的依赖。
+4. 退出增强优先恢复独立 Recovery Profile；原生 runtime 仍失败才清理接管进入直通。
+5. 每项状态、核心和网络资源只有一个 owner；只清理自身持有的对象。
+6. UI、缓存和生成投影不能反向成为配置或运行事实源。
+7. 设备不可逆操作边界见[AGENTS.md](../../AGENTS.md)，软件恢复不能扩张为物理恢复授权。
+8. 源码、平台构建、安装与实际网络分别验证，不相互替代。
 
 ## 文档地图
 
@@ -116,7 +96,7 @@ RecoveryProfileRef
   [runtime-and-recovery.md](runtime-and-recovery.md)。
 - 改公开字段、RPC 动作或 UI 行为：先更新 [interfaces.md](interfaces.md)；视觉规则另改
   [UI 设计合同](../design/ui.md)。
-- 改 package、private Instance 或 deployment bundle 边界：先更新 [packaging.md](packaging.md)。
+- 改交付与私有配置边界：先更新 [packaging.md](packaging.md)；包格式、系统接管和宿主机制改对应[平台文档](../platform/README.md)。
 - 仅提出未来能力：写 proposal，不得先修改当前架构或让 UI 冒充已经实现。
 
 所有主题修改都必须同时回读真实 caller、实现 owner 和受影响测试。退役接口前先证明
@@ -138,7 +118,6 @@ successor 已接管真实 caller；caller-zero 后在同一批次删除实现、
 每个新增机制必须回答：当前需求是什么，现有 owner 为什么不能完成，不增加会失败哪项验收，
 最小真实路径如何证明。缺少其中任何一项时，该机制不进入 source。
 
-设备完成必须分别取得 installed artifact、staged/active 身份、所选后端 effective Profile、Mihomo
-current chain、DNS/nft/IPv4/IPv6、业务访问、恢复和 LuCI DOM 的 target-local readback。推广先在一台
-可恢复 canary 上证明，再把同一 canonical artifact 复制到单独授权的 replica；任何一台设备的
-成功都不能替代另一台设备的验收。
+平台交付分别取得安装身份、staged/active 身份、有效 Profile、实际运行路径、网络接入、
+业务访问、恢复和真实界面的回读。具体检查由平台能力决定，见[开发验证](../development/validation.md)。
+真实设备推广先在可恢复 canary 上验证；另一个目标须独立授权和验收。

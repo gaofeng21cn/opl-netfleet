@@ -63,4 +63,18 @@ check(current.cache_current && !current.pending_update && !current.using_previou
 check(public_source(source, { present: false }).pending_update, "new source needs explicit refresh");
 print("subscriptions_contract_ok\n");
 
+
+const shared_model = use("models.subscriptions");
+const normalized = shared_model.normalize_sources({ source_a: { name: "Source", url: "https://example.invalid/subscription" } }, {}, {});
+assert(normalized.ok && normalized.sources.source_a.user_agent == "clash.meta");
+assert(!shared_model.normalize_sources({ source_a: { name: "Source", url: "https://user:secret@example.invalid/subscription" } }, {}, {}).ok);
+assert(!shared_model.normalize_sources({ source_a: { name: "Source", imported: true } }, {}, {}).ok);
+assert(shared_model.normalize_sources({ source_a: { name: "Source" } }, {}, { source_a: true }).ok);
+const quota_wire = shared_model.userinfo("Subscription-Userinfo: upload=2; download=3; total=9");
+assert(shared_model.quota_state({ total: quota_wire.total, used: quota_wire.used }).remaining_bytes == 4);
+assert(shared_model.quota_state({ total: 9 }).state == "unknown");
+assert(shared_model.quota_state({ available: 0 }).state == "exhausted");
+assert(shared_model.quota_state({ total: 0, used: 0 }).state == "exhausted");
+assert(shared_model.quota_state({ available: -1, total: 9, used: 2 }).state == "exhausted");
+assert(shared_model.quota_state({ total: 9, used: 2, reset_day: "15" }).reset_day_source == "manual");
 release_services();

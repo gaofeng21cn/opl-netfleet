@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { shell_quote as q, process_identity } from '../bridge.uc';
+import { rpc, process_identity } from '../bridge.uc';
 import { trusted } from '../kernel/io.uc';
 
 let locks = {};
@@ -26,12 +26,7 @@ export function create(root) {
 		} };
 	}
 	function inspect_digest(directory, files) {
-		const pipe = fs.popen(`cd ${q(directory)} && sha256sum ${join(' ', map(files, path => q(substr(path, length(directory) + 1))))}`);
-		const identities = pipe?.read('all');
-		if (pipe == null || pipe.close() != 0 || !length(identities ?? '')) return null;
-		const digest = fs.popen(`printf '%s' ${q(identities)} | sha256sum`);
-		const output = trim(digest?.read('all') ?? '');
-		return digest != null && digest.close() == 0 && match(output, /^[a-f0-9]{64} /) ? substr(output, 0, 64) : null;
+		return rpc('code.digest', { directory, files }).digest;
 	}
 	return { trusted_owner: owner, paths: { installed_root: root, default_system: `${root}/system.json`,
 		override: `${state}/system.json`, network_lock: `${state}/network.lock`, code_locks: `${state}/code-locks`,

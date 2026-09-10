@@ -372,7 +372,7 @@ define Package/opl-netfleet-plugin-$(1)
   VERSION:=$(shell python3 ./plugin-packages.py version $(1))-r$(PKG_RELEASE)
   REPLACES:=opl-netfleet
   DEPENDS:=+opl-netfleet-kernel $(shell python3 ./plugin-packages.py dependencies $(1))
-  EXTRA_DEPENDS:=$(if $(filter selection,$(1)),opl-netfleet-plugin-models (>=0.7.6),$(if $(filter product-ui,$(1)),opl-netfleet-kernel (>=0.8.8)$(comma) luci-app-netfleet (>=0.8.4),$(if $(filter maintenance,$(1)),opl-netfleet-kernel (>=0.8.1),$(if $(filter mihomo,$(1)),opl-netfleet-plugin-platform (>=0.8.3)))))
+  EXTRA_DEPENDS:=$(if $(filter platform-openwrt,$(1)),opl-netfleet-plugin-models (>=0.7.8),$(if $(filter selection,$(1)),opl-netfleet-plugin-models (>=0.7.6),$(if $(filter product-ui,$(1)),opl-netfleet-kernel (>=0.8.8)$(comma) luci-app-netfleet (>=0.8.4),$(if $(filter maintenance,$(1)),opl-netfleet-kernel (>=0.8.1),$(if $(filter mihomo,$(1)),opl-netfleet-plugin-platform (>=0.8.3))))))
   PKGARCH:=all
 endef
 

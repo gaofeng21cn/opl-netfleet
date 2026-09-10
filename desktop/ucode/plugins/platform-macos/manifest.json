@@ -44,7 +44,9 @@
     "platform.subscriptions": {
       "version": 1,
       "module": "lib/subscriptions.uc",
-      "requires": {}
+      "requires": {
+        "models.subscriptions": 1
+      }
     },
     "platform.files": {
       "version": 1,
@@ -63,7 +65,9 @@
     "subscriptions.store": {
       "version": 1,
       "module": "lib/subscriptions.uc",
-      "requires": {}
+      "requires": {
+        "models.subscriptions": 1
+      }
     },
     "events.output": {
       "version": 1,
@@ -81,7 +85,8 @@
         "mihomo.controller": 1,
         "platform.storage": 1,
         "platform.paths": 1,
-        "configuration.onboarding-model": 1
+        "configuration.onboarding-model": 1,
+        "models.subscriptions": 1
       }
     }
   },
@@ -94,6 +99,11 @@
     "desktop-discover": {
       "service": "desktop.control",
       "method": "command_discover",
+      "access": "read"
+    },
+    "desktop-sources": {
+      "service": "desktop.control",
+      "method": "command_sources",
       "access": "read"
     }
   },

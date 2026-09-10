@@ -220,6 +220,7 @@ NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
 - [UI 设计](docs/design/ui.md)
 - [能力与平台归属](docs/product/capabilities.md)
 - [平台实现层](docs/platform/README.md)
+- [OpenWrt 平台实现](docs/platform/openwrt.md)：宿主、网关、管理与包更新机制。
 - [macOS 平台实现](docs/platform/macos.md)
 - [产品白皮书](docs/product/whitepaper.md)
 - [开发与设备操作规则](AGENTS.md)

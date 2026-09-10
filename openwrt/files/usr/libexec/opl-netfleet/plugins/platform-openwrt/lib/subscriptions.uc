@@ -2,7 +2,7 @@ import { cursor } from "uci";
 
 return function(context) {
 	const UCI_PACKAGE = context.use("platform.runtime").UCI_PACKAGE;
-	const quota_reset_day = context.use("models.subscriptions").quota_reset_day;
+	const quota_state = context.use("models.subscriptions").quota_state;
 	function subscription_exists(section) { return cursor().get(UCI_PACKAGE, section) == "subscription"; }
 	function subscription_display_name(section) {
 		const value = cursor().get(UCI_PACKAGE, section, "name");
@@ -45,25 +45,11 @@ return function(context) {
 		const expiry_raw = uci.get(UCI_PACKAGE, section, config?.expiry_field ?? "expire");
 		const expires_at = type(expiry_raw) == "string" &&
 			match(trim(expiry_raw), /^[0-9]{4}-[0-9]{2}-[0-9]{2}([ T][0-9]{2}:[0-9]{2}:[0-9]{2})?$/) ? trim(expiry_raw) : null;
-		const result = { state: "unknown" };
-		const reset_day = quota_reset_day(uci.get(UCI_PACKAGE, section, "quota_reset_day"));
-		if (reset_day != null) { result.reset_day = reset_day; result.reset_day_source = "manual"; }
-		if (expires_at != null) result.expires_at = expires_at;
 		let available_raw = uci.get(UCI_PACKAGE, section, available_field);
 		if (available_raw == null && available_field != "available") available_raw = uci.get(UCI_PACKAGE, section, "available");
-		const available = quantity(available_raw);
-		if (available != null) {
-			result.state = available <= 0 ? "exhausted" : "available";
-			if (available > 0) result.remaining_bytes = available;
-			return result;
-		}
-		const total = quantity(uci.get(UCI_PACKAGE, section, total_field)), used = quantity(uci.get(UCI_PACKAGE, section, used_field));
-		if (total != null && used != null) {
-			const remaining = total - used;
-			result.state = remaining <= 0 ? "exhausted" : "available";
-			if (remaining > 0) result.remaining_bytes = remaining;
-		}
-		return result;
+		return quota_state({ available: quantity(available_raw),
+			total: quantity(uci.get(UCI_PACKAGE, section, total_field)), used: quantity(uci.get(UCI_PACKAGE, section, used_field)),
+			expires_at, reset_day: uci.get(UCI_PACKAGE, section, "quota_reset_day") });
 	}
 	return { subscription_exists, subscription_display_name, subscription_options, subscription_quota };
 };
