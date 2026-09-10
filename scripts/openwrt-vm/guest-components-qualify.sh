@@ -193,7 +193,75 @@ apk --timeout 30 --repositories-file /etc/apk/repositories.d/netfleet-component-
 independent=$(jsonfilter -i "$work/fixture.json" -e '@.package_versions["opl-netfleet-plugin-dashboard"].independent')
 uclient-fetch -q -O "$work/independent.apk" \
 	"$feed_url/components-fixtures/independent/opl-netfleet-plugin-dashboard-$independent.apk"
-install_fixture "$work/independent.apk" >"$work/independent.log" 2>&1
+# Update a non-resource plugin through the real finite transaction. Keep an old
+# local checksum root to prove it is not copied onto the new APK database.
+plugin=opl-netfleet-plugin-dashboard
+prior=$(package_version "$plugin" old)
+install_fixture "$work/$plugin-$prior.apk" >"$work/independent.log" 2>&1
+local_stage="$work/local-install"
+mkdir -p "$local_stage/old" "$local_stage/new"
+cp "$work/$plugin-$prior.apk" "$local_stage/old/"
+cp "$work/independent.apk" "$local_stage/new/$plugin-$independent.apk"
+chmod 700 "$local_stage" "$local_stage/old" "$local_stage/new"
+chmod 600 "$local_stage"/old/* "$local_stage"/new/*
+old_sha=$(sha256sum "$local_stage/old/$plugin-$prior.apk" | cut -d' ' -f1)
+new_sha=$(sha256sum "$local_stage/new/$plugin-$independent.apk" | cut -d' ' -f1)
+printf '{"schema":"opl-netfleet-plugin-install.v1","packages":[{"name":"%s","before_version":"%s","version":"%s","before_sha256":"%s","sha256":"%s"}]}\n' \
+ "$plugin" "$prior" "$independent" "$old_sha" "$new_sha" >"$local_stage/request.json"
+core_pid_before=$(pidof mihomo)
+cp "$local_stage/old/$plugin-$prior.apk" "$local_stage/old/unexpected.apk"
+if ucode "$owner" components-install "$local_stage" >"$work/local-rejected.json"; then exit 1; fi
+assert_json "$work/local-rejected.json" '@.error' unexpected_plugin_archive
+[ "$(pidof mihomo)" = "$core_pid_before" ]
+rm "$local_stage/old/unexpected.apk"
+cp -R /usr/libexec/opl-netfleet/plugins/components "$local_stage/components"
+cp /tmp/observe-openwrt.uc "$local_stage/observe.uc"
+(cd "$local_stage" && sha256sum request.json old/* new/* components/manifest.json components/lib/control.uc observe.uc >SHA256SUMS)
+# Both the busy path and the successful worker/observation path use the public
+# executor, not a test-only shell installation implementation.
+(
+ exec 8>/var/lock/opl-netfleet-operator.lock
+ flock -n 8
+ if sh /tmp/update-openwrt-plugins-remote.sh "$local_stage" 10 >"$work/local-busy.json"; then exit 1; fi
+ assert_json "$work/local-busy.json" '@.error' operator_window_busy
+)
+sh /tmp/update-openwrt-plugins-remote.sh "$local_stage" 10 >"$work/local-run.json"
+assert_json "$local_stage/acceptance.json" '@.ok' true
+assert_json "$local_stage/acceptance.json" '@.owner_pids_stable' true
+[ "$(pidof mihomo)" = "$core_pid_before" ]
+grep -Fxq "$plugin" /etc/apk/world
+# Retry with stale installed-version evidence must fail before hooks.
+if ucode "$owner" components-install "$local_stage" >"$work/local-rejected.json"; then exit 1; fi
+assert_json "$work/local-rejected.json" '@.error' installed_version_changed
+unchanged
+rpc_ready
+# Shared models legitimately drain the dependent core; verify that lifecycle
+# restoration completes before observing normal supervisor cycles.
+local_stage="$work/shared-install"
+mkdir -m 700 -p "$local_stage/old" "$local_stage/new"
+printf '%s\n' '{"schema":"opl-netfleet-plugin-install.v1","packages":[]}' >"$local_stage/request.json"
+# Exercise shared-model dependents and self-updating components/UI in the same
+# finite operation, including their real package hooks and resource ownership.
+for extra in opl-netfleet-plugin-models opl-netfleet-plugin-components opl-netfleet-plugin-product-ui; do
+ extra_prior=$(package_version "$extra" old)
+ extra_next=$(package_version "$extra" current)
+ install_fixture "$work/$extra-$extra_prior.apk" >>"$work/independent.log" 2>&1
+ cp "$work/$extra-$extra_prior.apk" "$local_stage/old/"
+ uclient-fetch -q -O "$local_stage/new/$extra-$extra_next.apk" "$feed_url/$extra-$extra_next.apk"
+ chmod 600 "$local_stage/old/$extra-$extra_prior.apk" "$local_stage/new/$extra-$extra_next.apk"
+ extra_old_sha=$(sha256sum "$local_stage/old/$extra-$extra_prior.apk" | cut -d' ' -f1)
+ extra_new_sha=$(sha256sum "$local_stage/new/$extra-$extra_next.apk" | cut -d' ' -f1)
+ ucode -e 'import {readfile,writefile} from "fs";
+  const value=json(readfile(ARGV[0]));
+  push(value.packages,{name:ARGV[1],before_version:ARGV[2],version:ARGV[3],before_sha256:ARGV[4],sha256:ARGV[5]});
+  writefile(ARGV[0],sprintf("%J\n",value));' "$local_stage/request.json" "$extra" "$extra_prior" "$extra_next" "$extra_old_sha" "$extra_new_sha"
+done
+cp -R /usr/libexec/opl-netfleet/plugins/components "$local_stage/components"
+cp /tmp/observe-openwrt.uc "$local_stage/observe.uc"
+(cd "$local_stage" && sha256sum request.json old/* new/* components/manifest.json components/lib/control.uc observe.uc >SHA256SUMS)
+sh /tmp/update-openwrt-plugins-remote.sh "$local_stage" 10 >"$work/shared-run.json"
+assert_json "$local_stage/acceptance.json" '@.ok' true
+assert_json "$local_stage/acceptance.json" '@.owner_pids_stable' true
 unchanged
 rpc_ready
 cp /etc/apk/world "$work/update-world"
@@ -339,6 +407,10 @@ apk list --manifest | grep -Fqx "mihomo-meta $core_current"
 [ "$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.core.pid')" = "$core_pid_before" ]
 unchanged
 stage=complete
-# Remove the explicit root introduced by the independent-plugin test; the product still needs it.
-apk --no-network --repositories-file /dev/null del opl-netfleet-plugin-dashboard >"$work/independent-root-remove.log" 2>&1
-printf '%s\n' '{"ok":true,"checks":{"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"installer_complete_product_upgrade":true,"component_preserves_newer_independent_plugin":true,"component_world_preserved":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_durable_terminal_reconcile":true,"component_interrupted_install_recovery":true,"component_failed_package_hook_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"
+# Remove only roots introduced by the finite-update fixtures. The installed
+# product still requires these plugins; later product removal must not inherit
+# this test's independent installation intent.
+apk --no-network --repositories-file /dev/null del opl-netfleet-plugin-dashboard \
+	opl-netfleet-plugin-models opl-netfleet-plugin-components opl-netfleet-plugin-product-ui \
+	>"$work/independent-root-remove.log" 2>&1
+printf '%s\n' '{"ok":true,"checks":{"component_operator_window":true,"component_finite_observation":true,"component_finite_shared_models":true,"component_finite_plugin_update":true,"component_finite_rejects_extra_archive":true,"component_finite_rejects_stale_version":true,"component_finite_keeps_core_pid":true,"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"installer_complete_product_upgrade":true,"component_preserves_newer_independent_plugin":true,"component_world_preserved":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_durable_terminal_reconcile":true,"component_interrupted_install_recovery":true,"component_failed_package_hook_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"

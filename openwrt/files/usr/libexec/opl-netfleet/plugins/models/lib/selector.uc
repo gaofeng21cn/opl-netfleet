@@ -53,6 +53,20 @@ is_provider_proxy_leaf = function(provider_state, source_name, value, require_al
 		CONTROL_PROXY_TYPES[proxy_type] != true;
 };
 
+function history_time(health) {
+	const history = health?.history;
+	const last = type(history) == 'array' && length(history) ? history[length(history) - 1] : null;
+	const parts = match(last?.time ?? '', /^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\.([0-9]{1,9}))?Z$/);
+	return parts == null ? null : `${parts[1]}.${substr((parts[3] ?? '') + '000000000', 0, 9)}Z`;
+};
+
+function newer_group_success(group, leaf) {
+	const group_time = history_time(group), leaf_time = history_time(leaf);
+	const last = group?.history?.[length(group?.history ?? []) - 1];
+	return group?.alive == true && leaf?.alive == false && group_time != null && leaf_time != null &&
+		group_time > leaf_time && type(last?.delay) == 'int' && last.delay >= 0;
+};
+
 function provider_group_measurement_reason(proxy_state, provider_state, source_name, group, url) {
 	const state = proxy_state?.[group];
 	if (state == null) return "group_unavailable";
@@ -70,7 +84,10 @@ function provider_group_measurement_reason(proxy_state, provider_state, source_n
 	if (CONTROL_PROXY_TYPES[lc(leaf.type)] == true) return "no_proxy_leaf";
 	if (state.extra?.[url]?.alive == false) return "group_latency_failed";
 	if (state.extra?.[url]?.alive != true) return "group_latency_unrecorded";
-	if (leaf.extra?.[url]?.alive == false) return "leaf_latency_failed";
+	// Provider-wide health checks can precede a successful candidate URLTest.
+	// An older leaf failure must not veto the newer same-target group result.
+	if (leaf.extra?.[url]?.alive == false)
+		return newer_group_success(state.extra[url], leaf.extra[url]) ? null : "leaf_latency_failed";
 	if (leaf.extra?.[url]?.alive != true) return "leaf_latency_unrecorded";
 	return null;
 };
@@ -78,6 +95,8 @@ function provider_group_measurement_reason(proxy_state, provider_state, source_n
 provider_group_leaf_with_health = function(proxy_state, provider_state, source_name, group, require_alive, url) {
 	const group_state = proxy_state?.[group];
 	const leaf = group_state?.now ?? null;
+	if (require_alive)
+		return provider_group_measurement_reason(proxy_state, provider_state, source_name, group, url) == null ? leaf : null;
 	return (require_alive ? group_state?.extra?.[url]?.alive == true : group_state?.alive == true) && type(group_state?.all) == "array" &&
 		index(group_state.all, leaf) >= 0 &&
 		is_provider_proxy_leaf(provider_state, source_name, leaf, require_alive, url) ? leaf : null;
