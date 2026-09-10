@@ -188,8 +188,10 @@ return function(context, options) {
         const live=unlocked(lock,()=>health(!reason));
         if(live.ready&&reconcile(live)) {save({...previous,intercepting:false,reason:'engine_config_pending'},previous);return;}
         const starting=live.starting&&live.pid!=previous.ready_engine_pid;
-        if(!reason&&previous.intercepting===true&&previous.ready_engine_pid&&live.pid&&live.pid!=previous.ready_engine_pid)
-            reason='engine_restarted';
+        // Gateway admission also disappears during an engine restart. That is
+        // a consequence of the crash, not a reason to discard its fault count.
+        if(previous.intercepting===true&&previous.ready_engine_pid&&live.pid!=previous.ready_engine_pid)
+            reason=live.pid?'engine_restarted':'engine_unavailable';
         const expected=fs.lstat(EFFECTIVE)?engine.revision(io.read(EFFECTIVE)):null;
         const healthy=!reason&&live.ready&&live.processing_chain===true&&live.transparent_chain===true&&live.revision==expected;
         reason??=!live.ready?'engine_unavailable':!live.processing_chain?'processing_chain_failed':!live.transparent_chain?'transparent_chain_failed':'engine_revision_mismatch';
