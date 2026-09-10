@@ -504,6 +504,24 @@ details.open = true;
 assert(details.open && all(details, node => node.tag === 'li').length === 2);
 """)
 
+    def test_measurement_current_quota_precedes_stale_health_and_recovers(self):
+        self.run_js(r"""
+const view = modesModule({});
+const provider = {id:'airport', display_name:'机场', subscription_section:'source', quota:{state:'exhausted'}};
+const entry = {provider_id:'airport', region_id:'region', ok:false, quota_state:'available', measurement_reason:'group_latency_failed'};
+const status = {providers:[provider], subscriptions:[{section:'source',last_success:1789000000}], regions:[{id:'region',available_count:1,available_provider_count:1,
+ measurement:{sampled_at:1788947164,measured_count:0,entries:[entry]}}]};
+let item = all(view.regions(status,{}), n=>n.tag==='li').find(n=>text(n).includes('该次测速记录'));
+assert.equal(text(item.children[1]),'流量已耗尽，不参与选优');
+assert(text(item).includes('订阅更新于') && text(item).includes('未提供底层错误'));
+// A later quota reset must not present the old exhausted sample as a current ban.
+provider.quota = {state:'available',remaining_bytes:1073741824}; entry.quota_state='exhausted';
+item = all(view.regions(status,{}), n=>n.tag==='li').find(n=>text(n).includes('该次测速记录'));
+assert.equal(text(item.children[1]),'订阅配额记录：剩余 1.0 GiB');
+assert(text(item).includes('该次测速时流量已耗尽'));
+assert(!item.children.some(n=>text(n)==='流量已耗尽，不参与选优'));
+""")
+
     def test_subscription_selection_is_one_operation_feedback(self):
         self.run_js(r"""
 const managed = module('managed.js', {});
