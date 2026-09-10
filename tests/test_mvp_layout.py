@@ -266,7 +266,7 @@ class MvpLayoutTests(unittest.TestCase):
             ROOT / "scripts" / "deploy-openwrt-remote.sh"
         ).read_text()
         self.assertIn("OPL_NETFLEET_DEPLOY_LOCKED=1", deployment_source)
-        self.assertIn('sh "$0" "$@" 9>&-', deployment_source)
+        self.assertRegex(deployment_source, r'sh "\$0" "\$@" (?:8>&- )?9>&-')
         for private_literal in ("192.168.",):
             self.assertNotIn(private_literal, deployment_source)
 
