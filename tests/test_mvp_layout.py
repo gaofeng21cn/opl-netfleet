@@ -443,7 +443,8 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertIn('"provider_link_cleanup_failed"', compilation)
         self.assertIn('context.use("subscriptions.providers").load', compilation)
         self.assertNotIn("function load_provider_profiles", compilation)
-        self.assertIn("return removed", nikki)
+        self.assertIn('context.use("mihomo.profile-storage")', nikki)
+        self.assertIn("return removed", (RUNTIME / "plugins/mihomo/lib/profile-storage.uc").read_text())
         for method in ("enable", "refresh", "selectAuto", "configApply", "onboardingApply"):
             self.assertRegex(api, rf"{method}: function\([^)]*\)\s*\{{\s*return withRpcTimeout\(300")
         self.assertNotIn("withRpcTimeout(120", api)

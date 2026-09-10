@@ -32,6 +32,7 @@
 | 平台 | 机制事实当前 owner | 源码 |
 | --- | --- | --- |
 | OpenWrt | `docs/architecture/`（`packaging.md`、`microkernel.md`、`runtime-and-recovery.md`、`interfaces.md`、`device-identity.md`）、`docs/operations/`、`docs/development/` | `openwrt/`、`plugins/` |
+| macOS | `docs/platform/macos.md`、`docs/development/macos.md` | `desktop/`、`ui/src/desktop/` |
 
-本目录尚无平台文档：OpenWrt 的机制事实仍由表中文件拥有，此处不重复它们的内容。事实按主题迁入
-平台文档时，同一批次把共享文档中的对应段落缩减为指针，不留第二份当前叙事。
+OpenWrt 的机制事实仍由表中文件拥有，此处不重复它们的内容。事实按主题迁入
+`docs/platform/openwrt.md` 时，同一批次把共享文档中的对应段落缩减为指针，不留第二份当前叙事。

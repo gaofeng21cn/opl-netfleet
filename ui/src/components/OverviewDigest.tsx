@@ -18,7 +18,9 @@ export function OverviewDigest({
   status,
   events,
   onOpen,
+  platform = 'openwrt',
 }: {
+  platform?: 'openwrt' | 'desktop';
   status: StatusSnapshot;
   events: EventsSnapshot;
   onOpen(target: SummaryTarget): void;
@@ -60,7 +62,7 @@ export function OverviewDigest({
   const attention = [
     !status.runtime.mihomo_running ? 'Mihomo 未运行' : null,
     !status.runtime.controller_available ? '设备控制接口不可用' : null,
-    status.active && !status.runtime.lan_runtime?.transparent_proxy_ready ? 'LAN 透明代理不可用' : null,
+    platform === 'openwrt' && status.active && !status.runtime.lan_runtime?.transparent_proxy_ready ? 'LAN 透明代理不可用' : null,
     availabilityMeasured && unavailableProviders.length > 0 ? `不可用机场：${unavailableProviders.map((provider) => providerName(status, provider.id)).join('、')}` : null,
     exhaustedProviders.length > 0 ? `流量已耗尽：${exhaustedProviders.map((provider) => providerName(status, provider.id)).join('、')}` : null,
     unavailableSelectedRegions.length > 0 ? `当前使用地区已无可用路径：${unavailableSelectedRegions.map((region) => regionName(status, region.id)).join('、')}` : null,

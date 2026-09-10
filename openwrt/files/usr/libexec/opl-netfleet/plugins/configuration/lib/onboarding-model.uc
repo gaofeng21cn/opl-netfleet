@@ -2,7 +2,7 @@
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let clone, push_unique, profile_group, match_entry_group, stable_subscriptions, add_blocker, discover;
+let clone, push_unique, profile_group, match_entry_group, stable_subscriptions, add_blocker, derive;
 
 const region_catalog = context.use("models.regions").catalog;
 const discover_regions = context.use("models.regions").discover;
@@ -57,7 +57,7 @@ add_blocker = function(blockers, code, detail) {
 	push(blockers, { code: code, detail: detail ?? null });
 };
 
-discover = function(input) {
+derive = function(input, require_runtime) {
 	const REGION_CATALOG = region_catalog();
 	const blockers = [];
 	const warnings = [];
@@ -69,10 +69,12 @@ discover = function(input) {
 	else if (profile_ref == "file:OPL-NetFleet.json")
 		add_blocker(blockers, "netfleet_profile_already_selected", null);
 	if (type(profile) != "object") add_blocker(blockers, "current_profile_unreadable", null);
-	if (input?.backend_enabled != true) add_blocker(blockers, "backend_disabled", null);
-	if (input?.mihomo_running != true || input?.runtime_valid != true)
-		add_blocker(blockers, "backend_runtime_unhealthy", null);
-	if (input?.controller_ready != true) add_blocker(blockers, "mihomo_controller_unavailable", null);
+	if (require_runtime) {
+		if (input?.backend_enabled != true) add_blocker(blockers, "backend_disabled", null);
+		if (input?.mihomo_running != true || input?.runtime_valid != true)
+			add_blocker(blockers, "backend_runtime_unhealthy", null);
+		if (input?.controller_ready != true) add_blocker(blockers, "mihomo_controller_unavailable", null);
+	}
 	if (input?.generated_artifacts_present == true)
 		add_blocker(blockers, "existing_generated_artifacts", null);
 
@@ -161,7 +163,7 @@ discover = function(input) {
 			latency: { method: "mihomo_delay", url: "https://www.gstatic.com/generate_204", timeout_ms: 2000, expected_status: 204 },
 			quota: { source: "nikki_subscription_metadata", zero_is_exhausted: true }
 		},
-		evidence: { path: "/etc/opl-netfleet/evidence.json" },
+		evidence: { path: input?.evidence_path ?? "/etc/opl-netfleet/evidence.json" },
 		fail_open: {
 			healthcheck: { path_probe_id: "default-egress", guard_probe_id: "default-egress", timeout_ms: 5000, interval_seconds: 300, max_failed_times: 2 },
 			probes: [{ id: "default-egress", url: "https://www.gstatic.com/generate_204", expected_status: 204 }]
@@ -189,5 +191,9 @@ discover = function(input) {
 	};
 };
 
-return { discover };
+// Drafting inspects configuration and caches only; activation still uses the
+// strict runtime discovery and existing target-local enable preconditions.
+function discover(input) { return derive(input, true); }
+function draft(input) { return { ...derive(input, false), readiness: "configuration" }; }
+return { discover, draft };
 };

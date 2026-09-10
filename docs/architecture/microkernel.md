@@ -106,12 +106,12 @@ effect 登记其实际取消函数，平台提供者负责执行机制。跨调�
 | 服务 | 责任与接口 |
 | --- | --- |
 | `platform.storage` | JSON/YAML 读取、文件摘要与修改时间、文本和原子 JSON 写入、目录创建 |
-| `platform.paths` | `POLICY_PATH`、`EVIDENCE_PATH`、`RECOVERY_PATH`，由安装平台确定存储位置 |
+| `platform.paths` | policy、evidence、recovery、Policy Source、事件、操作和刷新临时目录，由安装平台确定存储位置 |
 | `platform.profile` | `current_profile`、`set_profile`、`backend_enabled`、`set_backend_enabled`，读写所选后端配置并回读 |
 | `platform.credentials` | `api_secret`、`proxy_authentication`，凭据只在设备内用于授权调用 |
 | `platform.subscriptions` | `subscription_exists`、`subscription_display_name`、`subscription_options`、`subscription_quota`，输出规范化订阅元数据 |
 | `platform.device` | `device_name`、`upstream_ready`，报告设备身份和上游可用性 |
-| `platform.process` | `shell_quote`、`run_owner`，平台命令构造与已注册业务动作调用 |
+| `platform.process` | `shell_quote`、`run_owner`、`run_owner_result`、`process_identity`，平台命令构造、已注册业务动作调用和真实进程身份 |
 | `platform.documents` | `validate_policy` 校验候选策略与当前平台约束，`load_policy`、`load_evidence` 加载有效文档，`write_evidence` 写入 evidence；不读取 UCI |
 
 默认安装组合按能力划分包边界。`selection-algorithm` 独立提供选择算法，仅依赖纯模型；
@@ -119,6 +119,11 @@ effect 登记其实际取消函数，平台提供者负责执行机制。跨调�
 `platform-storage` 提供文件、JSON/YAML 存储与产品文档，拥有 yq 依赖；`platform-openwrt`
 提供 UCI Profile、凭据、订阅事实和设备状态，拥有 UCI、ip-full 及默认 UCI 配置。
 安装算法和模型不会拉入 Mihomo、UCI 或平台包。
+
+`mihomo.profile-storage` 共享 Profile 引用解析、生成文件和 provider link 生命周期；
+OpenWrt 与 macOS 后端组合该服务，各自只持有平台核心启停与网络回读。
+订阅来源配置快照的位置由 `platform.runtime.SUBSCRIPTION_CONFIG_PATH` 提供；
+OpenWrt 对应实际 UCI 文件，macOS 的来源由桌面运行管理者事务保存，字段为空不等于来源缺失。
 
 上述能力涉及的 UCI 字段、WAN/路由探测和 CLI 路径封装在对应提供者中。共享选择控制器依赖
 profile、credentials、documents 和 paths；调度器通过 process 调用业务动作，不直接拼接
@@ -136,8 +141,9 @@ OpenWrt 仍只使用 `/etc/opl-netfleet/evidence.json`，策略不能指定另�
 入口加载 `adapters/openwrt.uc`，适配器保留实际祖先进程锁验证。平台适配器承接进程执行，
 统一进程插件模块校验响应信封、输出大小与生命周期回读。
 
-平台能力解耦与完整宿主移植分别验证。当前 Linux 代码租约、进程身份、APK/procd 生命周期
-及 DNS/TProxy 接管属于 OpenWrt 宿主实现；它们不因业务服务可替换就自动成为 macOS 能力。
+平台能力解耦与完整宿主移植分别验证。Linux 代码租约、进程身份、APK/procd 生命周期
+及 DNS/TProxy 接管属于 OpenWrt 宿主实现。[macOS MVP](../platform/macos.md)通过独立适配器提供
+当前用户的真实文件锁、进程身份、核心和网络生命周期；不加载 OpenWrt 平台服务。
 订阅持久管理、后端设置及维护等 OpenWrt 专用服务仍包含 UCI 和本机操作。
 跨平台产品方向见[设计白皮书](../product/whitepaper.md)，插件开发使用同一服务声明与绑定合同。
 

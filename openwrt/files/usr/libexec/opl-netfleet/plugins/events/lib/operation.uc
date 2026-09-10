@@ -2,23 +2,18 @@ import * as fs from "fs";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let path, process_identity, public_snapshot, persist, details_update, begin, update, finish, get;
+let path, public_snapshot, persist, details_update, begin, update, finish, get;
 
 
 
+const process_identity = context.use("platform.process").process_identity;
+const OPERATION_DIR = context.use("platform.paths").OPERATION_DIR;
 let current = null;
 
 path = function(kind) {
-	return index(["subscription", "selection", "packages"], kind) >= 0 ? `/tmp/opl-netfleet-operation-${kind}.json` : null;
+	return index(["subscription", "selection", "packages"], kind) >= 0 ? `${OPERATION_DIR}/opl-netfleet-operation-${kind}.json` : null;
 };
 
-process_identity = function(pid) {
-	const source = fs.readfile(`/proc/${pid}/stat`);
-	const fields = source == null ? null : match(source, /^([0-9]+) \(.*\) (.*)$/);
-	if (fields == null) return null;
-	const tail = split(trim(fields[2]), " ");
-	return length(tail) > 19 ? { pid: int(fields[1]), started: tail[19], alive: tail[0] != "Z" && tail[0] != "X" } : null;
-};
 
 public_snapshot = function(value) {
 	if (value == null) return null;

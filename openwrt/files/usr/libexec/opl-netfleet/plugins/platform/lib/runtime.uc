@@ -37,5 +37,6 @@ metadata = function() {
 
 environment = function() { return { backend: KIND }; };
 
-return { KIND, UCI_PACKAGE, ROOT_DIR, RUN_DIR, SERVICE, NFT_TABLE, STATE_DIR, LOG_PATH, API, metadata, environment };
+const SUBSCRIPTION_CONFIG_PATH = KIND == "native-mihomo" ? "/etc/config/netfleet" : null;
+return { SUBSCRIPTION_CONFIG_PATH, KIND, UCI_PACKAGE, ROOT_DIR, RUN_DIR, SERVICE, NFT_TABLE, STATE_DIR, LOG_PATH, API, metadata, environment };
 };

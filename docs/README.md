@@ -11,11 +11,13 @@
 - [`architecture/device-identity.md`](architecture/device-identity.md)：网络侧设备身份、IPv6 地址更新和证据过期。
 - [`product/capabilities.md`](product/capabilities.md)：能力清单与平台归属，连接功能规划与各平台实现。
 - [`platform/`](platform/README.md)：跨平台实现层入口，以及各平台机制事实的当前 owner。
-- [`design/ui.md`](design/ui.md)：React 参考面与原生 LuCI 的视觉和交互设计合同。
+- [`platform/macos.md`](platform/macos.md)：macOS 机制事实、私有状态、流量接管与恢复边界。
+- [`design/ui.md`](design/ui.md)：React 参考面、原生 LuCI 与 macOS 客户端的视觉和交互设计合同。
 - [`operations/deployment.md`](operations/deployment.md)：按后端与设备状态选择安装、更新、迁移入口，以及 Nikki Fleet 事务。
 - [`operations/canary-promotion.md`](operations/canary-promotion.md)：通用 canary 推广与恢复流程。
 - [`development/validation.md`](development/validation.md)：源码、UI、隔离 OpenWrt、发布验证，以及实体性能评估方法。
 - [`development/plugins.md`](development/plugins.md)：插件接口、开发模板、软件包构建、安装与热加载。
+- [`development/macos.md`](development/macos.md)：macOS 本机构建、启动与验证。
 
 ## 目标与理由
 

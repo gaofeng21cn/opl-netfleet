@@ -1,0 +1,27 @@
+--- a/include/ucode/platform.h
++++ b/include/ucode/platform.h
+@@ -57,8 +57,11 @@
+ 
+ # define environ (*_NSGetEnviron())
+ 
+-__hidden int pipe2(int[2], int);
+-__hidden int sigtimedwait(const sigset_t *, siginfo_t *, const struct timespec *);
++// Native modules resolve these shims through libucode on Darwin.
++# define pipe2 uc_darwin_pipe2
++# define sigtimedwait uc_darwin_sigtimedwait
++int uc_darwin_pipe2(int[2], int);
++int uc_darwin_sigtimedwait(const sigset_t *, siginfo_t *, const struct timespec *);
+ 
+ static inline int
+ execvpe(const char *program, char * const *argv, char * const *envp)
+--- a/lib/fs.c
++++ b/lib/fs.c
+@@ -633,7 +633,7 @@
+ 					path = "/usr/local/bin:/usr/bin:/bin";
+ 
+ 				for (; *path; path = (*end ? end + 1 : end)) {
+-					end = strchrnul(path, ':');
++					end = path + strcspn(path, ":");
+ 
+ 					if (end == path)
+ 						continue;

@@ -89,6 +89,10 @@ NetFleet 脚本与界面包为 `noarch`；当前随 Feed 提供的 Mihomo 核心
 
 ## 安装
 
+macOS 本机 MVP 的构建、使用和验证见[macOS 开发指南](docs/development/macos.md)。
+它复用 NetFleet 核心业务与 React 界面组件，提供原生桌面窗口、菜单和快捷键；系统代理与 TUN 需要本机管理员授权。
+当前为本地构建与 ad-hoc 签名入口，下述软件源安装命令仅适用于 OpenWrt。
+
 ### 准备工作
 
 开始前，目标设备需要：
@@ -211,10 +215,12 @@ NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
 - [设备独立管理](docs/architecture/management.md)
 - [模块与扩展](docs/architecture/extensions.md)
 - [插件开发与安装](docs/development/plugins.md)
+- [macOS 开发](docs/development/macos.md)
 - [HTTPS 兼容模块](docs/architecture/https-compatibility.md)
 - [UI 设计](docs/design/ui.md)
 - [能力与平台归属](docs/product/capabilities.md)
 - [平台实现层](docs/platform/README.md)
+- [macOS 平台实现](docs/platform/macos.md)
 - [产品白皮书](docs/product/whitepaper.md)
 - [开发与设备操作规则](AGENTS.md)
 

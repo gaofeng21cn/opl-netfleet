@@ -9,6 +9,7 @@ interface SectionProps {
   draft: ConfigDraft;
   status: StatusSnapshot;
   onChange(next: ConfigDraft): void;
+  onManageSubscriptions?(): void;
 }
 
 const replaceAt = <T extends { id: string }>(items: T[], id: string, update: Partial<T>) => (
@@ -60,13 +61,13 @@ export function FoundationSection({ draft, status, onChange }: SectionProps) {
   </section>;
 }
 
-export function ProvidersSection({ draft, status, onChange }: SectionProps) {
+export function ProvidersSection({ draft, status, onChange, onManageSubscriptions }: SectionProps) {
   const available = draft.providerOptions.filter((option) => !draft.providers.some((item) => item.id === option.id));
   const [selected, setSelected] = useState('');
   const selectedId = available.some((item) => item.id === selected) ? selected : available[0]?.id || '';
   return <section className="nf-config-section">
     <SectionHeading title="机场" description="选择参与 NetFleet 的订阅及其运行角色。" />
-    <SubscriptionsPreview status={status} />
+    <>{onManageSubscriptions ? <button className="nf-button-secondary" type="button" onClick={onManageSubscriptions}>管理订阅</button> : <SubscriptionsPreview status={status} />}</>
     <div className="nf-table-wrap nf-config-table nf-config-provider-table">
       <table><thead><tr><th>参与机场与资源</th><th>故障层级</th><th>计费方式</th><th>操作</th></tr></thead>
         <tbody>{draft.providers.map((provider) => <tr key={provider.id}>

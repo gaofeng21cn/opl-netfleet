@@ -14,7 +14,8 @@ const initiatorName = (initiator?: string) => ({
   supervisor: '后台选优',
 }[initiator || ''] || initiator || '未提供');
 
-export function EventsView({ snapshot, status, connections, connectionsLoading, connectionsError, error, client, stale, refresh }: {
+export function EventsView({ snapshot, status, connections, connectionsLoading, connectionsError, error, client, stale, refresh, sections = ['events', 'website', 'core'] }: {
+  sections?: Array<'events' | 'website' | 'core'>;
   snapshot: EventsSnapshot;
   status: StatusSnapshot;
   connections: ConnectionsSnapshot;
@@ -26,17 +27,17 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
   refresh?: () => void;
 }) {
   const [page, setPage] = useState(0);
-  const [section, setSection] = useState('events');
+  const [section, setSection] = useState(sections[0] || 'events');
   const rows = snapshot.events.slice().reverse();
   const pageCount = Math.max(1, Math.ceil(rows.length / 20));
   const currentPage = Math.min(page, pageCount - 1);
   const visibleRows = rows.slice(currentPage * 20, (currentPage + 1) * 20);
   return (
     <div className="nf-view-stack">
-      <nav className="nf-subtabs" aria-label="诊断分类">{[['events', '选路记录'], ['website', '网站诊断'], ['core', '核心与日志']].map(([id, label]) => <button type="button" key={id} aria-current={section === id ? 'page' : undefined} onClick={() => setSection(id)}>{label}</button>)}</nav>
+      <nav className="nf-subtabs" aria-label="诊断分类">{[['events', '选路记录'], ['website', '网站诊断'], ['core', '核心与日志']].filter(([id]) => sections.includes(id as 'events' | 'website' | 'core')).map(([id, label]) => <button type="button" key={id} aria-current={section === id ? 'page' : undefined} onClick={() => setSection(id as 'events' | 'website' | 'core')}>{label}</button>)}</nav>
       {error && <div className="nf-inline-warning">{error}；以下内容保留上一次成功读取结果。</div>}
       {section === 'events' && <section className="nf-table-section">
-        <div className="nf-section-heading"><div><h2>选路事件</h2><p>只展示设备已确认完成的事件。</p></div></div>
+        <div className="nf-section-heading"><div><h2>选路事件</h2><p>只展示已确认完成的事件。</p></div></div>
         <div className="nf-table-wrap"><table>
           <thead><tr><th>时间</th><th>操作</th><th>来源</th><th>出口</th><th>结果</th><th>延迟</th><th>原因</th></tr></thead>
           <tbody>{visibleRows.map((event, index) => (

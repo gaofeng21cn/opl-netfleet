@@ -1,0 +1,178 @@
+/* macOS host layout uses the shared NetFleet visual tokens and components. */
+.nf-brand-logo { width: 32px; height: 32px; object-fit: contain; }
+.nf-desktop-fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
+.nf-desktop-fieldset:disabled { opacity: .65; }
+.nf-desktop .nf-status-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1000px) { .nf-desktop .nf-status-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.nf-desktop-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px 0; }
+.nf-form-rows > .nf-desktop-actions { padding: 16px; }
+.nf-desktop-inline { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.nf-desktop-inline select { flex: 1; min-width: 120px; height: 40px; padding: 0 8px; border: 1px solid var(--nf-border); border-radius: 5px; background: var(--nf-surface); color: var(--nf-text); }
+.nf-desktop-editor { padding: 16px 0; display: grid; gap: 12px; }
+.nf-desktop-editor > label { font-size: 14px; font-weight: 600; }
+.nf-desktop-editor textarea { width: 100%; min-height: 220px; resize: vertical; border: 1px solid var(--nf-border); border-radius: 5px; padding: 12px; color: var(--nf-text); background: var(--nf-surface); font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.nf-desktop input[type="file"] { max-width: 100%; font-size: 13px; }
+.nf-desktop [hidden] { display: none !important; }
+.nf-desktop .nf-region-preview { flex-wrap: wrap; }
+.nf-desktop .nf-form-row label p { font-weight: 400; }
+.nf-desktop .nf-table-wrap td small { display: block; margin-top: 4px; color: var(--nf-muted); }
+.nf-desktop button:focus-visible, .nf-desktop input:focus-visible, .nf-desktop select:focus-visible, .nf-desktop textarea:focus-visible { outline: 2px solid var(--nf-accent); outline-offset: 2px; }
+
+/* Desktop chrome is scoped: LuCI's page layout must not replace the app sidebar. */
+.nf-app.nf-desktop {
+  --nf-soft: #f7f8fa;
+  --nf-accent: #5365d5;
+  --nf-accent-strong: #4354bf;
+  --nf-accent-soft: #e8ecfc;
+  --nf-border: #e3e5eb;
+  --nf-text: #262830;
+  --nf-muted: #777b88;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  background: var(--nf-soft);
+}
+.nf-desktop .nf-sidebar {
+  position: fixed; inset: 0 auto 0 0; width: 208px; height: 100vh;
+  display: flex; flex-direction: column; background: #eef0f5;
+  border-right: 1px solid #dfe2e9; overflow-y: auto;
+}
+.nf-desktop .nf-brand {
+  position: static; height: 90px; flex-shrink: 0; padding: 0 21px;
+  gap: 10px; font-size: 17px; border: 0;
+}
+.nf-desktop .nf-brand strong { color: var(--nf-text); font-weight: 700; }
+.nf-desktop .nf-brand-logo { width: 35px; height: 35px; }
+.nf-desktop .nf-nav {
+  position: static; display: flex; flex-direction: column; width: auto;
+  margin: 0; padding: 6px 12px; gap: 5px; border: 0; overflow: visible;
+}
+.nf-desktop .nf-nav button {
+  flex-shrink: 0; height: 40px; padding: 0 13px; gap: 12px;
+  border-radius: 8px; font-size: 13px; color: #565c6b;
+}
+.nf-desktop .nf-nav button svg { display: block; width: 18px; height: 18px; }
+.nf-desktop .nf-nav button.is-active {
+  background: #dfe5f8; color: #3f52be; box-shadow: none; font-weight: 600;
+}
+.nf-desktop .nf-nav button.is-active::before { display: none; }
+.nf-desktop .nf-nav button:nth-child(5) { margin-top: 26px; }
+.nf-desktop .nf-sidebar-foot {
+  display: flex; align-items: center; margin: auto 22px 22px;
+  padding-top: 20px; border-top: 1px solid #dadee7;
+}
+.nf-desktop .nf-sidebar-foot strong { font-weight: 500; font-size: 12px; }
+.nf-desktop .nf-sidebar-foot small { font-size: 11px; }
+.nf-desktop .nf-health-dot { width: 6px; height: 6px; margin-top: 0; }
+.nf-desktop .nf-stage { padding: 0 0 0 208px; min-width: 0; }
+.nf-desktop .nf-toolbar {
+  position: sticky; top: 0; left: auto; right: auto; height: 58px;
+  padding: 0 28px; background: rgba(247,248,250,.96);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+}
+.nf-desktop .nf-toolbar::before { display: none; }
+.nf-desktop-location { display: flex; align-items: center; gap: 12px; font-size: 12px; }
+.nf-desktop-location span { color: var(--nf-muted); }
+.nf-desktop-location strong { border-left: 1px solid #d7dbe5; padding-left: 12px; font-weight: 600; }
+.nf-desktop .nf-toolbar-actions { gap: 5px; }
+.nf-desktop .nf-toolbar-actions button { border: 0; height: 30px; padding: 0 9px; border-radius: 6px; font-size: 12px; }
+.nf-desktop .nf-toolbar-actions svg { width: 15px; height: 15px; }
+.nf-desktop .nf-toolbar-actions button:hover:not(:disabled) { background: #e9ecf3; }
+.nf-desktop .nf-main { width: auto; max-width: 1120px; margin: 0 auto; padding: 30px 32px 24px; overflow-wrap: anywhere; }
+.nf-desktop .nf-page-heading { min-height: 0; margin-bottom: 28px; }
+.nf-desktop .nf-page-heading h1 { font-size: 25px; font-weight: 650; letter-spacing: -.6px; }
+.nf-desktop .nf-page-heading p { display: block; margin-top: 9px; font-size: 12px; line-height: 1.6; }
+.nf-desktop .nf-section-heading { min-height: 40px; margin-bottom: 8px; }
+.nf-desktop .nf-section-heading h2, .nf-desktop .nf-config-section-heading h2 { font-size: 14px; font-weight: 600; }
+.nf-desktop .nf-config-section { margin-bottom: 24px; }
+.nf-desktop .nf-status-strip {
+  display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 0;
+  padding: 18px 0; margin-bottom: 18px; border: 1px solid var(--nf-border);
+  border-radius: 10px; background: #fff;
+}
+.nf-desktop .nf-status-item { padding: 0 18px; border-right: 1px solid var(--nf-border); }
+.nf-desktop .nf-status-item:last-child { border: 0; }
+.nf-desktop .nf-status-item > div { display: flex; flex-direction: column; gap: 8px; }
+.nf-desktop .nf-status-item span { font-size: 11px; color: var(--nf-muted); }
+.nf-desktop .nf-status-item strong { font-size: 13px; font-weight: 600; }
+.nf-desktop .nf-form-rows { border: 1px solid var(--nf-border); border-radius: 10px; overflow: hidden; }
+.nf-desktop .nf-form-row { min-height: 76px; padding: 17px 18px; gap: 20px; grid-template-columns: minmax(150px,.85fr) minmax(0,1fr); }
+.nf-desktop .nf-form-row label { font-weight: 500; font-size: 13px; }
+.nf-desktop .nf-form-row p { font-size: 11px; line-height: 1.7; }
+.nf-desktop :is(.nf-form-row input,.nf-form-row select,.nf-desktop-inline select) { height: 32px; font-size: 12px; border-radius: 6px; border-color: #d8dce5; }
+.nf-desktop :is(.nf-button-primary,.nf-button-secondary,.nf-button-danger) { min-height: 32px; font-size: 12px; font-weight: 500; border-radius: 6px; padding: 0 12px; }
+.nf-desktop .nf-button-primary { box-shadow: 0 1px 2px #293a7d18; }
+.nf-desktop .nf-button-secondary { box-shadow: 0 1px 2px #202a4010; }
+.nf-desktop .nf-desktop-actions { padding: 14px 0 0; gap: 9px; }
+.nf-desktop .nf-desktop-welcome { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 23px; margin: 26px 0; background: #edf0fb; border: 1px solid #dee4f7; border-radius: 10px; }
+.nf-desktop-welcome h2 { margin: 0 0 7px; font-size: 15px; font-weight: 600; }
+.nf-desktop-welcome p { margin: 0; font-size: 12px; color: #6c748c; line-height: 1.7; }
+.nf-desktop-welcome button { flex-shrink: 0; }
+.nf-desktop .nf-config-layout { grid-template-columns: 142px minmax(0,1fr); gap: 24px; }
+.nf-desktop .nf-config-tabs { display: flex; flex-direction: column; position: sticky; top: 82px; padding: 5px; gap: 3px; border: 0; background: transparent; }
+.nf-desktop .nf-config-tabs button { min-height: 35px; padding: 0 9px; border: 0; border-radius: 6px; font-size: 12px; }
+.nf-desktop .nf-config-tabs button.is-active { box-shadow: none; background: #e8ebf3; color: #394366; font-weight: 600; }
+.nf-desktop .nf-config-tabs svg { width: 15px; height: 15px; }
+.nf-desktop .nf-config-section-heading { min-height: 0; padding: 0 0 15px; margin-bottom: 4px; border: 0; }
+.nf-desktop .nf-config-section-heading p { font-size: 12px; line-height: 1.7; }
+.nf-desktop .nf-desktop-editor { padding: 18px; border: 1px solid var(--nf-border); border-radius: 10px; background: white; }
+.nf-desktop .nf-desktop-editor > label { font-size: 12px; font-weight: 500; }
+.nf-desktop .nf-desktop-editor textarea { min-height: 230px; border-radius: 7px; background: #fbfcfe; font-size: 12px; }
+.nf-desktop .nf-empty { padding: 28px 22px; border: 1px solid var(--nf-border); border-radius: 10px; background: white; font-size: 12px; line-height: 1.8; }
+.nf-desktop .nf-table-wrap { border: 1px solid var(--nf-border); border-radius: 10px; background: white; }
+.nf-desktop .nf-table-wrap :is(th,td) { font-size: 12px; padding: 12px 14px; }
+.nf-desktop .nf-table-wrap th { background: #f1f3f8; font-weight: 500; color: #6a7180; }
+.nf-desktop .nf-overview-insights { border: 1px solid var(--nf-border); border-radius: 10px; background: white; }
+.nf-desktop .nf-source-bar { margin-top: 30px; gap: 8px 16px; opacity: .85; }
+.nf-desktop .nf-source-bar :is(span,strong,small) { font-size: 10px; }
+.nf-desktop .nf-mobile-nav { display: none; }
+@media (max-width: 1000px) {
+  .nf-desktop .nf-sidebar { width: 180px; }
+  .nf-desktop .nf-stage { padding-left: 180px; }
+  .nf-desktop .nf-main { padding: 24px; }
+  .nf-desktop .nf-brand { padding: 0 16px; font-size: 15px; }
+  .nf-desktop .nf-status-strip { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px 0; }
+  .nf-desktop .nf-status-item:nth-child(2) { border: 0; }
+  .nf-desktop .nf-config-layout { grid-template-columns: minmax(0,1fr); gap: 16px; }
+  .nf-desktop .nf-config-tabs { position: static; flex-direction: row; flex-wrap: wrap; }
+  .nf-desktop .nf-config-tabs button { width: auto; }
+}
+@media (max-width: 680px) {
+  .nf-desktop .nf-sidebar { width: 148px; }
+  .nf-desktop .nf-stage { padding-left: 148px; }
+  .nf-desktop .nf-brand { font-size: 13px; padding: 0 12px; gap: 6px; }
+  .nf-desktop .nf-brand-logo { width: 26px; height: 26px; }
+  .nf-desktop .nf-main { padding: 18px; }
+  .nf-desktop .nf-toolbar { padding: 0 16px; }
+  .nf-desktop .nf-desktop-location { display: none; }
+  .nf-desktop .nf-form-row { grid-template-columns: minmax(0,1fr); }
+  .nf-desktop .nf-desktop-welcome { flex-direction: column; align-items: flex-start; }
+}
+
+.nf-desktop-file-picker { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.nf-desktop-file-picker > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--nf-muted); font-size: 12px; }
+.nf-desktop-file-picker > button { flex-shrink: 0; }
+
+/* macOS separates proxy lifecycle from operating-system traffic access. */
+.nf-desktop .nf-desktop-state { padding: 5px 9px; border-radius: 7px; background: var(--nf-surface-muted, #f0f2f6); color: var(--nf-text-secondary, #566173); font-size: 12px; white-space: nowrap; }
+.nf-desktop .nf-desktop-state.is-running { color: #3653ac; background: #edf1fc; }
+.nf-desktop .nf-desktop-runtime-summary { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 4px 0 14px; }
+.nf-desktop .nf-desktop-runtime-summary strong { font-size: 19px; font-weight: 600; }
+.nf-desktop .nf-desktop-runtime-summary p { margin: 7px 0 0; color: #667085; font-size: 13px; }
+.nf-desktop .nf-desktop-advanced { border-top: 1px solid #e6e8ed; padding-top: 12px; font-size: 12px; color: #667085; }
+.nf-desktop .nf-desktop-advanced summary { cursor: pointer; }
+.nf-desktop .nf-desktop-network-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.nf-desktop .nf-desktop-network-options label { display: flex; align-items: flex-start; gap: 8px; padding: 14px 12px; border: 1px solid #e0e4eb; border-radius: 9px; cursor: pointer; background: #fff; }
+.nf-desktop .nf-desktop-network-options label.is-selected { border-color: #7588c9; background: #f4f6fd; }
+.nf-desktop .nf-desktop-network-options input { margin: 3px 0 0; accent-color: #556bb4; }
+.nf-desktop .nf-desktop-network-options strong { display: block; font-size: 13px; }
+.nf-desktop .nf-desktop-network-options small { display: block; color: #667085; font-size: 12px; line-height: 1.6; margin-top: 6px; }
+.nf-desktop .nf-desktop-network-footer, .nf-desktop .nf-desktop-inline-note { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 12px; color: #667085; }
+.nf-desktop .nf-desktop-network-footer p { margin: 12px 0 0; }
+.nf-desktop .nf-desktop-inline-note { padding: 10px 12px; background: #f5f6fa; border-radius: 8px; margin-bottom: 14px; }
+.nf-desktop .nf-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@media (max-width: 1000px) {
+  .nf-desktop .nf-desktop-runtime-summary { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .nf-desktop .nf-desktop-network-options { grid-template-columns: 1fr; }
+  .nf-desktop .nf-desktop-network-options label { padding: 10px 12px; }
+  .nf-desktop .nf-desktop-network-options small { margin-top: 3px; }
+}
