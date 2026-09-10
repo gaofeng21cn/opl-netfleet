@@ -36,5 +36,7 @@ done
 [ "$phase" = complete ] || { printf '{"ok":false,"id":"%s","error":"update_result_pending"}\n' "$id"; exit 1; }
 # Normal scheduler cycles continue here. Browser navigation can be inspected in
 # the same operator window; write actions are separate explicit acceptance work.
-ucode "$stage/observe.uc" "$seconds" "$stage/acceptance.json"
-cat acceptance.json
+observed=0
+ucode "$stage/observe.uc" "$seconds" "$stage/acceptance.json" || observed=$?
+[ ! -f acceptance.json ] || cat acceptance.json
+exit "$observed"

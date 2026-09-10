@@ -214,11 +214,20 @@ if ucode "$owner" components-install "$local_stage" >"$work/local-rejected.json"
 assert_json "$work/local-rejected.json" '@.error' unexpected_plugin_archive
 [ "$(pidof mihomo)" = "$core_pid_before" ]
 rm "$local_stage/old/unexpected.apk"
-ucode "$owner" components-install "$local_stage" >"$work/local-start.json"
-assert_json "$work/local-start.json" '@.ok' true
-id=$(jsonfilter -i "$work/local-start.json" -e '@.result.operation.id')
-wait_operation "$id"
-assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
+cp -R /usr/libexec/opl-netfleet/plugins/components "$local_stage/components"
+cp /tmp/observe-openwrt.uc "$local_stage/observe.uc"
+(cd "$local_stage" && sha256sum request.json old/* new/* components/manifest.json components/lib/control.uc observe.uc >SHA256SUMS)
+# Both the busy path and the successful worker/observation path use the public
+# executor, not a test-only shell installation implementation.
+(
+ exec 8>/var/lock/opl-netfleet-operator.lock
+ flock -n 8
+ if sh /tmp/update-openwrt-plugins-remote.sh "$local_stage" 10 >"$work/local-busy.json"; then exit 1; fi
+ assert_json "$work/local-busy.json" '@.error' operator_window_busy
+)
+sh /tmp/update-openwrt-plugins-remote.sh "$local_stage" 10 >"$work/local-run.json"
+assert_json "$local_stage/acceptance.json" '@.ok' true
+assert_json "$local_stage/acceptance.json" '@.owner_pids_stable' true
 [ "$(pidof mihomo)" = "$core_pid_before" ]
 grep -Fxq "$plugin" /etc/apk/world
 # Retry with stale installed-version evidence must fail before hooks.
@@ -371,4 +380,4 @@ unchanged
 stage=complete
 # Remove the explicit root introduced by the independent-plugin test; the product still needs it.
 apk --no-network --repositories-file /dev/null del opl-netfleet-plugin-dashboard >"$work/independent-root-remove.log" 2>&1
-printf '%s\n' '{"ok":true,"checks":{"component_finite_plugin_update":true,"component_finite_rejects_extra_archive":true,"component_finite_rejects_stale_version":true,"component_finite_keeps_core_pid":true,"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"installer_complete_product_upgrade":true,"component_preserves_newer_independent_plugin":true,"component_world_preserved":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_durable_terminal_reconcile":true,"component_interrupted_install_recovery":true,"component_failed_package_hook_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"
+printf '%s\n' '{"ok":true,"checks":{"component_operator_window":true,"component_finite_observation":true,"component_finite_plugin_update":true,"component_finite_rejects_extra_archive":true,"component_finite_rejects_stale_version":true,"component_finite_keeps_core_pid":true,"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"installer_complete_product_upgrade":true,"component_preserves_newer_independent_plugin":true,"component_world_preserved":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_durable_terminal_reconcile":true,"component_interrupted_install_recovery":true,"component_failed_package_hook_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"
