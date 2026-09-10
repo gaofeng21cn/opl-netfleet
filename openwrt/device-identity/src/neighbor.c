@@ -72,6 +72,7 @@ static int64_t millis(void) {
     return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 int main(int argc, char **argv) {
+    if (getuid() != 0 || geteuid() != 0) return 2;
     struct link links[MAX_LINKS]; struct in6_addr targets[MAX_TARGETS];
     struct result results[MAX_RESULTS]; struct pollfd fds[MAX_LINKS];
     size_t nl = 0, nt = 0, nr = 0, packets = 0; int code = 1, pos = 1;
@@ -91,17 +92,19 @@ int main(int argc, char **argv) {
         nt++;
     }
     if (!nt) { code = 0; goto done; }
+    const int64_t began = millis(), deadline = began + 350;
+    if (began < 0) goto done;
     for (size_t i = 0; i < nl; i++) {
         links[i].fd = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC | SOCK_NONBLOCK, htons(ETH_P_IPV6));
         struct sockaddr_ll address = {.sll_family=AF_PACKET, .sll_protocol=htons(ETH_P_IPV6), .sll_ifindex=(int)links[i].index};
         if (links[i].fd < 0 || bind(links[i].fd, (struct sockaddr *)&address, sizeof(address))) goto done;
         fds[i] = (struct pollfd){.fd=links[i].fd, .events=POLLIN};
         for (size_t j = 0; j < nt; j++) {
+            if (millis() >= deadline) goto done;
             uint8_t p[86]; solicitation(p, &links[i], &targets[j]);
             if (send(links[i].fd, p, sizeof(p), 0) < 0 && errno != EAGAIN && errno != EWOULDBLOCK) goto done;
         }
     }
-    int64_t deadline = millis() + 350;
     while (millis() < deadline) {
         int64_t remaining = deadline - millis();
         if (remaining <= 0) break;

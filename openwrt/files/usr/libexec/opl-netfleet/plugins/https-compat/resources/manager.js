@@ -295,7 +295,7 @@ function render(controller) {
 			E('td', {}, [ E('strong', { 'class': recovery.latched ? 'is-warning' : '' }, !rule.enabled ? '规则已关闭' : !state.requested ? '模块已关闭' : rule.strategy === 'bypass' ? '旁路' :
 				state.eligible_devices && !rule.devices.some(id => state.eligible_devices.includes(id)) ? '无可接管设备' : state.intercepting && recovery.admitted ? '正在接管' : '当前旁路'),
 				state.requested && rule.enabled && (state.reason || recovery.reason) ? E('small', {}, reason(state.reason || recovery.reason)) : '',
-				result.at ? E('small', {}, '最近上游：' + (result.upstream_protocol || '协议未确认') + ' · ' + new Date(result.at * 1000).toLocaleString()) : E('small', {}, '尚无转发记录') ]),
+				result.upstream_protocol || result.at ? E('small', {}, '最近上游：' + (result.upstream_protocol || '协议未确认') + (result.at ? ' · ' + new Date(result.at * 1000).toLocaleString() : '')) : E('small', {}, '尚无转发记录') ]),
 			E('td', {}, [ button('编辑', function() { edit(controller, 'rules', rule); }, busy), button('删除', function() {
 				return applyConfig(function(config) { config.rules = config.rules.filter(function(value) { return value.id !== rule.id; }); });
 			}, busy), recovery.latched ? button('恢复', function() { return mutate(controller, 'compatibilityProbe', { operation: 'recover', rule: rule.id }); }, busy) : '' ]) ]);

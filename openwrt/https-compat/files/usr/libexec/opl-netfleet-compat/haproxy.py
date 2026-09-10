@@ -124,7 +124,7 @@ frontend ingress
         if not addresses:
             continue
         name = f'r{number}'
-        lines += [f"  acl {name}_source src {' '.join(addresses)}", f"  acl {name}_domain req.ssl_sni -i {rule['domain']}"]
+        lines += [f"  acl {name}_source src -f {run}/sources-{name}.acl", f"  acl {name}_domain req.ssl_sni -i {rule['domain']}"]
         if rule['match'] == 'suffix':
             lines += [f"  acl {name}_domain req.ssl_sni -m end -i .{rule['domain']}"]
         condition = f"{name}_source {name}_domain {{ dst_port {rule['port']} }} !{{ req.ssl_alpn -m str h2 }}"
@@ -181,6 +181,7 @@ frontend {name}_http
 
 def configuration_revision(effective):
     structural = {key: value for key, value in effective.items() if key != 'blocked_rules'}
+    structural['devices'] = [{**device, 'addresses': []} if device.get('identity') else device for device in effective['devices']]
     return hashlib.sha256(json.dumps(structural, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
@@ -193,10 +194,20 @@ def write_rule_map(run, effective, mapping):
     write_private(run / 'rules.map', ''.join(f'{name} {value}\n' for name, value in rule_switches(effective, mapping).items()).encode())
 
 
+def write_source_acls(run, effective, rules):
+    for name, identity in rules.items():
+        rule = next(row for row in effective['rules'] if row['id'] == identity)
+        addresses = sorted({address + ('/128' if ':' in address else '/32')
+                            for device in effective['devices'] if device['id'] in rule['devices']
+                            for address in device['addresses']})
+        write_private(run / f'sources-{name}.acl', ('\n'.join(addresses) + '\n').encode())
+
+
 def prepare(effective_path, run):
     effective = json.loads(effective_path.read_bytes())
     config, rules = configuration(effective, run, configuration_revision(effective))
     write_rule_map(run, effective, rules)
+    write_source_acls(run, effective, rules)
     path = run / 'haproxy.cfg'
     temporary = path.with_suffix('.new')
     write_private(temporary, config.encode())

@@ -1,11 +1,11 @@
 import * as fs from 'fs';
-const root='/src/openwrt/files/usr/libexec/opl-netfleet',pid=+ARGV[0];
+const root=ARGV[1] ?? '/src/openwrt/files/usr/libexec/opl-netfleet',pid=+ARGV[0];
 const network={backend:'native-mihomo',ready:true,router_proxy:true,lan_proxy:true,compatibility_ownership_guard:true,interfaces:['nf-observe'],engine_pid:pid};
 const context={root,id:'mihomo',use:name=>name=='mihomo.gateway'?{interception_snapshot:()=>({ok:true,result:{...network}})}:
     name=='platform.process'?{shell_quote:value=>"'"+replace(`${value}`,"'","'\\''")+"'"}:
     {write_private:(path,data)=>{const result=fs.writefile(path,data);fs.chmod(path,0600);return result;},atomic_json:(path,data)=>fs.writefile(path,sprintf('%J',data))}};
 const api=loadfile(root+'/plugins/mihomo/lib/interception.uc')()(context);
-const owner={owner:'https-compat',service:'opl-netfleet-compat',instance:'engine',user:'nobody'};
+const owner={owner:'https-compat',service:'opl-netfleet-compat',instance:'engine',user:ARGV[2] ?? 'nobody'};
 function check(value,reason) {if(!value) die(reason);}
 function call(action,params) {const result=api.request(owner,{action,...(params??{})});check(result.ok,sprintf('%s: %J',action,result));return result.result;}
 const lock=fs.open('/var/lock/opl-netfleet-deploy.lock','ae',0600);check(lock.lock('xn'),'lock');

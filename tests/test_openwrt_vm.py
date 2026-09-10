@@ -55,8 +55,7 @@ class OpenWrtVmTests(unittest.TestCase):
                                      (before["payload"] / "usr/libexec/opl-netfleet/plugins/workspace-note/lib/document.uc").read_bytes())
 
     def test_probe_serves_mihomo_head_and_business_get(self):
-        snippet = RUNNER.read_text().split('python3 - "$work/local-probe-server.crt"', 1)[1]
-        snippet = snippet.split("<<'PY' &\n", 1)[1].split('\nPY\n', 1)[0]
+        snippet = (ROOT / 'scripts/openwrt-vm/probe-server.py').read_text()
         handler = next(node for node in ast.parse(snippet).body
                        if isinstance(node, ast.ClassDef) and node.name == 'Handler')
         scope = dict(http=http, json=json, urlsplit=urlsplit, parse_qs=parse_qs)

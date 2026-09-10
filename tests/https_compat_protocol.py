@@ -121,6 +121,7 @@ class Protocol(unittest.IsolatedAsyncioTestCase):
         (self.directory / 'haproxy.cfg').write_text(text)
         (self.directory / 'haproxy-rules.json').write_text(json.dumps(mapping))
         haproxy.write_rule_map(self.directory, policy, mapping)
+        haproxy.write_source_acls(self.directory, policy, mapping)
         self.proxy = await asyncio.create_subprocess_exec(BINARY, '-db', '-f', str(self.directory / 'haproxy.cfg'),
                                                           stdout=self.log, stderr=self.log)
         self.addAsyncCleanup(self.stop_proxy)

@@ -6,7 +6,7 @@ tree=${2:?}
 feed_url=${3:-}
 
 if [ -f /tmp/compat-runtime/native-runtime.json ]; then
- exec sh /tmp/guest-compatibility-native-qualify.sh "$commit" "$tree" "$feed_url"
+ exec sh /tmp/guest-compatibility-native-qualify.sh "$commit" "$tree" "$feed_url" "${4:?}"
 fi
 
 test "$(uname -m)" = aarch64

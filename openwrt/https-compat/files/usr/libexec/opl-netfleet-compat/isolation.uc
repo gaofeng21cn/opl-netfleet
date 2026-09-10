@@ -30,7 +30,8 @@ return function(io,base,run) {
     }
     function readable() {
         const ids=account();
-        for(let name in ['rules.map','haproxy.cfg','effective.json']) {
+        const sources=filter(fs.lsdir(run) ?? [],name=>match(name,/^sources-r[0-9]+\.acl$/));
+        for(let name in ['rules.map','haproxy.cfg','effective.json',...sources]) {
             const path=run+'/'+name;
             if(fs.lstat(path)?.type!='file'||!fs.chown(path,0,ids.gid)||!fs.chmod(path,0640)) die('engine_config_unsafe');
         }

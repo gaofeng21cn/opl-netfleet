@@ -196,82 +196,7 @@ openssl x509 -req -sha256 -days 1 \
 	-CA "$work/local-probe.crt" -CAkey "$work/local-probe-ca.key" -CAcreateserial \
 	-extfile "$work/local-probe-server.ext" \
 	-out "$work/local-probe-server.crt" >/dev/null 2>&1
-python3 - "$work/local-probe-server.crt" "$work/local-probe-server.key" "$probe_port" >"$work/local-probe.log" 2>&1 <<'PY' &
-import http.server
-import json
-import ssl
-import sys
-from urllib.parse import urlsplit, parse_qs
-
-
-class Handler(http.server.BaseHTTPRequestHandler):
-    # Mihomo URLTest uses HEAD; curl business probes use GET.
-    def do_HEAD(self):
-        self.send_response(204)
-        self.end_headers()
-
-    def do_GET(self):
-        url = urlsplit(self.path)
-        if url.path.startswith("/native-subscriptions/"):
-            if parse_qs(url.query).get("token") != ["vm-only-credential"]:
-                self.send_error(403)
-                return
-            kind = url.path.rsplit("/", 1)[-1]
-            if kind == "redirect":
-                self.send_response(302)
-                self.send_header("Location", "http://127.0.0.1/blocked-downgrade")
-                self.end_headers()
-                return
-            if kind == "missing":
-                self.send_error(404)
-                return
-            body = json.dumps({"proxies": [{"name": "native-region-node", "type": "socks5",
-                "server": "127.0.0.1", "port": 1081, "udp": True}],
-                "dns": {"enable": True, "nameserver": ["udp://127.0.0.1:1054"]},
-                "mixed-port": 1111, "rules": ["MATCH,REJECT"]}).encode()
-            if kind == "setup":
-                body = json.dumps({"proxies": [{"name": "JP Japan setup-node", "type": "socks5",
-                    "server": "198.18.1.2", "port": 1081, "udp": True}],
-                    "proxy-groups": [{"name": "Outbound", "type": "select", "proxies": ["JP Japan setup-node"]}],
-                    "rules": ["MATCH,Outbound"]}).encode()
-            elif kind == "invalid":
-                body = b"proxies: [not valid yaml"
-            elif kind == "bad-node":
-                body = b'{"proxies":[{"name":"bad","type":"not-a-proxy"}]}'
-            elif kind == "empty":
-                body = b'{"proxies":[]}'
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Subscription-Userinfo", "upload=1024; download=2048; total=104857600; expire=0")
-            self.end_headers()
-            self.wfile.write(body)
-            return
-        self.send_response(204)
-        self.end_headers()
-
-    def log_message(self, _format, *_args):
-        pass
-
-
-class TLSServer(http.server.ThreadingHTTPServer):
-    daemon_threads = True
-    request_queue_size = 128
-
-    def process_request_thread(self, request, client_address):
-        try:
-            tls_request = self.context.wrap_socket(request, server_side=True)
-        except (ssl.SSLError, OSError):
-            self.shutdown_request(request)
-            return
-        super().process_request_thread(tls_request, client_address)
-
-
-server = TLSServer(("0.0.0.0", int(sys.argv[3])), Handler)
-server.context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-server.context.load_cert_chain(sys.argv[1], sys.argv[2])
-server.serve_forever()
-PY
+python3 "$workspace/scripts/openwrt-vm/probe-server.py" "$work/local-probe-server.crt" "$work/local-probe-server.key" "$probe_port" >"$work/local-probe.log" 2>&1 &
 probe_pid=$!
 probe_ready() {
 	kill -0 "$probe_pid" >/dev/null 2>&1 || return 1
@@ -518,7 +443,7 @@ run_guest() {
 	case "$guest_kind" in
 		management) guest_script=guest-qualify.sh; guest_arguments= ;;
 		package) guest_arguments="'$package_manifest_sha' '$probe_port' '$feed_url'" ;;
-		compatibility) guest_arguments="'$feed_url'" ;;
+		compatibility) guest_arguments="'$feed_url' '$probe_port'" ;;
 		native|setup|migration)
 			ssh $ssh_common root@127.0.0.1 "touch /tmp/netfleet-${guest_kind}-vm-authorized" ;;
 	esac

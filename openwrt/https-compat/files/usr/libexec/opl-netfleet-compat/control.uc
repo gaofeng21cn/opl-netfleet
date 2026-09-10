@@ -89,7 +89,7 @@ return function(context, options) {
     function status() {
         const config=policy.validate(io.read(CONFIG,DEFAULT)),state=io.read(STATE,{}),live=health(),kernel=call('status');
         const fp=fingerprint(),source=identity.resolve(config),trust=io.read(TRUST,{}),active=effective(config,trust,source);
-        let reason=state.reason ?? (config.enabled?'not_ready':'disabled');
+        let reason=kernel.intercepting?null:state.reason ?? (config.enabled?'not_ready':'disabled');
         if(!kernel.intercepting&&state.intercepting) reason='lease_expired';
         if(!config.enabled) reason=live.active_connections?'draining':'disabled';
         else if(!fp) reason='ca_not_ready';
@@ -180,17 +180,21 @@ return function(context, options) {
                 if(epoch!=network.epoch) {call('prepare',{epoch:network.epoch});epoch=network.epoch;}
             }
         } catch(error) {reason=error.message;}
-        const live=unlocked(lock,()=>health(true));
+        // No gateway admission means no transparent loopback path to prove.
+        // Keep process/config readback, and resume wire probes before any lease.
+        const live=unlocked(lock,()=>health(!reason));
         if(live.ready&&reconcile(live)) {save({...previous,intercepting:false,reason:'engine_config_pending'},previous);return;}
         const starting=live.starting&&live.pid!=previous.ready_engine_pid;
+        if(!reason&&previous.intercepting===true&&previous.ready_engine_pid&&live.pid&&live.pid!=previous.ready_engine_pid)
+            reason='engine_restarted';
         const expected=fs.lstat(EFFECTIVE)?engine.revision(io.read(EFFECTIVE)):null;
         const healthy=!reason&&live.ready&&live.processing_chain===true&&live.transparent_chain===true&&live.revision==expected;
         reason??=!live.ready?'engine_unavailable':!live.processing_chain?'processing_chain_failed':!live.transparent_chain?'transparent_chain_failed':'engine_revision_mismatch';
-        const own_failure=index(['engine_unavailable','processing_chain_failed','transparent_chain_failed','engine_revision_mismatch'],reason)>=0;
-        const recovery=advance(previous.recovery,{requested:true,healthy,reason,now,count_failure:own_failure&&!starting&&previous.intercepting===true});
+        const own_failure=index(['engine_unavailable','engine_restarted','processing_chain_failed','transparent_chain_failed','engine_revision_mismatch'],reason)>=0;
+        const recovery=advance(previous.recovery,{requested:true,healthy,reason,now,count_failure:own_failure&&previous.intercepting===true});
         const state={...previous,recovery,intercepting:false,reason:recovery.reason,local_probes:live.local_probes ?? {},engine_pid:live.pid ?? previous.engine_pid};
         if(!healthy&&previous.intercepting===true&&own_failure) state.last_failure={at:time(),reason,health_error:live.health_error,
-            local_probes:live.local_probes ?? {},health_counters:live.health_counters,engine_pid:live.pid};
+            local_probes:live.local_probes ?? {},health_counters:live.health_counters,engine_pid:live.pid,previous_engine_pid:previous.ready_engine_pid};
         if(live.ready&&live.pid) state.ready_engine_pid=live.pid;
         if(!recovery.intercepting) {
             bypass();
@@ -231,7 +235,11 @@ return function(context, options) {
         }
         state.rule_recovery=rule_states;
         if(io.canonical(io.read(EFFECTIVE))!=io.canonical(active)) {
-            bypass();io.atomic(EFFECTIVE,active);state.reason='rules_recovering';save(state,previous);return;
+            const same_engine=engine.revision(active)==live.revision;
+            if(!same_engine) bypass();
+            io.atomic(EFFECTIVE,active);
+            if(!same_engine) {state.reason='rules_recovering';save(state,previous);return;}
+            engine.sync_rule_switches(active,live);
         }
         const target_rules=filter(active.rules,rule=>rule.enabled&&rule.strategy=='h2'&&index(active.blocked_rules ?? [],rule.id)<0),candidates=[];
         for(let current in values(rule_states)) current.admitted=false;

@@ -46,6 +46,7 @@ return function(io, policy, paths) {
     }
     function revision(effective) {
         const structural={...effective};delete structural.blocked_rules;
+        structural.devices=map(structural.devices,device=>device.identity?{...device,addresses:[]}:device);
         return io.sha256(io.canonical(structural));
     }
     function configuration(effective,run,rev,port,probe_port) {
@@ -87,7 +88,7 @@ frontend ingress
             const rule=rules[n],name=`r${n}`;mapping[name]=rule.id;
             const addresses=[];for(let device in config.devices) if(index(rule.devices,device.id)>=0) push(addresses,...device.addresses);
             if(!length(addresses)) continue;
-            push(lines,`  acl ${name}_source src ${join(' ',addresses)}`,`  acl ${name}_domain req.ssl_sni -i ${rule.domain}`);
+            push(lines,`  acl ${name}_source src -f ${run}/sources-${name}.acl`,`  acl ${name}_domain req.ssl_sni -i ${rule.domain}`);
             if(rule.match=='suffix') push(lines,`  acl ${name}_domain req.ssl_sni -m end -i .${rule.domain}`);
             const condition=`${name}_source ${name}_domain { dst_port ${rule.port} } !{ req.ssl_alpn -m str h2 }`;
             if(config.enabled&&rule.strategy=='h2') push(lines,`  use_backend ${name}_convert if ${condition} { str(${name}),map_str_int(${run}/rules.map,0) eq 1 }`);
@@ -167,9 +168,26 @@ frontend ${name}_http
     function switches(effective,mapping) {
         const result={};for(let name,id in mapping) result[name]=index(effective.blocked_rules ?? [],id)>=0?'0':'1';return result;
     }
+    function sources(effective,mapping) {
+        const result={};
+        for(let name,id in mapping) {
+            const rule=filter(effective.rules,row=>row.id==id)[0],addresses=[];
+            for(let device in effective.devices) if(index(rule.devices,device.id)>=0)
+                push(addresses,...map(device.addresses,address=>address+(index(address,':')>=0?'/128':'/32')));
+            result[name]=sort(uniq(addresses));
+        }
+        return result;
+    }
+    function write_source(path,addresses) {
+        const previous=fs.stat(path),temporary=path+'.next';
+        io.write(temporary,join('\n',addresses)+'\n');
+        if(previous&&(!fs.chown(temporary,0,previous.gid)||!fs.chmod(temporary,previous.mode&0777))) die('engine_source_acl_update_failed');
+        if(!fs.rename(temporary,path)) die('engine_source_acl_update_failed');
+    }
     function prepare(effective) {
         const result=configuration(effective,RUN,revision(effective));
         const values=switches(effective,result.mapping);
+        for(let name,addresses in sources(effective,result.mapping)) write_source(`${RUN}/sources-${name}.acl`,addresses);
         io.write(RUN+'/rules.map',join('',map(keys(values),name=>`${name} ${values[name]}\n`)));
         io.write(RUN+'/haproxy.cfg.pending',result.text);
         io.command([BINARY,'-c','-f',RUN+'/haproxy.cfg.pending'],5);
@@ -178,8 +196,8 @@ frontend ${name}_http
     }
     let synchronized=null;
     function sync_rule_switches(effective,health) {
-        const expected=switches(effective,io.read(RUN+'/haproxy-rules.json',{}));
-        const identity=io.canonical([health.pid,health.revision,expected]);
+        const mapping=io.read(RUN+'/haproxy-rules.json',{}),expected=switches(effective,mapping),addresses=sources(effective,mapping);
+        const identity=io.canonical([health.pid,health.revision,expected,addresses]);
         if(identity==synchronized) return;
         synchronized=null;
         function current() {
@@ -192,6 +210,27 @@ frontend ${name}_http
         const updates=map(filter(keys(expected),name=>expected[name]!=before[name]),name=>`set map ${RUN}/rules.map ${name} ${expected[name]}`);
         if(length(updates)&&length(trim(command(join(';',updates))))) die('engine_rule_map_update_failed');
         if(io.canonical(current())!=io.canonical(expected)) die('engine_rule_map_mismatch');
+        for(let name,wanted in addresses) {
+            const path=`${RUN}/sources-${name}.acl`;
+            function observed() {
+                const result=[];
+                for(let line in split(command(`show acl ${path}`),'\n')) {
+                    const parts=split(trim(line),/\s+/);
+                    if(length(parts)==2&&index(parts[0],'0x')==0) {
+                        const raw=split(parts[1],'/'),bytes=iptoarr(raw[0]);
+                        if(!bytes||(length(raw)>1&&+raw[1]!=(length(bytes)==4?32:128))) die('engine_source_acl_mismatch');
+                        push(result,arrtoip(bytes)+(length(bytes)==4?'/32':'/128'));
+                    }
+                }
+                return sort(result);
+            }
+            const before=observed(),changes=[];
+            for(let address in before) if(index(wanted,address)<0) push(changes,`del acl ${path} ${address}`);
+            for(let address in wanted) if(index(before,address)<0) push(changes,`add acl ${path} ${address}`);
+            if(length(changes)&&length(trim(command(join(';',changes))))) die('engine_source_acl_update_failed');
+            if(io.canonical(observed())!=io.canonical(wanted)) die('engine_source_acl_mismatch');
+            if(length(changes)) write_source(path,wanted);
+        }
         synchronized=identity;
     }
     function health() {
