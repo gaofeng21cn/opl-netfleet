@@ -110,3 +110,15 @@ check(!restore_world(["a", "b", "c"], before, "/unused"), "unrelated world roots
 succeeds = false;
 check(!restore_world(["a"], before, "/unused"), "unsatisfied constraints require transaction rollback");
 `)();
+
+const reconcile_start = index(source, "recovery_world = function(");
+loadstring(`
+let recovery_world;
+const fs = {readfile: path => "C:Q1current\\nP:ui\\nV:1.0-r1\\n\\n"};
+function fail(reason) { die(reason); }
+` + substr(source, reconcile_start, world_start - reconcile_start) + `
+const before = {ui: "ui><Q1stale", other: "other><Q1keep"};
+const repaired = recovery_world(["ui"], before);
+if (repaired.ui != "ui" || repaired.other != before.other || before.ui != "ui><Q1stale") die("stale pin must be repaired only in the selected recovery intent");
+if (recovery_world(["ui"], {ui: "ui><Q1current"}).ui != "ui><Q1current") die("matching pin must be preserved for rollback");
+`)();

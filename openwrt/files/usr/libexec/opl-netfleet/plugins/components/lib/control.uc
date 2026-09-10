@@ -2,7 +2,7 @@ import * as fs from "fs";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, restore_world, feed, newer, available, update_process, progress, get, local_stage, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, recovery_stop, restore_services, rollback, recover, journal, upgrade, command;
+let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, recovery_world, restore_world, feed, newer, available, update_process, progress, get, local_stage, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, recovery_stop, restore_services, rollback, recover, journal, upgrade, command;
 
 const gateway = context.use("mihomo.gateway");
 const dashboard_resource = context.use("dashboard.control").resource;
@@ -77,6 +77,24 @@ package_world = function() {
 		const name = match(constraint, /^([a-z0-9][a-z0-9+_.-]*)([@<>=~]|$)/)?.[1];
 		if (name == null) fail("package_world_invalid");
 		result[name] = constraint;
+	}
+	return result;
+};
+recovery_world = function(names, before) {
+	// Reconcile stale checksum roots left by an older installer copying world
+	// after APK replacement. Never restore a checksum that is not installed.
+	const identities = {};
+	for (let record in split(fs.readfile("/lib/apk/db/installed") ?? "", "\n\n")) {
+		const name = match(record, /(^|\n)P:([^\n]+)/)?.[2];
+		const digest = match(record, /(^|\n)C:([^\n]+)/)?.[2];
+		if (name != null && digest != null) identities[name] = digest;
+	}
+	const result = { ...before };
+	for (let name in names) {
+		const pin = `${name}><`;
+		if (index(before[name] ?? "", pin) != 0) continue;
+		if (identities[name] == null) fail("package_world_identity_unavailable");
+		if (before[name] != `${pin}${identities[name]}`) result[name] = name;
 	}
 	return result;
 };
@@ -446,6 +464,8 @@ upgrade = function(request, work, candidates) {
 	if (before_status == null && !unconfigured) fail("runtime_readback_failed");
 	const paths = private_paths();
 	const before = { backend: KIND, core_enabled: capture(`/etc/init.d/${SERVICE} enabled`) != null, supervisor_enabled: capture("/etc/init.d/opl-netfleet enabled") != null, active: before_status?.active ?? false, unconfigured: unconfigured, core: service_running(SERVICE), supervisor: service_running("opl-netfleet"), selections: {}, paths: paths, inputs: input_identity(paths), world: package_world() };
+	before.original_world = before.world;
+	before.world = recovery_world(names, before.world);
 	before.runtime_paths = filter(["/usr/libexec/opl-netfleet", "/usr/libexec/opl-netfleet-plugin-package",
 		"/usr/share/opl-netfleet", "/etc/init.d/opl-netfleet", "/etc/init.d/opl-netfleet-update-recovery", `/etc/init.d/${SERVICE}`,
 		...(request.component == "mihomo" ? ["/usr/libexec/mihomo"] : [])], path => fs.lstat(path) != null);
