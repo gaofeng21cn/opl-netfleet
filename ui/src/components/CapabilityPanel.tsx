@@ -6,10 +6,12 @@ export function CapabilityPanel({ snapshot, capability, compact = false, onChoos
   snapshot: StatusSnapshot; capability: Capability; compact?: boolean; disabled?: boolean;
   onChooseRegion?(): void; onSelectAuto?(): void;
 }) {
-  const route = capabilityRoute(snapshot, capability);
+  const measured = snapshot.active && snapshot.runtime.netfleet_present !== false;
+  const inactiveMode = snapshot.runtime.mihomo_running === false ? '已停止' : '原生配置';
+  const route = measured ? capabilityRoute(snapshot, capability) : [inactiveMode];
   const failOpen = failOpenOrder(snapshot, capability);
   return (
-    <article className={`nf-capability ${capability.alive ? 'is-healthy' : 'is-unhealthy'} ${compact ? 'is-compact' : ''}`}>
+    <article className={`nf-capability ${measured ? capability.alive ? 'is-healthy' : 'is-unhealthy' : ''} ${compact ? 'is-compact' : ''}`}>
       <div className="nf-capability-heading">
         <span className="nf-capability-icon"><Globe2 aria-hidden="true" /></span>
         <div><h2>{capabilityName(capability)}</h2><span>{capability.base_groups?.join('、') || capability.base_group || '未绑定'}</span></div>
@@ -25,12 +27,12 @@ export function CapabilityPanel({ snapshot, capability, compact = false, onChoos
         </div>
       </details>
       <dl className="nf-capability-metrics">
-        <div><dt>当前延迟</dt><dd className={capability.alive ? 'is-ok' : 'is-warning'}>{delay(capability.reason?.delay_ms)}</dd></div>
-        <div><dt>健康状态</dt><dd><span className={`nf-health-dot ${capability.alive ? '' : 'is-bad'}`} />{capability.alive ? '健康' : '不可用'}</dd></div>
-        <div><dt>模式</dt><dd>{modeName(capability)}</dd></div>
+        <div><dt>当前延迟</dt><dd className={measured ? capability.alive ? 'is-ok' : 'is-warning' : undefined}>{measured ? delay(capability.reason?.delay_ms) : '未测量'}</dd></div>
+        <div><dt>健康状态</dt><dd>{measured && <span className={`nf-health-dot ${capability.alive ? '' : 'is-bad'}`} />}{measured ? capability.alive ? '健康' : '不可用' : '未测量'}</dd></div>
+        <div><dt>模式</dt><dd>{measured ? modeName(capability) : inactiveMode}</dd></div>
         <div className="nf-fail-open"><dt>运行时网络退路</dt><dd>{failOpen.join(' → ') || '未编译'}</dd></div>
       </dl>
-      <p className="nf-capability-reason">{capability.user_mode === 'manual_region' ? `手动保持 ${regionName(snapshot, capability.manual_region_id || capability.region_id)} · 整轮后台自动选优已暂停` : reasonText(snapshot, capability)}</p>
+      <p className="nf-capability-reason">{!measured ? snapshot.runtime.mihomo_running === false ? '代理已停止，启用 NetFleet 后可测量和切换出口。' : '当前使用原生配置，NetFleet 未接管出口。' : capability.user_mode === 'manual_region' ? `手动保持 ${regionName(snapshot, capability.manual_region_id || capability.region_id)} · 整轮后台自动选优已暂停` : reasonText(snapshot, capability)}</p>
       {!compact && <div className="nf-region-preview"><button type="button" className="nf-button-secondary" disabled={disabled || !onChooseRegion || !capability.can_select_region} title={disabled ? '当前状态不可操作，请确认 NetFleet 已启用且状态读取正常' : onChooseRegion ? '指定地区并暂停整轮后台自动选优' : '本机参考面为只读，请在设备 LuCI 中确认切换'} onClick={onChooseRegion}>指定地区</button>
       {onSelectAuto && snapshot.selection?.automation_paused && <button type="button" className="nf-button-secondary" disabled={disabled} onClick={onSelectAuto}>恢复自动选优</button>}</div>}
     </article>

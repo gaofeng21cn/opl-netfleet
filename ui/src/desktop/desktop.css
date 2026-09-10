@@ -103,10 +103,6 @@
 .nf-desktop .nf-button-primary { box-shadow: 0 1px 2px #293a7d18; }
 .nf-desktop .nf-button-secondary { box-shadow: 0 1px 2px #202a4010; }
 .nf-desktop .nf-desktop-actions { padding: 14px 0 0; gap: 9px; }
-.nf-desktop .nf-desktop-welcome { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 23px; margin: 26px 0; background: #edf0fb; border: 1px solid #dee4f7; border-radius: 10px; }
-.nf-desktop-welcome h2 { margin: 0 0 7px; font-size: 15px; font-weight: 600; }
-.nf-desktop-welcome p { margin: 0; font-size: 12px; color: #6c748c; line-height: 1.7; }
-.nf-desktop-welcome button { flex-shrink: 0; }
 .nf-desktop .nf-config-layout { grid-template-columns: 142px minmax(0,1fr); gap: 24px; }
 .nf-desktop .nf-config-tabs { display: flex; flex-direction: column; position: sticky; top: 82px; padding: 5px; gap: 3px; border: 0; background: transparent; }
 .nf-desktop .nf-config-tabs button { min-height: 35px; padding: 0 9px; border: 0; border-radius: 6px; font-size: 12px; }
@@ -145,7 +141,6 @@
   .nf-desktop .nf-toolbar { padding: 0 16px; }
   .nf-desktop .nf-desktop-location { display: none; }
   .nf-desktop .nf-form-row { grid-template-columns: minmax(0,1fr); }
-  .nf-desktop .nf-desktop-welcome { flex-direction: column; align-items: flex-start; }
 }
 
 .nf-desktop-file-picker { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -155,27 +150,9 @@
 /* macOS separates proxy lifecycle from operating-system traffic access. */
 .nf-desktop .nf-desktop-state { padding: 5px 9px; border-radius: 7px; background: var(--nf-surface-muted, #f0f2f6); color: var(--nf-text-secondary, #566173); font-size: 12px; white-space: nowrap; }
 .nf-desktop .nf-desktop-state.is-running { color: #3653ac; background: #edf1fc; }
-.nf-desktop .nf-desktop-runtime-summary { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 4px 0 14px; }
-.nf-desktop .nf-desktop-runtime-summary strong { font-size: 19px; font-weight: 600; }
-.nf-desktop .nf-desktop-runtime-summary p { margin: 7px 0 0; color: #667085; font-size: 13px; }
-.nf-desktop .nf-desktop-advanced { border-top: 1px solid #e6e8ed; padding-top: 12px; font-size: 12px; color: #667085; }
-.nf-desktop .nf-desktop-advanced summary { cursor: pointer; }
-.nf-desktop .nf-desktop-network-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.nf-desktop .nf-desktop-network-options label { display: flex; align-items: flex-start; gap: 8px; padding: 14px 12px; border: 1px solid #e0e4eb; border-radius: 9px; cursor: pointer; background: #fff; }
-.nf-desktop .nf-desktop-network-options label.is-selected { border-color: #7588c9; background: #f4f6fd; }
-.nf-desktop .nf-desktop-network-options input { margin: 3px 0 0; accent-color: #556bb4; }
-.nf-desktop .nf-desktop-network-options strong { display: block; font-size: 13px; }
-.nf-desktop .nf-desktop-network-options small { display: block; color: #667085; font-size: 12px; line-height: 1.6; margin-top: 6px; }
-.nf-desktop .nf-desktop-network-footer, .nf-desktop .nf-desktop-inline-note { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 12px; color: #667085; }
-.nf-desktop .nf-desktop-network-footer p { margin: 12px 0 0; }
+.nf-desktop .nf-desktop-inline-note { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 12px; color: #667085; }
 .nf-desktop .nf-desktop-inline-note { padding: 10px 12px; background: #f5f6fa; border-radius: 8px; margin-bottom: 14px; }
 .nf-desktop .nf-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-@media (max-width: 1000px) {
-  .nf-desktop .nf-desktop-runtime-summary { align-items: flex-start; flex-direction: column; gap: 8px; }
-  .nf-desktop .nf-desktop-network-options { grid-template-columns: 1fr; }
-  .nf-desktop .nf-desktop-network-options label { padding: 10px 12px; }
-  .nf-desktop .nf-desktop-network-options small { margin-top: 3px; }
-}
 
 /* Shared controls retain their semantics; the desktop host supplies density. */
 .nf-desktop .nf-section-heading { align-items: flex-start; gap: 16px; }
@@ -190,10 +167,6 @@
 .nf-desktop .nf-form-row :is(input:not([type="checkbox"]):not([type="radio"]), select) { width: 100%; min-width: 0; }
 .nf-desktop .nf-form-rows > .nf-desktop-actions { padding: 14px 18px; border-top: 1px solid var(--nf-border); background: #fafbfc; }
 .nf-desktop .nf-table-wrap + .nf-desktop-fieldset { margin-top: 20px; }
-.nf-desktop .nf-desktop-runtime-summary > .nf-desktop-actions { padding: 0; flex-shrink: 0; }
-.nf-desktop .nf-desktop-network-footer { align-items: center; margin-top: 14px; }
-.nf-desktop .nf-desktop-network-footer p { margin: 0; line-height: 1.65; }
-.nf-desktop .nf-desktop-network-footer button { flex-shrink: 0; }
 .nf-desktop .nf-config-actions { gap: 12px; flex-wrap: wrap; padding: 16px 0; }
 .nf-desktop .nf-config-actions > div { gap: 8px; flex-wrap: wrap; }
 .nf-desktop .nf-config-actions button { min-height: 32px; font-size: 12px; border-radius: 6px; }
@@ -226,3 +199,58 @@
 .nf-desktop .nf-region-checks input { margin: 0; width: 14px; height: 14px; flex: 0 0 14px; accent-color: var(--nf-accent); }
 .nf-desktop .nf-config-actions { padding: 12px 16px; border-radius: 10px; bottom: 12px; }
 .nf-desktop .nf-config-actions > div { margin-left: auto; justify-content: flex-end; }
+
+/* Desktop overview: high-frequency actions first, detail on its owning page. */
+.nf-desktop .nf-toolbar { height: 44px; padding: 0 24px; }
+.nf-desktop .nf-main { padding: 20px 24px; }
+.nf-desktop .nf-page-heading { margin-bottom: 20px; }
+.nf-desktop .nf-page-heading h1 { font-size: 22px; }
+.nf-desktop .nf-desktop-overview-heading { margin-bottom: 16px; }
+.nf-desktop .nf-brand { height: 74px; }
+.nf-desktop-connection { border: 1px solid var(--nf-border); border-radius: 10px; background: var(--nf-surface,white); margin-bottom: 16px; }
+.nf-desktop-connection-main { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px 16px; }
+.nf-desktop-eyebrow { font-size: 11px; color: var(--nf-muted); }
+.nf-desktop-connection-main h2 { margin: 5px 0 6px; font-size: 21px; font-weight: 600; letter-spacing: -.3px; }
+.nf-desktop-connection-main p { margin: 0; color: var(--nf-muted); font-size: 12px; line-height: 1.5; }
+.nf-desktop-connection-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.nf-desktop-access { border: 0; border-top: 1px solid var(--nf-border); padding: 13px 20px 11px; margin: 0; min-width: 0; }
+.nf-desktop-access-row { display: flex; align-items: center; gap: 12px; }
+.nf-desktop-access-row label { font-size: 12px; font-weight: 500; flex-shrink: 0; }
+.nf-desktop-access-row select { height: 32px; min-width: 140px; padding: 0 9px; border: 1px solid #d8dce5; border-radius: 6px; background: white; color: var(--nf-text); font: inherit; font-size: 12px; }
+.nf-desktop-access-state { font-size: 11px; color: var(--nf-muted); margin-left: auto; }
+.nf-desktop-access-help { margin: 8px 0 0; font-size: 11px; color: var(--nf-muted); line-height: 1.5; }
+.nf-desktop-connection-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 20px; background: #fafbfc; border-top: 1px solid var(--nf-border); border-radius: 0 0 10px 10px; font-size: 11px; color: var(--nf-muted); }
+.nf-desktop-connection-foot button, .nf-desktop-section-title button { padding: 0; background: transparent; border: 0; color: var(--nf-accent); font: inherit; cursor: pointer; }
+.nf-desktop-overview { display: grid; gap: 14px; }
+.nf-desktop-section-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.nf-desktop-section-title h2 { margin: 0; font-size: 13px; font-weight: 600; }
+.nf-desktop-section-title button { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+.nf-desktop-section-title svg { width: 14px; height: 14px; }
+.nf-desktop-exit-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.nf-desktop-exit-card { min-width: 0; padding: 15px 16px 12px; border: 1px solid var(--nf-border); border-radius: 10px; background: white; }
+.nf-desktop-exit-title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 13px; }
+.nf-desktop-exit-title h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.nf-desktop-exit-title > span { font-size: 11px; color: var(--nf-muted); white-space: nowrap; }
+.nf-desktop-exit-region { display: block; font-size: 17px; font-weight: 600; line-height: 1.4; }
+.nf-desktop-exit-card p { margin: 5px 0 12px; font-size: 11px; color: var(--nf-muted); line-height: 1.5; }
+.nf-desktop-exit-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.nf-desktop-exit-foot > span { font-size: 11px; color: var(--nf-muted); }
+.nf-desktop-resource-links { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.nf-desktop-resource-links button { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 10px 0; border: 0; border-top: 1px solid var(--nf-border); background: transparent; font: inherit; font-size: 12px; color: var(--nf-muted); text-align: left; cursor: pointer; }
+.nf-desktop-resource-links svg { width: 15px; height: 15px; flex-shrink: 0; }
+.nf-desktop-resource-links strong { margin-left: auto; font-weight: 600; color: var(--nf-text); }
+.nf-desktop-resource-links button > svg:last-child { margin-left: auto; width: 12px; }
+.nf-desktop-attention, .nf-desktop-onboarding { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 1px solid var(--nf-border); border-radius: 8px; background: white; }
+.nf-desktop-attention { background: #fff9ed; border-color: #ead6af; }
+.nf-desktop-attention strong, .nf-desktop-onboarding h2 { font-size: 13px; margin: 0; }
+.nf-desktop-attention ul { padding-left: 16px; margin: 5px 0 0; font-size: 12px; line-height: 1.5; }
+.nf-desktop-onboarding p { font-size: 12px; color: var(--nf-muted); margin: 6px 0 0; }
+.nf-desktop-attention button, .nf-desktop-onboarding button { flex-shrink: 0; }
+@media (max-width: 1000px) {
+  .nf-desktop .nf-main { padding: 18px 20px; }
+  .nf-desktop .nf-toolbar { padding: 0 20px; }
+  .nf-desktop-connection-main { padding: 16px; }
+  .nf-desktop-access { padding: 12px 16px 10px; }
+  .nf-desktop-connection-foot { padding: 9px 16px; }
+  .nf-desktop-exit-card { padding: 13px 14px 11px; }
+}

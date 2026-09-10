@@ -26,11 +26,12 @@ def build_icon(staging, resources):
     shutil.copy2(logo, branding / logo.name)
     iconset = staging / "NetFleet.iconset"
     iconset.mkdir()
+    renderer = staging / "render-icon"
+    run("swiftc", "-O", "-framework", "AppKit", HERE / "render-icon.swift", "-o", renderer)
     for size in (16, 32, 128, 256, 512):
         for scale in (1, 2):
             suffix = "@2x" if scale == 2 else ""
-            run("sips", "-z", str(size * scale), str(size * scale), logo,
-                "--out", iconset / f"icon_{size}x{size}{suffix}.png")
+            run(renderer, logo, iconset / f"icon_{size}x{size}{suffix}.png", str(size * scale))
     run("iconutil", "-c", "icns", iconset, "-o", resources / "NetFleet.icns")
 
 
