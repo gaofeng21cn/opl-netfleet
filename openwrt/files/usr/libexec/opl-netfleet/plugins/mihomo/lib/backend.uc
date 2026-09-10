@@ -6,7 +6,10 @@ return function(context) {
 // Bind the service functions before assigning closures that may reference them.
 let restart, update_subscription, running, listener_port, https_hostname, dns_query_ready, lan_runtime_state, configured_value, valid_table, valid_device, no_lookup_rule, no_route, path_absent, cleanup_state, stop;
 
-const profile_storage = context.use("mihomo.profile-storage");
+// This backend and its profile implementation share one plugin generation.
+// Keep internal reuse independent of global service bindings; the public
+// profile-storage service remains available to other platform backends.
+const profile_storage = loadfile(`${context.root}/plugins/${context.id}/lib/profile-storage.uc`)()(context);
 const KIND = context.use("platform.runtime").KIND;
 const UCI_PACKAGE = context.use("platform.runtime").UCI_PACKAGE;
 const ROOT_DIR = context.use("platform.runtime").ROOT_DIR;

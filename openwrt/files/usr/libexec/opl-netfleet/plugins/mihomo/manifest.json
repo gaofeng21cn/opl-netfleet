@@ -13,8 +13,7 @@
         "platform.runtime": 1,
         "platform.process": 1,
         "platform.storage": 1,
-        "mihomo.gateway": 1,
-        "mihomo.profile-storage": 1
+        "mihomo.gateway": 1
       }
     },
     "mihomo.controller": {
