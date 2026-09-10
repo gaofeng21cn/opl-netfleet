@@ -54,8 +54,8 @@ const restore_profile = context.use("recovery.control").restore_profile;
 const restore_recovery_with_probes = context.use("recovery.control").restore_recovery_with_probes;
 const subscription_update = context.use("subscriptions.store").update_result;
 
-const MAIN_PATH = "/usr/libexec/opl-netfleet/main.uc";
-const REFRESH_DIR = "/tmp/opl-netfleet-subscription-refresh";
+const run_owner_result = context.use("platform.process").run_owner_result;
+const REFRESH_DIR = context.use("platform.paths").REFRESH_DIR;
 prepare_refresh_snapshot = function(policy, active, sections) {
 	if (system(`rm -rf ${shell_quote(REFRESH_DIR)}`) != 0 ||
 		system(`mkdir -p ${shell_quote(`${REFRESH_DIR}/subscriptions`)}`) != 0) {
@@ -63,8 +63,8 @@ prepare_refresh_snapshot = function(policy, active, sections) {
 	}
 	const entries = [];
 	let backend_config = null;
-	if (BACKEND_KIND == "native-mihomo") {
-		const path = "/etc/config/netfleet";
+	if (context.use("platform.runtime").SUBSCRIPTION_CONFIG_PATH != null) {
+		const path = context.use("platform.runtime").SUBSCRIPTION_CONFIG_PATH;
 		const backup = `${REFRESH_DIR}/netfleet`;
 		const digest = sha256(path);
 		if (digest == null || system(`cp -p ${shell_quote(path)} ${shell_quote(backup)}`) != 0 || sha256(backup) != digest)
@@ -140,13 +140,7 @@ run_refresh_selection = function(requested, parent_id) {
 	const initiator = event_initiator(requested, requested == "scheduled" ? "scheduled" : null);
 	const output = `${REFRESH_DIR}/selection.json`;
 	const error_output = `${REFRESH_DIR}/selection.stderr`;
-	const exit_code = system(`ucode ${shell_quote(MAIN_PATH)} maintain ${shell_quote(trigger)} ${shell_quote(initiator)} ${shell_quote(parent_id ?? "")} >${shell_quote(output)} 2>${shell_quote(error_output)}`);
-	const response = read_json(output);
-	return {
-		ok: exit_code == 0 && response?.ok == true,
-		state: response?.result?.state ?? null,
-		error: response?.error ?? (exit_code == 0 ? "selection_readback_failed" : "selection_failed")
-	};
+	return run_owner_result(["maintain", trigger, initiator, parent_id ?? ""], output, error_output);
 };
 
 reload_refresh_profile = function(snapshot, policy, rolling_back) {

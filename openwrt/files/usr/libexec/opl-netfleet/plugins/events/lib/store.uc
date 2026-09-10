@@ -12,7 +12,7 @@ const read_json = context.use("platform.storage").read_json;
 const shell_quote = context.use("platform.process").shell_quote;
 const write_text = context.use("platform.storage").write_text;
 
-const EVENTS_PATH = "/var/lib/opl-netfleet/events.json";
+const EVENTS_PATH = context.use("platform.paths").EVENTS_PATH;
 
 read_events = function() {
 	return read_json(EVENTS_PATH);
@@ -21,7 +21,7 @@ read_events = function() {
 write_events = function(store) {
 	const temporary = `${EVENTS_PATH}.tmp`;
 	const content = sprintf("%J", store);
-	if (content == null || !mkdir("/var/lib/opl-netfleet") || !write_text(temporary, content)) {
+	if (content == null || !mkdir(replace(EVENTS_PATH, /\/[^/]+$/, "")) || !write_text(temporary, content)) {
 		return false;
 	}
 	return system(`mv -f ${shell_quote(temporary)} ${shell_quote(EVENTS_PATH)}`) == 0;

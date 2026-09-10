@@ -8,7 +8,7 @@ const resolve_profile = context.use("mihomo.backend").resolve_profile;
 const read_json = context.use("platform.storage").read_json;
 const read_yaml = context.use("platform.storage").read_yaml;
 
-const POLICY_SOURCE_DIR = "/etc/opl-netfleet/policy-sources";
+const POLICY_SOURCE_DIR = context.use("platform.paths").POLICY_SOURCE_DIR;
 
 bundle_id = function(reference) {
 	const parts = split(reference ?? "", ":");

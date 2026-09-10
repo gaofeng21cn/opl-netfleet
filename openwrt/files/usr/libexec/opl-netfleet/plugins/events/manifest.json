@@ -17,13 +17,17 @@
       "requires": {
         "platform.runtime": 1,
         "platform.storage": 1,
-        "platform.process": 1
+        "platform.process": 1,
+        "platform.paths": 1
       }
     },
     "events.operation": {
       "version": 1,
       "module": "lib/operation.uc",
-      "requires": {}
+      "requires": {
+        "platform.process": 1,
+        "platform.paths": 1
+      }
     },
     "events.output": {
       "version": 1,

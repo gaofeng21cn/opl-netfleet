@@ -13,7 +13,8 @@
         "platform.runtime": 1,
         "platform.process": 1,
         "platform.storage": 1,
-        "mihomo.gateway": 1
+        "mihomo.gateway": 1,
+        "mihomo.profile-storage": 1
       }
     },
     "mihomo.controller": {
@@ -39,7 +40,8 @@
       "module": "lib/policy-source.uc",
       "requires": {
         "mihomo.backend": 1,
-        "platform.storage": 1
+        "platform.storage": 1,
+        "platform.paths": 1
       }
     },
     "mihomo.gateway": {
@@ -122,6 +124,15 @@
         "platform.storage": 1,
         "platform.profile": 1,
         "platform.credentials": 1
+      }
+    },
+    "mihomo.profile-storage": {
+      "version": 1,
+      "module": "lib/profile-storage.uc",
+      "requires": {
+        "platform.runtime": 1,
+        "platform.process": 1,
+        "platform.storage": 1
       }
     }
   },

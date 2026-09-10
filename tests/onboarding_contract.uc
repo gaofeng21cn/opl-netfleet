@@ -2,6 +2,7 @@
 import { use, release as release_services } from "./services.uc";
 
 const discover = use("configuration.onboarding-model").discover;
+const draft = use("configuration.onboarding-model").draft;
 
 function base_input() {
 	return {
@@ -91,6 +92,25 @@ if (unstable_result.ready || unstable_result.blockers[0]?.code != "backend_runti
 
 if (sprintf("%J", discover(base_input()).revision_input) != sprintf("%J", discover(base_input()).revision_input)) {
 	print("onboarding_revision_input_unstable\n");
+	exit(1);
+}
+
+const offline = base_input();
+offline.backend_enabled = false;
+offline.mihomo_running = false;
+offline.runtime_valid = false;
+offline.controller_ready = false;
+offline.evidence_path = "/private/desktop/evidence.json";
+const draft_result = draft(offline);
+if (!draft_result.ready || draft_result.readiness != "configuration" ||
+	draft_result.policy.evidence.path != offline.evidence_path || discover(offline).ready ||
+	draft(no_cache).ready || draft(no_match).ready) {
+	print("offline_draft_runtime_boundary_failed\n");
+	exit(1);
+}
+const equivalent = discover({ ...base_input(), evidence_path: offline.evidence_path });
+if (sprintf("%J", draft_result.policy) != sprintf("%J", equivalent.policy)) {
+	print("offline_draft_policy_diverged\n");
 	exit(1);
 }
 
