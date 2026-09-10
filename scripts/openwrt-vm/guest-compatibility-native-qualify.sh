@@ -39,7 +39,20 @@ curl -fsS "$feed_url/install-netfleet.sh" -o "$work/install.sh"
 NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 sh "$work/install.sh" >>"$work/packages.log" 2>&1
 cp /tmp/compat-runtime/compat-public-key.pem /etc/apk/keys/netfleet-native-test.pem
 apk verify /tmp/compat-runtime/*.apk >>"$work/packages.log" 2>&1
-apk add /tmp/compat-runtime/*.apk >>"$work/packages.log" 2>&1
+# Exercise the public full-profile installer against the same signed optional feed.
+# This loopback server exists only in the isolated guest and is stopped after install.
+uhttpd -f -p 127.0.0.1:18081 -h /tmp/compat-runtime >"$work/optional-feed.log" 2>&1 &
+optional_feed_pid=$!
+for attempt in $(seq 1 20); do
+ curl -fsS http://127.0.0.1:18081/compat-packages.adb -o /dev/null && break
+ sleep 1
+done
+NETFLEET_INSTALL_PROFILE=full NETFLEET_FEED_BASE="$feed_url" \
+ NETFLEET_COMPAT_FEED_BASE=http://127.0.0.1:18081 NETFLEET_ALLOW_INSECURE_FEED=1 \
+ sh "$work/install.sh" >>"$work/packages.log" 2>&1
+kill "$optional_feed_pid"
+/usr/libexec/opl-netfleet/main.uc compatibility-get >"$work/default-off.json"
+test "$(jsonfilter -i "$work/default-off.json" -e '@.result.requested')" = false
 check_native() {
  ! command -v python3 >/dev/null
  ! command -v python >/dev/null
