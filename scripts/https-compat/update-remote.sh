@@ -11,6 +11,15 @@ phase() { printf '{"phase":"%s"}\n' "$1" >journal.new; mv journal.new journal.js
 if [ "$mode" = start ]; then
  sha256sum -c SHA256SUMS >transfer.log 2>&1
  [ ! -e journal.json ]
+ exec 8>/var/lock/opl-netfleet-operator.lock
+ flock -n 8 || { printf '%s\n' 'update_operator_busy' >&2; exit 1; }
+ # Admission precedes procd replacement: another start must not terminate a
+ # running transaction before its worker has acquired the operator lock.
+ ucode - "$service" <<'UC'
+import * as fs from 'fs';
+const p=fs.popen('ubus call service list'),state=json(p.read('all'));
+if(p.close()||state[ARGV[0]]!=null)die('https_update_already_registered');
+UC
  phase prepared
  ucode - "$stage" "$service" <<'UC'
 import * as fs from 'fs';

@@ -50,6 +50,10 @@ UC
    sleep 1
   done
   test "$(jsonfilter -i "$transaction/journal.json" -e '@.phase')" = verifying
+  competing=$(mktemp -d /tmp/netfleet-https-update-test.XXXXXX)
+  cp "$transaction"/*.apk "$transaction/request.json" "$transaction/SHA256SUMS" "$transaction"/update-* "$competing/"
+  if sh "$competing/update-remote.sh" start "$competing" >"$competing/start.log" 2>&1; then exit 1; fi
+  test ! -f "$competing/journal.json"
   # SIGKILL the worker shell; procd must respawn it and recover old bytes.
   ubus call service list '{"name":"opl-netfleet-https-update"}' >"$transaction/procd.json"
   test "$(jsonfilter -i "$transaction/procd.json" -e '@["opl-netfleet-https-update"].instances.update.respawn.threshold')" = 3600
@@ -64,6 +68,14 @@ UC
   sleep 1
  done
  case "$1" in accept) test "$result" = complete;; bad-base) test "$result" = rejected;; *) test "$result" = rolled_back;; esac
+ # A terminal journal can precede the worker releasing its operator lock.
+ # Wait for the old service to disappear before starting another transaction.
+ for attempt in $(seq 1 20); do
+  ubus call service list '{"name":"opl-netfleet-https-update"}' >"$transaction/cleanup.json"
+  if ! jsonfilter -i "$transaction/cleanup.json" -e '@["opl-netfleet-https-update"].instances' | grep -q .; then break; fi
+  sleep 1
+ done
+ ! jsonfilter -i "$transaction/cleanup.json" -e '@["opl-netfleet-https-update"].instances' | grep -q .
  test "$(pidof mihomo)" = "$base_pid"
  sha256sum -c "$work/base.sha256" >>"$work/cycle.log"
  sha256sum -c "$work/cycle-private.sha256" >>"$work/cycle.log"
