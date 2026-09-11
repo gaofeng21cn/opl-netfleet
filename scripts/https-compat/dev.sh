@@ -34,6 +34,10 @@ if [[ "$action" == check ]]; then
   command -v "$interpreter" >/dev/null || { printf 'Set UCODE to a native UCode executable.\n' >&2; exit 2; }
   args=()
   [[ -z "${UCODE_LIB:-}" ]] || args=(-L "$UCODE_LIB")
+  "$interpreter" "${args[@]}" -e 'assert(match("a\n", /^[a-z]+$/) == null);' >/dev/null 2>&1 || {
+    printf '%s\n' 'UCode regex semantics differ from OpenWrt. Use an OpenWrt-compatible UCode build or run check on Linux.' >&2
+    exit 2
+  }
   runtime="$root/openwrt/https-compat/files/usr/libexec/opl-netfleet-compat"
   "$interpreter" "${args[@]}" tests/https_native_policy_bounds.uc "$runtime"
   "$interpreter" "${args[@]}" tests/https_native_recovery.uc "$runtime"

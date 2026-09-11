@@ -474,6 +474,8 @@ PACKAGES=/tmp/base-candidate COMPAT_PACKAGES=/tmp/compat-candidate OUTPUT=/tmp/c
 
 `check` 只验证便于快速迭代的策略、恢复状态机和通用插件 SDK；它不模拟 nft、TLS、
 地址发现或资源隔离。`vm` 复用真实无 Python guest 的兼容诊断，输出不能授权部署。
+macOS 的其他产品内嵌 UCode 不一定具有 OpenWrt 的正则语义；入口会先检查该差异。
+不满足时换用兼容的 UCode 构建或在 Linux 执行，不能放宽非法输入断言来通过检查。
 同样参数使用 `qualify`，依次执行完整基础包资格与兼容诊断，保留两份不同作用的回执。
 构建和 VM 只读取已提交的 `REF`，不会把尚未提交的源码误报为已验证包；输出放在仓库外。
 SDK 是 Linux 构建环境，VM 是 macOS/OpenWrt 验证环境，不是必须在同一环境执行的脚本。
@@ -498,6 +500,8 @@ python3 scripts/https-compat/compare.py /tmp/baseline.json /tmp/compat-proof/plu
 执行后按输出的目标私有 `stage/journal.json` 回读 `complete`、`rolled_back` 或错误状态，
 不因 SSH 中断重新发起安装。`installed-before.json` 记录真实目标包组合；测试基座身份
 不能替代目标包、依赖、原路径与实际业务验收。
+安装前还会核对资格绑定的内核、平台调用层、HTTPS 管理和 Mihomo 接管文件字节；
+相关调用链与基座不符时拒绝安装，只更新了无关插件不要求一起重装基础包。
 
 开发诊断额外运行一分钟开启计时的管理轮次，阶段记录在回执 `profile`。常规启动不记录；
 计时只包括阶段耗时和当前管理进程及已回收子进程的 CPU 累计差。嵌套阶段不能相加，
