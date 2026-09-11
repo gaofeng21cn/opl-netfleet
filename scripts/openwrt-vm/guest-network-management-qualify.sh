@@ -9,6 +9,10 @@ chmod 0700 "$work"
 service=/etc/init.d/opl-netfleet-core
 cp -p "$service" "$work/core-service"
 cleanup() {
+	rc=$?
+	if [ "$rc" -ne 0 ]; then
+		for log in "$work"/*.log; do [ ! -f "$log" ] || tail -40 "$log" >&2; done
+	fi
 	cp -p "$work/core-service" "$service"
 	rm -f "$work/fail-next-start"
 }
