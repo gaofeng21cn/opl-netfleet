@@ -1,7 +1,7 @@
 import { ChevronRight } from 'lucide-react';
 import { CapabilityPanel } from '../components/CapabilityPanel';
 import { sampledAt } from './presentation';
-import { eventResult } from '../lib/format';
+import { displayEventName, eventResult } from '../lib/format';
 import type { ViewId } from '../types';
 import type { DesktopSnapshot } from './types';
 
@@ -39,7 +39,7 @@ export function DesktopOverview({ snapshot, disabled, canSelect, onNavigate, onS
       <button type="button" onClick={() => onNavigate('config')}><span>策略与配置</span><ChevronRight aria-hidden="true" /></button>
     </nav>
     <section className="nf-desktop-recent"><div className="nf-desktop-section-title"><h2>最近决策</h2><button type="button" onClick={() => onNavigate('events')}>全部记录<ChevronRight aria-hidden="true" /></button></div>
-      {recent.length ? <ul>{recent.map((item, i) => <li key={i}><time>{sampledAt(item.at)}</time><span>{eventResult(snapshot.events!, item)}</span></li>)}</ul> : <p>暂无决策记录。启用后会记录实际选路结果。</p>}
+      {recent.length ? <ul>{recent.map((item, i) => <li key={i}><time>{sampledAt(item.at)}</time><span>{item.capability && <strong>{displayEventName(snapshot.events!, 'capabilities', item.capability)} · </strong>}{eventResult(snapshot.events!, item)}</span></li>)}</ul> : <p>暂无决策记录。启用后会记录实际选路结果。</p>}
     </section>
   </div>;
 }
