@@ -35,9 +35,10 @@ cycle_transaction() {
  transaction=$(mktemp -d /tmp/netfleet-https-update-test.XXXXXX)
  cp "$cycle_old" "$cycle_new" "$transaction/"
  cp /tmp/scripts/https-compat/update-remote.sh /tmp/scripts/https-compat/update-guard.uc "$transaction/"
- ucode - "$transaction" "$2" "$3" <<'UC'
+ ucode - "$transaction" "$2" "$3" "$1" <<'UC'
 import * as fs from 'fs';
 const base=json(fs.readfile('/tmp/compat-base-identity.json'));
+if(ARGV[3]=='bad-base')base.runtime_sha256['/usr/libexec/opl-netfleet/main.uc']=sprintf('%064d',0);
 fs.writefile(ARGV[0]+'/request.json',sprintf('%J',{old:fs.basename(ARGV[1]),new:fs.basename(ARGV[2]),base_runtime:base.runtime_sha256}));
 UC
  (cd "$transaction"; sha256sum *.apk request.json update-remote.sh update-guard.uc >SHA256SUMS)
@@ -62,13 +63,14 @@ UC
   case "$result" in complete|rolled_back|recovery_failed|rejected) break;; esac
   sleep 1
  done
- if [ "$1" = accept ]; then test "$result" = complete; else test "$result" = rolled_back;fi
+ case "$1" in accept) test "$result" = complete;; bad-base) test "$result" = rejected;; *) test "$result" = rolled_back;; esac
  test "$(pidof mihomo)" = "$base_pid"
  sha256sum -c "$work/base.sha256" >>"$work/cycle.log"
  sha256sum -c "$work/cycle-private.sha256" >>"$work/cycle.log"
  wait_intercepting
  probe 4 h2;probe 6 h2
 }
+cycle_transaction bad-base "$cycle_old" "$cycle_new"
 cycle_transaction reject "$cycle_old" "$cycle_new"
 cycle_transaction accept "$cycle_old" "$cycle_new"
 cycle_transaction kill "$cycle_new" "$cycle_old"
