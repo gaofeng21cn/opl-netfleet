@@ -173,3 +173,9 @@ world 约束恢复、无资源 owner 插件更新时核心 PID 不变，以及�
 安装身份、运行健康、业务动作和浏览器交互分别报告；失败后恢复原业务不代表新功能通过。
 上述性能值不等于带宽上限或长期稳定性。操作窗口见
 [Canary 流程](../operations/canary-promotion.md)。
+
+### 插件增量资格与 owner 边界
+
+插件任务不得把其他插件的源码、包或设备状态当作自己的交付物。先由基础组合 owner 以最新 canonical `main` 生成基础包并取得完整 QEMU qualification；回执绑定基础包的 source commit/tree、manifest 和运行 caller 摘要。插件 owner 再以这份回执作为固定基座，只验证自己的增量包、依赖、启停、故障恢复和卸载。固定基座中的任何运行 caller 变化都会使增量资格失效，必须退回基础组合 owner 重新资格，不能用旧回执强行安装。
+
+HTTPS 的顺序固定为：基础组合资格 → HTTPS 独立资格 → 插件包 dry-run → 只更新 HTTPS 包的 canary → 目标回读 → 吸收 canonical `main`。订阅、平台、模型、UI 等共享插件由各自 owner 按同一顺序交付；它们的候选可以组成测试基座，但不能进入 HTTPS 插件提交。资格脚本必须对同一工作区加互斥锁，防止重复 QEMU 和共享证据目录互相污染。
