@@ -71,6 +71,8 @@ cp /usr/share/opl-netfleet/netfleet.config /etc/config/netfleet
 chmod 0600 /etc/config/netfleet
 sha256sum /etc/config/netfleet >/tmp/compat-base-before.sha256
 stage=control_entry
+ucode /tmp/tests/https_native_profile.uc /usr/libexec/opl-netfleet-compat >"$work/profile-test.log" 2>&1
+NETFLEET_COMPAT_PROFILE=1 ucode /tmp/tests/https_native_profile.uc /usr/libexec/opl-netfleet-compat >>"$work/profile-test.log" 2>&1
 ucode /tmp/tests/async_process_capture.uc /usr/libexec/opl-netfleet /usr/libexec/opl-netfleet-compat >"$work/async-capture.log" 2>&1
 ucode /tmp/tests/async_health_socket.uc /usr/libexec/opl-netfleet-compat >>"$work/async-capture.log" 2>&1
 ucode /tmp/tests/https_native_health.uc /usr/libexec/opl-netfleet-compat >"$work/health-fields.log" 2>&1
