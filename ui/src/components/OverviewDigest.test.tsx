@@ -141,14 +141,29 @@ describe('概览信息层级', () => {
   it('尚未运行订阅更新时不把空时间显示成数据缺失', () => {
     const status = structuredClone(fixtureScenarios.healthy.status);
     status.subscription_refresh!.last_run_at = null;
+    status.subscription_refresh!.last_success_at = null;
+    status.subscription_refresh!.next_run_at = null;
     status.subscriptions![0].last_attempt = null;
     status.subscriptions![0].last_success = null;
 
     const html = renderToStaticMarkup(<ProviderTable snapshot={status} full />);
 
-    expect(html).toContain('<dt>最近执行</dt><dd>尚未执行</dd>');
-    expect(html).not.toContain('<dt>最近尝试</dt>');
+    expect(html).toContain('<dt>最近尝试</dt><dd>暂无执行记录</dd>');
+    expect(html).toContain('<dt>最近全部更新</dt><dd>暂无成功记录</dd>');
     expect(html).not.toContain('<dt>订阅更新时间</dt>');
+  });
+
+  it('更新失败时仍明确显示此前成功时间和最近尝试', () => {
+    const status = structuredClone(fixtureScenarios.healthy.status);
+    status.subscription_refresh = { enabled: true, interval_seconds: 86400,
+      last_success_at: 1789000000, last_run_at: 1789086400, next_run_at: 1789086700,
+      last_result: 'upstream_unavailable', last_ok: false };
+    const html = renderToStaticMarkup(<ProviderTable snapshot={status} full />);
+    expect(html).toContain('<dt>最近全部更新</dt>');
+    expect(html).toContain('<dt>最近尝试</dt>');
+    expect(html).toContain('<dt>下次更新</dt>');
+    expect(html).not.toContain('暂无成功记录');
+    expect(html).not.toContain('暂无执行记录');
   });
 
   it('机场与订阅只通过明确绑定聚合，不按显示名猜测', () => {

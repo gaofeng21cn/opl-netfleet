@@ -120,6 +120,8 @@ export class MockNetFleetClient implements NetFleetClient {
     this.currentStatus.subscription_refresh = {
       ...(this.currentStatus.subscription_refresh || {}),
       last_run_at: at,
+      last_success_at: at,
+      next_run_at: this.currentStatus.subscription_refresh?.enabled ? at + (this.currentStatus.subscription_refresh.interval_seconds || 43200) : null,
       last_result: 'unchanged',
       last_ok: true,
       last_changed_count: 0,

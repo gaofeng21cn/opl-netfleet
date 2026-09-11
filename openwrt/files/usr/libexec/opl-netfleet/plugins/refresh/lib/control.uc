@@ -12,7 +12,15 @@ const fail = context.use("events.output").fail;
 const ok = context.use("events.output").ok;
 const event_initiator = context.use("events.record").event_initiator;
 const record_events = context.use("events.record").record_events;
+const record_history = context.use("subscriptions.facts").record_history;
+const read_history = context.use("subscriptions.facts").read_history;
 const refresh_event = context.use("events.record").refresh_event;
+let full_refresh = false;
+function record_refresh(result, requested) {
+	const event = refresh_event(result, requested);
+	if (!record_history(event, full_refresh)) fail("refresh", "subscription_history_write_failed");
+	return record_events([event]);
+};
 const resolve_profile = context.use("mihomo.backend").resolve_profile;
 const MANIFEST_PATH = context.use("mihomo.backend").MANIFEST_PATH;
 const ARTIFACT_PATH = context.use("mihomo.backend").ARTIFACT_PATH;
@@ -191,7 +199,6 @@ fail_refresh = function(snapshot, policy, selections, requested, error, detail) 
 		reloaded: false,
 		subscriptions: detail?.subscriptions ?? []
 	};
-	const events_recorded = record_events([refresh_event(event, requested)]);
 	cleanup_refresh_snapshot();
 	if (!rollback.ok) {
 		let recovery;
@@ -202,6 +209,7 @@ fail_refresh = function(snapshot, policy, selections, requested, error, detail) 
 			const cleanup = cleanup_state();
 			recovery = { ok: disabled && stopped && cleanup.ok, mode: "direct", cleanup: cleanup };
 		}
+		const events_recorded = record_refresh(event, requested);
 		fail("refresh", "rollback_failed", {
 			error: error,
 			rollback: rollback,
@@ -209,10 +217,13 @@ fail_refresh = function(snapshot, policy, selections, requested, error, detail) 
 			events_recorded: events_recorded
 		});
 	}
+	const events_recorded = record_refresh(event, requested);
 	fail("refresh", error, { detail: detail, rollback: rollback, events_recorded: events_recorded });
 };
 
 refresh_action = function(policy, section, initiator) {
+	read_history();
+	full_refresh = section == null;
 	operation_begin("subscription", "preparing");
 	const requested = initiator ?? ARGV[1] ?? "cli";
 	const config = automation_config(policy);
@@ -231,7 +242,7 @@ refresh_action = function(policy, section, initiator) {
 		const result = { ok: false, reason: "upstream_unavailable", provider_count: length(sections),
 			changed_count: 0, failed_count: length(sections), reloaded: false,
 			subscriptions: unavailable_results(sections) };
-		result.events_recorded = record_events([refresh_event(result, requested)]);
+		result.events_recorded = record_refresh(result, requested);
 		ok("refresh", { state: "failed", result: result });
 		return;
 	}
@@ -247,7 +258,7 @@ refresh_action = function(policy, section, initiator) {
 			const result = { ok: false, reason: "active_precondition_failed", provider_count: length(sections),
 				changed_count: 0, failed_count: 0, reloaded: false,
 				subscriptions: unavailable_results(sections) };
-			result.events_recorded = record_events([refresh_event(result, requested)]);
+			result.events_recorded = record_refresh(result, requested);
 			ok("refresh", { state: "skipped", result: result });
 			return;
 		}
@@ -256,6 +267,8 @@ refresh_action = function(policy, section, initiator) {
 	const snapshot = prepare_refresh_snapshot(policy, active, sections);
 	if (!snapshot.ok) {
 		cleanup_refresh_snapshot();
+		record_refresh({ ok: false, reason: snapshot.error, provider_count: length(sections),
+			failed_count: length(sections), subscriptions: unavailable_results(sections) }, requested);
 		fail("refresh", snapshot.error, { section: snapshot.section ?? null });
 	}
 	const outcomes = [];
@@ -299,7 +312,7 @@ refresh_action = function(policy, section, initiator) {
 			subscriptions: subscriptions
 		};
 		cleanup_refresh_snapshot();
-		result.events_recorded = record_events([refresh_event(result, requested)]);
+		result.events_recorded = record_refresh(result, requested);
 		ok("refresh", { state: result.reason, result: result });
 		return;
 	}
@@ -321,7 +334,7 @@ refresh_action = function(policy, section, initiator) {
 			subscriptions: subscriptions
 		};
 		cleanup_refresh_snapshot();
-		result.events_recorded = record_events([refresh_event(result, requested)]);
+		result.events_recorded = record_refresh(result, requested);
 		ok("refresh", { state: result.reason, result: result, readback: reloaded?.readback ?? null,
 			protected_probes: reloaded?.protected_probes ?? null });
 		return;
@@ -373,7 +386,7 @@ refresh_action = function(policy, section, initiator) {
 		subscriptions: subscriptions
 	};
 	cleanup_refresh_snapshot();
-	result.events_recorded = record_events([refresh_event(result, requested)]);
+	result.events_recorded = record_refresh(result, requested);
 	ok("refresh", { state: result.reason, result: result, readback: final_readback,
 		protected_probes: final_probes });
 };

@@ -150,7 +150,9 @@ export function ProviderTable({ snapshot, full = false, onManageSubscriptions, s
       <div className="nf-policy-grid is-five">
         <dl><dt>自动更新</dt><dd>{refresh?.enabled ? '已启用' : '已关闭'}</dd></dl>
         <dl><dt>更新周期</dt><dd>{duration(refresh?.interval_seconds)}</dd></dl>
-        <dl><dt>最近执行</dt><dd>{executionAt(refresh?.last_run_at)}</dd></dl>
+        <dl><dt>最近全部更新</dt><dd>{refresh?.last_success_at ? sampledAt(refresh.last_success_at) : '暂无成功记录'}</dd></dl>
+        <dl><dt>最近尝试</dt><dd>{refresh?.last_run_at ? sampledAt(refresh.last_run_at) : '暂无执行记录'}</dd></dl>
+        <dl><dt>下次更新</dt><dd>{!refresh?.enabled ? '已关闭' : refresh.next_run_at && refresh.next_run_at > Date.now() / 1000 ? sampledAt(refresh.next_run_at) : '待更新'}</dd></dl>
         <dl><dt>订阅状态</dt><dd>{subscriptionSummary(snapshot)}</dd></dl>
         <dl><dt>最近结果</dt><dd>{refreshResult(refresh?.last_result)}</dd></dl>
       </div>

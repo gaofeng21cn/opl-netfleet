@@ -10,7 +10,8 @@
 `openwrt/files/usr/share/opl-netfleet/system.json` 组合，macOS 消费同一份业务源码并显式
 替换平台服务。源码路径不是业务归属；模型与选择服务不能依赖 UCI、procd 或网关实现。
 OpenWrt 默认绑定在 `/usr/share/opl-netfleet/system.json`，私有覆盖在
-`/etc/opl-netfleet/system.json`，evidence 只写 `/etc/opl-netfleet/evidence.json`。
+`/etc/opl-netfleet/system.json`，evidence 只写 `/etc/opl-netfleet/evidence.json`。订阅更新记录独立保存到
+`/etc/opl-netfleet/subscription-history.json`，使用私有权限和同目录原子替换，保留跨服务重启、设备重启和软件包升级的时间基准。
 
 ## 软件包、更新与部署输入
 

@@ -238,6 +238,8 @@ export interface StatusSnapshot {
     interval_seconds?: number;
     provider_count?: number;
     last_run_at?: number | null;
+    last_success_at?: number | null;
+    next_run_at?: number | null;
     last_result?: string | null;
     last_ok?: boolean | null;
     last_changed_count?: number | null;

@@ -43,7 +43,7 @@ const healthy: StatusSnapshot = {
     automation: { enabled: true, selection_interval_seconds: 1800, poll_interval_seconds: 15, startup_grace_seconds: 120, runtime_grace_seconds: 45, subscription_refresh_enabled: true, subscription_refresh_interval_seconds: 43200 },
   },
   subscription_refresh: {
-    enabled: true, interval_seconds: 43200, provider_count: 3, last_run_at: 1788146100,
+    enabled: true, interval_seconds: 43200, provider_count: 3, last_run_at: 1788146100, last_success_at: 1788146100, next_run_at: 1788189300,
     last_result: 'unchanged', last_ok: true, last_changed_count: 0, last_failed_count: 0, last_reloaded: false,
   },
   subscriptions: [
