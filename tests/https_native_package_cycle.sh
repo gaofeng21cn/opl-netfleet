@@ -96,6 +96,7 @@ for attempt in $(seq 1 20); do grep -q wire-ok "$work/keepalive.out" && break; s
 grep -q wire-ok "$work/keepalive.out"
 kill -0 "$keepalive_client"
 cycle_transaction reject "$cycle_old" "$cycle_new"
+test "$(jsonfilter -i "$transaction/graceful-drain.json" -e '@.drained')" = true
 ! kill -0 "$keepalive_client" 2>/dev/null
 wait "$keepalive_client" || true
 kill "$keepalive_sender" 2>/dev/null || true
