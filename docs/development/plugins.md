@@ -498,10 +498,11 @@ python3 scripts/https-compat/compare.py /tmp/baseline.json /tmp/compat-proof/plu
 不变，并绑定所有包与测试身份。只替换引擎的设备更新入口是
 `scripts/https-compat/update.py --help`；先用相同输入加 `--dry-run` 验证资格。
 执行后按输出的目标私有 `stage/journal.json` 回读 `complete`、`rolled_back` 或错误状态，
+不因 SSH 中断重新发起安装。
 `deferred` 表示活动连接尚未排空、还没有执行 APK 写入；新连接旁路，健康请求继续，
 待其完成后再发起更新。旧版引擎的空闲连接由更新器通过相同的优雅停止信号排空，
 不能用强杀连接或重装尚未变化的软件包替代排空。
-不因 SSH 中断重新发起安装。`installed-before.json` 记录真实目标包组合；测试基座身份
+`installed-before.json` 记录真实目标包组合；测试基座身份
 不能替代目标包、依赖、原路径与实际业务验收。
 安装前还会核对资格绑定的内核、平台调用层、HTTPS 管理和 Mihomo 接管文件字节；
 相关调用链与基座不符时拒绝安装，只更新了无关插件不要求一起重装基础包。

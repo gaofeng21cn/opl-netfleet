@@ -65,10 +65,10 @@ const current=services['opl-netfleet-compat']?.instances?.engine,pid=current?.pi
 if(!current?.running){print('{"drained":true}\n');exit(0);}
 if(type(pid)!='int'||pid<=1||fs.readlink(`/proc/${pid}/exe`)!='/usr/libexec/opl-netfleet-compat/haproxy')die('draining_engine_unconfirmed');
 function birth(){const s=fs.readfile(`/proc/${pid}/stat`);return s?split(trim(substr(s,rindex(s,') ')+2)),/\s+/)[19]:null;}
-const started=birth(),until=time()+30;
+const now=()=>+split(fs.readfile('/proc/uptime'),' ')[0],started=birth(),until=now()+30;
 if(started!=null){
  if(system('ubus call service signal '+quote(sprintf('%J',{name:'opl-netfleet-compat',instance:'engine',signal:10}))))die('draining_signal_failed');
- while(birth()==started){if(time()>=until)die('healthy_connections_still_draining');sleep(200);}
+ while(birth()==started){if(now()>=until)die('healthy_connections_still_draining');sleep(200);}
 }
 print('{"drained":true}\n');
 UC
@@ -99,7 +99,8 @@ rollback() {
  if [ ! -f package-write-started ]; then
   # No APK was attempted. Keep new traffic bypassed and healthy requests alive.
   # Reinstalling the unchanged old package cannot resolve a pending drain.
-  phase deferred
+  if [ "$(jsonfilter -i drain.json -e '@.error' 2>/dev/null)" = healthy_connections_still_draining ]; then phase deferred
+  else phase rejected;fi
   finish
   return
  fi
