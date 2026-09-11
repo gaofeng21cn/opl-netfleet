@@ -184,11 +184,14 @@ try {
 	check(documents.write_evidence(documents.load_evidence()) == false, "storage failure propagated");
 	writes_ok = true;
 
+	let refresh_state = {last_success_at: int(time())};
+	ports["subscriptions.facts"] = {read_history: () => refresh_state};
 	const scheduler = use("scheduler.control");
 	let tick = scheduler.tick(null);
 	check(commands[-1]?.action == "maintain" && tick.state.was_runtime_ready, "scheduler dispatches selection through platform capability");
 	const now = int(time());
-	scheduler.tick({...tick.state, next_refresh_at: now - 1});
+	refresh_state.last_success_at = now - 604800;
+	scheduler.tick(tick.state);
 	check(commands[-1]?.action == "refresh", "scheduled refresh uses the same command provider");
 	healthy = false;
 	scheduler.tick({...tick.state, unhealthy_since: now - 600});

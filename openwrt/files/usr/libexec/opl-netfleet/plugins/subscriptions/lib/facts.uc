@@ -1,12 +1,14 @@
+import { create_history } from "./history.uc";
 
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
 let subscription_facts, subscription_refresh_projection, require_provider_profiles, policy_provider_profiles, manifest_provider_profiles, remove_policy_provider_links, provider_quotas, provider_display_names;
 
-const validate_events = context.use("events.model").validate;
 const fail = context.use("events.output").fail;
-const read_events = context.use("events.store").read_events;
+const history = create_history(context);
+const read_history = history.read;
+const record_history = history.record;
 const resolve_profile = context.use("mihomo.backend").resolve_profile;
 const remove_provider_links = context.use("mihomo.backend").remove_provider_links;
 const automation_config = context.use("models.policy").automation;
@@ -45,9 +47,7 @@ subscription_facts = function(policy) {
 };
 
 subscription_refresh_projection = function(policy) {
-	const store = read_events();
-	const events = validate_events(store).ok ? store?.events ?? [] : [];
-	return project_subscriptions(automation_config(policy), subscription_facts(policy), events);
+	return project_subscriptions(automation_config(policy), subscription_facts(policy), read_history());
 };
 
 require_provider_profiles = function(policy, stage) {
@@ -122,5 +122,5 @@ provider_display_names = function(policy) {
 	return result;
 };
 
-return { subscription_facts, subscription_refresh_projection, require_provider_profiles, policy_provider_profiles, manifest_provider_profiles, remove_policy_provider_links, provider_quotas, provider_display_names };
+return { read_history, record_history, subscription_facts, subscription_refresh_projection, require_provider_profiles, policy_provider_profiles, manifest_provider_profiles, remove_policy_provider_links, provider_quotas, provider_display_names };
 };

@@ -10,6 +10,13 @@ const summarize = use("models.subscription").summarize;
 const public_results = use("models.subscription").public_results;
 const unavailable_results = use("models.subscription").unavailable_results;
 const project = use("models.subscription").project;
+const history_update = use("models.subscription").history_update;
+const refresh_due_at = use("models.subscription").refresh_due_at;
+function history(events) {
+	let state = null;
+	for (let event in events) state = history_update(state, event, true);
+	return state;
+};
 
 const policy = {
 	providers: {
@@ -149,7 +156,7 @@ const facts = [
 const projected = project({
 	subscription_refresh_enabled: true,
 	subscription_refresh_interval_seconds: 43200
-}, facts, [{
+}, facts, history([{
 	at: 1699999900,
 	action: "refresh",
 	reason: "updated",
@@ -175,7 +182,7 @@ const projected = project({
 		{ section: "alpha", result: "updated", digest: next },
 		{ section: "beta", result: "failed", digest: previous }
 	]
-}]);
+}]));
 const encoded = sprintf("%J", projected);
 if (projected.provider_count != 2 || projected.last_result != "partially_updated" ||
 	projected.subscriptions[0].section != "alpha" ||
@@ -205,7 +212,7 @@ if (projected.provider_count != 2 || projected.last_result != "partially_updated
 const unavailable = project({
 	subscription_refresh_enabled: true,
 	subscription_refresh_interval_seconds: 43200
-}, facts, [{
+}, facts, history([{
 	at: 1700000100,
 	action: "refresh",
 	reason: "upstream_unavailable",
@@ -215,7 +222,7 @@ const unavailable = project({
 	reloaded: false,
 	initiator: "supervisor",
 	subscriptions: unavailable_results(["alpha", "beta"])
-}]);
+}]));
 if (unavailable.last_result != "upstream_unavailable" ||
 	unavailable.subscriptions[0].last_result != "failed" ||
 	unavailable.subscriptions[0].last_success != 1699999800 ||

@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "subscriptions",
   "label": "Subscriptions",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "api_version": 1,
   "package": "opl-netfleet-plugin-subscriptions",
   "services": {
@@ -33,15 +33,17 @@
       "version": 1,
       "module": "lib/facts.uc",
       "requires": {
-        "events.model": 1,
         "events.output": 1,
-        "events.store": 1,
         "mihomo.backend": 1,
         "models.policy": 1,
         "models.subscription": 1,
         "subscriptions.providers": 1,
         "platform.storage": 1,
-        "platform.subscriptions": 1
+        "platform.subscriptions": 1,
+        "platform.paths": 1,
+        "platform.files": 1,
+        "events.store": 1,
+        "events.model": 1
       }
     }
   },

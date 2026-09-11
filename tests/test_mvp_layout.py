@@ -812,7 +812,7 @@ function createPage(storage, api, notifications) {
 	} ];
 	page.status.subscription_refresh = {
 		enabled: true, interval_seconds: 43200, provider_count: 1, last_run_at: 1700000000,
-		last_result: 'unchanged'
+		last_result: 'unchanged', last_success_at: 1699999000, next_run_at: 1700043200
 	};
 	page.status.subscriptions = [ {
 		section: 'primary', ref: 'subscription:primary', display_name: 'Alpha 正式机场',
@@ -823,6 +823,10 @@ function createPage(storage, api, notifications) {
 	page.redraw();
 	const providerPageText = nodeText(findNode(root, node => node.attrs.class === 'netfleet-page-content'));
 	assert(providerPageText.includes('1 / 1 正常'));
+	assert(providerPageText.includes('最近全部更新'));
+	assert(providerPageText.includes('最近尝试'));
+	assert(providerPageText.includes('下次更新'));
+	assert(!providerPageText.includes('暂无成功记录'));
 	assert(providerPageText.includes('资源数：当前可用 / 已加载'));
 	assert(providerPageText.includes('47/50 节点 · 订阅 52 条'));
 	assert(!providerPageText.includes('3/4 节点'));

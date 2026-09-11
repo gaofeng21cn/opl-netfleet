@@ -13,6 +13,8 @@ const controller_ready = context.use("mihomo.controller").controller_ready;
 const automation = context.use("models.policy").automation;
 const guard_probe_url = context.use("models.policy").guard_probe_url;
 const is_active = context.use("models.activation").is_active;
+const refresh_history = context.use("subscriptions.facts").read_history;
+const refresh_due_at = context.use("models.subscription").refresh_due_at;
 const pending_recovery = context.use("recovery.state").pending;
 
 settings = function() {
@@ -29,30 +31,30 @@ runtime_controller_ready = function() {
 tick = function(previous) {
 	let unhealthy_since = previous?.unhealthy_since ?? null;
 	let next_selection_at = previous?.next_selection_at ?? null;
-	let next_refresh_at = previous?.next_refresh_at ?? null;
 	let was_runtime_ready = previous?.was_runtime_ready == true;
 	function result(delay) {
 		return { state: { unhealthy_since: unhealthy_since, next_selection_at: next_selection_at,
-			next_refresh_at: next_refresh_at, was_runtime_ready: was_runtime_ready }, delay_ms: delay };
+			was_runtime_ready: was_runtime_ready }, delay_ms: delay };
 	};
 	const settings_value = settings();
 	const now = int(time());
 	if (settings_value == null || settings_value.policy.main.enabled != true) {
 		unhealthy_since = null;
 		next_selection_at = null;
-		next_refresh_at = null;
 		was_runtime_ready = false;
 		return result(30000);
 	}
 	const config = settings_value.automation;
 	if (next_selection_at == null) next_selection_at = now + config.selection_interval_seconds;
-	if (config.subscription_refresh_enabled == true && next_refresh_at == null)
-		next_refresh_at = now + config.subscription_refresh_interval_seconds;
-	if (config.subscription_refresh_enabled != true) {
-		next_refresh_at = null;
-	} else if (now >= next_refresh_at && run_owner("refresh", "scheduled")) {
-		next_refresh_at = now + config.subscription_refresh_interval_seconds;
-		next_selection_at = now + config.selection_interval_seconds;
+	try {
+		if (config.subscription_refresh_enabled == true) {
+			const due = refresh_due_at(refresh_history(), config.subscription_refresh_interval_seconds);
+			if ((due == null || now >= due) && run_owner("refresh", "scheduled"))
+				next_selection_at = now + config.selection_interval_seconds;
+		}
+	} catch (error) {
+		// A subscription state failure must not suppress network recovery.
+		warn(`NetFleet subscription scheduling: ${error.message}\n`);
 	}
 	const owned = is_active(current_profile());
 	const recovery = pending_recovery(settings_value.policy);

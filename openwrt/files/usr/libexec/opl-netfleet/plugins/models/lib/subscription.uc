@@ -2,7 +2,7 @@
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let sorted_names, enabled_sections, referenced_sections, quota_config, cache_accepted, evaluate_entry, summarize, public_results, unavailable_results, latest_refresh, section_refresh_state, public_quota, project;
+let sorted_names, enabled_sections, referenced_sections, quota_config, cache_accepted, evaluate_entry, summarize, public_results, unavailable_results, history_update, refresh_due_at, public_quota, project;
 
 
 
@@ -140,39 +140,31 @@ unavailable_results = function(sections) {
 	return result;
 };
 
-latest_refresh = function(events) {
-	let latest = null;
-	const items = events ?? [];
-	for (let i = 0; i < length(items); i++) {
-		if (items[i]?.action == "refresh") latest = items[i];
+history_update = function(previous, event, full) {
+	const state = previous == null ? { schema_version: 1, subscriptions: {} } : json(sprintf("%J", previous));
+	if (event?.action != "refresh" || type(event.at) != "int" || event.at <= 0) return state;
+	if (full == true) {
+		state.latest = event;
+		if (event.ok == true) state.last_success_at = event.at;
 	}
-	return latest;
+	const accepted = index(["rollback_restored", "rollback_failed"], event.reason) < 0;
+	for (let item in event.subscriptions ?? []) {
+		if (type(item.section) != "string") continue;
+		const old = state.subscriptions[item.section];
+		state.subscriptions[item.section] = {
+			last_attempt: event.at,
+			last_result: accepted ? item.result : event.reason,
+			last_success: accepted && index(["updated", "unchanged"], item.result) >= 0 ? event.at : old?.last_success ?? null
+		};
+	}
+	return state;
 };
 
-section_refresh_state = function(events) {
-	const result = {};
-	const items = events ?? [];
-	for (let i = length(items) - 1; i >= 0; i--) {
-		const event = items[i];
-		if (event?.action != "refresh" || type(event.subscriptions) != "array") continue;
-		for (let j = 0; j < length(event.subscriptions); j++) {
-			const item = event.subscriptions[j];
-			const section = item?.section;
-			if (type(section) != "string") continue;
-			if (result[section] == null) {
-				result[section] = {
-					last_attempt: event.at ?? null,
-					last_result: item.result ?? null,
-					last_success: null
-				};
-			}
-			if (result[section].last_success == null &&
-				(item.result == "updated" || item.result == "unchanged")) {
-				result[section].last_success = event.at ?? null;
-			}
-		}
-	}
-	return result;
+refresh_due_at = function(history, interval) {
+	const attempt = history?.latest;
+	if (type(attempt?.at) == "int" && attempt.ok != true) return attempt.at + 300;
+	const success = history?.last_success_at;
+	return type(success) == "int" ? success + interval : null;
 };
 
 public_quota = function(quota) {
@@ -190,9 +182,9 @@ public_quota = function(quota) {
 	return result;
 };
 
-project = function(automation, facts, events) {
-	const latest = latest_refresh(events);
-	const by_section = section_refresh_state(events);
+project = function(automation, facts, history) {
+	const latest = history?.latest;
+	const by_section = history?.subscriptions ?? {};
 	const subscriptions = [];
 	const entries = facts ?? [];
 	for (let i = 0; i < length(entries); i++) {
@@ -219,6 +211,8 @@ project = function(automation, facts, events) {
 		interval_seconds: automation?.subscription_refresh_interval_seconds ?? null,
 		provider_count: length(subscriptions),
 		last_run_at: latest?.at ?? null,
+		last_success_at: history?.last_success_at ?? null,
+		next_run_at: automation?.subscription_refresh_enabled == true ? refresh_due_at(history, automation.subscription_refresh_interval_seconds) : null,
 		last_result: latest?.reason ?? null,
 		last_ok: latest?.ok ?? null,
 		last_changed_count: latest?.changed_count ?? null,
@@ -229,5 +223,5 @@ project = function(automation, facts, events) {
 	};
 };
 
-return { enabled_sections, referenced_sections, quota_config, cache_accepted, evaluate_entry, summarize, public_results, unavailable_results, project };
+return { enabled_sections, referenced_sections, quota_config, cache_accepted, evaluate_entry, summarize, public_results, unavailable_results, history_update, refresh_due_at, project };
 };

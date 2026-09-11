@@ -944,7 +944,9 @@ function providersPage(status, controller) {
 			metricGrid([
 			[ '自动更新', refresh.enabled ? '已启用' : '已关闭' ],
 			[ '更新周期', seconds(refresh.interval_seconds) ],
-			[ '最近执行', executionAt(refresh.last_run_at) ],
+			[ '最近全部更新', executionAt(refresh.last_success_at) ],
+			[ '最近尝试', executionAt(refresh.last_run_at) ],
+			[ '下次更新', refresh.enabled ? (refresh.next_run_at ? sampledAt(refresh.next_run_at) : '等待首次更新') : '已关闭' ],
 			[ '订阅状态', subscriptionSummary(refresh, subscriptions) ],
 			[ '最近结果', refreshResult(refresh.last_result) ]
 			], 'is-five')
