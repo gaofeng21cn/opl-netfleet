@@ -65,7 +65,7 @@ rollback() {
  if install "$old" && verify; then phase rolled_back
  else
   # Preserve user intent, revoke only this plugin's new takeover.
-  flock -w 15 9 && ucode "$main" compatibility-suspend >bypass.json || true
+  flock -w 15 9 && ucode "$main" plugin-package-drain https-compat >bypass.json || true
   flock -u 9
   phase recovery_failed
  fi
