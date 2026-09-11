@@ -30,20 +30,23 @@ for rep in 1 2 3; do
   if [ "$scene" = off ]; then
    ucode /tmp/tests/https_native_guest.uc disable >"$out/intent.log"
    sleep 12
-  elif [ "$scene" = idle ]; then bench_enable; fi
+  elif [ "$scene" = idle ]; then bench_enable;
+  else wait_intercepting; fi
   sleep 10
   deadline=$(($(date +%s)+300))
   bench_capture >"$out/before.json"
   if [ "$scene" = load ] || [ "$scene" = ui ]; then
    (
     while [ "$(date +%s)" -lt "$deadline" ]; do
-     rc=0; wire -sS --data-binary "@$bench/upload.bin" -o /dev/null -w '%{http_code} %{time_starttransfer} %{time_total}\n' 'https://wire.example/compat-wire/echo' >>"$out/upload.tsv" 2>>"$out/errors.log" || rc=$?
+     rc=0; wire -sS --data-binary "@$bench/upload.bin" -D "$out/upload.headers" -o /dev/null -w '%{http_code} %{time_starttransfer} %{time_total}\n' 'https://wire.example/compat-wire/echo' >>"$out/upload.tsv" 2>>"$out/errors.log" || rc=$?
+     grep -iq '^x-upstream-protocol: h2' "$out/upload.headers" || echo upload_protocol_mismatch >>"$out/errors.log"
      echo "$rc" >>"$out/codes"; sleep 1
     done
    ) & upload_pid=$!
    (
     while [ "$(date +%s)" -lt "$deadline" ]; do
-     rc=0; wire -sSN -o /dev/null -w '%{http_code} %{time_starttransfer} %{time_total}\n' 'https://wire.example/compat-wire/events' >>"$out/sse.tsv" 2>>"$out/errors.log" || rc=$?
+     rc=0; wire -sSN -D "$out/sse.headers" -o /dev/null -w '%{http_code} %{time_starttransfer} %{time_total}\n' 'https://wire.example/compat-wire/events' >>"$out/sse.tsv" 2>>"$out/errors.log" || rc=$?
+     grep -iq '^x-upstream-protocol: h2' "$out/sse.headers" || echo sse_protocol_mismatch >>"$out/errors.log"
      echo "$rc" >>"$out/codes"
     done
    ) & events_pid=$!

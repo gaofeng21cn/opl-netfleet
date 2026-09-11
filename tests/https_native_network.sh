@@ -168,8 +168,17 @@ probe() {
 }
 wait_intercepting() {
     for attempt in $(seq 1 95); do
+        # Long package/idle tests can outlive IPv4 neighbour evidence. Generate
+        # real ARP-confirmed traffic instead of injecting identity cache entries.
+        if [ "$((attempt % 5))" = 1 ]; then
+            ping -c 1 -W 1 -I nfcompat0 10.77.0.2 >/dev/null 2>&1 || true
+        fi
         ucode /tmp/tests/https_native_guest.uc state >"$work/state.json"
-        [ "$(jsonfilter -i "$work/state.json" -e '@.intercepting')" != true ] || return 0
+        if [ "$(jsonfilter -i "$work/state.json" -e '@.intercepting')" = true ] &&
+            jsonfilter -i "$work/state.json" -e '@.device_addresses.mac[*]' | grep -qx '10.77.0.2'; then
+            # Published address evidence can precede the next lease transaction.
+            if probe 4 h2 && probe 6 h2; then return 0; fi
+        fi
         sleep 1
     done
     return 1
