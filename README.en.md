@@ -151,7 +151,8 @@ support. See the chosen release and the [package contract](docs/architecture/pac
 The local macOS MVP shares NetFleet's core business services and React UI components,
 with a native window, application menus, and keyboard shortcuts.
 See the [macOS build and validation guide](docs/development/macos.md). System proxy and TUN
-require local administrator authorization. This is a local, ad-hoc signed build; the feed
+require local administrator authorization. Local `.app` builds use ad-hoc signing. The DMG distribution path requires Developer ID signing,
+notarization, and final-package VM qualification; the feed
 installation commands below apply only to OpenWrt.
 Both platforms share validation and ship independently; see the [delivery workflow](docs/development/delivery.md)
 for version identity, candidate builds, and delivery boundaries.

@@ -9,6 +9,14 @@ import { fileURLToPath } from 'node:url';
 import { run } from '../runtime/io.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const resources = process.env.NETFLEET_TEST_APP && path.join(process.env.NETFLEET_TEST_APP, 'Contents/Resources');
+const serverPath = resources ? path.join(resources, 'desktop/runtime/server.mjs') : path.join(root, 'desktop/runtime/server.mjs');
+if (resources) {
+  process.env.NETFLEET_RUNTIME_ROOT = path.join(resources, 'runtime');
+  process.env.NETFLEET_SOURCE_ROOT = path.join(resources, 'shared');
+  process.env.NETFLEET_BUILTIN_ROOT = path.join(resources, 'builtin');
+}
+
 const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'netfleet-macos-qualify-'));
 const nodeList = `proxies:
   - name: "香港 01"
@@ -59,7 +67,7 @@ async function api(action, input = {}) {
 async function state() { return measured('snapshot', async () => (await (await fetch(`${base}/api/state`, { headers: { Authorization: `Bearer ${token}` } })).json()).result); }
 // Each qualification instance owns its own state directory and loopback endpoint.
 async function boot(dir) {
-  const handle = spawn(process.execPath, [path.join(root, 'desktop/runtime/server.mjs'), '--state', dir], { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const handle = spawn(process.execPath, [serverPath, '--state', dir], { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
   const startup = await new Promise((resolve, reject) => {
     let output = '', error = ''; const timer = setTimeout(() => reject(new Error('startup timeout')), 45000);
     handle.stdout.on('data', data => { output += data; if (output.includes('\n')) { clearTimeout(timer); try { resolve(JSON.parse(output.split('\n')[0])); } catch (failure) { reject(failure); } } });
@@ -76,7 +84,7 @@ try {
   const initial = await state(); assert.equal(initial.runtime.running, false); assert.equal(initial.runtime.networkMode, 'explicit');
   assert.equal(initial.status, null); assert.equal(initial.events, null);
   assert.deepEqual((await api('connections')).result.connections, []);
-  const duplicate = await run(process.execPath, [path.join(root, 'desktop/runtime/server.mjs'), '--state', stateDir], { env: process.env });
+  const duplicate = await run(process.execPath, [serverPath, '--state', stateDir], { env: process.env });
   assert.notEqual(duplicate.code, 0); evidence.checks.push('single_owner_enforced');
   const profile = { proxies: [{ name: '日本 qualification', type: 'http', server: '127.0.0.1', port: relay.address().port }],
     'proxy-groups': [{ name: 'Proxy', type: 'select', proxies: ['日本 qualification'] }], rules: ['MATCH,Proxy'] };
@@ -109,6 +117,12 @@ try {
   const automatic = await api('select-auto', { capability: selectable.id }); assert.equal(automatic.ok, true, JSON.stringify(automatic));
   evidence.checks.push('manual_region_and_restore_automatic');
   const refreshed = await api('refresh'); assert.equal(refreshed.ok, true, JSON.stringify(refreshed)); evidence.checks.push('shared_refresh');
+  process.kill((await state()).runtime.pid, 'SIGKILL');
+  for (let i = 0; i < 50 && (await state()).runtime.running; i++) await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal((await state()).runtime.running, false);
+  const restarted = await api('enable'); assert.equal(restarted.ok, true, JSON.stringify(restarted));
+  assert.equal((await state()).runtime.mode, 'netfleet');
+  evidence.checks.push('crashed_netfleet_core_restarts_without_manual_disable');
   const disabled = await api('disable'); assert.equal(disabled.ok, true, JSON.stringify(disabled));
   const native = await state(); assert.equal(native.runtime.running, true); assert.equal(native.runtime.mode, 'mihomo'); evidence.checks.push('recovery_profile_restored');
   assert.equal((await api('mode', { mode: 'direct' })).ok, true); assert.equal((await state()).runtime.running, false); evidence.checks.push('direct_stops_owned_core');
@@ -158,7 +172,7 @@ try {
   assert.deepEqual(Object.keys(preparedState.policy.capabilities).sort(), ['ai-compatible', 'standard']);
   assert.deepEqual(preparedState.policy.capabilities['ai-compatible'].excluded_regions, ['hong_kong']);
   const compiledBuiltin = JSON.parse(await fs.readFile(path.join(subscriptionStateDir, 'backend/profiles/OPL-NetFleet.json')));
-  const bundled = JSON.parse(await fs.readFile(path.join(root, 'openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json')));
+  const bundled = JSON.parse(await fs.readFile(resources ? path.join(resources, 'builtin/policy-sources/base-v1.json') : path.join(root, 'openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json')));
   assert.deepEqual(compiledBuiltin.rules, bundled.rules);
   assert.ok(compiledBuiltin['proxy-groups'].some(group => group.name === 'AI 出口'));
   assert.equal(Object.keys(compiledBuiltin['rule-providers']).length, 20);
@@ -217,7 +231,7 @@ try {
     const sorted = [...samples].sort((a, b) => a - b);
     return [action, { count: sorted.length, p50_ms: sorted[Math.ceil(sorted.length * 0.5) - 1], p95_ms: sorted[Math.ceil(sorted.length * 0.95) - 1] }];
   }));
-  const output = path.join(root, '.build/macos/qualification.json'); await fs.mkdir(path.dirname(output), { recursive: true });
+  const output = process.env.NETFLEET_TEST_OUTPUT ?? path.join(root, '.build/macos/qualification.json'); await fs.mkdir(path.dirname(output), { recursive: true });
   await fs.writeFile(output, JSON.stringify(evidence, null, 2)); console.log(JSON.stringify(evidence));
 } finally {
   if (base && !stopped) await api('shutdown').catch(() => {});

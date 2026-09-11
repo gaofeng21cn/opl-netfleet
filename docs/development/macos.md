@@ -22,8 +22,8 @@ open '.build/macos/OPL NetFleet.app'
 直接运行源码服务前执行 `python3 scripts/macos/builtin-assets.py` 准备离线资源；严格平台检查自动完成这一步。构建在任务缓存内完成，不安装
 Homebrew 软件或特权服务。UCode 使用固定源码，Darwin 补丁解决实际 `popen` 及旧
 macOS libc 兼容断点；源码、补丁与下载摘要均保留在构建入口和依赖回执中。
-构建器检查包内动态库路径并进行本地 ad-hoc 签名；这不是 Developer ID 签名或公证。
-App 图标由仓库现有 logo 通过 macOS `sips` 与 `iconutil` 生成；侧栏使用同一品牌源文件。
+构建器检查包内动态库路径，默认进行本地 ad-hoc 签名；分发签名参数见下文。
+App 图标由仓库现有 logo 通过 AppKit 绘制与 `iconutil` 生成；侧栏使用同一品牌源文件。
 当前持续验证仅覆盖 arm64。依赖清单中的 Intel 记录不代表已经构建或验收。
 
 ## 本地交付
@@ -45,7 +45,47 @@ open '.build/macos/OPL NetFleet.app'
 应用作为单槽回退，将新应用完整复制后验证 `codesign --verify --deep --strict` 和包内
 身份，再启动并检查“关于 OPL NetFleet”与界面读取。失败恢复旧应用，成功后清理旧副本；
 不要在应用运行时覆盖包，也不要因更新而删除私有配置、安装 helper 或开启网络接管。
-本地交付直接使用 `.app`，不生成 DMG、下载版或公共发布。整体流程见[双平台交付](delivery.md)。
+本地交付直接使用 `.app`；公开分发使用下文独立的 DMG 流程。整体流程见[双平台交付](delivery.md)。
+
+## 签名与 DMG
+
+公开分发需要 Developer ID Application 证书及已配置的 `notarytool` Keychain profile。
+凭据留在钥匙串，不能写入仓库或命令日志。先在已吸收的干净源码上构建：
+
+```sh
+python3 scripts/macos/build-app.py --require-clean-source \
+  --signing-identity 'Developer ID Application: <证书名称>'
+ditto -c -k --keepParent '.build/macos/OPL NetFleet.app' '.build/macos/notarization.zip'
+xcrun notarytool submit '.build/macos/notarization.zip' --keychain-profile '<profile>' --wait
+xcrun stapler staple '.build/macos/OPL NetFleet.app'
+python3 scripts/macos/package-dmg.py --app '.build/macos/OPL NetFleet.app' \
+  --output '.build/macos/OPL-NetFleet-macos-arm64.dmg' \
+  --signing-identity 'Developer ID Application: <证书名称>'
+xcrun notarytool submit '.build/macos/OPL-NetFleet-macos-arm64.dmg' --keychain-profile '<profile>' --wait
+xcrun stapler staple '.build/macos/OPL-NetFleet-macos-arm64.dmg'
+xcrun stapler validate '.build/macos/OPL-NetFleet-macos-arm64.dmg'
+spctl --assess --type open --context context:primary-signature --verbose=2 '.build/macos/OPL-NetFleet-macos-arm64.dmg'
+```
+
+两次公证都必须返回 Accepted；失败读取该提交的 `notarytool log` 后修复并重建候选。
+打包器拒绝覆盖已有 DMG；初始伴随 JSON 是打包阶段回执，其中 DMG 公证及 VM 验收均为
+未完成。staple 改变 DMG 字节，最终验收另记录最终 SHA-256，不能沿用打包阶段摘要。
+
+冻结最终包后，在隔离的 arm64 macOS VM 内从 DMG 安装。保持 Gatekeeper 启用，以下载
+隔离属性验证首次启动；同时回读 app 签名、staple、包内源码身份与最终 DMG 摘要。
+VM 不安装开发工具，以包内 Node 运行资格脚本：
+
+```sh
+NETFLEET_TEST_APP='/Applications/OPL NetFleet.app' \
+NETFLEET_TEST_OUTPUT='/tmp/netfleet-qualification.json' \
+'/Applications/OPL NetFleet.app/Contents/Resources/runtime/bin/node' /path/to/desktop/tests/qualification.mjs
+NETFLEET_TEST_APP='/Applications/OPL NetFleet.app' \
+'/Applications/OPL NetFleet.app/Contents/Resources/runtime/bin/node' /path/to/desktop/tests/owner-crash.mjs
+```
+
+资格脚本外另验收原生首次启动、订阅录入、六页关键交互、管理员授权、系统代理与 TUN
+实际转发，以及停止、退出、核心和 owner 崩溃后的网络恢复；还需覆盖旧版升级保留配置
+和退出后卸载。源代码或旧安装通过不能替代最终 DMG 的验收。
 
 ## 使用
 

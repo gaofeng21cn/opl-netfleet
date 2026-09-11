@@ -58,7 +58,9 @@ def source_identity(repo):
             "working_tree_dirty": bool(git("status", "--porcelain", "--untracked-files=all"))}
 
 
-def build_identity(repo, require_clean=False):
+def build_identity(repo, require_clean=False, signing_identity=None):
+    if signing_identity and not require_clean:
+        raise RuntimeError("Developer ID distribution requires --require-clean-source")
     identity = source_identity(repo)
     if require_clean and identity["working_tree_dirty"]:
         raise RuntimeError("Local delivery requires committed, clean source; use a development build for uncommitted changes")
@@ -66,7 +68,7 @@ def build_identity(repo, require_clean=False):
     return {"schema": "opl-netfleet-macos-build.v1", "platform": "macos",
             "package_version": info["CFBundleShortVersionString"],
             "package_release": info["CFBundleVersion"], "build_target_arch": platform.machine(),
-            "channel": "local" if require_clean else "development", **identity}
+            "channel": "distribution" if signing_identity else ("local" if require_clean else "development"), **identity}
 
 
 def verify_source_unchanged(repo, identity):
@@ -75,14 +77,14 @@ def verify_source_unchanged(repo, identity):
         raise RuntimeError("Source identity changed during build; previous app preserved")
 
 
-def build(output, cache, require_clean=False):
+def build(output, cache, require_clean=False, signing_identity=None):
     if output.suffix != ".app":
         raise RuntimeError("Output must have an .app extension")
     for relative in ("desktop/app/main.swift", "desktop/app/Info.plist", "desktop/helper/NetworkHelper.swift",
                      "desktop/runtime/server.mjs", "ui/desktop.html", "ui/vite.desktop.config.ts", "assets/branding/opl-netfleet-logo.png"):
         if not (REPO / relative).is_file():
             raise RuntimeError(f"Required desktop source missing: {relative}")
-    identity = build_identity(REPO, require_clean)
+    identity = build_identity(REPO, require_clean, signing_identity)
     web = build_desktop_ui()
     runtime = prepare(cache)
     # A sibling staging directory preserves a previously built app on failure.
@@ -130,19 +132,30 @@ def build(output, cache, require_clean=False):
             REPO / "desktop/helper/NetworkHelper.swift", "-o",
             resources / "runtime/bin/netfleet-network-helper")
         verify(resources / "runtime")
-        # Sign nested Mach-O artifacts first; this is local ad-hoc signing only.
+        # Node's V8 JIT needs MAP_JIT under the hardened runtime. Other binaries
+        # and the app retain the default entitlement set.
+        node_entitlements = staging / "node-entitlements.plist"
+        node_entitlements.write_bytes(plistlib.dumps({"com.apple.security.cs.allow-jit": True}))
+        signing = ["--force", "--sign", signing_identity or "-"]
+        if signing_identity:
+            signing += ["--options", "runtime", "--timestamp"]
         for path in sorted(app.rglob("*")):
             if path.is_file() and not path.is_symlink():
                 kind = subprocess.check_output(["file", "-b", str(path)], text=True)
                 if "Mach-O" in kind:
-                    run("codesign", "--force", "--sign", "-", path)
-        run("codesign", "--force", "--sign", "-", app)
+                    extra = ["--entitlements", node_entitlements] if signing_identity and path == resources / "runtime/bin/node" else []
+                    run("codesign", *signing, *extra, path)
+        run("codesign", *signing, app)
+        if signing_identity:
+            details = subprocess.run(["codesign", "-dv", "--verbose=4", str(app)], capture_output=True, text=True, check=True).stderr
+            if "Authority=Developer ID Application:" not in details or "runtime" not in details:
+                raise RuntimeError("Distribution requires Developer ID Application and hardened runtime")
         run("codesign", "--verify", "--deep", "--strict", app)
         verify_source_unchanged(REPO, identity)
         receipt = {"app": str(output), **identity,
                    "dependency_lock_sha256": sha256(HERE / "dependencies.json"),
                    "brand_logo_sha256": sha256(REPO / "assets/branding/opl-netfleet-logo.png"),
-                   "signing": "ad-hoc", "notarized": False,
+                   "signing": "developer-id" if signing_identity else "ad-hoc", "notarized": False,
                    "network_settings_changed": False,
                    "checks": ["react_typecheck", "desktop_production_build", "native_ucode_fs_socket", "ucode_popen_shell_argv", "mihomo_version", "node_version",
                               "yq_readonly_conversion", "portable_dynamic_libraries", "codesign_strict"]}
@@ -166,5 +179,6 @@ if __name__ == "__main__":
     parser.add_argument("--cache", type=Path, default=Path.home() / ".cache/opl-netfleet/macos")
     parser.add_argument("--require-clean-source", action="store_true",
                         help="Build for local delivery; reject uncommitted source before building")
+    parser.add_argument("--signing-identity", help="Developer ID Application identity for distribution (requires clean source)")
     args = parser.parse_args()
-    build(args.output.resolve(), args.cache.resolve(), args.require_clean_source)
+    build(args.output.resolve(), args.cache.resolve(), args.require_clean_source, args.signing_identity)

@@ -271,6 +271,9 @@ async function action(input) {
     }
     case 'compile': await ensurePolicy(); return ucode('compile');
     case 'enable': {
+      // A crashed core can leave the selected NetFleet profile marked enabled.
+      // Reconcile through the normal stop path before compiling it again.
+      if (state.enabled && !(await core.status()).running) await action({ action: 'mode', mode: 'direct' });
       await ensurePolicy(); await ucode('compile'); const result = await ucode('enable');
       await saveState({ mode: 'netfleet', enabled: true, scheduler: { enabled: true, running: true } }); return result;
     }

@@ -51,3 +51,14 @@ Release 并下载公开资产校验。主线前进后仍使用已冻结并验收
 
 该渠道不创建 GitHub Release、下载页或更新 feed。macOS CI 中的应用只用于构建验证，
 不作为本机已安装的证据。系统代理/TUN 授权验收仍是单独的实际网络操作。
+
+## macOS DMG 公开分发
+
+macOS 使用独立的 `macos-vX.Y.Z` tag，版本对应应用 `Info.plist`，不与 OpenWrt 包号绑定。
+按[签名与 DMG](macos.md#签名与-dmg)构建、公证并冻结 arm64 DMG，完成最终包的隔离
+macOS VM 验收后才发布。应用签名、两次公证、最终 DMG 摘要、源码身份和 VM 结果分别
+回读；发布后下载公开资产并核对相同摘要。内部验收日志与订阅数据不进入 Release。
+
+macOS-only Release 必须使用 `gh release create --latest=false`，避免抢占 OpenWrt
+安装入口依赖的 `/releases/latest/download/install-netfleet.sh`。公开 macOS 资产通过
+对应 tag 获取；本流程不提供应用内自动更新，也不自动更新已安装的本机应用。

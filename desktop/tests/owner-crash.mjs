@@ -7,11 +7,19 @@ import { fileURLToPath } from 'node:url';
 import { delay } from '../runtime/io.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const resources = process.env.NETFLEET_TEST_APP && path.join(process.env.NETFLEET_TEST_APP, 'Contents/Resources');
+const serverPath = resources ? path.join(resources, 'desktop/runtime/server.mjs') : path.join(root, 'desktop/runtime/server.mjs');
+if (resources) {
+  process.env.NETFLEET_RUNTIME_ROOT = path.join(resources, 'runtime');
+  process.env.NETFLEET_SOURCE_ROOT = path.join(resources, 'shared');
+  process.env.NETFLEET_BUILTIN_ROOT = path.join(resources, 'builtin');
+}
+
 const state = await fs.mkdtemp(path.join(os.tmpdir(), 'netfleet-owner-crash-'));
 let server, base, token, corePid;
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 async function start() {
-  server = spawn(process.execPath, [path.join(root, 'desktop/runtime/server.mjs'), '--state', state], { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+  server = spawn(process.execPath, [serverPath, '--state', state], { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
   const line = await new Promise((resolve, reject) => {
     let out = '', error = ''; const timer = setTimeout(() => reject(new Error('startup_timeout')), 15000);
     server.stdout.on('data', data => { out += data; if (out.includes('\n')) { clearTimeout(timer); resolve(JSON.parse(out.split('\n')[0])); } });

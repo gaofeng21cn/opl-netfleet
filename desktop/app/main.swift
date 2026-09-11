@@ -86,7 +86,7 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
            let data = try? Data(contentsOf: url),
            let identity = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
            let commit = identity["source_commit"] as? String {
-            let channel = identity["channel"] as? String == "local" ? "本地交付" : "开发构建"
+            let channel = ["local": "本地交付", "distribution": "正式分发"][identity["channel"] as? String ?? ""] ?? "开发构建"
             let dirty = identity["working_tree_dirty"] as? Bool == true ? " · 含未提交修改" : ""
             let arch = identity["build_target_arch"] as? String ?? ""
             options[.credits] = NSAttributedString(string: "\(channel) · \(arch)\(dirty)\n源码 \(commit.prefix(12))")

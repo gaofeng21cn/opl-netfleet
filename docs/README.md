@@ -19,7 +19,7 @@
 - [`development/validation.md`](development/validation.md)：源码、UI、隔离 OpenWrt、发布验证，以及实体性能评估方法。
 - [`development/plugins.md`](development/plugins.md)：插件接口与独立升级兼容性、开发模板、软件包构建、安装与热加载。
 - [`development/delivery.md`](development/delivery.md)：双平台共享检查、独立交付、版本身份与实际交付状态。
-- [`development/macos.md`](development/macos.md)：macOS 本机构建、启动与验证。
+- [`development/macos.md`](development/macos.md)：macOS 本机构建、启动、签名与 DMG 验证。
 
 ## 目标与理由
 

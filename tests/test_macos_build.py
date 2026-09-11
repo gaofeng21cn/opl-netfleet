@@ -56,6 +56,15 @@ class MacOSBuildIdentityTests(unittest.TestCase):
                 self.assertEqual(identity["channel"], "development")
                 target.write_bytes(old) if old is not None else target.unlink()
 
+    def test_distribution_requires_clean_source(self):
+        with self.assertRaisesRegex(RuntimeError, "require-clean-source"):
+            builder.build_identity(self.repo, signing_identity="Developer ID Application: Fixture")
+        identity = builder.build_identity(self.repo, True, "Developer ID Application: Fixture")
+        self.assertEqual(identity["channel"], "distribution")
+        (self.repo / "untracked").write_text("change")
+        with self.assertRaisesRegex(RuntimeError, "clean source"):
+            builder.build_identity(self.repo, True, "Developer ID Application: Fixture")
+
     def test_source_changes_during_build_are_rejected(self):
         identity = builder.build_identity(self.repo, True)
         (self.repo / "source").write_text("change")

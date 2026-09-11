@@ -87,13 +87,15 @@ Mihomo 原生代理或 NetFleet 增强代理。首次启动使用显式代理，
 系统代理与 TUN 需要安装本应用随包提供的有限特权组件并由 macOS 管理员授权，安装不等于接管
 成功；显式代理不需要特权组件。每个核心与网络资源只有一个管理者，系统设置保存接管前状态，
 清理只恢复仍属于当前操作的字段，第三方后续修改不得被旧快照覆盖。核心或桌面进程异常退出
-必须触发网络清理，无法证明清理成功时呈现未确认，不冒充直连。退出增强恢复独立 Recovery
+必须触发网络清理，无法证明清理成功时呈现未确认，不冒充直连。用户在核心异常退出后重新启动时，桌面 owner 先确认停止与接管清理，再清除旧启用状态并重新编译、启用；清理失败不得继续。退出增强恢复独立 Recovery
 Profile；显式直连停止核心与调度并撤销自身接管。
 
 ## 打包与签名
 
 应用由本地构建入口生成 `.app`，内含固定版本的 Node、UCode、Mihomo 和 yq，包内动态库使用
-相对路径。当前产物为 ad-hoc 签名、未公证；源码运行与可分发应用的签名、公证是独立证据层，
+相对路径。本地构建使用 ad-hoc 签名；分发构建使用 Developer ID Application、hardened runtime
+和可信时间戳。只有 Node 启用 V8 所需的 `allow-jit` entitlement。源码运行、签名、公证和
+下载后首次运行是独立证据层，
 构建与验证入口见[macOS 开发](../development/macos.md)。
 
 macOS 平台版本与构建修订由 `desktop/app/Info.plist` 的 `CFBundleShortVersionString`、
@@ -105,6 +107,9 @@ macOS 平台版本与构建修订由 `desktop/app/Info.plist` 的 `CFBundleShort
 默认构建标记为 `development`，未提交改动必须显示。`--require-clean-source` 在依赖准备
 前拒绝 dirty 源码，成功产物标记为 `local`；提交或工作区清洁状态在构建期间变化时拒绝
 替换原应用。`local` 只表示干净源码的本地交付构建，不表示已安装、已公证或公开发布。
+同时指定 `--signing-identity` 时渠道为 `distribution`，该值只标记签名分发构建，不证明公证
+或发布完成。DMG 打包入口要求应用已公证并 staple，DMG 自身仍需公证、staple 和最终
+虚拟机验收；具体命令归[开发指南](../development/macos.md#签名与-dmg)。
 
 ## 本机接口
 
