@@ -1,0 +1,95 @@
+#!/bin/sh
+# HTTPS engine package only. Kernel lifecycle retains resource ownership.
+set -eu
+umask 077
+mode=${1:?}; stage=${2:?}
+case "$stage" in /tmp/netfleet-https-update-*) ;; *) exit 2;; esac
+cd "$stage"
+main=/usr/libexec/opl-netfleet/main.uc
+service=opl-netfleet-https-update
+phase() { printf '{"phase":"%s"}\n' "$1" >journal.new; mv journal.new journal.json; }
+if [ "$mode" = start ]; then
+ sha256sum -c SHA256SUMS >transfer.log 2>&1
+ [ ! -e journal.json ]
+ phase prepared
+ ucode - "$stage" "$service" <<'UC'
+import * as fs from 'fs';
+const value={name:ARGV[1],instances:{update:{command:['/usr/bin/timeout','-k','5','600','/bin/sh',ARGV[0]+'/update-remote.sh','run',ARGV[0]],respawn:[3600,2,3],stdout:false,stderr:false,term_timeout:30}}};
+const quote=v=>"'"+replace(v,"'","'\\''")+"'";
+if(system('ubus call service add '+quote(sprintf('%J',value))))die('update_start_failed');
+UC
+ exit 0
+fi
+[ "$mode" = run ]
+exec >>worker.log 2>&1
+exec 8>/var/lock/opl-netfleet-operator.lock
+flock -n 8 || exit 1
+exec 9>/var/lock/opl-netfleet-deploy.lock
+old=$(jsonfilter -i request.json -e '@.old')
+new=$(jsonfilter -i request.json -e '@.new')
+case "$old$new" in *[!a-zA-Z0-9._-]*) exit 2;; esac
+[ -f "$old" ] && [ -f "$new" ]
+finish() {
+ trap - EXIT INT TERM
+ ubus call service delete '{"name":"opl-netfleet-https-update"}' >/dev/null 2>&1 || true
+}
+check_base() {
+ sha256sum -c base-before.sha256 >/dev/null &&
+ [ "$(pidof mihomo)" = "$(cat base-pid)" ] &&
+ ucode "$main" native-gateway-status >gateway.json &&
+ [ "$(jsonfilter -i gateway.json -e '@.result.ready')" = true ]
+}
+install() {
+ flock -w 15 9 || return 1
+ ucode "$main" plugin-package-drain https-compat >drain.json || { flock -u 9; return 1; }
+ # No source/feed resolution and no other package may be downloaded.
+ apk --no-network --repositories-file /dev/null add "$stage/$1" 9>&- || { flock -u 9; return 1; }
+ flock -u 9
+}
+verify() {
+ check_base || return 1
+ sha256sum -c private-before.sha256 >/dev/null || return 1
+ for attempt in $(seq 1 90); do
+  ucode "$main" compatibility-get >state.json || return 1
+  requested=$(jsonfilter -i state.json -e '@.result.requested')
+  # A concurrent user disable is authoritative; never enable on their behalf.
+  if [ "$requested" = false ]; then return 0; fi
+  [ "$(jsonfilter -i state.json -e '@.result.intercepting')" != true ] || return 0
+  sleep 1
+ done
+ return 1
+}
+rollback() {
+ trap - EXIT INT TERM
+ phase recovering
+ if install "$old" && verify; then phase rolled_back
+ else
+  # Preserve user intent, revoke only this plugin's new takeover.
+  flock -w 15 9 && ucode "$main" compatibility-suspend >bypass.json || true
+  flock -u 9
+  phase recovery_failed
+ fi
+ finish
+}
+current=$(jsonfilter -i journal.json -e '@.phase')
+case "$current" in complete|rolled_back|recovery_failed|rejected) finish;exit 0;; esac
+sha256sum -c SHA256SUMS >transfer.log 2>&1
+if [ "$current" != prepared ]; then rollback;exit 0;fi
+trap 'phase rejected; finish' EXIT INT TERM
+flock -w 15 9
+# Guard checks exact APK metadata, installed old bytes, dependencies and base health.
+ucode "$stage/update-guard.uc" "$stage"
+pidof mihomo >base-pid
+sha256sum /etc/config/netfleet /etc/opl-netfleet/native/run/config.yaml >base-before.sha256
+find /etc/opl-netfleet/compatibility -type f -exec sha256sum '{}' ';' >private-before.sha256
+phase installing
+flock -u 9
+trap rollback EXIT INT TERM
+install "$new"
+phase verifying
+if [ -f /tmp/netfleet-compat-vm-authorized ] && [ -f hold-acceptance ]; then sleep 120;fi
+# Deliberate VM-only acceptance failure exercises the real rollback consumer.
+if [ -f /tmp/netfleet-compat-vm-authorized ] && [ -f reject-acceptance ]; then exit 1;fi
+verify
+phase complete
+finish

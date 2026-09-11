@@ -175,7 +175,7 @@ tar -cf "$work/runtime-source.tar" -C "$workspace" \
 	openwrt/files/usr/share/opl-netfleet \
 	openwrt/files/etc/opl-netfleet/policy.example.json \
 	openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json \
-	openwrt/files/etc/opl-netfleet/rulesets.lock.json examples/plugins plugins/device-identity tests \
+	openwrt/files/etc/opl-netfleet/rulesets.lock.json examples/plugins plugins/device-identity tests scripts/https-compat/update-remote.sh scripts/https-compat/update-guard.uc \
 	-C "$work" runtime-rulesets
 openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
 	-keyout "$work/local-probe-ca.key" -out "$work/local-probe.crt" \

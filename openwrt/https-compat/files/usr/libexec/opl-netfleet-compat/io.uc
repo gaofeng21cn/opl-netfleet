@@ -22,9 +22,6 @@ return function(options) {
         record(name,max(0,int((now()-started)*1000)),max(0,cpu()-used));
         if(error) die(error.message);return value;
     }
-    function profile(path) {
-        if(profiling) atomic(path,{stages:timings,monotonic:now()});
-    }
     function read(path, fallback) {
         const info = fs.lstat(path);
         if (!info) return fallback;
@@ -67,6 +64,9 @@ return function(options) {
         const durable = index(path, '/etc/') == 0;
         write(path, (durable ? canonical(value) : sprintf('%J', value)) + '\n', durable);
     }
+    function profile(path) {
+        if(profiling) atomic(path,{stages:timings,monotonic:now()});
+    }
     function ancestor_lock(path) {
         const target = fs.stat(path); let pid = +fs.readlink('/proc/self');
         if (!target) return false;
@@ -83,6 +83,10 @@ return function(options) {
         }
         return false;
     }
+    let locked_at=null,renewed_at=null;
+    function lock_started() { if(profiling) locked_at=now(); }
+    function lock_stopped() { if(profiling&&locked_at!=null) {record('lock_held',int((now()-locked_at)*1000));locked_at=null;} }
+    function renewed() { if(profiling) {const at=now();if(renewed_at!=null)record('renewal_interval',int((at-renewed_at)*1000));renewed_at=at;} }
     function lock(wait) {
         const path = '/var/lock/opl-netfleet-deploy.lock', file = fs.open(path, 'ae', 0600);
         if (!file) die('mutation_busy');
@@ -95,10 +99,6 @@ return function(options) {
         }
         file.close(); die('mutation_busy');
     }
-    let locked_at=null,renewed_at=null;
-    function lock_started() { if(profiling) locked_at=now(); }
-    function lock_stopped() { if(profiling&&locked_at!=null) {record('lock_held',int((now()-locked_at)*1000));locked_at=null;} }
-    function renewed() { if(profiling) {const at=now();if(renewed_at!=null)record('renewal_interval',int((at-renewed_at)*1000));renewed_at=at;} }
     function unlock(file) { if (file) { lock_stopped();file.lock('u'); file.close(); } }
     return {root, quote, now, read, mkdir, command, write, atomic, canonical, sha256, lock, unlock,measure,profile,lock_started,lock_stopped,renewed};
 };

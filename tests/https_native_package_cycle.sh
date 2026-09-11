@@ -29,10 +29,42 @@ cycle_install() {
  wait_intercepting
  probe 4 h2; probe 6 h2
 }
-# Exact old/new versions; no other installed package is in the transaction.
+# Start from the old signed engine, then exercise the actual update worker.
 cycle_install "$cycle_old"
-cycle_install "$cycle_new"
-# Exercise a rejected acceptance by restoring the old signed engine, then retry.
-cycle_install "$cycle_old"
-cycle_install "$cycle_new"
-echo 'engine package cycle: old/new, acceptance rollback, retry, stable base and private state passed'
+cycle_transaction() {
+ transaction=$(mktemp -d /tmp/netfleet-https-update-test.XXXXXX)
+ cp "$cycle_old" "$cycle_new" "$transaction/"
+ cp /tmp/scripts/https-compat/update-remote.sh /tmp/scripts/https-compat/update-guard.uc "$transaction/"
+ ucode - "$transaction" "$2" "$3" <<'UC'
+import * as fs from 'fs';
+fs.writefile(ARGV[0]+'/request.json',sprintf('%J',{old:fs.basename(ARGV[1]),new:fs.basename(ARGV[2])}));
+UC
+ (cd "$transaction"; sha256sum *.apk request.json update-remote.sh update-guard.uc >SHA256SUMS)
+ case "$1" in reject) touch "$transaction/reject-acceptance";; kill) touch "$transaction/hold-acceptance";; esac
+ sh "$transaction/update-remote.sh" start "$transaction"
+ if [ "$1" = kill ]; then
+  for attempt in $(seq 1 90); do
+   [ "$(jsonfilter -i "$transaction/journal.json" -e '@.phase')" != verifying ] || break
+   sleep 1
+  done
+  test "$(jsonfilter -i "$transaction/journal.json" -e '@.phase')" = verifying
+  # SIGKILL the procd-owned timeout process; its respawn must recover old bytes.
+  ubus call service list '{"name":"opl-netfleet-https-update"}' >"$transaction/procd.json"
+  kill -KILL "$(jsonfilter -i "$transaction/procd.json" -e '@["opl-netfleet-https-update"].instances.update.pid')"
+ fi
+ for attempt in $(seq 1 150); do
+  result=$(jsonfilter -i "$transaction/journal.json" -e '@.phase')
+  case "$result" in complete|rolled_back|recovery_failed|rejected) break;; esac
+  sleep 1
+ done
+ if [ "$1" = accept ]; then test "$result" = complete; else test "$result" = rolled_back;fi
+ test "$(pidof mihomo)" = "$base_pid"
+ sha256sum -c "$work/base.sha256" >>"$work/cycle.log"
+ sha256sum -c "$work/cycle-private.sha256" >>"$work/cycle.log"
+ wait_intercepting
+ probe 4 h2;probe 6 h2
+}
+cycle_transaction reject "$cycle_old" "$cycle_new"
+cycle_transaction accept "$cycle_old" "$cycle_new"
+cycle_transaction kill "$cycle_new" "$cycle_old"
+echo 'engine package cycle: actual acceptance rollback, upgrade, interrupted-worker recovery, stable base and private state passed'
