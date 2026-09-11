@@ -316,8 +316,22 @@ return function(context, options) {
         io.atomic(TRUST,trust);io.atomic(EFFECTIVE,effective(config,trust,identity.resolve(config)));return status();
     }
     function drain() {
-        bypass();const deadline=io.now()+30;
-        while(true) {const live=health();if(live.active_connections===0) return {drained:true};if(io.now()>=deadline) die('healthy_connections_still_draining');sleep(200);}
+        bypass();const deadline=io.now()+30,live=health(),pid=live.pid;
+        if(!pid&&live.active_connections===0) return {drained:true};
+        if(type(pid)!='int'||pid<=1) die('draining_engine_unconfirmed');
+        function birth() {
+            const stat=fs.readfile(`/proc/${pid}/stat`);
+            return stat?split(trim(substr(stat,rindex(stat,') ')+2)),/\s+/)[19]:null;
+        }
+        const started=birth();if(started==null) return {drained:true};
+        // SIGUSR1 closes idle HTTP connections, while active responses finish.
+        // Stats listeners may close first; only the original process exiting is proof.
+        service('signal',{instance:'engine',signal:10});
+        while(birth()==started) {
+            if(io.now()>=deadline) die('healthy_connections_still_draining');
+            sleep(200);
+        }
+        return {drained:true};
     }
     function mutate(action,request,lock) {
         io.mkdir(RUN);

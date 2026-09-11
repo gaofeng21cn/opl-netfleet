@@ -83,7 +83,35 @@ UC
  probe 4 h2;probe 6 h2
 }
 cycle_transaction bad-base "$cycle_old" "$cycle_new"
+# A client can keep its TLS connection alive across the old controller's whole
+# 30-second drain window. Exercise the installer bridge with the old signed APK.
+mkfifo "$work/keepalive.in"
+timeout -k 1 120 ip netns exec nfcompat-client openssl s_client -quiet -ign_eof \
+ -connect 198.51.100.10:443 -servername wire.example -verify_return_error \
+ -CAfile "$work/client-ca.pem" <"$work/keepalive.in" >"$work/keepalive.out" 2>"$work/keepalive.log" &
+keepalive_client=$!
+timeout -k 1 120 sh -c 'while true; do printf "GET /wire HTTP/1.1\r\nHost: wire.example\r\n\r\n"; sleep 3; done' >"$work/keepalive.in" &
+keepalive_sender=$!
+for attempt in $(seq 1 20); do grep -q wire-ok "$work/keepalive.out" && break; sleep 1; done
+grep -q wire-ok "$work/keepalive.out"
+kill -0 "$keepalive_client"
 cycle_transaction reject "$cycle_old" "$cycle_new"
+! kill -0 "$keepalive_client" 2>/dev/null
+wait "$keepalive_client" || true
+kill "$keepalive_sender" 2>/dev/null || true
+wait "$keepalive_sender" || true
+rm "$work/keepalive.in"
 cycle_transaction accept "$cycle_old" "$cycle_new"
+if [ -n "$probe_port" ]; then
+ wire -fsSN 'https://wire.example/compat-wire/events' >"$work/drain-events.txt" &
+ draining_stream=$!
+ for attempt in $(seq 1 20); do grep -q '^data: 0$' "$work/drain-events.txt" && break; sleep 0.1; done
+ grep -q '^data: 0$' "$work/drain-events.txt"
+ kill -0 "$draining_stream"
+fi
 cycle_transaction kill "$cycle_new" "$cycle_old"
+if [ -n "${draining_stream:-}" ]; then
+ wait "$draining_stream"
+ test "$(grep -c '^data:' "$work/drain-events.txt")" = 30
+fi
 echo 'engine package cycle: actual acceptance rollback, upgrade, interrupted-worker recovery, stable base and private state passed'

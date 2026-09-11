@@ -51,8 +51,32 @@ check_base() {
 }
 install() {
  flock -w 15 9 || return 1
- ucode "$main" plugin-package-drain https-compat >drain.json || { flock -u 9; return 1; }
+ if ! ucode "$main" plugin-package-drain https-compat >drain.json; then
+  # Older engines wait for idle TCP clients without initiating graceful stop.
+  # Their failed drain has already revoked leases and entered maintenance.
+  if [ "$(jsonfilter -i drain.json -e '@.error')" != healthy_connections_still_draining ]; then flock -u 9;return 1;fi
+  if ! ucode - >graceful-drain.json <<'UC'
+import * as fs from 'fs';
+const quote=v=>"'"+replace(v,"'","'\\''")+"'";
+const state=json(fs.readfile('/var/run/opl-netfleet-compat/state.json'));
+if(state.maintenance!==true||state.intercepting!==false)die('draining_state_unconfirmed');
+const p=fs.popen('ubus call service list'),services=json(p.read('all'));if(p.close())die('draining_service_unconfirmed');
+const current=services['opl-netfleet-compat']?.instances?.engine,pid=current?.pid;
+if(!current?.running){print('{"drained":true}\n');exit(0);}
+if(type(pid)!='int'||pid<=1||fs.readlink(`/proc/${pid}/exe`)!='/usr/libexec/opl-netfleet-compat/haproxy')die('draining_engine_unconfirmed');
+function birth(){const s=fs.readfile(`/proc/${pid}/stat`);return s?split(trim(substr(s,rindex(s,') ')+2)),/\s+/)[19]:null;}
+const started=birth(),until=time()+30;
+if(started!=null){
+ if(system('ubus call service signal '+quote(sprintf('%J',{name:'opl-netfleet-compat',instance:'engine',signal:10}))))die('draining_signal_failed');
+ while(birth()==started){if(time()>=until)die('healthy_connections_still_draining');sleep(200);}
+}
+print('{"drained":true}\n');
+UC
+  then flock -u 9;return 1;fi
+  ucode "$main" plugin-package-drain https-compat >drain.json || { flock -u 9;return 1; }
+ fi
  # No source/feed resolution and no other package may be downloaded.
+ touch package-write-started
  apk --no-network --repositories-file /dev/null ${2:-} add "$stage/$1" 9>&- || { flock -u 9; return 1; }
  ucode "$main" plugin-package-resume https-compat >resume.json || { flock -u 9; return 1; }
  flock -u 9
@@ -72,6 +96,13 @@ verify() {
 }
 rollback() {
  trap - EXIT INT TERM
+ if [ ! -f package-write-started ]; then
+  # No APK was attempted. Keep new traffic bypassed and healthy requests alive.
+  # Reinstalling the unchanged old package cannot resolve a pending drain.
+  phase deferred
+  finish
+  return
+ fi
  phase recovering
  if install "$old" --force-reinstall && verify; then phase rolled_back
  else
@@ -83,7 +114,7 @@ rollback() {
  finish
 }
 current=$(jsonfilter -i journal.json -e '@.phase')
-case "$current" in complete|rolled_back|recovery_failed|rejected) finish;exit 0;; esac
+case "$current" in complete|rolled_back|recovery_failed|rejected|deferred) finish;exit 0;; esac
 sha256sum -c SHA256SUMS >transfer.log 2>&1
 if [ "$current" != prepared ]; then rollback;exit 0;fi
 trap 'phase rejected; finish' EXIT INT TERM
