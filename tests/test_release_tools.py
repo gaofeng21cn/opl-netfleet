@@ -14,7 +14,7 @@ PACKAGER = ROOT / 'scripts/netfleet-package-build.sh'
 PREPARER = ROOT / 'scripts/prepare-openwrt-sdk.sh'
 VERIFIER = ROOT / 'scripts/verify-netfleet-release.py'
 PUBLISHER = ROOT / 'scripts/publish-netfleet-release.sh'
-WORKFLOW = ROOT / '.github/workflows/netfleet-release.yml'
+WORKFLOW = ROOT / '.github/workflows/netfleet-openwrt-candidate.yml'
 FEED_BUILDER = ROOT / 'scripts/netfleet-feed-build.sh'
 INSTALLER = ROOT / 'scripts/install-netfleet.sh'
 
@@ -654,10 +654,69 @@ class ReleaseToolsTests(unittest.TestCase):
         self.assertIn('opl-netfleet-openwrt-vm-qualification.v2', source)
         self.assertIn('package.get("manifest_sha256")', source)
         self.assertIn("remote_main", source)
-        self.assertIn('candidate source is not current canonical main', source)
         self.assertIn('release already exists and is immutable', source)
         self.assertIn('gh release download', source)
         self.assertEqual(2, source.count('verify-netfleet-release.py'))
+
+class PublisherSourceAdmissionTests(unittest.TestCase):
+    def test_frozen_main_candidate_survives_main_advance_but_unmerged_source_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(repo), *args], text=True, stderr=subprocess.DEVNULL).strip()
+            git("init", "-q", "-b", "main")
+            git("config", "user.email", "test@example.invalid")
+            git("config", "user.name", "Test")
+            scripts = repo / "scripts"
+            scripts.mkdir()
+            for source in (PUBLISHER, VERIFIER):
+                shutil.copy2(source, scripts / source.name)
+            git("add", ".")
+            git("commit", "-qm", "qualified candidate")
+            qualified = git("rev-parse", "HEAD")
+            remote = root / "remote.git"
+            subprocess.run(["git", "clone", "--bare", str(repo), str(remote)], check=True, capture_output=True)
+            git("remote", "add", "origin", str(remote))
+            (repo / "macos-change").write_text("unrelated platform change")
+            git("add", ".")
+            git("commit", "-qm", "advance main")
+            git("push", "origin", "main")
+            git("checkout", "-qb", "unmerged")
+            (repo / "unmerged").write_text("not admitted")
+            git("add", ".")
+            git("commit", "-qm", "unmerged source")
+            unmerged = git("rev-parse", "HEAD")
+            git("checkout", "main")
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            gh = bin_dir / "gh"
+            # Stop after source admission, before any tag or release mutation.
+            gh.write_text('''#!/bin/sh
+[ "$1 $2" = "release view" ] || exit 90
+echo '{"tagName":"v0.4.5"}'
+''')
+            gh.chmod(0o755)
+            for commit, expected in ((qualified, "release already exists and is immutable"),
+                                     (unmerged, "has not been absorbed into canonical main")):
+                with self.subTest(commit=commit):
+                    candidate = root / commit
+                    candidate.mkdir()
+                    tree = git("rev-parse", commit + "^{tree}")
+                    write_release(candidate, commit, tree)
+                    receipt = root / (commit + ".json")
+                    receipt.write_text(json.dumps({"schema": "opl-netfleet-openwrt-vm-qualification.v2",
+                        "qualified": True, "package_qualified": True, "source_commit": commit,
+                        "source_tree": tree, "package": {"manifest_sha256": sha256(candidate / "manifest.json")}}))
+                    result = subprocess.run([str(scripts / PUBLISHER.name), "--repo", "example/test",
+                        "--tag", "v0.4.5", "--candidate", str(candidate), "--qualification", str(receipt)],
+                        env={**os.environ, "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"]},
+                        capture_output=True, text=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(expected, result.stderr)
+                    self.assertEqual(git("tag"), "")
+
 
 class PackageLifecycleTests(unittest.TestCase):
     def setUp(self):

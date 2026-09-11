@@ -12,7 +12,7 @@
 <p align="center">独立管理 Mihomo · 多机场自动选优 · 功能插件组合 · 独立热替换</p>
 
 <p align="center">
-  <a href="https://github.com/gaofeng21cn/opl-netfleet/actions"><img src="https://img.shields.io/github/actions/workflow/status/gaofeng21cn/opl-netfleet/netfleet-release.yml?label=checks" alt="Checks" /></a>
+  <a href="https://github.com/gaofeng21cn/opl-netfleet/actions"><img src="https://img.shields.io/github/actions/workflow/status/gaofeng21cn/opl-netfleet/netfleet-check.yml?label=checks" alt="Checks" /></a>
   <a href="https://github.com/gaofeng21cn/opl-netfleet/releases/latest"><img src="https://img.shields.io/github/v/release/gaofeng21cn/opl-netfleet" alt="最新版本" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="Apache-2.0 许可证" /></a>
 </p>
@@ -92,6 +92,7 @@ NetFleet 脚本与界面包为 `noarch`；当前随 Feed 提供的 Mihomo 核心
 macOS 本机 MVP 的构建、使用和验证见[macOS 开发指南](docs/development/macos.md)。
 它复用 NetFleet 核心业务与 React 界面组件，提供原生桌面窗口、菜单和快捷键；系统代理与 TUN 需要本机管理员授权。
 当前为本地构建与 ad-hoc 签名入口，下述软件源安装命令仅适用于 OpenWrt。
+两端共享检查、独立交付；版本与源码身份、候选构建及发布入口见[双平台交付](docs/development/delivery.md)。
 
 ### 准备工作
 

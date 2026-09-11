@@ -12,7 +12,7 @@
 <p align="center">Independent Mihomo management · multi-provider selection · composable plugins · independent hot replacement</p>
 
 <p align="center">
-  <a href="https://github.com/gaofeng21cn/opl-netfleet/actions"><img src="https://img.shields.io/github/actions/workflow/status/gaofeng21cn/opl-netfleet/netfleet-release.yml?label=checks" alt="Checks" /></a>
+  <a href="https://github.com/gaofeng21cn/opl-netfleet/actions"><img src="https://img.shields.io/github/actions/workflow/status/gaofeng21cn/opl-netfleet/netfleet-check.yml?label=checks" alt="Checks" /></a>
   <a href="https://github.com/gaofeng21cn/opl-netfleet/releases/latest"><img src="https://img.shields.io/github/v/release/gaofeng21cn/opl-netfleet" alt="Latest release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="Apache-2.0 license" /></a>
 </p>
@@ -153,6 +153,8 @@ with a native window, application menus, and keyboard shortcuts.
 See the [macOS build and validation guide](docs/development/macos.md). System proxy and TUN
 require local administrator authorization. This is a local, ad-hoc signed build; the feed
 installation commands below apply only to OpenWrt.
+Both platforms share validation and ship independently; see the [delivery workflow](docs/development/delivery.md)
+for version identity, candidate builds, and delivery boundaries.
 
 ### Prerequisites
 

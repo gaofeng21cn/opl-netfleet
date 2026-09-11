@@ -96,6 +96,16 @@ Profile；显式直连停止核心与调度并撤销自身接管。
 相对路径。当前产物为 ad-hoc 签名、未公证；源码运行与可分发应用的签名、公证是独立证据层，
 构建与验证入口见[macOS 开发](../development/macos.md)。
 
+macOS 平台版本与构建修订由 `desktop/app/Info.plist` 的 `CFBundleShortVersionString`、
+`CFBundleVersion` 唯一维护。构建器从同一源码读取这些值，连同完整 `source_commit`、
+`source_tree`、架构、渠道与 dirty 标志写入签名覆盖的 `Contents/Resources/build.json`，
+外部 `build-receipt.json` 使用相同字段并附带构建检查结果。原生“关于”窗口显示平台版本、
+修订、渠道与短提交号；完整身份以包内文件为准。
+
+默认构建标记为 `development`，未提交改动必须显示。`--require-clean-source` 在依赖准备
+前拒绝 dirty 源码，成功产物标记为 `local`；提交或工作区清洁状态在构建期间变化时拒绝
+替换原应用。`local` 只表示干净源码的本地交付构建，不表示已安装、已公证或公开发布。
+
 ## 本机接口
 
 界面 HTTP 仅监听回环地址，使用每次启动生成的随机令牌，并限制来源和请求大小。私有 Unix

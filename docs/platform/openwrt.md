@@ -186,7 +186,8 @@ GitHub candidate workflow 必须先把用户选择的 `source_ref` checkout 为�
 package source。workflow 只产生短期候选，不直接创建 Release。候选必须在同一 commit/tree
 的干净 ARM64 OpenWrt VM 中通过候选目录提供的临时 feed 和同一 bootstrap 完成签名安装及
 重复升级事务，再完成数据库回读、installed bytes、LuCI/RPC、首次设置、
-退出恢复和卸载验证，之后才允许发布入口创建不可变 Release。发布完成后必须从公开 Release
+退出恢复和卸载验证，之后才允许发布入口创建不可变 Release。发布入口重新读取远端主线，
+只接受已被该主线包含的候选提交；后续无关提交不要求重建已经通过资格验收的同一候选。发布完成后必须从公开 Release
 重新下载全部文件，校验文件集合、逐文件摘要以及 manifest 中的 source commit/tree，才可
 报告发布成功；已有 Release 不允许覆盖资产。VM 的 HTTP feed 覆盖只允许用于本机受控资格
 验证，公开安装入口默认只接受 HTTPS。NetFleet 的 `noarch` 代码包可跨 CPU 架构复用，

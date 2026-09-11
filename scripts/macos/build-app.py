@@ -4,6 +4,7 @@ import argparse
 import json
 import importlib.util
 import platform
+import plistlib
 from pathlib import Path
 import shutil
 import sys
@@ -49,13 +50,39 @@ def build_desktop_ui():
     return output
 
 
-def build(output, cache):
+def source_identity(repo):
+    def git(*args):
+        return subprocess.check_output(["git", "-C", str(repo), *args], text=True).strip()
+    return {"source_commit": git("rev-parse", "HEAD^{commit}"),
+            "source_tree": git("rev-parse", "HEAD^{tree}"),
+            "working_tree_dirty": bool(git("status", "--porcelain", "--untracked-files=all"))}
+
+
+def build_identity(repo, require_clean=False):
+    identity = source_identity(repo)
+    if require_clean and identity["working_tree_dirty"]:
+        raise RuntimeError("Local delivery requires committed, clean source; use a development build for uncommitted changes")
+    info = plistlib.loads((repo / "desktop/app/Info.plist").read_bytes())
+    return {"schema": "opl-netfleet-macos-build.v1", "platform": "macos",
+            "package_version": info["CFBundleShortVersionString"],
+            "package_release": info["CFBundleVersion"], "build_target_arch": platform.machine(),
+            "channel": "local" if require_clean else "development", **identity}
+
+
+def verify_source_unchanged(repo, identity):
+    current = source_identity(repo)
+    if current != {key: identity[key] for key in current}:
+        raise RuntimeError("Source identity changed during build; previous app preserved")
+
+
+def build(output, cache, require_clean=False):
     if output.suffix != ".app":
         raise RuntimeError("Output must have an .app extension")
     for relative in ("desktop/app/main.swift", "desktop/app/Info.plist", "desktop/helper/NetworkHelper.swift",
                      "desktop/runtime/server.mjs", "ui/desktop.html", "ui/vite.desktop.config.ts", "assets/branding/opl-netfleet-logo.png"):
         if not (REPO / relative).is_file():
             raise RuntimeError(f"Required desktop source missing: {relative}")
+    identity = build_identity(REPO, require_clean)
     web = build_desktop_ui()
     runtime = prepare(cache)
     # A sibling staging directory preserves a previously built app on failure.
@@ -96,6 +123,7 @@ def build(output, cache):
         for name in ("dependencies.json", "dependency-receipt.json"):
             shutil.copy2(runtime / name, resources / name)
         shutil.copy2(REPO / "desktop/app/Info.plist", contents / "Info.plist")
+        (resources / "build.json").write_text(json.dumps(identity, indent=2) + "\n")
         run("swiftc", "-O", "-target", platform.machine() + "-apple-macosx13.0", "-framework", "AppKit", "-framework", "WebKit",
             REPO / "desktop/app/main.swift", "-o", contents / "MacOS/OPL NetFleet")
         run("swiftc", "-O", "-target", platform.machine() + "-apple-macosx13.0", "-framework", "SystemConfiguration",
@@ -110,9 +138,8 @@ def build(output, cache):
                     run("codesign", "--force", "--sign", "-", path)
         run("codesign", "--force", "--sign", "-", app)
         run("codesign", "--verify", "--deep", "--strict", app)
-        source_tree = subprocess.check_output(["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True).strip()
-        receipt = {"app": str(output), "source_head": source_tree,
-                   "working_tree_dirty": bool(subprocess.check_output(["git", "-C", str(REPO), "status", "--porcelain"], text=True).strip()),
+        verify_source_unchanged(REPO, identity)
+        receipt = {"app": str(output), **identity,
                    "dependency_lock_sha256": sha256(HERE / "dependencies.json"),
                    "brand_logo_sha256": sha256(REPO / "assets/branding/opl-netfleet-logo.png"),
                    "signing": "ad-hoc", "notarized": False,
@@ -137,5 +164,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=REPO / ".build/macos/OPL NetFleet.app")
     parser.add_argument("--cache", type=Path, default=Path.home() / ".cache/opl-netfleet/macos")
+    parser.add_argument("--require-clean-source", action="store_true",
+                        help="Build for local delivery; reject uncommitted source before building")
     args = parser.parse_args()
-    build(args.output.resolve(), args.cache.resolve())
+    build(args.output.resolve(), args.cache.resolve(), args.require_clean_source)

@@ -1,4 +1,4 @@
-name: NetFleet package candidate
+name: NetFleet OpenWrt 候选包构建
 
 on:
   workflow_dispatch:

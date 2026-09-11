@@ -78,7 +78,11 @@ if not (
 PY
 
 remote_main=$(git -C "$repo_dir" ls-remote --refs origin refs/heads/main | awk 'NR == 1 { print $1 }')
-[[ "$remote_main" == "$source_commit" ]] || die 'candidate source is not current canonical main'
+[[ -n "$remote_main" ]] || die 'cannot resolve canonical main'
+# Fetch the observed commit, so later unrelated platform changes do not invalidate a qualified candidate.
+git -C "$repo_dir" fetch --no-tags origin "$remote_main"
+git -C "$repo_dir" merge-base --is-ancestor "$source_commit" "$remote_main" ||
+  die 'candidate source has not been absorbed into canonical main'
 release_state=$(gh release view "$tag" --repo "$repo" --json tagName 2>/dev/null || true)
 [[ -z "$release_state" ]] || die "release already exists and is immutable: $tag"
 

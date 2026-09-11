@@ -41,7 +41,7 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let menu = NSMenu()
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "关于 OPL NetFleet", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "关于 OPL NetFleet", action: #selector(showAbout), keyEquivalent: "").target = self
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "显示 OPL NetFleet", action: #selector(showWindow), keyEquivalent: "0").target = self
         appMenu.addItem(withTitle: "隐藏 OPL NetFleet", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
@@ -78,6 +78,20 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         statusMenu.addItem(.separator())
         statusMenu.addItem(withTitle: "退出并恢复网络", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
         statusItem.menu = statusMenu
+    }
+
+    @objc private func showAbout() {
+        var options: [NSApplication.AboutPanelOptionKey: Any] = [:]
+        if let url = Bundle.main.url(forResource: "build", withExtension: "json"),
+           let data = try? Data(contentsOf: url),
+           let identity = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+           let commit = identity["source_commit"] as? String {
+            let channel = identity["channel"] as? String == "local" ? "本地交付" : "开发构建"
+            let dirty = identity["working_tree_dirty"] as? Bool == true ? " · 含未提交修改" : ""
+            let arch = identity["build_target_arch"] as? String ?? ""
+            options[.credits] = NSAttributedString(string: "\(channel) · \(arch)\(dirty)\n源码 \(commit.prefix(12))")
+        }
+        NSApp.orderFrontStandardAboutPanel(options: options)
     }
 
     @objc private func showWindow() {

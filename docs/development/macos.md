@@ -26,6 +26,27 @@ macOS libc 兼容断点；源码、补丁与下载摘要均保留在构建入口
 App 图标由仓库现有 logo 通过 macOS `sips` 与 `iconutil` 生成；侧栏使用同一品牌源文件。
 当前持续验证仅覆盖 arm64。依赖清单中的 Intel 记录不代表已经构建或验收。
 
+## 本地交付
+
+平台版本只在 `desktop/app/Info.plist` 中维护；功能或修复交付时更新应用版本或构建修订，
+不要求与 OpenWrt 包版本一致。先完成下文严格检查并把源码吸收到主线，再在干净源码上执行：
+
+```sh
+python3 scripts/macos/build-app.py --require-clean-source
+open '.build/macos/OPL NetFleet.app'
+```
+
+默认不带参数的构建用于开发，不能当作干净源码交付。正式本地构建在源码 dirty 时提前
+拒绝，提交或清洁状态中途变化也会拒绝替换旧产物。回读 `.build/macos/build-receipt.json`
+及应用内 `Contents/Resources/build.json` 的版本、修订、`source_commit`、`source_tree`、
+架构和 `channel=local`；外部回执不是实际安装或运行的证明。
+
+更新 `/Applications/OPL NetFleet.app` 前，从应用菜单正常退出并确认进程已结束。保留旧
+应用作为单槽回退，将新应用完整复制后验证 `codesign --verify --deep --strict` 和包内
+身份，再启动并检查“关于 OPL NetFleet”与界面读取。失败恢复旧应用，成功后清理旧副本；
+不要在应用运行时覆盖包，也不要因更新而删除私有配置、安装 helper 或开启网络接管。
+本地交付直接使用 `.app`，不生成 DMG、下载版或公共发布。整体流程见[双平台交付](delivery.md)。
+
 ## 使用
 
 业务界面与 React 参考面共用组件，提供概览、出口、机场、地区、配置和诊断六页。
