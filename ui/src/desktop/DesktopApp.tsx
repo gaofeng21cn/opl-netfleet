@@ -5,7 +5,7 @@ import { Shell } from '../components/Shell';
 import { DesktopOverview } from './DesktopOverview';
 import { CapabilityPanel } from '../components/CapabilityPanel';
 import { PolicySummary } from '../components/PolicySummary';
-import { ResultNotice } from '../components/ResultNotice';
+import { ActionFeedback } from './ActionFeedback';
 import { SourceDialog } from './SourceDialog';
 import { RegionSelectionDialog } from '../components/RegionSelectionDialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -32,6 +32,7 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
   const [progress, setProgress] = useState<{ title: string; started: number } | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [result, setResult] = useState<{ id: string; title: string; detail: string; warning?: boolean } | null>(null);
+  const dismissResult = useCallback(() => setResult(null), []);
   const [showSubscriptions, setShowSubscriptions] = useState(false);
   const [diagnostic, setDiagnostic] = useState<'events' | 'connections' | 'logs'>('events');
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -75,7 +76,7 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
       const outcome = await work() as { message?: string; ready?: boolean } | undefined;
       try { applySnapshot(await client.readSnapshot()); }
       catch (reason) { setConnected(false); setReadError(reasonText(reason)); setResult({ id: crypto.randomUUID(), title, warning: true, detail: '操作已返回成功，但状态回读失败。请先刷新确认结果，不要重复提交。' }); return false; }
-      setResult({ id: crypto.randomUUID(), title, warning: outcome?.ready === false, detail: outcome?.message || `操作完成，状态已更新。用时 ${((Date.now() - started) / 1000).toFixed(1)} 秒。` });
+      setResult({ id: crypto.randomUUID(), title, warning: outcome?.ready === false, detail: outcome?.message || `已完成并更新状态 · ${((Date.now() - started) / 1000).toFixed(1)} 秒` });
       return true;
     } catch (reason) {
       try { applySnapshot(await client.readSnapshot()); }
@@ -93,13 +94,11 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
   const selectionBlocked = !connected || snapshot?.error ? '状态读取失败，请刷新后重试' : busy ? '已有操作正在执行' : !readyToSelect ? '启用 NetFleet 后可切换地区' : undefined;
   const automatic = automaticSelectionCopy(Boolean(status?.selection?.automation_paused));
   const sourceDialogOpen = showSubscriptions && view === 'providers';
-  const feedback = <>
-    {(readError || snapshot?.error) && <div className="nf-alert" role="alert"><AlertCircle aria-hidden="true" /><span>{readError || snapshot?.error}</span></div>}
-    {progress && <section className="nf-operation" role="status" aria-live="polite"><strong>{progress.title}</strong><p className="nf-operation-detail">请求正在执行，已等待 {elapsed} 秒。完成后将重新读取本机状态。</p></section>}
-    {result && <ResultNotice scope={location.origin} slot="desktop-action" identity={result.id} title={result.title} warning={result.warning}>{result.detail}</ResultNotice>}</>;
-  return <Shell platform="desktop" view={view} onViewChange={navigate} busy={busy} healthy={connected && !snapshot?.error} readOnly={!connected} canSelect={Boolean(readyToSelect && automaticId)} automationPaused={status?.selection?.automation_paused} canDisable={Boolean(readyToSelect)} dashboardReady={false} onRefresh={() => void refresh()} onSelect={() => setConfirmAutomatic(true)} onDisable={() => void run('退出增强并保留原生代理', () => client.disable())} onOpenDashboard={() => undefined}>
+  const readFailure = (readError || snapshot?.error) && <div className="nf-alert" role="alert"><AlertCircle aria-hidden="true" /><span>{readError || snapshot?.error}</span></div>;
+  const feedback = <ActionFeedback progress={progress} elapsed={elapsed} result={result} inline={sourceDialogOpen} onDismiss={dismissResult} />;
+  return <Shell notice={!sourceDialogOpen && feedback} platform="desktop" view={view} onViewChange={navigate} busy={busy} healthy={connected && !snapshot?.error} readOnly={!connected} canSelect={Boolean(readyToSelect && automaticId)} automationPaused={status?.selection?.automation_paused} canDisable={Boolean(readyToSelect)} dashboardReady={false} onRefresh={() => void refresh()} onSelect={() => setConfirmAutomatic(true)} onDisable={() => void run('退出增强并保留原生代理', () => client.disable())} onOpenDashboard={() => undefined}>
 
-    {!sourceDialogOpen && feedback}
+    {!sourceDialogOpen && readFailure}
     {!snapshot && <p className="nf-empty">{busy ? '正在读取本机运行状态…' : '尚未取得本机状态。请使用“刷新”重新连接。'}</p>}
     {snapshot && <>
       {view === 'overview' && <>
@@ -113,7 +112,7 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
         {!status && <p className="nf-empty">添加订阅后自动准备机场资源与业务策略。</p>}
         {Object.keys(snapshot.subscriptions).some(id => !status?.providers.some(item => (item.subscription_section || item.id) === id)) && <p className="nf-management-note">部分来源尚未纳入机场列表，可在“管理订阅来源”中查看准备状态。</p>}
       </div>
-      <SourceDialog open={sourceDialogOpen} onClose={() => setShowSubscriptions(false)}>{sourceDialogOpen && feedback}<SubscriptionManager snapshot={snapshot} disabled={blocked} client={client} run={run} /></SourceDialog>
+      <SourceDialog open={sourceDialogOpen} onClose={() => setShowSubscriptions(false)}>{sourceDialogOpen && <>{readFailure}{feedback}</>}<SubscriptionManager snapshot={snapshot} disabled={blocked} client={client} run={run} /></SourceDialog>
       {view === 'regions' && (status ? <RegionTable snapshot={status} full onChooseRegion={region => setSelection({ region })} blockedReason={selectionBlocked} /> : <p className="nf-empty">添加订阅并完成准备后，这里显示已识别地区。</p>)}
       <div hidden={view !== 'config'}><DesktopConfiguration snapshot={snapshot} disabled={blocked} client={client} run={run} onManageSubscriptions={() => { navigate('providers'); setShowSubscriptions(true); }} /></div>
       <div hidden={view !== 'events'}>

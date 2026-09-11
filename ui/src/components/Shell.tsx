@@ -45,6 +45,7 @@ interface ShellProps {
   onDisable(): void;
   onOpenDashboard(): void;
   children: React.ReactNode;
+  notice?: React.ReactNode;
 }
 
 export function Shell({
@@ -64,6 +65,7 @@ export function Shell({
   onDisable,
   onOpenDashboard,
   children,
+  notice,
 }: ShellProps) {
   const items = platform === 'desktop' ? nav.filter(item => item.id !== 'components') : nav;
   return (
@@ -131,6 +133,7 @@ export function Shell({
           </div>
         </header>
         <main className="nf-main">{children}</main>
+        {notice}
       </div>
 
       <nav className="nf-mobile-nav" aria-label="NetFleet 移动导航">
