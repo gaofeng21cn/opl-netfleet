@@ -75,12 +75,12 @@ routes_present = function(state) {
 	}
 	return true;
 };
-readiness = function(chains) {
+readiness = function(table_present) {
 	const core = process_state();
 	const state = ownership();
 	// The backend already reads this table for its DNS/TProxy checks in this observation.
-	const tables = chains == null ? parse(capture("nft -j list tables")) : null;
-	const table = chains != null ? length(keys(chains)) > 0 :
+	const tables = table_present == null ? parse(capture("nft -j list tables")) : null;
+	const table = table_present != null ? table_present == true :
 		length(filter(tables?.nftables ?? [], row => row.table?.family == "inet" && row.table?.name == "netfleet")) > 0;
 	const attached = state != null && state.core_pid == core.pid && table && routes_present(state);
 	return { ok: true, result: { ready: core.running && controller_ready() && attached,

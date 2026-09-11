@@ -1,6 +1,6 @@
 import { popen } from "fs";
 import { cursor } from "uci";
-import { listeners, rules, dns_ready as native_dns_ready } from "./health.uc";
+import { listeners, rule_snapshot, dns_ready as native_dns_ready } from "./health.uc";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
@@ -95,7 +95,8 @@ lan_runtime_state = function(dns_probe_url) {
 		};
 	}
 	const sockets = listeners();
-	const chains = rules(NFT_TABLE);
+	const snapshot = rule_snapshot(NFT_TABLE);
+	const chains = snapshot.chains;
 	const tproxy_tcp_wildcard = sockets.tcp[7892] == true;
 	const tproxy_udp_wildcard = sockets.udp[7892] == true;
 	const tproxy_rule_present = length(filter(chains.lan_tproxy ?? [], expr => expr.tproxy?.port == 7892)) > 0;
@@ -108,7 +109,7 @@ lan_runtime_state = function(dns_probe_url) {
 	const dns_query_ok = KIND == "native-mihomo" ?
 		(dns_enabled && dns_udp_wildcard && native_dns_ready(dns_port)) : dns_query_ready(dns_probe_url);
 	if (native_expected != null) {
-		const owner = context.use("mihomo.gateway").readiness(chains);
+		const owner = context.use("mihomo.gateway").readiness(snapshot.present);
 		const owner_ready = owner?.ok == true && owner?.result?.ready == true;
 		let proxy_chains = true;
 		let dns_chains = true;
@@ -179,7 +180,7 @@ path_absent = function(path) {
 // Observe only the selected owner's cleanup contract; mutation stays in its init service.
 cleanup_state = function() {
 	if (KIND == "native-mihomo") {
-		const response = context.use("mihomo.gateway").readiness(chains);
+		const response = context.use("mihomo.gateway").readiness(snapshot.present);
 		const completed = response?.ok == true;
 		// procd can remove the instance before the old process has exited.
 		// Match the native owner's start precondition before reusing its listeners.

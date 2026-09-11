@@ -24,20 +24,21 @@ export function listeners() {
 	return parse_listeners(tables);
 };
 
-export function rules(table) {
+export function rule_snapshot(table) {
 	const process = popen(`nft -j list table inet ${table} 2>/dev/null`);
 	let data = null;
 	try { data = process == null ? null : json(process.read("all")); } catch (error) {}
-	if (process == null || process.close() != 0) return {};
-	let chains = {};
+	if (process == null || process.close() != 0) return { present: false, chains: {} };
+	let chains = {}, present = false;
 	for (let item in data?.nftables ?? []) {
+		if (item.table?.family == "inet" && item.table?.name == table) present = true;
 		if (item.chain != null) chains[item.chain.name] ??= [];
 		if (item.rule != null) {
 			chains[item.rule.chain] ??= [];
 			for (let expr in item.rule.expr ?? []) push(chains[item.rule.chain], expr);
 		}
 	}
-	return chains;
+	return { present, chains };
 };
 
 const QUESTION = "\x06health\x0copl-netfleet\x07invalid\x00\x00\x10\x00\x01";
