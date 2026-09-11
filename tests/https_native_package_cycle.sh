@@ -50,6 +50,8 @@ UC
   test "$(jsonfilter -i "$transaction/journal.json" -e '@.phase')" = verifying
   # SIGKILL the worker shell; procd must respawn it and recover old bytes.
   ubus call service list '{"name":"opl-netfleet-https-update"}' >"$transaction/procd.json"
+  test "$(jsonfilter -i "$transaction/procd.json" -e '@["opl-netfleet-https-update"].instances.update.respawn.threshold')" = 3600
+  test "$(jsonfilter -i "$transaction/procd.json" -e '@["opl-netfleet-https-update"].instances.update.respawn.timeout')" = 2
   worker_shell=$(cat "$transaction/worker.pid")
   test -n "$worker_shell"
   kill -KILL "$worker_shell"

@@ -14,7 +14,7 @@ if [ "$mode" = start ]; then
  phase prepared
  ucode - "$stage" "$service" <<'UC'
 import * as fs from 'fs';
-const value={name:ARGV[1],instances:{update:{command:['/usr/bin/timeout','-k','5','600','/bin/sh',ARGV[0]+'/update-remote.sh','run',ARGV[0]],respawn:{threshold:3600,timeout:2,retry:3},stdout:false,stderr:false,term_timeout:30}}};
+const value={name:ARGV[1],instances:{update:{command:['/usr/bin/timeout','-k','5','600','/bin/sh',ARGV[0]+'/update-remote.sh','run',ARGV[0]],respawn:['3600','2','3'],stdout:false,stderr:false,term_timeout:30}}};
 const quote=v=>"'"+replace(v,"'","'\\''")+"'";
 if(system('ubus call service add '+quote(sprintf('%J',value))))die('update_start_failed');
 UC
