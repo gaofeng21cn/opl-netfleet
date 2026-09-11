@@ -72,7 +72,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.wfile.flush()
                 time.sleep(1)
             return
-        if url.path == '/compat-wire/events':
+        if url.path in ('/compat-wire/events', '/compat-wire/drain-events'):
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')
             self.send_header('Cache-Control', 'no-cache')
@@ -81,7 +81,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 for number in range(30):
                     self.wfile.write(f'data: {number}\n\n'.encode())
                     self.wfile.flush()
-                    time.sleep(0.1)
+                    time.sleep(0.5 if url.path.endswith('/drain-events') else 0.1)
             except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
                 pass
             return

@@ -44,6 +44,14 @@ UC
  (cd "$transaction"; sha256sum *.apk request.json update-remote.sh update-guard.uc >SHA256SUMS)
  case "$1" in reject) touch "$transaction/reject-acceptance";; kill) touch "$transaction/hold-acceptance";; esac
  sh "$transaction/update-remote.sh" start "$transaction"
+ if [ -n "${draining_stream:-}" ]; then
+  for attempt in $(seq 1 20); do
+   [ ! -f "$transaction/drain.json" ] || break
+   sleep 1
+  done
+  test -f "$transaction/drain.json"
+  kill -0 "$draining_stream"
+ fi
  if [ "$1" = kill ]; then
   for attempt in $(seq 1 90); do
    [ "$(jsonfilter -i "$transaction/journal.json" -e '@.phase')" != verifying ] || break
@@ -104,9 +112,9 @@ wait "$keepalive_sender" || true
 rm "$work/keepalive.in"
 cycle_transaction accept "$cycle_old" "$cycle_new"
 if [ -n "$probe_port" ]; then
- wire -fsSN 'https://wire.example/compat-wire/events' >"$work/drain-events.txt" &
+ wire -fsSN --max-time 40 'https://wire.example/compat-wire/drain-events' >"$work/drain-events.txt" &
  draining_stream=$!
- for attempt in $(seq 1 20); do grep -q '^data: 0$' "$work/drain-events.txt" && break; sleep 0.1; done
+ for attempt in $(seq 1 20); do grep -q '^data: 0$' "$work/drain-events.txt" && break; ucode -e 'sleep(100);'; done
  grep -q '^data: 0$' "$work/drain-events.txt"
  kill -0 "$draining_stream"
 fi
