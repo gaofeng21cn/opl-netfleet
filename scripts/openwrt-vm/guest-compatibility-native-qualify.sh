@@ -34,10 +34,11 @@ ucode - "$commit" "$tree" <<'UC'
 import * as fs from 'fs';
 import {sha256} from 'digest';
 const root='/tmp/compat-runtime';
-const base=fs.readfile('/tmp/compat-base-identity.json');
+const identity=fs.readfile('/tmp/compat-device-identity.json');
 for(let name in ['compat-manifest.json','device-identity-manifest.json']) {
  const m=json(fs.readfile(root+'/'+name));
- const expected=name=='device-identity-manifest.json'&&base?json(base):{source_commit:ARGV[0],source_tree:ARGV[1]};
+ const expected=name=='device-identity-manifest.json'&&identity?json(identity):{source_commit:ARGV[0],source_tree:ARGV[1]};
+ if(name=='device-identity-manifest.json'&&identity&&sprintf('%J',m)!=sprintf('%J',expected)) die('native_identity_manifest_mismatch');
  if(m.source_commit!=expected.source_commit||m.source_tree!=expected.source_tree||fs.basename(m.artifact)!=m.artifact||sha256(fs.readfile(root+'/'+m.artifact))!=m.sha256) die('native_package_identity_mismatch');
 }
 UC

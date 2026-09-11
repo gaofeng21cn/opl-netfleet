@@ -487,6 +487,9 @@ if [ "$lane_mode" = compatibility ]; then
 	if [ -n "${NETFLEET_COMPAT_BASE_IDENTITY:-}" ]; then
 		printf '%s\n' "$NETFLEET_COMPAT_BASE_IDENTITY" | ssh $ssh_common root@127.0.0.1 'cat >/tmp/compat-base-identity.json'
 	fi
+	if [ -n "${NETFLEET_COMPAT_DEVICE_IDENTITY:-}" ]; then
+		printf '%s\n' "$NETFLEET_COMPAT_DEVICE_IDENTITY" | ssh $ssh_common root@127.0.0.1 'cat >/tmp/compat-device-identity.json'
+	fi
 	if [ "${NETFLEET_COMPAT_BENCHMARK:-0}" = 1 ]; then
 		ssh $ssh_common root@127.0.0.1 'touch /tmp/netfleet-compat-benchmark'
 	fi

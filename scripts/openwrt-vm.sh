@@ -174,6 +174,7 @@ git -C "$repo_dir" archive "$source_commit" \
 package_archive=""
 package_manifest_sha=""
 base_identity=""
+device_identity=""
 if [[ -n "$packages" ]]; then
 	packages=$(cd "$packages" 2>/dev/null && pwd) || die "package candidate directory is unavailable"
 	package_commit=$source_commit
@@ -182,6 +183,18 @@ if [[ -n "$packages" ]]; then
 		base_identity=$(python3 "$repo_dir/scripts/https-compat/base.py" --packages "$packages" --qualification "$base_qualification" --ref "$source_commit")
 		package_commit=$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["source_commit"])' "$base_identity")
 		package_tree=$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["source_tree"])' "$base_identity")
+	fi
+	if [[ -n "$compat_package" ]]; then
+		device_identity=$(python3 - "$repo_dir" "$compat_package" "$package_commit" <<'PY'
+import json, sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1])/'scripts/https-compat'))
+from qualify import artifact, identity_matches_base
+identity = artifact(Path(sys.argv[2]), 'device-identity-manifest.json')
+identity_matches_base(identity, {'source_commit':sys.argv[3]})
+print(json.dumps(identity))
+PY
+)
 	fi
 	"$source_dir/scripts/verify-netfleet-release.py" \
 		--directory "$packages" --source-commit "$package_commit" --source-tree "$package_tree" >/dev/null
@@ -214,6 +227,7 @@ NETFLEET_QEMU_VERSION=$qemu_version \
 	NETFLEET_COMPAT_RUNTIME="$compat_runtime" \
 	NETFLEET_COMPAT_PACKAGE="$compat_package" \
 	NETFLEET_COMPAT_BASE_IDENTITY="$base_identity" \
+	NETFLEET_COMPAT_DEVICE_IDENTITY="$device_identity" \
 	NETFLEET_COMPAT_BENCHMARK="$benchmark" \
 	NETFLEET_PLUGIN_PACKAGES="$plugin_packages" \
 	NETFLEET_PACKAGE_ARCHIVE="$package_archive" \
