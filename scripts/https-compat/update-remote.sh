@@ -23,7 +23,7 @@ fi
 [ "$mode" = run ]
 exec >>worker.log 2>&1
 exec 8>/var/lock/opl-netfleet-operator.lock
-flock -n 8 || exit 1
+flock -w 60 8 || exit 1
 exec 9>/var/lock/opl-netfleet-deploy.lock
 old=$(jsonfilter -i request.json -e '@.old')
 new=$(jsonfilter -i request.json -e '@.new')
@@ -87,7 +87,7 @@ flock -u 9
 trap rollback EXIT INT TERM
 install "$new"
 phase verifying
-if [ -f /tmp/netfleet-compat-vm-authorized ] && [ -f hold-acceptance ]; then sleep 120;fi
+if [ -f /tmp/netfleet-compat-vm-authorized ] && [ -f hold-acceptance ]; then sleep 120 8>&- 9>&-;fi
 # Deliberate VM-only acceptance failure exercises the real rollback consumer.
 if [ -f /tmp/netfleet-compat-vm-authorized ] && [ -f reject-acceptance ]; then exit 1;fi
 verify
