@@ -180,7 +180,7 @@ path_absent = function(path) {
 // Observe only the selected owner's cleanup contract; mutation stays in its init service.
 cleanup_state = function() {
 	if (KIND == "native-mihomo") {
-		const response = context.use("mihomo.gateway").readiness(snapshot.present);
+		const response = context.use("mihomo.gateway").status();
 		const completed = response?.ok == true;
 		// procd can remove the instance before the old process has exited.
 		// Match the native owner's start precondition before reusing its listeners.
