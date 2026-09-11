@@ -146,3 +146,11 @@
 .nf-desktop tr.is-selected .nf-region-action { background: var(--nf-accent-soft); }
 
 .nf-desktop :is(.nf-table-section,.nf-policy-grid,.nf-table-tools) { background: transparent; }
+
+.nf-desktop table { background: var(--nf-surface); }
+.nf-desktop .nf-measurement-result { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 8px; }
+.nf-desktop .nf-measurement-result small { margin: 0; }
+.nf-desktop .nf-measurement > .nf-measurement-time { display: inline-block; margin: 4px 10px 0 0; }
+.nf-desktop .nf-measurement details { display: inline; margin: 0; }
+.nf-desktop .nf-measurement summary { display: inline-block; font-size: 12px; }
+.nf-desktop .nf-measurement details[open] { display: block; margin-top: 6px; }

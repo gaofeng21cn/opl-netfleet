@@ -36,9 +36,9 @@ function MeasurementCell({ value, snapshot }: { value?: Measurement | null; snap
   const exhausted = value.exclusions.quota_exhausted || 0;
   const unmeasured = entries.filter(entry => !entry.ok && entry.quota_state !== 'exhausted').length;
   const explanation = (reason: string | null) => measurementReasons[reason || 'measurement_unavailable'] || '未取得有效测速，原因暂无法解释';
-  return <td className="nf-measurement"><span>{delay(value.best_delay_ms, '未取得有效测速')}</span>
-    <small>{value.measured_count} 项测速成功{exhausted > 0 && ` · ${exhausted} 项流量耗尽`}{unmeasured > 0 && ` · ${unmeasured} 项无有效结果`}</small>
-    <small>采样于 {sampledAt(value.sampled_at)}</small>
+  return <td className="nf-measurement"><div className="nf-measurement-result"><span>{delay(value.best_delay_ms, '未取得有效测速')}</span>
+    <small>{value.measured_count} 项测速成功{exhausted > 0 && ` · ${exhausted} 项流量耗尽`}{unmeasured > 0 && ` · ${unmeasured} 项无有效结果`}</small></div>
+    <small className="nf-measurement-time">采样于 {sampledAt(value.sampled_at)}</small>
     <details><summary>查看测速详情{entries.length > 0 && `（${entries.length} 项）`}</summary>
       <p>每项对应一个机场在一个地区的候选线路，不代表节点数。测速结果不等于业务保护检查结果。</p>
       {entries.length ? <ul>{entries.map((entry, index) => <li key={index}>
