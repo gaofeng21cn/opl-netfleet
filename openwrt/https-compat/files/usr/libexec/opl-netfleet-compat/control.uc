@@ -268,7 +268,12 @@ return function(context, options) {
         }
         if(length(candidates)) {
             const key=io.canonical([epoch,candidates]);
-            if(!renewal||renewal.key!=key||now-renewal.at<0||now-renewal.at>=4) {call('renew',{epoch,candidates});io.renewed();renewal={key,at:now};}
+            if(!renewal||renewal.key!=key||now-renewal.at<0||now-renewal.at>=4) {
+                call('renew',{epoch,candidates});io.renewed();renewal={key,at:now};
+                // The gateway just revalidated this exact epoch, including live
+                // process/listener/routing admission. Failures clear preview in call().
+                if(preview?.value.epoch==epoch) preview.at=io.now();
+            }
         } else {bypass();state.reason=!length(target_rules)&&length(active.rules)?'rules_bypassed':'no_verified_targets';}
         state.intercepting=length(candidates)>0;save(state,previous);
     }

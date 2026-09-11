@@ -299,6 +299,19 @@ sleep 60
 cp /var/run/opl-netfleet-compat/profile.json "$work/profile.json"
 /etc/init.d/opl-netfleet-compat start
 wait_intercepting
+stage=gateway_epoch_change
+cp /etc/opl-netfleet/native/run/config.yaml "$work/profile-epoch-before.json"
+flock -w 10 /var/lock/opl-netfleet-deploy.lock ucode - <<'UC'
+import * as fs from 'fs';
+const p='/etc/opl-netfleet/native/run/config.yaml',v=json(fs.readfile(p));
+push(v.rules,'SRC-IP-CIDR,10.77.0.0/24,DIRECT');fs.writefile(p+'.new',sprintf('%J',v));fs.rename(p+'.new',p);
+UC
+sleep 7
+probe 4 http/1.1
+probe 6 http/1.1
+cp "$work/profile-epoch-before.json" /etc/opl-netfleet/native/run/config.yaml
+wait_intercepting
+probe 4 h2
 stage=manager_stall
 processes
 kill -STOP "$manager_pid"
