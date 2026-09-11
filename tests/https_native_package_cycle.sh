@@ -21,7 +21,7 @@ cycle_install() {
   flock -w 10 9
   # Explicit owner admission precedes APK: a rejected drain cannot write files.
   ucode /usr/libexec/opl-netfleet/main.uc plugin-package-drain https-compat >"$work/cycle-drain.json"
-  apk --no-network --repositories-file /dev/null add "$1" 9>&-
+  apk --no-network --repositories-file /dev/null --force-reinstall add "$1" 9>&-
  ) >>"$work/cycle.log" 2>&1
  test "$(pidof mihomo)" = "$base_pid"
  sha256sum -c "$work/base.sha256" >>"$work/cycle.log"

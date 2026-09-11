@@ -44,7 +44,8 @@ install() {
  flock -w 15 9 || return 1
  ucode "$main" plugin-package-drain https-compat >drain.json || { flock -u 9; return 1; }
  # No source/feed resolution and no other package may be downloaded.
- apk --no-network --repositories-file /dev/null add "$stage/$1" 9>&- || { flock -u 9; return 1; }
+ apk --no-network --repositories-file /dev/null ${2:-} add "$stage/$1" 9>&- || { flock -u 9; return 1; }
+ ucode "$main" plugin-package-resume https-compat >resume.json || { flock -u 9; return 1; }
  flock -u 9
 }
 verify() {
@@ -63,7 +64,7 @@ verify() {
 rollback() {
  trap - EXIT INT TERM
  phase recovering
- if install "$old" && verify; then phase rolled_back
+ if install "$old" --force-reinstall && verify; then phase rolled_back
  else
   # Preserve user intent, revoke only this plugin's new takeover.
   flock -w 15 9 && ucode "$main" plugin-package-drain https-compat >bypass.json || true
