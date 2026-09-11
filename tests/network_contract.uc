@@ -97,6 +97,12 @@ const extra = { secret: "keep", "tcp-concurrent": true, dns: { "fake-ip-filter":
 const removed = [];
 advanced.persist(extra, { delete: (package, section, option) => push(removed, option) }, merged.settings.advanced, inherit.advanced);
 check(extra["tcp-concurrent"] == null && extra.secret == "keep" && length(removed) == 1 && removed[0] == "tcp_concurrent", "persist_only_changed_fields");
+const sniff_before = { "sniffer.sniff": { TLS: { port: [443] } } };
+const sniff_after = { "sniffer.sniff": { HTTP: { port: [80] } } };
+advanced.persist(extra, { delete: () => true }, sniff_before, sniff_after);
+check(extra["netfleet-replace-sniff"] == true, "explicit_protocol_map_replacement");
+advanced.persist(extra, { delete: () => true }, sniff_after, { "sniffer.sniff": null });
+check(extra["netfleet-replace-sniff"] == null && extra.sniffer.sniff == null, "protocol_reset_removes_replacement");
 const explanation = advanced.explain(profile, {}, profile, [{ ".name": "mixin", fake_ip_filter: "0" }], null);
 check(filter(explanation, e => e.id == "dns.fake-ip-filter")[0].source == "override", "disabled_uci_flag_does_not_claim_override");
 check(index(sprintf("%J", explanation), "private-password") < 0 && index(sprintf("%J", explanation), "unchanged-secret") < 0, "explanation_does_not_expose_unowned_credentials");

@@ -18,6 +18,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+ucode /tmp/tests/network_device.uc "$work" legacy_sniff >"$work/legacy-sniff.log" 2>&1
 ucode /tmp/tests/network_device.uc "$work" apply >"$work/apply.log" 2>&1
 ucode /usr/libexec/opl-netfleet/main.uc status >"$work/status.json"
 [ "$(jsonfilter -i "$work/status.json" -e '@.result.runtime.lan_runtime.transparent_proxy_ready')" = true ]
