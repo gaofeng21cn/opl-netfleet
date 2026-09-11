@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -15,6 +16,24 @@ import qualify
 import update
 
 class EngineArtifacts(unittest.TestCase):
+    def test_independent_identity_source_on_newer_base(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def git(*args):
+                return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
+            git('init', '-q');git('config', 'user.name', 'Fixture');git('config', 'user.email', 'fixture@example.invalid')
+            source=root/'plugins/device-identity/control';source.parent.mkdir(parents=True);source.write_text('stable')
+            git('add', '.');git('commit', '-qm', 'identity')
+            identity={'source_commit':git('rev-parse','HEAD'),'source_tree':git('rev-parse','HEAD^{tree}')}
+            (root/'unrelated').write_text('base change');git('add','.');git('commit','-qm','new base')
+            fixed={'source_commit':git('rev-parse','HEAD')}
+            qualify.identity_matches_base(identity,fixed,root)
+            with self.assertRaises(ValueError):
+                qualify.identity_matches_base({**identity,'source_tree':'0'*40},fixed,root)
+            source.write_text('changed');git('add','.');git('commit','-qm','identity change')
+            with self.assertRaises(ValueError):
+                qualify.identity_matches_base(identity,{'source_commit':git('rev-parse','HEAD')},root)
+
     def test_name_and_bytes_are_bound(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);name='opl-netfleet-https-compat-0.5.3-r1.apk'

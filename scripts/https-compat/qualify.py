@@ -19,6 +19,17 @@ def artifact(directory, name):
     return value
 
 
+def identity_matches_base(identity, base, repo=ROOT):
+    commit = identity['source_commit']
+    tree = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', commit+'^{tree}'], text=True).strip()
+    if tree != identity['source_tree']:
+        raise ValueError('identity source tree mismatch')
+    changed = subprocess.check_output(['git', '-C', str(repo), 'diff', '--name-only',
+        commit, base['source_commit'], '--', 'plugins/device-identity'], text=True)
+    if changed.strip():
+        raise ValueError('identity source differs from the fixed base')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--packages', required=True, type=Path)
@@ -37,8 +48,7 @@ def main():
     tree = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', current['source_commit']+'^{tree}'], text=True).strip()
     if current['source_tree'] != tree or identity != old_identity:
         raise ValueError('engine source mismatch or unexpected identity plugin update')
-    if identity['source_commit'] != base['source_commit'] or identity['source_tree'] != base['source_tree']:
-        raise ValueError('identity plugin is not from the fixed base')
+    identity_matches_base(identity, base)
     result = {'schema':'opl-netfleet-https-plugin-qualification.v1', 'plugin_qualified':False,
               'source_commit':current['source_commit'], 'source_tree':tree,
               'base':base, 'engine':current, 'previous_engine':previous,
