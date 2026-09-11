@@ -5,11 +5,13 @@ const revision=sprintf('%064d',0);
 if(ARGV[0]=='--server') {
     const server=socket.listen({path:ARGV[1]+'/engine/engine.sock'},null,{socktype:socket.SOCK_STREAM});
     if(!server) die('fixture_listen_failed');
-    for(let i=0;i<2;i++) {
+    for(let i=0;i<1;i++) {
         socket.poll(1500,[server,socket.POLLIN]);
         const conn=server.accept();if(!conn) die('fixture_accept_failed');
         const query=conn.recv(4096);sleep(100);
-        const response=index(query,'show stat')==0?'# pxname,svname,scur\ningress,FRONTEND,0\nloopback_convert,BACKEND,0\n':
+        if(trim(query)!='show stat;show info') die('fixture_query_mismatch');
+        const response='# pxname,svname,scur,req_tot,hrsp_2xx,hrsp_3xx,hrsp_4xx,econ,eresp\n'+
+            'ingress,FRONTEND,0,0,0,0,0,0,0\nloopback_convert,BACKEND,0,0,0,0,0,0,0\n\n'+
             'Pid: 42\ndescription: '+revision+'\nVersion: fixture\n';
         conn.send(response,socket.MSG_NOSIGNAL);conn.close();
     }
