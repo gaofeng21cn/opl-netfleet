@@ -86,7 +86,7 @@ return function(options) {
     let locked_at=null,renewed_at=null;
     function lock_started() { if(profiling) locked_at=now(); }
     function lock_stopped() { if(profiling&&locked_at!=null) {record('lock_held',int((now()-locked_at)*1000));locked_at=null;} }
-    function renewed() { if(profiling) {const at=now();if(renewed_at!=null)record('renewal_interval',int((at-renewed_at)*1000));renewed_at=at;} }
+    function renewed(success) { if(success===false) {renewed_at=null;return;} if(profiling) {const at=now();if(renewed_at!=null)record('renewal_interval',int((at-renewed_at)*1000));renewed_at=at;} }
     function lock(wait) {
         const path = '/var/lock/opl-netfleet-deploy.lock', file = fs.open(path, 'ae', 0600);
         if (!file) die('mutation_busy');

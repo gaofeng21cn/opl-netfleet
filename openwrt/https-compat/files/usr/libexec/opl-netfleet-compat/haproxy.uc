@@ -241,10 +241,20 @@ frontend ${name}_http
         synchronized=identity;
     }
     function health() {
-        const info={},lines=split(command('show stat'),'\n');
-        for(let line in split(command('show info'),'\n')) {const n=index(line,': ');if(n>=0) info[substr(line,0,n)]=substr(line,n+2);}
-        const headers=split(replace(shift(lines),/^# /,''),','),rows=[];
-        for(let line in lines) if(length(line)) {const parts=split(line,','),row={};for(let n=0;n<length(headers);n++) row[headers[n]]=parts[n];push(rows,row);}
+        const info={},lines=split(command('show stat;show info'),'\n'),rows=[];
+        const fields=['pxname','svname','scur','req_tot','hrsp_2xx','hrsp_3xx','hrsp_4xx','econ','eresp'];
+        let positions=null;
+        for(let line in lines) {
+            if(index(line,'# pxname,')==0) {
+                const headers=split(substr(line,2),',');
+                positions=map(fields,key=>index(headers,key));
+                if(length(filter(positions,n=>n<0))) die('health_response_invalid');
+            } else if(index(line,',')>=0&&positions) {
+                const parts=split(line,','),row={};
+                for(let n=0;n<length(fields);n++) row[fields[n]]=parts[positions[n]];
+                push(rows,row);
+            } else {const n=index(line,': ');if(n>=0) info[substr(line,0,n)]=substr(line,n+2);}
+        }
         const ingress=filter(rows,row=>row.pxname=='ingress'&&row.svname=='FRONTEND')[0],probes=filter(rows,row=>row.pxname=='loopback_convert'&&row.svname=='BACKEND')[0];
         if(!ingress||!probes||!match(info.description ?? '',/^[0-9a-f]{64}$/)||!(+info.Pid>0)) die('health_response_invalid');
         const connections=max(0,+ingress.scur-(+probes.scur)),mapping=io.read(RUN+'/haproxy-rules.json',{}),rules={},events=[],observed={};

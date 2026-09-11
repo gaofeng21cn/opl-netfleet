@@ -16,13 +16,18 @@ return function(context, options) {
     const advance=loadfile(root+'/recovery.uc')();
     const gateway=context.use('mihomo.interception');
     const owner={owner:'https-compat',service:'opl-netfleet-compat',instance:'engine',user:'netfleet-compat'};
-    let epoch=null,renewal=null,preview=null,verified=null,certificate=null,ca_cache=null;
+    let epoch=null,renewal=null,preview=null,verified=null,certificate=null,ca_cache=null,cleared=false;
     function call(action,params) {
+        if(action=='prepare'||action=='renew') cleared=false;
         const response=io.measure('gateway_'+action,()=>gateway.request(owner,{action,...(params ?? {})}));
         if(response?.ok!==true) {preview=null;renewal=null;die(response?.error ?? 'lease_operation_failed');}
         return response.result;
     }
-    function bypass() {epoch=null;renewal=null;return call('bypass');}
+    function bypass() {
+        epoch=null;renewal=null;io.renewed(false);
+        if(cleared) return {intercepting:false,leases:0};
+        const value=call('bypass');cleared=value.intercepting===false&&value.leases===0;return value;
+    }
     function revision() {
         const config=fs.readfile(CONFIG);return config==null?null:io.sha256(config+'\u0000'+(fs.readfile(TRUST) ?? ''));
     }
