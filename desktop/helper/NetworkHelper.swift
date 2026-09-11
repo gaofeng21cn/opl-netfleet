@@ -13,7 +13,9 @@ let corePath = "/Library/Application Support/OPL NetFleet/Privileged/mihomo"
 let fm = FileManager.default
 struct Failure: Error, CustomStringConvertible { let description: String; init(_ text: String) { description = text } }
 func require(_ condition: Bool, _ message: String) throws { if !condition { throw Failure(message) } }
-func jsonData(_ value: Any) throws -> Data { try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) }
+// Mihomo reads JSON configuration through its YAML parser, which rejects JSON's
+// optional escaped slashes in regular expressions from the built-in policy.
+func jsonData(_ value: Any) throws -> Data { try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .withoutEscapingSlashes]) }
 func writePrivate(_ object: Any, _ path: String) throws {
     try jsonData(object).write(to: URL(fileURLWithPath: path), options: .atomic)
     chmod(path, 0o600)
