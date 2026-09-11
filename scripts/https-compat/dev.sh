@@ -29,6 +29,14 @@ case "${1:---help}" in
 esac
 [[ $# == 1 ]] || { usage >&2; exit 2; }
 cd "$root"
+# One qualification/benchmark VM per source workspace.  A second invocation
+# must fail before creating a QEMU or writing the shared evidence directory.
+lockdir="${NETFLEET_COMPAT_LOCKDIR:-${TMPDIR:-/tmp}/netfleet-https-compat-${UID:-0}.lock}"
+if ! mkdir "$lockdir" 2>/dev/null; then
+  printf 'Another HTTPS qualification is already running (%s).\n' "$lockdir" >&2
+  exit 3
+fi
+trap 'rmdir "$lockdir" 2>/dev/null || true' EXIT INT TERM
 if [[ "$action" == check ]]; then
   interpreter=${UCODE:-ucode}
   command -v "$interpreter" >/dev/null || { printf 'Set UCODE to a native UCode executable.\n' >&2; exit 2; }
