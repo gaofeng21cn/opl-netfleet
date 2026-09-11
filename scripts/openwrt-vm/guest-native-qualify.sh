@@ -39,7 +39,7 @@ finish() {
 	nft delete table ip6 netfleet_native_fixture 2>/dev/null
 	if [ "$rc" -ne 0 ]; then
 		echo "Native runtime qualification failed at: $stage" >&2
-		for file in "$work"/*.log "$work"/*-result.json; do
+		for file in "$work"/*.log "$work"/*.stderr "$work"/*-result.json; do
 			[ ! -f "$file" ] || { echo "--- $file" >&2; tail -60 "$file" >&2; }
 		done
 		ubus call service list '{"name":"opl-netfleet-core"}' >&2
