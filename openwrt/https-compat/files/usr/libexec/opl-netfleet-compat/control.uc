@@ -20,11 +20,13 @@ return function(context, options) {
     function call(action,params) {
         if(action=='prepare'||action=='renew') cleared=false;
         const response=io.measure('gateway_'+action,()=>gateway.request(owner,{action,...(params ?? {})}));
-        if(response?.ok!==true) {preview=null;renewal=null;die(response?.error ?? 'lease_operation_failed');}
+        if(response?.ok!==true) {preview=null;renewal=null;epoch=null;die(response?.error ?? 'lease_operation_failed');}
         return response.result;
     }
     function bypass() {
-        epoch=null;renewal=null;io.renewed(false);
+        // Clearing target leases retains the prepared probe chains. A later
+        // renew still checks the current gateway epoch before admitting traffic.
+        renewal=null;io.renewed(false);
         if(cleared) return {intercepting:false,leases:0};
         const value=call('bypass');cleared=value.intercepting===false&&value.leases===0;return value;
     }
@@ -201,6 +203,7 @@ return function(context, options) {
         const healthy=!reason&&live.ready&&live.processing_chain===true&&live.transparent_chain===true&&live.revision==expected;
         reason??=!live.ready?'engine_unavailable':!live.processing_chain?'processing_chain_failed':!live.transparent_chain?'transparent_chain_failed':'engine_revision_mismatch';
         const own_failure=index(['engine_unavailable','engine_restarted','processing_chain_failed','transparent_chain_failed','engine_revision_mismatch'],reason)>=0;
+        if(!healthy) epoch=null;
         const recovery=advance(previous.recovery,{requested:true,healthy,reason,now,count_failure:own_failure&&previous.intercepting===true});
         const state={...previous,recovery,intercepting:false,reason:recovery.reason,local_probes:live.local_probes ?? {},engine_pid:live.pid ?? previous.engine_pid};
         if(!healthy&&previous.intercepting===true&&own_failure) state.last_failure={at:time(),reason,health_error:live.health_error,
