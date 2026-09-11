@@ -32,7 +32,7 @@ if (phase == "legacy_sniff") {
 	const source = host.use("mihomo.backend").resolve_profile(host.use("platform.profile").current_profile());
 	const mixin = "/etc/opl-netfleet/native/mixin.json";
 	const original_source = fs.readfile(source), original_mixin = fs.readfile(mixin), original_uci = fs.readfile("/etc/config/netfleet");
-	try {
+	{
 		const profile = json(original_source), extra = original_mixin == null ? {} : json(original_mixin);
 		profile.sniffer = { enable: false, sniff: { TLS: { port: [443] } } };
 		extra.sniffer = { sniff: { HTTP: { port: [80] } } };
@@ -46,11 +46,9 @@ if (phase == "legacy_sniff") {
 		check(atomic_json(mixin, extra), "explicit_sniff_fixture");
 		const replaced = get();
 		check(replaced.ok && length(keys(replaced.result.settings.advanced["sniffer.sniff"])) == 1, "explicit_protocol_replacement");
-	} finally {
-		fs.writefile(source, original_source);
-		if (original_mixin == null) fs.unlink(mixin); else fs.writefile(mixin, original_mixin);
-		fs.writefile("/etc/config/netfleet", original_uci);
-	}
+	fs.writefile(source, original_source);
+	if (original_mixin == null) fs.unlink(mixin); else fs.writefile(mixin, original_mixin);
+	fs.writefile("/etc/config/netfleet", original_uci);
 } else if (phase == "apply") {
 	const uci = cursor();
 	check(uci.set("netfleet", "proxy", "network_vm_private", "preserve") && uci.commit("netfleet"), "private_uci_fixture");
