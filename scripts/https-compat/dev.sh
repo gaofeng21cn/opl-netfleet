@@ -37,7 +37,7 @@ if [[ "$action" == check ]]; then
   runtime="$root/openwrt/https-compat/files/usr/libexec/opl-netfleet-compat"
   "$interpreter" "${args[@]}" tests/https_native_policy_bounds.uc "$runtime"
   "$interpreter" "${args[@]}" tests/https_native_recovery.uc "$runtime"
-  python3 -m unittest discover -s tests -p test_plugin_sdk.py
+  python3 -m unittest tests.test_plugin_sdk tests.test_https_dev
   printf '%s\n' 'Portable contracts passed; run vm for real OpenWrt/TLS/fault coverage.'
   exit 0
 fi

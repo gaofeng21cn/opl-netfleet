@@ -144,8 +144,8 @@ return function(context, options) {
         if(!fs.lstat(EFFECTIVE)) io.atomic(EFFECTIVE,effective(config,io.read(TRUST,{}),identity.resolve(config)));
         isolation.prepare();engine.prepare(io.read(EFFECTIVE));isolation.readable();return {prepared:true};
     }
-    function reconcile(live) {
-        const active=io.read(EFFECTIVE),expected=engine.revision(active),now=io.now();
+    function reconcile(live,active,expected) {
+        const now=io.now();
         const certkey=io.canonical([live.pid,fs.stat(CA+'/probe-cert.pem')?.mtime]);
         if(certificate?.key!=certkey||now-certificate.at>=3600) {
             let renew=false;try {io.command(['openssl','x509','-in',CA+'/probe-cert.pem','-checkend','604800','-noout']);}catch(_){renew=true;}
@@ -175,25 +175,24 @@ return function(context, options) {
         if(previous.maintenance||previous.recovery?.latched) {
             bypass();save({...previous,intercepting:false,reason:previous.maintenance?'maintenance':'manual_recovery_required'},previous);return;
         }
-        const source=io.measure('identity_read',()=>identity.resolve(config,true));let network={},reason;
+        const source=io.measure('identity_read',()=>identity.resolve(config,true));let network={},reason,current=io.read(EFFECTIVE,{});
         try {
             network=snapshot();reason=network.reason ?? (network.ready?null:'native_gateway_unavailable');
             if(!reason) {
-                const current=io.read(EFFECTIVE,{});
-                if(io.canonical(current.egress)!=io.canonical(network.egress)) {bypass();io.atomic(EFFECTIVE,{...current,egress:network.egress});}
+                if(io.canonical(current.egress)!=io.canonical(network.egress)) {bypass();current={...current,egress:network.egress};io.atomic(EFFECTIVE,current);}
                 if(epoch!=network.epoch) {call('prepare',{epoch:network.epoch});epoch=network.epoch;}
             }
         } catch(error) {reason=error.message;}
         // No gateway admission means no transparent loopback path to prove.
         // Keep process/config readback, and resume wire probes before any lease.
         const live=unlocked(lock,()=>health(!reason));
-        if(live.ready&&reconcile(live)) {save({...previous,intercepting:false,reason:'engine_config_pending'},previous);return;}
+        const expected=fs.lstat(EFFECTIVE)?engine.revision(current):null;
+        if(live.ready&&reconcile(live,current,expected)) {save({...previous,intercepting:false,reason:'engine_config_pending'},previous);return;}
         const starting=live.starting&&live.pid!=previous.ready_engine_pid;
         // Gateway admission also disappears during an engine restart. That is
         // a consequence of the crash, not a reason to discard its fault count.
         if(previous.intercepting===true&&previous.ready_engine_pid&&live.pid!=previous.ready_engine_pid)
             reason=live.pid?'engine_restarted':'engine_unavailable';
-        const expected=fs.lstat(EFFECTIVE)?engine.revision(io.read(EFFECTIVE)):null;
         const healthy=!reason&&live.ready&&live.processing_chain===true&&live.transparent_chain===true&&live.revision==expected;
         reason??=!live.ready?'engine_unavailable':!live.processing_chain?'processing_chain_failed':!live.transparent_chain?'transparent_chain_failed':'engine_revision_mismatch';
         const own_failure=index(['engine_unavailable','engine_restarted','processing_chain_failed','transparent_chain_failed','engine_revision_mismatch'],reason)>=0;
@@ -229,7 +228,7 @@ return function(context, options) {
             if(!rule.enabled||rule.strategy!='h2') continue;
             const old=rule_states[rule.id] ?? {},errors=filter(live.failure_events ?? [],event=>event.rule==rule.id&&event.id>(old.last_error ?? 0));
             const new_error=length(errors)>0;
-            const result=old.intercepting!==true&&(rule.match=='exact'||observed[rule.id])?
+            const result=!old.latched&&old.intercepting!==true&&(rule.match=='exact'||observed[rule.id])?
                 probes.request('upstream',{...rule,...(observed[rule.id] ?? {})},network.egress):null;
             const probe=result ?? old.probe ?? {},probe_ok=probe.ok ?? old.probe_ok ?? (rule.match=='suffix');
             const failure=new_error?errors[length(errors)-1]:old.last_failure;
@@ -240,7 +239,7 @@ return function(context, options) {
             if(!current.intercepting) {active.blocked_rules??=[];push(active.blocked_rules,rule.id);}
         }
         state.rule_recovery=rule_states;
-        if(io.canonical(io.read(EFFECTIVE))!=io.canonical(active)) {
+        if(io.canonical(current)!=io.canonical(active)) {
             const same_engine=engine.revision(active)==live.revision;
             if(!same_engine) bypass();
             io.atomic(EFFECTIVE,active);

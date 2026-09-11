@@ -332,6 +332,30 @@ test "$(jsonfilter -i "$work/crash-state.json" -e '@.recovery.latched')" = true
 ucode /tmp/tests/https_native_guest.uc recover >"$work/recover.log"
 wait_intercepting
 probe 4 h2
+stage=latched_rule
+# Fault fixture publishes only rule state under the ordinary mutation lock.
+flock -w 10 /var/lock/opl-netfleet-deploy.lock ucode - <<'UC'
+import * as fs from 'fs';
+const path='/var/run/opl-netfleet-compat/state.json',state=json(fs.readfile(path));
+state.rule_recovery.wire.latched=true;fs.writefile(path+'.new',sprintf('%J',state));fs.rename(path+'.new',path);
+UC
+sleep 12
+rule_probe_before=$(jsonfilter -i /var/run/opl-netfleet-compat/state.json -e '@.rule_recovery.wire.probe.at')
+sleep 12
+test "$(jsonfilter -i /var/run/opl-netfleet-compat/state.json -e '@.rule_recovery.wire.probe.at')" = "$rule_probe_before"
+probe 4 http/1.1
+ucode - <<'UC'
+import * as fs from 'fs';
+const main='/usr/libexec/opl-netfleet/main.uc',p=fs.popen('ucode '+main+' compatibility-get'),v=json(p.read('all'));
+if(p.close()||!v.ok)die('state_read_failed');
+fs.writefile('/tmp/rule-recover.json',sprintf('%J',{request:{revision:v.result.revision,operation:'recover',rule:'wire'}}));
+if(system('ucode '+main+' compatibility-probe /tmp/rule-recover.json >/dev/null'))die('rule_recover_failed');
+fs.unlink('/tmp/rule-recover.json');
+UC
+wait_intercepting
+probe 4 h2
+stage=resource_pressure
+. /tmp/tests/https_native_resource_pressure.sh
 stage=disabled_wire
 ucode /tmp/tests/https_native_guest.uc disable >"$work/disable.log"
 probe 4 http/1.1

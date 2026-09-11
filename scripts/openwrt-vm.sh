@@ -165,6 +165,7 @@ git -C "$repo_dir" archive "$source_commit" \
 	openwrt/files/etc/opl-netfleet/rulesets.lock.json \
 	scripts/deploy-openwrt-remote.sh \
 	scripts/update-openwrt-plugins-remote.sh scripts/observe-openwrt.uc \
+	scripts/https-compat/update-remote.sh scripts/https-compat/update-guard.uc \
 	scripts/openwrt-vm \
 	scripts/install-netfleet.sh \
 	scripts/verify-netfleet-release.py examples/plugins plugins/device-identity tests |

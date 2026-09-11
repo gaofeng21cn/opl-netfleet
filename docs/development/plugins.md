@@ -478,10 +478,32 @@ PACKAGES=/tmp/base-candidate COMPAT_PACKAGES=/tmp/compat-candidate OUTPUT=/tmp/c
 构建和 VM 只读取已提交的 `REF`，不会把尚未提交的源码误报为已验证包；输出放在仓库外。
 SDK 是 Linux 构建环境，VM 是 macOS/OpenWrt 验证环境，不是必须在同一环境执行的脚本。
 
-当前 HTTPS 构建入口同时产出引擎与 Device identity；管理插件来自基础包构建产物。
-这不是要求安装时更新全部包。实际替换仅选择发生变化且依赖满足的插件包，保留其他
-包、用户配置与加载选择。若修改受限 gateway 接口，其 owner 是 Mihomo 插件，须另行
-纳入依赖变更与基础路径回归，不能作为 HTTPS 内部优化绕过验证。
+固定基座迭代时设置 `NETFLEET_COMPAT_IDENTITY_FROM=/path/to/previous-compat`，构建器只
+编译 HTTPS 引擎，复用已签名的 Device identity；管理插件来自基础包。SDK 首次准备使用
+`bash scripts/prepare-openwrt-sdk.sh --sdk /path/to/sdk`。每个开发工作区使用自己的可写
+SDK 和输出目录，源码只读挂载；运行时没有 SDK、Python 或构建工具依赖。
+
+```sh
+PACKAGES=/tmp/qualified-base COMPAT_PACKAGES=/tmp/compat-candidate \
+  BASE_QUALIFICATION=/tmp/base-qualification.json PREVIOUS=/tmp/previous-compat \
+  OUTPUT=/tmp/compat-proof bash scripts/https-compat/dev.sh qualify
+# 相同参数将 qualify 换为 benchmark，执行四场景、每场景三次五分钟测量。
+python3 scripts/https-compat/compare.py /tmp/baseline.json /tmp/compat-proof/plugin-qualification.json
+```
+
+固定基座检查会拒绝任何宿主、Mihomo 或 Device identity 运行源码变化；它们需要新的
+完整基础资格。独立资格验证安装、实际验收失败回退、更新执行进程中断恢复及基础网络
+不变，并绑定所有包与测试身份。只替换引擎的设备更新入口是
+`scripts/https-compat/update.py --help`；先用相同输入加 `--dry-run` 验证资格。
+执行后按输出的目标私有 `stage/journal.json` 回读 `complete`、`rolled_back` 或错误状态，
+不因 SSH 中断重新发起安装。`installed-before.json` 记录真实目标包组合；测试基座身份
+不能替代目标包、依赖、原路径与实际业务验收。
+
+开发诊断额外运行一分钟开启计时的管理轮次，阶段记录在回执 `profile`。常规启动不记录；
+计时只包括阶段耗时和当前管理进程及已回收子进程的 CPU 累计差。嵌套阶段不能相加，
+异步地址同步可能跨越轮次，因此以 cgroup 总量作为成本比较权威。计时采样使用系统
+单调时钟的 10 ms 精度；锁持有时间不包括放锁等待探针的区间。基准四场景在计时关闭时
+执行。实际替换只选择发生变化且依赖满足的包，保留用户配置与加载选择。
 
 官方插件遵循[原生运行成本合同](../architecture/microkernel.md#官方插件运行成本)。
 开发资格包可保留迁移中的旧实现用于隔离比较，正式原生候选必须验证 APK 的实际

@@ -50,10 +50,9 @@ UC
   test "$(jsonfilter -i "$transaction/journal.json" -e '@.phase')" = verifying
   # SIGKILL the worker shell; procd must respawn it and recover old bytes.
   ubus call service list '{"name":"opl-netfleet-https-update"}' >"$transaction/procd.json"
-  worker_timeout=$(jsonfilter -i "$transaction/procd.json" -e '@["opl-netfleet-https-update"].instances.update.pid')
-  worker_shell=$(cat "/proc/$worker_timeout/task/$worker_timeout/children")
+  worker_shell=$(cat "$transaction/worker.pid")
   test -n "$worker_shell"
-  kill -KILL $worker_shell
+  kill -KILL "$worker_shell"
  fi
  for attempt in $(seq 1 150); do
   result=$(jsonfilter -i "$transaction/journal.json" -e '@.phase')
