@@ -8,6 +8,18 @@ main=/usr/libexec/opl-netfleet/main.uc
 pid=$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.core.pid')
 [ -n "$pid" ]
 pids=''
+cleanup() {
+ rc=$?
+ trap - EXIT INT TERM
+ if [ "$rc" -ne 0 ]; then
+  for child in $pids; do kill "$child" 2>/dev/null || true; done
+  for file in "$work"/*.stderr "$work"/transfer-*.json; do
+   [ ! -f "$file" ] || { echo "--- $file" >&2; cat "$file" >&2; }
+  done
+ fi
+ exit "$rc"
+}
+trap cleanup EXIT INT TERM
 for family in 4 6; do
  destination=198.19.0.1
  [ "$family" != 6 ] || destination='[2001:db8:2::1]'
@@ -15,12 +27,12 @@ for family in 4 6; do
   ip netns exec nf-client curl -q -fsS --noproxy '*' --connect-timeout 3 --max-time 60 \
    --cacert /tmp/local-probe.crt --resolve "netfleet-probe.test:$port:$destination" \
    "https://netfleet-probe.test:$port/native-workload/payload" -o "$work/payload-$family-$copy" \
-   --write-out '%{json}' >"$work/transfer-$family-$copy.json" &
+   --write-out '%{json}' >"$work/transfer-$family-$copy.json" 2>"$work/transfer-$family-$copy.stderr" &
   pids="$pids $!"
  done
  ip netns exec nf-client curl -q -fsSN --noproxy '*' --connect-timeout 3 --max-time 45 \
   --cacert /tmp/local-probe.crt --resolve "netfleet-probe.test:$port:$destination" \
-  "https://netfleet-probe.test:$port/native-workload/events" >"$work/events-$family" &
+  "https://netfleet-probe.test:$port/native-workload/events" >"$work/events-$family" 2>"$work/events-$family.stderr" &
  pids="$pids $!"
 done
 # Control-plane reads run while the sustained streams and bulk transfers are active.

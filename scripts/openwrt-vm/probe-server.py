@@ -60,11 +60,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(block)
             return
         if url.path == '/native-workload/events':
+            events = [f'data: {number}\n\n'.encode() for number in range(30)]
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')
+            # This finite fixture must finish at an HTTP boundary. An abrupt TLS
+            # EOF is not a successful stream completion for OpenWrt's mbedTLS curl.
+            self.send_header('Content-Length', str(sum(map(len, events))))
             self.end_headers()
-            for number in range(30):
-                self.wfile.write(f'data: {number}\n\n'.encode())
+            for event in events:
+                self.wfile.write(event)
                 self.wfile.flush()
                 time.sleep(1)
             return
