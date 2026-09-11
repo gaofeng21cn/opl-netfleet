@@ -49,6 +49,7 @@ if (phase == "legacy_sniff") {
 	fs.writefile(source, original_source);
 	if (original_mixin == null) fs.unlink(mixin); else fs.writefile(mixin, original_mixin);
 	fs.writefile("/etc/config/netfleet", original_uci);
+}
 } else if (phase == "apply") {
 	const uci = cursor();
 	check(uci.set("netfleet", "proxy", "network_vm_private", "preserve") && uci.commit("netfleet"), "private_uci_fixture");
