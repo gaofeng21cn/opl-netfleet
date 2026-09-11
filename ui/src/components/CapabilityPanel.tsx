@@ -1,40 +1,30 @@
-import { ChevronRight, Globe2 } from 'lucide-react';
-import { capabilityName, capabilityRoute, delay, failOpenOrder, modeName, reasonText, regionName } from '../lib/format';
+import { capabilityName, capabilityRoute, delay, failOpenOrder, modeName, reasonText, regionName, providerName } from '../lib/format';
 import type { Capability, StatusSnapshot } from '../types';
 
-export function CapabilityPanel({ snapshot, capability, compact = false, onChooseRegion, onSelectAuto, disabled = false }: {
-  snapshot: StatusSnapshot; capability: Capability; compact?: boolean; disabled?: boolean;
-  onChooseRegion?(): void; onSelectAuto?(): void;
+export function CapabilityPanel({ snapshot, capability, compact = false, onChooseRegion, onSelectAuto, onOpen, active, disabled = false }: {
+  snapshot: StatusSnapshot; capability: Capability; compact?: boolean; disabled?: boolean; active?: boolean;
+  onChooseRegion?(): void; onSelectAuto?(): void; onOpen?(): void;
 }) {
-  const measured = snapshot.active && snapshot.runtime.netfleet_present !== false;
-  const inactiveMode = snapshot.runtime.mihomo_running === false ? '已停止' : '原生配置';
-  const route = measured ? capabilityRoute(snapshot, capability) : [inactiveMode];
-  const failOpen = failOpenOrder(snapshot, capability);
-  return (
-    <article className={`nf-capability ${measured ? capability.alive ? 'is-healthy' : 'is-unhealthy' : ''} ${compact ? 'is-compact' : ''}`}>
-      <div className="nf-capability-heading">
-        <span className="nf-capability-icon"><Globe2 aria-hidden="true" /></span>
-        <div><h2>{capabilityName(capability)}</h2><span>{capability.base_groups?.join('、') || capability.base_group || '未绑定'}</span></div>
-      </div>
-      <details className="nf-route-block"><summary>完整节点链路</summary>
-        <span className="nf-field-label">当前路由链</span>
-        <div className="nf-route" aria-label="当前路由链">
-          {route.map((step, index) => (
-            <span className="nf-route-part" key={`${step}-${index}`}>
-              <span>{step}</span>{index < route.length - 1 && <ChevronRight aria-hidden="true" />}
-            </span>
-          ))}
-        </div>
-      </details>
-      <dl className="nf-capability-metrics">
-        <div><dt>当前延迟</dt><dd className={measured ? capability.alive ? 'is-ok' : 'is-warning' : undefined}>{measured ? delay(capability.reason?.delay_ms) : '未测量'}</dd></div>
-        <div><dt>健康状态</dt><dd>{measured && <span className={`nf-health-dot ${capability.alive ? '' : 'is-bad'}`} />}{measured ? capability.alive ? '健康' : '不可用' : '未测量'}</dd></div>
-        <div><dt>模式</dt><dd>{measured ? modeName(capability) : inactiveMode}</dd></div>
-        <div className="nf-fail-open"><dt>运行时网络退路</dt><dd>{failOpen.join(' → ') || '未编译'}</dd></div>
-      </dl>
-      <p className="nf-capability-reason">{!measured ? snapshot.runtime.mihomo_running === false ? '代理已停止，启用 NetFleet 后可测量和切换出口。' : '当前使用原生配置，NetFleet 未接管出口。' : capability.user_mode === 'manual_region' ? `手动保持 ${regionName(snapshot, capability.manual_region_id || capability.region_id)} · 整轮后台自动选优已暂停` : reasonText(snapshot, capability)}</p>
-      {!compact && <div className="nf-region-preview"><button type="button" className="nf-button-secondary" disabled={disabled || !onChooseRegion || !capability.can_select_region} title={disabled ? '当前状态不可操作，请确认 NetFleet 已启用且状态读取正常' : onChooseRegion ? '指定地区并暂停整轮后台自动选优' : '本机参考面为只读，请在设备 LuCI 中确认切换'} onClick={onChooseRegion}>指定地区</button>
-      {onSelectAuto && snapshot.selection?.automation_paused && <button type="button" className="nf-button-secondary" disabled={disabled} onClick={onSelectAuto}>恢复自动选优</button>}</div>}
-    </article>
-  );
+  const attached = (active ?? snapshot.active) && snapshot.runtime.netfleet_present !== false;
+  const measured = attached && snapshot.runtime.controller_available !== false;
+  const stopped = snapshot.runtime.mihomo_running === false;
+  const direct = capability.data_path === 'direct_manual' || capability.data_path === 'direct_fallback';
+  const current = !attached ? '未接管' : !measured ? '状态待确认' : direct ? '直连' : capability.data_path === 'provider_fallback' ? '机场退路' : regionName(snapshot, capability.region_id);
+  const provider = !attached ? '启用后显示当前路径' : !measured ? '控制接口暂不可读' : direct ? '不经过机场' : providerName(snapshot, capability.provider_id);
+  const selection = measured || ['direct', 'manual_region'].includes(capability.user_mode || '') ? modeName(capability) : capability.mode === 'automatic' ? '自动选优' : capability.mode === 'manual' ? '手动选择' : '按已保存策略';
+  const reason = !measured ? '' : capability.user_mode === 'manual_region' ? `手动保持 ${regionName(snapshot, capability.manual_region_id || capability.region_id)} · 后台自动选优已暂停` : reasonText(snapshot, capability);
+  const business = capability.business_routes ?? [];
+  return <article className={`nf-exit-panel${compact ? ' is-compact' : ''}`}>
+    <div className="nf-exit-panel-heading"><h2>{capabilityName(capability)}</h2><div className="nf-exit-actions">
+      {onSelectAuto && snapshot.selection?.automation_paused && <button type="button" className="nf-button-secondary" disabled={disabled} onClick={onSelectAuto}>恢复自动选优</button>}
+      {compact && disabled && onOpen ? <button type="button" className="nf-button-secondary" onClick={onOpen}>查看详情</button> : <button type="button" className="nf-button-secondary" disabled={disabled || !onChooseRegion || !capability.can_select_region} title={disabled ? '启用 NetFleet 并确认状态后可指定地区' : '指定地区并暂停后台自动选优'} onClick={onChooseRegion}>指定地区</button>}
+    </div></div>
+    <dl className="nf-exit-current"><div className="nf-exit-path"><dt>当前路径</dt><dd>{current}<small>{provider}</small></dd></div><div><dt>选择方式</dt><dd>{selection}</dd></div><div><dt>延迟</dt><dd>{measured && !direct ? delay(capability.reason?.delay_ms) : '未测量'}</dd></div><div><dt>健康状态</dt><dd>{measured ? direct ? capability.data_path === 'direct_manual' ? '手动直连' : '直连退路' : capability.alive ? '健康' : '不可用' : '未测量'}</dd></div></dl>
+    {reason && <p className="nf-exit-reason">{reason}</p>}
+    {!compact && <details className="nf-exit-details"><summary>业务范围与路径详情</summary>
+      {(['capability', 'direct', 'unknown'] as const).map(kind => { const routes = business.filter(item => kind === 'unknown' ? !['capability', 'direct'].includes(item.default_route) : item.default_route === kind); return routes.length > 0 && <div className="nf-exit-business" key={kind}><strong>{kind === 'capability' ? '默认走此出口' : kind === 'direct' ? '默认直连' : '默认方式未提供'}</strong><span>{routes.map(item => item.name).join('、')}</span></div>; })}
+      {!business.length && <div className="nf-exit-business"><strong>已绑定业务组</strong><span>{capability.base_groups?.join('、') || capability.base_group || '未提供'}<small>当前状态未提供各业务的默认方式。</small></span></div>}
+      <dl className="nf-exit-detail-fields"><div><dt>完整节点链路</dt><dd>{measured ? capabilityRoute(snapshot, capability).join(' → ') : attached ? '当前路径暂不可读' : stopped ? '代理已停止' : '当前使用原生配置'}</dd></div><div><dt>运行时故障退路</dt><dd>{failOpenOrder(snapshot, capability).join(' → ')}</dd></div></dl>
+    </details>}
+  </article>;
 }

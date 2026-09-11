@@ -6,7 +6,7 @@ import { DesktopOverview } from './DesktopOverview';
 import { CapabilityPanel } from '../components/CapabilityPanel';
 import { PolicySummary } from '../components/PolicySummary';
 import { ResultNotice } from '../components/ResultNotice';
-import { DataSourceBar } from '../components/DataSourceBar';
+import { SourceDialog } from './SourceDialog';
 import { RegionSelectionDialog } from '../components/RegionSelectionDialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ProviderTable, RegionTable } from '../views/Tables';
@@ -15,11 +15,9 @@ import type { ViewId } from '../types';
 import type { DesktopNetFleetClient } from './client';
 import type { DesktopSnapshot } from './types';
 import { DesktopConfiguration } from './DesktopConfiguration';
-import { LogsAndBackup, RuntimeControls, SubscriptionManager, type RunAction } from './panels';
+import { DesktopTools, RuntimeControls, SubscriptionManager, type RunAction } from './panels';
 
 const pages = ['overview', 'exits', 'providers', 'regions', 'config', 'events'] as const;
-const titles: Record<string, string> = { overview: '网络概览', exits: '出口', providers: '机场', regions: '地区', config: '配置', events: '诊断' };
-const descriptions: Record<string, string> = { overview: '查看本机连接状态，管理代理与网络接入。', exits: '为不同业务选择合适的出口。', providers: '管理订阅来源，比较机场覆盖与连接质量。', regions: '查看可用地区，为业务指定出口位置。', config: '管理基础配置、业务策略与自动运行。', events: '查看连接与运行记录，备份本机配置。' };
 const currentPage = (): ViewId => pages.includes(location.hash.slice(1) as typeof pages[number]) ? location.hash.slice(1) as ViewId : 'overview';
 const reasonText = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
 
@@ -35,11 +33,11 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
   const [elapsed, setElapsed] = useState(0);
   const [result, setResult] = useState<{ id: string; title: string; detail: string; warning?: boolean } | null>(null);
   const [showSubscriptions, setShowSubscriptions] = useState(false);
+  const [diagnostic, setDiagnostic] = useState<'events' | 'connections' | 'logs'>('events');
   const [selection, setSelection] = useState<Selection | null>(null);
   const [confirmAutomatic, setConfirmAutomatic] = useState(false);
   const inflight = useRef(false);
   const readPending = useRef<Promise<void> | null>(null);
-  const subscriptionsRef = useRef<HTMLDivElement>(null);
   const navigate = useCallback((next: ViewId) => { if (!pages.includes(next as typeof pages[number])) return; setView(next); history.pushState(null, '', `#${next}`); }, []);
   const applySnapshot = (value: DesktopSnapshot) => { setSnapshot(value); setConnected(true); setReadError(null); setFetchedAt(Math.floor(Date.now() / 1000)); };
   const refresh = useCallback(async () => {
@@ -68,7 +66,6 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
     return () => { removeEventListener('popstate', pop); removeEventListener('hashchange', pop); removeEventListener('netfleet-command', command); };
   }, [navigate, refresh]);
   useEffect(() => { if (!progress) return; const tick = () => setElapsed(Math.floor((Date.now() - progress.started) / 1000)); tick(); const timer = setInterval(tick, 1000); return () => clearInterval(timer); }, [progress]);
-  useEffect(() => { if (showSubscriptions && view === 'providers') subscriptionsRef.current?.scrollIntoView({ block: 'nearest' }); }, [showSubscriptions, view]);
   const run: RunAction = async (title, work) => {
     if (inflight.current || !connected) return false;
     inflight.current = true; setBusy(true); setProgress({ title, started: Date.now() }); setResult(null);
@@ -92,35 +89,41 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
   const businessBlocked = blocked || !status || Boolean(snapshot?.error);
   const automaticId = status?.selection?.automatic_capability_id || status?.capabilities.find(capability => capability.enabled && capability.mode === 'automatic')?.id;
   const readyToSelect = !businessBlocked && snapshot?.runtime.mode === 'netfleet' && snapshot.runtime.running;
-  const openSubscriptions = () => { setShowSubscriptions(true); subscriptionsRef.current?.scrollIntoView({ block: 'nearest' }); };
+  const openSubscriptions = () => setShowSubscriptions(true);
   const selectionBlocked = !connected || snapshot?.error ? '状态读取失败，请刷新后重试' : busy ? '已有操作正在执行' : !readyToSelect ? '启用 NetFleet 后可切换地区' : undefined;
   const automatic = automaticSelectionCopy(Boolean(status?.selection?.automation_paused));
-  return <Shell platform="desktop" view={view} onViewChange={navigate} busy={busy} healthy={connected && !snapshot?.error} readOnly={!connected} canSelect={Boolean(readyToSelect && automaticId)} automationPaused={status?.selection?.automation_paused} canDisable={Boolean(readyToSelect)} dashboardReady={false} onRefresh={() => void refresh()} onSelect={() => setConfirmAutomatic(true)} onDisable={() => void run('退出增强并保留原生代理', () => client.disable())} onOpenDashboard={() => undefined}>
-    <div className={`nf-page-heading${view === 'overview' ? ' nf-desktop-overview-heading' : ''}`}><div><h1>{titles[view]}</h1>{view !== 'overview' && <p>{descriptions[view]}</p>}</div></div>
+  const sourceDialogOpen = showSubscriptions && view === 'providers';
+  const feedback = <>
     {(readError || snapshot?.error) && <div className="nf-alert" role="alert"><AlertCircle aria-hidden="true" /><span>{readError || snapshot?.error}</span></div>}
     {progress && <section className="nf-operation" role="status" aria-live="polite"><strong>{progress.title}</strong><p className="nf-operation-detail">请求正在执行，已等待 {elapsed} 秒。完成后将重新读取本机状态。</p></section>}
-    {result && <ResultNotice scope={location.origin} slot="desktop-action" identity={result.id} title={result.title} warning={result.warning}>{result.detail}</ResultNotice>}
+    {result && <ResultNotice scope={location.origin} slot="desktop-action" identity={result.id} title={result.title} warning={result.warning}>{result.detail}</ResultNotice>}</>;
+  return <Shell platform="desktop" view={view} onViewChange={navigate} busy={busy} healthy={connected && !snapshot?.error} readOnly={!connected} canSelect={Boolean(readyToSelect && automaticId)} automationPaused={status?.selection?.automation_paused} canDisable={Boolean(readyToSelect)} dashboardReady={false} onRefresh={() => void refresh()} onSelect={() => setConfirmAutomatic(true)} onDisable={() => void run('退出增强并保留原生代理', () => client.disable())} onOpenDashboard={() => undefined}>
+
+    {!sourceDialogOpen && feedback}
     {!snapshot && <p className="nf-empty">{busy ? '正在读取本机运行状态…' : '尚未取得本机状态。请使用“刷新”重新连接。'}</p>}
     {snapshot && <>
       {view === 'overview' && <>
         <RuntimeControls snapshot={snapshot} client={client} run={run} disabled={blocked} />
-        <DesktopOverview snapshot={snapshot} disabled={blocked} canSelect={Boolean(readyToSelect)} onSelect={capability => setSelection({ capability })} onNavigate={next => { navigate(next); if (next === 'providers') setShowSubscriptions(true); }} />
+        <DesktopOverview snapshot={snapshot} disabled={blocked} canSelect={Boolean(readyToSelect)} onSelect={capability => setSelection({ capability })} onNavigate={next => { navigate(next); if (next === 'providers' && !snapshot.runtime.configured) setShowSubscriptions(true); }} />
       </>}
-      {view === 'exits' && (status ? <><div className="nf-capability-list is-detailed">{status.capabilities.map(capability => <CapabilityPanel key={capability.id} snapshot={status} capability={capability} disabled={!readyToSelect} onChooseRegion={() => setSelection({ capability: capability.id })} onSelectAuto={automaticId ? () => setConfirmAutomatic(true) : undefined} />)}</div><PolicySummary snapshot={status} /></> : <p className="nf-empty">添加订阅并完成准备后，这里显示业务出口。</p>)}
+      {view === 'exits' && (status ? <><div className="nf-capability-list is-detailed">{status.capabilities.map(capability => <CapabilityPanel key={capability.id} snapshot={status} capability={capability} active={snapshot.runtime.running && snapshot.runtime.mode === 'netfleet' && status.active} disabled={!readyToSelect} onChooseRegion={() => setSelection({ capability: capability.id })} onSelectAuto={automaticId ? () => setConfirmAutomatic(true) : undefined} />)}</div><PolicySummary snapshot={status} /></> : <p className="nf-empty">添加订阅并完成准备后，这里显示业务出口。</p>)}
       <div hidden={view !== 'providers'}>
-        {status && <ProviderTable snapshot={status} full onManageSubscriptions={openSubscriptions} />}
-        {!status && <p className="nf-empty">编译后可查看机场的地区覆盖与运行测量；订阅来源可先在下方管理。</p>}
-        <div ref={subscriptionsRef} hidden={Boolean(status) && !showSubscriptions}><SubscriptionManager snapshot={snapshot} disabled={blocked} client={client} run={run} /></div>
+        <div className="nf-desktop-page-actions"><span>{status?.providers.length ?? 0} 个机场 · {Object.keys(snapshot.subscriptions).length} 个来源</span><button type="button" className="nf-button-secondary" disabled={blocked || !Object.values(snapshot.subscriptions).some(item => item.enabled && item.hasUrl)} onClick={() => void run('更新订阅', () => client.refresh())}>更新订阅</button><button type="button" className="nf-button-primary" onClick={openSubscriptions}>管理订阅来源</button></div>
+        {status && <ProviderTable snapshot={status} full subscriptionsManaged />}
+        {!status && <p className="nf-empty">添加订阅后自动准备机场资源与业务策略。</p>}
+        {Object.keys(snapshot.subscriptions).some(id => !status?.providers.some(item => (item.subscription_section || item.id) === id)) && <p className="nf-management-note">部分来源尚未纳入机场列表，可在“管理订阅来源”中查看准备状态。</p>}
       </div>
+      <SourceDialog open={sourceDialogOpen} onClose={() => setShowSubscriptions(false)}>{sourceDialogOpen && feedback}<SubscriptionManager snapshot={snapshot} disabled={blocked} client={client} run={run} /></SourceDialog>
       {view === 'regions' && (status ? <RegionTable snapshot={status} full onChooseRegion={region => setSelection({ region })} blockedReason={selectionBlocked} /> : <p className="nf-empty">添加订阅并完成准备后，这里显示已识别地区。</p>)}
       <div hidden={view !== 'config'}><DesktopConfiguration snapshot={snapshot} disabled={blocked} client={client} run={run} onManageSubscriptions={() => { navigate('providers'); setShowSubscriptions(true); }} /></div>
       <div hidden={view !== 'events'}>
-        {status && <EventsView sections={['events']} snapshot={snapshot.events || { events: [] }} status={status} connections={{ connections: [], count: 0, truncated: false }} connectionsLoading={false} stale={!connected} />}
-        {!status && <p className="nf-empty">当前尚无已编译业务策略，仍可读取日志和管理备份。</p>}
-        <LogsAndBackup snapshot={snapshot} disabled={blocked} client={client} run={run} />
+        <nav className="nf-subtabs" aria-label="诊断分类">{([['events', '选路记录'], ['connections', '当前连接'], ['logs', '核心日志']] as const).map(([id, label]) => <button type="button" key={id} aria-current={diagnostic === id ? 'page' : undefined} onClick={() => setDiagnostic(id)}>{label}</button>)}</nav>
+        <div hidden={diagnostic !== 'events'}>{status ? <EventsView sections={['events']} snapshot={snapshot.events || { events: [] }} status={status} connections={{ connections: [], count: 0, truncated: false }} connectionsLoading={false} stale={!connected} /> : <p className="nf-empty">暂无选路记录，启用后会记录实际结果。</p>}</div>
+        <div hidden={diagnostic !== 'connections'}><DesktopTools section="connections" snapshot={snapshot} disabled={blocked} client={client} run={run} /></div>
+        <div hidden={diagnostic !== 'logs'}><DesktopTools section="logs" snapshot={snapshot} disabled={blocked} client={client} run={run} /></div>
       </div>
     </>}
-    {view === 'events' && <DataSourceBar source={{ mode: 'live', label: '本机认证服务', target_label: '当前 Mac', read_only: blocked, connected, fetched_at: fetchedAt }} statusError={readError || snapshot?.error} />}
+    {view === 'events' && <p className="nf-desktop-read-status" role="status">{connected ? '服务连接正常' : '服务连接失败'} · 最近读取 {fetchedAt ? new Date(fetchedAt * 1000).toLocaleTimeString('zh-CN') : '尚未读取'}</p>}
     {selection && status && <RegionSelectionDialog snapshot={status} initialCapability={selection.capability} initialRegion={selection.region} blockedReason={selectionBlocked} onCancel={() => setSelection(null)} onConfirm={(capability, region) => { setSelection(null); void run('切换并保持地区', () => client.selectRegion(capability, region)); }} />}
     {confirmAutomatic && <ConfirmDialog {...automatic} busy={!readyToSelect || !automaticId} onCancel={() => setConfirmAutomatic(false)} onConfirm={() => { if (!automaticId || !readyToSelect) return; setConfirmAutomatic(false); void run(automatic.title, () => client.selectAuto(automaticId)); }} />}
   </Shell>;

@@ -40,6 +40,8 @@ export interface Capability {
   can_select_region?: boolean;
   base_group?: string | null;
   base_groups?: string[];
+  business_routes?: Array<{ name: string; default_route: string }>;
+  display_order?: number;
   data_path: string;
   runtime_path?: string[];
   provider_id?: string | null;

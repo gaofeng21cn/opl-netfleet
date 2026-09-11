@@ -1018,7 +1018,7 @@ function providersPage(status, controller) {
 
 function regionsPage(status, controller) {
 	const state = controller.regionTableState || (controller.regionTableState = {});
-	const regions = currentRegionPlan(status).sort(function(a, b) {
+	const regions = (status.regions || []).slice().sort(function(a, b) {
 		return (finite(a.measurement?.best_delay_ms) ? Number(a.measurement.best_delay_ms) : Infinity) -
 			(finite(b.measurement?.best_delay_ms) ? Number(b.measurement.best_delay_ms) : Infinity) ||
 			(Number(b.available_node_count) || -1) - (Number(a.available_node_count) || -1) ||
@@ -1028,8 +1028,8 @@ function regionsPage(status, controller) {
 	const rows = regions.map(function(region) {
 		return E('tr', { 'class': region.selected ? 'cbi-rowstyle-1' : '' }, [
 			E('td', {}, [regionName(status, region.id), E('small', {}, (status.capabilities || []).filter(function(cap) { return cap.enabled && cap.region_id === region.id && ['preferred', 'manual_region'].includes(cap.data_path); }).map(capabilityName).join('、'))]),
-			E('td', {}, countPair(region.available_provider_count, region.provider_count)),
-			E('td', {}, region.node_count == null ? '节点清单暂不可读' : countPair(region.available_node_count, region.node_count)),
+			E('td', {}, status.active && status.runtime.controller_available ? countPair(region.available_provider_count, region.provider_count) : '未测量'),
+			E('td', {}, !status.active || !status.runtime.controller_available ? '未测量' : region.node_count == null ? '节点清单暂不可读' : countPair(region.available_node_count, region.node_count)),
 			measurementCell(region.measurement, status)
 		].concat([
 			E('td', {}, E('details', { 'class': 'netfleet-measurement-history' }, [ E('summary', {}, '历史测量'),
@@ -1045,7 +1045,7 @@ function regionsPage(status, controller) {
 	const caption = E('p', { 'class': 'netfleet-table-caption' });
 	const update = function() {
 		const visible = tableItems(regions, state, function(region) { return regionName(status, region.id); });
-		caption.replaceChildren('核心健康记录覆盖 ' + regions.length + ' 个地区 · 显示 ' + visible.length + ' 个');
+		caption.replaceChildren('已配置 ' + regions.length + ' 个地区 · ' + (status.active && status.runtime.controller_available ? currentRegionPlan(status).length + ' 个有健康记录' : '实时状态未测量') + ' · 显示 ' + visible.length + ' 个');
 		list.replaceChildren(simpleTable([ '地区', '机场健康记录', '节点健康记录', '最近一次候选测速', '历史测量', '参与方式', '操作' ],
 			visible.map(function(region) { return rows[regions.indexOf(region)]; }), '没有匹配的地区', 'netfleet-data-table'));
 	};
