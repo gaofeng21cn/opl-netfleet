@@ -119,9 +119,11 @@ render_profile = function() {
 			else if (type(source[fields[0]]) == "object") delete source[fields[0]][fields[1]];
 		}
 	}
-	// The advanced editor owns this whole protocol map; removed protocols must not reappear from the source.
-	if (type(extra.sniffer?.sniff) == "object" && type(source.sniffer) == "object") delete source.sniffer.sniff;
+	// Only an explicitly saved advanced protocol map replaces the source map.
+	// Existing private partial overlays retain their original deep-merge behavior.
+	if (extra["netfleet-replace-sniff"] == true && type(extra.sniffer?.sniff) == "object" && type(source.sniffer) == "object") delete source.sniffer.sniff;
 	const profile = merge(merge(source, extra), overlay);
+	delete profile["netfleet-replace-sniff"];
 	for (let field in ["proxies", "proxy-groups", "rules"]) {
 		const additions = profile[`netfleet-${field}`] ?? [];
 		if (length(additions) > 0) profile[field] = [...additions, ...(profile[field] ?? [])];

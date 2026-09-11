@@ -105,6 +105,10 @@ return function(context) {
 		for (let field in changes(before, after)) {
 			assign(extra, field.path, after[field.id]);
 			uci.delete('netfleet', 'mixin', field.uci);
+			if (field.id == 'sniffer.sniff') {
+				if (after[field.id] == null) delete extra['netfleet-replace-sniff'];
+				else extra['netfleet-replace-sniff'] = true;
+			}
 		}
 	}
 	function explain(profile, source, extra, sections, running) {
