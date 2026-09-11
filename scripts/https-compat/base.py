@@ -13,6 +13,24 @@ BASE_PATHS = ['openwrt/Makefile', 'openwrt/plugin_payload.py', 'openwrt/plugin-p
               'plugins/device-identity', 'openwrt/native']
 
 
+def runtime_files(packages):
+    """Pin the installed callers of HTTPS lifecycle and gateway admission."""
+    root = 'usr/libexec/opl-netfleet/'
+    prefixes = [root+p for p in ['kernel/', 'adapters/', 'plugins/mihomo/',
+                'plugins/https-compat/', 'plugins/platform/', 'plugins/platform-storage/']]
+    exact = [root+'main.uc', root+'plugins/models/lib/extensions.uc',
+             'usr/libexec/opl-netfleet-plugin-package', 'etc/init.d/opl-netfleet-core']
+    result = {}
+    for line in (Path(packages)/'FILES.sha256').read_text().splitlines():
+        digest, path = line.split(None, 1)
+        if path in exact or any(path.startswith(prefix) for prefix in prefixes):
+            result['/'+path] = digest
+    if not all('/'+path in result for path in exact) or not all(
+            any(path.startswith('/'+prefix) for path in result) for prefix in prefixes):
+        raise ValueError('qualified base caller inventory incomplete')
+    return result
+
+
 def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
@@ -40,7 +58,8 @@ def validate(packages, receipt, commit, repo=ROOT):
     if changed.strip():
         raise ValueError('base runtime changed; full qualification required: ' + changed.strip())
     return {'source_commit': base_commit, 'source_tree': base_tree,
-            'manifest_sha256': sha(packages / 'manifest.json'), 'qualification_sha256': sha(receipt)}
+            'manifest_sha256': sha(packages / 'manifest.json'), 'qualification_sha256': sha(receipt),
+            'runtime_sha256': runtime_files(packages)}
 
 
 if __name__ == '__main__':

@@ -2,6 +2,11 @@ import * as fs from 'fs';
 import {sha256} from 'digest';
 const stage=ARGV[0],request=json(fs.readfile(stage+'/request.json'));
 const quote=v=>"'"+replace(v,"'","'\\''")+"'";
+if(type(request.base_runtime)!='object'||!length(request.base_runtime))die('qualified_base_inventory_missing');
+for(let path,digest in request.base_runtime) {
+ if(!match(path,/^\/(usr\/libexec\/opl-netfleet[-\/]|etc\/init.d\/opl-netfleet-core$)/)||
+    !match(digest,/^[0-9a-f]{64}$/)||sha256(fs.readfile(path) ?? '')!=digest)die('qualified_base_runtime_changed');
+}
 function read(command) {const p=fs.popen(command),s=p.read('all');if(p.close())die('update_precondition_failed');return json(s);}
 const installed=read("apk --no-network query --from installed --format json --fields name,version 'opl-netfleet*'");
 fs.writefile(stage+'/installed-before.json',sprintf('%J',installed));

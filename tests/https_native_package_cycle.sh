@@ -37,7 +37,8 @@ cycle_transaction() {
  cp /tmp/scripts/https-compat/update-remote.sh /tmp/scripts/https-compat/update-guard.uc "$transaction/"
  ucode - "$transaction" "$2" "$3" <<'UC'
 import * as fs from 'fs';
-fs.writefile(ARGV[0]+'/request.json',sprintf('%J',{old:fs.basename(ARGV[1]),new:fs.basename(ARGV[2])}));
+const base=json(fs.readfile('/tmp/compat-base-identity.json'));
+fs.writefile(ARGV[0]+'/request.json',sprintf('%J',{old:fs.basename(ARGV[1]),new:fs.basename(ARGV[2]),base_runtime:base.runtime_sha256}));
 UC
  (cd "$transaction"; sha256sum *.apk request.json update-remote.sh update-guard.uc >SHA256SUMS)
  case "$1" in reject) touch "$transaction/reject-acceptance";; kill) touch "$transaction/hold-acceptance";; esac

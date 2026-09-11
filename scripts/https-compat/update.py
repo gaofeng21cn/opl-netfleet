@@ -26,6 +26,8 @@ def verify(packages, base_proof, candidate, previous, receipt):
     proof = json.loads(receipt.read_text())
     if (proof.get('schema') != 'opl-netfleet-https-plugin-qualification.v1'
             or proof.get('plugin_qualified') is not True or proof.get('base') != base
+            or proof.get('source_commit') != current['source_commit']
+            or proof.get('source_tree') != current['source_tree']
             or proof.get('engine') != current or proof.get('previous_engine') != old
             or proof.get('identity') != identity or proof.get('packages') != ['opl-netfleet-https-compat']
             or not all(proof.get('checks', {}).get(key) is True for key in REQUIRED)):
@@ -33,6 +35,12 @@ def verify(packages, base_proof, candidate, previous, receipt):
     diagnostic = receipt.with_suffix('.diagnostic.json')
     if sha(diagnostic) != proof.get('diagnostic_sha256'):
         raise ValueError('HTTPS diagnostic evidence changed')
+    wire = json.loads(diagnostic.read_text())
+    if (wire.get('diagnostic_passed') is not True or wire.get('base') != base
+            or wire.get('source_commit') != current['source_commit']
+            or wire.get('source_tree') != current['source_tree']
+            or wire.get('lanes', {}).get('compatibility', {}).get('checks') != proof.get('checks')):
+        raise ValueError('HTTPS diagnostic source or checks mismatch')
     for name in ['update-remote.sh', 'update-guard.uc']:
         committed = subprocess.check_output(['git', '-C', str(ROOT), 'show',
             current['source_commit']+':scripts/https-compat/'+name])
@@ -62,7 +70,8 @@ def main():
     stage='/tmp/netfleet-https-update-'+uuid.uuid4().hex
     files={current['artifact']:(a.candidate/current['artifact']).read_bytes(),
            old['artifact']:(a.previous/old['artifact']).read_bytes(),
-           'request.json':json.dumps({'old':old['artifact'],'new':current['artifact']}).encode()}
+           'request.json':json.dumps({'old':old['artifact'],'new':current['artifact'],
+               'base_runtime':json.loads(a.qualification.read_text())['base']['runtime_sha256']}).encode()}
     if current['artifact']==old['artifact']:raise ValueError('update requires distinct versions')
     for name in ['update-remote.sh','update-guard.uc']:files[name]=(ROOT/'scripts/https-compat'/name).read_bytes()
     files['SHA256SUMS']=''.join(hashlib.sha256(data).hexdigest()+'  '+name+'\n' for name,data in files.items()).encode()
