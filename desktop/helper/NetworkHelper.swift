@@ -179,6 +179,10 @@ func prepareTun(configPath: String, base: String, uid: uid_t, port: Int) throws 
     var dns = config["dns"] as? [String: Any] ?? [:]
     dns.removeValue(forKey: "listen"); dns["enable"] = true
     config["dns"] = dns
+    if config["sniffer"] == nil {
+        config["sniffer"] = ["enable": true, "force-dns-mapping": true, "parse-pure-ip": true,
+            "sniff": ["HTTP": ["ports": [80, 8080]], "TLS": ["ports": [443, 8443]], "QUIC": ["ports": [443, 8443]]]]
+    }
     config["tun"] = ["enable": true, "device": "utun198", "stack": "gvisor", "auto-route": true, "auto-detect-interface": true, "strict-route": false, "dns-hijack": ["any:53"]]
     for category in ["proxy-providers", "rule-providers"] {
         guard let providers = input[category] as? [String: [String: Any]] else { continue }
