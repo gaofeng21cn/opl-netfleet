@@ -32,8 +32,8 @@ export const sortProvidersForDisplay = (snapshot: StatusSnapshot): Provider[] =>
   providerName(snapshot, a.id).localeCompare(providerName(snapshot, b.id), 'zh-CN')
 );
 
-export const sortRegionsForDisplay = (snapshot: StatusSnapshot): Region[] => snapshot.regions
-  .filter((region) => finite(region.available_count, 0) > 0 && finite(region.available_provider_count, 0) > 0)
+export const sortRegionsForDisplay = (snapshot: StatusSnapshot, includeDirectory = false): Region[] => snapshot.regions
+  .filter((region) => includeDirectory || finite(region.available_count, 0) > 0 && finite(region.available_provider_count, 0) > 0)
   .slice()
   .sort((a, b) =>
     finite(a.measurement?.best_delay_ms, Infinity) - finite(b.measurement?.best_delay_ms, Infinity) ||
@@ -133,6 +133,7 @@ export function modeName(capability: Capability): string {
   const mode = capability.user_mode || capability.mode;
   return {
     automatic: '自动选优',
+    native_profile: '原生配置',
     manual_region: '手动保持地区',
     direct: '手动直连',
     manual: '手动选择',

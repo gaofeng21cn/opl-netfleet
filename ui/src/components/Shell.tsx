@@ -90,10 +90,10 @@ export function Shell({
             );
           })}
         </nav>
-        <div className="nf-sidebar-foot">
+        {platform !== 'desktop' && <div className="nf-sidebar-foot">
           <span className={`nf-health-dot ${healthy ? '' : 'is-bad'}`} />
-          <div><strong>OPL NetFleet</strong><small>{platform === 'desktop' ? 'macOS 本机' : '共享 UI'}</small></div>
-        </div>
+          <div><strong>OPL NetFleet</strong><small>共享 UI</small></div>
+        </div>}
       </aside>
 
       <div className="nf-stage">
@@ -110,7 +110,7 @@ export function Shell({
                 </select>
               </label>
             </div>
-          ) : platform === 'desktop' ? <div className="nf-desktop-location"><span>当前 Mac</span><strong>{items.find(item => item.id === view)?.label}</strong></div> : <span />}
+          ) : platform === 'desktop' ? <h1 className="nf-desktop-title">{items.find(item => item.id === view)?.label}</h1> : <span />}
           <div className="nf-toolbar-actions">
             {platform !== 'desktop' && <button type="button" onClick={onOpenDashboard} disabled={!dashboardReady} title={dashboardReady ? '在新标签页打开完整 Zashboard' : 'Zashboard 当前不可用'}>
               <SquareArrowOutUpRight aria-hidden="true" /><span>Zashboard</span>
@@ -124,9 +124,9 @@ export function Shell({
               <Target aria-hidden="true" />
               <span>{automationPaused ? '恢复自动选优' : '重新选优'}</span>
             </button>}
-            {!readOnly && view === 'overview' && <button className="is-danger" type="button" onClick={onDisable} disabled={busy || !canDisable} title={platform === 'desktop' ? '退出增强并保留 Mihomo 原生代理' : '关闭 NetFleet'}>
+            {!readOnly && view === 'overview' && platform !== 'desktop' && <button className="is-danger" type="button" onClick={onDisable} disabled={busy || !canDisable} title="关闭 NetFleet">
               <Power aria-hidden="true" />
-              <span>{platform === 'desktop' ? '退出增强' : '关闭 NetFleet'}</span>
+              <span>关闭 NetFleet</span>
             </button>}
           </div>
         </header>

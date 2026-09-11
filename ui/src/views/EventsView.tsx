@@ -34,7 +34,7 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
   const visibleRows = rows.slice(currentPage * 20, (currentPage + 1) * 20);
   return (
     <div className="nf-view-stack">
-      <nav className="nf-subtabs" aria-label="诊断分类">{[['events', '选路记录'], ['website', '网站诊断'], ['core', '核心与日志']].filter(([id]) => sections.includes(id as 'events' | 'website' | 'core')).map(([id, label]) => <button type="button" key={id} aria-current={section === id ? 'page' : undefined} onClick={() => setSection(id as 'events' | 'website' | 'core')}>{label}</button>)}</nav>
+      {sections.length > 1 && <nav className="nf-subtabs" aria-label="诊断分类">{[['events', '选路记录'], ['website', '网站诊断'], ['core', '核心与日志']].filter(([id]) => sections.includes(id as 'events' | 'website' | 'core')).map(([id, label]) => <button type="button" key={id} aria-current={section === id ? 'page' : undefined} onClick={() => setSection(id as 'events' | 'website' | 'core')}>{label}</button>)}</nav>}
       {error && <div className="nf-inline-warning">{error}；以下内容保留上一次成功读取结果。</div>}
       {section === 'events' && <section className="nf-table-section">
         <div className="nf-section-heading"><div><h2>选路事件</h2><p>只展示已确认完成的事件。</p></div></div>

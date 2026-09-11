@@ -4,7 +4,10 @@ import type { DesktopSnapshot } from './types';
 
 export function toDesktopDraft(snapshot: DesktopSnapshot): ConfigDraft {
   if (!snapshot.status || !snapshot.config) throw new Error(snapshot.configError || '业务配置尚不可读取。');
-  return createConfigDraft(snapshot.status, snapshot.config);
+  const draft = createConfigDraft(snapshot.status, snapshot.config);
+  const order = new Map(snapshot.status.capabilities.map((item, index) => [item.id, index]));
+  draft.capabilities.sort((a, b) => (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity));
+  return draft;
 }
 
 // Send editor fields, not a reconstructed policy. The shared configuration owner

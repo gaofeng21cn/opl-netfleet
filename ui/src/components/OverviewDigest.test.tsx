@@ -178,8 +178,8 @@ describe('概览信息层级', () => {
     expect(overview).toContain('5<small> 个当前可用</small>');
     expect(overview).not.toContain('CH 瑞士');
     expect(overview).not.toContain('不可用地区');
-    expect(regions).toContain('当前 5 个地区可用');
-    expect(regions).not.toContain('CH 瑞士');
+    expect(regions).toContain('已配置 6 个地区');
+    expect(regions).toContain('CH 瑞士');
   });
 
   it('当前使用地区失去路径时仍作为运行异常提示', () => {
