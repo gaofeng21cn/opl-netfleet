@@ -41,6 +41,9 @@ if (phase == "apply") {
 	check(atomic_json(`${work}/initial-choices.json`, choices()), "save_initial_choices");
 	const config_before = sha256("/etc/config/netfleet");
 	const changed = clone(current.result.settings);
+	changed.advanced["tcp-concurrent"] = !(changed.advanced["tcp-concurrent"] ?? false);
+	changed.advanced["log-level"] = "warning";
+	changed.advanced["sniffer.sniff"] = { HTTP: { port: [80, "8080-8081"], "override-destination": false } };
 	changed.listeners.mixed_port = 17890;
 	changed.listeners.http_port = 0;
 	changed.listeners.socks_port = 0;
@@ -56,6 +59,12 @@ if (phase == "apply") {
 	check(result.ok && result.result.state == "applied", `network_apply_failed:${sprintf("%J", result)}`);
 	const saved = get();
 	check(saved.result.settings.listeners.mixed_port == 17890, "listener_readback");
+	check(saved.result.settings.advanced["tcp-concurrent"] == changed.advanced["tcp-concurrent"], "advanced_configuration_readback");
+	const active = read_json("/etc/opl-netfleet/native/run/config.yaml");
+	check(active["tcp-concurrent"] == changed.advanced["tcp-concurrent"] && active["log-level"] == "warning" &&
+		length(keys(active.sniffer.sniff)) == 1, "advanced_running_readback");
+	check(cursor().get("netfleet", "mixin", "tcp_concurrent") == null, "changed_uci_override_removed");
+	check(filter(saved.result.explanation, e => e.id == "tcp-concurrent")[0].source == "override", "advanced_origin_readback");
 	check(saved.result.settings.listeners.credentials[0].password == null && saved.result.settings.listeners.credentials[0].password_configured,
 		"password_not_returned");
 	check(read_json("/etc/opl-netfleet/native/run/config.yaml").authentication[0] == "network-vm:network-vm-private", "authentication_installed");

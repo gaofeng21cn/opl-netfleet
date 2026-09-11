@@ -1,10 +1,11 @@
 import * as fs from "fs";
 import { cursor } from "uci";
+import { connect } from "ubus";
 import { sha256 as digest_sha256 } from "digest";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let shell, capture, parse, directory, uci_value, enabled, merge, source_path, process_state, controller_ready, ownership, routes_present, status, render_profile, prepare, cleanup, attach, reconcile, watch, interception_snapshot, command;
+let shell, capture, parse, directory, uci_value, enabled, merge, source_path, process_state, controller_ready, ownership, routes_present, readiness, status, render_profile, prepare, cleanup, attach, reconcile, watch, interception_snapshot, command;
 
 const private_file = context.use("platform.files").private_file;
 const private_directory = context.use("platform.files").private_directory;
@@ -48,7 +49,10 @@ source_path = function(ref) {
 		parts[0] == "subscription" ? `${BASE}/subscriptions/${parts[1]}.yaml` : null;
 };
 process_state = function() {
-	const data = parse(capture(`ubus call service list '{"name":"${SERVICE}"}'`));
+	const bus = connect(null, 5);
+	let data;
+	try { data = bus?.call("service", "list", { name: SERVICE }); } catch (error) {}
+	bus?.disconnect();
 	const instance = data?.[SERVICE]?.instances?.core;
 	const pid = instance?.pid;
 	const actual = pid ? fs.readfile(`/proc/${pid}/cmdline`) : null;
@@ -71,15 +75,22 @@ routes_present = function(state) {
 	}
 	return true;
 };
-status = function() {
+readiness = function(chains) {
 	const core = process_state();
 	const state = ownership();
-	const tables = parse(capture("nft -j list tables"));
-	const table = length(filter(tables?.nftables ?? [], row => row.table?.family == "inet" && row.table?.name == "netfleet")) > 0;
+	// The backend already reads this table for its DNS/TProxy checks in this observation.
+	const tables = chains == null ? parse(capture("nft -j list tables")) : null;
+	const table = chains != null ? length(keys(chains)) > 0 :
+		length(filter(tables?.nftables ?? [], row => row.table?.family == "inet" && row.table?.name == "netfleet")) > 0;
 	const attached = state != null && state.core_pid == core.pid && table && routes_present(state);
 	return { ok: true, result: { ready: core.running && controller_ready() && attached,
 		core_running: core.running, registered: core.registered, attached: attached,
-		clean: !table && state == null, config_sha256: private_file(CONFIG) ? digest_sha256(fs.readfile(CONFIG)) : null } };
+		clean: !table && state == null } };
+};
+status = function() {
+	const observed = readiness();
+	observed.result.config_sha256 = private_file(CONFIG) ? digest_sha256(fs.readfile(CONFIG)) : null;
+	return observed;
 };
 render_profile = function() {
 	if (read_json("/etc/opl-netfleet/backend.json")?.kind != "native-mihomo")
@@ -108,6 +119,8 @@ render_profile = function() {
 			else if (type(source[fields[0]]) == "object") delete source[fields[0]][fields[1]];
 		}
 	}
+	// The advanced editor owns this whole protocol map; removed protocols must not reappear from the source.
+	if (type(extra.sniffer?.sniff) == "object" && type(source.sniffer) == "object") delete source.sniffer.sniff;
 	const profile = merge(merge(source, extra), overlay);
 	for (let field in ["proxies", "proxy-groups", "rules"]) {
 		const additions = profile[`netfleet-${field}`] ?? [];
@@ -369,5 +382,5 @@ printf("%J\n", result);
 exit(result.ok ? 0 : 1);
 };
 
-return { command, cleanup, status, interception_snapshot };
+return { command, cleanup, status, readiness, process_state, interception_snapshot };
 };

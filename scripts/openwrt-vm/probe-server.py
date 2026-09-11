@@ -50,6 +50,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         url = urlsplit(self.path)
+        if url.path == '/native-workload/payload':
+            size = 8 * 1024 * 1024
+            self.send_response(200)
+            self.send_header('Content-Length', str(size))
+            self.end_headers()
+            block = b'N' * 65536
+            for _ in range(size // len(block)):
+                self.wfile.write(block)
+            return
+        if url.path == '/native-workload/events':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.end_headers()
+            for number in range(30):
+                self.wfile.write(f'data: {number}\n\n'.encode())
+                self.wfile.flush()
+                time.sleep(1)
+            return
         if url.path == '/compat-wire/events':
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')

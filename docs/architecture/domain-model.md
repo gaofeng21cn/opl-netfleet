@@ -167,7 +167,7 @@ target-local 配置只保留下列 owner 分区：
 - `evidence`：唯一固定路径，仅保存有界显示证据；
 - `fail_open`：protected probe 列表，以及 path/guard probe ID、timeout、interval 和失败次数组成的 Mihomo fallback healthcheck。
 
-不创建 `ProviderBinding` 与 `ProviderPolicy` 两套存储，不提交订阅 URL、token、节点、resolver 或完整配置。跨设备安装所需的订阅凭据、target-local `routing_rules`、provider bootstrap DNS mixin 和 `platform.json` 属于用户私有 OPL Instance 所生成的 deployment bundle；只有稳定 section ID 被 policy 引用。mixin 只保留确有设备证据的 provider 入口 DNS 例外，不能重新拥有规则、策略组或全局平台值；platform 不是 engine 配置，也不能成为算法分支。未知组、未知能力、歧义引用和未授权地区必须在 compile 阶段拒绝或排除；地区排除由 capability 配置决定。provider source、生成文件和运行快照留在设备私有 state，Git 只保存脱敏合同、机场无关规则与真正被 caller 消费的实现。
+不创建 `ProviderBinding` 与 `ProviderPolicy` 两套存储，不提交订阅 URL、token、节点、resolver 或完整配置。跨设备安装所需的订阅凭据、target-local `routing_rules`、provider bootstrap DNS mixin 和 `platform.json` 属于用户私有 OPL Instance 所生成的 deployment bundle；只有稳定 section ID 被 policy 引用。deployment bundle 中的 mixin 只投影确有设备证据的 provider 入口 DNS 例外，不能重新拥有规则、策略组或全局平台值；设备独立网络 owner 的高级配置则按[管理合同](management.md)持有本平台私有覆写，不能回写为业务 policy；platform 不是 engine 配置，也不能成为算法分支。未知组、未知能力、歧义引用和未授权地区必须在 compile 阶段拒绝或排除；地区排除由 capability 配置决定。provider source、生成文件和运行快照留在设备私有 state，Git 只保存脱敏合同、机场无关规则与真正被 caller 消费的实现。
 
 设备配置 owner 可以通过结构化请求增删上述 policy 中的 provider、region、capability、binding 和 `routing_rules`，但只能引用设备已经存在的稳定 subscription、共享地区目录及当前 Policy Source 已存在的策略组。provider ID 使用 subscription section；自动发现与高级编辑共用同一个地区目录和 filter owner，浏览器不能创建正则或节点副本。该能力只把单设备的 policy 结构从 private renderer 迁入 target-local owner，不改变订阅 owner、mixin、platform 或 Mihomo 的责任。
 

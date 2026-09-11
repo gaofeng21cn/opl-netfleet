@@ -328,6 +328,8 @@ Nikki 路径到原生目录；不会从品牌名猜配置，也不靠重新下�
 
 LAN ingress 以 effective `allow_lan`、TCP/UDP `7892` wildcard listener 和所选后端 nft TProxy rule 为准；DNS 接管以 effective `dns_enabled`、TCP/UDP DNS listener 与所选后端要求的 DNS redirect chains 为准。原生后端还通过进程内 UDP socket 在一秒内查询自身 DNS 端口：gateway 在生成配置中为保留命名空间 `health.opl-netfleet.invalid` 添加 `+.health.opl-netfleet.invalid: rcode://name_error` nameserver policy；该高级规则不进入用户可编辑的精确域名列表，TXT 查询经过正常 DNS resolver 并在本地返回 NXDOMAIN，不访问上游。探针校验响应 ID、问题与完整报文，只把该预期应答当作本地处理链健康；它不代表外部域名解析或业务成功。Nikki 后端仍使用保护探针域名经路由器 resolver 的解析证据。一次 backend 回读共享 `/proc/net` 监听快照和 nft table 快照，并直接调用既有 gateway service，不启动第二个宿主进程，也不复用跨轮缓存。
 
+原生健康读取从 procd 回读核心命令身份，并复用本次 nft 表快照核验 DNS/TProxy；状态页不为就绪判断重复计算完整配置摘要。显式 gateway 状态仍提供配置摘要，观察之间不缓存健康结果。
+
 ## 平台服务绑定与宿主
 
 首次设置由 `setup.native` 持有，后端迁移由 `setup.migration` 持有；两者只负责本平台输入、运行基线与交接，成功后调用共享 onboarding、编译与激活服务，失败恢复原状态。
@@ -422,9 +424,10 @@ LuCI 在机场页和配置的机场区提供同一个订阅管理入口，新增
 
 ### 独立设备管理接口
 
-管理对象与恢复边界由[设备独立管理](../architecture/management.md)负责。`network_get` 按需返回当前
+管理对象与恢复边界由[设备独立管理](../architecture/management.md)负责。
+`network_get` 按需返回当前
 原生网络配置、revision 和已有接口资源；`network_validate / network_apply` 接受
-`{revision,settings}`，其中 `settings` 分为 `dns / lan / router / listeners`。DNS 包括
+`{revision,settings}`，其中 `settings` 分为 `dns / lan / router / listeners / advanced`。DNS 包括
 普通、引导、代理节点与直连解析上游，以及精确域名的解析覆盖；LAN 包括入口接口与
 按 IPv4/IPv6、MAC 匹配的代理和 DNS 接入规则；监听包括 HTTP/SOCKS/mixed 端口与认证。
 读取不返回密码，只显示是否已配置；编辑未提交密码时保留原值。该接口不接受代理模式、
@@ -449,6 +452,7 @@ LuCI 通过 `fs.exec_direct` 调用白名单 `opl-netfleet-transfer`，经 `cgi-
 
 ### 当前运行接口
 
+`product-pages.js` 负责页面生命周期、读取和写入交互；`product-views.js` 负责状态渲染，`management.js` 与 `advanced.js` 负责配置表单。它们属于同一个产品 UI 插件，不独立保存业务状态。
 默认产品页面按插件 revision 共享资源工厂的下载和编译结果；切页重新创建页面绑定、
 权限守卫与作用域。加载失败允许重试，取消一个页面不取消其他页面共用的资源请求。
 私有配置与 API 响应不进入这个工厂缓存。
@@ -624,6 +628,19 @@ LuCI 同步 mutation 与 rpcd/uhttpd execution timeout 使用 300 秒有界预�
 当前运行选择，验证候选配置，再复用原生服务的重载或重启和 owner 回读；失败恢复原配置
 与运行状态。已有未公开的 UCI/mixin 字段必须保留，不将少量表单值覆盖成整份默认配置。
 尚无原生后端的设备显示不可用原因，不暗中修改 Nikki。
+
+### 高级核心配置与生效解释
+
+网络配置 owner 同时管理常用网络设置与高级 Mihomo 参数。高级设置覆盖 DNS 行为、
+嗅探、连接与 GeoData；每项可显式覆盖或继承 Profile/核心默认值。读取返回参数定义、
+配置值、来源以及实际运行配置中的值；核心默认值未知时明确标注，不猜测内置默认。
+专家编辑使用同一组已声明参数的 JSON 对象，与表单共享草稿和同一校验、应用事务。
+未知参数和网关持有的接管、监听、控制接口、生成出口及路由对象不能通过该入口写入。
+
+参数修改在私有 mixin 中保存，同时移除该参数对应的旧 UCI 覆写，避免保存后被再次覆盖；
+未修改参数和未表示的私有字段保持原样。恢复继承时删除本地覆写，由当前 Profile 或核心
+默认提供结果。候选校验返回逐项配置差异和核心重启影响；应用后比较实际渲染结果，
+不一致进入原有失败恢复事务。配置值与运行值分别展示，停止状态不宣称运行生效。
 
 ### 配置文件与维护
 

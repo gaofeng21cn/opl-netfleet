@@ -7,9 +7,9 @@ import { EventsView } from '../views/EventsView';
 import { eventDelay, eventResult, latestDecision } from './format';
 import type { DecisionEvent, EventsSnapshot } from '../types';
 
-const nativeSource = readFileSync(new URL('../../../openwrt/files/usr/libexec/opl-netfleet/plugins/product-ui/resources/product-pages.js', import.meta.url), 'utf8');
-const native = new Function('E', nativeSource.split('const productController = {')[0] +
-  'return { latestDecision, eventResult, eventDelay, overviewDigest, eventsPage };')(
+const nativeSource = readFileSync(new URL('../../../openwrt/files/usr/libexec/opl-netfleet/plugins/product-ui/resources/product-views.js', import.meta.url), 'utf8');
+const native = new Function('baseclass', 'E', nativeSource)(
+  { extend: (value: unknown) => value },
   (tag: string, attrs: object, children: unknown) => ({ tag, attrs, children }),
 );
 const status = fixtureScenarios.healthy.status;

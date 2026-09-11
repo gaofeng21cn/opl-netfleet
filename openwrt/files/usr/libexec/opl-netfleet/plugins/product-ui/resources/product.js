@@ -70,7 +70,7 @@ function diagnosis(controller, displayName) {
 }
 
 function networkChanges(before, after) {
-	return [['dns', 'DNS 解析'], ['lan', '局域网接入与设备规则'], ['router', '路由器本机代理'], ['listeners', '代理监听与认证']].filter(function(item) {
+	return [['dns', 'DNS 解析'], ['lan', '局域网接入与设备规则'], ['router', '路由器本机代理'], ['listeners', '代理监听与认证'], ['advanced', 'Mihomo 高级参数']].filter(function(item) {
 		return JSON.stringify(before[item[0]]) !== JSON.stringify(after[item[0]]);
 	}).map(function(item) { return item[1]; });
 }

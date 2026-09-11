@@ -5,6 +5,8 @@ return function(context) {
 // Bind the service functions before assigning closures that may reference them.
 let shell, command_json, failure, gateway, revision, port, discover, public_state, get, request, remove_work, candidate, validate, set_value, stage, save_file, install_file, restore_files, selections, resume, rollback, apply, command_network_get, command_network_validate, command_network_apply;
 
+const advanced = loadfile(`${context.root}/plugins/${context.id}/lib/advanced.uc`)()(context);
+const read_yaml = context.use("platform.storage").read_yaml;
 const resolve_profile = context.use("mihomo.backend").resolve_profile;
 const stop = context.use("mihomo.backend").stop;
 const running = context.use("mihomo.backend").running;
@@ -72,6 +74,10 @@ discover = function() {
 	uci.foreach("netfleet", null, (section) => { push(sections, section); });
 	const profile = rendered.result.profile;
 	const settings = project(profile, sections);
+	const source = read_yaml(resolve_profile(current_profile()), true);
+	const extra = read_json(MIXIN) ?? {};
+	const is_running = running();
+	const active_profile = is_running ? read_yaml(`${BASE}/run/config.yaml`, true) : null;
 	const interfaces = [];
 	for (let entry in command_json("ubus call network.interface dump")?.interface ?? [])
 		if (type(entry.interface) == "string") push(interfaces, { name: entry.interface, up: entry.up == true, device: entry.l3_device ?? entry.device ?? null });
@@ -79,14 +85,15 @@ discover = function() {
 	for (let listener in profile.listeners ?? []) if (listener.port != null) push(reserved, int(listener.port));
 	const after = revision();
 	if (before == null || before != after) return { available: false, backend: KIND, reason: "network_revision_conflict", revision: null, settings: null };
-	return { available: true, backend: KIND, revision: after, running: running(), settings: settings, profile: profile, sections: sections,
-		resources: { interfaces: interfaces, reserved_ports: filter(reserved, (value) => value > 0),
+	return { available: true, backend: KIND, revision: after, running: is_running, settings: settings, profile: profile, source: source, sections: sections, active_profile: active_profile,
+		explanation: advanced.explain(profile, source, extra, sections, active_profile),
+		resources: { advanced_fields: advanced.fields(), interfaces: interfaces, reserved_ports: filter(reserved, (value) => value > 0),
 			preserved_dns_policy_count: length(keys(profile.dns?.["nameserver-policy"] ?? {})) - length(settings.dns.policies),
 			preserved_proxy_policy_count: length(keys(profile.dns?.["proxy-server-nameserver-policy"] ?? {})) - length(settings.dns.proxy_policies) } };
 };
 public_state = function(found) {
 	return found.available ? { available: true, backend: found.backend, revision: found.revision, running: found.running,
-		settings: public_settings(found.settings), resources: found.resources } : found;
+		settings: public_settings(found.settings), explanation: found.explanation, resources: found.resources } : found;
 };
 get = function() {
 	try { return { ok: true, result: public_state(discover()) }; }
@@ -101,8 +108,22 @@ remove_work = function(path) {
 	return type(path) == "string" && match(path, /^\/etc\/opl-netfleet\/\.network\.[A-Za-z0-9]+$/) &&
 		private_directory(path) && shell(`rm -rf ${shell_quote(path)}`);
 };
+function change_summary(found, settings) {
+	const result = advanced.difference(found.settings.advanced, settings.advanced, found.profile, found.source);
+	const labels = { dns: { nameservers: "常规 DNS", default_nameservers: "启动解析 DNS", proxy_nameservers: "代理节点 DNS", direct_nameservers: "直连 DNS", policies: "域名 DNS", proxy_policies: "代理节点域名 DNS" },
+		lan: { enabled: "局域网代理", interfaces: "接入接口", rules: "设备规则及顺序" }, router: { enabled: "路由器本机代理" },
+		listeners: { mixed_port: "混合代理端口", http_port: "HTTP 代理端口", socks_port: "SOCKS 代理端口", authentication_enabled: "代理认证", credentials: "认证账户" } };
+	for (let section, fields in labels) for (let field, label in fields) {
+		const before = found.settings[section][field], after = settings[section][field];
+		if (sprintf('%J', before) == sprintf('%J', after)) continue;
+		push(result, { id: `${section}.${field}`, label, category: 'network',
+			before: field == 'credentials' ? '已保存的认证配置' : before,
+			after: field == 'credentials' ? '更新认证配置（密码不展示）' : after });
+	}
+	return result;
+}
 candidate = function(found, settings, work) {
-	const value = runtime_profile(found.profile, settings);
+	const value = runtime_profile(found.profile, settings, found.source);
 	if (!atomic_json(`${work}/candidate.json`, value)) return failure("network_candidate_write_failed");
 	const status = system(`timeout -s KILL 45 /usr/bin/mihomo -t -d ${shell_quote(`${BASE}/run`)} -f ${shell_quote(`${work}/candidate.json`)} >/dev/null 2>&1`);
 	if (status == 0) return { ok: true };
@@ -118,7 +139,7 @@ validate = function(path) {
 		work = fs.mkdtemp("/etc/opl-netfleet/.network.XXXXXX");
 		if (work == null || !private_directory(work)) return failure("network_workspace_failed");
 		const valid = candidate(found, change.settings, work);
-		result = valid.ok ? { ok: true, result: { valid: true, revision: found.revision, restart_required: found.running } } : valid;
+		result = valid.ok ? { ok: true, result: { valid: true, revision: found.revision, restart_required: found.running && length(change_summary(found, change.settings)) > 0, changes: change_summary(found, change.settings) } } : valid;
 	} catch (error) { result = failure(error_code(error, "network_validation_failed")); }
 	if (work != null) remove_work(work);
 	return result;
@@ -131,9 +152,10 @@ set_value = function(uci, section, field, value) {
 stage = function(found, settings, work) {
 	if (!shell(`cp -p ${shell_quote(CONFIG)} ${shell_quote(`${work}/netfleet`)}`)) return false;
 	const uci = cursor(work);
-	const profile = runtime_profile(found.profile, settings);
+	const profile = runtime_profile(found.profile, settings, found.source);
 	const extra = fs.lstat(MIXIN) == null ? {} : read_json(MIXIN);
 	if (type(extra) != "object") return false;
+	advanced.persist(extra, uci, found.settings.advanced, settings.advanced);
 	if (extra.dns == null) extra.dns = {};
 	for (let field in ["nameserver", "default-nameserver", "proxy-server-nameserver", "direct-nameserver", "nameserver-policy", "proxy-server-nameserver-policy"]) {
 		if (profile.dns[field] == null) delete extra.dns[field];
@@ -275,6 +297,9 @@ apply = function(path) {
 		if (!resumed.ok) die(resumed.error);
 		const current = discover();
 		if (!current.available) die("network_readback_failed");
+		const expected = project(runtime_profile(found.profile, change.settings, found.source), current.sections);
+		if (sprintf("%J", expected.advanced) != sprintf("%J", current.settings.advanced) ||
+			(current.running && (current.active_profile == null || sprintf("%J", expected.advanced) != sprintf("%J", advanced.project(current.active_profile))))) die("network_effective_mismatch");
 		remove_work(work);
 		work = null;
 		return { ok: true, result: { state: "applied", restarted: snapshot.running, network: public_state(current) } };

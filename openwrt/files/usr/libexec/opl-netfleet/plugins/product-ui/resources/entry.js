@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 const reads = new Set(['status', 'events', 'connections', 'pluginsList', 'pluginRead', 'configGet', 'configValidate', 'networkGet', 'networkValidate', 'maintenanceGet', 'profileGet', 'backupExport', 'diagnosticsGet', 'dashboardGet', 'componentsGet', 'operationGet', 'nativeSetupGet', 'subscriptionsGet', 'migrationGet', 'onboardingGet']);
-const names = ['api', 'product', 'managed', 'management', 'config', 'product-pages'];
+const names = ['api', 'product', 'advanced', 'managed', 'management', 'config', 'product-views', 'product-pages'];
 let factories;
 
 function loadFactories() {
   if (!factories) {
-    const parameters = ['baseclass', 'ui', 'poll', 'rpc', 'fs', 'request', 'resourceUrl', 'netfleet', 'api', 'product', 'managed', 'management', 'netfleetConfig'];
+    const parameters = ['baseclass', 'ui', 'poll', 'rpc', 'fs', 'request', 'resourceUrl', 'netfleet', 'api', 'product', 'managed', 'management', 'netfleetConfig', 'advanced', 'productViews'];
     factories = Promise.all(names.map(async name => {
       const response = await fetch(new URL(name + '.js', import.meta.url));
       if (!response.ok) throw new Error('product_ui_resource_unavailable:' + name);
@@ -36,7 +36,7 @@ export async function mountPage(context, pageId) {
     const exported = loaded.values[index](...loaded.parameters.map(name => bindings[name]));
     let value = typeof exported === 'function' ? new exported() : exported;
     if (names[index] === 'api') { value = guard(value); bindings.netfleet = value; }
-    bindings[names[index] === 'config' ? 'netfleetConfig' : names[index]] = value;
+    bindings[names[index] === 'config' ? 'netfleetConfig' : names[index] === 'product-views' ? 'productViews' : names[index]] = value;
   }
   return bindings['product-pages'].mount(context, pageId);
 }

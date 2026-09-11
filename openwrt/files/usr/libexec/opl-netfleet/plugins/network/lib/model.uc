@@ -6,6 +6,8 @@ let copy, array, enabled, error_code, exact_domain, policies, project, public_se
 
 
 
+const advanced = loadfile(`${context.root}/plugins/${context.id}/lib/advanced.uc`)()(context);
+
 copy = function(value) { return json(sprintf("%J", value)); };
 array = function(value) { return type(value) == "array" ? value : value == null ? [] : [value]; };
 enabled = function(value) { return `${value ?? "0"}` == "1"; };
@@ -45,6 +47,7 @@ project = function(profile, sections) {
 			password_configured: length(entry) > separator + 1, password: substr(entry, separator + 1) });
 	}
 	return {
+		advanced: advanced.project(profile),
 		dns: { nameservers: array(profile.dns?.nameserver), default_nameservers: array(profile.dns?.["default-nameserver"]),
 			proxy_nameservers: array(profile.dns?.["proxy-server-nameserver"]), direct_nameservers: array(profile.dns?.["direct-nameserver"]),
 			policies: policies(profile.dns?.["nameserver-policy"]), proxy_policies: policies(profile.dns?.["proxy-server-nameserver-policy"]) },
@@ -134,7 +137,10 @@ validate_request = function(request, revision, current, resources) {
 	if (!fields(request, ["revision", "settings"], errors, "request")) return { ok: false, error: "network_invalid", errors: errors };
 	if (type(revision) != "string" || request.revision != revision) return { ok: false, error: "network_revision_conflict" };
 	const settings = copy(request.settings);
-	if (!fields(settings, ["dns", "lan", "router", "listeners"], errors, "settings")) return { ok: false, error: "network_invalid", errors: errors };
+	if (!fields(settings, ["dns", "lan", "router", "listeners", "advanced"], errors, "settings")) return { ok: false, error: "network_invalid", errors: errors };
+	if (settings.advanced == null) settings.advanced = copy(current.advanced);
+	advanced.validate(settings.advanced, errors, address);
+	if (type(settings.advanced) == "object") settings.advanced = { ...current.advanced, ...settings.advanced };
 	if (fields(settings.dns, ["nameservers", "default_nameservers", "proxy_nameservers", "direct_nameservers", "policies", "proxy_policies"], errors, "dns")) {
 		for (let name in ["nameservers", "default_nameservers", "proxy_nameservers", "direct_nameservers"])
 			resolvers(settings.dns[name], errors, `dns.${name}`, name == "nameservers");
@@ -220,8 +226,8 @@ managed_policy = function(original, entries) {
 	return result;
 };
 
-runtime_profile = function(original, settings) {
-	const profile = copy(original);
+runtime_profile = function(original, settings, inherited) {
+	const profile = advanced.render(original, advanced.project(original), settings.advanced ?? advanced.project(original), inherited ?? original);
 	if (profile.dns == null) profile.dns = {};
 	const mapping = { nameservers: "nameserver", default_nameservers: "default-nameserver", proxy_nameservers: "proxy-server-nameserver", direct_nameservers: "direct-nameserver" };
 	for (let key, name in mapping) {

@@ -82,7 +82,8 @@ function module(name, api) {
         return new Function('E', source.replace('export function', 'function') + '\nreturn createManager;')(E)({ api, ui, readOnly: () => false });
     }
     const product = new Function('baseclass', fs.readFileSync(path.join(resources, 'product.js'), 'utf8'))(baseclass);
-    return new Function('baseclass', 'ui', 'api', 'E', 'managed', 'product', fs.readFileSync(path.join(resources, name), 'utf8'))(baseclass, ui, api, E, name === 'managed.js' ? null : module('managed.js', api), product);
+    const advanced = new Function('baseclass', 'ui', 'E', fs.readFileSync(path.join(resources, 'advanced.js'), 'utf8'))(baseclass, ui, E);
+    return new Function('baseclass', 'ui', 'api', 'E', 'managed', 'product', 'advanced', fs.readFileSync(path.join(resources, name), 'utf8'))(baseclass, ui, api, E, name === 'managed.js' ? null : module('managed.js', api), product, advanced);
 }
 function configModule(management) {
     return new Function('baseclass', 'ui', 'management', 'E', 'compatibility', fs.readFileSync(path.join(resources, 'config.js'), 'utf8'))(baseclass, ui, management, E, { render: () => null });
@@ -91,7 +92,9 @@ function modesModule(api, selectionRunner) {
     const source = fs.readFileSync(path.join(resources, 'product-pages.js'), 'utf8');
     const exports = source.slice(0, source.lastIndexOf('return baseclass.extend({')) +
         'return { regions: regionsPage, controls: operatingModeControls, controller: productController, summary: statusSummary, health: pathHealthLabel, region: currentRegion, mode: modeName };';
-    return new Function('baseclass', 'ui', 'netfleet', 'E', 'managed', exports)(baseclass, ui, api, E, { notify: ui.addNotification, runSelection: selectionRunner });
+    const managed = { notify: ui.addNotification, runSelection: selectionRunner };
+    const views = new Function('baseclass', 'ui', 'managed', 'E', fs.readFileSync(path.join(resources, 'product-views.js'), 'utf8'))(baseclass, ui, managed, E);
+    return new Function('baseclass', 'ui', 'netfleet', 'E', 'managed', 'productViews', exports)(baseclass, ui, api, E, managed, views);
 }
 function networkState() {
     return { available: true, backend: 'native-mihomo', revision: 'network-r1', running: true,
@@ -146,6 +149,35 @@ class LuciManagementTests(unittest.TestCase):
             text=True, capture_output=True, check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_advanced_json_invalid_draft_blocks_owner_call_and_omissions_are_preserved(self):
+        self.run_js(r"""
+const owner = controller();
+owner.networkState = networkState();
+owner.networkState.settings.advanced = { 'sniffer.sniff': { TLS: { port: [443] } }, 'tcp-concurrent': true };
+owner.networkState.resources.advanced_fields = [{ id: 'sniffer.sniff', label: '协议与端口', kind: 'sniff', group: '嗅探' }];
+owner.networkDraft = clone(owner.networkState.settings);
+let calls = 0;
+const management = module('management.js', { networkValidate: async () => { calls++; return { changes: [] }; } });
+let root = management.network(owner);
+const field = find(root, node => node.tag === 'textarea' && node.attrs['aria-label'] === '协议与端口');
+fire(field, 'input', { value: '{', setCustomValidity() {} });
+await fire(button(root, '校验配置'));
+assert.equal(calls, 0);
+assert(notifications.some(n => n.text.includes('有效 JSON')));
+await fire(button(root, '应用网络配置'));
+assert.equal(modal, null);
+fire(field, 'input', { value: '{"HTTP":{"port":[80]}}', setCustomValidity() {} });
+await fire(button(root, '校验配置'));
+assert.equal(calls, 1);
+ui.hideModal();
+fire(button(root, '专家 JSON 编辑'));
+const expert = find(modal.content, node => node.tag === 'textarea');
+expert.value = '{"sniffer.sniff":null}';
+fire(button(modal.content, '更新草稿'));
+assert.equal(owner.networkDraft.advanced['sniffer.sniff'], null);
+assert.equal(owner.networkDraft.advanced['tcp-concurrent'], true);
+""")
 
     def test_network_default_rule_is_explicit_and_new_device_precedes_it(self):
         self.run_js(r"""
@@ -356,6 +388,12 @@ owner.previewConfigChanges = () => api.configValidate(config.request(owner.confi
 await fire(button(config.render(owner), '校验与变更'));
 assert.equal(wire[0].method, 'config_validate');
 assert.deepEqual(wire[0].args[0].routing_rules, [{ kind: 'ip_cidr', value: '2001:db8::/32', capability: 'standard' }]);
+owner.configDraft.routing_rules.push({ kind: 'domain_suffix', value: 'example.test', target: 'direct' });
+root = config.render(owner);
+fire(all(root, n => n.attrs['aria-label'] === '上移规则')[1]);
+assert.equal(config.request(owner.configDraft).routing_rules[0].value, 'example.test');
+assert.equal(config.request(owner.configDraft).routing_rules[1].value, '2001:db8::/32');
+
 """)
 
     def test_luci_file_transport_uses_authenticated_upload_and_small_rpc_reference(self):
@@ -950,18 +988,18 @@ const source = fs.readFileSync(path.join(resources, 'entry.js'), 'utf8').replace
 const entry = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 const first = new AbortController(), second = new AbortController();
 const [a, b] = await Promise.all([entry.mountPage({ signal: first.signal, readOnly: false }, 'overview'), entry.mountPage({ signal: second.signal, readOnly: true }, 'config')]);
-assert.equal(fetches, 6, 'parallel pages share resource loading without optional plugin assets');
+assert.equal(fetches, 8, 'parallel pages share resource loading without optional plugin assets');
 assert.notEqual(a.api, b.api, 'each mount has its own permission guard');
 assert.equal(await a.api.configSave(), 'saved');
 await assert.rejects(b.api.configSave(), /plugin_read_only/);
 first.abort(); await assert.rejects(a.api.status(), /plugin_scope_disposed/);
 assert.equal(await b.api.status(), 'ok');
 await entry.mountPage({ signal: second.signal, readOnly: false }, 'events');
-assert.equal(fetches, 6, 'navigation does not fetch or compile the same revision again');
+assert.equal(fetches, 8, 'navigation does not fetch or compile the same revision again');
 const retry = await import('data:text/javascript;base64,' + Buffer.from(source + '\n// different revision').toString('base64'));
 fail = true; await assert.rejects(retry.mountPage({ signal: second.signal }, 'overview'), /product_ui_resource_unavailable/);
 fail = false; assert.equal((await retry.mountPage({ signal: second.signal }, 'overview')).id, 'overview');
-assert.equal(fetches, 18, 'failed load retries with a new resource batch');
+assert.equal(fetches, 24, 'failed load retries with a new resource batch');
 """)
 
     def test_identity_source_setup_and_dynamic_device_binding(self):

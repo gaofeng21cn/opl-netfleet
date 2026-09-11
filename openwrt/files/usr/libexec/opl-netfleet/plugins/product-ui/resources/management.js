@@ -5,6 +5,7 @@
 'require netfleet.api as api';
 'require netfleet.managed as managed';
 'require netfleet.product as product';
+'require netfleet.advanced as advanced';
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function disabled(controller) { return controller.busy || !controller.liveDataReady || controller.context?.readOnly; }
@@ -32,6 +33,7 @@ function errorText(error) {
 	const known = {
 		mutation_busy: '设备正在执行其他操作，请稍后重试', network_revision_conflict: '网络配置已变化，请重新读取后修改',
 		network_invalid: '网络配置未通过校验',
+		network_effective_mismatch: '应用后的配置与预期不一致，已进入恢复流程',
 		network_validation_timeout: '核心配置校验超时，当前网络配置未修改',
 		network_runtime_profile_invalid: '配置未通过 Mihomo 校验，当前网络配置未修改',
 		maintenance_revision_changed: '设备配置已变化，请重新读取后操作', profile_referenced: '此文件仍被使用，请先切换配置',
@@ -77,7 +79,7 @@ function load(controller, kind, force) {
 	const read = { network: api.networkGet, maintenance: api.maintenanceGet, diagnostics: api.diagnosticsGet }[kind];
 	controller[kind + 'Read'] = read().then(function(state) {
 		controller[key] = state;
-		if (kind === 'network') controller.networkDraft = clone(state.settings || {});
+		if (kind === 'network') { controller.networkDraft = clone(state.settings || {}); controller.networkDraftErrors = {}; }
 		return state;
 	}).catch(function(error) { controller[kind + 'Error'] = error; }).finally(function() {
 		controller[kind + 'Read'] = null;
@@ -121,6 +123,7 @@ function network(controller) {
 	return E('section', {}, [ E('div', { 'class': 'netfleet-config-heading' }, [ E('h3', {}, '网络接入'), E('p', {}, 'TProxy') ]),
 		E('fieldset', { 'disabled': locked || null, 'class': 'netfleet-management-fields' }, [ E('h4', {}, 'DNS'), E('div', { 'class': 'netfleet-config-rows' }, rows),
 			policies('policies', '按域名指定 DNS'), policies('proxy_policies', '按代理节点域名指定 DNS'),
+			advanced.render(controller),
 			E('h4', {}, '代理范围'),
 			row('路由器本机', toggle(draft.router.enabled, function(value) { draft.router.enabled = value; controller.redraw(); })),
 			row('局域网设备', toggle(draft.lan.enabled, function(value) { draft.lan.enabled = value; controller.redraw(); })),
@@ -159,8 +162,9 @@ function network(controller) {
 		]),
 		E('div', { 'class': 'netfleet-config-actions' }, [ E('span', {}, controller.networkResult || ''), E('div', {}, [
 			button('放弃更改', function() { return load(controller, 'network', true); }, locked),
-			button('校验配置', function() { return api.networkValidate({ revision: state.revision, settings: clone(draft) }).then(function() { controller.networkResult = '校验通过'; controller.redraw(); }).catch(notice); }, locked),
+			button('校验配置', function() { if (!advanced.valid(controller)) return; return api.networkValidate({ revision: state.revision, settings: clone(draft) }).then(function(result) { controller.networkResult = '校验通过'; controller.redraw(); ui.showModal('配置校验与变更', [advanced.preview(result), button('关闭', ui.hideModal)]); }).catch(notice); }, locked),
 			button('应用网络配置', function() {
+				if (!advanced.valid(controller)) return;
 				const changes = product.networkChanges(state.settings, draft);
 				if (!changes.length) { controller.networkResult = '草稿与上次读取一致，无需应用。'; controller.redraw(); return; }
 				const request = { revision: state.revision, settings: clone(draft) };

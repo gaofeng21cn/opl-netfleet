@@ -77,4 +77,28 @@ const omitted = clone(profile);
 delete omitted.dns["default-nameserver"];
 check(runtime_profile(omitted, project(omitted, sections)).dns["default-nameserver"] == null, "omitted_bootstrap_not_replaced_by_invalid_empty_list");
 
+const advanced = loadfile(replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet/plugins/network/lib/advanced.uc"))()({});
+rejects(s => { s.advanced["tun.enable"] = true; }, "unowned_expert_field_rejected");
+rejects(s => { s.advanced["dns.fake-ip-range"] = "999.1.1.1/33"; }, "invalid_fake_ip_network_rejected");
+rejects(s => { s.advanced["dns.fake-ip-range6"] = "2001:::1/64"; }, "invalid_fake_ipv6_rejected");
+rejects(s => { s.advanced["sniffer.sniff"] = { TLS: { port: ["65536"] } }; }, "sniff_port_overflow_rejected");
+rejects(s => { s.advanced["sniffer.sniff"] = { TLS: { port: ["443-80"] } }; }, "reversed_port_range_rejected");
+const partial = clone(request);
+partial.settings.advanced = { "tcp-concurrent": true };
+const merged = validate_request(partial, "current", current, resources);
+check(merged.ok && merged.settings.advanced["dns.fake-ip-filter"][0] == "+.keep.test", "omitted_advanced_fields_preserved");
+const selected = runtime_profile(profile, merged.settings);
+check(selected["tcp-concurrent"] && selected.dns["fake-ip-filter"][0] == "+.keep.test" && selected.secret == profile.secret, "advanced_candidate_is_scoped");
+const inherit = clone(merged.settings);
+inherit.advanced["tcp-concurrent"] = null;
+const inherited = runtime_profile(selected, inherit, { "tcp-concurrent": false });
+check(inherited["tcp-concurrent"] == false, "explicit_reset_inherits_false");
+const extra = { secret: "keep", "tcp-concurrent": true, dns: { "fake-ip-filter": ["+.keep.test"] } };
+const removed = [];
+advanced.persist(extra, { delete: (package, section, option) => push(removed, option) }, merged.settings.advanced, inherit.advanced);
+check(extra["tcp-concurrent"] == null && extra.secret == "keep" && length(removed) == 1 && removed[0] == "tcp_concurrent", "persist_only_changed_fields");
+const explanation = advanced.explain(profile, {}, profile, [{ ".name": "mixin", fake_ip_filter: "0" }], null);
+check(filter(explanation, e => e.id == "dns.fake-ip-filter")[0].source == "override", "disabled_uci_flag_does_not_claim_override");
+check(index(sprintf("%J", explanation), "private-password") < 0 && index(sprintf("%J", explanation), "unchanged-secret") < 0, "explanation_does_not_expose_unowned_credentials");
+
 release_services();

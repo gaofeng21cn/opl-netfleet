@@ -32,7 +32,7 @@ update_subscription = function(section) {
 
 running = function() {
 	if (KIND == "native-mihomo")
-		return system(`/etc/init.d/${SERVICE} running >/dev/null 2>&1`) == 0;
+		return context.use("mihomo.gateway").process_state().running;
 	return system("pidof mihomo >/dev/null 2>&1") == 0;
 };
 
@@ -108,7 +108,7 @@ lan_runtime_state = function(dns_probe_url) {
 	const dns_query_ok = KIND == "native-mihomo" ?
 		(dns_enabled && dns_udp_wildcard && native_dns_ready(dns_port)) : dns_query_ready(dns_probe_url);
 	if (native_expected != null) {
-		const owner = context.use("mihomo.gateway").status();
+		const owner = context.use("mihomo.gateway").readiness(chains);
 		const owner_ready = owner?.ok == true && owner?.result?.ready == true;
 		let proxy_chains = true;
 		let dns_chains = true;
@@ -179,7 +179,7 @@ path_absent = function(path) {
 // Observe only the selected owner's cleanup contract; mutation stays in its init service.
 cleanup_state = function() {
 	if (KIND == "native-mihomo") {
-		const response = context.use("mihomo.gateway").status();
+		const response = context.use("mihomo.gateway").readiness(chains);
 		const completed = response?.ok == true;
 		// procd can remove the instance before the old process has exited.
 		// Match the native owner's start precondition before reusing its listeners.

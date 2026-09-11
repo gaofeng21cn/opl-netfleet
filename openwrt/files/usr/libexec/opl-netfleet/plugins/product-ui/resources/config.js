@@ -390,13 +390,19 @@ function routing(controller) {
 			E('td', {}, select(rule.target === 'direct' ? 'direct' : rule.capability, targets, function(event) {
 				update(controller, function(next) { assignTarget(next.routing_rules[index], event.target.value); });
 			})),
-			E('td', {}, compactButton('移除', function() {
-				update(controller, function(next) { next.routing_rules.splice(index, 1); });
-			}, true))
+			E('td', { class: 'netfleet-inline-actions' }, [
+				E('button', { type: 'button', class: 'btn cbi-button', disabled: index === 0 || null, 'aria-label': '上移规则', click: function() {
+					update(controller, function(next) { next.routing_rules.splice(index - 1, 0, next.routing_rules.splice(index, 1)[0]); });
+				} }, '↑'),
+				E('button', { type: 'button', class: 'btn cbi-button', disabled: index === draft.routing_rules.length - 1 || null, 'aria-label': '下移规则', click: function() {
+					update(controller, function(next) { next.routing_rules.splice(index + 1, 0, next.routing_rules.splice(index, 1)[0]); });
+				} }, '↓'),
+				compactButton('移除', function() { update(controller, function(next) { next.routing_rules.splice(index, 1); }); }, true)
+			])
 		]);
 	});
 	return E('section', {}, [
-		sectionHeading('业务规则', '按域名后缀或 IP 网段指定出口，也可设为直连。'),
+		sectionHeading('业务规则', '按域名后缀或 IP 网段指定出口，也可设为直连。按表格顺序首次匹配；重叠规则把更具体的匹配放在前面。'),
 		E('div', { 'class': 'netfleet-config-table netfleet-routing-table' }, [
 			E('table', {}, [ E('thead', {}, E('tr', {}, [ E('th', {}, '匹配类型'), E('th', {}, '匹配内容'), E('th', {}, '使用出口'), E('th', {}, '操作') ])), E('tbody', {}, rows) ])
 		]),

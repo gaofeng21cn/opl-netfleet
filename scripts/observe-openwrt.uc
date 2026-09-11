@@ -20,7 +20,8 @@ function processes() {
    const fields = split(replace(fs.readfile(`/proc/${entry.pid}/stat`) ?? '', /^.*\) /, ''), ' ');
    const status = fs.readfile(`/proc/${entry.pid}/status`) ?? '';
    result[`${name}/${key}`] = { pid: entry.pid, ticks: int(fields[11]) + int(fields[12]),
-    rss_kib: int(match(status, /VmRSS:\s*(\d+)/)?.[1] ?? 0) };
+    rss_kib: int(match(status, /VmRSS:\s*(\d+)/)?.[1] ?? 0),
+    fd_count: length(fs.glob(`/proc/${entry.pid}/fd/*`) ?? []) };
   }
  }
  return result;
@@ -47,7 +48,15 @@ for (let name, value in before) {
  if (after[name]?.pid != value.pid) stable = false;
  for (let sample in samples) if (sample.processes[name]?.pid != value.pid) stable = false;
 }
-const result = { ok: healthy && stable, duration_seconds: time() - started, samples: length(samples),
+const resources = {};
+for (let name, value in before) {
+ const seen = map(samples, sample => sample.processes[name]);
+ const last = after[name];
+ resources[name] = { rss_before_kib: value.rss_kib, rss_peak_kib: max(...map(seen, p => p?.rss_kib ?? 0)),
+  rss_after_kib: last?.rss_kib, fd_before: value.fd_count, fd_peak: max(...map(seen, p => p?.fd_count ?? 0)),
+  fd_after: last?.fd_count, cpu_ticks: last?.pid == value.pid ? last.ticks - value.ticks : null };
+}
+const result = { ok: healthy && stable, resources, duration_seconds: time() - started, samples: length(samples),
  status_p50_ms: delays[int((length(delays)-1)*0.5)], status_p95_ms: delays[int((length(delays)-1)*0.95)],
  runtime_healthy: healthy, owner_pids_stable: stable, before, after, protected_probe: probe?.result?.ok == true };
 const file = fs.open(output, 'w', 0600);
