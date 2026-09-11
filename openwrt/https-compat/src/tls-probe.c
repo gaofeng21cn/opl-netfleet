@@ -184,7 +184,7 @@ static int probe(int argc,char **argv) {
 int main(int argc,char **argv) {
     started=millis();
     if(argc>=2&&!strcmp(argv[1],"local-pair")) {
-        if(argc!=4) return 2;
+        if(argc!=4||argv[2][0]!='/'||strlen(argv[2])>350||number(argv[3],2147483647)<=0) return 2;
         paired=1;signal(SIGALRM,expired);
         struct itimerval timer={.it_value={.tv_sec=1,.tv_usec=400000}};
         setitimer(ITIMER_REAL,&timer,NULL);

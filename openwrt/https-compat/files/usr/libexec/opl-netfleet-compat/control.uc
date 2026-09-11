@@ -131,9 +131,9 @@ return function(context, options) {
         const paths=[CONFIG,TRUST,STATE,EFFECTIVE,CA+'/mitmproxy-ca-cert.pem','/etc/opl-netfleet/native/run/config.yaml',
             '/etc/config/netfleet','/var/run/opl-netfleet-core/ownership.json'];
         const before=map(paths,path=>fs.readfile(path));
-        lock.lock('u');let result,failure;
+        io.lock_stopped();lock.lock('u');let result,failure;
         try {result=work();}catch(error){failure=error;}
-        if(!lock.lock('xn')) die('mutation_busy');
+        if(!lock.lock('xn')) die('mutation_busy');io.lock_started();
         for(let i=0;i<length(paths);i++) if(fs.readfile(paths[i])!=before[i]) die('compatibility_probe_stale');
         if(failure) die(failure.message);return result;
     }
@@ -261,7 +261,7 @@ return function(context, options) {
         }
         if(length(candidates)) {
             const key=io.canonical([epoch,candidates]);
-            if(!renewal||renewal.key!=key||now-renewal.at<0||now-renewal.at>=4) {call('renew',{epoch,candidates});renewal={key,at:now};}
+            if(!renewal||renewal.key!=key||now-renewal.at<0||now-renewal.at>=4) {call('renew',{epoch,candidates});io.renewed();renewal={key,at:now};}
         } else {bypass();state.reason=!length(target_rules)&&length(active.rules)?'rules_bypassed':'no_verified_targets';}
         state.intercepting=length(candidates)>0;save(state,previous);
     }

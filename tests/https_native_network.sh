@@ -194,6 +194,8 @@ ucode /tmp/tests/https_native_guest.uc network-enable >"$work/enable.log"
 cat /etc/opl-netfleet/compatibility/ca/mitmproxy-ca-cert.pem >>"$work/client-ca.pem"
 wait_intercepting
 stage=converted_wire
+processes
+sh /tmp/tests/https_native_probe_pair.sh "$manager_pid" "$base_pid" >"$work/probe-pair.log" 2>&1
 probe 4 h2
 probe 6 h2
 probe 4 http/1.1 other.example
@@ -276,6 +278,10 @@ if [ -n "$probe_port" ]; then
     probe 4 h2
 fi
 stage=resources
+if [ -f /tmp/compat-runtime/upgrade.json ]; then
+    stage=plugin_update
+    . /tmp/tests/https_native_package_cycle.sh
+fi
 if [ -f /tmp/netfleet-compat-benchmark ]; then
     stage=benchmark
     . /tmp/tests/https_benchmark.sh
@@ -286,6 +292,13 @@ resources idle-after
 for attempt in $(seq 1 20); do probe 4 h2; done
 resources load-after
 ucode /tmp/tests/https_native_metrics.uc report "$work" >"$work/performance.json"
+stage=profile
+NETFLEET_COMPAT_PROFILE=1 /etc/init.d/opl-netfleet-compat start
+wait_intercepting
+sleep 60
+cp /var/run/opl-netfleet-compat/profile.json "$work/profile.json"
+/etc/init.d/opl-netfleet-compat start
+wait_intercepting
 stage=manager_stall
 processes
 kill -STOP "$manager_pid"

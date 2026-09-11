@@ -4,7 +4,7 @@ set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 usage() {
   cat <<'EOF'
-Usage: scripts/https-compat/dev.sh check|build|vm|qualify
+Usage: scripts/https-compat/dev.sh check|build|vm|qualify|benchmark
 
 check    Run portable policy/recovery and plugin SDK contracts against working files.
          Requires UCODE (default: ucode); optional UCODE_LIB module path.
@@ -14,6 +14,8 @@ vm       Run the isolated native HTTPS diagnostic lane; never deploy to a device
 qualify  Run full base-package qualification, then the native HTTPS diagnostic lane.
          vm/qualify require PACKAGES, COMPAT_PACKAGES, OUTPUT; REF defaults to HEAD.
          QEMU currently requires macOS on Apple Silicon. OUTPUT must be outside Git.
+         With BASE_QUALIFICATION and PREVIOUS, qualify reuses the fixed base and
+         tests engine-only upgrade/rollback. benchmark adds 3 x 300s per scene.
 
 Portable checks are not TLS/network or package qualification. The compatibility
 diagnostic receipt alone never authorizes deployment. No real devices are contacted.
@@ -22,7 +24,7 @@ EOF
 require() { [[ -n "${!1:-}" ]] || { printf '%s is required\n' "$1" >&2; exit 2; }; }
 case "${1:---help}" in
   --help|-h) usage; exit 0 ;;
-  check|build|vm|qualify) action=$1 ;;
+  check|build|vm|qualify|benchmark) action=$1 ;;
   *) usage >&2; exit 2 ;;
 esac
 [[ $# == 1 ]] || { usage >&2; exit 2; }
@@ -53,8 +55,16 @@ if [[ "$action" == build ]]; then
 fi
 require PACKAGES; require COMPAT_PACKAGES
 [[ -f "$COMPAT_PACKAGES/compat-manifest.json" ]] || { printf 'Signed compatibility candidate missing.\n' >&2; exit 2; }
+if [[ -n "${BASE_QUALIFICATION:-}" && ( "$action" == qualify || "$action" == benchmark ) ]]; then
+  require PREVIOUS
+  args=(); [[ "$action" != benchmark ]] || args=(--benchmark)
+  exec python3 scripts/https-compat/qualify.py --packages "$PACKAGES" --base-qualification "$BASE_QUALIFICATION" \
+    --candidate "$COMPAT_PACKAGES" --previous "$PREVIOUS" --output "$OUTPUT/plugin-qualification.json" "${args[@]}"
+fi
+[[ "$action" != benchmark ]] || { printf 'benchmark requires BASE_QUALIFICATION and PREVIOUS.\n' >&2; exit 2; }
 if [[ "$action" == qualify ]]; then
   bash scripts/openwrt-vm.sh --ref "$commit" --packages "$PACKAGES" --output "$OUTPUT/qualification.json"
 fi
-exec bash scripts/openwrt-vm.sh --ref "$commit" --packages "$PACKAGES" \
+args=(); [[ -z "${BASE_QUALIFICATION:-}" ]] || args=(--base-qualification "$BASE_QUALIFICATION")
+exec bash scripts/openwrt-vm.sh --ref "$commit" --packages "$PACKAGES" "${args[@]}" \
   --diagnostic compatibility --compat-package "$COMPAT_PACKAGES" --output "$OUTPUT/compatibility.json"

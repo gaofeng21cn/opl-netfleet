@@ -24,7 +24,7 @@ test "$(readlink /var)" = tmp
 ip route replace default via 192.168.1.2
 printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
 apk update >"$work/packages.log" 2>&1
-apk add curl ca-bundle openssl-util coreutils-timeout ucode-mod-fs ucode-mod-digest ucode-mod-uloop kmod-veth >>"$work/packages.log" 2>&1
+apk add curl ca-bundle openssl-util coreutils-timeout ucode-mod-fs ucode-mod-digest ucode-mod-uloop kmod-veth libatomic1 >>"$work/packages.log" 2>&1
 ucode - "$commit" "$tree" <<'UC'
 import * as fs from 'fs';
 import {sha256} from 'digest';
@@ -139,5 +139,5 @@ stage=complete
 ucode - "$commit" "$tree" <<'UC'
 import * as fs from 'fs';
 const benchmark=fs.readfile('/tmp/https-native-network/benchmark.json');
-printf('%J\n',{ok:true,source_commit:ARGV[0],source_tree:ARGV[1],checks:{native_dependency_closure:true,real_control_entry:true,procd_launcher:true,local_h1_to_h2:true,resource_limits:true,user_disable:true,uninstall_reinstall:true,stable_ca:true,base_configuration_unchanged:true,local_address_rotation:true,address_conflict_expiry:true,dual_stack_kernel_lease:true,real_gateway_h2:true,original_routing:true,sni_and_unknown_device_bypass:true,address_update_without_restart:true,streaming_upload_and_sse:true,cancellation_and_business_errors:true,simultaneous_stall_fail_open:true,third_fault_latch:true,manual_recovery:true,base_pid_unchanged:true},metrics:json(fs.readfile('/tmp/https-native-network/performance.json')),benchmark:benchmark?json(benchmark):null,production_ready:false});
+printf('%J\n',{ok:true,source_commit:ARGV[0],source_tree:ARGV[1],checks:{...(fs.stat('/tmp/compat-runtime/upgrade.json')?{engine_package_cycle:true}:{}),dual_stack_probe_faults:true,native_dependency_closure:true,real_control_entry:true,procd_launcher:true,local_h1_to_h2:true,resource_limits:true,user_disable:true,uninstall_reinstall:true,stable_ca:true,base_configuration_unchanged:true,local_address_rotation:true,address_conflict_expiry:true,dual_stack_kernel_lease:true,real_gateway_h2:true,original_routing:true,sni_and_unknown_device_bypass:true,address_update_without_restart:true,streaming_upload_and_sse:true,cancellation_and_business_errors:true,simultaneous_stall_fail_open:true,third_fault_latch:true,manual_recovery:true,base_pid_unchanged:true},profile:json(fs.readfile('/tmp/https-native-network/profile.json')),metrics:json(fs.readfile('/tmp/https-native-network/performance.json')),benchmark:benchmark?json(benchmark):null,production_ready:false});
 UC
