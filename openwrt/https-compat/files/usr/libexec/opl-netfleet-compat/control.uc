@@ -18,7 +18,7 @@ return function(context, options) {
     const owner={owner:'https-compat',service:'opl-netfleet-compat',instance:'engine',user:'netfleet-compat'};
     let epoch=null,renewal=null,preview=null,verified=null,certificate=null,ca_cache=null;
     function call(action,params) {
-        const response=gateway.request(owner,{action,...(params ?? {})});
+        const response=io.measure('gateway_'+action,()=>gateway.request(owner,{action,...(params ?? {})}));
         if(response?.ok!==true) {preview=null;renewal=null;die(response?.error ?? 'lease_operation_failed');}
         return response.result;
     }
@@ -40,12 +40,13 @@ return function(context, options) {
     function health(probe) {
         const before=probe?isolation.counters():null;
         try {
-            const value=engine.health(),key=io.canonical([value.pid,value.revision]),now=io.now();
+            const value=io.measure('engine_status',()=>engine.health()),key=io.canonical([value.pid,value.revision]),now=io.now();
             let proofs=verified?.key==key?{...verified.proofs}:{},full=verified?.key!=key||now-verified.at>=60;
             if(probe) {
                 const ids=isolation.account();
-                if(full) proofs.processing=engine.probe(null,ids.uid);
-                proofs.ipv4=engine.probe(4,ids.uid);proofs.ipv6=engine.probe(6,ids.uid);
+                if(full) proofs.processing=io.measure('private_probe',()=>engine.probe(null,ids.uid));
+                const pair=io.measure('dual_stack_probe',()=>engine.probe_pair(ids.uid));
+                proofs.ipv4=pair.ipv4;proofs.ipv6=pair.ipv6;
                 if(length(values(proofs))==3&&!length(filter(values(proofs),value=>value.ok!==true)))
                     verified={key,at:full?now:verified.at,proofs};
                 else verified=null;
@@ -174,7 +175,7 @@ return function(context, options) {
         if(previous.maintenance||previous.recovery?.latched) {
             bypass();save({...previous,intercepting:false,reason:previous.maintenance?'maintenance':'manual_recovery_required'},previous);return;
         }
-        const source=identity.resolve(config,true);let network={},reason;
+        const source=io.measure('identity_read',()=>identity.resolve(config,true));let network={},reason;
         try {
             network=snapshot();reason=network.reason ?? (network.ready?null:'native_gateway_unavailable');
             if(!reason) {
@@ -383,7 +384,7 @@ return function(context, options) {
         let timer;
         timer=uloop.timer(0,function() {
             const started=io.now();let lock;
-            try {lock=io.lock(0);tick(lock,delayed);delayed=false;}
+            try {lock=io.lock(0);io.measure('tick',()=>tick(lock,delayed));delayed=false;}
             catch(error) {
                 const reason=match(error.message ?? '',/^[a-z_]+$/)?error.message:'compatibility_controller_failed';
                 delayed=reason=='mutation_busy';
@@ -396,7 +397,9 @@ return function(context, options) {
                     save({...previous,recovery,intercepting:false,reason:recovery.reason,last_failure:{at:time(),reason}},previous);
                 } catch (_) {}
             }
-            io.unlock(lock);timer.set(max(50,int(2000-(io.now()-started)*1000)));
+            io.unlock(lock);
+            try {io.profile(RUN+'/profile.json');} catch (_) {}
+            timer.set(max(50,int(2000-(io.now()-started)*1000)));
         });
         uloop.run();return {stopped:true};
     }

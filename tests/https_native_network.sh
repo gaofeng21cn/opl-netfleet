@@ -276,6 +276,10 @@ if [ -n "$probe_port" ]; then
     probe 4 h2
 fi
 stage=resources
+if [ -f /tmp/netfleet-compat-benchmark ]; then
+    stage=benchmark
+    . /tmp/tests/https_benchmark.sh
+fi
 resources idle-before
 sleep 20
 resources idle-after

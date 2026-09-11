@@ -4,6 +4,21 @@ return function(options) {
     const root = options.root;
     const quote = value => "'" + replace(`${value}`, "'", "'\\''") + "'";
     const now = () => +split(fs.readfile('/proc/uptime'), ' ')[0];
+    const profiling = getenv('NETFLEET_COMPAT_PROFILE') == '1';
+    const timings = {};
+    function measure(name, work) {
+        if (!profiling) return work();
+        const started=now();let value,error;
+        try {value=work();} catch (failure) {error=failure;}
+        const row=timings[name] ?? {count:0,total_ms:0,max_ms:0,samples:[]};
+        const elapsed=max(0,int((now()-started)*1000));
+        row.count++;row.total_ms+=elapsed;row.max_ms=max(row.max_ms,elapsed);
+        push(row.samples,elapsed);row.samples=slice(row.samples,-300);timings[name]=row;
+        if(error) die(error.message);return value;
+    }
+    function profile(path) {
+        if(profiling) atomic(path,{stages:timings,monotonic:now()});
+    }
     function read(path, fallback) {
         const info = fs.lstat(path);
         if (!info) return fallback;
@@ -75,5 +90,5 @@ return function(options) {
         file.close(); die('mutation_busy');
     }
     function unlock(file) { if (file) { file.lock('u'); file.close(); } }
-    return {root, quote, now, read, mkdir, command, write, atomic, canonical, sha256, lock, unlock};
+    return {root, quote, now, read, mkdir, command, write, atomic, canonical, sha256, lock, unlock,measure,profile};
 };

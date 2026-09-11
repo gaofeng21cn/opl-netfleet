@@ -4,6 +4,7 @@ sdk=${1:?OpenWrt SDK path required}
 key=${2:?APK signing key required}
 output=${3:?output directory required}
 ref=${4:-HEAD}
+identity_from=${NETFLEET_COMPAT_IDENTITY_FROM:-}
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 commit=$(git -C "$repo" rev-parse "$ref^{commit}")
 tree=$(git -C "$repo" rev-parse "$commit^{tree}")
@@ -31,7 +32,9 @@ done
 git -C "$repo" archive "$commit" openwrt plugins/device-identity scripts/netfleet-plugin.py scripts/verify-native-runtime.py | tar -xf - -C "$work"
 cp -R "$work/openwrt/https-compat" "$sdk/package/$package"
 cp "$work/openwrt/native/atomic-replace.c" "$sdk/package/$package/src/"
-python3 "$work/scripts/netfleet-plugin.py" package-source "$work/plugins/device-identity" "$sdk/package/$identity_package" --license Apache-2.0
+if [ -z "$identity_from" ]; then
+  python3 "$work/scripts/netfleet-plugin.py" package-source "$work/plugins/device-identity" "$sdk/package/$identity_package" --license Apache-2.0
+fi
 mkdir -p "$sdk/package/opl-netfleet"
 cp "$work/openwrt/Makefile" "$sdk/package/opl-netfleet/"
 cp "$work/openwrt/plugin-packages.py" "$sdk/package/opl-netfleet/"
@@ -51,8 +54,10 @@ make -C "$sdk" -j"$jobs" package/toolchain/compile package/feeds/base/openssl/co
   CONFIG_PACKAGE_libopenssl-devcrypto= CONFIG_PACKAGE_libopenssl-afalg= \
   CONFIG_PACKAGE_libopenssl-padlock= NO_DEPS=1 V=s
 make -C "$sdk" -j"$jobs" "package/$package/download" "package/$package/compile" NO_DEPS=1 V=s
-make -C "$sdk" "package/$identity_package/clean" V=s
-make -C "$sdk" -j"$jobs" "package/$identity_package/compile" NO_DEPS=1 V=s
+if [ -z "$identity_from" ]; then
+  make -C "$sdk" "package/$identity_package/clean" V=s
+  make -C "$sdk" -j"$jobs" "package/$identity_package/compile" NO_DEPS=1 V=s
+fi
 mapfile -t packages < <(find "$sdk/bin/packages" -type f -name "$package-*.apk")
 test "${#packages[@]}" = 1
 cp "${packages[0]}" "$output/"
@@ -60,27 +65,39 @@ cp "$sdk/public-key.pem" "$output/compat-public-key.pem"
 mkdir -p "$work/trusted"
 cp "$sdk/public-key.pem" "$work/trusted/compat-public-key.pem"
 artifact="$output/${packages[0]##*/}"
-mapfile -t identity_packages < <(find "$sdk/bin/packages" -type f -name "$identity_package-*.apk")
+if [ -n "$identity_from" ]; then
+  mapfile -t identity_packages < <(find "$identity_from" -maxdepth 1 -type f -name "$identity_package-*.apk")
+  cp "$identity_from/device-identity-manifest.json" "$output/"
+else
+  mapfile -t identity_packages < <(find "$sdk/bin/packages" -type f -name "$identity_package-*.apk")
+fi
 test "${#identity_packages[@]}" = 1
 cp "${identity_packages[0]}" "$output/"
 identity_artifact="$output/${identity_packages[0]##*/}"
 "$sdk/staging_dir/host/bin/apk" adbsign --allow-untrusted --reset-signatures \
   --sign-key "$sdk/private-key.pem" "$artifact"
 "$sdk/staging_dir/host/bin/apk" verify --keys-dir "$work/trusted" "$artifact"
-"$sdk/staging_dir/host/bin/apk" adbsign --allow-untrusted --reset-signatures --sign-key "$sdk/private-key.pem" "$identity_artifact"
+if [ -z "$identity_from" ]; then
+  "$sdk/staging_dir/host/bin/apk" adbsign --allow-untrusted --reset-signatures --sign-key "$sdk/private-key.pem" "$identity_artifact"
+fi
 "$sdk/staging_dir/host/bin/apk" verify --keys-dir "$work/trusted" "$identity_artifact"
 python3 "$work/scripts/verify-native-runtime.py" --apk "$sdk/staging_dir/host/bin/apk" "$artifact" "$identity_artifact" >"$output/native-runtime.json"
-python3 - "$output" "$commit" "$tree" "${packages[0]##*/}" "${identity_packages[0]##*/}" <<'PY'
+python3 - "$output" "$commit" "$tree" "${packages[0]##*/}" "${identity_packages[0]##*/}" "$identity_from" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
-output, commit, tree, name, identity = sys.argv[1:]
+output, commit, tree, name, identity, identity_from = sys.argv[1:]
 path = Path(output)
 (path / 'compat-manifest.json').write_text(json.dumps({'source_commit': commit, 'source_tree': tree,
     'architecture': 'aarch64_generic', 'engine': 'haproxy', 'engine_version': '3.2.21',
     'artifact': name, 'sha256': hashlib.sha256((path / name).read_bytes()).hexdigest(),
     'native_runtime': {'name': 'native-runtime.json', 'sha256': hashlib.sha256((path / 'native-runtime.json').read_bytes()).hexdigest()}}, sort_keys=True) + '\n')
-(path / 'device-identity-manifest.json').write_text(json.dumps({'source_commit': commit, 'source_tree': tree,
-    'artifact': identity, 'sha256': hashlib.sha256((path / identity).read_bytes()).hexdigest()}, sort_keys=True) + '\n')
+if identity_from:
+    stored = json.loads((path / 'device-identity-manifest.json').read_text())
+    if stored.get('artifact') != identity or stored.get('sha256') != hashlib.sha256((path / identity).read_bytes()).hexdigest():
+        raise SystemExit('Retained device identity artifact mismatch')
+else:
+    (path / 'device-identity-manifest.json').write_text(json.dumps({'source_commit': commit, 'source_tree': tree,
+        'artifact': identity, 'sha256': hashlib.sha256((path / identity).read_bytes()).hexdigest()}, sort_keys=True) + '\n')
 PY
 
 # Optional feed is a separate composition: the default product never pulls it in.

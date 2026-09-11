@@ -29,9 +29,11 @@ ucode - "$commit" "$tree" <<'UC'
 import * as fs from 'fs';
 import {sha256} from 'digest';
 const root='/tmp/compat-runtime';
+const base=fs.readfile('/tmp/compat-base-identity.json');
 for(let name in ['compat-manifest.json','device-identity-manifest.json']) {
  const m=json(fs.readfile(root+'/'+name));
- if(m.source_commit!=ARGV[0]||m.source_tree!=ARGV[1]||fs.basename(m.artifact)!=m.artifact||sha256(fs.readfile(root+'/'+m.artifact))!=m.sha256) die('native_package_identity_mismatch');
+ const expected=name=='device-identity-manifest.json'&&base?json(base):{source_commit:ARGV[0],source_tree:ARGV[1]};
+ if(m.source_commit!=expected.source_commit||m.source_tree!=expected.source_tree||fs.basename(m.artifact)!=m.artifact||sha256(fs.readfile(root+'/'+m.artifact))!=m.sha256) die('native_package_identity_mismatch');
 }
 UC
 stage=install
@@ -136,5 +138,6 @@ sh /tmp/tests/https_native_network.sh "$probe_port" >"$work/network.log" 2>&1
 stage=complete
 ucode - "$commit" "$tree" <<'UC'
 import * as fs from 'fs';
-printf('%J\n',{ok:true,source_commit:ARGV[0],source_tree:ARGV[1],checks:{native_dependency_closure:true,real_control_entry:true,procd_launcher:true,local_h1_to_h2:true,resource_limits:true,user_disable:true,uninstall_reinstall:true,stable_ca:true,base_configuration_unchanged:true,local_address_rotation:true,address_conflict_expiry:true,dual_stack_kernel_lease:true,real_gateway_h2:true,original_routing:true,sni_and_unknown_device_bypass:true,address_update_without_restart:true,streaming_upload_and_sse:true,cancellation_and_business_errors:true,simultaneous_stall_fail_open:true,third_fault_latch:true,manual_recovery:true,base_pid_unchanged:true},metrics:json(fs.readfile('/tmp/https-native-network/performance.json')),production_ready:false});
+const benchmark=fs.readfile('/tmp/https-native-network/benchmark.json');
+printf('%J\n',{ok:true,source_commit:ARGV[0],source_tree:ARGV[1],checks:{native_dependency_closure:true,real_control_entry:true,procd_launcher:true,local_h1_to_h2:true,resource_limits:true,user_disable:true,uninstall_reinstall:true,stable_ca:true,base_configuration_unchanged:true,local_address_rotation:true,address_conflict_expiry:true,dual_stack_kernel_lease:true,real_gateway_h2:true,original_routing:true,sni_and_unknown_device_bypass:true,address_update_without_restart:true,streaming_upload_and_sse:true,cancellation_and_business_errors:true,simultaneous_stall_fail_open:true,third_fault_latch:true,manual_recovery:true,base_pid_unchanged:true},metrics:json(fs.readfile('/tmp/https-native-network/performance.json')),benchmark:benchmark?json(benchmark):null,production_ready:false});
 UC

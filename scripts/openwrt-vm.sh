@@ -18,6 +18,8 @@ Options:
   --diagnostic <lane>  Run native, setup, migration, runtime, package, or compatibility diagnostics
   --compat-runtime <dir>  Isolated musl engine binary for compatibility diagnostics
   --compat-package <dir>  Signed optional APK candidate; requires --packages
+  --base-qualification <file>  Reuse an unchanged qualified base for HTTPS diagnostics
+  --benchmark     Measure four HTTPS scenes, 3 x 300 seconds each, in the guest
   --plugin-packages <dir>  Signed plugin tests in the full suite or native diagnostic lane
   --output <path>   Qualification receipt path outside the repository
   -h, --help        Show this help
@@ -36,6 +38,8 @@ diagnostic=all
 compat_runtime=""
 compat_package=""
 plugin_packages=""
+base_qualification=""
+benchmark=0
 while (($#)); do
 	case "$1" in
 		--ref)
@@ -74,6 +78,12 @@ while (($#)); do
 			plugin_packages=$(cd "$2" && pwd)
 			shift 2
 			;;
+		--base-qualification)
+			(($# >= 2)) || die "--base-qualification requires a file"
+			base_qualification=$2
+			shift 2
+			;;
+		--benchmark) benchmark=1; shift ;;
 		-h|--help)
 			usage
 			exit 0
@@ -83,6 +93,8 @@ while (($#)); do
 done
 
 [[ -n "$output" ]] || die "--output is required"
+[[ "$benchmark" == 0 || "$diagnostic" == compatibility ]] || die 'benchmark requires compatibility diagnostics'
+[[ -z "$base_qualification" || "$diagnostic" == compatibility && -n "$packages" && -n "$compat_package" ]] || die 'base qualification requires signed compatibility diagnostics'
 [[ "$diagnostic" != compatibility || -x "$compat_runtime/haproxy" || -f "$compat_package/compat-manifest.json" ]] || die "compatibility diagnostic requires --compat-runtime or --compat-package"
 [[ -z "$compat_package" || "$diagnostic" == compatibility && -n "$packages" ]] || die "--compat-package requires compatibility diagnostic and --packages"
 [[ "$diagnostic" == compatibility || -z "$compat_runtime" ]] || die "compatibility payload is diagnostic-only"
@@ -160,10 +172,18 @@ git -C "$repo_dir" archive "$source_commit" \
 
 package_archive=""
 package_manifest_sha=""
+base_identity=""
 if [[ -n "$packages" ]]; then
 	packages=$(cd "$packages" 2>/dev/null && pwd) || die "package candidate directory is unavailable"
+	package_commit=$source_commit
+	package_tree=$source_tree
+	if [[ -n "$base_qualification" ]]; then
+		base_identity=$(python3 "$repo_dir/scripts/https-compat/base.py" --packages "$packages" --qualification "$base_qualification" --ref "$source_commit")
+		package_commit=$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["source_commit"])' "$base_identity")
+		package_tree=$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["source_tree"])' "$base_identity")
+	fi
 	"$source_dir/scripts/verify-netfleet-release.py" \
-		--directory "$packages" --source-commit "$source_commit" --source-tree "$source_tree" >/dev/null
+		--directory "$packages" --source-commit "$package_commit" --source-tree "$package_tree" >/dev/null
 	python3 - "$packages/manifest.json" <<'PY'
 import json, sys
 from pathlib import Path
@@ -192,6 +212,8 @@ NETFLEET_QEMU_VERSION=$qemu_version \
 	NETFLEET_VM_LANE=$diagnostic \
 	NETFLEET_COMPAT_RUNTIME="$compat_runtime" \
 	NETFLEET_COMPAT_PACKAGE="$compat_package" \
+	NETFLEET_COMPAT_BASE_IDENTITY="$base_identity" \
+	NETFLEET_COMPAT_BENCHMARK="$benchmark" \
 	NETFLEET_PLUGIN_PACKAGES="$plugin_packages" \
 	NETFLEET_PACKAGE_ARCHIVE="$package_archive" \
 	NETFLEET_PACKAGE_MANIFEST_SHA256="$package_manifest_sha" \

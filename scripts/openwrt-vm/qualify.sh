@@ -484,6 +484,12 @@ if [ "$lane_mode" = compatibility ]; then
 	actual_sha=$(ssh $ssh_common root@127.0.0.1 'sha256sum /tmp/compat-runtime.tar' | awk '{print $1}')
 	[ "$actual_sha" = "$compat_runtime_sha" ] || exit 1
 	ssh $ssh_common root@127.0.0.1 'mkdir -p /tmp/compat-runtime && tar -xf /tmp/compat-runtime.tar -C /tmp/compat-runtime && rm /tmp/compat-runtime.tar'
+	if [ -n "${NETFLEET_COMPAT_BASE_IDENTITY:-}" ]; then
+		printf '%s\n' "$NETFLEET_COMPAT_BASE_IDENTITY" | ssh $ssh_common root@127.0.0.1 'cat >/tmp/compat-base-identity.json'
+	fi
+	if [ "${NETFLEET_COMPAT_BENCHMARK:-0}" = 1 ]; then
+		ssh $ssh_common root@127.0.0.1 'touch /tmp/netfleet-compat-benchmark'
+	fi
 	run_guest compatibility compatibility
 fi
 if [ "$lane_mode" = all ] || [ "$lane_mode" = setup ]; then
@@ -592,6 +598,8 @@ if "package" in lanes:
 if mode != "all":
     value.update(schema="opl-netfleet-openwrt-vm-diagnostic.v1", diagnostic_passed=True,
                  diagnostic_lane=mode)
+if os.environ.get('NETFLEET_COMPAT_BASE_IDENTITY'):
+    value['base'] = json.loads(os.environ['NETFLEET_COMPAT_BASE_IDENTITY'])
 target = Path(sys.argv[1])
 temporary = target.with_name(target.name + ".tmp")
 temporary.write_text(json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n")

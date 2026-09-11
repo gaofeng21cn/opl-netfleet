@@ -23,6 +23,9 @@
 #define IP_LOCAL_PORT_RANGE 51
 #endif
 static long long started;
+static int paired;
+static const char *last_reason;
+static SSL_CTX *paired_context;
 static long long millis(void) {struct timespec ts;clock_gettime(CLOCK_MONOTONIC,&ts);return ts.tv_sec*1000LL+ts.tv_nsec/1000000;}
 static void expired(int signum) {
     (void)signum;
@@ -30,6 +33,7 @@ static void expired(int signum) {
     (void)write(STDOUT_FILENO,message,sizeof(message)-1);_exit(1);
 }
 static int finish(const char *reason) {
+    if(paired) {last_reason=reason;return reason?1:0;}
     printf("{\"ok\":%s,\"reason\":",reason?"false":"true");
     if(reason) printf("\"%s\"",reason);else fputs("null",stdout);
     printf(",\"duration_ms\":%lld,\"timeout_ms\":1400,\"at\":%ld}\n",millis()-started,(long)time(NULL));
@@ -65,8 +69,7 @@ static int number(const char *text,int maximum) {
     char *end;errno=0;long value=strtol(text,&end,10);
     return !errno&&*text&&!*end&&value>=0&&value<=maximum?(int)value:-1;
 }
-int main(int argc,char **argv) {
-    started=millis();
+static int probe(int argc,char **argv) {
     if(argc==4 && !strcmp(argv[1],"resolve")) {
         if(number(argv[3],65535)<1 || !*argv[2] || strlen(argv[2])>253 || strspn(argv[2],"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")!=strlen(argv[2])) return 2;
         signal(SIGALRM,expired);
@@ -85,7 +88,8 @@ int main(int argc,char **argv) {
     int local=argc>=2&&!strcmp(argv[1],"local");
     if((local&&argc!=5)||(!local&&(argc!=6||strcmp(argv[1],"upstream")))) return 2;
     signal(SIGPIPE,SIG_IGN);signal(SIGALRM,expired);
-    struct itimerval timer={.it_value={.tv_sec=1,.tv_usec=400000}};setitimer(ITIMER_REAL,&timer,NULL);
+    struct itimerval timer={.it_value={.tv_sec=1,.tv_usec=400000}};
+    if(!paired) setitimer(ITIMER_REAL,&timer,NULL);
     int fd=-1;char ca[512],hostname[254];uint32_t ports=0;
     if(local) {
         int family=number(argv[3],6),uid=number(argv[4],2147483647);
@@ -134,8 +138,12 @@ int main(int argc,char **argv) {
         }
         freeaddrinfo(records);if(fd<0) return finish("upstream_connect_failed");
     }
-    SSL_CTX *context=SSL_CTX_new(TLS_client_method());
-    if(!context||!SSL_CTX_load_verify_locations(context,ca,NULL)) return finish("probe_ca_failed");
+    SSL_CTX *context=paired_context;
+    if(!context) {
+        context=SSL_CTX_new(TLS_client_method());
+        if(!context||!SSL_CTX_load_verify_locations(context,ca,NULL)) return finish("probe_ca_failed");
+        if(paired) paired_context=context;
+    }
     SSL_CTX_set_verify(context,SSL_VERIFY_PEER,NULL);
     SSL *ssl=SSL_new(context);
     const unsigned char h1[]={8,'h','t','t','p','/','1','.','1'},h2[]={2,'h','2'};
@@ -171,5 +179,29 @@ int main(int argc,char **argv) {
             if(!strcasestr(response,"transfer-encoding: chunked")||!end||strncmp(end,"\r\n",2)||size!=strlen(nonce)||strncmp(end+2,nonce,size)||strncmp(end+2+size,"\r\n",2)) return finish("probe_conversion_failed");
         }
     }
-    SSL_free(ssl);SSL_CTX_free(context);close(fd);return finish(NULL);
+    SSL_free(ssl);if(!paired) SSL_CTX_free(context);close(fd);return finish(NULL);
+}
+int main(int argc,char **argv) {
+    started=millis();
+    if(argc>=2&&!strcmp(argv[1],"local-pair")) {
+        if(argc!=4) return 2;
+        paired=1;signal(SIGALRM,expired);
+        struct itimerval timer={.it_value={.tv_sec=1,.tv_usec=400000}};
+        setitimer(ITIMER_REAL,&timer,NULL);
+        char *args[]={argv[0],"local",argv[2],"4",argv[3],NULL};
+        int v4=probe(5,args);const char *reason4=last_reason;
+        long long elapsed4=millis()-started,second=millis();
+        args[3]="6";
+        // Do not spend another deadline after the first proof has failed.
+        int v6=v4?1:probe(5,args);
+        const char *reason6=v4?"probe_skipped":last_reason;
+        printf("{\"ipv4\":{\"ok\":%s,\"reason\":",v4?"false":"true");
+        if(reason4) printf("\"%s\"",reason4);else fputs("null",stdout);
+        printf(",\"duration_ms\":%lld,\"timeout_ms\":1400},\"ipv6\":{\"ok\":%s,\"reason\":",elapsed4,v6?"false":"true");
+        if(reason6) printf("\"%s\"",reason6);else fputs("null",stdout);
+        printf(",\"duration_ms\":%lld,\"timeout_ms\":1400},\"duration_ms\":%lld}\n",millis()-second,millis()-started);
+        SSL_CTX_free(paired_context);
+        return v4||v6?1:0;
+    }
+    return probe(argc,argv);
 }

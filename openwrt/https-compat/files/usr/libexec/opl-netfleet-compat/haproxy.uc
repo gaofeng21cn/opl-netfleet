@@ -267,5 +267,12 @@ frontend ${name}_http
         try {return json(io.command([io.root+'/tls-probe','local',RUN,family ?? 0,uid],2,null,true));}
         catch (_) {return {ok:false,reason:'local_conversion_failed'};}
     }
-    return {fingerprint,prepare_ca,revision,configuration,prepare,sync_rule_switches,health,probe};
+    function probe_pair(uid) {
+        const failure={ok:false,reason:'local_conversion_failed'};
+        try {
+            const value=json(io.command([io.root+'/tls-probe','local-pair',RUN,uid],2,null,true));
+            return {ipv4:value.ipv4 ?? failure,ipv6:value.ipv6 ?? failure};
+        } catch (_) {return {ipv4:failure,ipv6:failure};}
+    }
+    return {fingerprint,prepare_ca,revision,configuration,prepare,sync_rule_switches,health,probe,probe_pair};
 };

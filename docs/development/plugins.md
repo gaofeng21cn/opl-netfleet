@@ -459,6 +459,30 @@ Linux/OpenWrt 上可用 `ucode tests/plugin_sdk_service.uc examples/plugins/host
 
 ## 官方插件轻量验收
 
+HTTPS 插件使用 `bash scripts/https-compat/dev.sh` 汇总已有开发入口，不包含设备部署动作：
+
+```sh
+# 本机或 Linux 容器，读取当前工作文件；UCode 来自平台开发工具链。
+UCODE=/path/to/ucode bash scripts/https-compat/dev.sh check
+# 在已准备的 Linux OpenWrt SDK 中构建已提交源码；签名密钥留在开发机。
+SDK=/path/to/sdk SIGNING_KEY=/secure/plugin-key.pem OUTPUT=/tmp/compat-candidate \
+  REF=HEAD bash scripts/https-compat/dev.sh build
+# Apple Silicon Mac 上，以同源码基础候选包建立隔离 OpenWrt，不连接真实设备。
+PACKAGES=/tmp/base-candidate COMPAT_PACKAGES=/tmp/compat-candidate OUTPUT=/tmp/compat-proof \
+  REF=HEAD bash scripts/https-compat/dev.sh vm
+```
+
+`check` 只验证便于快速迭代的策略、恢复状态机和通用插件 SDK；它不模拟 nft、TLS、
+地址发现或资源隔离。`vm` 复用真实无 Python guest 的兼容诊断，输出不能授权部署。
+同样参数使用 `qualify`，依次执行完整基础包资格与兼容诊断，保留两份不同作用的回执。
+构建和 VM 只读取已提交的 `REF`，不会把尚未提交的源码误报为已验证包；输出放在仓库外。
+SDK 是 Linux 构建环境，VM 是 macOS/OpenWrt 验证环境，不是必须在同一环境执行的脚本。
+
+当前 HTTPS 构建入口同时产出引擎与 Device identity；管理插件来自基础包构建产物。
+这不是要求安装时更新全部包。实际替换仅选择发生变化且依赖满足的插件包，保留其他
+包、用户配置与加载选择。若修改受限 gateway 接口，其 owner 是 Mihomo 插件，须另行
+纳入依赖变更与基础路径回归，不能作为 HTTPS 内部优化绕过验证。
+
 官方插件遵循[原生运行成本合同](../architecture/microkernel.md#官方插件运行成本)。
 开发资格包可保留迁移中的旧实现用于隔离比较，正式原生候选必须验证 APK 的实际
 依赖闭包、安装 payload、解释器入口及真实子进程。扫描对象是安装后的运行文件，
