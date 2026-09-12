@@ -241,7 +241,9 @@ frontend ${name}_http
         synchronized=identity;
     }
     function health() {
-        const info={},lines=split(command('show stat;show info'),'\n'),rows=[];
+        const mapping=io.read(RUN+'/haproxy-rules.json',{}),observed={};
+        const request=join(';',['show stat','show info',...map(keys(mapping),name=>`get var proc.${name}_sni`)]);
+        const info={},lines=split(command(request),'\n'),rows=[];
         const fields=['pxname','svname','scur','req_tot','hrsp_2xx','hrsp_3xx','hrsp_4xx','econ','eresp'];
         let positions=null;
         for(let line in lines) {
@@ -253,15 +255,15 @@ frontend ${name}_http
                 const parts=split(line,','),row={};
                 for(let n=0;n<length(fields);n++) row[fields[n]]=parts[positions[n]];
                 push(rows,row);
-            } else {const n=index(line,': ');if(n>=0) info[substr(line,0,n)]=substr(line,n+2);}
+            } else {
+                const value=match(line,/^proc\.(r[0-9]+)_sni: type=str value=<([a-z0-9.-]+)>$/);
+                if(value&&length(value[2])<=253&&mapping[value[1]]) observed[mapping[value[1]]]={domain:value[2]};
+                const n=index(line,': ');if(n>=0) info[substr(line,0,n)]=substr(line,n+2);
+            }
         }
         const ingress=filter(rows,row=>row.pxname=='ingress'&&row.svname=='FRONTEND')[0],probes=filter(rows,row=>row.pxname=='loopback_convert'&&row.svname=='BACKEND')[0];
         if(!ingress||!probes||!match(info.description ?? '',/^[0-9a-f]{64}$/)||!(+info.Pid>0)) die('health_response_invalid');
-        const connections=max(0,+ingress.scur-(+probes.scur)),mapping=io.read(RUN+'/haproxy-rules.json',{}),rules={},events=[],observed={};
-        if(length(mapping)) for(let line in split(command(join(';',map(keys(mapping),name=>`get var proc.${name}_sni`))),'\n')) {
-            const value=match(line,/^proc\.(r[0-9]+)_sni: type=str value=<([a-z0-9.-]+)>$/);
-            if(value&&length(value[2])<=253&&mapping[value[1]]) observed[mapping[value[1]]]={domain:value[2]};
-        }
+        const connections=max(0,+ingress.scur-(+probes.scur)),rules={},events=[];
         for(let row in rows) {
             const name=replace(row.pxname,/_h2$/,'');
             if(row.svname!='BACKEND'||!mapping[name]||!match(row.pxname,/_h2$/)) continue;
