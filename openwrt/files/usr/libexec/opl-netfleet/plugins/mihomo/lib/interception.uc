@@ -15,29 +15,41 @@ return function(context) {
         return output;
     }
     function table() {
+        // A present private table needs one query. On failure, distinguish an
+        // absent table from a failed read; the latter must never report bypass.
+        const value=capture(join(' ',map(['nft','-j','list','table','inet',TABLE],quote)),1);
+        if (!value.status&&value.output!=null&&length(value.output)<=2097152) return json(value.output);
         const tables=json(run(['nft','-j','list','tables']));
         if (!length(filter(tables.nftables ?? [],row=>row.table?.family=='inet'&&row.table?.name==TABLE))) return null;
-        return json(run(['nft','-j','list','table','inet',TABLE]));
+        die('gateway_command_failed');
+    }
+    function leases(current) {
+        let count=0;
+        for (let row in current?.nftables ?? []) for (let item in row.set?.elem ?? []) if (item.elem?.expires>0) count++;
+        return {intercepting:count>0,leases:count};
+    }
+    function transaction(batch) {
+        run(['nft','-f','-'],batch);
+        // nft list commands in the write batch render its pre-commit cache.
+        // A separate read is required to observe committed elements and expiry.
+        return table();
     }
     function bypass() {
-        if (table()) run(['nft','-f','-'],`flush set inet ${TABLE} targets4\nflush set inet ${TABLE} targets6\n`);
+        if (table()) return leases(transaction(`flush set inet ${TABLE} targets4\nflush set inet ${TABLE} targets6\n`));
+        return {intercepting:false,leases:0};
     }
-    function status() {
-        const current=table(); let leases=0;
-        for (let row in current?.nftables ?? []) for (let item in row.set?.elem ?? []) if (item.elem?.expires>0) leases++;
-        return {intercepting:leases>0,leases};
-    }
+    function status() { return leases(table()); }
     function prepare(network,uid,owner,excluded) {
         const interfaces=network.interfaces,dscp=network.dscp_bypass ?? [];
         if (type(interfaces)!='array' || !length(interfaces) || length(interfaces)>16 || length(filter(interfaces,x=>type(x)!='string'||!match(x,/^[A-Za-z0-9_.:-]{1,15}$/)))) die('lan_interfaces_required');
         if (type(dscp)!='array' || length(filter(dscp,x=>type(x)!='int'||x<0||x>63))) die('invalid_dscp_bypass');
         if (length(filter(excluded,x=>type(x)!='int'||x<1||x>65535))) die('invalid_source_port_exclusions');
         const signature=sha256(sprintf('%J',[7,interfaces,dscp,uid,owner,excluded])), current=table();
-        if (length(filter(current?.nftables ?? [],row=>row.table?.comment==signature))) return;
+        if (length(filter(current?.nftables ?? [],row=>row.table?.comment==signature))) return current;
         const names=join(', ',map(interfaces,x=>sprintf('%J',x)));
         let exclusions=length(dscp)?`ip dscp { ${join(', ',dscp)} } return\n  ip6 dscp { ${join(', ',dscp)} } return`:'';
         if (length(excluded)) exclusions+=`\n  tcp sport { ${join(', ',excluded)} } return`;
-        run(['nft','-f','-'],(current?`delete table inet ${TABLE}\n`:'')+`table inet ${TABLE} {
+        return transaction((current?`delete table inet ${TABLE}\n`:'')+`table inet ${TABLE} {
  comment "${signature}"
  set targets4 { type ipv4_addr . ipv4_addr . inet_service; flags interval,timeout; timeout 10s; }
  set targets6 { type ipv6_addr . ipv6_addr . inet_service; flags interval,timeout; timeout 10s; }
@@ -94,7 +106,7 @@ return function(context) {
             batch+=`flush set inet ${TABLE} targets${family}\n`;
             if (length(groups[family])) batch+=`add element inet ${TABLE} targets${family} { ${join(', ',sort(uniq(groups[family])))} }\n`;
         }
-        run(['nft','-f','-'],batch);
+        return leases(transaction(batch));
     }
     function network_lock_held() {
         const target=fs.stat('/var/lock/opl-netfleet-deploy.lock');
@@ -162,7 +174,7 @@ return function(context) {
         const claimed=fs.stat(CLAIM)?json(fs.readfile(CLAIM)):null;
         if (claimed && (type(claimed)!='object' || length(keys(claimed))!=length(keys(owner)) || length(filter(keys(owner),key=>owner[key]!=claimed[key])))) die('lease_owner_conflict');
         if (action=='bypass'||action=='remove') {
-            if (action=='bypass') bypass();
+            if (action=='bypass') return bypass();
             else { if (table()) run(['nft','delete','table','inet',TABLE]); fs.unlink(CLAIM); }
             return status();
         }
@@ -175,13 +187,12 @@ return function(context) {
         if (!listener_owned(network.engine_pid,uid)) {bypass();die('lease_listener_unconfirmed');}
         if (!claimed && !files.atomic_json(CLAIM,owner)) die('lease_owner_unavailable');
         try {
-            const routing=egress(profile); prepare(network,uid,owner,routing.excluded_ports);
-            if (action=='renew') renew(input.candidates);
+            const routing=egress(profile),prepared=prepare(network,uid,owner,routing.excluded_ports);
+            return action=='renew'?renew(input.candidates):leases(prepared);
         } catch (error) {
             try { bypass(); } catch (_) {}
             die(error.message);
         }
-        return status();
     }
     function request(owner,input) {
         try { return {ok:true,result:dispatch(owner,input)}; }
