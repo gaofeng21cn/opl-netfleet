@@ -278,8 +278,9 @@ if [ -n "$probe_port" ]; then
     wait "$stream_pid"
     test "$(grep -c '^data:' "$work/events.txt")" = 30
     cancelled=0
-    wire -sSN --max-time 0.5 'https://wire.example/compat-wire/events' >"$work/cancelled.txt" 2>"$work/cancelled.log" || cancelled=$?
+    wire -sSN --max-time 2 'https://wire.example/compat-wire/events' >"$work/cancelled.txt" 2>"$work/cancelled.log" || cancelled=$?
     test "$cancelled" = 28
+    grep -q '^data: 0$' "$work/cancelled.txt"
     for code in 401 429; do
         test "$(wire -sS -o /dev/null -D "$work/error.headers" -w '%{http_code}' "https://wire.example/compat-wire/$code")" = "$code"
         grep -iq '^retry-after: 7' "$work/error.headers"

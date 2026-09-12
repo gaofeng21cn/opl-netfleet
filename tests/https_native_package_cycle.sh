@@ -91,8 +91,8 @@ UC
  probe 4 h2;probe 6 h2
 }
 cycle_transaction bad-base "$cycle_old" "$cycle_new"
-# A client can keep its TLS connection alive across the old controller's whole
-# 30-second drain window. Exercise the installer bridge with the old signed APK.
+# Idle keep-alive must close before replacement. Older controllers need the
+# worker's graceful bridge; newer controllers complete native drain directly.
 mkfifo "$work/keepalive.in"
 timeout -k 1 120 ip netns exec nfcompat-client openssl s_client -quiet -ign_eof \
  -connect 198.51.100.10:443 -servername wire.example -verify_return_error \
@@ -104,7 +104,12 @@ for attempt in $(seq 1 20); do grep -q wire-ok "$work/keepalive.out" && break; s
 grep -q wire-ok "$work/keepalive.out"
 kill -0 "$keepalive_client"
 cycle_transaction reject "$cycle_old" "$cycle_new"
-test "$(jsonfilter -i "$transaction/graceful-drain.json" -e '@.drained')" = true
+if [ -f "$transaction/graceful-drain.json" ]; then
+ test "$(jsonfilter -i "$transaction/graceful-drain.json" -e '@.drained')" = true
+else
+ test "$(jsonfilter -i "$transaction/drain.json" -e '@.ok')" = true
+ test "$(jsonfilter -i "$transaction/drain.json" -e '@.result.state')" = replacing
+fi
 ! kill -0 "$keepalive_client" 2>/dev/null
 wait "$keepalive_client" || true
 kill "$keepalive_sender" 2>/dev/null || true
