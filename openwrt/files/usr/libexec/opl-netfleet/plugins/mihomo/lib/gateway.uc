@@ -296,10 +296,7 @@ interception_snapshot = function(listener) {
 	const uci = cursor();
 	if (!match(listener?.service ?? '', /^[a-z][a-z0-9-]{0,47}$/) || !match(listener?.instance ?? '', /^[a-z][a-z0-9-]{0,47}$/))
 		return { ok: false, error: 'lease_listener_invalid' };
-	const bus = connect(null, 5);
-	let service;
-	try { service = bus?.call("service", "list", { name: listener.service }); } catch (_) {}
-	bus?.disconnect();
+	const service = parse(capture(`ubus call service list ${shell_quote(sprintf('%J', { name: listener.service }))}`));
 	const engine = service?.[listener.service]?.instances?.[listener.instance];
 	const membership = engine?.running == true && type(engine.pid) == "int" ? fs.readfile(`/proc/${engine.pid}/cgroup`) : null;
 	let engine_group = null;
