@@ -281,10 +281,17 @@ frontend ${name}_http
     }
     function probe_pair(uid) {
         const failure={ok:false,reason:'local_conversion_failed'};
+        const directory=fs.mkdtemp('/tmp/netfleet-probe.XXXXXX');
+        if(!directory) return {ipv4:failure,ipv6:failure};
+        const report=directory+'/result';let value;
         try {
-            const value=json(io.command([io.root+'/tls-probe','local-pair',RUN,uid],2,null,true));
-            return {ipv4:value.ipv4 ?? failure,ipv6:value.ipv6 ?? failure};
-        } catch (_) {return {ipv4:failure,ipv6:failure};}
+            const code=system(['/usr/bin/timeout','-k','1','2',io.root+'/tls-probe','local-pair',RUN,uid,report]);
+            const size=fs.lstat(report)?.size;
+            if((code!=0&&code!=1)||size==null||size>4096) die('local_conversion_failed');
+            value=json(fs.readfile(report));
+        } catch (_) {}
+        fs.unlink(report);fs.rmdir(directory);
+        return {ipv4:value?.ipv4 ?? failure,ipv6:value?.ipv6 ?? failure};
     }
     return {fingerprint,prepare_ca,revision,configuration,prepare,sync_rule_switches,health,probe,probe_pair};
 };

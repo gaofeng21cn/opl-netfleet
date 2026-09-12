@@ -15,9 +15,18 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 kill -STOP "$manager"
-"$helper" local-pair "$run" "$uid" >"$out"
+rm -f "$out"
+"$helper" local-pair "$run" "$uid" "$out"
 test "$(jsonfilter -i "$out" -e '@.ipv4.ok')" = true
 test "$(jsonfilter -i "$out" -e '@.ipv6.ok')" = true
+# Refuse existing files and symlinks; never overwrite a prior report.
+cp "$out" "$out.saved"
+if "$helper" local-pair "$run" "$uid" "$out"; then exit 1; fi
+cmp "$out" "$out.saved"
+ln -s "$out" "$out.link"
+if "$helper" local-pair "$run" "$uid" "$out.link"; then exit 1; fi
+cmp "$out" "$out.saved"
+rm -f "$out.saved" "$out.link"
 nft -f - <<'NFT'
 table inet compat_probe_fixture {
  chain reject_probe { type filter hook output priority -110; policy accept; }

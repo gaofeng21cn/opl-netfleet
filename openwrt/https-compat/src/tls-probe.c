@@ -183,6 +183,13 @@ static int probe(int argc,char **argv) {
 }
 int main(int argc,char **argv) {
     started=millis();
+    /* Private report avoids shell redirection and signal-interrupted pipe reads. */
+    if(argc==5&&!strcmp(argv[1],"local-pair")) {
+        int report=open(argv[4],O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC,0600);
+        if(report<0) return 2;
+        if(dup2(report,STDOUT_FILENO)<0) {close(report);return 2;}
+        close(report);argc=4;
+    }
     if(argc>=2&&!strcmp(argv[1],"local-pair")) {
         if(argc!=4||argv[2][0]!='/'||strlen(argv[2])>350||number(argv[3],2147483647)<=0) return 2;
         paired=1;signal(SIGALRM,expired);
