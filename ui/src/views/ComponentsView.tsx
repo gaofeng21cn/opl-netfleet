@@ -45,7 +45,7 @@ function PluginRow({ plugin }: { plugin: PluginComponent }) {
     <td><span>{plugin.runtime === 'service' ? '服务插件' : '进程插件'}</span><small>{plugin.description || pluginPurposes[plugin.id] || `为 NetFleet 提供 ${plugin.label || plugin.id} ${plugin.runtime === 'service' ? '服务' : '功能'}`}</small></td>
     <td><strong>{displayVersion(version)}</strong><details><summary>版本详情</summary><small>{version}</small><small>{plugin.package}</small></details></td>
     <td className="nf-component-actions">{plugin.ui?.length ? plugin.ui.map(page => <button key={page.id} type="button" disabled title={previewReason}>{plugin.ui.length === 1 ? plugin.configuration ? '配置' : '打开页面' : page.title}</button>) : <small>无需单独配置</small>}</td>
-    <td className="nf-component-actions"><span>{plugin.enabled === false ? '已停用' : unavailable ? '暂不可用' : plugin.runtime === 'service' ? '可用' : '可按需加载'}</span>{plugin.reason && plugin.reason !== 'plugin_disabled' && <small className="is-warning">{componentError(plugin.reason)}</small>}{plugin.revision && <button type="button" disabled title={previewReason}>查看状态</button>}</td>
+    <td className="nf-component-actions"><span>{plugin.enabled === false ? '已停用' : unavailable ? '暂不可用' : '可用'}</span>{plugin.reason && plugin.reason !== 'plugin_disabled' && <small className="is-warning">{componentError(plugin.reason)}</small>}{plugin.revision && <button type="button" disabled title={previewReason}>查看状态</button>}</td>
   </tr>;
 }
 

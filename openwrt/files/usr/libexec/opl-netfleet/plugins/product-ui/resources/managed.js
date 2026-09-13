@@ -813,7 +813,7 @@ function componentsPage(controller) {
 			controller.context.navigate('plugin:' + plugin.id + ':' + (plugin.instance && plugin.instance !== 'default' ? plugin.instance + ':' : '') + page.id);
 		}, active || plugin.enabled === false); });
 		const rawVersion = plugin.installed_version || plugin.version;
-		const availability = plugin.enabled === false ? '已停用' : plugin.reason || plugin.state === 'unavailable' || plugin.state === 'invalid' ? '暂不可用' : plugin.runtime === 'service' ? '可用' : '可按需加载';
+		const availability = plugin.enabled === false ? '已停用' : plugin.reason || plugin.state === 'unavailable' || plugin.state === 'invalid' ? '暂不可用' : '可用';
 		const state = [E('span', { 'class': 'netfleet-plugin-state' }, availability)];
 		if (plugin.reason && plugin.reason !== 'plugin_disabled') state.push(E('small', { 'class': 'is-warning' }, errorLabel(plugin.reason)));
 		if (plugin.revision) state.push(button('查看状态', function() { pluginDialog(controller, plugin); }, active));
