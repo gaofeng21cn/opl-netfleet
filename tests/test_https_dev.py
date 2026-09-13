@@ -17,6 +17,22 @@ import update
 import compare
 
 class EngineArtifacts(unittest.TestCase):
+    def test_dev_runner_releases_its_lock_after_success_or_failure(self):
+        import os
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);binary=root/'bin';binary.mkdir();candidate=root/'candidate';candidate.mkdir()
+            (candidate/'compat-manifest.json').write_text('{}')
+            runner=binary/'python3';runner.write_text('#!/bin/sh\nexit "$FIXTURE_STATUS"\n');runner.chmod(0o755)
+            lock=root/'lock'
+            env={**os.environ,'PATH':str(binary)+os.pathsep+os.environ['PATH'],
+                 'NETFLEET_COMPAT_LOCKDIR':str(lock),'OUTPUT':str(root/'out'),'REF':'HEAD',
+                 'PACKAGES':str(root),'COMPAT_PACKAGES':str(candidate),'BASE_QUALIFICATION':str(root/'base.json'),
+                 'PREVIOUS':str(candidate)}
+            for status in [0,7]:
+                result=subprocess.run(['bash',str(DIR/'dev.sh'),'qualify'],env={**env,'FIXTURE_STATUS':str(status)},capture_output=True)
+                self.assertEqual(result.returncode,status,result.stderr.decode())
+                self.assertFalse(lock.exists())
+
     def test_retained_set_binds_exact_owner_files_without_downgrading_other_plugins(self):
         import copy
         with tempfile.TemporaryDirectory() as directory:

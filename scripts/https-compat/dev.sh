@@ -65,7 +65,8 @@ ref=${REF:-HEAD}
 commit=$(git rev-parse --verify "${ref}^{commit}")
 if [[ "$action" == build ]]; then
   require SDK; require SIGNING_KEY
-  exec bash scripts/https-compat/build-package.sh "$SDK" "$SIGNING_KEY" "$OUTPUT" "$commit"
+  bash scripts/https-compat/build-package.sh "$SDK" "$SIGNING_KEY" "$OUTPUT" "$commit"
+  exit 0
 fi
 require PACKAGES; require COMPAT_PACKAGES
 [[ -f "$COMPAT_PACKAGES/compat-manifest.json" ]] || { printf 'Signed compatibility candidate missing.\n' >&2; exit 2; }
@@ -73,13 +74,14 @@ if [[ -n "${BASE_QUALIFICATION:-}" && ( "$action" == qualify || "$action" == ben
   require PREVIOUS
   args=(); [[ "$action" != benchmark ]] || args=(--benchmark)
   [[ -z "${RETAINED_BASE:-}" ]] || args+=(--retained-base "$RETAINED_BASE")
-  exec python3 scripts/https-compat/qualify.py --packages "$PACKAGES" --base-qualification "$BASE_QUALIFICATION" \
+  python3 scripts/https-compat/qualify.py --packages "$PACKAGES" --base-qualification "$BASE_QUALIFICATION" \
     --candidate "$COMPAT_PACKAGES" --previous "$PREVIOUS" --output "$OUTPUT/plugin-qualification.json" "${args[@]}"
+  exit 0
 fi
 [[ "$action" != benchmark ]] || { printf 'benchmark requires BASE_QUALIFICATION and PREVIOUS.\n' >&2; exit 2; }
 if [[ "$action" == qualify ]]; then
   bash scripts/openwrt-vm.sh --ref "$commit" --packages "$PACKAGES" --output "$OUTPUT/qualification.json"
 fi
 args=(); [[ -z "${BASE_QUALIFICATION:-}" ]] || args=(--base-qualification "$BASE_QUALIFICATION")
-exec bash scripts/openwrt-vm.sh --ref "$commit" --packages "$PACKAGES" "${args[@]}" \
+bash scripts/openwrt-vm.sh --ref "$commit" --packages "$PACKAGES" "${args[@]}" \
   --diagnostic compatibility --compat-package "$COMPAT_PACKAGES" --output "$OUTPUT/compatibility.json"
