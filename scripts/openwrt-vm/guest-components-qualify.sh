@@ -406,6 +406,8 @@ mkdir -p "$work/upstream-repository"
 uclient-fetch -q -O "$work/upstream-repository/packages.adb" "$feed_url/components-fixtures/unsigned-core/packages.adb"
 uclient-fetch -q -O "$work/upstream-repository/mihomo-meta-$core_old.apk" "$feed_url/components-fixtures/unsigned-core/mihomo-meta-$core_old.apk"
 install_fixture -X "$work/upstream-repository/packages.adb" "mihomo-meta=$core_old" >"$work/upstream-downgrade.log" 2>&1
+# The version constraint selects this fixture only; it is not an administrator pin.
+apk --no-network --repositories-file /dev/null add mihomo-meta >>"$work/upstream-downgrade.log" 2>&1
 unchanged
 request components_update "$core_current" mihomo
 assert_json "$work/operation-result.json" '@.result.packages.state' succeeded

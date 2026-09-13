@@ -289,7 +289,7 @@ function archive_valid(path, work) {
 	if (length(rows ?? []) != 1 || rows[0].version != info.version) return false;
 	// Repository fetch authenticates the index and every package data block, even
 	// when the upstream archive has no individual signature. Never allow untrusted.
-	return run_command(`apk --no-network fetch --from none -X ${q(repository)} --all-matches --stdout ${q(info.name)} >/dev/null`, work);
+	return run_command(`(apk --no-network fetch --from none -X ${q(repository)} --all-matches --stdout ${q(info.name)} >/dev/null)`, work);
 }
 archive = function(name, version, path, work, fallback_version, source) {
 	const target = `${path}/${name}-${version}.apk`;
