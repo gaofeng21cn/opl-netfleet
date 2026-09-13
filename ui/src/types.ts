@@ -177,6 +177,7 @@ export interface DeviceConfigSnapshot {
 }
 
 export interface StatusSnapshot {
+  operating_mode?: 'openwrt' | 'mihomo' | 'netfleet';
   build?: { version?: string | null; source_commit?: string | null; source_tree?: string | null };
   active: boolean;
   recovery?: { reason: string; requested_at: number; retry_at: number } | null;
