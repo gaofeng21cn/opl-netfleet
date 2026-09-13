@@ -4,9 +4,21 @@ const io=require('netfleet_interception');
 assert(getenv('NETFLEET_ISOLATED_NATIVE_TEST')=='1');
 function command(text) {const p=fs.popen(text,'r'),out=p.read('all'),rc=p.close();assert(rc==0,text);return out;}
 function nft(text) {const p=fs.popen('nft -f -','w');p.write(text+'\n');assert(p.close()==0,text);}
-function rejects(work) {let rejected=false;try {work();} catch(e) {rejected=e.message=='gateway_command_failed'||e.message=='invalid_lease_candidate';}assert(rejected,'invalid observation accepted');}
-const initial=io.observe();assert(initial.present&&initial.guard);
+function rejects(work) {let rejected=false;try {work();} catch(e) {rejected=index(['gateway_command_failed','invalid_lease_candidate','gateway_input_invalid'],e.message)>=0;}assert(rejected,'invalid observation accepted');}
+let initial=io.observe();assert(initial.present&&initial.guard);
 assert(sprintf('%J',sort(initial.interfaces))=='[ "br-lan", "nf-observe" ]');
+// Production LAN sets use interval encoding even for literal interface names.
+// Kernel dump order is unrelated to lexical interval order.
+nft('delete set inet netfleet lan_inbound_device\nadd set inet netfleet lan_inbound_device { type ifname; flags interval; auto-merge; elements = { "br-lan", "nf-observe" }; }');
+assert(sprintf('%J',sort(io.observe().interfaces))=='[ "br-lan", "nf-observe" ]');
+nft('flush set inet netfleet lan_inbound_device\nadd element inet netfleet lan_inbound_device { "nf*" }');
+rejects(()=>io.observe());
+const names=[];for(let n=0;n<16;n++)push(names,sprintf('"nf-%02d"',n));
+nft('flush set inet netfleet lan_inbound_device\nadd element inet netfleet lan_inbound_device { '+join(', ',names)+' }');
+assert(length(io.observe().interfaces)==16,'literal interval bound rejected');
+nft('add element inet netfleet lan_inbound_device { "nf-16" }');rejects(()=>io.observe());
+nft('flush set inet netfleet lan_inbound_device\nadd element inet netfleet lan_inbound_device { "br-lan", "nf-observe" }');
+initial=io.observe();
 const protected=command('nft -j list table inet netfleet');
 const pairs=[['192.0.2.22','198.51.100.0/24',443],['2001:db8::22','2001:db8:8::/64',8443]];
 assert(io.renew(pairs,initial.generation).leases==2);
@@ -41,7 +53,9 @@ assert(!io.observe().guard,'different ownership bit accepted');
 nft('flush chain inet netfleet mangle_prerouting_lan\nadd rule inet netfleet mangle_prerouting_lan ct mark & 0x01000000 != 0 return');
 assert(io.observe().guard,'valid guard not recovered');
 command('ip -4 rule add fwmark 0x80/0xff lookup 80; ip -4 route add local default dev lo table 80; ip -6 rule add fwmark 0x80/0xff lookup 80; ip -6 route add local default dev lo table 80');
-assert(io.routes(80,[4,6]));command('ip -6 route del local default dev lo table 80');assert(!io.routes(80,[4,6]));
+assert(io.routes(80,[4,6]));assert(io.routes('80',[4,6]),'persisted UCI table identity rejected');
+for(let bad in ['80junk','-80','0','4294967296','80\u0000',{}])rejects(()=>io.routes(bad,[4,6]));
+command('ip -6 route del local default dev lo table 80');assert(!io.routes(80,[4,6]));
 command('ip -4 rule del fwmark 0x80/0xff lookup 80; ip -4 route del local default dev lo table 80; ip -6 rule del fwmark 0x80/0xff lookup 80');
 assert(io.port_range(40000,50000));
 nft('delete table inet netfleet_compat');assert(!io.table().exists&&!io.status().intercepting);

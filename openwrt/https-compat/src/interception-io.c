@@ -176,17 +176,47 @@ static int read_table(struct connection *c, struct table_info *info) {
 }
 struct candidate { unsigned len; unsigned char key[36], end[36]; };
 static int candidate_order(const void *, const void *);
-struct elements { uc_value_t *interfaces; unsigned count; unsigned keylen; const char *table, *set; struct candidate *expected; unsigned expected_count; bool *seen; };
+struct elements { uc_value_t *interfaces; unsigned count; unsigned keylen; const char *table, *set; struct candidate *expected; unsigned expected_count; bool *seen; unsigned lan_count; unsigned char lan_keys[33][16]; bool lan_ends[33]; };
+static int interface_elements(struct elements *result) {
+    /* ifname interval dumps are unordered. Accept only exact-name singleton
+     * intervals, never widen a wildcard/range to a literal interface name. */
+    unsigned starts=0,ends=0;bool seen[33]={0};
+    for(unsigned i=0;i<result->lan_count;i++) if(result->lan_ends[i]) {
+        bool zero=true;for(unsigned b=0;b<16;b++)zero &= result->lan_keys[i][b]==0;
+        if(zero) {if(ends++)return -1;seen[i]=true;}
+    }
+    bool intervals=false;for(unsigned i=0;i<result->lan_count;i++)intervals |= result->lan_ends[i];
+    for(unsigned i=0;i<result->lan_count;i++) {
+        if(result->lan_ends[i])continue;
+        const unsigned char *key=result->lan_keys[i];size_t n=strnlen((const char *)key,16);
+        if(n==0||n>15||++starts>16)return -1;
+        for(unsigned b=0;b<n;b++)if(!strchr("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-",key[b]))return -1;
+        for(unsigned b=n;b<16;b++)if(key[b])return -1;
+        for(unsigned j=0;j<i;j++)if(!result->lan_ends[j]&&!memcmp(key,result->lan_keys[j],16))return -1;
+        if(intervals) {
+            unsigned char end[16];memcpy(end,key,16);end[15]=1;
+            unsigned matches=0;
+            for(unsigned j=0;j<result->lan_count;j++)if(result->lan_ends[j]&&!memcmp(end,result->lan_keys[j],16)) {
+                if(seen[j])return -1;
+                seen[j]=true;matches++;
+            }
+            if(matches!=1)return -1;
+        }
+        ucv_array_push(result->interfaces,ucv_string_new_length((const char *)key,n));
+    }
+    for(unsigned i=0;i<result->lan_count;i++)if(result->lan_ends[i]&&!seen[i])return -1;
+    result->count=starts;return 0;
+}
 static int element_cb(struct nftnl_set_elem *e, void *arg) {
     struct elements *result = arg; uint32_t len = 0;
     const unsigned char *key = nftnl_set_elem_get(e, NFTNL_SET_ELEM_KEY, &len);
-    if (!key || len != result->keylen || (nftnl_set_elem_is_set(e, NFTNL_SET_ELEM_FLAGS) && nftnl_set_elem_get_u32(e, NFTNL_SET_ELEM_FLAGS))) return -1;
+    uint32_t flags=nftnl_set_elem_is_set(e,NFTNL_SET_ELEM_FLAGS)?nftnl_set_elem_get_u32(e,NFTNL_SET_ELEM_FLAGS):0;
+    if (!key || len != result->keylen) return -1;
     if (result->interfaces) {
-        size_t n = strnlen((const char *)key, len);
-        if (n == 0 || n >= len || n > 15 || ++result->count > 16) return -1;
-        for (size_t i = 0; i < n; i++) if (!strchr("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-", key[i])) return -1;
-        ucv_array_push(result->interfaces, ucv_string_new_length((const char *)key, n));
+        if(len!=16||result->lan_count>=33||(flags&~NFT_SET_ELEM_INTERVAL_END)||nftnl_set_elem_is_set(e,NFTNL_SET_ELEM_KEY_END))return -1;
+        unsigned i=result->lan_count++;memcpy(result->lan_keys[i],key,16);result->lan_ends[i]=flags!=0;
     } else {
+        if(flags)return -1;
         if (!nftnl_set_elem_is_set(e, NFTNL_SET_ELEM_EXPIRATION)) return -1;
         if (!nftnl_set_elem_get_u64(e, NFTNL_SET_ELEM_EXPIRATION)) return 0;
         if (++result->count > LIMIT) return -1;
@@ -293,6 +323,7 @@ static uc_value_t *uc_observe(uc_vm_t *vm, size_t nargs) {
     struct elements lan = {.interfaces=ucv_array_new(vm), .keylen=16, .table="netfleet", .set="lan_inbound_device"};
     uint32_t before=0,after=0;int rc=generation(&c,&before);
     if(!rc)rc=read_elements(&c, &lan);
+    if(!rc&&interface_elements(&lan)){errno=EPROTO;rc=-1;}
     struct guard g = {0};
     if (!rc) {
         _Alignas(struct nlmsghdr) char buffer[1024]; struct nftnl_rule *r = nftnl_rule_alloc();
@@ -338,8 +369,15 @@ static int route_cb(const struct nlmsghdr *h, void *arg) {
 }
 static uc_value_t *uc_routes(uc_vm_t *vm,size_t nargs) {
     (void)nargs; uc_value_t *table=uc_fn_arg(0),*families=uc_fn_arg(1);
-    int64_t id=ucv_int64_get(table);
-    if (ucv_type(table)!=UC_INTEGER || id<1 || id>UINT32_MAX || ucv_type(families)!=UC_ARRAY || ucv_array_length(families)>2) return failure(vm,"gateway_input_invalid");
+    int64_t id=0;
+    /* The gateway's persisted UCI table identity is a decimal string. */
+    if(ucv_type(table)==UC_INTEGER)id=ucv_int64_get(table);
+    else if(ucv_type(table)==UC_STRING) {
+        const char *s=ucv_string_get(table);size_t len=ucv_string_length(table);
+        if(!len||len>10||strlen(s)!=len||strspn(s,"0123456789")!=len)return failure(vm,"gateway_input_invalid");
+        id=strtoll(s,NULL,10);
+    }
+    if (id<1 || id>UINT32_MAX || ucv_type(families)!=UC_ARRAY || ucv_array_length(families)>2) return failure(vm,"gateway_input_invalid");
     struct connection c;if(open_netlink(&c,NETLINK_ROUTE))return failure(vm,"gateway_command_failed");
     bool ready=true;int rc=0;
     for(size_t i=0;i<ucv_array_length(families)&&!rc;i++) {
