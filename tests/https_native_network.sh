@@ -155,6 +155,19 @@ done
 test "$(jsonfilter -i "$work/gateway.json" -e '@.result.ready')" = true
 base_pid=$(pidof mihomo)
 sha256sum /etc/config/netfleet /etc/opl-netfleet/native/run/config.yaml >"$work/base.sha256"
+stage=kernel_tcp_reset
+for family in 4 6; do
+    rm -f "/tmp/tcp-reset-ready-$family"
+    ip netns exec nfcompat-origin ucode /tmp/tests/tcp_reset_peer.uc "$family" observe >"$work/reset-$family.json" 2>"$work/reset-$family.log" &
+    reset_peer=$!
+    for attempt in $(seq 1 30); do
+        [ ! -f "/tmp/tcp-reset-ready-$family" ] || break
+        ucode -e 'sleep(20);'
+    done
+    ucode /tmp/tests/tcp_reset_peer.uc "$family" send
+    wait "$reset_peer"
+    rm -f "/tmp/tcp-reset-ready-$family"
+done
 probe() {
     family=$1
     expected=$2

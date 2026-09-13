@@ -17,6 +17,23 @@ import update
 import compare
 
 class EngineArtifacts(unittest.TestCase):
+    def test_base_binding_includes_actual_gateway_templates(self):
+        import hashlib
+        source=ROOT/'openwrt/files'
+        paths=[p for p in source.rglob('*') if p.is_file()]
+        inventory={str(p.relative_to(source)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            def write():
+                (root/'FILES.sha256').write_text(''.join(f'{digest}  {name}\n' for name,digest in inventory.items()))
+            write()
+            selected=base.runtime_files(root)
+            template='usr/share/opl-netfleet/nikki/hijack.ut'
+            self.assertEqual(selected['/'+template],inventory[template])
+            del inventory[template]
+            write()
+            with self.assertRaises(ValueError):base.runtime_files(root)
+
     def test_dev_runner_releases_its_lock_after_success_or_failure(self):
         import os
         with tempfile.TemporaryDirectory() as directory:

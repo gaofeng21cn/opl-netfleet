@@ -535,8 +535,16 @@ table inet netfleet {
 		{% endif %}
 	}
 
+	chain socketless_reset {
+		# A missing socket cannot match skuid. Socket-owned resets retain the
+		# normal policy; kernel resets must reach the peer to retire stale tuples.
+		meta skuid 0-4294967295 return
+		counter accept
+	}
+
 	chain mangle_output {
 		type route hook output priority mangle; policy accept;
+		tcp flags & rst != 0 jump socketless_reset
 		{% if (cgroups_version == 1): %}
 		meta cgroup {{ cgroup_id }} counter return
 		{% elif (cgroups_version == 2): %}

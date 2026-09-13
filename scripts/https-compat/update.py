@@ -15,7 +15,8 @@ from qualify import artifact
 
 REQUIRED = ['engine_package_cycle', 'dual_stack_probe_faults', 'native_dependency_closure',
             'real_gateway_h2', 'simultaneous_stall_fail_open', 'base_pid_unchanged',
-            'base_configuration_unchanged', 'streaming_upload_and_sse', 'resource_pressure']
+            'base_configuration_unchanged', 'streaming_upload_and_sse', 'resource_pressure',
+            'kernel_tcp_reset_delivery']
 
 
 def verify(packages, base_proof, candidate, previous, receipt, retained=None):

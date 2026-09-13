@@ -19,8 +19,11 @@ def runtime_files(packages):
     root = 'usr/libexec/opl-netfleet/'
     prefixes = [root+p for p in ['kernel/', 'adapters/', 'plugins/mihomo/',
                 'plugins/https-compat/', 'plugins/platform/', 'plugins/platform-storage/']]
+    prefixes.append('usr/share/opl-netfleet/nikki/')
     exact = [root+'main.uc', root+'plugins/models/lib/extensions.uc',
-             'usr/libexec/opl-netfleet-plugin-package', 'etc/init.d/opl-netfleet-core', 'etc/init.d/opl-netfleet']
+             'usr/libexec/opl-netfleet-plugin-package', 'etc/init.d/opl-netfleet-core', 'etc/init.d/opl-netfleet',
+             'usr/share/opl-netfleet/nikki/hijack.ut', 'usr/share/opl-netfleet/nikki/mixin.uc',
+             'usr/share/opl-netfleet/nikki/include.uc']
     result = {}
     for line in (Path(packages)/'FILES.sha256').read_text().splitlines():
         digest, path = line.split(None, 1)

@@ -272,6 +272,12 @@ procd 直接持有 Mihomo 子进程，并提供有限 respawn。gateway 通过�
 进入自身代理。路由身份、受影响地址族与原 bridge 参数写入私有 ownership 对象，
 只用于本 owner 的清理，不作为另一个网络配置源。
 
+本机 TCP Reset 若没有所属 socket，必须沿原始出口发送，不能被本机 TProxy 再次
+截获。否则旧上游连接收不到内核对无效 ACK 的 Reset，源端口复用时新连接可能一直
+重传 SYN。该例外只处理无 socket 的 Reset；有 socket 的 Reset 与正常 TCP/UDP
+仍遵循原有选路。规则由基础 gateway 的模板生成，不由 HTTPS 或其他可选插件维护，
+不修改 DSCP、用户规则或上游连接的业务内容。
+
 停止和失败收口先删除拦截，再撤销本 owner 的策略路由并恢复其修改的 bridge 参数。
 发现不明来源 table、身份不匹配或无法回读清理结果时报告失败，不清除其他 owner 的状态。
 服务正常退出、崩溃后的恢复与停止都必须取得实际运行或清理证据；不能用 procd 注册、
