@@ -645,9 +645,11 @@ function capabilityPanel(status, capability, controller) {
 					pathHealthLabel(capability)
 				])
 			]),
-			E('dl', {}, [ E('dt', {}, '选择方式'), E('dd', {}, modeName(capability)) ])
+			E('dl', {}, [ E('dt', {}, '选择方式'), E('dd', {}, [modeName(capability),
+				capability.user_mode === 'automatic' ? E('small', {}, (status.selection?.automation_paused ? '后台选优暂停 · ' : '') + '切换门槛 ' + delay(capability.region_switch_margin_ms ?? status.selection?.region_switch_margin_ms)) :
+				capability.user_mode === 'manual_region' ? E('small', {}, '手动保持地区 · 后台选优暂停') : null
+			].filter(Boolean)) ])
 		]),
-		selectionExplanation(status, capability),
 		E('details', { 'class': 'netfleet-exit-details' }, [ E('summary', {}, '节点、业务与恢复详情'), E('p', {}, route(status, capability).join(' → ')),
 		business.length ? E('div', { 'class': 'netfleet-business-routing' }, [
 			E('h4', {}, '业务路由')

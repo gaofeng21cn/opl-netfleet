@@ -5,6 +5,9 @@ const modulePath = /^resources\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.js$/;
 const sharedEvents = new Map();
 
 export const pluginHostStyles = `
+/* Navigation survives page disposal; its surface must survive with it. */
+.netfleet-plugin-shell > .netfleet-primary-nav { background: var(--background-color-high, #fff); }
+[data-netfleet-theme=dark] .netfleet-plugin-shell > .netfleet-primary-nav { background: var(--background-color-high, #252526); }
 .netfleet-plugin-shell > .netfleet-primary-nav { position: static; display: flex; flex-wrap: wrap; gap: 4px; padding: 0; margin: 0 0 20px; list-style: none; border-bottom: 1px solid var(--nf-border, #ddd); }
 .netfleet-plugin-shell { min-width: 0; }
 .netfleet-primary-nav > li { display: block; flex: 0 0 auto; float: none; margin: 0; padding: 0; list-style: none; }

@@ -10,16 +10,42 @@ import { displayVersion } from '../lib/version';
 const previewReason = '本机预览只读，请在设备 LuCI 中操作';
 const coreVersion = (value: string) => value.replace(/^v/, '').replace(/-r\d+$/, '');
 const checkedTime = (value: number | null, failed?: string | null) => value ? `检查于 ${new Date(value * 1000).toLocaleString()}` : failed ? '检查时间未记录' : '尚未检查更新';
+const pluginPurposes: Record<string, string> = {
+  'device-identity': '识别网络设备，为按设备配置规则提供稳定身份',
+  activation: '切换运行模式，应用或退出代理接管',
+  compilation: '根据策略与节点来源生成代理运行配置',
+  components: '检查并更新基础软件与面板资源',
+  configuration: '读取、校验和保存出口与选路策略',
+  dashboard: '提供实时面板入口与资源更新',
+  events: '记录设备操作进度和选路事件',
+  'https-compat': '为指定设备和网站提供 HTTPS 协议兼容',
+  maintenance: '管理配置文件、备份与核心维护',
+  mihomo: '连接代理核心并管理其运行配置',
+  models: '提供机场、地区与出口的结构化配置',
+  network: '管理设备代理、DNS 与监听设置',
+  platform: '提供设备进程与运行环境能力',
+  'platform-openwrt': '接入系统配置与设备信息',
+  'platform-storage': '读写配置文档与设备文件',
+  'product-ui': '提供概览、出口与配置等管理页面',
+  recovery: '在退出或异常时恢复网络直连',
+  refresh: '更新订阅并准备最新节点',
+  scheduler: '按计划执行订阅更新与自动选优',
+  selection: '为各出口测速并选择可用路径',
+  'selection-algorithm': '按策略比较地区与候选路径',
+  setup: '准备运行基础并接入已有设置',
+  status: '汇总当前出口、机场与设备运行状态',
+  subscriptions: '管理机场订阅与节点缓存',
+};
 
 function PluginRow({ plugin }: { plugin: PluginComponent }) {
   const version = plugin.installed_version || plugin.version;
   const unavailable = Boolean(plugin.reason) || ['unavailable', 'invalid'].includes(plugin.state);
   return <tr>
     <td><strong>{plugin.label || plugin.id}</strong><small>{plugin.id}</small>{plugin.instance && plugin.instance !== 'default' && <small>实例：{plugin.instance}</small>}</td>
-    <td><span>{plugin.runtime === 'service' ? '服务插件' : '进程插件'}</span><small>{plugin.description || `为 NetFleet 提供 ${plugin.label || plugin.id} ${plugin.runtime === 'service' ? '服务' : '功能'}`}</small></td>
+    <td><span>{plugin.runtime === 'service' ? '服务插件' : '进程插件'}</span><small>{plugin.description || pluginPurposes[plugin.id] || `为 NetFleet 提供 ${plugin.label || plugin.id} ${plugin.runtime === 'service' ? '服务' : '功能'}`}</small></td>
     <td><strong>{displayVersion(version)}</strong><details><summary>版本详情</summary><small>{version}</small><small>{plugin.package}</small></details></td>
     <td className="nf-component-actions">{plugin.ui?.length ? plugin.ui.map(page => <button key={page.id} type="button" disabled title={previewReason}>{plugin.ui.length === 1 ? plugin.configuration ? '配置' : '打开页面' : page.title}</button>) : <small>无需单独配置</small>}</td>
-    <td className="nf-component-actions"><span>{plugin.enabled === false ? '已停用' : unavailable ? '暂不可用' : plugin.runtime === 'service' ? '可用' : '可按需加载'}</span>{plugin.reason && plugin.reason !== 'plugin_disabled' && <small className="is-warning">{componentError(plugin.reason)}</small>}{plugin.revision && <button type="button" disabled title={previewReason}>查看状态</button>}</td>
+    <td className="nf-component-actions"><span>{plugin.enabled === false ? '已停用' : unavailable ? '暂不可用' : '可用'}</span>{plugin.reason && plugin.reason !== 'plugin_disabled' && <small className="is-warning">{componentError(plugin.reason)}</small>}{plugin.revision && <button type="button" disabled title={previewReason}>查看状态</button>}{['product-ui', 'components', 'status', 'events', 'setup'].includes(plugin.id) ? <small>管理界面必需</small> : plugin.revision && <button type="button" disabled title={previewReason}>{plugin.runtime === 'service' ? plugin.enabled === false ? '启用' : '禁用' : '启用 / 禁用'}</button>}</td>
   </tr>;
 }
 
