@@ -81,7 +81,14 @@ UC
     sleep 10
    done) & ui_pid=$!
   fi
+  neighbour_at=0
   while [ "$(date +%s)" -lt "$deadline" ]; do
+   # Keep the isolated client present through real ARP traffic in every scene,
+   # including off. Otherwise an idle 300s window outlives 120s identity evidence.
+   if [ "$(date +%s)" -ge "$neighbour_at" ]; then
+    ping -c 1 -W 1 -I nfcompat0 10.77.0.2 >/dev/null 2>&1 || echo neighbour_unreachable >>"$out/errors.log"
+    neighbour_at=$(($(date +%s)+30))
+   fi
    bench_capture >>"$out/samples.jsonl"
    sleep 2
   done
