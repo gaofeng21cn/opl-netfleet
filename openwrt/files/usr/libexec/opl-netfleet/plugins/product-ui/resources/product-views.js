@@ -343,8 +343,16 @@ function statusSummary(status) {
 		[ '周期选优', supervisor.running ? (status.selection && status.selection.automation_paused ? '手动暂停' : '运行中') : '未运行' ],
 		[ '当前配置', status.active ? 'NetFleet 运行配置' : text(status.recovery_profile_display_name, '当前原生配置') ]
 	];
-	return E('div', { 'class': 'netfleet-status-line', 'aria-label': '运行状态' }, items.map(function(item) {
-		return E('span', {}, [ E('span', {}, item[0]), E('strong', {}, item[1]) ]);
+	return E('div', { 'class': 'netfleet-status-line', 'aria-label': '运行状态' }, [
+		['运行概况', [items[0], items[1], items[8]]],
+		['网络接管', [items[2], items[3], items[4]]],
+		['管理服务', [items[5], ['实时面板', items[6][1]], items[7]]]
+	].map(function(group) {
+		return E('section', { 'class': 'netfleet-status-group', 'aria-label': group[0] }, [
+			E('h3', {}, group[0]), E('dl', {}, group[1].flatMap(function(item) {
+				return [E('dt', {}, item[0]), E('dd', {}, item[1])];
+			}))
+		]);
 	}));
 }
 
