@@ -5,7 +5,6 @@ const modulePath = /^resources\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.js$/;
 const sharedEvents = new Map();
 
 export const pluginHostStyles = `
-.netfleet-shell-brand { font-weight: 700; font-size: 15px; padding: 0 0 12px; }
 .netfleet-plugin-shell > .cbi-tabmenu { display: flex; flex-wrap: wrap; gap: 4px; padding: 0; margin: 0 0 20px; }
 .netfleet-plugin-shell { min-width: 0; }
 .netfleet-plugin-shell > .cbi-tabmenu > li { margin: 0 !important; padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; }
@@ -20,7 +19,6 @@ export const pluginHostStyles = `
 .netfleet-plugin-subnav [aria-current=page] { font-weight: 600; }
 [data-netfleet-theme=dark] .netfleet-plugin-shell > .cbi-tabmenu > .cbi-tab > a { color: var(--primary-color-high, #a5b2ff); border-bottom-color: currentColor; }
 @media (max-width: 700px) {
-  .netfleet-plugin-shell > .netfleet-shell-brand { display: none; }
   .netfleet-plugin-shell > .cbi-tabmenu { flex-wrap: nowrap; gap: 0; width: 100%; min-height: 0; margin: 0 0 16px !important; padding: 0 !important; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
   .netfleet-plugin-shell > .cbi-tabmenu > li { flex: 0 0 auto; float: none; height: auto; min-height: 0; }
   .netfleet-plugin-shell > .cbi-tabmenu > li > a { display: flex; align-items: center; min-height: 44px; padding: 8px 12px !important; margin: 0 !important; white-space: nowrap; font-size: 15px; line-height: 1.4; }

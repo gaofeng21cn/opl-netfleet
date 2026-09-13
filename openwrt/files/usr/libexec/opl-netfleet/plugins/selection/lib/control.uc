@@ -83,7 +83,10 @@ automatic_select_action = function(policy, capability, evidence, trigger, initia
 		automatic_provider_sources(manifest, automatic_names), policy.checks);
 	const shared = { entries: {}, prepared: true };
 	for (let name in automatic_names) {
-		if (!reset_candidate_groups(secret, manifest.generated_groups[name])) fail("select", "candidate_group_reset_failed", name);
+		const detail = { capability: name };
+		if (!reset_candidate_groups(secret, manifest.generated_groups[name], detail,
+			counts => operation_update("resetting_candidates", { subject: name, ...counts })))
+			fail("select", "candidate_group_reset_failed", detail);
 	}
 	operation_update("measuring", { subject: null, total: 0, completed: 0 });
 	const results = {};

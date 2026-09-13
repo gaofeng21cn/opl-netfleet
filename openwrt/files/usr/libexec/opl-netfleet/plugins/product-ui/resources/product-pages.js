@@ -127,7 +127,7 @@ const productController = {
 		this.currentView = this.pageId;
 		this.eventPage = 0;
 		this.diagnosticSection = 'events';
-		this.componentsSection = 'plugins';
+		this.componentsSection = 'software';
 		this.fetchedAt = initial.fetchedAt;
 		this.readDurationMs = initial.readDurationMs;
 		this.liveDataReady = !initial.cached;
@@ -210,7 +210,7 @@ const productController = {
 
 	redraw: function() {
 		const self = this;
-		if (this.context.signal.aborted) return;
+		if (this.context.signal?.aborted) return;
 		if (this.onboarding && this.onboarding.required) {
 			const source = section('数据来源', null, [ metricGrid([
 				[ '数据来源', '设备实时 RPC' ], [ '目标', '当前设备' ],
@@ -275,7 +275,7 @@ const productController = {
 		if (this.currentView === 'overview') content.splice(2, 0, operatingModeControls(this));
 		if (this.currentView !== 'components' && this.currentView !== 'config')
 			content.unshift(managed.operationNode(this, 'selection'), managed.operationNode(this, 'subscription'));
-		content.unshift(managed.operationNode(this, 'configuration'));
+		content.unshift(managed.operationNode(this, 'mode'), managed.operationNode(this, 'configuration'));
 
 		let sourceName = '设备实时 RPC';
 		let freshness = '刚刚更新';
@@ -299,7 +299,7 @@ const productController = {
 			'class': 'netfleet-dashboard-link', 'type': 'button', 'disabled': true,
 			'title': dashboardReady(this.status) ? '正在读取连接信息' : dashboardUnavailableReason(this.status)
 		}, 'Zashboard ↗');
-		this.root.replaceChildren(pageHeading(title, this.status, dashboard), E('div', { 'class': 'netfleet-page-actions' }, buttons), E('div', { 'class': 'netfleet-page-content' }, content), source);
+		this.root.replaceChildren(pageHeading(title, this.status, dashboard, buttons), E('div', { 'class': 'netfleet-page-content' }, content), source);
 	},
 
 	openDashboard: function() {
@@ -537,9 +537,14 @@ const productController = {
 	runMode: async function(mode, expectedMode) {
 		if (this.busy || this.refreshing || this.modeSwitching || !this.liveDataReady || this.context.readOnly) return;
 		this.modeSwitching = true;
-		this.busy = true;
+		this.modeRequest = true;
+		this.modeTarget = mode;
+		this.modeStartedAt = Math.floor(Date.now() / 1000);
+		this.previousModeId = this.operations?.mode?.id;
+		this.operations = Object.assign({}, this.operations, { mode: null });
+		ui.hideModal();
 		this.redraw();
-		ui.showModal('切换网络运行模式', [ E('p', { 'class': 'spinning' }, '正在切换至' + operatingModeLabel(mode) + '…') ]);
+		managed.readOperations(this);
 		let failure = null;
 		try {
 			const inventory = await netfleet.pluginsList();
@@ -548,16 +553,20 @@ const productController = {
 			await netfleet.pluginCall({ id: 'activation', instance: 'default', action: 'set-mode',
 				revision: plugin.revision, confirm: true, params: { mode: mode, expected_mode: expectedMode } });
 		} catch (error) { failure = error; }
+		if (this.context.signal.aborted) return;
+		await managed.readOperations(this);
 		try { await this.refreshData(true); }
 		catch (error) { failure = failure || error; }
 		this.modeDraft = null;
 		this.modeSwitching = false;
-		this.busy = false;
-		ui.hideModal();
+		this.modeRequest = false;
+		await managed.readOperations(this);
 		this.redraw();
+		const operation = this.operations?.mode;
+		if (operation && operation.id !== this.previousModeId) return;
 		const confirmed = this.liveDataReady && this.status.operating_mode === mode;
-		const actual = this.liveDataReady ? operatingModeLabel(this.status.operating_mode) : '设备状态暂不可读';
-		const reason = failure && failure.netfleetKind === 'request_aborted' ? '浏览器连接已中止' : text(failure && failure.message, '设备未确认');
+		const actual = this.liveDataReady ? operatingModeLabel(this.status.operating_mode) : failure?.detail?.mode ? operatingModeLabel(failure.detail.mode) + '（切换结束时回读）' : '设备状态暂不可读';
+		const reason = failure && failure.netfleetKind === 'request_aborted' ? '浏览器连接已中止，设备可能仍在执行' : managed.errorLabel(text(failure && failure.message, '设备未确认'));
 		managed.notify(null, E('p', {}, failure ? '切换未完成：' + reason + '；当前：' + actual :
 			confirmed ? '当前：' + actual : '切换结果尚未确认；当前：' + actual), failure || !confirmed ? 'warning' : 'info');
 	},

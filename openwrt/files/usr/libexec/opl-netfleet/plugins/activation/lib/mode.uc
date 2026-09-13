@@ -11,6 +11,7 @@ return function(context) {
 	const recovery = context.use("recovery.control");
 	const recovery_state = context.use("recovery.state");
 	const output = context.use("events.output");
+	const operation = context.use("events.operation");
 	function get() {
 		const current = profile.current_profile(), running = backend.running();
 		const state = running ? controller.proxies(credentials.api_secret(), 2) : null;
@@ -52,19 +53,27 @@ return function(context) {
 		const target = !model.is_active(before.profile) && backend.profile_exists(before.profile) ?
 			before.profile : policy?.recovery_profile?.ref;
 		if (request.mode == "mihomo" && target == null) return failure("native_profile_unavailable");
-		if (!recovery_state.clear()) return failure("recovery_state_write_failed");
-		if (request.mode == before.mode) return { ok: true, result: { ...get(), unchanged: true } };
-		if (request.mode != "netfleet" && before.compatibility.installed &&
-			!service.set_service_state({ enabled: false, running: false }, "opl-netfleet-compat").ok)
-			return failure("compatibility_stop_failed");
-		if (!pause()) return failure("supervisor_stop_failed");
+		operation.begin("mode", "checking_mode", { requested_mode: request.mode, actual_mode: before.mode });
+		let recovery_needed = false;
 		const attempt = output.capture(() => {
+			if (!recovery_state.clear()) output.fail("set-mode", "recovery_state_write_failed");
+			if (request.mode == before.mode) return;
+			if (request.mode != "netfleet" && before.compatibility.installed) {
+				operation.update("stopping_compatibility", { actual_mode: null });
+				if (!service.set_service_state({ enabled: false, running: false }, "opl-netfleet-compat").ok)
+					output.fail("set-mode", "compatibility_stop_failed");
+			}
+			operation.update("stopping_scheduler", { actual_mode: null });
+			if (!pause()) output.fail("set-mode", "supervisor_stop_failed");
+			recovery_needed = true;
 			if (request.mode == "openwrt") {
+				operation.update("stopping_proxy");
 				if (!direct()) output.fail("set-mode", "runtime_mode_cleanup_failed");
 				return;
 			}
 			// A healthy compiled runtime only needs its scheduler restored.
 			if (request.mode == "netfleet" && before.active && before.netfleet_present && before.mihomo_running && before.controller_available) {
+				operation.update("starting_scheduler");
 				if (!profile.set_backend_enabled(true) || !service.set_service_state({ enabled: true, running: true }).ok)
 					output.fail("set-mode", "supervisor_start_failed");
 				return;
@@ -73,26 +82,47 @@ return function(context) {
 			if (!profile.set_backend_enabled(true)) output.fail("set-mode", "backend_enable_failed");
 			const same_native = before.profile == native_target && before.mihomo_running && before.controller_available && !before.netfleet_present;
 			if (!same_native) {
+				operation.update("restoring_native");
 				const restored = recovery.restore_profile_with_probes(native_target, policy);
 				if (!restored.runtime_ok) output.fail("set-mode", "profile_restore_failed", restored);
 			}
 			if (request.mode == "netfleet") {
+				operation.update("compiling");
 				const compiled = context.use("compilation.control").compile_result(policy, false);
 				if (!compiled.ok) output.fail("set-mode", compiled.error, compiled.detail);
-				context.use("activation.control").enable_action(policy, documents.load_evidence(), true);
+				context.use("activation.control").enable_action(policy, documents.load_evidence(), true,
+					(phase, details) => operation.update(phase, { total: 0, completed: 0, ...details }));
+				operation.update("starting_scheduler", { subject: null });
 				if (!service.set_service_state({ enabled: true, running: true }).ok) output.fail("set-mode", "supervisor_start_failed");
 			}
-			if (get().mode != request.mode) output.fail("set-mode", "runtime_mode_unconfirmed");
 		});
+		// Fast paths must pass the same final owner readback as a full activation.
+		if (attempt.ok) {
+			operation.update("verifying", { subject: null });
+			const actual = get();
+			if (actual.mode == request.mode) {
+				const result = { ...actual, unchanged: request.mode == before.mode };
+				operation.finish(true, null, result);
+				return { ok: true, result };
+			}
+			attempt.ok = false; attempt.error = "runtime_mode_unconfirmed";
+		}
 		if (!attempt.ok) {
 			const recovery_attempt = output.capture(() => {
+				if (!recovery_needed) return;
+				operation.update("rolling_back");
 				pause();
 				if (request.mode == "openwrt") direct();
 				else settle(policy, before);
 			});
-			return failure(attempt.error, { cause: attempt.detail, recovery_error: recovery_attempt.ok ? null : recovery_attempt.error });
+			const actual = get();
+			const recovered = !recovery_needed && actual.mode != null && actual.mode == before.mode ? "unchanged" :
+				actual.mode == "openwrt" ? "direct" : actual.mode == "mihomo" ? "native" : "failed";
+			const result = { ...actual, recovery: recovered,
+				detail: { cause: attempt.detail, recovery_error: recovery_attempt.ok ? null : recovery_attempt.error } };
+			operation.finish(false, attempt.error, result);
+			return { ok: false, error: attempt.error, result };
 		}
-		return { ok: true, result: get() };
 	};
 	return { get: () => ({ ok: true, result: get() }), set };
 };

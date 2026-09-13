@@ -160,14 +160,31 @@ select = function(secret, group, choice) {
 	return system(command) == 0;
 };
 
-unfix = function(secret, group) {
+unfix = function(secret, group, detail) {
 	if (type(secret) != "string" || length(secret) == 0 ||
 		type(group) != "string" || length(group) == 0) {
+		if (detail != null) detail.error = "invalid_candidate_reset_request";
 		return false;
 	}
 	const endpoint = `${API}/proxies/${url_path_segment(group)}`;
-	const command = `curl -fsS --connect-timeout 2 --max-time 5 -X DELETE -H ${shell_quote(`Authorization: Bearer ${secret}`)} ${shell_quote(endpoint)}`;
-	return system(command) == 0;
+	// DELETE clears URLTest's cached choice and is idempotent. Retain only
+	// bounded diagnostic fields, never response bodies, credentials or commands.
+	const command = `curl -q -sS --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' -X DELETE -H ${shell_quote(`Authorization: Bearer ${secret}`)} ${shell_quote(endpoint)} 2>/dev/null`;
+	for (let attempt = 1; attempt <= 2; attempt++) {
+		const child = popen(command);
+		const status = child == null ? 0 : int(trim(child.read("all")));
+		const transport = child == null ? -1 : child.close();
+		const ok = transport == 0 && status >= 200 && status < 300;
+		if (detail != null) {
+			detail.group = group; detail.http_status = status;
+			detail.transport_code = transport; detail.attempts = attempt;
+			detail.error = ok ? null : transport != 0 ? "candidate_reset_transport_failed" : "candidate_reset_http_failed";
+		}
+		if (ok) return true;
+		if (index([7, 28, 52, 56], transport) < 0 &&
+			!(transport == 0 && index([502, 503, 504], status) >= 0)) return false;
+	}
+	return false;
 };
 
 proxy_port = function(secret) {

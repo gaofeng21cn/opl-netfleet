@@ -3,18 +3,18 @@
     "title": "NetFleet",
     "order": 15,
     "action": {
-	  "type": "firstchild"
+      "type": "view",
+      "path": "netfleet/overview-v0_8_8"
 	},
 	"depends": {
 	  "acl": [ "luci-app-netfleet" ]
 	}
   },
   "admin/services/netfleet/overview": {
-    "title": "NetFleet",
 	"order": 10,
 	"action": {
       "type": "view",
-			"path": "netfleet/overview-v0_8_7"
+			"path": "netfleet/overview-v0_8_8"
     },
     "depends": {
       "acl": [ "luci-app-netfleet" ]

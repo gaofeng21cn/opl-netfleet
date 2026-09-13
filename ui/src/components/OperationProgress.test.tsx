@@ -70,6 +70,30 @@ describe('operation progress', () => {
     expect(html).not.toContain('1.19.30');
   });
 
+  it('shows real mode stages and preserves native recovery separately from the failed request', () => {
+    const mode: OperationSnapshot = { ...operation, kind: 'mode', phase: 'resetting_candidates', subject: 'standard',
+      requested_mode: 'netfleet', actual_mode: null, completed: 0, total: 2 };
+    const active = renderToStaticMarkup(<OperationProgress operation={mode} subjectLabel="常规出口" now={115} />);
+    expect(active).toContain('运行模式切换');
+    expect(active).toContain('初始化候选出口');
+    expect(active).toContain('出口：常规出口');
+    expect(active).toContain('已完成 0 / 2 个候选组');
+    expect(active).toContain('已耗时 15 秒');
+    expect(active).toContain('可继续浏览');
+    expect(active).not.toContain('%');
+    const failed = renderToStaticMarkup(<OperationProgress operation={{ ...mode, state: 'failed', phase: 'rolling_back',
+      finished_at: 130, error: 'candidate_group_reset_failed', recovery: 'native', actual_mode: 'mihomo' }} />);
+    expect(failed).toContain('执行失败');
+    expect(failed).toContain('候选出口初始化失败');
+    expect(failed).toContain('已恢复 Mihomo 原生代理');
+    expect(failed).toContain('完成时确认：Mihomo 原生代理');
+    expect(failed).toContain('耗时 30 秒');
+    expect(failed).not.toContain('运行模式未确认');
+    const unknown = renderToStaticMarkup(<OperationProgress operation={{ ...mode, state: 'failed', recovery: 'failed' }} />);
+    expect(unknown).toContain('恢复结果未通过确认');
+    expect(unknown).toContain('完成时运行模式未确认');
+  });
+
   it('keeps a failed update distinct from its separately confirmed recovery outcome', () => {
     for (const [recovery, expected] of [['restored', '已恢复更新前状态'], ['failed', '恢复失败'], ['direct', '已恢复网络直通']] as const) {
       const result = { ...operation, state: 'failed' as const, recovery };

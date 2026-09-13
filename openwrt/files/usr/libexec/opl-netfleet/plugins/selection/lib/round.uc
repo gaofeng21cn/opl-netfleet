@@ -77,8 +77,9 @@ automatic_round = function(policy, manifest, manifest_entry, capability, secret,
 	// ten seconds. Clear each automatic leaf group through the controller before
 	// the single capability delay; the delay still owns all node measurements and
 	// Mihomo remains the only leaf selector.
-	if (shared?.prepared != true && !reset_candidate_groups(secret, manifest_entry)) {
-		return { ok: false, error: "candidate_group_reset_failed", candidates: [] };
+	const reset_detail = {};
+	if (shared?.prepared != true && !reset_candidate_groups(secret, manifest_entry, reset_detail)) {
+		return { ok: false, error: "candidate_group_reset_failed", detail: reset_detail, candidates: [] };
 	}
 	const reused = {};
 	let reusable = shared?.state != null;

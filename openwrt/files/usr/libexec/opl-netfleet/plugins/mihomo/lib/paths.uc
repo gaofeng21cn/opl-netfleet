@@ -59,8 +59,9 @@ refresh_data_fallback = function(secret, entry, policy, provider_state, selected
 	// Confirm only the chosen path. Traversing all visible branches can overwrite
 	// its healthy wrapper with a failed lazy fallback during initial convergence.
 	const round = selected_group == null ? measure_latency(secret, entry.name, policy.checks) : null;
-	if (selected_group != null && !unfix_proxy(secret, selected_group))
-		return { ok: false, error: "candidate_group_reset_failed", round: null, runtime: null };
+	const reset_detail = {};
+	if (selected_group != null && !unfix_proxy(secret, selected_group, reset_detail))
+		return { ok: false, error: "candidate_group_reset_failed", detail: reset_detail, round: null, runtime: null };
 	if (selected_group != null) {
 		// The selected leaf already has this round's speed evidence. Do not remeasure it.
 		// Mihomo caches health independently for each URL. A latency test on the
@@ -316,18 +317,18 @@ candidate_group_names = function(entry) {
 	return result;
 };
 
-reset_candidate_groups = function(secret, entry) {
+reset_candidate_groups = function(secret, entry, detail, progress) {
 	const names = candidate_group_names(entry);
 	if (length(names) == 0) {
+		if (detail != null) detail.error = "candidate_groups_missing";
 		return false;
 	}
-	let reset = true;
 	for (let i = 0; i < length(names); i++) {
-		if (!unfix_proxy(secret, names[i])) {
-			reset = false;
-		}
+		if (progress != null) progress({ completed: i, total: length(names) });
+		if (!unfix_proxy(secret, names[i], detail)) return false;
 	}
-	return reset;
+	if (progress != null) progress({ completed: length(names), total: length(names) });
+	return true;
 };
 
 candidate_provider_leaves_ready = function(entry, proxy_state, provider_state, url) {

@@ -82,8 +82,14 @@ fail_enable_after_switch = function(policy, original_profile, reason, details) {
 	fail("enable", reason, details);
 };
 
-enable_action = function(policy, evidence, quiet) {
+enable_action = function(policy, evidence, quiet, report) {
+	const progress = type(report) == "function" ? report : () => null;
+	progress("checking_inputs", { total: 0, completed: 0, subject: null });
 	let current = current_profile();
+	const reject = (reason, details) => {
+		progress("rolling_back");
+		fail_enable_after_switch(policy, current, reason, details);
+	};
 	const stopped = BACKEND_KIND == "native-mihomo" && backend_enabled() != true && !running();
 	if (policy.main.enabled != true) {
 		fail("enable", "disabled_by_policy", null);
@@ -125,6 +131,7 @@ enable_action = function(policy, evidence, quiet) {
 		prepare_recovery_action(policy, current, true);
 		current = current_profile();
 	}
+	progress("probing");
 	const base_probes = require_protected_probes(policy, "enable");
 	const before_secret = api_secret();
 	// A newly activated NetFleet profile can start URLTest groups before the
@@ -144,7 +151,9 @@ enable_action = function(policy, evidence, quiet) {
 			});
 		}
 	}
+	progress("switching_profile");
 	if (!set_profile(COMPILED_PROFILE) || !restart()) {
+		progress("rolling_back");
 		const recovery = restore_recovery_with_probes(policy, "owner_switch_failed");
 		if (!recovery.ok) {
 			fail("enable", "rollback_failed", { profile: current, recovery: recovery });
@@ -153,7 +162,7 @@ enable_action = function(policy, evidence, quiet) {
 	}
 	const secret = api_secret();
 	if (!secret) {
-		fail_enable_after_switch(policy, current, "api_secret_missing", {});
+		reject("api_secret_missing", {});
 	}
 	const selections = {};
 	const automatic_results = {};
@@ -161,11 +170,12 @@ enable_action = function(policy, evidence, quiet) {
 	for (let i = 0; i < length(capability_names); i++) {
 		const capability = capability_names[i];
 		const entry = manifest.generated_groups[capability];
+		progress("initializing_exits", { subject: capability, total: length(capability_names), completed: i });
 		const first_choice = initial_choice(manifest, capability);
 		const user_choice = initial_user_choice(entry, first_choice);
 		if (!entry?.name || !first_choice || !user_choice ||
 			!wait_for_group_member(secret, entry.name, user_choice, initialization_grace)) {
-			fail_enable_after_switch(policy, current, "initialization_failed", {
+			reject("initialization_failed", {
 				capability: capability,
 				initial_choice: first_choice,
 				user_choice: user_choice
@@ -178,22 +188,28 @@ enable_action = function(policy, evidence, quiet) {
 			trigger: "enable"
 		};
 	}
+	if (length(automatic_names)) progress("measuring", { subject: null });
 	const provider_measurement_ok = length(automatic_names) == 0 ? null :
 		measure_providers(secret, automatic_provider_sources(manifest, automatic_names), policy.checks);
 	const shared = {entries: {}, prepared: true};
-	for (let capability in automatic_names)
-		if (!reset_candidate_groups(secret, manifest.generated_groups[capability]))
-			fail_enable_after_switch(policy, current, "candidate_group_reset_failed", {capability});
+	for (let capability in automatic_names) {
+		progress("resetting_candidates", { subject: capability });
+		const detail = { capability };
+		if (!reset_candidate_groups(secret, manifest.generated_groups[capability], detail,
+			counts => progress("resetting_candidates", { subject: capability, ...counts })))
+			reject("candidate_group_reset_failed", detail);
+	}
 	for (let i = 0; i < length(automatic_names); i++) {
 		const capability = automatic_names[i];
 		const entry = manifest.generated_groups[capability];
 		const parent = policy.capabilities?.[capability]?.prefer_region_from;
+		progress("selecting", { subject: capability, total: length(automatic_names), completed: i });
 		const preferred_region = parent == null ? null : automatic_results[parent]?.decision?.region_id;
 		const result = automatic_round(policy, manifest, entry, capability, secret, false,
 			enable_freshness_baseline, provider_measurement_ok, preferred_region, shared,
 			parent == null ? null : automatic_results[parent]?.decision);
 		if (!result.ok) {
-			fail_enable_after_switch(policy, current, result.error, {
+			reject(result.error, {
 				capability: capability,
 				automatic: result
 			});
@@ -204,13 +220,14 @@ enable_action = function(policy, evidence, quiet) {
 	for (let i = 0; i < length(capability_names); i++) {
 		const capability = capability_names[i];
 		const entry = manifest.generated_groups[capability];
+		progress("activating_exit", { subject: capability, total: length(capability_names), completed: i });
 		const activation = entry.mode == "automatic" ?
 			activate_preferred_choice(secret, entry, selections[capability].selected_group,
 				policy, true, false, automatic_results[capability].decision) :
 			activate_manual_choice(secret, entry, selections[capability].user_choice,
 				policy, false);
 		if (!activation.ok) {
-			fail_enable_after_switch(policy, current, activation.error, {
+			reject(activation.error, {
 				capability: capability,
 				selected_group: selections[capability].selected_group,
 				activation: activation
@@ -218,20 +235,23 @@ enable_action = function(policy, evidence, quiet) {
 		}
 		selections[capability].selected_leaf = activation.leaf;
 		selections[capability].data_path = activation.data_path;
+		progress("activating_exit", { subject: capability, total: length(capability_names), completed: i + 1 });
 	}
+	progress("probing", { subject: null });
 	const activation_probes = protected_probes_after_restart(policy);
 	if (!activation_probes.ok) {
-		fail_enable_after_switch(policy, current, "protected_probe_failed", {
+		reject("protected_probe_failed", {
 			capabilities: selections,
 			protected_probes: activation_probes
 		});
 	}
+	progress("verifying");
 	const readback = runtime_readback(COMPILED_PROFILE, manifest);
 	if (!readback.mihomo_running || !readback.mihomo_config_valid ||
 		!readback.state_available || !readback.runtime_identity_ok ||
 		!automatic_selectors_ready(readback, manifest, automatic_names) ||
 		current_profile() != COMPILED_PROFILE) {
-		fail_enable_after_switch(policy, current, "owner_readback_failed", { readback: readback });
+		reject("owner_readback_failed", { readback: readback });
 	}
 	let next_evidence = evidence;
 	for (let i = 0; i < length(automatic_names); i++) {

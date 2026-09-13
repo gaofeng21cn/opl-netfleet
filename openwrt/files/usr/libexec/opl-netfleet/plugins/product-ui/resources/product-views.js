@@ -27,19 +27,10 @@ function text(value, fallback) {
 	return value !== null && value !== undefined && String(value).trim() ? String(value) : fallback;
 }
 
-function buildLabel(status) {
-	const build = status && status.build || {};
-	const version = text(build.version, null);
-	const commit = text(build.source_commit, null);
-	if (!version && !commit)
-		return '版本未提供';
-	return 'NetFleet' + (version ? ' v' + version : '') + (commit ? ' · ' + commit.slice(0, 7) : '');
-}
-
-function pageHeading(title, status, dashboard) {
+function pageHeading(title, status, dashboard, actions) {
 	return E('div', { 'class': 'netfleet-page-heading' }, [
 		E('h2', {}, title),
-		E('div', { 'class': 'netfleet-page-tools' }, [ dashboard, E('span', { 'class': 'netfleet-build' }, buildLabel(status)) ])
+		E('div', { 'class': 'netfleet-page-tools' }, [ ...(actions || []), dashboard ])
 	]);
 }
 
@@ -1126,4 +1117,4 @@ function eventsPage(status, events, connections, connectionsLoading, connections
 	];
 }
 
-return baseclass.extend({ ageLabel, finite, text, buildLabel, pageHeading, delay, averageDelay, countPair, dashboardReady, dashboardUnavailableReason, regionalDisplayName, byId, providerName, regionName, capabilityName, route, runtimeFallback, modeName, pathHealthLabel, reasonText, quota, providerExpiry, sampledAt, executionAt, refreshResult, simpleTable, section, metricGrid, onboardingMessage, nativeProfileLabel, backendName, onboardingPage, detailGrid, statusSummary, operatingModeLabel, operatingModeControls, fastest, joined, currentRegionPlan, currentRegion, currentProvider, overviewLink, overviewExitSummary, overviewFact, overviewDigest, regionChoiceBlocked, regionChoiceButton, selectionExplanation, selectionToolbar, capabilityPanel, overviewPage, seconds, exitsPage, cacheDigest, subscriptionForProvider, subscriptionFailed, subscriptionState, subscriptionSummary, providerNodes, quotaMeter, tableTools, tableItems, measurementCell, providersPage, regionsPage, displayEventName, latestDecision, eventResult, eventDelay, eventReason, eventsPage });
+return baseclass.extend({ ageLabel, finite, text, pageHeading, delay, averageDelay, countPair, dashboardReady, dashboardUnavailableReason, regionalDisplayName, byId, providerName, regionName, capabilityName, route, runtimeFallback, modeName, pathHealthLabel, reasonText, quota, providerExpiry, sampledAt, executionAt, refreshResult, simpleTable, section, metricGrid, onboardingMessage, nativeProfileLabel, backendName, onboardingPage, detailGrid, statusSummary, operatingModeLabel, operatingModeControls, fastest, joined, currentRegionPlan, currentRegion, currentProvider, overviewLink, overviewExitSummary, overviewFact, overviewDigest, regionChoiceBlocked, regionChoiceButton, selectionExplanation, selectionToolbar, capabilityPanel, overviewPage, seconds, exitsPage, cacheDigest, subscriptionForProvider, subscriptionFailed, subscriptionState, subscriptionSummary, providerNodes, quotaMeter, tableTools, tableItems, measurementCell, providersPage, regionsPage, displayEventName, latestDecision, eventResult, eventDelay, eventReason, eventsPage });

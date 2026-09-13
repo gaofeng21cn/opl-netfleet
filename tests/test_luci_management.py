@@ -73,7 +73,7 @@ const storage = new Proxy({}, { get() { throw new Error('secret storage access i
 global.localStorage = storage;
 global.sessionStorage = storage;
 global.document = { body: { appendChild() {} }, querySelectorAll() { return []; } };
-global.L = { url: value => '/cgi-bin/luci/' + value };
+global.L = { url: (...parts) => '/cgi-bin/luci/' + parts.join('/') };
 global.crypto = require('node:crypto').webcrypto;
 const baseclass = { extend: value => value };
 function module(name, api) {
@@ -91,8 +91,9 @@ function configModule(management) {
 function modesModule(api, selectionRunner) {
     const source = fs.readFileSync(path.join(resources, 'product-pages.js'), 'utf8');
     const exports = source.slice(0, source.lastIndexOf('return baseclass.extend({')) +
-        'return { regions: regionsPage, controls: operatingModeControls, controller: productController, summary: statusSummary, health: pathHealthLabel, region: currentRegion, mode: modeName };';
-    const managed = { notify: ui.addNotification, runSelection: selectionRunner };
+        'return { progress: managed, regions: regionsPage, controls: operatingModeControls, controller: productController, summary: statusSummary, health: pathHealthLabel, region: currentRegion, mode: modeName };';
+    const managed = module('managed.js', { operationGet: async () => ({}), ...api });
+    if (selectionRunner) managed.runSelection = selectionRunner;
     const views = new Function('baseclass', 'ui', 'managed', 'E', fs.readFileSync(path.join(resources, 'product-views.js'), 'utf8'))(baseclass, ui, managed, E);
     return new Function('baseclass', 'ui', 'netfleet', 'E', 'managed', 'productViews', exports)(baseclass, ui, api, E, managed, views);
 }
@@ -682,8 +683,8 @@ assert(!text(managed.components(owner)).includes('NetFleet 与 LuCI 安装版本
 assert(text(managed.components(owner)).includes('0.9.0-r1'));
 owner.components.components[1].update_available = true;
 owner.components.components[1].available_version = '1.2.0-r1';
-assert(button(managed.components(owner), '更新'), 'an older LuCI package must still be updatable with the paired NetFleet package');
-fire(button(managed.components(owner), '更新'));
+assert(button(managed.components(owner), '更新界面'), 'an older LuCI package must still be updatable with the paired NetFleet package');
+fire(button(managed.components(owner), '更新界面'));
 assert(text(modal.content).includes('LuCI 界面 1.2.0-r1'));
 owner.operations = { packages: { kind: 'packages', state: 'failed', error: 'rollback_runtime_failed', recovery: 'failed', started_at: 100, finished_at: 102 } };
 assert(text(managed.components(owner)).includes('恢复失败'));
@@ -691,9 +692,76 @@ owner.liveDataReady = false;
 assert(button(managed.components(owner), '检查更新').disabled);
 """)
 
-    def test_optional_component_inventory_is_local_readonly_and_deduplicated(self):
+    def test_components_follow_user_order_and_keep_plugin_actions_in_scope(self):
         self.run_js(r"""
 const owner = controller();
+owner.components = { supported: true, feed: { configured: true }, components: [
+  { id: 'netfleet', label: 'NetFleet', installed_version: '1.0.0' }
+], dependencies: [], extensions: [
+  { id: 'https-compat', label: 'HTTPS compatibility', kind: 'plugin', runtime: 'service', version: '0.9.2', revision: 'r1', enabled: true },
+  { id: 'custom-plugin', label: 'Custom name', kind: 'plugin', runtime: 'process', version: '1.0.0', revision: 'r2' }
+] };
+const managed = module('managed.js', {});
+let page = managed.components(owner);
+const nav = find(page, node => node.attrs['aria-label'] === '插件与更新分类');
+assert.deepEqual(all(nav, node => node.tag === 'button').map(text), ['基础组件', '功能插件']);
+assert.equal(button(nav, '基础组件').attrs['aria-current'], 'page');
+assert(button(page, '检查更新'));
+assert(text(page).indexOf('NetFleet') < text(page).indexOf('尚未检查更新'));
+assert(!button(page, '运行管理'));
+fire(button(nav, '功能插件'));
+page = managed.components(owner);
+assert(!button(page, '检查更新'), 'plugin package updates use the platform package manager');
+assert(text(page).includes('HTTPS 兼容') && text(page).includes('为指定设备和网站提供 HTTPS 协议兼容'));
+assert(text(page).includes('Custom name'), 'unknown plugins retain the declared name');
+assert(button(page, '运行管理'));
+assert(!find(page, node => node.tag === 'details' && text(node).includes('编辑服务组合')).open);
+""")
+
+    def test_package_manager_link_uses_accessible_menu_route_and_reads_once(self):
+        self.run_js(r"""
+const owner = controller(); owner.componentsSection = 'plugins';
+let menuReads = 0, componentReads = 0;
+const plugin = { id: 'custom', label: 'Custom', kind: 'plugin', version: '1.0.0', revision: 'r1' };
+const snapshot = { supported: true, feed: {}, components: [], dependencies: [], extensions: [plugin] };
+ui.menu = { load: async () => {
+  menuReads++;
+  return { children: { admin: { satisfied: true, children: {
+    forbidden: { title: 'Restricted', satisfied: false, action: { type: 'view', path: 'system/opkg' } },
+    system: { satisfied: true, children: { 'package-manager': { title: 'Software', satisfied: true, action: { type: 'view', path: 'package-manager' } } } }
+  } } } };
+} };
+const managed = module('managed.js', {
+  componentsGet: async () => { componentReads++; return clone(snapshot); },
+  pluginRead: async () => ({ loaded: false, revision: 'r1' })
+});
+await Promise.all([managed.loadComponents(owner), managed.loadComponents(owner)]);
+await managed.loadComponents(owner);
+assert.equal(componentReads, 2);
+assert.equal(menuReads, 1, 'component refresh reuses the current menu');
+let page = managed.components(owner);
+const link = find(page, node => node.tag === 'a' && text(node) === '软件包管理 ↗');
+assert.equal(link.attrs.href, '/cgi-bin/luci/admin/system/package-manager');
+assert(!text(page).includes('此设备未提供软件包管理页面'));
+fire(button(page, '运行管理')); await tick();
+assert.equal(find(modal.content, node => node.tag === 'a').attrs.href, link.attrs.href, 'dialog uses the same discovered route');
+
+ui.menu.load = async () => ({ children: { admin: { children: { hidden: { title: 'Software', satisfied: false, action: { type: 'view', path: 'package-manager' } } } } } });
+const missing = controller(); missing.componentsSection = 'plugins';
+await managed.loadComponents(missing);
+page = managed.components(missing);
+assert(!find(page, node => node.tag === 'a'), 'an inaccessible menu must not create a guessed link');
+assert(text(page).includes('此设备未提供软件包管理页面'));
+ui.menu.load = async () => { throw new Error('menu unavailable'); };
+const failed = controller(); failed.componentsSection = 'plugins';
+await managed.loadComponents(failed);
+assert.equal(failed.componentsError, null, 'menu failure does not hide the component inventory');
+assert(!find(managed.components(failed), node => node.tag === 'a'));
+""")
+
+    def test_optional_component_inventory_is_local_readonly_and_deduplicated(self):
+        self.run_js(r"""
+const owner = controller(); owner.componentsSection = 'plugins';
 const extension = { id: 'https-compat', label: 'HTTPS 兼容', kind: 'optional', package: 'opl-netfleet-https-compat',
   installed_version: '0.2.0-r1', api_version: 93, compatible: true, available: true, state: 'ready', reason: null,
   dependencies: [{ id: 'mitmproxy', available: true, installed_version: '12.2.3' }], ui: ['config:compatibility'] };
@@ -725,7 +793,7 @@ assert(!text(row).includes('mitmproxy'));
 assert(!find(row, node => node.tag === 'details'));
 assert.equal(all(row, node => node.attrs.class === 'is-warning').length, 0);
 assert.equal(all(root, node => node.attrs.role === 'alert').length, 0);
-assert(text(root).includes('运行依赖正常'));
+assert(!text(root).includes('运行依赖正常'), 'base dependencies belong to the basic components tab');
 owner.components.extensions[0] = { ...extension, installed_version: null, available: true };
 row = find(managed.components(owner), node => node.tag === 'tr' && text(node).includes('HTTPS 兼容'));
 assert(text(row).includes('安装版本未确认'));
@@ -758,7 +826,7 @@ const modes = modesModule({
   pluginsList: async () => ({ plugins: [{ id: 'activation', instance: 'default', revision: 'live-r2' }] }),
   pluginCall: async request => { calls.push(request); if (fail) throw new Error('runtime_mode_changed'); }
 });
-const owner = Object.assign(Object.create(modes.controller), controller(), { context: { readOnly: false }, status: { operating_mode: 'mihomo', runtime: {} } });
+const owner = Object.assign(Object.create(modes.controller), controller(), { context: { readOnly: false, signal: { aborted: false } }, status: { operating_mode: 'mihomo', runtime: {} } });
 let page = modes.controls(owner);
 assert.equal(all(page, n => n.type === 'radio').length, 3);
 assert.equal(find(page, n => n.type === 'radio' && n.checked).value, 'mihomo');
@@ -792,6 +860,58 @@ const direct = { data_path: 'passthrough', alive: true, user_mode: 'native_profi
 assert.equal(modes.health(direct), '已直连');
 assert.equal(modes.region({}, direct), '直连');
 assert.equal(modes.mode(direct), '原生直连');
+""")
+
+    def test_mode_progress_survives_rpc_disconnect_and_new_page_scope(self):
+        self.run_js(r"""
+let operation = { id: 'older-mode', kind: 'mode', state: 'failed', phase: 'checking_mode', started_at: 1, updated_at: 2 };
+let release;
+const accepted = new Promise(resolve => { release = resolve; });
+const modes = modesModule({
+  operationGet: async () => ({ mode: clone(operation) }),
+  pluginsList: async () => ({ plugins: [{ id: 'activation', revision: 'live-mode-r1' }] }),
+  pluginCall: async () => {
+    operation = { id: 'mode-current', kind: 'mode', state: 'running', phase: 'resetting_candidates',
+      started_at: Date.now() / 1000 - 15, updated_at: Date.now() / 1000, total: 2, completed: 0,
+      subject: 'standard', requested_mode: 'netfleet', actual_mode: null };
+    await accepted;
+    const error = new Error('XHR request aborted by browser'); error.netfleetKind = 'request_aborted'; throw error;
+  }
+});
+const owner = Object.assign(Object.create(modes.controller), controller(), {
+  context: { readOnly: false, signal: { aborted: false } }, operations: { mode: clone(operation) },
+  status: { operating_mode: 'mihomo', capabilities: [{ id: 'standard', display_name: '常规出口' }], runtime: {} }
+});
+Object.defineProperty(owner, 'busy', { get() { return modes.progress.operationBusy(this); } });
+const request = owner.runMode('netfleet', 'mihomo');
+await tick();
+await modes.progress.readOperations(owner);
+assert.equal(modal, null, 'mode switching must not block the page with a modal');
+assert(owner.busy, 'pending owner mutation still disables conflicting writes');
+assert.equal(owner.status.operating_mode, 'mihomo', 'request target is not an effective-mode readback');
+const active = text(modes.progress.operationNode(owner, 'mode'));
+assert(active.includes('初始化候选出口'));
+assert(active.includes('出口：常规出口'));
+assert(active.includes('已完成 0 / 2 个候选组'));
+assert(active.includes('已耗时 15 秒'));
+assert(active.includes('可继续浏览'));
+assert(!active.includes('%'));
+release(); await request;
+assert(owner.busy && owner.operationTimer, 'RPC disconnect must retain polling while the device operation runs');
+operation = { ...operation, state: 'failed', phase: 'rolling_back', finished_at: Date.now() / 1000,
+  error: 'candidate_group_reset_failed', actual_mode: 'mihomo', recovery: 'native' };
+await modes.progress.readOperations(owner); await tick();
+const failed = text(modes.progress.operationNode(owner, 'mode'));
+assert(failed.includes('执行失败'));
+assert(failed.includes('候选出口初始化失败'));
+assert(failed.includes('已恢复 Mihomo 原生代理'));
+assert(failed.includes('完成时确认：Mihomo 原生代理'));
+assert.equal(owner.busy, false);
+assert.equal(owner.refreshes, 2, 'owner terminal transition refreshes actual status after the disconnected response');
+const reopened = Object.assign(controller(), { context: { signal: { aborted: false } } });
+await modes.progress.readOperations(reopened);
+assert(text(modes.progress.operationNode(reopened, 'mode')).includes('已恢复 Mihomo 原生代理'), 'new page scope reads the same persistent failure');
+clearTimeout(owner.operationTimer); clearTimeout(owner.resultTimer); clearTimeout(reopened.resultTimer);
 """)
 
     def test_region_choice_uses_capability_authority_and_live_readback(self):
@@ -832,7 +952,7 @@ assert.equal(modal, null);
 const calls = [];
 const plugin = { id: 'device-info', label: '设备信息', kind: 'plugin', version: '1.0.0', revision: 'r1',
   package: 'opl-netfleet-plugin-device-info', actions: { inspect: 'read', reset: 'write' } };
-const owner = controller();
+const owner = controller(); owner.componentsSection = 'plugins';
 owner.components = { supported: true, feed: {}, components: [], dependencies: [], extensions: [plugin] };
 const managed = module('managed.js', {
   pluginRead: async request => { calls.push(['read', request]); return { loaded: false, ready: true, revision: 'r2' }; },
@@ -840,9 +960,9 @@ const managed = module('managed.js', {
   componentsGet: async () => owner.components,
 });
 let page = managed.components(owner);
-assert.equal(all(page, node => node.tag === 'strong' && node.attrs.title === plugin.package).length, 1);
+assert(text(find(page, node => node.tag === 'details')).includes(plugin.package));
 assert.equal(calls.length, 0, 'inventory must not execute plugin');
-fire(button(page, '运行与管理'));
+fire(button(page, '运行管理'));
 await tick();
 assert.equal(calls[0][1].action, 'get');
 fire(button(modal.content, '加载'));
@@ -879,7 +999,7 @@ const serviceManaged = module('managed.js', {
 });
 page = serviceManaged.components(owner);
 assert.equal(serviceCalls.length, 0, 'service inventory must not execute plugin');
-fire(button(page, '运行与管理'));
+fire(button(page, '运行管理'));
 await tick();
 assert.deepEqual(serviceCalls, [['read', {
   id: 'metrics', action: 'get', revision: 'service-r1', confirm: false, params: {},
@@ -904,7 +1024,7 @@ assert.equal(serviceCalls.at(-1)[1].revision, 'service-r3', 'read after reload u
 const note = JSON.parse(fs.readFileSync(path.join(resources, '../../../../../../../../examples/plugins/workspace-note/manifest.json'), 'utf8'));
 owner.components.extensions = [{ ...note, kind: 'plugin', runtime: 'service', revision: 'note-r1', instance: 'review' }];
 page = serviceManaged.components(owner);
-fire(button(page, '运行与管理'));
+fire(button(page, '运行管理'));
 await tick();
 find(modal.content, node => node.tag === 'select').value = 'config-set';
 find(modal.content, node => node.tag === 'textarea').value = '{"title":"Updated","body":"Note","generation":1}';
@@ -922,7 +1042,7 @@ assert.equal(serviceCalls.at(-1)[1].action, 'config-set');
 
     def test_https_service_exposes_configuration_without_loading_engine(self):
         self.run_js(r"""
-const owner = controller();
+const owner = controller(); owner.componentsSection = 'plugins';
 const opened = [];
 owner.context = { navigate: id => opened.push(id) };
 const plugin = { id: 'https-compat', label: 'HTTPS compatibility', kind: 'plugin', runtime: 'service',
@@ -933,13 +1053,13 @@ const managed = module('managed.js', {});
 let page = managed.components(owner);
 fire(button(page, '配置'));
 assert.deepEqual(opened, ['plugin:https-compat:settings']);
-assert(button(page, '运行与管理'));
+assert(button(page, '运行管理'));
 assert(text(page).includes('可用性'));
 assert(!text(page).includes('已启用'));
 plugin.enabled = false;
 page = managed.components(owner);
 assert(button(page, '配置').disabled, 'disabled management plugin must not be loaded by opening its configuration');
-assert(!button(page, '运行与管理').disabled);
+assert(!button(page, '运行管理').disabled);
 plugin.id = 'another-plugin'; plugin.enabled = true;
 fire(button(managed.components(owner), '配置'));
 assert.equal(opened.at(-1), 'plugin:another-plugin:settings', 'configuration navigation is manifest-driven');
@@ -948,6 +1068,7 @@ assert.equal(opened.at(-1), 'plugin:another-plugin:settings', 'configuration nav
     def test_composition_preview_binds_edits_and_confirmation(self):
         self.run_js(r"""
 const owner = controller(), calls = [];
+owner.componentsSection = 'plugins';
 owner.components = { supported: true, feed: {}, components: [], dependencies: [], extensions: [] };
 const managed = module('managed.js', {
   systemGet: async () => ({ revision: 'current', config: { schema: 'opl-netfleet-system.v1', bindings: {}, enabled: {} }, defaults: { enabled: { note: true }, bindings: { 'note.store': 'note' } }, plugins: [{ id: 'note', services: [{ name: 'note.store', version: 1 }] }] }),
@@ -955,7 +1076,7 @@ const managed = module('managed.js', {
   systemApply: async value => { calls.push(['apply', value]); return { applied: true }; },
   componentsGet: async () => owner.components,
 });
-fire(button(managed.components(owner), '服务组合')); await tick();
+fire(button(managed.components(owner), '编辑服务组合')); await tick();
 const editor = find(modal.content, node => node.tag === 'textarea');
 assert(button(modal.content, '应用组合').disabled);
 const enabled = find(modal.content, node => node.attrs?.['aria-label'] === '插件开关 note');
@@ -973,7 +1094,7 @@ fire(button(modal.content, '应用组合')); await tick();
 assert.deepEqual(calls.at(-1), ['apply', { revision: 'current', config: JSON.parse(editor.value), confirm: true }]);
 fire(button(modal.content, '关闭')); assert.equal(editor.value, '', 'closing clears private configuration');
 owner.context = { readOnly: true };
-assert(button(managed.components(owner), '服务组合').disabled);
+assert(button(managed.components(owner), '编辑服务组合').disabled);
 """)
 
     def test_product_factories_share_fetches_but_keep_page_guards(self):

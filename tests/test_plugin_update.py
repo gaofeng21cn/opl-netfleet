@@ -9,10 +9,11 @@ spec.loader.exec_module(mod)
 
 class PluginUpdateTests(unittest.TestCase):
     def test_exact_selection_excludes_core_and_optional_packages(self):
-        manifest = {'artifacts': [{'package': 'opl-netfleet-plugin-models'}, {'package': 'opl-netfleet-plugin-components'}, {'package': 'opl-netfleet'}]}
+        manifest = {'artifacts': [{'package': 'opl-netfleet-plugin-models'}, {'package': 'opl-netfleet-plugin-components'}, {'package': 'opl-netfleet'}, {'package': 'luci-app-netfleet'}, {'package': 'luci-app-nikki'}]}
         selected = mod.package_selection(manifest, ['opl-netfleet-plugin-models'])
         self.assertEqual(selected, [{'package': 'opl-netfleet-plugin-models'}])
-        for names in [[], ['opl-netfleet'], ['mihomo-meta'], ['opl-netfleet-https-compat'], ['opl-netfleet-plugin-models'] * 2]:
+        self.assertEqual(mod.package_selection(manifest, ['luci-app-netfleet']), [{'package': 'luci-app-netfleet'}])
+        for names in [[], ['opl-netfleet'], ['luci-app-nikki'], ['mihomo-meta'], ['opl-netfleet-https-compat'], ['opl-netfleet-plugin-models'] * 2]:
             with self.assertRaises(ValueError): mod.package_selection(manifest, names)
 
     def test_qualification_must_match_source_and_candidate(self):

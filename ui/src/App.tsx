@@ -273,6 +273,7 @@ function ProductPreview({ client, initialStatus, initialEvents, preview, fallbac
       )}
 
       {error && <div className="nf-alert" role="alert"><AlertCircle aria-hidden="true" /><span>{error}</span></div>}
+      <OperationProgress operation={operations.mode || null} scope={`${source.mode}|${source.target_label}`} subjectLabel={status.capabilities.find(item => item.id === operations.mode?.subject)?.display_name} error={operations.mode ? operationError : null} />
       <OperationProgress operation={operations.configuration || null} scope={`${source.mode}|${source.target_label}`} error={operations.configuration ? operationError : null} />
       {view !== 'components' && view !== 'config' && <OperationProgress operation={operations.selection || null} scope={`${source.mode}|${source.target_label}`} subjectLabel={status.capabilities.find(item => item.id === operations.selection?.subject)?.display_name} error={operations.selection ? operationError : null} />}
 

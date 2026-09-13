@@ -727,7 +727,8 @@ function createPage(storage, api, notifications) {
     await new Promise(function(resolve) { setImmediate(resolve); });
     assert.strictEqual(initialResolved, true, 'cached load must not wait for RPC');
     const root = page.render(await initialPromise);
-    assert(nodeText(root.children[0]).includes('NetFleet v0.3.0 · aaaaaaa'));
+    assert(nodeText(root).includes('网络概览'));
+    assert(!nodeText(root).includes('NetFleet v0.3.0 · aaaaaaa'), 'build identity belongs in component details, not the page header');
     assert.strictEqual(page.styleLink.attrs.href, 'resources/native.css?v=revision-1');
     assert.strictEqual(page.liveDataReady, false);
     assert(nodeText(root).includes('缓存数据，正在更新'));
@@ -800,8 +801,8 @@ function createPage(storage, api, notifications) {
     assert(nodeText(root).includes('Netflix'));
 	assert(nodeText(root).includes('Steam'));
 	assert(!nodeText(root).includes('接管的原始策略组'));
-	assert(String(root.children[3].attrs.class).includes('netfleet-source'), 'data source must follow page content');
-	assert(String(root.children[1].attrs.class).includes('netfleet-page-actions'), 'page actions must precede content');
+	assert(String(root.children[root.children.length - 1].attrs.class).includes('netfleet-source'), 'data source must follow page content');
+	assert(findNode(root.children[0], node => node.tag === 'button' && nodeText(node) === '刷新'), 'page actions share the title row');
 
 	page.status.providers = [ {
 		id: 'primary', display_name: 'Alpha 正式机场', subscription_section: 'primary', selected: true,

@@ -50,7 +50,7 @@ def package_selection(manifest: dict, names: list[str]) -> list[dict]:
         raise ValueError('an explicit, non-duplicate plugin set is required')
     result = []
     for name in names:
-        if not re.fullmatch(r'opl-netfleet-plugin-[a-z][a-z0-9-]*', name) or name not in artifacts:
+        if (name != 'luci-app-netfleet' and not re.fullmatch(r'opl-netfleet-plugin-[a-z][a-z0-9-]*', name)) or name not in artifacts:
             raise ValueError(f'not a product plugin artifact: {name}')
         result.append(artifacts[name])
     return result
@@ -100,7 +100,7 @@ def main() -> None:
     # This read is advisory. The transaction checks each version again under
     # its mutation lock before invoking any lifecycle hooks.
     installed = {row['name']: row['version'] for row in json.loads(run(ssh + [
-        "apk --no-network query --from installed --format json --fields name,version 'opl-netfleet*'"
+        "apk --no-network query --from installed --format json --fields name,version 'opl-netfleet*' 'luci-app-netfleet'"
     ]))}
     files: dict[str, bytes] = {}
     packages = []

@@ -11,7 +11,7 @@ const OPERATION_DIR = context.use("platform.paths").OPERATION_DIR;
 let current = null;
 
 path = function(kind) {
-	return index(["subscription", "selection", "packages", "configuration"], kind) >= 0 ? `${OPERATION_DIR}/opl-netfleet-operation-${kind}.json` : null;
+	return index(["subscription", "selection", "packages", "configuration", "mode"], kind) >= 0 ? `${OPERATION_DIR}/opl-netfleet-operation-${kind}.json` : null;
 };
 
 
@@ -19,7 +19,9 @@ public_snapshot = function(value) {
 	if (value == null) return null;
 	return { id: value.id, parent_id: value.parent_id ?? null, kind: value.kind, state: value.state, phase: value.phase,
 		started_at: value.started_at, updated_at: value.updated_at, finished_at: value.finished_at,
-		completed: value.completed, total: value.total, subject: value.subject, error: value.error, recovery: value.recovery ?? null };
+		completed: value.completed, total: value.total, subject: value.subject, error: value.error, recovery: value.recovery ?? null,
+		failure_detail: value.failure_detail ?? null,
+		...(value.kind == "mode" ? { requested_mode: value.requested_mode ?? null, actual_mode: value.actual_mode ?? null } : {}) };
 };
 
 persist = function() {
@@ -45,6 +47,8 @@ details_update = function(details) {
 		current.completed = details.completed < current.total ? details.completed : current.total;
 	if (index(keys(details ?? {}), "subject") >= 0)
 		current.subject = type(details.subject) == "string" && !match(details.subject, /:\/\//) ? substr(details.subject, 0, 160) : null;
+	if (current.kind == "mode") for (let field in ["requested_mode", "actual_mode"])
+		if (field in (details ?? {})) current[field] = index(["openwrt", "mihomo", "netfleet"], details[field]) >= 0 ? details[field] : null;
 };
 
 begin = function(kind, phase, details) {
@@ -80,6 +84,16 @@ finish = function(ok, error, result) {
 	current.recovery = result?.rollback?.ok == true ? "restored" :
 		result?.recovery?.ok == true && result.recovery.mode == "direct" ? "direct" :
 		result?.rollback?.ok == false ? "failed" : null;
+	if (current.kind == "mode") {
+		details_update({ actual_mode: result?.mode });
+		current.recovery = index(["restored", "native", "direct", "failed", "unchanged"], result?.recovery) >= 0 ? result.recovery : null;
+	}
+	// Preserve the narrow controller failure across browser disconnects. Other
+	// result fields can contain private profiles or command output and stay out.
+	const detail = result?.detail?.cause ?? result?.detail ?? result;
+	if (current.error == "candidate_group_reset_failed" && type(detail?.http_status) == "int")
+		current.failure_detail = { http_status: detail.http_status, transport_code: detail.transport_code,
+			attempts: detail.attempts, group: type(detail.group) == "string" && !match(detail.group, /:\/\//) ? substr(detail.group, 0, 160) : null };
 	persist();
 	return public_snapshot(current);
 };

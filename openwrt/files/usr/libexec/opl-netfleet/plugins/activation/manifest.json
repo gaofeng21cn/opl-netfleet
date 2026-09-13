@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "activation",
   "label": "Activation",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "api_version": 1,
   "package": "opl-netfleet-plugin-activation",
   "services": {
@@ -11,6 +11,7 @@
       "module": "lib/mode.uc",
       "requires": {
         "events.output": 1,
+        "events.operation": 1,
         "activation.control": 1,
         "compilation.control": 1,
         "mihomo.backend": 1,

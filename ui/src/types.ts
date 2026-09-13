@@ -325,9 +325,12 @@ export interface NetFleetClient {
 
 export interface OperationSnapshot {
   id: string;
-  kind: 'subscription' | 'selection' | 'packages' | 'configuration';
+  kind: 'subscription' | 'selection' | 'packages' | 'configuration' | 'mode';
   state: 'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted';
-  recovery?: 'restored' | 'failed' | 'direct' | null;
+  recovery?: 'restored' | 'failed' | 'direct' | 'native' | 'unchanged' | null;
+  requested_mode?: 'openwrt' | 'mihomo' | 'netfleet' | null;
+  actual_mode?: 'openwrt' | 'mihomo' | 'netfleet' | null;
+  failure_detail?: { group: string | null; http_status: number; transport_code: number; attempts: number } | null;
   phase: string;
   started_at: number;
   updated_at: number;
@@ -339,6 +342,7 @@ export interface OperationSnapshot {
 }
 
 export interface OperationsSnapshot {
+  mode?: OperationSnapshot | null;
   configuration?: OperationSnapshot | null;
   subscription: OperationSnapshot | null;
   selection?: OperationSnapshot | null;

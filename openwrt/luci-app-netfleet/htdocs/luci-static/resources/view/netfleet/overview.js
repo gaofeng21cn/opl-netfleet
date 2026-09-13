@@ -114,7 +114,7 @@ return view.extend({
       E('p', {}, '插件清单读取失败：' + String(this.error.message || this.error)),
       E('button', { 'class': 'btn cbi-button', 'type': 'button', 'click': function() { return self.refreshPlugins(); } }, '重新读取')
     ]) : E('span');
-    this.root.replaceChildren(E('style', {}, this.module.pluginHostStyles), E('div', { 'class': 'netfleet-shell-brand' }, 'NetFleet'), tabs, subnav, warning, this.pageContainer);
+    this.root.replaceChildren(E('style', {}, this.module.pluginHostStyles), tabs, subnav, warning, this.pageContainer);
     // Only scroll the navigation strip; scrollIntoView would also move the page.
     requestAnimationFrame(function() {
       const active = tabs.querySelector('.cbi-tab');

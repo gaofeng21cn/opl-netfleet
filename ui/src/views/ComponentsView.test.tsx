@@ -17,6 +17,13 @@ const extension = (overrides: Partial<ExtensionComponent> = {}): ExtensionCompon
   dependencies: [{ id: 'mitmproxy', available: true, installed_version: '12.2.3' }], ui: ['config:compatibility'], ...overrides,
 });
 
+it('opens the basic components first and places source freshness after the software', () => {
+  const html = render(snapshot());
+  expect(html).toContain('aria-current="page">基础组件</button><button type="button">功能插件');
+  expect(html.indexOf('nf-software-table')).toBeLessThan(html.indexOf('nf-component-checks'));
+  expect(html).toContain('管理运行策略、出口选优与网络恢复');
+});
+
 it('distinguishes installed unversioned Zashboard resources from an absent installation', () => {
   const html = render(snapshot());
   expect(html).toContain('版本未记录');
@@ -88,7 +95,7 @@ it('projects optional package versions and dependencies without duplicating reso
   expect(row).toContain('<details>');
   expect(row).not.toContain('<details open');
   expect(row).toContain('mitmproxy：12.2.3');
-  expect(row).toContain('管理');
+  expect(row).toContain('配置');
   expect(row).not.toContain('>93<');
   expect(row).not.toContain('更新');
   expect(row).not.toContain('候选版本');
