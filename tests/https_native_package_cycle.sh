@@ -39,6 +39,11 @@ cycle_transaction() {
 import * as fs from 'fs';
 const base=json(fs.readfile('/tmp/compat-base-identity.json'));
 if(ARGV[3]=='bad-base')base.runtime_sha256['/usr/libexec/opl-netfleet/main.uc']=sprintf('%064d',0);
+if(ARGV[3]=='bad-template') {
+ const path='/usr/share/opl-netfleet/nikki/hijack.ut';
+ if(!base.runtime_sha256[path])die('gateway_template_not_bound');
+ base.runtime_sha256[path]=sprintf('%064d',0);
+}
 fs.writefile(ARGV[0]+'/request.json',sprintf('%J',{old:fs.basename(ARGV[1]),new:fs.basename(ARGV[2]),base_runtime:base.runtime_sha256}));
 UC
  (cd "$transaction"; sha256sum *.apk request.json update-remote.sh update-guard.uc >SHA256SUMS)
@@ -75,7 +80,7 @@ UC
   case "$result" in complete|rolled_back|recovery_failed|rejected) break;; esac
   sleep 1
  done
- case "$1" in accept) test "$result" = complete;; bad-base) test "$result" = rejected;; *) test "$result" = rolled_back;; esac
+ case "$1" in accept) test "$result" = complete;; bad-base|bad-template) test "$result" = rejected;; *) test "$result" = rolled_back;; esac
  # A terminal journal can precede the worker releasing its operator lock.
  # Wait for the old service to disappear before starting another transaction.
  for attempt in $(seq 1 20); do
@@ -91,6 +96,7 @@ UC
  probe 4 h2;probe 6 h2
 }
 cycle_transaction bad-base "$cycle_old" "$cycle_new"
+cycle_transaction bad-template "$cycle_old" "$cycle_new"
 # Idle keep-alive must close before replacement. Older controllers need the
 # worker's graceful bridge; newer controllers complete native drain directly.
 mkfifo "$work/keepalive.in"
