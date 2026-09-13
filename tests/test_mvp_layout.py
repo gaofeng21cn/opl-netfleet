@@ -653,7 +653,8 @@ function createPage(storage, api, notifications) {
         hideModal: function() {}
     };
 	const styleLink = E('link', { id: 'netfleet-native-style' });
-	const document = { getElementById: function() { return styleLink; }, head: { appendChild: function() {} } };
+	const document = { body: {}, documentElement: { dataset: {} }, getElementById: function() { return styleLink; }, head: { appendChild: function() {} } };
+	const getComputedStyle = () => ({ backgroundColor: 'rgb(255, 255, 255)' });
     const netfleetConfig = {
         clone: function(value) { return JSON.parse(JSON.stringify(value)); },
         dirty: function() { return false; },
@@ -674,7 +675,7 @@ function createPage(storage, api, notifications) {
     const management = { load: function(_, section) { managementLoads.push(section); return Promise.resolve(); }, maintenance: function() { return null; }, dashboard: function() { return null; } };
     const productSource = fs.readFileSync(require('path').resolve(require('path').dirname(process.argv[1]), 'product.js'), 'utf8');
     const product = new Function('baseclass', 'E', productSource)({ extend: value => value }, E);
-    const factory = new Function('view', 'ui', 'managed', 'management', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', 'compatibility', 'poll', 'product', 'resourceUrl', 'productViews', source);
+    const factory = new Function('view', 'ui', 'managed', 'management', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', 'compatibility', 'poll', 'product', 'resourceUrl', 'productViews', 'getComputedStyle', source);
     const page = factory(view, ui, managed, management, api, netfleetConfig, E, {
         resource: function(value) { return value; },
         url: function(value) { return '/cgi-bin/luci/' + value; }
@@ -683,7 +684,7 @@ function createPage(storage, api, notifications) {
         assert.strictEqual(parsed.hostname, 'router.example');
         assert.strictEqual(parsed.pathname, '/ui/zashboard/');
         assert.strictEqual(parsed.searchParams.get('secret'), 'private-secret');
-    } }, close: function() {} }; } }, document, { refresh: () => Promise.resolve(), label: () => '未安装' }, { add: () => {} }, product, name => 'resources/' + name + '?v=revision-1', new Function('baseclass', 'ui', 'managed', 'E', fs.readFileSync(require('path').join(require('path').dirname(process.argv[1]), 'product-views.js'), 'utf8'))({ extend: value => value }, ui, managed, E));
+    } }, close: function() {} }; } }, document, { refresh: () => Promise.resolve(), label: () => '未安装' }, { add: () => {} }, product, name => 'resources/' + name + '?v=revision-1', new Function('baseclass', 'ui', 'managed', 'E', fs.readFileSync(require('path').join(require('path').dirname(process.argv[1]), 'product-views.js'), 'utf8'))({ extend: value => value }, ui, managed, E), getComputedStyle);
     page.pageId = 'overview';
     page.navigated = null;
     page.context = { signal: new AbortController().signal, navigate(id) { page.navigated = id; } };
