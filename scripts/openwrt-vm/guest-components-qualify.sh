@@ -397,6 +397,35 @@ request components_update "$core_current" mihomo
 assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
 apk list --manifest | grep -Fqx "mihomo-meta $core_current"
 unchanged
+stage=upstream_signed_index_archive
+cp /etc/apk/repositories.d/netfleet-component-fixture.list "$work/saved-fixture-repositories"
+printf '%s\n' "$feed_url/components-fixtures/unsigned-core/packages.adb" >/etc/apk/repositories.d/netfleet-component-fixture.list
+printf '%s\n' "$feed_url/components-fixtures/core-current/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
+apk --repositories-file /etc/apk/repositories.d/netfleet-component-fixture.list update >"$work/upstream-index.log" 2>&1
+mkdir -p "$work/upstream-repository"
+uclient-fetch -q -O "$work/upstream-repository/packages.adb" "$feed_url/components-fixtures/unsigned-core/packages.adb"
+uclient-fetch -q -O "$work/upstream-repository/mihomo-meta-$core_old.apk" "$feed_url/components-fixtures/unsigned-core/mihomo-meta-$core_old.apk"
+install_fixture -X "$work/upstream-repository/packages.adb" "mihomo-meta=$core_old" >"$work/upstream-downgrade.log" 2>&1
+unchanged
+request components_update "$core_current" mihomo
+assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
+archive_id=$(jsonfilter -i "$work/operation-result.json" -e '@.result.packages.id')
+archive_dir="/etc/opl-netfleet/package-transactions/$archive_id/old/repository-mihomo-meta"
+test -s "$archive_dir/packages.adb"
+test -s "$archive_dir/mihomo-meta-$core_old.apk"
+if apk --no-network verify "$archive_dir/mihomo-meta-$core_old.apk" >"$work/individual-verify.log" 2>&1; then
+	echo 'Unsigned upstream fixture unexpectedly verifies independently' >&2; exit 1
+fi
+apk --no-network fetch --from none -X "$archive_dir/packages.adb" --all-matches --stdout mihomo-meta >/dev/null
+apk --no-network --repositories-file /dev/null --simulate add -X "$archive_dir/packages.adb" "mihomo-meta=$core_old" >"$work/upstream-rollback-simulate.log" 2>&1
+cp "$archive_dir/mihomo-meta-$core_old.apk" "$work/untampered-core.apk"
+printf X | dd of="$archive_dir/mihomo-meta-$core_old.apk" bs=1 seek=10000 conv=notrunc 2>/dev/null
+if apk --no-network fetch --from none -X "$archive_dir/packages.adb" --all-matches --stdout mihomo-meta >/dev/null 2>"$work/tampered-core.log"; then
+	echo 'Tampered core was accepted' >&2; exit 1
+fi
+mv "$work/untampered-core.apk" "$archive_dir/mihomo-meta-$core_old.apk"
+cp "$work/saved-fixture-repositories" /etc/apk/repositories.d/netfleet-component-fixture.list
+unchanged
 stage=incompatible_core_rejected_before_stop
 printf '%s\n' "$feed_url/components-fixtures/bad-core/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
 core_pid_before=$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.core.pid')
@@ -413,4 +442,4 @@ stage=complete
 apk --no-network --repositories-file /dev/null del opl-netfleet-plugin-dashboard \
 	opl-netfleet-plugin-models opl-netfleet-plugin-components opl-netfleet-plugin-product-ui \
 	>"$work/independent-root-remove.log" 2>&1
-printf '%s\n' '{"ok":true,"checks":{"component_operator_window":true,"component_finite_observation":true,"component_finite_shared_models":true,"component_finite_plugin_update":true,"component_finite_rejects_extra_archive":true,"component_finite_rejects_stale_version":true,"component_finite_keeps_core_pid":true,"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"installer_complete_product_upgrade":true,"component_preserves_newer_independent_plugin":true,"component_world_preserved":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_durable_terminal_reconcile":true,"component_interrupted_install_recovery":true,"component_failed_package_hook_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"
+printf '%s\n' '{"ok":true,"checks":{"component_operator_window":true,"component_finite_observation":true,"component_finite_shared_models":true,"component_finite_plugin_update":true,"component_finite_rejects_extra_archive":true,"component_finite_rejects_stale_version":true,"component_finite_keeps_core_pid":true,"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"installer_complete_product_upgrade":true,"component_preserves_newer_independent_plugin":true,"component_world_preserved":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_durable_terminal_reconcile":true,"component_interrupted_install_recovery":true,"component_failed_package_hook_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_signed_index_archive":true,"component_tampered_archive_rejected":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"

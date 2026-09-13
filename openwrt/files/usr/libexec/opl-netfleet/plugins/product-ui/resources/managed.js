@@ -716,6 +716,7 @@ const PLUGIN_PRESENTATION = {
 	selection: ['出口选优', '为各出口测速并选择可用路径'],
 	'selection-algorithm': ['选优算法', '按策略比较地区与候选路径'],
 	setup: ['首次接入', '准备运行基础并接入已有设置'],
+	status: ['运行状态', '汇总当前出口、机场与设备运行状态'],
 	subscriptions: ['节点来源', '管理机场订阅与节点缓存']
 };
 function pluginPurpose(plugin) {

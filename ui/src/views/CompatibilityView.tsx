@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowLeft, Download, ExternalLink, RefreshCw } from 'lucide-react';
 import type { ExtensionComponent } from '../types';
+import { displayVersion } from '../lib/version';
 
 export function CompatibilityView({ extension, onBack }: { extension?: ExtensionComponent; onBack(): void }) {
   const [tab, setTab] = useState('rules');
@@ -35,7 +36,7 @@ export function CompatibilityView({ extension, onBack }: { extension?: Extension
         <h3>本地转发链</h3><p>尚未读取本地验证记录</p><h3>目标恢复</h3>
         <div className="nf-table-wrap"><table><thead><tr>{['目标', '最近故障', '恢复探测', '操作'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody><tr><td colSpan={4}>尚未读取诊断记录</td></tr></tbody></table></div>
         <h3>兼容事件</h3><p>尚未读取兼容事件</p>
-        <small>{extension?.installed_version ? extension.installed_version.replace(/^v/, '').replace(/-r\d+$/, '') : '未读取安装版本'}</small>
+        <small>{extension?.installed_version ? displayVersion(extension.installed_version) : '未读取安装版本'}</small>
         <button type="button" disabled title={previewReason}><ExternalLink aria-hidden="true" />软件包管理</button>
       </>}
     </div>

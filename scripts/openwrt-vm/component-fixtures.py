@@ -98,6 +98,8 @@ def build(candidate, output, baseline=None):
                 shutil.copy2(archive, output / kind / archive.name)
         (output / "old").mkdir()
         (output / "independent").mkdir()
+        (output / "unsigned-core").mkdir()
+        (output / "core-current").mkdir()
         core_versions = {}
         package_versions = {}
         product_packages = None
@@ -123,9 +125,11 @@ def build(candidate, output, baseline=None):
                 script.write_text(content)
                 script_args.extend(("--script", f"{kind}:{script}"))
 
-            def package(target_version, feed):
-                arguments = ["mkpkg", "--files", root, "--sign-key", private_key,
+            def package(target_version, feed, signed=True):
+                arguments = ["mkpkg", "--files", root,
                              "--output", output / feed / f"{name}-{target_version}.apk"]
+                if signed:
+                    arguments.extend(("--sign-key", private_key))
                 for key, value in metadata["info"].items():
                     if key in ("hashes", "installed-size", "file-size"):
                         continue
@@ -139,6 +143,9 @@ def build(candidate, output, baseline=None):
 
             package(prior, "good")
             shutil.copy2(output / "good" / f"{name}-{prior}.apk", output / "old")
+            if name == "mihomo-meta":
+                package(prior, "unsigned-core", signed=False)
+                shutil.copy2(archive, output / "core-current" / archive.name)
             if name == "opl-netfleet-plugin-dashboard":
                 package_versions[name]["independent"] = independent_version
                 package(independent_version, "independent")
@@ -168,7 +175,7 @@ def build(candidate, output, baseline=None):
                 core.write_text("#!/bin/sh\nexit 1\n")
                 core.chmod(0o755)
             package(following, "bad-core" if name == "mihomo-meta" else "bad")
-        for kind in ("old", "good", "bad", "bad-core", "bad-hook", "interrupted", "independent"):
+        for kind in ("old", "good", "bad", "bad-core", "bad-hook", "interrupted", "independent", "unsigned-core", "core-current"):
             run("--allow-untrusted", "mkndx", "--output", output / kind / "packages.adb",
                 "--sign", private_key, *sorted((output / kind).glob("*.apk")))
         if baseline is not None:

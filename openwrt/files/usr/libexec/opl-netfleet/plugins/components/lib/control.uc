@@ -324,7 +324,7 @@ archive = function(name, version, path, work, fallback_version, source) {
 	if (!directory(retained) || !fs.rename(target, `${retained}/${name}-${version}.apk`)) return null;
 	const retained_package = `${retained}/${name}-${version}.apk`;
 	for (let repository in exact?.repositories ?? []) {
-		if (!match(repository, /^https:\/\/[^?#]+\/packages\.adb$/)) continue;
+		if (!match(repository, /^https?:\/\/[^?#]+\/packages\.adb$/)) continue;
 		if (run_command(`curl -q -fsSL --connect-timeout 10 --max-time 45 -o ${q(`${retained}/packages.adb`)} ${q(repository)}`, work) &&
 			archive_valid(retained_package, work)) return retained_package;
 	}
