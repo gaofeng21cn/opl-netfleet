@@ -719,6 +719,9 @@
 }
 
 .netfleet-native .table.cbi-section-table {
+	display: block;
+	width: 100%;
+	max-width: 100%;
 	overflow-x: auto;
 	border: 1px solid var(--nf-border);
 	border-radius: 6px;
@@ -726,6 +729,8 @@
 }
 
 .netfleet-native table.table {
+	/* Themes may turn .table into a block at responsive breakpoints. */
+	display: table;
 	width: 100%;
 	font-size: 14.5px;
 }
