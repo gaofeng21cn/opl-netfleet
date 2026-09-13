@@ -20,7 +20,7 @@ def runtime_files(packages):
     prefixes = [root+p for p in ['kernel/', 'adapters/', 'plugins/mihomo/',
                 'plugins/https-compat/', 'plugins/platform/', 'plugins/platform-storage/']]
     exact = [root+'main.uc', root+'plugins/models/lib/extensions.uc',
-             'usr/libexec/opl-netfleet-plugin-package', 'etc/init.d/opl-netfleet-core']
+             'usr/libexec/opl-netfleet-plugin-package', 'etc/init.d/opl-netfleet-core', 'etc/init.d/opl-netfleet']
     result = {}
     for line in (Path(packages)/'FILES.sha256').read_text().splitlines():
         digest, path = line.split(None, 1)
@@ -72,7 +72,9 @@ def retained_runtime(directory, runtime):
         if not isinstance(inventory, dict) or not 1 <= len(inventory) <= 512 or prefix+'manifest.json' not in inventory:
             raise ValueError('retained runtime inventory missing')
         for path, digest in inventory.items():
-            if not path.startswith(prefix) or any(part in ['.', '..', ''] for part in path[len(prefix):].split('/')) or not re.fullmatch(r'[0-9a-f]{64}', digest):
+            shared = plugin == 'scheduler' and path == '/etc/init.d/opl-netfleet' and runtime.get(path) == digest
+            local = path.startswith(prefix) and not any(part in ['.', '..', ''] for part in path[len(prefix):].split('/'))
+            if not (local or shared) or not re.fullmatch(r'[0-9a-f]{64}', digest):
                 raise ValueError('retained runtime escapes plugin owner')
         original = {path for path in projected if path.startswith(prefix)}
         if not original.issubset(inventory):

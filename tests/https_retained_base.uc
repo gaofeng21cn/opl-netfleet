@@ -28,25 +28,23 @@ for(let row in manifest.artifacts) {
  if(!fs.mkdir(dir,0700))die('retained_extraction_exists');
  run('apk extract --keys-dir '+quote(root)+' --destination '+quote(dir)+' '+quote(archive));
  const prefix='/usr/libexec/opl-netfleet/plugins/'+replace(row.package,/^opl-netfleet-plugin-/,'');
+ let checked=0;
  function owners(path) {
   for(let name in fs.lsdir(dir+path) ?? []) {
    const file=path+'/'+name, info=fs.lstat(dir+file);
    if(info.type=='directory')owners(file);
-   else if(info.type!='file' || !(index(file,prefix+'/')==0 ||
-      index(file,'/lib/apk/packages/'+row.package+'.')==0))die('retained_payload_owner_escape');
+   else {
+    if(info.type!='file')die('retained_payload_owner_escape');
+    if(file=='/lib/apk/packages/'+row.package+'.list')continue;
+    const shared=row.package=='opl-netfleet-plugin-scheduler' && file=='/etc/init.d/opl-netfleet' &&
+       row.files[file]==base.runtime_sha256[file];
+    if(!(index(file,prefix+'/')==0 || shared))die('retained_payload_owner_escape');
+    if(row.files[file]!=sha256(fs.readfile(dir+file)))die('retained_payload_changed');
+    checked++;
+   }
   }
  }
  owners('');
- let checked=0;
- function check(path) {
-  for(let name in fs.lsdir(dir+path) ?? []) {
-   const file=path+'/'+name, info=fs.lstat(dir+file);
-   if(info.type=='directory')check(file);
-   else if(info.type!='file' || row.files[file]!=sha256(fs.readfile(dir+file)))die('retained_payload_changed');
-   else checked++;
-  }
- }
- check(prefix);
  if(checked!=length(row.files))die('retained_payload_inventory_incomplete');
  push(archives,quote(archive));
 }

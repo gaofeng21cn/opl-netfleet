@@ -528,7 +528,8 @@ python3 scripts/https-compat/compare.py /tmp/compat-proof/plugin-qualification.j
 
 保留集合不能包含待验证的 Mihomo、HTTPS 管理和 Device identity，也不能移除原基座
 已绑定的调用文件。隔离 guest 先验签、核对 APK 元数据及全部插件文件，再安装保留集合，
-回读实际组合并运行同一完整 HTTPS 资格。回执绑定清单、归档、公开密钥及实际调用文件；
+调度插件的既有 `/etc/init.d/opl-netfleet` 归属单独核对，必须与合格基础包字节一致；
+其他跨插件路径不能随保留集合写入。回读实际组合并运行同一完整 HTTPS 资格。回执绑定清单、归档、公开密钥及实际调用文件；
 只有通过这组资格，安装器才接受目标的这些差异。保留包只用于隔离组合验证，HTTPS 更新器
 不会把它们发送到生产设备或安装它们。
 

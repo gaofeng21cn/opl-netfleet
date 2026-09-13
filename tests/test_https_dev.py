@@ -45,6 +45,24 @@ class EngineArtifacts(unittest.TestCase):
                 if change=='extra':(root/'unexpected').write_text('not part of composition')
                 with self.subTest(change=change),self.assertRaises(ValueError):run(value)
 
+    def test_retained_scheduler_only_keeps_the_qualified_launcher(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);name='opl-netfleet-plugin-scheduler';archive=name+'-0.7.2-r1.apk'
+            (root/archive).write_bytes(b'signed fixture');(root/'public.pem').write_bytes(b'PUBLIC KEY fixture')
+            prefix='/usr/libexec/opl-netfleet/plugins/scheduler/'
+            runtime={prefix+'manifest.json':'a'*64,'/etc/init.d/opl-netfleet':'b'*64}
+            manifest={'schema':'opl-netfleet-retained-base.v1','keys':[{'name':'public.pem','sha256':base.sha(root/'public.pem')}],
+                'artifacts':[{'package':name,'version':'0.7.2-r1','artifact':archive,'sha256':base.sha(root/archive),'files':dict(runtime)}]}
+            def run():
+                (root/'retained-base.json').write_text(json.dumps(manifest))
+                return base.retained_runtime(root,runtime)
+            self.assertEqual(run()[0],runtime)
+            manifest['artifacts'][0]['files']['/etc/init.d/opl-netfleet']='c'*64
+            with self.assertRaises(ValueError):run()
+            del manifest['artifacts'][0]['files']['/etc/init.d/opl-netfleet']
+            manifest['artifacts'][0]['files']['/etc/init.d/opl-netfleet-core']='b'*64
+            with self.assertRaises(ValueError):run()
+
     def test_alternating_benchmark_requires_complete_versions(self):
         rows=[{'version':version,'name':f'{rep}-{scene}'} for version in ['old','new']
               for rep in range(1,4) for scene in ['off','idle','load','ui']]
