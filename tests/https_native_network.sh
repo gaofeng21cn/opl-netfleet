@@ -46,7 +46,9 @@ finish() {
     cp "$work/ca.before" /etc/ssl/certs/ca-certificates.crt
     exit "$rc"
 }
-trap finish EXIT INT TERM
+trap finish EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 ip netns add nfcompat-client
 ip link add nfcompat0 type veth peer name nfcompat1
 ip link set nfcompat1 netns nfcompat-client
@@ -136,7 +138,7 @@ origin_pid=$!
 stage=core
 mkdir -p /etc/opl-netfleet/native/profiles /etc/opl-netfleet/native/run /var/run/opl-netfleet-core
 chmod 0700 /etc/opl-netfleet/native /etc/opl-netfleet/native/profiles /etc/opl-netfleet/native/run /var/run/opl-netfleet-core
-printf '{"rules":["SRC-PORT,41641,DIRECT","MATCH,DIRECT"],"hosts":{"wire.example":"198.51.100.10"}}\n' >/etc/opl-netfleet/native/profiles/compat-wire.json
+printf '{"find-process-mode":"off","rules":["PROCESS-NAME,haproxy,REJECT","SRC-PORT,41641,DIRECT","MATCH,DIRECT"],"hosts":{"wire.example":"198.51.100.10"}}\n' >/etc/opl-netfleet/native/profiles/compat-wire.json
 chmod 0600 /etc/opl-netfleet/native/profiles/compat-wire.json
 uci set netfleet.config.enabled=1
 uci set netfleet.config.profile=file:compat-wire.json

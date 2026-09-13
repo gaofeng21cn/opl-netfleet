@@ -35,6 +35,8 @@ return function() {
             if (type(rule)!='string') return 'routing_rule_unreadable';
             const fields=split(rule,','),kind=fields[0];
             if (kind=='SRC-PORT') { try { source_ports({rules:[rule]}); } catch (error) { return error.message; } }
+            else if (kind=='PROCESS-NAME' && profile['find-process-mode']=='off' &&
+                     length(fields)==3 && length(fields[1])>0) continue;
             else if (kind=='RULE-SET') {
                 const provider=profile['rule-providers']?.[fields[1]];
                 if (index(['domain','ipcidr'],provider?.behavior)<0) return 'rule_provider_not_equivalent';
