@@ -98,12 +98,16 @@ recovery_world = function(names, before) {
 	}
 	return result;
 };
-restore_world = function(names, before, work, rollback, changed) {
-	// Preserve explicit version/repository constraints; local archive pins describe bytes,
-	// not an administrator's desired version after an explicitly requested update.
+restore_world = function(names, before, work, rollback, changed, candidates) {
+	// Explicit upgrades move exact-version pins to the selected candidate. Range and
+	// repository constraints remain intact; rollback restores the previous intent.
 	const expected = {};
-	for (let name in names)
-		expected[name] = !rollback && (changed == null || index(changed, name) >= 0) && index(before[name] ?? "", `${name}><`) == 0 ? name : before[name];
+	for (let name in names) {
+		const updating = !rollback && (changed == null || index(changed, name) >= 0);
+		expected[name] = updating && index(before[name] ?? "", `${name}><`) == 0 ? name : before[name];
+		if (updating && candidates?.[name] != null && index(before[name] ?? "", `${name}=`) == 0)
+			expected[name] = `${name}=${candidates[name]}`;
+	}
 	const roots = filter(names, name => expected[name] != null);
 	if (length(roots) && !run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(roots, name => q(expected[name])))}`, work)) return false;
 	const dependencies = filter(names, name => expected[name] == null);
@@ -535,7 +539,7 @@ upgrade = function(request, work, candidates) {
 		// continues to block unrelated starts until this transaction is verified.
 		// APK otherwise strips the restore flag from the hook environment.
 		if (!run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null add ${join(" ", map(next, q))}`, work)) fail("package_install_failed");
-		if (!restore_world(names, before.world, work, false, filter(names, name => versions[name] != candidates[name]))) fail("package_world_restore_failed");
+		if (!restore_world(names, before.world, work, false, filter(names, name => versions[name] != candidates[name]), candidates)) fail("package_world_restore_failed");
 		operation.update("verifying");
 		const after = installed();
 		for (let name in names) if (after?.[name] != candidates[name]) fail("package_identity_mismatch");

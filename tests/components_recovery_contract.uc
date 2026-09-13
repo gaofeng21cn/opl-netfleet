@@ -110,6 +110,13 @@ actual = {a: "a", b: "b>=2", c: "c", unrelated: "changed"};
 check(!restore_world(["a", "b", "c"], before, "/unused"), "unrelated world roots cannot change silently");
 succeeds = false;
 check(!restore_world(["a"], before, "/unused"), "unsatisfied constraints require transaction rollback");
+succeeds = true;
+const pinned = {core: "core=1.0", other: "other=2.0"};
+actual = {core: "core=1.1", other: "other=2.0"};
+check(restore_world(["core"], pinned, "/unused", false, ["core"], {core:"1.1"}), "explicit upgrade moves only its exact version pin");
+actual.core = "core=1.0";
+check(restore_world(["core"], pinned, "/unused", true, ["core"], {core:"1.1"}), "rollback restores the original exact version pin");
+check(restore_world(["core"], pinned, "/unused", false, [], {core:"1.1"}), "retained component pin is not rewritten");
 `)();
 
 const reconcile_start = index(source, "recovery_world = function(");
