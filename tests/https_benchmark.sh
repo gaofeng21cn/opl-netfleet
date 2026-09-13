@@ -32,6 +32,20 @@ if(system('ucode '+main+' compatibility-enable '+p+' >/dev/null'))die('enable');
 UC
  wait_intercepting
 }
+bench_history() {
+ # Equal retained history in both packages. Only diagnostic events are seeded;
+ # recovery, trust, admission and user configuration remain owned by the runtime.
+ flock -w 10 /var/lock/opl-netfleet-deploy.lock ucode - <<'UC'
+import * as fs from 'fs';
+const path='/var/run/opl-netfleet-compat/state.json',state=json(fs.readfile(path)),events=[];
+for(let n=0;n<100;n++)push(events,{at:n,reason:'benchmark_history',intercepting:false,
+ local_probes:{processing:{ok:true,duration_ms:10},ipv4:{ok:true,duration_ms:10},ipv6:{ok:true,duration_ms:10}},
+ failure:{reason:'benchmark_history',at:n},engine_restart:{attempts:1,next_at:0}});
+state.events=events;
+const f=fs.open(path+'.benchmark','we',0600),raw=sprintf('%J\n',state);
+if(!f||f.write(raw)!=length(raw)||!f.close()||!fs.rename(path+'.benchmark',path))die('benchmark_state_failed');
+UC
+}
 dd if=/dev/zero of="$bench/upload.bin" bs=1024 count=128 2>/dev/null
 for rep in 1 2 3; do
  for scene in off idle load ui; do
@@ -47,6 +61,7 @@ for rep in 1 2 3; do
   else wait_intercepting; fi
   apk info -v opl-netfleet-https-compat >"$out/package.txt"
   sleep 10
+  bench_history
   deadline=$(($(date +%s)+300))
   bench_capture >"$out/before.json"
   if [ "$scene" = load ] || [ "$scene" = ui ]; then
@@ -122,5 +137,5 @@ for(let name in fs.lsdir(root)) {
   enabled&&(s.admission.state!==true||!(s.at-s.admission.last_tick>=0&&s.at-s.admission.last_tick<10)));
  push(rows,{name:parts[1]+'-'+parts[2],version:parts[0],package:trim(fs.readfile(root+'/'+name+'/package.txt')),seconds:elapsed,groups,requests,ui,
   admission:{samples:length(samples),invalid:length(invalid)},errors:trim(fs.readfile(root+'/'+name+'/errors.log') ?? ''),codes:trim(fs.readfile(root+'/'+name+'/codes') ?? '')});
-}printf('%J\n',{environment:'isolated_openwrt',seconds:300,repeats:3,comparison:'alternating_signed_packages_same_guest',cpu_ticks_per_second:100,rows});
+}printf('%J\n',{environment:'isolated_openwrt',seconds:300,repeats:3,history_events:100,comparison:'alternating_signed_packages_same_guest',cpu_ticks_per_second:100,rows});
 UC
