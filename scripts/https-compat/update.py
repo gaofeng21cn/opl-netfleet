@@ -18,11 +18,11 @@ REQUIRED = ['engine_package_cycle', 'dual_stack_probe_faults', 'native_dependenc
             'base_configuration_unchanged', 'streaming_upload_and_sse', 'resource_pressure']
 
 
-def verify(packages, base_proof, candidate, previous, receipt):
+def verify(packages, base_proof, candidate, previous, receipt, retained=None):
     current = artifact(candidate, 'compat-manifest.json')
     old = artifact(previous, 'compat-manifest.json')
     identity = artifact(candidate, 'device-identity-manifest.json')
-    base = validate(packages, base_proof, current['source_commit'])
+    base = validate(packages, base_proof, current['source_commit'], retained=retained)
     proof = json.loads(receipt.read_text())
     if (proof.get('schema') != 'opl-netfleet-https-plugin-qualification.v1'
             or proof.get('plugin_qualified') is not True or proof.get('base') != base
@@ -32,6 +32,8 @@ def verify(packages, base_proof, candidate, previous, receipt):
             or proof.get('identity') != identity or proof.get('packages') != ['opl-netfleet-https-compat']
             or not all(proof.get('checks', {}).get(key) is True for key in REQUIRED)):
         raise ValueError('HTTPS engine qualification mismatch')
+    if retained is not None and proof.get('checks', {}).get('retained_base_packages') is not True:
+        raise ValueError('retained base qualification missing')
     diagnostic = receipt.with_suffix('.diagnostic.json')
     if sha(diagnostic) != proof.get('diagnostic_sha256'):
         raise ValueError('HTTPS diagnostic evidence changed')
@@ -56,9 +58,10 @@ def main():
         p.add_argument('--'+name, required=True, type=Path)
     p.add_argument('--ssh-option', action='append', default=[])
     p.add_argument('--dry-run', action='store_true')
+    p.add_argument('--retained-base', type=Path)
     a=p.parse_args();os.umask(0o077)
     if a.target.startswith('-'): raise ValueError('invalid target')
-    current, old = verify(a.packages, a.base_qualification, a.candidate, a.previous, a.qualification)
+    current, old = verify(a.packages, a.base_qualification, a.candidate, a.previous, a.qualification, a.retained_base)
     canonical=Path(subprocess.check_output(['git','-C',str(ROOT),'rev-parse','--path-format=absolute','--git-common-dir'],text=True).strip()).parent
     if any(a.output.resolve().is_relative_to(root) for root in [ROOT,canonical]):
         raise ValueError('receipt must remain outside repositories')

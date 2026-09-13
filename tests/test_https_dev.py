@@ -17,6 +17,34 @@ import update
 import compare
 
 class EngineArtifacts(unittest.TestCase):
+    def test_retained_set_binds_exact_owner_files_without_downgrading_other_plugins(self):
+        import copy
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); name='opl-netfleet-plugin-platform'; version='0.8.4-r1'
+            archive=f'{name}-{version}.apk'; (root/archive).write_bytes(b'signed archive fixture')
+            (root/'public.pem').write_bytes(b'PUBLIC KEY fixture')
+            prefix='/usr/libexec/opl-netfleet/plugins/platform/'
+            inventory={prefix+'manifest.json':'a'*64,prefix+'lib/paths.uc':'b'*64}
+            manifest={'schema':'opl-netfleet-retained-base.v1','keys':[{'name':'public.pem','sha256':base.sha(root/'public.pem')}],
+                      'artifacts':[{'package':name,'version':version,'artifact':archive,'sha256':base.sha(root/archive),'files':inventory}]}
+            other='/usr/libexec/opl-netfleet/plugins/mihomo/lib/gateway.uc'
+            runtime={prefix+'manifest.json':'c'*64,prefix+'lib/paths.uc':'d'*64,other:'e'*64}
+            def run(value):
+                (root/'retained-base.json').write_text(json.dumps(value))
+                return base.retained_runtime(root,runtime)
+            projected,proof=run(manifest)
+            self.assertEqual(projected,{**inventory,other:'e'*64})
+            self.assertEqual(proof['manifest_sha256'],base.sha(root/'retained-base.json'))
+            for change in ['digest','escape','missing','gateway','key','extra']:
+                value=copy.deepcopy(manifest)
+                if change=='digest':value['artifacts'][0]['sha256']='0'*64
+                if change=='escape':value['artifacts'][0]['files'][prefix+'../gateway.uc']='f'*64
+                if change=='missing':del value['artifacts'][0]['files'][prefix+'lib/paths.uc']
+                if change=='gateway':value['artifacts'][0]['package']='opl-netfleet-plugin-mihomo'
+                if change=='key':value['keys'][0]['name']='../public.pem'
+                if change=='extra':(root/'unexpected').write_text('not part of composition')
+                with self.subTest(change=change),self.assertRaises(ValueError):run(value)
+
     def test_alternating_benchmark_requires_complete_versions(self):
         rows=[{'version':version,'name':f'{rep}-{scene}'} for version in ['old','new']
               for rep in range(1,4) for scene in ['off','idle','load','ui']]

@@ -519,6 +519,19 @@ python3 scripts/https-compat/compare.py /tmp/compat-proof/plugin-qualification.j
 安装前还会核对资格绑定的内核、平台调用层、HTTPS 管理和 Mihomo 接管文件字节；
 相关调用链与基座不符时拒绝安装，只更新了无关插件不要求一起重装基础包。
 
+目标需要保留其他独立版本时，为资格入口设置 `RETAINED_BASE=/private/retained-base`，
+更新器传同一目录的 `--retained-base`。目录只包含精确签名 APK、公开验签密钥和
+`retained-base.json`。清单的 `schema` 为 `opl-netfleet-retained-base.v1`；`keys` 每项
+包含 `name`、`sha256`，`artifacts` 每项包含 `package`、`version`（含 `-r`）、
+`artifact`、`sha256`，以及 `files`（插件自身绝对运行路径到 SHA-256 的映射）。
+文件清单从原签名归档解包生成，并与目标安装字节比较；不从设备目录重打包。
+
+保留集合不能包含待验证的 Mihomo、HTTPS 管理和 Device identity，也不能移除原基座
+已绑定的调用文件。隔离 guest 先验签、核对 APK 元数据及全部插件文件，再安装保留集合，
+回读实际组合并运行同一完整 HTTPS 资格。回执绑定清单、归档、公开密钥及实际调用文件；
+只有通过这组资格，安装器才接受目标的这些差异。保留包只用于隔离组合验证，HTTPS 更新器
+不会把它们发送到生产设备或安装它们。
+
 开发诊断额外运行一分钟开启计时的管理轮次，阶段记录在回执 `profile`。常规启动不记录；
 计时只包括阶段耗时和当前管理进程及已回收子进程的 CPU 累计差。嵌套阶段不能相加，
 异步地址同步可能跨越轮次，常驻探针子进程也不包含在已回收子进程的计数中，因此以

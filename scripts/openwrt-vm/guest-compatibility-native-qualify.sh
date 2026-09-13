@@ -59,6 +59,11 @@ NETFLEET_INSTALL_PROFILE=full NETFLEET_FEED_BASE="$feed_url" \
  NETFLEET_COMPAT_FEED_BASE=http://127.0.0.1:18081 NETFLEET_ALLOW_INSECURE_FEED=1 \
  sh "$work/install.sh" >>"$work/packages.log" 2>&1
 kill "$optional_feed_pid"
+if [ -f /tmp/compat-runtime/retained-base/retained-base.json ]; then
+ stage=retained_base
+ touch /tmp/netfleet-retained-base-vm-authorized
+ ucode /tmp/tests/https_retained_base.uc >"$work/retained-base.json" 2>"$work/retained-base.log"
+fi
 /usr/libexec/opl-netfleet/main.uc compatibility-get >"$work/default-off.json"
 test "$(jsonfilter -i "$work/default-off.json" -e '@.result.requested')" = false
 check_native() {
@@ -163,5 +168,5 @@ stage=complete
 ucode - "$commit" "$tree" <<'UC'
 import * as fs from 'fs';
 const benchmark=fs.readfile('/tmp/https-native-network/benchmark.json');
-printf('%J\n',{ok:true,source_commit:ARGV[0],source_tree:ARGV[1],checks:{...(fs.stat('/tmp/compat-runtime/upgrade.json')?{engine_package_cycle:true}:{}),dual_stack_probe_faults:true,native_kernel_io:true,native_dependency_closure:true,real_control_entry:true,procd_launcher:true,local_h1_to_h2:true,resource_limits:true,resource_pressure:true,user_disable:true,uninstall_reinstall:true,stable_ca:true,base_configuration_unchanged:true,local_address_rotation:true,address_conflict_expiry:true,dual_stack_kernel_lease:true,real_gateway_h2:true,original_routing:true,sni_and_unknown_device_bypass:true,address_update_without_restart:true,streaming_upload_and_sse:true,cancellation_and_business_errors:true,simultaneous_stall_fail_open:true,third_fault_latch:true,manual_recovery:true,base_pid_unchanged:true},profile:json(fs.readfile('/tmp/https-native-network/profile.json')),metrics:json(fs.readfile('/tmp/https-native-network/performance.json')),benchmark:benchmark?json(benchmark):null,production_ready:false});
+printf('%J\n',{ok:true,source_commit:ARGV[0],source_tree:ARGV[1],checks:{...(fs.stat('/tmp/compat-runtime/upgrade.json')?{engine_package_cycle:true}:{}),...(fs.stat('/tmp/compat-runtime/retained-base/retained-base.json')?{retained_base_packages:json(fs.readfile('/tmp/compat-native-fixture/retained-base.json'))?.ok===true}:{}),dual_stack_probe_faults:true,native_kernel_io:true,native_dependency_closure:true,real_control_entry:true,procd_launcher:true,local_h1_to_h2:true,resource_limits:true,resource_pressure:true,user_disable:true,uninstall_reinstall:true,stable_ca:true,base_configuration_unchanged:true,local_address_rotation:true,address_conflict_expiry:true,dual_stack_kernel_lease:true,real_gateway_h2:true,original_routing:true,sni_and_unknown_device_bypass:true,address_update_without_restart:true,streaming_upload_and_sse:true,cancellation_and_business_errors:true,simultaneous_stall_fail_open:true,third_fault_latch:true,manual_recovery:true,base_pid_unchanged:true},profile:json(fs.readfile('/tmp/https-native-network/profile.json')),metrics:json(fs.readfile('/tmp/https-native-network/performance.json')),benchmark:benchmark?json(benchmark):null,production_ready:false});
 UC

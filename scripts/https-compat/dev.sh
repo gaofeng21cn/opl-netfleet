@@ -17,6 +17,7 @@ qualify  Run full base-package qualification, then the native HTTPS diagnostic l
          With BASE_QUALIFICATION and PREVIOUS, qualify reuses the fixed base and
          tests engine-only upgrade/rollback. benchmark alternates signed old/new
          packages in one guest, adding 3 x 300s per scene for each version.
+         RETAINED_BASE optionally binds exact signed plugins kept by a mixed target.
 
 Portable checks are not TLS/network or package qualification. The compatibility
 diagnostic receipt alone never authorizes deployment. No real devices are contacted.
@@ -71,6 +72,7 @@ require PACKAGES; require COMPAT_PACKAGES
 if [[ -n "${BASE_QUALIFICATION:-}" && ( "$action" == qualify || "$action" == benchmark ) ]]; then
   require PREVIOUS
   args=(); [[ "$action" != benchmark ]] || args=(--benchmark)
+  [[ -z "${RETAINED_BASE:-}" ]] || args+=(--retained-base "$RETAINED_BASE")
   exec python3 scripts/https-compat/qualify.py --packages "$PACKAGES" --base-qualification "$BASE_QUALIFICATION" \
     --candidate "$COMPAT_PACKAGES" --previous "$PREVIOUS" --output "$OUTPUT/plugin-qualification.json" "${args[@]}"
 fi
