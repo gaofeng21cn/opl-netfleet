@@ -238,14 +238,14 @@ after_upgrade=$("$real_apk" list --manifest)
 
 stage=package_database
 version=$(jsonfilter -i "$candidate/manifest.json" -e '@.package_version')
-release=$(jsonfilter -i "$candidate/manifest.json" -e '@.package_release')
 installed_manifest=$("$real_apk" list --manifest)
 printf '%s\n' "$installed_manifest" >"$fixture/package-manifest.after"
 printf '%s\n' "$installed_manifest" >>"$fixture/package-manager.log"
 ucode -e '
 	import { readfile } from "fs";
 	for (let artifact in json(readfile(ARGV[0])).artifacts)
-		if (artifact.package != "opl-netfleet-plugin-https-compat") printf("%s %s-r%s\n", artifact.package, artifact.version, artifact.release);
+		if (artifact.package != "opl-netfleet-plugin-https-compat") printf("%s %s%s\n", artifact.package, artifact.version,
+            artifact.release != null ? "-r" + artifact.release : "");
 ' "$candidate/manifest.json" >"$fixture/product-packages.txt"
 : >"$fixture/package-info.after"
 while read -r package_name package_version; do
@@ -692,5 +692,5 @@ if [ "$(jsonfilter -i "$fixture/lifecycle-fixture.json" -e '@.legacy.key_sha256'
 fi
 
 stage=complete
-printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_release":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","lifecycle":{"legacy_monolith_upgrade":%s,"legacy_source_commit":"%s","legacy_source_tree":"%s","legacy_artifacts":%s},"checks":{"manifest":true,"signing_key":true,"kernel_only_package_install":true,"kernel_only_service_lifecycle":true,"feed_bootstrap":true,"feed_install":true,"feed_install_inactive":true,"feed_upgrade_transaction":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"probe_rpc":true,"independent_plugin_upgrade":true,"independent_plugin_keeps_owners_running":true,"kernel_upgrade":true,"optional_management_removal":true,"rpc_method_upgrade":true,"lifecycle_restores_routes_and_private_inputs":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
-	"$source_commit" "$source_tree" "$manifest_sha" "$version" "$release" "$legacy_upgraded" "$legacy_source_commit" "$legacy_source_tree" "$legacy_artifacts"
+printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","lifecycle":{"legacy_monolith_upgrade":%s,"legacy_source_commit":"%s","legacy_source_tree":"%s","legacy_artifacts":%s},"checks":{"manifest":true,"signing_key":true,"kernel_only_package_install":true,"kernel_only_service_lifecycle":true,"feed_bootstrap":true,"feed_install":true,"feed_install_inactive":true,"feed_upgrade_transaction":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"probe_rpc":true,"independent_plugin_upgrade":true,"independent_plugin_keeps_owners_running":true,"kernel_upgrade":true,"optional_management_removal":true,"rpc_method_upgrade":true,"lifecycle_restores_routes_and_private_inputs":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
+	"$source_commit" "$source_tree" "$manifest_sha" "$version" "$legacy_upgraded" "$legacy_source_commit" "$legacy_source_tree" "$legacy_artifacts"

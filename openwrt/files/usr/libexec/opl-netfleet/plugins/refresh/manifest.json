@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "refresh",
   "label": "Subscription refresh",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "api_version": 1,
   "package": "opl-netfleet-plugin-refresh",
   "services": {

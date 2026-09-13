@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import tempfile
@@ -23,6 +24,26 @@ def sdk_path():
     return tools[0].parents[3]
 
 
+def fixture_versions(version):
+    """Exercise numeric upgrades from an old -r1 install, retaining third-party revisions."""
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:-r(\d+))?", version)
+    if match is None:
+        raise ValueError("invalid component fixture version")
+    major, minor, patch = map(int, match.group(1, 2, 3))
+    if match[4] is not None:
+        base, release = version.rsplit("-r", 1)
+        revision = int(release)
+        if revision < 1:
+            raise ValueError("old-format fixture requires release >= 1")
+        return f"{base}-r{revision - 1}", f"{base}-r{revision + 1}", f"{base}-r{revision + 2}"
+    if patch < 1:
+        # Numeric candidates with no patch yet still have an older prerelease.
+        prior = f"{version}_rc1"
+    else:
+        prior = f"{major}.{minor}.{patch - 1}-r1"
+    return prior, f"{major}.{minor}.{patch + 1}", f"{major}.{minor}.{patch + 2}"
+
+
 def build(candidate, output, baseline=None):
     sdk = sdk_path()
     apk = sdk / "staging_dir/host/bin/apk"
@@ -30,12 +51,10 @@ def build(candidate, output, baseline=None):
         raise SystemExit("SDK host apk is unavailable")
     output.mkdir(mode=0o700)
     manifest = json.loads((candidate / "manifest.json").read_text())
-    version = f"{manifest['package_version']}-r{manifest['package_release']}"
-    revision = int(manifest["package_release"])
-    if revision < 1:
-        raise SystemExit("Component fixture requires package release >= 1")
-    old_version = f"{manifest['package_version']}-r{revision - 1}"
-    bad_version = f"{manifest['package_version']}-r{revision + 1}"
+    version = manifest["package_version"]
+    if manifest.get("package_release") is not None:
+        version += "-r" + manifest["package_release"]
+    old_version, bad_version, _ = fixture_versions(version)
     with tempfile.TemporaryDirectory(prefix="netfleet-component-build-") as temporary:
         scratch = Path(temporary)
 
@@ -88,9 +107,7 @@ def build(candidate, output, baseline=None):
             archive = candidate / filename
             metadata = json.loads(run("adbdump", "--format", "json", archive))
             package_version = metadata["info"]["version"]
-            base, release = package_version.rsplit("-r", 1)
-            prior = f"{base}-r{int(release) - 1}"
-            following = f"{base}-r{int(release) + 1}"
+            prior, following, independent_version = fixture_versions(package_version)
             package_versions[name] = {"current": package_version, "old": prior, "bad": following}
             if name == "mihomo-meta":
                 core_versions = {"core_version": package_version, "core_old_version": prior, "core_bad_version": following}
@@ -123,7 +140,6 @@ def build(candidate, output, baseline=None):
             package(prior, "good")
             shutil.copy2(output / "good" / f"{name}-{prior}.apk", output / "old")
             if name == "opl-netfleet-plugin-dashboard":
-                independent_version = f"{base}-r{int(release) + 2}"
                 package_versions[name]["independent"] = independent_version
                 package(independent_version, "independent")
             if name == "opl-netfleet-plugin-configuration":

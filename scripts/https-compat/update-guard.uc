@@ -13,7 +13,7 @@ fs.writefile(stage+'/installed-before.json',sprintf('%J',installed));
 const versions={};for(let row in installed)versions[row.name]=row.version;
 for(let kind in ['old','new']) {
  const name=request[kind];
- if(!match(name,/^opl-netfleet-https-compat-[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+\.apk$/))die('invalid_engine_archive');
+ if(!match(name,/^opl-netfleet-https-compat-[0-9]+\.[0-9]+\.[0-9]+(-r[0-9]+)?\.apk$/))die('invalid_engine_archive');
  const path=stage+'/'+name;
  if(system('apk --no-network verify '+quote(path)+' >/dev/null 2>&1'))die('engine_signature_invalid');
  const meta=read('apk adbdump --format json '+quote(path));

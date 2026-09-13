@@ -1,8 +1,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet-https-compat
-PKG_VERSION:=0.6.0
-PKG_RELEASE:=1
+PKG_VERSION:=0.6.1
+PKG_RELEASE:=
 PKG_LICENSE:=MIT GPL-2.0-or-later LGPL-2.1-only
 HAPROXY_VERSION:=3.2.21
 PKG_SOURCE:=haproxy-$(HAPROXY_VERSION).tar.gz

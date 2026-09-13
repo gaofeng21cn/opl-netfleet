@@ -48,7 +48,7 @@ def stage_plugin(example, destination, version):
         with (source / "resources/style.css").open("a") as stylesheet:
             stylesheet.write("\n/* Signed APK upgrade fixture. */\n")
     package = destination / "package"
-    generated = SDK.package_source(source, package, "Apache-2.0", 1)
+    generated = SDK.package_source(source, package, "Apache-2.0")
     make_root = destination / "make"
     (make_root / "include").mkdir(parents=True)
     (make_root / "rules.mk").touch()
@@ -140,7 +140,7 @@ def build(output, sdk):
             receipt["plugins"][identity] = {}
             for version in ("0.1.0", "0.1.1"):
                 staged = stage_plugin(ROOT / "examples/plugins" / identity, scratch / f"{identity}-{version}", version)
-                artifact = pack(staged["package"], f"{version}-r1", staged["payload"],
+                artifact = pack(staged["package"], version, staged["payload"],
                                 staged["dependencies"], staged["scripts"])
                 receipt["plugins"][identity][version] = {**artifact, "revision": staged["revision"]}
         note = output / receipt["plugins"]["workspace-note"]["0.1.0"]["name"]

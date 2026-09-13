@@ -20,7 +20,7 @@ class EngineArtifacts(unittest.TestCase):
     def test_retained_set_binds_exact_owner_files_without_downgrading_other_plugins(self):
         import copy
         with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory); name='opl-netfleet-plugin-platform'; version='0.8.4-r1'
+            root=Path(directory); name='opl-netfleet-plugin-platform'; version='0.8.5'
             archive=f'{name}-{version}.apk'; (root/archive).write_bytes(b'signed archive fixture')
             (root/'public.pem').write_bytes(b'PUBLIC KEY fixture')
             prefix='/usr/libexec/opl-netfleet/plugins/platform/'
@@ -106,17 +106,18 @@ class EngineArtifacts(unittest.TestCase):
                 qualify.identity_matches_base(identity,{'source_commit':git('rev-parse','HEAD')},root)
 
     def test_name_and_bytes_are_bound(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory);name='opl-netfleet-https-compat-0.5.3-r1.apk'
-            (root/name).write_bytes(b'candidate')
-            manifest={'artifact':name,'sha256':base.sha(root/name)}
-            (root/'compat-manifest.json').write_text(json.dumps(manifest))
-            self.assertEqual(qualify.artifact(root,'compat-manifest.json'),manifest)
-            (root/name).write_bytes(b'changed')
-            with self.assertRaises(ValueError):qualify.artifact(root,'compat-manifest.json')
-            manifest['artifact']='../'+name
-            (root/'compat-manifest.json').write_text(json.dumps(manifest))
-            with self.assertRaises(ValueError):qualify.artifact(root,'compat-manifest.json')
+        for version in ('0.5.3-r1', '0.6.1'):
+            with tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);name=f'opl-netfleet-https-compat-{version}.apk'
+                (root/name).write_bytes(b'candidate')
+                manifest={'artifact':name,'sha256':base.sha(root/name)}
+                (root/'compat-manifest.json').write_text(json.dumps(manifest))
+                self.assertEqual(qualify.artifact(root,'compat-manifest.json'),manifest)
+                (root/name).write_bytes(b'changed')
+                with self.assertRaises(ValueError):qualify.artifact(root,'compat-manifest.json')
+                manifest['artifact']='../'+name
+                (root/'compat-manifest.json').write_text(json.dumps(manifest))
+                with self.assertRaises(ValueError):qualify.artifact(root,'compat-manifest.json')
 
     def test_update_requires_real_bound_checks(self):
         engine={'source_commit':'a'*40,'source_tree':'c'*40,'artifact':'engine.apk','sha256':'e'}

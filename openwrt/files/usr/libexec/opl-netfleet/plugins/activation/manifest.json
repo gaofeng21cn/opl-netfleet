@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "activation",
   "label": "Activation",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "api_version": 1,
   "package": "opl-netfleet-plugin-activation",
   "services": {

@@ -91,15 +91,28 @@ class PluginSDKTests(unittest.TestCase):
         helper.write_text("#!/bin/sh\nexit 0\n")
         helper.chmod(0o755)
         destination = self.root / "package"
-        result = SDK.package_source(source, destination, "Apache-2.0", 2)
+        result = SDK.package_source(source, destination, "Apache-2.0")
         self.assertEqual("opl-netfleet-plugin-link-health", result["package"])
         self.assertEqual(helper.read_bytes(), (destination / "files/resources/helper").read_bytes())
         self.assertTrue(os.access(destination / "files/resources/helper", os.X_OK))
         SDK.validate(destination / "files")
         with self.assertRaises(ValueError):
-            SDK.package_source(source, self.root / "bad", "MIT\nBAD:=1", 1)
+            SDK.package_source(source, self.root / "bad", "MIT\nBAD:=1")
         with self.assertRaises(ValueError):
-            SDK.package_source(source, source / "package", "Apache-2.0", 1)
+            SDK.package_source(source, source / "package", "Apache-2.0")
+
+    def test_package_uses_manifest_numeric_version_without_another_release_sequence(self):
+        source = self.scaffold()
+        manifest = json.loads((source / "manifest.json").read_text())
+        package = self.root / "numeric"
+        SDK.package_source(source, package, "Apache-2.0")
+        makefile = (package / "Makefile").read_text()
+        self.assertIn(f'PKG_VERSION:={manifest["version"]}\nPKG_RELEASE:=\n', makefile)
+        for value in ("1.2.3-r1", "1.2", "01.2.3", "1.2.3.4"):
+            manifest["version"] = value
+            (source / "manifest.json").write_text(json.dumps(manifest))
+            with self.subTest(version=value), self.assertRaisesRegex(ValueError, "X.Y.Z"):
+                SDK.package_source(source, self.root / value, "Apache-2.0")
 
     def test_service_scaffold_rewrites_service_identity_and_declared_dependencies(self):
         source = self.root / "link-health"
@@ -228,7 +241,7 @@ class PluginSDKTests(unittest.TestCase):
     def test_complete_package_installs_private_code_and_public_resources(self):
         source = self.scaffold(kind="service", template="complete")
         package = self.root / "package"
-        built = SDK.package_source(source, package, "Apache-2.0", 1)
+        built = SDK.package_source(source, package, "Apache-2.0")
         include = self.root / "include"
         include.mkdir()
         (include / "package.mk").touch()
@@ -254,9 +267,9 @@ class PluginSDKTests(unittest.TestCase):
         helper.write_text("export const value = 1;\n")
         entry = source / "resources/page.js"
         entry.write_text("import { value } from './value.js';\nexport function mount() { return value; }\n")
-        first = SDK.package_source(source, self.root / "first", "Apache-2.0", 1)
+        first = SDK.package_source(source, self.root / "first", "Apache-2.0")
         helper.write_text("export const value = 2;\n")
-        second = SDK.package_source(source, self.root / "second", "Apache-2.0", 2)
+        second = SDK.package_source(source, self.root / "second", "Apache-2.0")
         self.assertNotEqual(first["revision"], second["revision"])
         self.assertEqual((self.root / "first/files/resources/page.js").read_bytes(),
                          (self.root / "second/files/resources/page.js").read_bytes())
@@ -273,7 +286,7 @@ class PluginSDKTests(unittest.TestCase):
         manifest, files = SDK.validate(source)
         self.assertFalse(any(path.parts[0] in SDK.PROJECT_METADATA for path in files))
         package = self.root / "package"
-        SDK.package_source(source, package, "Apache-2.0", 1)
+        SDK.package_source(source, package, "Apache-2.0")
         self.assertEqual(manifest, SDK.validate(package / "files")[0])
         for metadata in SDK.PROJECT_METADATA:
             self.assertFalse((package / "files" / metadata).exists())
@@ -303,7 +316,7 @@ class PluginSDKTests(unittest.TestCase):
                     manifest["package_dependencies"] = ["ucode-mod-fs", "opl-netfleet-plugin-clock"]
                     (source / "manifest.json").write_text(json.dumps(manifest))
                 package = self.root / f"package-{kind}"
-                SDK.package_source(source, package, "Apache-2.0", 1)
+                SDK.package_source(source, package, "Apache-2.0")
                 definition = self.extract_hook(package, "")
                 self.assertIn("EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.1)", definition)
                 dependencies = re.search(r"DEPENDS:=(.*)", definition).group(1).split()
@@ -316,7 +329,7 @@ class PluginSDKTests(unittest.TestCase):
     def test_package_hooks_delegate_to_kernel_with_phase_and_upgrade_context(self):
         source = self.scaffold(kind="service")
         package = self.root / "package"
-        SDK.package_source(source, package, "Apache-2.0", 1)
+        SDK.package_source(source, package, "Apache-2.0")
         helper = self.root / "package-helper"
         helper.write_text('#!/bin/sh\nprintf "%s:%s:%s\\n" "$1" "$2" "${PKG_UPGRADE:-0}"\nexit "${PLUGIN_TEST_EXIT:-0}"\n')
         helper.chmod(0o755)

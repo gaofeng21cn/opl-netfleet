@@ -283,11 +283,11 @@ exec /usr/libexec/opl-netfleet-plugin-package {plugin_id} {phase}
 '''
 
 
-def makefile(manifest, license_id, release, revision):
+def makefile(manifest, license_id, revision):
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.+-]*", license_id) is None:
         raise ValueError("--license must be one SPDX license identifier")
-    if release < 1:
-        raise ValueError("--release must be positive")
+    if re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", manifest["version"]) is None:
+        raise ValueError("new packages require a numeric X.Y.Z manifest version")
     plugin_id, package = manifest["id"], manifest["package"]
     requirements = ["opl-netfleet-kernel"]
     if manifest["schema"] == "opl-netfleet-service-plugin.v1":
@@ -303,7 +303,7 @@ def makefile(manifest, license_id, release, revision):
 
 PKG_NAME:={package}
 PKG_VERSION:={manifest["version"]}
-PKG_RELEASE:={release}
+PKG_RELEASE:=
 PKG_LICENSE:={license_id}
 
 include $(INCLUDE_DIR)/package.mk
@@ -345,7 +345,7 @@ $(eval $(call BuildPackage,{package}))
 '''
 
 
-def package_source(source, destination, license_id, release):
+def package_source(source, destination, license_id):
     manifest, files = validate(source)
     if source.resolve() == destination.resolve() or source.resolve() in destination.resolve().parents:
         raise ValueError("package output must be outside the plugin source")
@@ -372,10 +372,9 @@ def package_source(source, destination, license_id, release):
             shutil.copyfile(ROOT / "openwrt/native/atomic-replace.c", target / "src/atomic-replace.c")
             template = (ROOT / "openwrt/device-identity/Makefile").read_text()
             template = re.sub(r"(?m)^PKG_VERSION:=.*$", f"PKG_VERSION:={manifest['version']}", template)
-            template = re.sub(r"(?m)^PKG_RELEASE:=.*$", f"PKG_RELEASE:={release}", template)
             (target / "Makefile").write_text(template)
         else:
-            (target / "Makefile").write_text(makefile(manifest, license_id, release, revision), encoding="utf-8")
+            (target / "Makefile").write_text(makefile(manifest, license_id, revision), encoding="utf-8")
         result["revision"] = revision
 
     create_directory(destination, populate)
@@ -398,7 +397,6 @@ def main():
     package.add_argument("source", type=Path)
     package.add_argument("destination", type=Path)
     package.add_argument("--license", required=True, help="SPDX identifier matching your plugin license")
-    package.add_argument("--release", type=int, default=1)
     args = parser.parse_args()
     try:
         if args.command == "scaffold":
@@ -407,7 +405,7 @@ def main():
             manifest, files = validate(args.source)
             result = {"id": manifest["id"], "api_version": manifest["api_version"], "files": [str(path) for path in files]}
         else:
-            result = package_source(args.source, args.destination, args.license, args.release)
+            result = package_source(args.source, args.destination, args.license)
     except (ValueError, OSError) as error:
         print(json.dumps({"ok": False, "error": str(error)}), file=sys.stderr)
         return 1

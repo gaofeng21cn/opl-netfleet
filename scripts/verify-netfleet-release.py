@@ -50,6 +50,18 @@ def version_tuple(value: object) -> tuple[int, int, int]:
     return tuple(int(part) for part in value.split("."))  # type: ignore[return-value]
 
 
+def artifact_version(item: dict) -> str:
+    """Return the exact install identity, including revisions of retained old packages."""
+    version = item.get("version")
+    version_tuple(version)
+    release = item.get("release")
+    if release is None:
+        return version
+    if not isinstance(release, str) or re.fullmatch(r"[0-9]+", release) is None:
+        fail("release artifact revision is invalid")
+    return f"{version}-r{release}"
+
+
 def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, object]:
     if not HEX40.fullmatch(source_commit) or not HEX40.fullmatch(source_tree):
         fail("expected source identity must use full lowercase Git object IDs")

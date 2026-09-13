@@ -336,8 +336,9 @@ make -C "$sdk" package/opl-netfleet-plugin-workspace-note/compile V=s
 `opl-netfleet-kernel` 与声明的 `package_dependencies`；进程插件依赖微内核、API v1
 虚拟包及声明的 `dependencies`。SDK 不强制引入 `opl-netfleet` 默认产品组合。
 
-`--license` 必须与插件实际许可证一致。同一软件版本重新打包可增加 `--release`；输出
-目录已存在时生成器拒绝覆盖。默认包适用于解释型代码，使用 `PKGARCH:=all`；本地
+`--license` 必须与插件实际许可证一致。按[插件版本合同](../architecture/packaging.md#插件版本)
+修改 manifest 的三段数字版本；修复或发布包装变化递增最后一位，不另设打包修订参数。
+输出目录已存在时生成器拒绝覆盖。默认包适用于解释型代码，使用 `PKGARCH:=all`；本地
 二进制插件在标准 Makefile 中实现 `Build/Compile`，并使用实际目标架构。
 
 所有插件包的 preinst/postinst/prerm/postrm 都委托
@@ -351,7 +352,7 @@ APK 发布前，将构建产物放入自己的 feed 目录，并使用 SDK 工�
 apk_tool="$sdk/staging_dir/host/bin/apk"
 signing_key=/secure/plugin-signing-private.pem
 feed=/path/to/plugin-feed
-apk_package="$feed/opl-netfleet-plugin-workspace-note-0.1.0-r1.apk"
+apk_package="$feed/opl-netfleet-plugin-workspace-note-0.1.0.apk"
 "$apk_tool" adbsign --allow-untrusted --reset-signatures --sign-key "$signing_key" "$apk_package"
 "$apk_tool" mkndx --root "$sdk" --keys-dir /path/to/trusted-public-keys \
   --output "$feed/packages.adb" --sign "$signing_key" "$apk_package"
@@ -522,7 +523,7 @@ python3 scripts/https-compat/compare.py /tmp/compat-proof/plugin-qualification.j
 目标需要保留其他独立版本时，为资格入口设置 `RETAINED_BASE=/private/retained-base`，
 更新器传同一目录的 `--retained-base`。目录只包含精确签名 APK、公开验签密钥和
 `retained-base.json`。清单的 `schema` 为 `opl-netfleet-retained-base.v1`；`keys` 每项
-包含 `name`、`sha256`，`artifacts` 每项包含 `package`、`version`（含 `-r`）、
+包含 `name`、`sha256`，`artifacts` 每项包含 `package`、`version`（完整包版本）、
 `artifact`、`sha256`，以及 `files`（插件自身绝对运行路径到 SHA-256 的映射）。
 文件清单从原签名归档解包生成，并与目标安装字节比较；不从设备目录重打包。
 

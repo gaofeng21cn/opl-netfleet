@@ -46,10 +46,10 @@ done
 git -C "$repo_dir" archive "$commit" openwrt scripts/install-netfleet.sh scripts/verify-native-runtime.py | tar -C "$work" -xf -
 version=$(awk -F':=' '/^PKG_VERSION[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/Makefile")
 release=$(awk -F':=' '/^PKG_RELEASE[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/Makefile")
-[[ -n "$version" && -n "$release" ]] || die 'package version metadata is missing'
+[[ -n "$version" ]] || die 'package version metadata is missing'
 luci_version=$(awk -F':=' '/^PKG_VERSION[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/luci-app-netfleet/Makefile")
 luci_release=$(awk -F':=' '/^PKG_RELEASE[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/luci-app-netfleet/Makefile")
-[[ -n "$luci_version" && -n "$luci_release" ]] || die 'LuCI package version metadata is missing'
+[[ -n "$luci_version" ]] || die 'LuCI package version metadata is missing'
 build_identity=$work/openwrt/files/usr/share/opl-netfleet/build.json
 mkdir -p "$(dirname "$build_identity")"
 python3 - "$build_identity" "$version" "$commit" "$tree" <<'PY'
@@ -179,10 +179,12 @@ for package_name in "${product_packages[@]}"; do
   if [[ "$package_name" == opl-netfleet-plugin-* ]]; then
     artifact_version=$(python3 "$work/openwrt/plugin-packages.py" version "${package_name#opl-netfleet-plugin-}")
   fi
+  # Only archived sources have a separate OpenWrt package revision.
+  [[ -z "$artifact_release" ]] || artifact_version+="-r${artifact_release}"
   if [[ "$package_format" == apk ]]; then
-    artifact_pattern="${package_name}-${artifact_version}-r${artifact_release}.apk"
+    artifact_pattern="${package_name}-${artifact_version}.apk"
   else
-    artifact_pattern="${package_name}_${artifact_version}-r${artifact_release}_all.ipk"
+    artifact_pattern="${package_name}_${artifact_version}_all.ipk"
   fi
   package_artifacts=()
   while IFS= read -r file; do package_artifacts+=("$file"); done < <(find "$sdk/bin/packages" -type f -name "$artifact_pattern" -print | sort)
@@ -234,7 +236,7 @@ core_source=json.loads(Path(core_lock).read_text())
 for source in artifacts:
     data=Path(source).read_bytes(); name=Path(source).name
     target=Path(output)/name; target.write_bytes(data); target.chmod(0o600)
-    pattern = r'(.+)-(\d+\.\d+\.\d+)-r(\d+)\.apk' if package_format == 'apk' else r'(.+)_(\d+\.\d+\.\d+)-r(\d+)_[A-Za-z0-9_]+\.ipk'
+    pattern = r'(.+)-(\d+\.\d+\.\d+)(?:-r(\d+))?\.apk' if package_format == 'apk' else r'(.+)_(\d+\.\d+\.\d+)(?:-r(\d+))?_[A-Za-z0-9_]+\.ipk'
     identity = re.fullmatch(pattern, name)
     if identity is None:
         raise SystemExit(f'unrecognized package artifact: {name}')
@@ -244,9 +246,13 @@ for source in artifacts:
         item.update({'package_arch':build_target_arch, 'version':core_source['version'], 'upstream':core_source})
         dependencies.append(item)
     else:
-        item.update({'version': artifact_version, 'release': artifact_release})
+        item.update({'version': artifact_version})
+        if artifact_release is not None:
+            item['release'] = artifact_release
         items.append(item)
-manifest={'schema':'opl-netfleet-package-manifest.v2','source_commit':commit,'source_tree':tree,'package_version':version,'package_release':release,'package_format':package_format,'package_arch':package_arch,'build_target_arch':build_target_arch,'policy_schema':int(policy_schema),'runtime_payload_sha256':runtime_payload_sha256,'files_manifest':{'name':'FILES.sha256','sha256':files_sha256},'artifacts':items}
+manifest={'schema':'opl-netfleet-package-manifest.v2','source_commit':commit,'source_tree':tree,'package_version':version,'package_format':package_format,'package_arch':package_arch,'build_target_arch':build_target_arch,'policy_schema':int(policy_schema),'runtime_payload_sha256':runtime_payload_sha256,'files_manifest':{'name':'FILES.sha256','sha256':files_sha256},'artifacts':items}
+if release:
+    manifest['package_release'] = release
 manifest['artifact_files']={item['package']: item['name'] for item in items}
 if package_format == 'apk':
     manifest['native_runtime'] = {'name':'native-runtime.json', 'sha256':hashlib.sha256((Path(output)/'native-runtime.json').read_bytes()).hexdigest()}

@@ -106,7 +106,7 @@ def main() -> None:
     packages = []
     for item in selected:
         name = item['package']
-        version = f"{item['version']}-r{item['release']}"
+        version = verifier.artifact_version(item)
         before = installed.get(name)
         if before is None:
             raise ValueError(f'plugin is not installed: {name}')

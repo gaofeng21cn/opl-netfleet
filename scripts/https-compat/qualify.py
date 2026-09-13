@@ -14,7 +14,7 @@ def artifact(directory, name):
     value = json.loads((directory / name).read_text())
     file = value['artifact']
     package='opl-netfleet-https-compat' if name=='compat-manifest.json' else 'opl-netfleet-plugin-device-identity'
-    if not re.fullmatch(re.escape(package)+r'-[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+\.apk',file) or sha(directory / file) != value['sha256']:
+    if not re.fullmatch(re.escape(package)+r'-[0-9]+\.[0-9]+\.[0-9]+(-r[0-9]+)?\.apk',file) or sha(directory / file) != value['sha256']:
         raise ValueError('optional artifact identity mismatch')
     return value
 

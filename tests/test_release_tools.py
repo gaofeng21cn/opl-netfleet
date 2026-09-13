@@ -99,6 +99,40 @@ class ReleaseToolsTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'bytes differ'):
                 verifier.verify(root, commit, tree)
 
+    def test_numeric_package_identity_and_old_rollback_identity(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('numeric_release_verifier', VERIFIER)
+        verifier = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(verifier)
+        self.assertEqual(verifier.artifact_version({'version': '0.6.1'}), '0.6.1')
+        self.assertEqual(verifier.artifact_version({'version': '0.6.0', 'release': '1'}), '0.6.0-r1')
+        for item in ({'version': '0.6.1-r1'}, {'version': '0.6.1', 'release': ''},
+                     {'version': '0.6.1', 'release': '1;bad'}):
+            with self.subTest(item=item), self.assertRaises(ValueError):
+                verifier.artifact_version(item)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_release(root, 'a' * 40, 'b' * 40)
+            manifest = json.loads((root / 'manifest.json').read_text())
+            del manifest['package_release']
+            for artifact in manifest['artifacts']:
+                name = artifact['name'].replace('-r1.apk', '.apk')
+                (root / artifact['name']).rename(root / name)
+                artifact.update(name=name, version=manifest['package_version'])
+                manifest['artifact_files'][artifact['package']] = name
+            (root / 'manifest.json').write_text(json.dumps(manifest))
+            self.assertTrue(verifier.verify(root, 'a' * 40, 'b' * 40)['ok'])
+
+    def test_update_fixtures_exercise_old_revision_to_numeric_upgrade(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('numeric_fixtures', ROOT / 'scripts/openwrt-vm/component-fixtures.py')
+        fixtures = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fixtures)
+        self.assertEqual(fixtures.fixture_versions('0.6.1'), ('0.6.0-r1', '0.6.2', '0.6.3'))
+        self.assertEqual(fixtures.fixture_versions('1.19.30-r1'), ('1.19.30-r0', '1.19.30-r2', '1.19.30-r3'))
+        with self.assertRaises(ValueError):
+            fixtures.fixture_versions('bad')
+
     def test_luci_release_versions_all_shell_modules_without_cross_version_urls(self):
         package = ROOT / 'openwrt/luci-app-netfleet'
         with tempfile.TemporaryDirectory() as directory:
@@ -174,7 +208,7 @@ class ReleaseToolsTests(unittest.TestCase):
         runtime = (ROOT / 'openwrt/Makefile').read_text()
         luci = (ROOT / 'openwrt/luci-app-netfleet/Makefile').read_text()
         version = re.search(r'^PKG_VERSION:=(\d+\.\d+\.\d+)$', runtime, re.M).group(1)
-        self.assertIn('PKG_RELEASE:=1', runtime)
+        self.assertRegex(runtime, r'(?m)^PKG_RELEASE:=$')
         self.assertIn('PKG_LICENSE:=GPL-3.0-only', runtime)
         self.assertIn('PKG_MAINTAINER:=OPL NetFleet', runtime)
         self.assertIn('PKGARCH:=all', runtime)
@@ -216,7 +250,7 @@ class ReleaseToolsTests(unittest.TestCase):
         self.assertIn("'package_arch':package_arch", packager)
         self.assertIn("'build_target_arch':build_target_arch", packager)
         self.assertIn("manifest['feed_bootstrap']={'name':'install-netfleet.sh'", packager)
-        self.assertIn('${package_name}-${artifact_version}-r${artifact_release}.apk', packager)
+        self.assertIn('${package_name}-${artifact_version}.apk', packager)
         for path in (ROOT / 'scripts/netfleet-package-build.sh', ROOT / 'openwrt/Makefile', ROOT / 'openwrt/luci-app-netfleet/Makefile'):
             text = path.read_text()
             self.assertNotIn('subscriptions.json', text)

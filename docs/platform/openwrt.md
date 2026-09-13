@@ -49,6 +49,12 @@ OpenWrt 默认绑定在 `/usr/share/opl-netfleet/system.json`，私有覆盖在
 
 ### 版本化分发
 
+NetFleet 自有包的 `PKG_VERSION` 使用[插件版本合同](../architecture/packaging.md#插件版本)中的
+三段数字；`PKG_RELEASE` 留空，功能插件的 `VERSION` 直接消费 manifest 版本。
+OpenWrt 原生支持无打包后缀的 APK/IPK；发布清单的 artifact `version` 是完整安装版本，
+不再生成 `release` 或 `package_release` 字段。读取既有回退清单时仍识别其旧修订字段。
+
+
 版本化 OpenWrt package 是 NetFleet 代码的可校验分发载体，绑定精确 source
 commit/tree、package 架构、SDK 构建目标和 artifact checksum，只包含内核、功能插件、
 系统入口和 LuCI 页面。package 不包含 target-local policy、订阅、Nikki mixin、URL/token、

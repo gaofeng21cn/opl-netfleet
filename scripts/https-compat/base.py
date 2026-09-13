@@ -64,7 +64,7 @@ def retained_runtime(directory, runtime):
         plugin = name.removeprefix('opl-netfleet-plugin-')
         if plugin in ['mihomo', 'https-compat', 'device-identity']:
             raise ValueError('retained set cannot replace the gateway or HTTPS dependency under qualification')
-        if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+', version) or row['artifact'] != f'{name}-{version}.apk':
+        if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(-r[0-9]+)?', version) or row['artifact'] != f'{name}-{version}.apk':
             raise ValueError('invalid retained version')
         file_identity(row['artifact'], row['sha256'])
         prefix = '/usr/libexec/opl-netfleet/plugins/' + plugin + '/'

@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-plugin.v1",
   "id": "device-identity",
   "label": "Device identity",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "api_version": 1,
   "package": "opl-netfleet-plugin-device-identity",
   "dependencies": [

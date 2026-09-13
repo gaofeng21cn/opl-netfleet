@@ -36,7 +36,7 @@ if ! apk --no-network info -e opl-netfleet-kernel >/dev/null 2>&1; then
 	apk --no-network add "$packages"/netfleet-plugin-vm-host-*.apk >"$work/install-host.log" 2>&1
 	host_installed=1
 fi
-apk --no-network add "$packages"/opl-netfleet-plugin-device-info-0.1.0-r1.apk >"$work/install.log" 2>&1
+apk --no-network add "$packages"/opl-netfleet-plugin-device-info-0.1.0.apk >"$work/install.log" 2>&1
 test ! -e "$marker"
 invoke() {
 	params='{}'
@@ -58,7 +58,7 @@ invoke load
 test "$(jsonfilter -i "$work/response.json" -e '@.result.ready')" = true
 invoke inspect
 test "$(jsonfilter -i "$work/response.json" -e '@.result.release.distribution')" = OpenWrt
-apk --no-network add "$packages"/opl-netfleet-plugin-device-info-0.1.1-r1.apk >"$work/upgrade.log" 2>&1
+apk --no-network add "$packages"/opl-netfleet-plugin-device-info-0.1.1.apk >"$work/upgrade.log" 2>&1
 test ! -e "$marker"
 test "$(jsonfilter -i /usr/libexec/opl-netfleet/plugins/device-info/manifest.json -e '@.version')" = 0.1.1
 invoke get
@@ -84,7 +84,7 @@ ucode -e '
 	profile.config["workspace-note"] = {data_path:ARGV[1]};
 	if (!fs.writefile(ARGV[0], sprintf("%J\n", profile)) || !fs.chmod(ARGV[0], 0600)) exit(1);
 ' "$overlay" "$data"
-apk --no-network add "$packages"/opl-netfleet-plugin-workspace-note-0.1.0-r1.apk >"$work/note-install.log" 2>&1
+apk --no-network add "$packages"/opl-netfleet-plugin-workspace-note-0.1.0.apk >"$work/note-install.log" 2>&1
 test ! -e "$marker"
 invoke load
 invoke config-get
@@ -104,7 +104,7 @@ ucode -e '
 	if (item?.revision != ARGV[1] || length(item?.ui ?? []) != 1 || item.configuration?.write != "config-set") exit(1);
 ' "$work/list.json" "$revision_before"
 
-apk --no-network add "$packages"/opl-netfleet-plugin-workspace-note-0.1.1-r1.apk >"$work/note-upgrade.log" 2>&1
+apk --no-network add "$packages"/opl-netfleet-plugin-workspace-note-0.1.1.apk >"$work/note-upgrade.log" 2>&1
 test ! -e "$marker"
 test "$(jsonfilter -i "$root/manifest.json" -e '@.version')" = 0.1.1
 test "$(sha256sum "$data" | cut -d ' ' -f 1)" = "$saved_sha"
