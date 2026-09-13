@@ -151,12 +151,39 @@ function button(label, click, disabled, destructive) {
 }
 
 const PHASE_LABELS = {
+	snapshotting: '保存恢复点', deactivating: '退出旧配置', saving: '保存配置',
+	activating: '启用配置并检查网络',
 	preparing: '准备更新', checking: '检查更新源', downloading: '下载中', validating: '校验内容',
 	compiling: '生成运行配置', reloading: '重载运行配置', selecting: '重新选优',
 	measuring: '共享测速', applying: '应用出口', installing: '安装组件', verifying: '确认运行状态', rolling_back: '恢复更新前状态', done: '已完成'
 };
 
 function isRunning(operation) { return operation && ['queued', 'running'].includes(operation.state); }
+
+// Only operation identities and display timestamps cross page scopes. Origin storage
+// isolates devices; source contents and credentials never enter this record.
+const RESULT_LIFETIME_MS = 60000;
+function observedResult(controller, kind, operation) {
+	const key = 'netfleet:observed:v1:' + kind;
+	const records = controller.observedResults || (controller.observedResults = {});
+	if (!Object.prototype.hasOwnProperty.call(records, kind)) {
+		try { records[kind] = JSON.parse(sessionStorage.getItem(key)); } catch (_) { records[kind] = null; }
+	}
+	let record = records[kind];
+	const now = Date.now();
+	const identity = JSON.stringify([operation.id, operation.started_at]);
+	if (isRunning(operation) || controller[kind + 'Request'] && record?.identity !== identity) record = { identity: identity, seenAt: now };
+	else if (!record || record.identity !== identity || !record.expiresAt && now - record.seenAt >= RESULT_LIFETIME_MS) return false;
+	if (!isRunning(operation) && !record.expiresAt) record.expiresAt = now + RESULT_LIFETIME_MS;
+	records[kind] = record;
+	try { sessionStorage.setItem(key, JSON.stringify(record)); } catch (_) {}
+	return !record.expiresAt || now < record.expiresAt;
+}
+
+function operationBusy(controller) {
+	return controller.configurationRequest || controller.subscriptionRequest || controller.selectionRequest ||
+		Object.values(controller.operations || {}).some(isRunning);
+}
 
 function resultTime(value, label) {
 	return value > 0 ? (label || '完成于') + ' ' + new Date(value * 1000).toLocaleString() : '';
@@ -196,15 +223,19 @@ function operationNode(controller, kind) {
 	const subscription = controller.operations?.subscription;
 	const selection = controller.operations?.selection;
 	const related = subscription && selection?.parent_id === subscription.id;
-	const pending = kind === 'subscription' && controller.subscriptionRequest || kind === 'selection' && controller.selectionRequest;
+	const pending = controller[kind + 'Request'];
 	const disconnected = controller.operationError && (pending || isRunning(operation));
 	const attrs = { 'class': 'netfleet-operation', 'data-netfleet-operation': kind, 'role': 'status', 'aria-live': 'polite' };
 	if (kind === 'selection' && related && !controller.selectionRequest) return E('div', Object.assign(attrs, { 'hidden': true }));
 	if (!operation && !pending) return E('div', Object.assign(attrs, { 'hidden': true }));
+	if (operation) {
+		const observed = observedResult(controller, kind, operation);
+		if (operation.state === 'succeeded' && !observed) return E('div', Object.assign(attrs, { 'hidden': true }));
+	}
 	const active = operation ? isRunning(operation) : pending;
 	const state = disconnected ? '连接中断，执行结果尚未确认' : !operation ? '等待设备接收' :
 		({ queued: '已提交，等待设备执行', running: kind === 'selection' ? ({ preparing: '准备测速', checking: '检查节点健康', selecting: '测速与选优', verifying: '验证业务连通性' })[operation.phase] || PHASE_LABELS[operation.phase] || '处理中' : PHASE_LABELS[operation.phase] || '处理中', succeeded: '已完成', failed: '执行失败', interrupted: '执行已中断，结果尚未确认' })[operation.state] || '等待设备确认';
-	const started = operation && operation.started_at || (kind === 'selection' ? controller.selectionStartedAt : controller.subscriptionStartedAt);
+	const started = operation && operation.started_at || controller[kind + 'StartedAt'];
 	const end = active ? Date.now() / 1000 : operation && operation.finished_at;
 	const elapsed = started && end >= started ? Math.floor(end - started) : null;
 	const details = [ E('strong', { 'class': active && !disconnected ? 'spinning' : '' }, state) ];
@@ -226,7 +257,8 @@ function operationNode(controller, kind) {
 	if (elapsed != null) details.push(E('span', {}, (active ? '已耗时 ' : '耗时 ') + (elapsed < 60 ? elapsed + ' 秒' : Math.floor(elapsed / 60) + ' 分 ' + elapsed % 60 + ' 秒')));
 	if (operation && operation.error) details.push(E('span', { 'class': 'is-warning' }, errorLabel(operation.error)));
 	if (operation && operation.recovery) details.push(E('span', {}, ({ restored: '已恢复更新前状态', failed: '恢复失败', direct: '已恢复网络直通' })[operation.recovery] || '恢复结果尚未确认'));
-	const title = kind === 'subscription' ? '机场订阅更新' : kind === 'selection' ? '测速与自动选优' : operation && operation.subject === 'feed' ? '软件包源检查' : '组件更新';
+	if (kind === 'configuration' && active) details.push(E('span', {}, '可继续浏览；完成前请勿重复应用。'));
+	const title = kind === 'configuration' ? '配置应用' : kind === 'subscription' ? '机场订阅更新' : kind === 'selection' ? '测速与自动选优' : operation && operation.subject === 'feed' ? '软件包源检查' : '组件更新';
 	if (!active) return resultNode(controller, kind, JSON.stringify([operation.id, operation.started_at, operation.state, operation.finished_at, operation.recovery]), title, details,
 		['failed', 'interrupted'].includes(operation.state), { 'data-netfleet-operation': kind });
 	return E('div', Object.assign(attrs, { 'class': attrs.class + (disconnected || operation && ['failed', 'interrupted'].includes(operation.state) ? ' is-warning' : '') }), [
@@ -236,10 +268,18 @@ function operationNode(controller, kind) {
 }
 
 function updateOperationNodes(controller) {
+	if (controller.context?.signal.aborted) return;
 	if (typeof document === 'undefined') return;
 	document.querySelectorAll('[data-netfleet-operation]').forEach(function(node) {
 		node.replaceWith(operationNode(controller, node.getAttribute('data-netfleet-operation')));
 	});
+}
+
+function scheduleResultExpiry(controller) {
+	clearTimeout(controller.resultTimer);
+	const expiries = Object.values(controller.observedResults || {}).map(function(record) { return record?.expiresAt; }).filter(function(at) { return at > Date.now(); });
+	if (expiries.length && !controller.context?.signal.aborted)
+		controller.resultTimer = setTimeout(function() { updateOperationNodes(controller); scheduleResultExpiry(controller); }, Math.min(...expiries) - Date.now() + 1);
 }
 
 function readOperations(controller) {
@@ -247,12 +287,22 @@ function readOperations(controller) {
 	if (controller.operationRead) return controller.operationRead;
 	clearTimeout(controller.operationTimer);
 	controller.operationRead = api.operationGet().then(function(snapshot) {
+		if (controller.context?.signal.aborted) return;
+		const wasBusy = operationBusy(controller);
+		Object.entries(controller.operations || {}).forEach(function(entry) { if (isRunning(entry[1])) observedResult(controller, entry[0], entry[1]); });
 		const previous = controller.operations && controller.operations.packages;
+		const previousConfig = controller.operations?.configuration;
+		if (controller.configurationRequest && snapshot.configuration?.id === controller.previousConfigurationId) snapshot.configuration = null;
 		if (controller.subscriptionRequest && snapshot.subscription && snapshot.subscription.id === controller.previousSubscriptionId) snapshot.subscription = null;
 		if (controller.selectionRequest && snapshot.selection && snapshot.selection.id === controller.previousSelectionId) snapshot.selection = null;
 		if (controller.packageOperationId && (!snapshot.packages || snapshot.packages.id !== controller.packageOperationId) && isRunning(previous)) snapshot.packages = previous;
 		controller.operations = snapshot;
 		controller.operationError = null;
+		Object.entries(snapshot).forEach(function(entry) { if (entry[1]) observedResult(controller, entry[0], entry[1]); });
+		if (wasBusy !== operationBusy(controller)) controller.redraw();
+		if (previousConfig && isRunning(previousConfig) && snapshot.configuration?.id === previousConfig.id &&
+			!isRunning(snapshot.configuration) && !controller.configurationRequest)
+			controller.refreshData(true, true).catch(function() {});
 		const current = snapshot.packages;
 		if (current && !isRunning(current) && previous && previous.id === current.id && isRunning(previous)) {
 			loadComponents(controller).then(function() {
@@ -272,11 +322,37 @@ function readOperations(controller) {
 		controller.operationRead = null;
 		updateOperationNodes(controller);
 		const snapshot = controller.operations || {};
-		const running = controller.subscriptionRequest || controller.selectionRequest || isRunning(snapshot.subscription) || isRunning(snapshot.selection) || isRunning(snapshot.packages);
+		const running = operationBusy(controller);
 		if (running && !(controller.context && controller.context.signal.aborted))
 			controller.operationTimer = setTimeout(function() { if (!controller.root || controller.root.isConnected !== false) readOperations(controller); }, 1000);
+		scheduleResultExpiry(controller);
 	});
 	return controller.operationRead;
+}
+
+function runConfiguration(controller, request) {
+	controller.configurationRequest = true;
+	controller.configurationStartedAt = Math.floor(Date.now() / 1000);
+	controller.previousConfigurationId = controller.operations?.configuration?.id;
+	controller.operations = Object.assign({}, controller.operations, { configuration: null });
+	ui.showModal('应用 NetFleet 配置', [ E('div', { 'class': 'netfleet-native' }, [
+		operationNode(controller, 'configuration'), E('div', { 'class': 'right' }, button('收起进度', ui.hideModal))
+	]) ]);
+	controller.redraw();
+	readOperations(controller);
+	return Promise.resolve().then(request).then(function() {
+		if (controller.context?.signal.aborted) return;
+		return readOperations(controller).then(function() { return controller.refreshData(true, true); });
+	}).catch(function(error) {
+		if (controller.context?.signal.aborted) return;
+		const uncertain = error && (error.netfleetKind === 'request_aborted' || /timeout|XHR|network/i.test(error.message || ''));
+		controller.operationError = uncertain ? error : null;
+		notify(null, E('p', {}, uncertain ? '连接中断，配置应用结果尚未确认；请等待设备回读，不要重复应用。' :
+			'配置应用反馈：' + (controller.configFailure ? controller.configFailure(error) : failure(error))), uncertain ? 'warning' : 'error');
+	}).finally(function() {
+		controller.configurationRequest = false;
+		if (!controller.context?.signal.aborted) readOperations(controller).then(function() { controller.redraw(); });
+	});
 }
 
 function runSelection(controller, request, title) {
@@ -865,4 +941,4 @@ function nativeSetup(controller) {
 }
 
 return baseclass.extend({ quotaResetLabel: quotaResetLabel, notify: notify, preloadSubscriptions: loadSubscriptions, subscriptions: showSubscriptions, migration: migration, nativeSetup: nativeSetup,
-	operationNode: operationNode, readOperations: readOperations, runSubscription: runSubscription, runSelection: runSelection, components: componentsPage, loadComponents: loadComponents });
+	operationNode: operationNode, operationBusy: operationBusy, readOperations: readOperations, runConfiguration: runConfiguration, runSubscription: runSubscription, runSelection: runSelection, components: componentsPage, loadComponents: loadComponents });

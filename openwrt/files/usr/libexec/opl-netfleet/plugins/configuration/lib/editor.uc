@@ -9,6 +9,7 @@ const apply_request = context.use("configuration.model").apply;
 const changes = context.use("configuration.model").changes;
 const ok = context.use("events.output").ok;
 const fail = context.use("events.output").fail;
+const operation = context.use("events.operation");
 const resolve_profile = context.use("mihomo.backend").resolve_profile;
 const profile_exists = context.use("mihomo.backend").profile_exists;
 const prepare_provider_links = context.use("mihomo.backend").prepare_provider_links;
@@ -221,6 +222,7 @@ rollback = function(snapshot) {
 };
 
 fail_apply = function(snapshot, error, detail) {
+	operation.update("rolling_back");
 	const restored = rollback(snapshot);
 	cleanup_snapshot();
 	if (!restored.ok) fail("config-apply", "config_apply_rollback_failed", { error: error, detail: detail, rollback: restored });
@@ -252,34 +254,43 @@ save = function(policy, envelope_path) {
 };
 
 apply = function(policy, envelope_path) {
+	operation.begin("configuration", "validating");
 	const change = load_change(policy, "config-apply", envelope_path);
 	const current = projection(policy, change.resources);
 	if (length(change.changes) == 0 && current.active == true && current.pending_apply != true) {
+		operation.finish(true);
 		ok("config-apply", { state: "unchanged", config: current });
 		return;
 	}
+	operation.update("snapshotting");
 	const snapshot = prepare_snapshot();
 	if (snapshot == null) {
 		cleanup_snapshot();
 		fail("config-apply", "config_snapshot_failed", null);
 	}
 	if (snapshot.active == true) {
+		operation.update("deactivating");
 		const disabled = run_owner("disable");
 		if (!disabled.ok) {
 			cleanup_snapshot();
 			fail("config-apply", "active_disable_failed", disabled.response);
 		}
 	}
+	operation.update("saving");
 	if (!write_json_atomic(POLICY_PATH, change.policy) || load_policy() == null) fail_apply(snapshot, "policy_write_failed", null);
+	operation.update("compiling");
 	const compiled = run_owner("compile");
 	if (!compiled.ok) fail_apply(snapshot, compiled.error, compiled);
+	operation.update("activating");
 	const enabled = run_owner("enable");
 	if (!enabled.ok) fail_apply(snapshot, enabled.error, enabled);
+	operation.update("verifying");
 	const applied = load_policy();
 	const result = { state: "applied", previously_active: snapshot.active, change_count: length(change.changes),
 		changes: change.changes, activation: enabled.response?.result ?? null,
 		config: projection(applied, resources(applied)) };
 	cleanup_snapshot();
+	operation.finish(true);
 	ok("config-apply", result);
 };
 

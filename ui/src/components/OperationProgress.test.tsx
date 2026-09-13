@@ -7,8 +7,12 @@ import type { OperationSnapshot } from '../types';
 const operation: OperationSnapshot = { id: 'operation-1', kind: 'subscription', state: 'running', phase: 'downloading', started_at: 100, updated_at: 111, completed: 1, total: 3, subject: 'Alpha' };
 
 describe('operation progress', () => {
+  it('hides a historical successful result on a new target session', () => {
+    expect(renderToStaticMarkup(<OperationProgress scope="fresh-device" operation={{ ...operation, state: 'succeeded', finished_at: 120 }} />)).toBe('');
+  });
   it('shows compact dated results for packages and retains failure and recovery detail', () => {
     const completed = { ...operation, kind: 'packages' as const, subject: 'netfleet', state: 'succeeded' as const, finished_at: 120 };
+    renderToStaticMarkup(<OperationProgress operation={{ ...completed, state: 'running' }} />);
     const html = renderToStaticMarkup(<OperationProgress operation={completed} />);
     expect(html).toContain('组件更新');
     expect(html).toContain('NetFleet');
@@ -51,6 +55,7 @@ describe('operation progress', () => {
   });
 
   it('uses the same result contract for selection, without calling outlets files', () => {
+    renderToStaticMarkup(<OperationProgress operation={{ ...operation, kind: 'selection' }} />);
     const html = renderToStaticMarkup(<OperationProgress operation={{ ...operation, kind: 'selection', state: 'succeeded', finished_at: 137 }} />);
     expect(html).toContain('测速与自动选优');
     expect(html).toContain('个出口');

@@ -566,7 +566,7 @@ RPC 是调用设备 owner 的薄适配器，不维护第二份网络状态。`co
 Release 并缓存候选，`dashboard_update` 接受用户确认的版本，绑定该候选的官方 HTTPS
 资产与摘要执行有界资源事务。两者都不随组件页读取自动执行，也不重启核心；资源事务
 和恢复合同见[设备独立管理](#规则与运行面)。
-`operation_get` 返回订阅、选优和组件操作的最新进度：标识、状态、阶段、开始/更新时间、已处理数、
+`operation_get` 返回配置应用（`configuration`）、订阅、选优和组件操作的最新进度：标识、状态、阶段、开始/更新时间、已处理数、
 总数、当前对象显示名、脱敏错误码及恢复结果 `recovery`；选优子操作的 `parent_id`
 由订阅更新执行者传入并绑定本次订阅操作标识，独立选优为 `null`。UI 只合并身份匹配的
 父子操作，以“机场订阅更新”显示下载、测速选优、运行确认及最终结果；测速阶段在该条
@@ -578,6 +578,7 @@ Release 并缓存候选，`dashboard_update` 接受用户确认的版本，绑�
 返回真实结果，不伪造后续阶段或百分比。执行进程消失但没有终态时显示中断未确认，不冒充成功。
 初次加载与进入机场、组件页时读取一次当前操作；只在存在运行中操作时每秒读取独立进度，
 结束后停止轮询并刷新受影响的数据。操作标识绑定执行结果，旧操作终态不能确认新请求完成。
+成功结果仅在会话跟踪过该操作时短暂显示，通知生命周期见[界面设计](../design/ui.md)。
 终态结果可在浏览器会话内关闭；此显示偏好不修改 operation owner，不取消执行或隐藏当前
 运行故障。完成时间使用设备 `finished_at`，缺失时不得把当前读取时间当作完成时间。
 
@@ -595,6 +596,10 @@ policy，复用编译和激活服务、启动 supervisor 并回读。已有有�
 policy 配置 owner 不接受 raw policy、订阅 URL/token、节点正文、DNS/nft 命令、浏览器生成的 Profile、自定义 provider cache 路径、自定义地区正则或 quota metadata 映射。订阅凭据单独提交给 subscriptions owner，不混入 policy；原生 DNS、代理范围和监听设置通过独立 network owner 的受限结构编辑。配置文件通过 maintenance owner 校验，不能借文件导入建立另一条配置应用链。OpenWrt flow-offload、WAN/LAN 地址和任意防火墙参数不属于这些管理表单。
 
 ### 请求时限与显示分工
+
+配置应用复用同一同步事务，依次记录校验、快照、退出旧配置、写入、编译、启用与运行检查、
+最终回读及必要回滚阶段；进度记录不包含配置正文。收起弹窗或切换页不取消已提交请求，
+新页从同一 `operation_get` 恢复跟踪；浏览器断开后以设备执行者身份与终态为准。
 
 LuCI 同步 mutation 与 rpcd/uhttpd execution timeout 使用 300 秒有界预算，覆盖启动收敛、测速、owner readback 和必要回滚；成功路径不会等待到上限。package post-install 和 deployment owner 都只在 rpcd 或 uhttpd 当前上限低于 300 秒时提升到 300，保留更高值并重启、回读 RPC surface，deployment owner 还必须把 `/etc/config/rpcd` 和 `/etc/config/uhttpd` 原字节纳入同一部署回滚。不得通过后台 worker、第二选择器或伪造提前成功规避这个 owner 事务。
 

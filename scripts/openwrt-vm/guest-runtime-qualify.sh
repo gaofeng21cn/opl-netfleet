@@ -733,6 +733,9 @@ write_config_request "$work/config-request.json" "$active_revision" bundle bundl
 run_timed config_apply ucode "$main" config-apply "$work/config-request.json"
 [ "$(jsonfilter -i "$work/config_apply.json" -e '@.result.state')" = applied ]
 [ "$(jsonfilter -i "$work/config_apply.json" -e '@.result.config.active')" = true ]
+ucode "$main" components-operation >"$work/config-progress.json"
+[ "$(jsonfilter -i "$work/config-progress.json" -e '@.result.configuration.state')" = succeeded ]
+[ "$(jsonfilter -i "$work/config-progress.json" -e '@.result.configuration.phase')" = verifying ]
 [ "$(jsonfilter -i /etc/opl-netfleet/policy.json -e '@.regions.japan.display_name')" = 'Japan Updated' ]
 [ "$(uci -q get nikki.config.profile)" = file:OPL-NetFleet.json ]
 /etc/init.d/nikki running >/dev/null 2>&1
@@ -747,6 +750,9 @@ if ucode "$main" config-apply "$work/config-request.json" >"$work/config-rollbac
 fi
 [ "$(jsonfilter -i "$work/config-rollback.json" -e '@.error')" = staged_profile_test_failed ]
 [ "$(jsonfilter -i "$work/config-rollback.json" -e '@.detail.rollback.state')" = active_restored ]
+ucode "$main" components-operation >"$work/config-rollback-progress.json"
+[ "$(jsonfilter -i "$work/config-rollback-progress.json" -e '@.result.configuration.state')" = failed ]
+[ "$(jsonfilter -i "$work/config-rollback-progress.json" -e '@.result.configuration.recovery')" = restored ]
 [ "$(sha256sum /etc/opl-netfleet/policy.json | awk '{print $1}')" = "$policy_digest_before" ]
 [ "$(uci -q get nikki.config.profile)" = file:OPL-NetFleet.json ]
 /etc/init.d/nikki running >/dev/null 2>&1

@@ -145,7 +145,6 @@ function ProductPreview({ client, initialStatus, initialEvents, preview, fallbac
   }, [refreshComponents, view, preview?.scenario]);
 
   useEffect(() => {
-    if (view === 'config') return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     let active = false;
@@ -155,7 +154,7 @@ function ProductPreview({ client, initialStatus, initialEvents, preview, fallbac
         if (cancelled) return;
         setOperations(next);
         setOperationError(null);
-        active = operationRunning(next.subscription) || operationRunning(next.selection) || operationRunning(next.packages);
+        active = Object.values(next).some(operationRunning);
       } catch (reason) {
         if (!cancelled) setOperationError(reason instanceof Error ? reason.message : '操作进度读取失败');
       }
@@ -274,6 +273,7 @@ function ProductPreview({ client, initialStatus, initialEvents, preview, fallbac
       )}
 
       {error && <div className="nf-alert" role="alert"><AlertCircle aria-hidden="true" /><span>{error}</span></div>}
+      <OperationProgress operation={operations.configuration || null} scope={`${source.mode}|${source.target_label}`} error={operations.configuration ? operationError : null} />
       {view !== 'components' && view !== 'config' && <OperationProgress operation={operations.selection || null} scope={`${source.mode}|${source.target_label}`} subjectLabel={status.capabilities.find(item => item.id === operations.selection?.subject)?.display_name} error={operations.selection ? operationError : null} />}
 
       {view === 'overview' && <>

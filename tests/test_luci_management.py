@@ -505,6 +505,7 @@ await fire(button(managed.components(owner), '检查更新'));
 assert.equal(owner.dashboardError, null);
 assert.equal(owner.components.dashboard.checked_at, 100);
 assert(owner.componentsError);
+clearTimeout(owner.resultTimer);
 """)
 
     def test_regions_rank_current_measurement_without_pinning_the_selected_region(self):
@@ -579,6 +580,7 @@ owner.operations.subscription.error = 'protected_probe_failed';
 assert(text(managed.operationNode(owner, 'subscription')).includes('执行失败'));
 assert(managed.operationNode(owner, 'selection').attrs.hidden);
 owner.operations.selection.parent_id = null;
+owner.operations.selection.state = 'running';
 assert(!managed.operationNode(owner, 'selection').attrs.hidden, 'independent selection must remain visible');
 owner.operations.selection.parent_id = 'subscription-old';
 assert(!managed.operationNode(owner, 'selection').attrs.hidden, 'unrelated operation must not be merged');
@@ -591,6 +593,8 @@ global.sessionStorage = { getItem: key => records.get(key), setItem: (key, value
 const managed = module('managed.js', {});
 const owner = controller();
 const done = { id: 'operation-1', kind: 'subscription', state: 'succeeded', phase: 'done', started_at: 100, finished_at: 137, updated_at: 137, total: 3, completed: 3, subject: 'private-name' };
+owner.operations = { subscription: { ...done, state: 'running' } };
+managed.operationNode(owner, 'subscription');
 owner.operations = { subscription: clone(done) };
 let root = managed.operationNode(owner, 'subscription');
 assert(text(root).includes('完成于 ' + new Date(137000).toLocaleString()));
