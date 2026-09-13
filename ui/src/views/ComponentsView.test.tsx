@@ -102,6 +102,20 @@ it('projects optional package versions and dependencies without duplicating reso
   expect(row).not.toContain('候选版本');
 });
 
+it('shows the current device plugin inventory instead of treating it as an empty legacy inventory', () => {
+  const value = snapshot();
+  value.extensions = [{ kind: 'plugin', id: 'activation', label: '网络启停', runtime: 'service',
+    package: 'opl-netfleet-plugin-activation', installed_version: '0.7.4', version: '0.7.4',
+    enabled: true, state: 'ready', reason: null, revision: 'live-revision', ui: [],
+    description: '切换运行模式，应用或退出代理接管' }];
+  const html = render(value);
+  expect(html).toContain('网络启停');
+  expect(html).toContain('服务插件');
+  expect(html).toContain('切换运行模式，应用或退出代理接管');
+  expect(html).toContain('无需单独配置');
+  expect(html).not.toContain('当前没有可管理的功能插件');
+});
+
 it('keeps an absent optional module neutral and explains blocked modules locally', () => {
   const value = snapshot();
   value.extensions = [extension({ installed_version: null, available: false, state: 'not_installed', reason: 'extension_component_not_installed', dependencies: [{ id: 'mitmproxy', available: false, installed_version: null }] })];

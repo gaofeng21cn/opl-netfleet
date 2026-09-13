@@ -357,8 +357,26 @@ export interface ComponentsSnapshot {
   feed: { configured: boolean; url: string | null; checked_at: number | null; error: string | null };
   components: Array<{ id: 'netfleet' | 'luci' | 'mihomo'; label: string; installed_version: string | null; running_version: string | null; available_version: string | null; update_available: boolean; managed: boolean; reason: string | null }>;
   dependencies: Array<{ id: string; label: string; installed_version: string | null; available: boolean }>;
-  extensions?: ExtensionComponent[];
+  extensions?: Array<ExtensionComponent | PluginComponent>;
   dashboard?: DashboardComponent;
+}
+
+export interface PluginComponent {
+  id: string;
+  instance?: string;
+  label: string;
+  description?: string;
+  kind: 'plugin';
+  runtime: 'service' | 'process';
+  package: string;
+  installed_version: string | null;
+  version: string;
+  enabled: boolean;
+  state: string;
+  reason: string | null;
+  revision?: string;
+  configuration?: unknown;
+  ui: Array<{ id: string; title: string }>;
 }
 
 export interface ExtensionComponent {

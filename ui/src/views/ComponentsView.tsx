@@ -1,7 +1,7 @@
 import { Download, ExternalLink, RefreshCw, Settings } from 'lucide-react';
 import { useState } from 'react';
 import { CompatibilityView } from './CompatibilityView';
-import type { ComponentsSnapshot, DashboardComponent, ExtensionComponent, OperationSnapshot } from '../types';
+import type { ComponentsSnapshot, DashboardComponent, ExtensionComponent, PluginComponent, OperationSnapshot } from '../types';
 import { OperationProgress } from '../components/OperationProgress';
 import { componentError } from '../lib/componentError';
 import { ResultNotice, resultTime } from '../components/ResultNotice';
@@ -10,6 +10,18 @@ import { displayVersion } from '../lib/version';
 const previewReason = '本机预览只读，请在设备 LuCI 中操作';
 const coreVersion = (value: string) => value.replace(/^v/, '').replace(/-r\d+$/, '');
 const checkedTime = (value: number | null, failed?: string | null) => value ? `检查于 ${new Date(value * 1000).toLocaleString()}` : failed ? '检查时间未记录' : '尚未检查更新';
+
+function PluginRow({ plugin }: { plugin: PluginComponent }) {
+  const version = plugin.installed_version || plugin.version;
+  const unavailable = Boolean(plugin.reason) || ['unavailable', 'invalid'].includes(plugin.state);
+  return <tr>
+    <td><strong>{plugin.label || plugin.id}</strong><small>{plugin.id}</small>{plugin.instance && plugin.instance !== 'default' && <small>实例：{plugin.instance}</small>}</td>
+    <td><span>{plugin.runtime === 'service' ? '服务插件' : '进程插件'}</span><small>{plugin.description || `为 NetFleet 提供 ${plugin.label || plugin.id} ${plugin.runtime === 'service' ? '服务' : '功能'}`}</small></td>
+    <td><strong>{displayVersion(version)}</strong><details><summary>版本详情</summary><small>{version}</small><small>{plugin.package}</small></details></td>
+    <td className="nf-component-actions">{plugin.ui?.length ? plugin.ui.map(page => <button key={page.id} type="button" disabled title={previewReason}>{plugin.ui.length === 1 ? plugin.configuration ? '配置' : '打开页面' : page.title}</button>) : <small>无需单独配置</small>}</td>
+    <td className="nf-component-actions"><span>{plugin.enabled === false ? '已停用' : unavailable ? '暂不可用' : plugin.runtime === 'service' ? '可用' : '可按需加载'}</span>{plugin.reason && plugin.reason !== 'plugin_disabled' && <small className="is-warning">{componentError(plugin.reason)}</small>}{plugin.revision && <button type="button" disabled title={previewReason}>查看状态</button>}</td>
+  </tr>;
+}
 
 function ExtensionRow({ extension, onManage }: { extension: ExtensionComponent; onManage(): void }) {
   const state = { ready: '可配置', not_installed: '未安装', incompatible: '模块版本不兼容', backend_unsupported: '当前后端不支持', dependency_missing: '缺少依赖', unknown: '状态未确认' }[extension.state];
@@ -62,7 +74,7 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
 }) {
   const [section, setSection] = useState('software');
   const [detail, setDetail] = useState<string | null>(null);
-  if (detail === 'https-compat') return <CompatibilityView extension={snapshot?.extensions?.find(item => item.id === detail)} onBack={() => setDetail(null)} />;
+  if (detail === 'https-compat') return <CompatibilityView extension={snapshot?.extensions?.find((item): item is ExtensionComponent => item.kind === 'optional' && item.id === detail)} onBack={() => setDetail(null)} />;
   const feed = snapshot?.feed;
   const dashboard = snapshot?.dashboard;
   const luci = snapshot?.components.find(component => component.id === 'luci');
@@ -108,8 +120,8 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
       </div>}
       <section className="nf-component-modules" hidden={section !== 'plugins'}>
         <p>在插件中配置功能或查看运行情况；安装、更新与卸载由 OpenWrt 软件包管理器处理。</p>
-        {snapshot.extensions?.some(extension => extension.kind === 'optional') ? <div className="nf-table-wrap nf-plugin-table"><table><thead><tr>{['插件', '分类与用途', '版本', '配置', '运行管理'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>
-          {snapshot.extensions.filter(extension => extension.kind === 'optional').map(extension => <ExtensionRow key={extension.id} extension={extension} onManage={() => setDetail(extension.id)} />)}
+        {snapshot.extensions?.some(extension => extension.kind !== 'resource') ? <div className="nf-table-wrap nf-plugin-table"><table><thead><tr>{['插件', '分类与用途', '版本', '配置', '运行管理'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>
+          {snapshot.extensions.filter(extension => extension.kind !== 'resource').map(extension => extension.kind === 'plugin' ? <PluginRow key={`${extension.id}:${extension.instance || 'default'}`} plugin={extension} /> : <ExtensionRow key={extension.id} extension={extension} onManage={() => setDetail(extension.id)} />)}
         </tbody></table></div> : <p>当前没有可管理的功能插件</p>}
       </section>
       <details className="nf-component-details" hidden={section !== 'software'}><summary>技术详情：更新源与安装信息</summary>
