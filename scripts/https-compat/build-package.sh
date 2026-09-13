@@ -42,6 +42,21 @@ cp "$work/openwrt/plugin_payload.py" "$sdk/package/opl-netfleet/"
 cp -R "$work/openwrt/files" "$sdk/package/opl-netfleet/"
 cp -R "$work/openwrt/mihomo-meta" "$sdk/package/mihomo-meta"
 (cd "$sdk" && ./scripts/feeds install -p base openssl ca-bundle libmnl libnftnl libjson-c ucode libmd)
+# Official SDKs may project the base feed into package/ directly.
+base_target() {
+  local name=$1 path
+  for path in "feeds/base/$name" "libs/$name" "utils/$name" "system/$name"; do
+    if [ -f "$sdk/package/$path/Makefile" ]; then printf 'package/%s/compile' "$path"; return; fi
+  done
+  printf 'Missing SDK base package: %s\n' "$name" >&2
+  return 1
+}
+openssl_target=$(base_target openssl)
+libmnl_target=$(base_target libmnl)
+libnftnl_target=$(base_target libnftnl)
+json_target=$(base_target libjson-c)
+libmd_target=$(base_target libmd)
+ucode_target=$(base_target ucode)
 cp "$key" "$sdk/private-key.pem"
 chmod 0600 "$sdk/private-key.pem"
 "$sdk/staging_dir/host/bin/openssl" ec -in "$sdk/private-key.pem" -pubout >"$sdk/public-key.pem"
@@ -49,16 +64,16 @@ make -C "$sdk" "package/$package/clean" V=s
 jobs=${NETFLEET_COMPAT_BUILD_JOBS:-8}
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]]
 # Build real library metadata without optional kernel crypto engines.
-make -C "$sdk" -j"$jobs" package/toolchain/compile package/feeds/base/openssl/compile \
+make -C "$sdk" -j"$jobs" package/toolchain/compile "$openssl_target" \
   CONFIG_OPENSSL_ENGINE= CONFIG_OPENSSL_ENGINE_BUILTIN_DEVCRYPTO= \
   CONFIG_PACKAGE_libopenssl-devcrypto= CONFIG_PACKAGE_libopenssl-afalg= \
   CONFIG_PACKAGE_libopenssl-padlock= NO_DEPS=1 V=s
 # Native module headers and small wire libraries must come from real SDK builds.
 # Only the ucode core/headers are needed here; optional module dependencies are
 # provided by the base image and are not rebuilt by this optional-package lane.
-make -C "$sdk" -j"$jobs" package/feeds/base/libmnl/compile package/feeds/base/libnftnl/compile \
-  package/feeds/base/libjson-c/compile package/feeds/base/libmd/compile PKG_BUILD_FLAGS=no-lto NO_DEPS=1 V=s
-make -C "$sdk" -j"$jobs" package/feeds/base/ucode/compile \
+make -C "$sdk" -j"$jobs" "$libmnl_target" "$libnftnl_target" \
+  "$json_target" "$libmd_target" PKG_BUILD_FLAGS=no-lto NO_DEPS=1 V=s
+make -C "$sdk" -j"$jobs" "$ucode_target" \
   CONFIG_PACKAGE_ucode-mod-fs=y CONFIG_PACKAGE_ucode-mod-digest=y \
   CONFIG_PACKAGE_ucode-mod-math= CONFIG_PACKAGE_ucode-mod-nl80211= CONFIG_PACKAGE_ucode-mod-resolv= \
   CONFIG_PACKAGE_ucode-mod-rtnl= CONFIG_PACKAGE_ucode-mod-struct= CONFIG_PACKAGE_ucode-mod-ubus= \
