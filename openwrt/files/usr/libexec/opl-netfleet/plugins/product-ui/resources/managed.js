@@ -614,8 +614,9 @@ function pluginDialog(controller, plugin, initialAction) {
 				revision = result.revision || revision;
 				return api.pluginRead(Object.assign({}, request, { action: 'get', revision: revision, confirm: false }));
 			}) : api.pluginRead(request)).then(show).catch(function(error) {
+				loaded = null;
 				status.textContent = errorLabel(error.message || String(error));
-				if (writing) { loaded = null; status.textContent += '；请刷新状态确认当前结果。'; }
+				if (writing) status.textContent += '；请刷新状态确认当前结果。';
 			}).finally(function() { busy(false); if (writing) loadComponents(controller); });
 		};
 		if (!writing) return execute();
