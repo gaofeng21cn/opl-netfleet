@@ -91,7 +91,7 @@ return function(context) {
 				const compiled = context.use("compilation.control").compile_result(policy, false);
 				if (!compiled.ok) output.fail("set-mode", compiled.error, compiled.detail);
 				context.use("activation.control").enable_action(policy, documents.load_evidence(), true,
-					(phase, details) => operation.update(phase, { total: 0, completed: 0, ...details }));
+					(phase, details) => operation.update(phase, { total: 0, completed: 0, ...(details ?? {}) }));
 				operation.update("starting_scheduler", { subject: null });
 				if (!service.set_service_state({ enabled: true, running: true }).ok) output.fail("set-mode", "supervisor_start_failed");
 			}

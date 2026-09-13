@@ -61,6 +61,7 @@ const services = {
 	"compilation.control": { compile_result: () => ({ ok: !compilation_error, error: "fixture_compile_failure" }) },
 	"activation.control": { enable_action: (policy, evidence, quiet, progress) => {
 		writes++; starts++; state.profile = "file:OPL-NetFleet.json"; state.present = true; state.running = true;
+		progress("probing");
 		progress("resetting_candidates", { subject: "standard", total: 2, completed: 0 });
 		if (activation_error) output.fail("enable", "fixture_activation_failure", { stage: "switched" });
 		progress("activating_exit", { completed: 2 });
