@@ -1,13 +1,4 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* Keep the product navigation opaque above theme header decorations. */
-.netfleet-plugin-shell > .netfleet-primary-nav {
-	background: var(--background-color-high, #fff);
-}
-
-[data-netfleet-theme="dark"] .netfleet-plugin-shell > .netfleet-primary-nav {
-	background: var(--background-color-high, #252526);
-}
-
 .netfleet-native {
 	--nf-accent: var(--primary, var(--primary-color-high, #5e72e4));
 	--nf-accent-soft: var(--primary-color-low, rgba(94, 114, 228, 0.10));

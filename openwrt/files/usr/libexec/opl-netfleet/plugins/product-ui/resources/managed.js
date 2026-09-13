@@ -573,62 +573,75 @@ function compositionDialog(controller) {
 	}).catch(function(error) { if (!closed) output.textContent = errorLabel(error.message || String(error)); });
 }
 
-function pluginDialog(controller, plugin) {
+function managementRequired(plugin) {
+	return ['product-ui', 'components', 'status', 'events', 'setup'].includes(plugin.id);
+}
+
+function pluginDialog(controller, plugin, initialAction) {
 	const output = E('pre', { 'style': 'max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere' }, '');
 	const status = E('p', { 'role': 'status' }, '正在读取运行状态…');
 	const service = plugin.runtime === 'service';
-	const labels = { load: '加载进程', reload: '重新加载', unload: '卸载进程', get: '刷新状态' };
+	const labels = { load: '启用', reload: '重新启动', unload: '禁用', get: '刷新状态' };
 	let revision = plugin.revision;
 	let pending = false;
 	let loaded = null;
+	let closed = false;
 	const controls = [];
 	function busy(value) {
 		pending = value;
 		controls.forEach(function(control) {
 			const action = control.getAttribute('data-action');
-			control.disabled = value || action !== 'get' && (loaded === null || plugin.enabled === false ||
+			control.disabled = value || action !== 'get' && (controller.context?.readOnly || loaded === null || (action === 'unload' && managementRequired(plugin)) ||
 				(action === 'load' ? loaded : !loaded));
 		});
 	}
 	function show(result) {
 		revision = result.revision || revision;
 		loaded = typeof result.loaded === 'boolean' ? result.loaded : null;
-		status.textContent = result.loaded === true ? (result.ready === true ? '已加载 · 运行就绪' : '已加载 · 尚未就绪') : result.loaded === false ? '未加载' : service ? '由 NetFleet 管理' : '运行状态暂不可确认';
+		status.textContent = result.loaded === true ? (result.ready === true ? '已启用 · 运行就绪' : '已启用 · 尚未就绪') : result.loaded === false ? '已停用' : '运行状态暂不可确认';
 		output.textContent = JSON.stringify(result, null, 2);
 	}
 	function run(action) {
 		if (pending) return;
 		const writing = action !== 'get';
+		if (writing && (loaded === null || controller.context?.readOnly || (action === 'unload' && managementRequired(plugin)))) return;
 		const execute = function() {
 			busy(true);
 			status.textContent = writing ? labels[action] + '中…' : '正在读取运行状态…';
 			const request = { id: plugin.id, action: action, revision: revision, confirm: writing, params: {} };
 			if (plugin.instance) request.instance = plugin.instance;
-			return (writing ? api.pluginCall(request) : api.pluginRead(request)).then(show).catch(function(error) {
+			return (writing ? api.pluginCall(request).then(function(result) {
+				revision = result.revision || revision;
+				return api.pluginRead(Object.assign({}, request, { action: 'get', revision: revision, confirm: false }));
+			}) : api.pluginRead(request)).then(show).catch(function(error) {
 				status.textContent = errorLabel(error.message || String(error));
+				if (writing) { loaded = null; status.textContent += '；请刷新状态确认当前结果。'; }
 			}).finally(function() { busy(false); if (writing) loadComponents(controller); });
 		};
 		if (!writing) return execute();
-		ui.showModal('确认' + labels[action], [ E('p', {}, (plugin.label || plugin.id) + '：' + (action === 'unload' ? '将停止此插件进程，其提供的功能将暂时不可用。' : action === 'reload' ? '将重新启动此插件进程，相关功能会短暂中断。' : '将启动此插件进程并检查是否就绪。')),
+		ui.showModal('确认' + labels[action], [ E('p', {}, (plugin.label || plugin.id) + '：' + (action === 'unload' ? '将停止此插件提供的功能，保留软件包和配置。若仍被其他插件依赖，宿主会拒绝禁用。' : action === 'reload' ? '将重新启动此插件进程，相关功能会短暂中断。' : '将启用此插件并检查是否就绪。')),
 			E('div', { 'class': 'right' }, [ button('取消', function() { pluginDialog(controller, plugin); }), ' ',
 				button('确认', function() { open(); execute(); }) ]) ]);
 	}
-	(service ? ['get'] : ['get', 'load', 'reload', 'unload']).forEach(function(action) {
+	(service ? ['get', 'load', 'unload'] : ['get', 'load', 'unload', 'reload']).forEach(function(action) {
 		const control = button(labels[action], function() { return run(action); });
 		control.setAttribute('data-action', action); controls.push(control);
 	});
 	const children = [E('p', {}, plugin.id + ' · ' + (service ? '服务插件' : '进程插件') + ' · ' + displayVersion(plugin.installed_version || plugin.version)),
-		E('p', {}, pluginPurpose(plugin)), status, controls[0],
-		E('p', {}, service ? '由 NetFleet 自动管理，功能设置通过对应配置页面应用。' : '由 NetFleet 按需启动；手动维护会影响此进程提供的功能。')];
+		E('p', {}, pluginPurpose(plugin)), status,
+		E('div', { 'class': 'netfleet-inline-actions' }, controls.slice(0, 3)),
+		E('p', {}, managementRequired(plugin) ? '管理界面必需：此页面不提供禁用，避免失去管理和恢复入口。' : '开关由 NetFleet 宿主管理；禁用保留软件包和配置。')];
 	if (plugin.id === 'activation') children.push(button('前往概览切换运行模式', function() {
 		ui.hideModal(); controller.context.navigate('plugin:product-ui:overview');
 	}));
-	if (!service) children.push(E('details', {}, [E('summary', {}, '进程维护'), E('div', { 'class': 'netfleet-inline-actions' }, controls.slice(1))]));
+	if (!service) children.push(E('details', {}, [E('summary', {}, '进程维护'), E('div', { 'class': 'netfleet-inline-actions' }, controls.slice(3))]));
 	children.push(E('details', {}, [E('summary', {}, '技术详情'), E('p', {}, '软件包：' + (plugin.package || '未提供')),
 		E('p', {}, '完整版本：' + (plugin.installed_version || plugin.version || '未记录')), output]));
-	children.push(E('div', { 'class': 'right' }, button('关闭', ui.hideModal)));
+	children.push(E('div', { 'class': 'right' }, button('关闭', function() { closed = true; ui.hideModal(); })));
 	function open() { ui.showModal((plugin.label || plugin.id) + ' · 运行状态', E('div', { 'class': 'netfleet-plugin-runtime' }, children)); }
-	open(); run('get');
+	open(); return run('get').then(function() {
+		if (!closed && initialAction && loaded !== null && (initialAction === 'load' ? !loaded : loaded)) return run(initialAction);
+	});
 }
 
 function startPackageOperation(controller, component) {
@@ -817,6 +830,10 @@ function componentsPage(controller) {
 		const state = [E('span', { 'class': 'netfleet-plugin-state' }, availability)];
 		if (plugin.reason && plugin.reason !== 'plugin_disabled') state.push(E('small', { 'class': 'is-warning' }, errorLabel(plugin.reason)));
 		if (plugin.revision) state.push(button('查看状态', function() { pluginDialog(controller, plugin); }, active));
+		if (managementRequired(plugin)) state.push(E('small', {}, '管理界面必需'));
+		else if (plugin.revision) state.push(button(plugin.runtime === 'service' ? plugin.enabled === false ? '启用' : '禁用' : '启用 / 禁用', function() {
+			return pluginDialog(controller, plugin, plugin.runtime === 'service' ? plugin.enabled === false ? 'load' : 'unload' : null);
+		}, active));
 		moduleRows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, plugin.label || plugin.id), E('small', { 'class': 'netfleet-plugin-id' }, plugin.id),
 			plugin.instance && plugin.instance !== 'default' ? E('small', {}, '实例：' + plugin.instance) : '' ]),
 			E('td', {}, [E('span', { 'class': 'netfleet-plugin-kind' }, plugin.runtime === 'service' ? '服务插件' : '进程插件'), E('small', {}, pluginPurpose(plugin))]),

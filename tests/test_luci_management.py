@@ -958,7 +958,7 @@ const plugin = { id: 'device-info', label: '设备信息', kind: 'plugin', runti
 const owner = controller(); owner.componentsSection = 'plugins';
 owner.components = { supported: true, feed: {}, components: [], dependencies: [], extensions: [plugin] };
 const managed = module('managed.js', {
-  pluginRead: async request => { calls.push(['read', request]); return { loaded: false, ready: true, revision: 'r2' }; },
+  pluginRead: async request => { calls.push(['read', request]); return { loaded: calls.some(c => c[0] === 'write'), ready: true, revision: 'r2' }; },
   pluginCall: async request => { calls.push(['write', request]); return { loaded: true, ready: true, revision: 'r3' }; },
   componentsGet: async () => owner.components,
 });
@@ -969,17 +969,18 @@ assert.equal(text(find(page, n => n.tag === 'td' && text(n).startsWith('1.0.0'))
 fire(button(page, '查看状态')); await tick();
 assert.equal(calls[0][1].action, 'get');
 assert(!find(modal.content, n => n.tag === 'select' || n.tag === 'textarea'), 'no raw RPC editor');
-assert(button(modal.content, '重新加载').disabled);
-fire(button(modal.content, '加载进程'));
-assert.equal(modal.title, '确认加载进程');
+assert(button(modal.content, '重新启动').disabled);
+fire(button(modal.content, '启用'));
+assert.equal(modal.title, '确认启用');
 assert.equal(calls.length, 1, 'write waits for confirmation');
 fire(button(modal.content, '确认')); await tick();
 assert.equal(calls[1][0], 'write');
 assert.equal(calls[1][1].revision, 'r2', 'writes use fresh owner revision');
 assert.equal(calls[1][1].confirm, true);
 assert(text(modal.content).includes('运行就绪'));
-assert(button(modal.content, '加载进程').disabled);
-assert(!button(modal.content, '重新加载').disabled);
+assert(button(modal.content, '启用').disabled);
+assert(!button(modal.content, '重新启动').disabled);
+assert.equal(calls.at(-1)[1].action, 'get', 'read back after mutation');
 assert(text(modal.content).includes('完整版本：1.0.0-r2'));
 
 const service = { ...plugin, id: 'activation', label: 'Activation', runtime: 'service', instance: 'review', revision: 'service-r1',
@@ -990,11 +991,44 @@ page = managed.components(owner);
 fire(button(page, '查看状态')); await tick();
 assert.equal(calls.at(-1)[1].instance, 'review');
 assert(!find(modal.content, n => n.tag === 'select' || n.tag === 'textarea'));
-assert(!button(modal.content, '加载进程') && !button(modal.content, '重新加载') && !button(modal.content, '卸载进程'),
-  'service lifecycle belongs to the host');
-assert(text(modal.content).includes('由 NetFleet 自动管理'));
+assert(button(modal.content, '启用') && button(modal.content, '禁用') && !button(modal.content, '重新启动'),
+  'service enable/disable uses host lifecycle');
+assert(text(modal.content).includes('开关由 NetFleet 宿主管理'));
 fire(button(modal.content, '前往概览切换运行模式'));
 assert.deepEqual(opened, ['plugin:product-ui:overview']);
+""")
+
+    def test_service_switch_reads_identity_and_preserves_state_on_dependency_failure(self):
+        self.run_js(r"""
+const owner = controller(); owner.componentsSection = 'plugins';
+const plugin = { id: 'sample', label: '示例', kind: 'plugin', runtime: 'service', enabled: true,
+  version: '1.0.0', revision: 'stale', instance: 'review' };
+owner.components = { supported: true, feed: {}, components: [], extensions: [plugin] };
+const calls = [];
+let readFailure = false;
+const managed = module('managed.js', {
+  pluginRead: async request => { calls.push(['read', request]); if (readFailure) throw Error('offline'); return { loaded: true, ready: true, revision: 'fresh' }; },
+  pluginCall: async request => { calls.push(['write', request]); throw Error('plugin_required_by:consumer'); },
+  componentsGet: async () => owner.components,
+});
+await fire(button(managed.components(owner), '禁用'));
+assert.equal(modal.title, '确认禁用');
+assert.equal(calls.length, 1, 'reading does not disable the service');
+assert(text(modal.content).includes('保留软件包和配置'));
+await fire(button(modal.content, '确认')); await tick();
+assert.equal(calls[1][1].revision, 'fresh');
+assert.equal(calls[1][1].instance, 'review');
+assert.equal(calls[1][1].action, 'unload');
+assert.equal(plugin.enabled, true, 'dependency rejection cannot optimistically mark disabled');
+assert(text(modal.content).includes('其他已启用插件仍依赖此插件') && text(modal.content).includes('consumer'));
+assert(button(modal.content, '禁用').disabled);
+readFailure = true;
+await fire(button(managed.components(owner), '禁用'));
+assert.notEqual(modal.title, '确认禁用');
+assert(button(modal.content, '禁用').disabled);
+assert.equal(calls.filter(c => c[0] === 'write').length, 1, 'failed reads never mutate or retry');
+plugin.id = 'product-ui';
+assert(!button(managed.components(owner), '禁用'), 'the management page must retain its own recovery surface');
 """)
 
     def test_https_service_exposes_configuration_without_loading_engine(self):

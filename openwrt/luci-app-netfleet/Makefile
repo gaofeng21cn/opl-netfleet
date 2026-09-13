@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-netfleet
-PKG_VERSION:=0.8.9
+PKG_VERSION:=0.8.10
 PKG_RELEASE:=
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=OPL NetFleet
