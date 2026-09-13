@@ -45,5 +45,6 @@ done
 "$helper" local-pair "$run" "$uid" >"$out"
 test "$(jsonfilter -i "$out" -e '@.ipv4.ok')" = true
 test "$(jsonfilter -i "$out" -e '@.ipv6.ok')" = true
+NETFLEET_ISOLATED_NATIVE_TEST=1 ucode /tmp/tests/https_native_probe_session.uc "$run" "$uid" "$(id -g netfleet-compat)"
 test "$(pidof mihomo)" = "$base"
 echo 'dual-stack probe: real TLS, independent stack failure, recovery and stable base passed'

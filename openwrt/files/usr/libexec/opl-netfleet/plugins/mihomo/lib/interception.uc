@@ -7,6 +7,14 @@ return function(context) {
     const capture=context.use('platform.process').capture;
     const policy=loadfile(`${context.root}/plugins/${context.id}/lib/interception-policy.uc`)()();
     const TABLE='netfleet_compat', PORT=18443, CLAIM='/var/run/opl-netfleet-core/interception.json';
+    let native_io=null;
+    function native() {
+        // The installed predecessor is a real rollback caller without this module.
+        // A native declaration must never fall back when its module is missing/broken.
+        const declaration=json(fs.readfile('/usr/libexec/opl-netfleet-compat/extension.json') ?? '{}');
+        if(declaration.gateway_io!='native'&&!fs.stat('/usr/lib/ucode/netfleet_interception.so')) return null;
+        native_io??=require('netfleet_interception');return native_io;
+    }
     const paths=['/etc/opl-netfleet/native/run/config.yaml','/etc/config/netfleet','/var/run/opl-netfleet-core/ownership.json',
         '/etc/opl-netfleet/backend.json','/proc/sys/net/ipv4/ip_local_port_range'];
     function run(args,input) {
@@ -35,21 +43,27 @@ return function(context) {
         return table();
     }
     function bypass() {
+        // Removal and recovery must work even after the optional native module
+        // disappears. The CLI is used only for this bounded cleanup path.
+        if (fs.stat('/usr/lib/ucode/netfleet_interception.so')) {
+            try { return native().renew([]); } catch (_) {}
+        }
         if (table()) return leases(transaction(`flush set inet ${TABLE} targets4\nflush set inet ${TABLE} targets6\n`));
         return {intercepting:false,leases:0};
     }
-    function status() { return leases(table()); }
+    function status() { const io=native();return io?io.status():leases(table()); }
     function prepare(network,uid,owner,excluded) {
         const interfaces=network.interfaces,dscp=network.dscp_bypass ?? [];
         if (type(interfaces)!='array' || !length(interfaces) || length(interfaces)>16 || length(filter(interfaces,x=>type(x)!='string'||!match(x,/^[A-Za-z0-9_.:-]{1,15}$/)))) die('lan_interfaces_required');
         if (type(dscp)!='array' || length(filter(dscp,x=>type(x)!='int'||x<0||x>63))) die('invalid_dscp_bypass');
         if (length(filter(excluded,x=>type(x)!='int'||x<1||x>65535))) die('invalid_source_port_exclusions');
-        const signature=sha256(sprintf('%J',[7,interfaces,dscp,uid,owner,excluded])), current=table();
-        if (length(filter(current?.nftables ?? [],row=>row.table?.comment==signature))) return current;
+        const io=native(),signature=sha256(sprintf('%J',[7,interfaces,dscp,uid,owner,excluded]));
+        const raw=io?null:table(),current=io?io.table():{exists:raw!=null,signature:filter(raw?.nftables ?? [],row=>row.table?.comment)[0]?.table.comment};
+        if (current.signature==signature) return io?io.status():leases(raw);
         const names=join(', ',map(interfaces,x=>sprintf('%J',x)));
         let exclusions=length(dscp)?`ip dscp { ${join(', ',dscp)} } return\n  ip6 dscp { ${join(', ',dscp)} } return`:'';
         if (length(excluded)) exclusions+=`\n  tcp sport { ${join(', ',excluded)} } return`;
-        return transaction((current?`delete table inet ${TABLE}\n`:'')+`table inet ${TABLE} {
+        return leases(transaction((current.exists?`delete table inet ${TABLE}\n`:'')+`table inet ${TABLE} {
  comment "${signature}"
  set targets4 { type ipv4_addr . ipv4_addr . inet_service; flags interval,timeout; timeout 10s; }
  set targets6 { type ipv6_addr . ipv6_addr . inet_service; flags interval,timeout; timeout 10s; }
@@ -74,7 +88,7 @@ return function(context) {
   meta skuid ${uid} meta priority 6 ip saddr 127.0.0.1 ip daddr 127.0.0.1 tcp dport 18445 redirect to :${PORT}
   meta skuid ${uid} meta priority 6 ip6 saddr ::1 ip6 daddr ::1 tcp dport 18445 redirect to :${PORT}
  }
-}\n`);
+}\n`));
     }
     function source(value) {
         if (type(value)!='string' || index(value,'%')>=0) die('invalid_lease_candidate');
@@ -93,18 +107,21 @@ return function(context) {
         for (let bit=prefix;bit<bits;bit++) if (bytes[int(bit/8)] & (1 << (7-bit%8))) die('invalid_lease_candidate');
         return `${arrtoip(bytes)}/${prefix}`;
     }
-    function renew(candidates) {
+    function renew(candidates,generation) {
         if (type(candidates)!='array'||length(candidates)>4096) die('lease_candidate_limit');
-        const groups={'4':[],'6':[]};
+        const normalized=[];
         for (let row in candidates) {
             if (type(row)!='array'||length(row)!=3||type(row[2])!='int'||row[2]<1||row[2]>65535) die('invalid_lease_candidate');
             const bytes=source(row[0]),dst=destination(row[1],length(bytes));
-            push(groups[length(bytes)==4?'4':'6'],`${arrtoip(bytes)} . ${dst} . ${row[2]} timeout 10s`);
+            push(normalized,[arrtoip(bytes),dst,row[2]]);
         }
+        const io=native();if(io) return io.renew(normalized,generation);
+        const groups={'4':[],'6':[]};
+        for(let row in normalized) push(groups[index(row[0],':')>=0?'6':'4'],`${row[0]} . ${row[1]} . ${row[2]} timeout 10s`);
         let batch='';
-        for (let family in ['4','6']) {
+        for(let family in ['4','6']) {
             batch+=`flush set inet ${TABLE} targets${family}\n`;
-            if (length(groups[family])) batch+=`add element inet ${TABLE} targets${family} { ${join(', ',sort(uniq(groups[family])))} }\n`;
+            if(length(groups[family])) batch+=`add element inet ${TABLE} targets${family} { ${join(', ',sort(uniq(groups[family])))} }\n`;
         }
         return leases(transaction(batch));
     }
@@ -152,7 +169,7 @@ return function(context) {
     function egress(profile) {
         const ports=map(split(trim(fs.readfile(paths[4]) ?? ''),/\s+/),x=>+x), result=policy.egress_policy(profile,ports);
         if (result.port_range) {
-            try { run(['/usr/libexec/opl-netfleet-compat/port-range',...result.port_range]); }
+            try { const io=native();if(io) io.port_range(...result.port_range);else run(['/usr/libexec/opl-netfleet-compat/port-range',...result.port_range]); }
             catch (_) { die('egress_port_range_unsupported'); }
         }
         return result;
@@ -188,7 +205,7 @@ return function(context) {
         if (!claimed && !files.atomic_json(CLAIM,owner)) die('lease_owner_unavailable');
         try {
             const routing=egress(profile),prepared=prepare(network,uid,owner,routing.excluded_ports);
-            return action=='renew'?renew(input.candidates):leases(prepared);
+            return action=='renew'?renew(input.candidates,network.generation):prepared;
         } catch (error) {
             try { bypass(); } catch (_) {}
             die(error.message);

@@ -279,19 +279,26 @@ frontend ${name}_http
         try {return json(io.command([io.root+'/tls-probe','local',RUN,family ?? 0,uid],2,null,true));}
         catch (_) {return {ok:false,reason:'local_conversion_failed'};}
     }
-    function probe_pair(uid) {
-        const failure={ok:false,reason:'local_conversion_failed'};
-        const directory=fs.mkdtemp('/tmp/netfleet-probe.XXXXXX');
-        if(!directory) return {ipv4:failure,ipv6:failure};
-        const report=directory+'/result';let value;
-        try {
-            const code=system(['/usr/bin/timeout','-k','1','2',io.root+'/tls-probe','local-pair',RUN,uid,report]);
-            const size=fs.lstat(report)?.size;
-            if((code!=0&&code!=1)||size==null||size>4096) die('local_conversion_failed');
-            value=json(fs.readfile(report));
-        } catch (_) {}
-        fs.unlink(report);fs.rmdir(directory);
-        return {ipv4:value?.ipv4 ?? failure,ipv6:value?.ipv6 ?? failure};
+    let probe_session=null,probe_identity=null;
+    function close_probe() {
+        probe_session?.close();probe_session=null;probe_identity=null;
     }
-    return {fingerprint,prepare_ca,revision,configuration,prepare,sync_rule_switches,health,probe,probe_pair};
+    function probe_pair(uid,gid,engine_identity) {
+        const failure={ok:false,reason:'local_conversion_failed'};
+        try {
+            const ca=fs.readfile(RUN+'/ca/mitmproxy-ca-cert.pem');
+            if(!ca) die('probe_ca_failed');
+            const key=io.canonical([uid,gid,engine_identity,io.sha256(ca)]);
+            if(!probe_session||probe_identity!=key) {
+                close_probe();probe_session=require('netfleet_probe').open(RUN,uid,gid);probe_identity=key;
+            }
+            const result=probe_session.request();
+            if(result.ipv4?.ok!==true||result.ipv6?.ok!==true) close_probe();
+            return result;
+        } catch (error) {
+            close_probe();const failed={...failure,reason:match(error.message ?? '',/^probe_[a-z_]+$/)?error.message:failure.reason};
+            return {ipv4:failed,ipv6:failed};
+        }
+    }
+    return {fingerprint,prepare_ca,revision,configuration,prepare,sync_rule_switches,health,probe,probe_pair,close_probe};
 };

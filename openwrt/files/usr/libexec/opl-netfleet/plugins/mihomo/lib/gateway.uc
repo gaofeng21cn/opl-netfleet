@@ -75,15 +75,16 @@ routes_present = function(state) {
 	}
 	return true;
 };
-readiness = function(table_present, observed_core) {
+readiness = function(table_present, observed_core, native_io) {
 	const core = observed_core ?? process_state();
 	const state = ownership();
 	// The backend already reads this table for its DNS/TProxy checks in this observation.
 	const tables = table_present == null ? parse(capture("nft -j list tables")) : null;
 	const table = table_present != null ? table_present == true :
 		length(filter(tables?.nftables ?? [], row => row.table?.family == "inet" && row.table?.name == "netfleet")) > 0;
-	const attached = state != null && state.core_pid == core.pid && table && routes_present(state);
-	return { ok: true, result: { ready: core.running && controller_ready() && attached,
+	const attached = state != null && state.core_pid == core.pid && table &&
+		(native_io ? native_io.routes(state.table,state.families ?? []) : routes_present(state));
+	return { ok: true, result: { ready: core.running && (native_io ? native_io.controller() : controller_ready()) && attached,
 		core_running: core.running, registered: core.registered, attached: attached,
 		clean: !table && state == null } };
 };
@@ -344,25 +345,32 @@ interception_snapshot = function(listener) {
 		});
 		if (defaults != 1) custom = true;
 	}
-	// Keep the set read separate: nft's combined read cache can omit its elements.
-	const nft = parse(capture("nft -j list set inet netfleet lan_inbound_device"));
-	const guard_chain = parse(capture("nft -j list chain inet netfleet mangle_prerouting_lan"));
-	let interfaces = [];
-	for (let item in nft?.nftables ?? []) if (item.set?.family == "inet" && item.set?.table == "netfleet" && item.set?.name == "lan_inbound_device") interfaces = item.set.elem ?? [];
+	const declaration=parse(fs.readfile('/usr/libexec/opl-netfleet-compat/extension.json'));
+	const native_io=declaration?.gateway_io=='native'||fs.stat('/usr/lib/ucode/netfleet_interception.so')?require('netfleet_interception'):null;
+	let observed;
+	if(native_io) observed=native_io.observe();
+	else {
+		// Keep the set read separate: nft's combined read cache can omit its elements.
+		const nft = parse(capture("nft -j list set inet netfleet lan_inbound_device"));
+		const guard_chain = parse(capture("nft -j list chain inet netfleet mangle_prerouting_lan"));
+		let interfaces = [];
+		for (let item in nft?.nftables ?? []) if (item.set?.family == "inet" && item.set?.table == "netfleet" && item.set?.name == "lan_inbound_device") interfaces = item.set.elem ?? [];
+		const table_present = length(filter(guard_chain?.nftables ?? [], item => item.chain?.family == "inet" && item.chain?.table == "netfleet" && item.chain?.name == "mangle_prerouting_lan")) > 0;
+		const guard_rules = filter(guard_chain?.nftables ?? [], item => item.rule?.family == "inet" && item.rule?.table == "netfleet" && item.rule?.chain == "mangle_prerouting_lan");
+		const guard = filter(guard_rules[0]?.rule?.expr ?? [], expr => expr.counter == null);
+		const condition = guard[0]?.match;
+		const ownership_guard = length(guard) == 2 && condition?.op == "!=" && condition?.right == 0 &&
+			condition?.left?.["&"]?.[0]?.ct?.key == "mark" && condition?.left?.["&"]?.[1] == 16777216 &&
+			guard[1] != null && "return" in guard[1];
+		observed={present:table_present,guard:ownership_guard,interfaces};
+	}
 	const core = process_state();
-	const table_present = length(filter(guard_chain?.nftables ?? [], item => item.chain?.family == "inet" && item.chain?.table == "netfleet" && item.chain?.name == "mangle_prerouting_lan")) > 0;
-	const result = readiness(table_present, core);
-	const guard_rules = filter(guard_chain?.nftables ?? [], item => item.rule?.family == "inet" && item.rule?.table == "netfleet" && item.rule?.chain == "mangle_prerouting_lan");
-	const guard = filter(guard_rules[0]?.rule?.expr ?? [], expr => expr.counter == null);
-	const condition = guard[0]?.match;
-	const ownership_guard = length(guard) == 2 && condition?.op == "!=" && condition?.right == 0 &&
-		condition?.left?.["&"]?.[0]?.ct?.key == "mark" && condition?.left?.["&"]?.[1] == 16777216 &&
-		guard[1] != null && "return" in guard[1];
+	const result = readiness(observed.present, core, native_io);
 	return { ok: true, result: { backend: "native-mihomo", ready: result.result?.ready == true && enabled("config", "enabled"),
-		compatibility_ownership_guard: ownership_guard, core_pid: core.pid, engine_pid: engine?.pid,
+		compatibility_ownership_guard: observed.guard, generation: observed.generation, core_pid: core.pid, engine_pid: engine?.pid,
 		router_proxy: enabled("proxy", "router_proxy"), lan_proxy: enabled("proxy", "lan_proxy"),
 		ipv4_proxy: enabled("proxy", "ipv4_proxy"), ipv6_proxy: enabled("proxy", "ipv6_proxy"),
-		interfaces: interfaces, custom_lan_access: custom, listener_identity_ready: listener_identity_ready,
+		interfaces: sort(observed.interfaces), custom_lan_access: custom, listener_identity_ready: listener_identity_ready,
 		source_bypass: length(uci_value("proxy", "bypass_fwmark", [])) > 0,
 		dscp_bypass: map(uci_value("proxy", "bypass_dscp", []), value => int(value)) } };
 };

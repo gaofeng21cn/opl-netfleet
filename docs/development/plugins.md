@@ -480,6 +480,17 @@ macOS 的其他产品内嵌 UCode 不一定具有 OpenWrt 的正则语义；入�
 构建和 VM 只读取已提交的 `REF`，不会把尚未提交的源码误报为已验证包；输出放在仓库外。
 SDK 是 Linux 构建环境，VM 是 macOS/OpenWrt 验证环境，不是必须在同一环境执行的脚本。
 
+高频内核操作使用随 HTTPS 包安装的 ucode 原生模块；SDK 构建真实 libucode、libmnl、
+libnftnl 头文件与链接元数据，不复制未编译的头文件冒充依赖就绪。模块和探针会话都
+计入可选包的 payload 与完整缺失依赖增量。基础路径不加载模块，网关策略仍属于共享
+Mihomo 插件；修改其准入/续租调用时先重新建立完整基础资格，再消费该基座做 HTTPS 资格。
+
+无 Python guest 的原生 I/O 验证包含双栈前缀、4,096 候选、实际内核到期、generation
+变化、无效租约读取、基础 guard 与路由变化；探针会话验证永久降权、同资源组统计、
+未继承管理锁、子进程卡死截止时间和回收。每轮检查新连接和随机挑战；长期会话不能
+用旧连接成功代替当前健康。新 I/O 声明缺失模块时应拒绝，已签名旧引擎回退包的 CLI
+路径另做实际更新/回退验证，不把模块调用错误转换成旧路径成功。
+
 固定基座迭代时设置 `NETFLEET_COMPAT_IDENTITY_FROM=/path/to/previous-compat`，构建器只
 编译 HTTPS 引擎，复用已签名的 Device identity；管理插件来自基础包。SDK 首次准备使用
 `bash scripts/prepare-openwrt-sdk.sh --sdk /path/to/sdk`。每个开发工作区使用自己的可写

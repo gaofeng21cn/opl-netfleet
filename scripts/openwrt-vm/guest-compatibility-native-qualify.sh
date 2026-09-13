@@ -114,6 +114,22 @@ mkdir -p /etc/opl-netfleet/native/run /var/run/opl-netfleet-core
 chmod 0700 /etc/opl-netfleet/native /etc/opl-netfleet/native/run /var/run/opl-netfleet-core
 printf '{"rules":["MATCH,DIRECT"]}' >/etc/opl-netfleet/native/run/config.yaml
 engine_pid=$(jsonfilter -i "$work/procd.json" -e '@["opl-netfleet-compat"].instances.engine.pid')
+# New raw I/O fixture owns only disposable tables before the base is activated.
+nft -f - <<'NFT'
+table inet netfleet {
+ set lan_inbound_device { type ifname; elements = { "br-lan", "nf-observe" }; }
+ chain mangle_prerouting_lan { ct mark & 0x01000000 != 0 return; }
+}
+NFT
+nft list table inet netfleet_compat >/dev/null 2>&1 && nft delete table inet netfleet_compat
+nft -f - <<'NFT'
+table inet netfleet_compat {
+ set targets4 { type ipv4_addr . ipv4_addr . inet_service; flags interval,timeout; timeout 10s; }
+ set targets6 { type ipv6_addr . ipv6_addr . inet_service; flags interval,timeout; timeout 10s; }
+}
+NFT
+NETFLEET_ISOLATED_NATIVE_TEST=1 ucode /tmp/tests/interception_io_kernel.uc >"$work/native-io.log" 2>&1
+nft delete table inet netfleet
 nft add table inet base_fixture
 ucode /tmp/tests/interception_native_kernel.uc "$engine_pid" /usr/libexec/opl-netfleet netfleet-compat >"$work/leases.log" 2>&1
 nft list table inet base_fixture >/dev/null
@@ -147,5 +163,5 @@ stage=complete
 ucode - "$commit" "$tree" <<'UC'
 import * as fs from 'fs';
 const benchmark=fs.readfile('/tmp/https-native-network/benchmark.json');
-printf('%J\n',{ok:true,source_commit:ARGV[0],source_tree:ARGV[1],checks:{...(fs.stat('/tmp/compat-runtime/upgrade.json')?{engine_package_cycle:true}:{}),dual_stack_probe_faults:true,native_dependency_closure:true,real_control_entry:true,procd_launcher:true,local_h1_to_h2:true,resource_limits:true,resource_pressure:true,user_disable:true,uninstall_reinstall:true,stable_ca:true,base_configuration_unchanged:true,local_address_rotation:true,address_conflict_expiry:true,dual_stack_kernel_lease:true,real_gateway_h2:true,original_routing:true,sni_and_unknown_device_bypass:true,address_update_without_restart:true,streaming_upload_and_sse:true,cancellation_and_business_errors:true,simultaneous_stall_fail_open:true,third_fault_latch:true,manual_recovery:true,base_pid_unchanged:true},profile:json(fs.readfile('/tmp/https-native-network/profile.json')),metrics:json(fs.readfile('/tmp/https-native-network/performance.json')),benchmark:benchmark?json(benchmark):null,production_ready:false});
+printf('%J\n',{ok:true,source_commit:ARGV[0],source_tree:ARGV[1],checks:{...(fs.stat('/tmp/compat-runtime/upgrade.json')?{engine_package_cycle:true}:{}),dual_stack_probe_faults:true,native_kernel_io:true,native_dependency_closure:true,real_control_entry:true,procd_launcher:true,local_h1_to_h2:true,resource_limits:true,resource_pressure:true,user_disable:true,uninstall_reinstall:true,stable_ca:true,base_configuration_unchanged:true,local_address_rotation:true,address_conflict_expiry:true,dual_stack_kernel_lease:true,real_gateway_h2:true,original_routing:true,sni_and_unknown_device_bypass:true,address_update_without_restart:true,streaming_upload_and_sse:true,cancellation_and_business_errors:true,simultaneous_stall_fail_open:true,third_fault_latch:true,manual_recovery:true,base_pid_unchanged:true},profile:json(fs.readfile('/tmp/https-native-network/profile.json')),metrics:json(fs.readfile('/tmp/https-native-network/performance.json')),benchmark:benchmark?json(benchmark):null,production_ready:false});
 UC
