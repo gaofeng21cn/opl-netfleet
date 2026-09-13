@@ -242,7 +242,8 @@ frontend ${name}_http
     }
     function health() {
         const mapping=io.read(RUN+'/haproxy-rules.json',{}),observed={};
-        const request=join(';',['show stat','show info',...map(keys(mapping),name=>`get var proc.${name}_sni`)]);
+        // Drain and fault accounting use frontend/backend aggregates, not server rows.
+        const request=join(';',['show stat -1 3 -1','show info',...map(keys(mapping),name=>`get var proc.${name}_sni`)]);
         const info={},lines=split(command(request),'\n'),rows=[];
         const fields=['pxname','svname','scur','req_tot','hrsp_2xx','hrsp_3xx','hrsp_4xx','econ','eresp'];
         let positions=null;

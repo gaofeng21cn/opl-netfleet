@@ -11,7 +11,7 @@ if(ARGV[0]=='--server') {
         if(!socket.poll(2000,[listener,socket.POLLIN])) die('fixture_request_timeout');
         const connection=listener.accept(),request=connection?.recv(4096);
         if(!request) die('fixture_request_missing');
-        if(trim(request)!='show stat;show info;get var proc.r0_sni') die('fixture_request_invalid');
+        if(trim(request)!='show stat -1 3 -1;show info;get var proc.r0_sni') die('fixture_request_invalid');
         const response=
             '# pxname,svname,scur,req_tot,hrsp_2xx,hrsp_3xx,hrsp_4xx,econ,eresp\ningress,FRONTEND,2,0,0,0,0,0,0\nloopback_convert,BACKEND,0,0,0,0,0,0,0\nr0_h2,BACKEND,1,7,0,0,1,2,3\n\nPid: 42\ndescription: '+revision+'\nVersion: fixture\n'+
             'proc.r0_sni: type=str value=<'+row[0]+'>\n';

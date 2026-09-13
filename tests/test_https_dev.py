@@ -87,6 +87,31 @@ class EngineArtifacts(unittest.TestCase):
         self.assertEqual(result['ui']['cpu_seconds'],.04)
         self.assertEqual(result['ui']['failed'],1)
 
+    def test_benchmark_requires_admission_and_complete_work_in_every_window(self):
+        import copy
+        row={'name':'1-load','groups':{'manager':{'cpu_percent':2,'memory':100,
+             'throttled':1,'throttled_usec':50000,'peak_processes':3}},
+             'requests':{kind:[{'code':200,'ttfb':.02,'total':.03}] for kind in ['upload','sse']},
+             'admission':{'samples':150,'invalid':0},'codes':'0','errors':''}
+        good=compare.summarize([row],'load')
+        self.assertTrue(good['performance_comparable'])
+        self.assertEqual(good['groups']['manager']['throttled_seconds'],.05)
+        for change in ['bypass','no_admission','no_upload','no_sse','http','command','body']:
+            bad=copy.deepcopy(row);bad['name']='2-load'
+            if change=='bypass':bad['admission']['invalid']=1
+            if change=='no_admission':bad['admission']['samples']=0
+            if change=='no_upload':bad['requests']['upload']=[]
+            if change=='no_sse':bad['requests']['sse']=[]
+            if change=='http':bad['requests']['upload'][0]['code']=503
+            if change=='command':bad['codes']='28'
+            if change=='body':bad['errors']='sse_incomplete'
+            with self.subTest(change=change):
+                self.assertFalse(compare.summarize([row,bad],'load')['performance_comparable'])
+        row['name']='1-ui';row['ui']=[{'ok':True,'seconds':.1,'cpu_ticks':4}]
+        self.assertTrue(compare.summarize([row],'ui')['performance_comparable'])
+        other=copy.deepcopy(row);other['name']='2-ui';other['ui']=[]
+        self.assertFalse(compare.summarize([row,other],'ui')['performance_comparable'])
+
     def test_independent_identity_source_on_newer_base(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

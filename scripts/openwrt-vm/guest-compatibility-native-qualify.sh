@@ -87,6 +87,7 @@ NETFLEET_COMPAT_PROFILE=1 ucode /tmp/tests/https_native_profile.uc /usr/libexec/
 ucode /tmp/tests/async_process_capture.uc /usr/libexec/opl-netfleet /usr/libexec/opl-netfleet-compat >"$work/async-capture.log" 2>&1
 ucode /tmp/tests/async_health_socket.uc /usr/libexec/opl-netfleet-compat >>"$work/async-capture.log" 2>&1
 ucode /tmp/tests/https_native_health.uc /usr/libexec/opl-netfleet-compat >"$work/health-fields.log" 2>&1
+ucode /tmp/tests/https_state_cache.uc /usr/libexec/opl-netfleet-compat >"$work/state-cache.log" 2>&1
 ucode /tmp/tests/https_native_policy_bounds.uc /usr/libexec/opl-netfleet-compat >"$work/policy-bounds.log" 2>&1
 ucode /tmp/tests/https_native_identity_time.uc /usr/libexec/opl-netfleet-compat /usr/libexec/opl-netfleet/plugins/device-identity/resources/identity.uc >"$work/identity-time.log" 2>&1
 ucode /tmp/tests/https_native_guest.uc load >"$work/load.log" 2>&1

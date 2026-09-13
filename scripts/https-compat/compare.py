@@ -35,7 +35,9 @@ def summarize(rows,scene):
         groups[group]={'cpu_mean':statistics.mean(cpu),'cpu_min':min(cpu),'cpu_max':max(cpu),
                        'memory_max':max(r['groups'][group].get('peak_memory',r['groups'][group]['memory']) for r in selected),
                        'rss_max':max(r['groups'][group].get('peak_rss',0) for r in selected),
-                       'throttled':sum(r['groups'][group]['throttled'] for r in selected)}
+                       'throttled':sum(r['groups'][group]['throttled'] for r in selected),
+                       'throttled_seconds':sum(r['groups'][group].get('throttled_usec',0) for r in selected)/1e6,
+                       'peak_processes':max(r['groups'][group].get('peak_processes',0) for r in selected)}
     requests={}
     for kind in ['upload','sse']:
         samples=[x for row in selected for x in row['requests'][kind]]
@@ -45,11 +47,18 @@ def summarize(rows,scene):
                         'total_p95_ms':percentile([x['total']*1000 for x in samples],.95),
                         'http_errors':sum(x['code']!=200 for x in samples)}
     ui=[sample for row in selected for sample in row.get('ui',[])]
-    return {'groups':groups,'requests':requests,'ui':{'count':len(ui),
+    failures=sum(code!='0' for r in selected for code in r['codes'].split())
+    complete=(all(r.get('admission',{}).get('samples',0)>0 and r['admission'].get('invalid')==0 for r in selected)
+              and not failures and not any(r['errors'] for r in selected)
+              and not any(x['http_errors'] for x in requests.values())
+              and (scene not in ['load','ui'] or all(r['requests'][kind] for r in selected for kind in ['upload','sse']))
+              and (scene!='ui' or all(r.get('ui') for r in selected) and all(x['ok'] for x in ui)))
+    return {'performance_comparable':complete,'groups':groups,'requests':requests,'ui':{'count':len(ui),
             'query_p95_ms':percentile([x['seconds']*1000 for x in ui],.95),
             'cpu_seconds':sum(x['cpu_ticks'] for x in ui)/100,
             'failed':sum(not x['ok'] for x in ui)},
-            'failed_commands':sum(code!='0' for r in selected for code in r['codes'].split()),
+            'failed_commands':failures,
+            'admission_invalid_samples':sum(r.get('admission',{}).get('invalid',0) for r in selected),
             'error_output':any(r['errors'] for r in selected)}
 
 
@@ -61,7 +70,9 @@ def main():
     for scene in ['off','idle','load','ui']:
         before=summarize(old,scene);after=summarize(new,scene)
         first=before['groups']['netfleet-compat-manager']['cpu_mean'];second=after['groups']['netfleet-compat-manager']['cpu_mean']
-        results.append({'scene':scene,'before':before,'after':after,'manager_cpu_reduction_percent':(1-second/first)*100 if first else None})
+        comparable=before['performance_comparable'] and after['performance_comparable']
+        results.append({'scene':scene,'before':before,'after':after,'performance_comparable':comparable,
+                        'manager_cpu_reduction_percent':(1-second/first)*100 if first and comparable else None})
     print(json.dumps({'environment':'isolated_openwrt','results':results},indent=2))
 
 if __name__=='__main__':main()

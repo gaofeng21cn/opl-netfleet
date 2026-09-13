@@ -17,6 +17,32 @@ return function(context, options) {
     const gateway=context.use('mihomo.interception');
     const owner={owner:'https-compat',service:'opl-netfleet-compat',instance:'engine',user:'netfleet-compat'};
     let epoch=null,renewal=null,preview=null,verified=null,certificate=null,ca_cache=null,cleared=false;
+    let state_cache=null;
+    function read_state() {
+        return io.measure('state_read',()=>{
+            const raw=io.source(STATE);
+            if(raw==null) {state_cache=null;return {};}
+            if(!state_cache||state_cache.raw!=raw) {
+                let value;try {value=json(raw);}catch(_){die('compatibility_state_invalid');}
+                const events=value.events ?? [];delete value.events;
+                state_cache={raw,body:sprintf('%J',value),events,encoded:sprintf('%J',events)};
+            }
+            // History is immutable inside the controller. Mutable recovery fields
+            // receive a fresh copy so a failed tick cannot change saved state.
+            return {...json(state_cache.body),events:state_cache.events};
+        });
+    }
+    function write_state(value) {
+        return io.measure('state_publish',()=>{
+            const body={...value},events=body.events ?? [];delete body.events;
+            const unchanged=state_cache&&length(events)==length(state_cache.events)&&
+                !length(filter(events,(event,i)=>event!==state_cache.events[i]));
+            const encoded=unchanged?state_cache.encoded:sprintf('%J',events),summary=sprintf('%J',body);
+            const raw=substr(summary,0,length(summary)-1)+(length(keys(body))?',':'')+'"events":'+encoded+'}\n';
+            io.write(STATE,raw);
+            state_cache={raw,body:summary,events,encoded};
+        });
+    }
     function call(action,params) {
         if(action=='prepare'||action=='renew') cleared=false;
         const response=io.measure('gateway_'+action,()=>gateway.request(owner,{action,...(params ?? {})}));
@@ -99,7 +125,7 @@ return function(context, options) {
                 rule=>({...rule,devices:filter(rule.devices,id=>index(eligible,id)>=0)}))};
     }
     function status() {
-        const config=policy.validate(io.read(CONFIG,DEFAULT)),state=io.read(STATE,{}),live=health(),kernel=call('status');
+        const config=policy.validate(io.read(CONFIG,DEFAULT)),state=read_state(),live=health(),kernel=call('status');
         const fp=fingerprint(),source=identity.resolve(config),trust=io.read(TRUST,{}),active=effective(config,trust,source);
         let reason=kernel.intercepting?null:state.reason ?? (config.enabled?'not_ready':'disabled');
         if(!kernel.intercepting&&state.intercepting) reason='lease_expired';
@@ -115,7 +141,7 @@ return function(context, options) {
             isolation:isolation.status(),reason,active_connections:live.active_connections,active_requests:live.active_requests,
             address_source:source,device_addresses,device_connections,eligible_devices:sort(keys(eligible)),rules:live.rules,
             recovery:state.recovery ?? {},ca_sha256:fp,last_failure:state.last_failure,engine_restart:state.engine_restart ?? {},
-            rule_recovery:state.rule_recovery ?? {},local_probes:state.local_probes ?? {},trust:verified_trust(config,trust,fp),events:slice(state.events ?? [],-100)};
+            rule_recovery:state.rule_recovery ?? {},local_probes:state.local_probes ?? {},trust:verified_trust(config,trust,fp),events:json(sprintf('%J',slice(state.events ?? [],-100)))};
     }
     function save(state,previous) {
         // Eligibility is not evidence that a rule actually owned a kernel lease.
@@ -132,7 +158,7 @@ return function(context, options) {
             if(current.reason!=old.reason||current.intercepting!=old.intercepting) push(events,{at:time(),rule:id,reason:current.reason,
                 intercepting:current.intercepting ?? false,failure:current.last_failure,probe:current.probe});
         }
-        io.atomic(STATE,{...state,events:slice(events,-100),last_tick:io.now()});
+        write_state({...state,events:slice(events,-100),last_tick:io.now()});
     }
     function unlocked(lock,work) {
         if(!lock) die('compatibility_probe_requires_independent_lock');
@@ -170,7 +196,7 @@ return function(context, options) {
     }
     function tick(lock,delayed) {
         if(delayed) {preview=null;renewal=null;}
-        const config=policy.validate(io.read(CONFIG,DEFAULT)),previous=io.read(STATE,{}),now=io.now();
+        const config=policy.validate(io.read(CONFIG,DEFAULT)),previous=read_state(),now=io.now();
         if(now-(previous.last_tick ?? now)>10&&!delayed) {
             if(previous.intercepting===true) previous.last_failure={at:time(),reason:'management_lease_expired'};
             previous.recovery=advance(previous.recovery,{requested:config.enabled,healthy:false,reason:'management_lease_expired',now,
@@ -296,7 +322,7 @@ return function(context, options) {
         bypass();if(action!='disable'&&(config.enabled||length(config.devices))) engine.prepare_ca();
         for(let id in keys(trust)) if(!length(filter(config.devices,device=>device.id==id))) delete trust[id];
         io.atomic(CONFIG,config);io.atomic(TRUST,trust);io.atomic(EFFECTIVE,effective(config,trust,source));
-        const previous=io.read(STATE,{}),kept=original.enabled&&config.enabled&&action=='apply'?previous:{};
+        const previous=read_state(),kept=original.enabled&&config.enabled&&action=='apply'?previous:{};
         save({...kept,intercepting:false,reason:config.enabled?'recovering':'disabled'},previous);
         io.command([SERVICE,config.enabled?'enable':'disable'],2);
         if(config.enabled) io.command([SERVICE,'start'],15);
@@ -357,7 +383,7 @@ return function(context, options) {
         }
         if(index(['apply','enable','disable'],action)>=0) return apply(action,request);
         if(action=='bypass') {bypass();return {intercepting:false};}
-        const previous=io.read(STATE,{});
+        const previous=read_state();
         if(action=='suspend') {
             const instances=service('list')?.['opl-netfleet-compat']?.instances ?? {};
             const prior=previous.suspended;
@@ -393,7 +419,7 @@ return function(context, options) {
                     const counts=map(filter(health().failure_events ?? [],event=>event.rule==request.rule),event=>event.id);
                     previous.rule_recovery??={};previous.rule_recovery[request.rule]={last_error:max(old.last_error ?? 0,...counts)};
                 } else for(let name in ['recovery','unhealthy_since','engine_restart','maintenance']) delete previous[name];
-                io.atomic(STATE,previous);
+                write_state(previous);
             }
             return status();
         }
@@ -418,7 +444,7 @@ return function(context, options) {
                 if(index(['mutation_busy','compatibility_probe_stale'],reason)<0) try {
                     if(!lock) lock=io.lock(0);
                     try {bypass();}catch(_){}
-                    const previous=io.read(STATE,{}),config=io.read(CONFIG,DEFAULT);
+                    const previous=read_state(),config=io.read(CONFIG,DEFAULT);
                     const recovery=advance(previous.recovery,{requested:config.enabled,healthy:false,reason,now:io.now(),
                         count_failure:previous.intercepting===true&&index(['gateway_command_failed','compatibility_controller_failed'],reason)>=0});
                     save({...previous,recovery,intercepting:false,reason:recovery.reason,last_failure:{at:time(),reason}},previous);

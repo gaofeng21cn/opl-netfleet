@@ -16,7 +16,10 @@ for(let name in ['netfleet-compat','netfleet-compat-manager','services/opl-netfl
  }
  groups[name]={...stats,memory:+fs.readfile(path+'/memory.current'),rss,processes:count};
 }
-printf('%J\n',{at:+split(fs.readfile('/proc/uptime'),' ')[0],groups});
+const state=json(fs.readfile('/var/run/opl-netfleet-compat/state.json') ?? '{}');
+let kernel;try{kernel=require('netfleet_interception').status();}catch(_){kernel={error:true};}
+printf('%J\n',{at:+split(fs.readfile('/proc/uptime'),' ')[0],groups,
+ admission:{intercepting:kernel.intercepting,state:state.intercepting,last_tick:state.last_tick,reason:state.reason,error:kernel.error}});
 UC
 }
 bench_enable() {
@@ -49,15 +52,17 @@ for rep in 1 2 3; do
   if [ "$scene" = load ] || [ "$scene" = ui ]; then
    (
     while [ "$(date +%s)" -lt "$deadline" ]; do
-     rc=0; wire -sS --data-binary "@$bench/upload.bin" -D "$out/upload.headers" -o /dev/null -w '%{http_code} %{time_starttransfer} %{time_total}\n' 'https://wire.example/compat-wire/echo' >>"$out/upload.tsv" 2>>"$out/errors.log" || rc=$?
+     rc=0; wire -sS --data-binary "@$bench/upload.bin" -D "$out/upload.headers" -o "$out/upload.body" -w '%{http_code} %{time_starttransfer} %{time_total}\n' 'https://wire.example/compat-wire/echo' >>"$out/upload.tsv" 2>>"$out/errors.log" || rc=$?
      grep -iq '^x-upstream-protocol: h2' "$out/upload.headers" || echo upload_protocol_mismatch >>"$out/errors.log"
+     [ "$(jsonfilter -i "$out/upload.body" -e '@.bytes' 2>/dev/null)" = 131072 ] || echo upload_incomplete >>"$out/errors.log"
      echo "$rc" >>"$out/codes"; sleep 1
     done
    ) & upload_pid=$!
    (
     while [ "$(date +%s)" -lt "$deadline" ]; do
-     rc=0; wire -sSN -D "$out/sse.headers" -o /dev/null -w '%{http_code} %{time_starttransfer} %{time_total}\n' 'https://wire.example/compat-wire/events' >>"$out/sse.tsv" 2>>"$out/errors.log" || rc=$?
+     rc=0; wire -sSN -D "$out/sse.headers" -o "$out/sse.body" -w '%{http_code} %{time_starttransfer} %{time_total}\n' 'https://wire.example/compat-wire/events' >>"$out/sse.tsv" 2>>"$out/errors.log" || rc=$?
      grep -iq '^x-upstream-protocol: h2' "$out/sse.headers" || echo sse_protocol_mismatch >>"$out/errors.log"
+     [ "$(grep -c '^data:' "$out/sse.body")" = 30 ] || echo sse_incomplete >>"$out/errors.log"
      echo "$rc" >>"$out/codes"
     done
    ) & events_pid=$!
@@ -102,9 +107,13 @@ for(let name in fs.lsdir(root)) {
  const before=json(fs.readfile(root+'/'+name+'/before.json')),after=json(fs.readfile(root+'/'+name+'/after.json'));
  const groups={},elapsed=after.at-before.at;
  const samples=[];for(let line in split(trim(fs.readfile(root+'/'+name+'/samples.jsonl') ?? ''),'\n'))if(length(line))push(samples,json(line));
- for(let id,end in after.groups){const start=before.groups[id];let peak_memory=0,peak_rss=0;for(let sample in samples){peak_memory=max(peak_memory,sample.groups[id].memory);peak_rss=max(peak_rss,sample.groups[id].rss);}groups[id]={cpu_percent:(end.usage_usec-start.usage_usec)/(elapsed*10000),memory:end.memory,peak_memory,peak_rss,throttled:end.nr_throttled-start.nr_throttled};}
+ for(let id,end in after.groups){const start=before.groups[id];let peak_memory=0,peak_rss=0,peak_processes=0;for(let sample in samples){peak_memory=max(peak_memory,sample.groups[id].memory);peak_rss=max(peak_rss,sample.groups[id].rss);peak_processes=max(peak_processes,sample.groups[id].processes);}groups[id]={cpu_percent:(end.usage_usec-start.usage_usec)/(elapsed*10000),memory:end.memory,peak_memory,peak_rss,peak_processes,throttled:end.nr_throttled-start.nr_throttled,throttled_usec:end.throttled_usec-start.throttled_usec};}
  const requests={};for(let kind in ['upload','sse']){const values=[];for(let line in split(trim(fs.readfile(root+'/'+name+'/'+kind+'.tsv') ?? ''),'\n')){const v=split(line,' ');if(length(v)==3)push(values,{code:+v[0],ttfb:+v[1],total:+v[2]});}requests[kind]=values;}
  const ui=[];for(let line in split(trim(fs.readfile(root+'/'+name+'/ui.jsonl') ?? ''),'\n'))if(length(line))push(ui,json(line));
- const parts=split(name,'-');push(rows,{name:parts[1]+'-'+parts[2],version:parts[0],package:trim(fs.readfile(root+'/'+name+'/package.txt')),seconds:elapsed,groups,requests,ui,errors:trim(fs.readfile(root+'/'+name+'/errors.log') ?? ''),codes:trim(fs.readfile(root+'/'+name+'/codes') ?? '')});
+ const parts=split(name,'-'),enabled=parts[2]!='off';
+ const invalid=filter(samples,s=>s.admission?.error||s.admission?.intercepting!==enabled||
+  enabled&&(s.admission.state!==true||!(s.at-s.admission.last_tick>=0&&s.at-s.admission.last_tick<10)));
+ push(rows,{name:parts[1]+'-'+parts[2],version:parts[0],package:trim(fs.readfile(root+'/'+name+'/package.txt')),seconds:elapsed,groups,requests,ui,
+  admission:{samples:length(samples),invalid:length(invalid)},errors:trim(fs.readfile(root+'/'+name+'/errors.log') ?? ''),codes:trim(fs.readfile(root+'/'+name+'/codes') ?? '')});
 }printf('%J\n',{environment:'isolated_openwrt',seconds:300,repeats:3,comparison:'alternating_signed_packages_same_guest',cpu_ticks_per_second:100,rows});
 UC

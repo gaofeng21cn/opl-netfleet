@@ -22,11 +22,18 @@ return function(options) {
         record(name,max(0,int((now()-started)*1000)),max(0,cpu()-used));
         if(error) die(error.message);return value;
     }
-    function read(path, fallback) {
+    function source(path) {
         const info = fs.lstat(path);
-        if (!info) return fallback;
+        if (!info) return null;
         if (info.type != 'file' || info.uid != 0 || info.mode & 0022 || info.size > 2097152) die('compatibility_state_unsafe');
-        try { return json(fs.readfile(path)); } catch (_) { die('compatibility_state_invalid'); }
+        const raw=fs.readfile(path);
+        if(raw==null) die('compatibility_state_invalid');
+        return raw;
+    }
+    function read(path, fallback) {
+        const raw=source(path);
+        if(raw==null) return fallback;
+        try { return json(raw); } catch (_) { die('compatibility_state_invalid'); }
     }
     function mkdir(path, mode) {
         const info = fs.lstat(path);
@@ -100,5 +107,5 @@ return function(options) {
         file.close(); die('mutation_busy');
     }
     function unlock(file) { if (file) { lock_stopped();file.lock('u'); file.close(); } }
-    return {root, quote, now, read, mkdir, command, write, atomic, canonical, sha256, lock, unlock,measure,profile,lock_started,lock_stopped,renewed};
+    return {root, quote, now, source, read, mkdir, command, write, atomic, canonical, sha256, lock, unlock,measure,profile,lock_started,lock_stopped,renewed};
 };

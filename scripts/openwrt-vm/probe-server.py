@@ -9,6 +9,8 @@ from urllib.parse import urlsplit, parse_qs
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
+    protocol_version = 'HTTP/1.1'
+
     def do_POST(self):
         if not self.path.startswith('/compat-wire/echo'):
             self.send_error(404)
@@ -73,13 +75,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 time.sleep(1)
             return
         if url.path in ('/compat-wire/events', '/compat-wire/drain-events'):
+            events = [f'data: {number}\n\n'.encode() for number in range(30)]
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')
             self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Content-Length', str(sum(map(len, events))))
             self.end_headers()
             try:
-                for number in range(30):
-                    self.wfile.write(f'data: {number}\n\n'.encode())
+                for event in events:
+                    self.wfile.write(event)
                     self.wfile.flush()
                     time.sleep(0.5 if url.path.endswith('/drain-events') else 0.1)
             except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
@@ -99,6 +103,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if kind == "redirect":
                 self.send_response(302)
                 self.send_header("Location", "http://127.0.0.1/blocked-downgrade")
+                self.send_header('Content-Length', '0')
                 self.end_headers()
                 return
             if kind == "missing":
