@@ -14,8 +14,79 @@ sys.path.insert(0,str(DIR))
 import base
 import qualify
 import update
+import compare
 
 class EngineArtifacts(unittest.TestCase):
+    def test_retained_set_binds_exact_owner_files_without_downgrading_other_plugins(self):
+        import copy
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); name='opl-netfleet-plugin-platform'; version='0.8.4-r1'
+            archive=f'{name}-{version}.apk'; (root/archive).write_bytes(b'signed archive fixture')
+            (root/'public.pem').write_bytes(b'PUBLIC KEY fixture')
+            prefix='/usr/libexec/opl-netfleet/plugins/platform/'
+            inventory={prefix+'manifest.json':'a'*64,prefix+'lib/paths.uc':'b'*64}
+            manifest={'schema':'opl-netfleet-retained-base.v1','keys':[{'name':'public.pem','sha256':base.sha(root/'public.pem')}],
+                      'artifacts':[{'package':name,'version':version,'artifact':archive,'sha256':base.sha(root/archive),'files':inventory}]}
+            other='/usr/libexec/opl-netfleet/plugins/mihomo/lib/gateway.uc'
+            runtime={prefix+'manifest.json':'c'*64,prefix+'lib/paths.uc':'d'*64,other:'e'*64}
+            def run(value):
+                (root/'retained-base.json').write_text(json.dumps(value))
+                return base.retained_runtime(root,runtime)
+            projected,proof=run(manifest)
+            self.assertEqual(projected,{**inventory,other:'e'*64})
+            self.assertEqual(proof['manifest_sha256'],base.sha(root/'retained-base.json'))
+            for change in ['digest','escape','missing','gateway','key','extra']:
+                value=copy.deepcopy(manifest)
+                if change=='digest':value['artifacts'][0]['sha256']='0'*64
+                if change=='escape':value['artifacts'][0]['files'][prefix+'../gateway.uc']='f'*64
+                if change=='missing':del value['artifacts'][0]['files'][prefix+'lib/paths.uc']
+                if change=='gateway':value['artifacts'][0]['package']='opl-netfleet-plugin-mihomo'
+                if change=='key':value['keys'][0]['name']='../public.pem'
+                if change=='extra':(root/'unexpected').write_text('not part of composition')
+                with self.subTest(change=change),self.assertRaises(ValueError):run(value)
+
+    def test_retained_scheduler_only_keeps_the_qualified_launcher(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);name='opl-netfleet-plugin-scheduler';archive=name+'-0.7.2-r1.apk'
+            (root/archive).write_bytes(b'signed fixture');(root/'public.pem').write_bytes(b'PUBLIC KEY fixture')
+            prefix='/usr/libexec/opl-netfleet/plugins/scheduler/'
+            runtime={prefix+'manifest.json':'a'*64,'/etc/init.d/opl-netfleet':'b'*64}
+            manifest={'schema':'opl-netfleet-retained-base.v1','keys':[{'name':'public.pem','sha256':base.sha(root/'public.pem')}],
+                'artifacts':[{'package':name,'version':'0.7.2-r1','artifact':archive,'sha256':base.sha(root/archive),'files':dict(runtime)}]}
+            def run():
+                (root/'retained-base.json').write_text(json.dumps(manifest))
+                return base.retained_runtime(root,runtime)
+            self.assertEqual(run()[0],runtime)
+            manifest['artifacts'][0]['files']['/etc/init.d/opl-netfleet']='c'*64
+            with self.assertRaises(ValueError):run()
+            del manifest['artifacts'][0]['files']['/etc/init.d/opl-netfleet']
+            manifest['artifacts'][0]['files']['/etc/init.d/opl-netfleet-core']='b'*64
+            with self.assertRaises(ValueError):run()
+
+    def test_alternating_benchmark_requires_complete_versions(self):
+        rows=[{'version':version,'name':f'{rep}-{scene}'} for version in ['old','new']
+              for rep in range(1,4) for scene in ['off','idle','load','ui']]
+        value={'seconds':300,'repeats':3,'comparison':'alternating_signed_packages_same_guest','rows':rows}
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'benchmark.json';path.write_text(json.dumps(value))
+            self.assertEqual(len(compare.benchmark(path,'old')),12)
+            self.assertEqual(len(compare.benchmark(path,'new')),12)
+            rows.pop();path.write_text(json.dumps(value))
+            with self.assertRaises(ValueError):compare.benchmark(path,'new')
+
+    def test_benchmark_preserves_failed_samples_and_separate_ui_cost(self):
+        row={'name':'1-load','groups':{'manager':{'cpu_percent':2,'memory':100,
+             'peak_memory':200,'peak_rss':150,'throttled':1}},
+             'requests':{'upload':[{'code':502,'ttfb':.2,'total':.3}], 'sse':[]},
+             'ui':[{'seconds':.1,'cpu_ticks':4,'ok':False}], 'codes':'0\n28', 'errors':'protocol mismatch'}
+        result=compare.summarize([row],'load')
+        self.assertEqual(result['requests']['upload']['http_errors'],1)
+        self.assertEqual(result['failed_commands'],1)
+        self.assertTrue(result['error_output'])
+        self.assertEqual(result['groups']['manager']['memory_max'],200)
+        self.assertEqual(result['ui']['cpu_seconds'],.04)
+        self.assertEqual(result['ui']['failed'],1)
+
     def test_independent_identity_source_on_newer_base(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

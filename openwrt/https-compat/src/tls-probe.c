@@ -15,6 +15,8 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/un.h>
+#include <sys/prctl.h>
+#include "probe-session.h"
 #include <time.h>
 #include <unistd.h>
 #include <openssl/ssl.h>
@@ -25,7 +27,9 @@
 static long long started;
 static int paired;
 static const char *last_reason;
-static SSL_CTX *paired_context;
+static SSL_CTX *paired_context, *active_context;
+static SSL *active_ssl;
+static int active_fd=-1;
 static long long millis(void) {struct timespec ts;clock_gettime(CLOCK_MONOTONIC,&ts);return ts.tv_sec*1000LL+ts.tv_nsec/1000000;}
 static void expired(int signum) {
     (void)signum;
@@ -33,6 +37,10 @@ static void expired(int signum) {
     (void)write(STDOUT_FILENO,message,sizeof(message)-1);_exit(1);
 }
 static int finish(const char *reason) {
+    SSL_free(active_ssl);active_ssl=NULL;
+    if(active_context&&active_context!=paired_context)SSL_CTX_free(active_context);
+    active_context=NULL;
+    if(active_fd>=0){close(active_fd);active_fd=-1;}
     if(paired) {last_reason=reason;return reason?1:0;}
     printf("{\"ok\":%s,\"reason\":",reason?"false":"true");
     if(reason) printf("\"%s\"",reason);else fputs("null",stdout);
@@ -99,14 +107,14 @@ static int probe(int argc,char **argv) {
             struct sockaddr_un address={.sun_family=AF_UNIX};
             int count=snprintf(address.sun_path,sizeof(address.sun_path),"%s/engine/probe.sock",argv[2]);
             if(count<0||(size_t)count>=sizeof(address.sun_path)) return 2;
-            fd=socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0);
+            active_fd=fd=socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0);
             if(fd<0||connectfd(fd,(struct sockaddr*)&address,sizeof(address))) return finish("probe_connect_failed");
             const char proxy[]="PROXY TCP4 127.0.0.1 127.0.0.1 12345 18445\r\n";
             if(sendall(fd,proxy,sizeof(proxy)-1)) return finish("probe_connect_failed");
         } else {
             uid_t original=geteuid();
             if(seteuid((uid_t)uid)) return finish("probe_identity_failed");
-            fd=socket(family==4?AF_INET:AF_INET6,SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0);
+            active_fd=fd=socket(family==4?AF_INET:AF_INET6,SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0);
             if(seteuid(original)) return finish("probe_identity_failed");
             int priority=6;
             if(fd<0||setsockopt(fd,SOL_SOCKET,SO_PRIORITY,&priority,sizeof(priority))) return finish("probe_socket_failed");
@@ -131,21 +139,21 @@ static int probe(int argc,char **argv) {
         if(getaddrinfo(hostname,argv[3],&hints,&records)) return finish("upstream_dns_failed");
         unsigned n=0;
         for(struct addrinfo *record=records;record&&n<4;record=record->ai_next,n++) {
-            fd=socket(record->ai_family,SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0);
+            active_fd=fd=socket(record->ai_family,SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0);
             if(fd<0) continue;
-            if((ports&&setsockopt(fd,IPPROTO_IP,IP_LOCAL_PORT_RANGE,&ports,sizeof(ports)))||connectfd(fd,record->ai_addr,record->ai_addrlen)) {close(fd);fd=-1;continue;}
+            if((ports&&setsockopt(fd,IPPROTO_IP,IP_LOCAL_PORT_RANGE,&ports,sizeof(ports)))||connectfd(fd,record->ai_addr,record->ai_addrlen)) {close(fd);active_fd=fd=-1;continue;}
             break;
         }
         freeaddrinfo(records);if(fd<0) return finish("upstream_connect_failed");
     }
     SSL_CTX *context=paired_context;
     if(!context) {
-        context=SSL_CTX_new(TLS_client_method());
+        active_context=context=SSL_CTX_new(TLS_client_method());
         if(!context||!SSL_CTX_load_verify_locations(context,ca,NULL)) return finish("probe_ca_failed");
         if(paired) paired_context=context;
     }
     SSL_CTX_set_verify(context,SSL_VERIFY_PEER,NULL);
-    SSL *ssl=SSL_new(context);
+    SSL *ssl=active_ssl=SSL_new(context);
     const unsigned char h1[]={8,'h','t','t','p','/','1','.','1'},h2[]={2,'h','2'};
     if(!ssl||!SSL_set_fd(ssl,fd)||!SSL_set_tlsext_host_name(ssl,hostname)||!SSL_set1_host(ssl,hostname)||
        SSL_set_alpn_protos(ssl,local?h1:h2,local?sizeof(h1):sizeof(h2))) return finish("probe_tls_failed");
@@ -179,9 +187,42 @@ static int probe(int argc,char **argv) {
             if(!strcasestr(response,"transfer-encoding: chunked")||!end||strncmp(end,"\r\n",2)||size!=strlen(nonce)||strncmp(end+2,nonce,size)||strncmp(end+2+size,"\r\n",2)) return finish("probe_conversion_failed");
         }
     }
-    SSL_free(ssl);if(!paired) SSL_CTX_free(context);close(fd);return finish(NULL);
+    return finish(NULL);
+}
+static int session(const char *run,const char *user,const char *group) {
+    int uid=number(user,INT32_MAX),gid=number(group,INT32_MAX);pid_t parent=getppid();
+    if(uid<=0||gid<=0||run[0]!='/'||strlen(run)>350||getuid()!=0)return 2;
+    char ca[512];snprintf(ca,sizeof(ca),"%s/ca/mitmproxy-ca-cert.pem",run);
+    paired_context=SSL_CTX_new(TLS_client_method());
+    if(!paired_context||!SSL_CTX_load_verify_locations(paired_context,ca,NULL))return 2;
+    SSL_CTX_set_session_cache_mode(paired_context,SSL_SESS_CACHE_OFF);
+    if(setgroups(0,NULL)||setgid(gid)||setuid(uid)||prctl(PR_SET_NO_NEW_PRIVS,1,0,0,0)||
+       prctl(PR_SET_PDEATHSIG,SIGTERM)||getppid()!=parent)return 2;
+    paired=1;signal(SIGPIPE,SIG_IGN);signal(SIGALRM,expired);uint64_t serial=0;
+    for(;;) {
+        struct pollfd p={.fd=3,.events=POLLIN};int rc=poll(&p,1,30000);
+        if(rc<0&&errno==EINTR)continue;
+        if(rc<=0)return 0;
+        struct probe_request request;struct iovec iov={.iov_base=&request,.iov_len=sizeof(request)};
+        struct msghdr msg={.msg_iov=&iov,.msg_iovlen=1};
+        ssize_t n=recvmsg(3,&msg,MSG_DONTWAIT);
+        if(n<0&&(errno==EINTR||errno==EAGAIN))continue;
+        if(n!=sizeof(request)||(msg.msg_flags&MSG_TRUNC)||request.serial!=++serial)return 2;
+        started=millis();struct itimerval timer={.it_value={.tv_sec=1,.tv_usec=400000}};
+        setitimer(ITIMER_REAL,&timer,NULL);struct probe_reply reply={.serial=serial};
+        char *args[]={"tls-probe","local",(char *)run,"4",(char *)user,NULL};
+        int failed=probe(5,args);reply.ipv4.ok=!failed;reply.ipv4.duration_ms=millis()-started;
+        if(last_reason)snprintf(reply.ipv4.reason,sizeof(reply.ipv4.reason),"%s",last_reason);
+        long long second=millis();args[3]="6";
+        if(failed)last_reason="probe_skipped";else failed=probe(5,args);
+        reply.ipv6.ok=!failed;reply.ipv6.duration_ms=millis()-second;
+        if(last_reason)snprintf(reply.ipv6.reason,sizeof(reply.ipv6.reason),"%s",last_reason);
+        memset(&timer,0,sizeof(timer));setitimer(ITIMER_REAL,&timer,NULL);
+        if(send(3,&reply,sizeof(reply),MSG_NOSIGNAL)!=sizeof(reply))return 2;
+    }
 }
 int main(int argc,char **argv) {
+    if(argc==5&&!strcmp(argv[1],"session"))return session(argv[2],argv[3],argv[4]);
     started=millis();
     /* Private report avoids shell redirection and signal-interrupted pipe reads. */
     if(argc==5&&!strcmp(argv[1],"local-pair")) {

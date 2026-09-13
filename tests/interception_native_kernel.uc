@@ -2,9 +2,6 @@ import * as fs from 'fs';
 const root=ARGV[1] ?? '/src/openwrt/files/usr/libexec/opl-netfleet',pid=+ARGV[0];
 const network={backend:'native-mihomo',ready:true,router_proxy:true,lan_proxy:true,compatibility_ownership_guard:true,interfaces:['nf-observe'],engine_pid:pid};
 const process=loadfile(root+'/plugins/platform/lib/process.uc')()({});
-let unreadable=false;
-const capture=process.capture;
-process.capture=(command,timeout,input)=>unreadable&&index(command,"'list' 'table' 'inet' 'netfleet_compat'")>=0?{status:1,output:''}:capture(command,timeout,input);
 const context={root,id:'mihomo',use:name=>name=='mihomo.gateway'?{interception_snapshot:()=>({ok:true,result:{...network}})}:
     name=='platform.process'?process:
     {write_private:(path,data)=>{const result=fs.writefile(path,data);fs.chmod(path,0600);return result;},atomic_json:(path,data)=>fs.writefile(path,sprintf('%J',data))}};
@@ -17,9 +14,13 @@ const first=call('snapshot');check(first.reason==null,sprintf('admission: %J',fi
 call('prepare',{epoch:first.epoch});
 const candidates=[['192.0.2.22','198.51.100.1',443],['2001:db8:7::22','2001:db8:8::1',443]];
 let active=call('renew',{epoch:first.epoch,candidates});check(active.intercepting&&active.leases==2,'dual stack leases');
-unreadable=true;
-check(api.request(owner,{action:'status'}).error=='gateway_command_failed','unreadable existing table reported as bypass');
-unreadable=false;check(call('status').leases==2,'failed read changed leases');
+// The production table has referencing chains; use an invalid lease deadline
+// to exercise a real kernel reply rejection without mocking process.capture.
+check(system("nft add element inet netfleet_compat targets4 '{ 192.0.2.23 . 198.51.100.1 . 443 timeout 1h }'")==0,'invalid read fixture');
+check(api.request(owner,{action:'status'}).error=='gateway_command_failed','invalid existing lease reported as bypass');
+check(api.request(owner,{action:'renew',epoch:first.epoch,candidates}).error=='gateway_command_failed','renew accepted an invalid prepared table');
+check(!call('status').intercepting,'failed prepare did not withdraw');
+call('renew',{epoch:first.epoch,candidates});check(call('status').leases==2,'repair after failed read');
 const bad=api.request(owner,{action:'renew',epoch:first.epoch,candidates:[['192.0.2.22','198.51.100.1; delete table inet base',443]]});
 check(!bad.ok,'nft injection accepted');
 call('bypass');check(!call('status').intercepting,'bypass failed');

@@ -46,13 +46,14 @@ return function(context, options) {
     }
     function health(probe) {
         const before=probe?isolation.counters():null;
+        if(!probe) engine.close_probe();
         try {
             const value=io.measure('engine_status',()=>engine.health()),key=io.canonical([value.pid,value.revision]),now=io.now();
             let proofs=verified?.key==key?{...verified.proofs}:{},full=verified?.key!=key||now-verified.at>=60;
             if(probe) {
                 const ids=isolation.account();
                 if(full) proofs.processing=io.measure('private_probe',()=>engine.probe(null,ids.uid));
-                const pair=io.measure('dual_stack_probe',()=>engine.probe_pair(ids.uid));
+                const pair=io.measure('dual_stack_probe',()=>engine.probe_pair(ids.uid,ids.gid,key));
                 proofs.ipv4=pair.ipv4;proofs.ipv6=pair.ipv6;
                 if(length(values(proofs))==3&&!length(filter(values(proofs),value=>value.ok!==true)))
                     verified={key,at:full?now:verified.at,proofs};

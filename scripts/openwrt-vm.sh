@@ -180,7 +180,9 @@ if [[ -n "$packages" ]]; then
 	package_commit=$source_commit
 	package_tree=$source_tree
 	if [[ -n "$base_qualification" ]]; then
-		base_identity=$(python3 "$repo_dir/scripts/https-compat/base.py" --packages "$packages" --qualification "$base_qualification" --ref "$source_commit")
+		retained_args=()
+		[[ ! -d "$compat_package/retained-base" ]] || retained_args=(--retained-base "$compat_package/retained-base")
+		base_identity=$(python3 "$repo_dir/scripts/https-compat/base.py" --packages "$packages" --qualification "$base_qualification" --ref "$source_commit" "${retained_args[@]}")
 		package_commit=$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["source_commit"])' "$base_identity")
 		package_tree=$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["source_tree"])' "$base_identity")
 	fi

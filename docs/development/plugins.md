@@ -480,6 +480,17 @@ macOS 的其他产品内嵌 UCode 不一定具有 OpenWrt 的正则语义；入�
 构建和 VM 只读取已提交的 `REF`，不会把尚未提交的源码误报为已验证包；输出放在仓库外。
 SDK 是 Linux 构建环境，VM 是 macOS/OpenWrt 验证环境，不是必须在同一环境执行的脚本。
 
+高频内核操作使用随 HTTPS 包安装的 ucode 原生模块；SDK 构建真实 libucode、libmnl、
+libnftnl 头文件与链接元数据，不复制未编译的头文件冒充依赖就绪。模块和探针会话都
+计入可选包的 payload 与完整缺失依赖增量。基础路径不加载模块，网关策略仍属于共享
+Mihomo 插件；修改其准入/续租调用时先重新建立完整基础资格，再消费该基座做 HTTPS 资格。
+
+无 Python guest 的原生 I/O 验证包含双栈前缀、4,096 候选、实际内核到期、generation
+变化、无效租约读取、基础 guard 与路由变化；探针会话验证永久降权、同资源组统计、
+未继承管理锁、子进程卡死截止时间和回收。每轮检查新连接和随机挑战；长期会话不能
+用旧连接成功代替当前健康。新 I/O 声明缺失模块时应拒绝，已签名旧引擎回退包的 CLI
+路径另做实际更新/回退验证，不把模块调用错误转换成旧路径成功。
+
 固定基座迭代时设置 `NETFLEET_COMPAT_IDENTITY_FROM=/path/to/previous-compat`，构建器只
 编译 HTTPS 引擎，复用已签名的 Device identity；管理插件来自基础包。SDK 首次准备使用
 `bash scripts/prepare-openwrt-sdk.sh --sdk /path/to/sdk`。每个开发工作区使用自己的可写
@@ -489,8 +500,9 @@ SDK 和输出目录，源码只读挂载；运行时没有 SDK、Python 或构�
 PACKAGES=/tmp/qualified-base COMPAT_PACKAGES=/tmp/compat-candidate \
   BASE_QUALIFICATION=/tmp/base-qualification.json PREVIOUS=/tmp/previous-compat \
   OUTPUT=/tmp/compat-proof bash scripts/https-compat/dev.sh qualify
-# 相同参数将 qualify 换为 benchmark，执行四场景、每场景三次五分钟测量。
-python3 scripts/https-compat/compare.py /tmp/baseline.json /tmp/compat-proof/plugin-qualification.json
+# 相同参数将 qualify 换为 benchmark，在同一 guest 交替安装旧/新签名包；
+# 每个版本四场景、每场景三次五分钟测量，耗时至少两小时。
+python3 scripts/https-compat/compare.py /tmp/compat-proof/plugin-qualification.json
 ```
 
 固定基座检查会拒绝任何宿主、Mihomo 或 Device identity 运行源码变化；它们需要新的
@@ -507,11 +519,27 @@ python3 scripts/https-compat/compare.py /tmp/baseline.json /tmp/compat-proof/plu
 安装前还会核对资格绑定的内核、平台调用层、HTTPS 管理和 Mihomo 接管文件字节；
 相关调用链与基座不符时拒绝安装，只更新了无关插件不要求一起重装基础包。
 
+目标需要保留其他独立版本时，为资格入口设置 `RETAINED_BASE=/private/retained-base`，
+更新器传同一目录的 `--retained-base`。目录只包含精确签名 APK、公开验签密钥和
+`retained-base.json`。清单的 `schema` 为 `opl-netfleet-retained-base.v1`；`keys` 每项
+包含 `name`、`sha256`，`artifacts` 每项包含 `package`、`version`（含 `-r`）、
+`artifact`、`sha256`，以及 `files`（插件自身绝对运行路径到 SHA-256 的映射）。
+文件清单从原签名归档解包生成，并与目标安装字节比较；不从设备目录重打包。
+
+保留集合不能包含待验证的 Mihomo、HTTPS 管理和 Device identity，也不能移除原基座
+已绑定的调用文件。隔离 guest 先验签、核对 APK 元数据及全部插件文件，再安装保留集合，
+调度插件的既有 `/etc/init.d/opl-netfleet` 归属单独核对，必须与合格基础包字节一致；
+其他跨插件路径不能随保留集合写入。回读实际组合并运行同一完整 HTTPS 资格。回执绑定清单、归档、公开密钥及实际调用文件；
+只有通过这组资格，安装器才接受目标的这些差异。保留包只用于隔离组合验证，HTTPS 更新器
+不会把它们发送到生产设备或安装它们。
+
 开发诊断额外运行一分钟开启计时的管理轮次，阶段记录在回执 `profile`。常规启动不记录；
 计时只包括阶段耗时和当前管理进程及已回收子进程的 CPU 累计差。嵌套阶段不能相加，
-异步地址同步可能跨越轮次，因此以 cgroup 总量作为成本比较权威。计时采样使用系统
+异步地址同步可能跨越轮次，常驻探针子进程也不包含在已回收子进程的计数中，因此以
+包含全部 worker 的 cgroup 总量作为成本比较权威。计时采样使用系统
 单调时钟的 10 ms 精度；锁持有时间不包括放锁等待探针的区间。基准四场景在计时关闭时
-执行。实际替换只选择发生变化且依赖满足的包，保留用户配置与加载选择。
+执行；每两秒采样 RSS 和 cgroup 内存峰值，管理组以外的 UI 查询另记 CPU 与时延。
+实际替换只选择发生变化且依赖满足的包，保留用户配置与加载选择。
 
 长时间测量先通过真实邻居通信确认测试客户端地址，并等待该地址的 H1→H2 往返成功；
 不能只看全局“正在接管”，因为另一地址族仍可接管而测试地址已过期。上传和 SSE 分别

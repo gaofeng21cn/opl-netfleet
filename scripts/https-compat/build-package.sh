@@ -41,7 +41,7 @@ cp "$work/openwrt/plugin-packages.py" "$sdk/package/opl-netfleet/"
 cp "$work/openwrt/plugin_payload.py" "$sdk/package/opl-netfleet/"
 cp -R "$work/openwrt/files" "$sdk/package/opl-netfleet/"
 cp -R "$work/openwrt/mihomo-meta" "$sdk/package/mihomo-meta"
-(cd "$sdk" && ./scripts/feeds install -p base openssl ca-bundle)
+(cd "$sdk" && ./scripts/feeds install -p base openssl ca-bundle libmnl libnftnl libjson-c ucode libmd)
 cp "$key" "$sdk/private-key.pem"
 chmod 0600 "$sdk/private-key.pem"
 "$sdk/staging_dir/host/bin/openssl" ec -in "$sdk/private-key.pem" -pubout >"$sdk/public-key.pem"
@@ -53,6 +53,17 @@ make -C "$sdk" -j"$jobs" package/toolchain/compile package/feeds/base/openssl/co
   CONFIG_OPENSSL_ENGINE= CONFIG_OPENSSL_ENGINE_BUILTIN_DEVCRYPTO= \
   CONFIG_PACKAGE_libopenssl-devcrypto= CONFIG_PACKAGE_libopenssl-afalg= \
   CONFIG_PACKAGE_libopenssl-padlock= NO_DEPS=1 V=s
+# Native module headers and small wire libraries must come from real SDK builds.
+# Only the ucode core/headers are needed here; optional module dependencies are
+# provided by the base image and are not rebuilt by this optional-package lane.
+make -C "$sdk" -j"$jobs" package/feeds/base/libmnl/compile package/feeds/base/libnftnl/compile \
+  package/feeds/base/libjson-c/compile package/feeds/base/libmd/compile PKG_BUILD_FLAGS=no-lto NO_DEPS=1 V=s
+make -C "$sdk" -j"$jobs" package/feeds/base/ucode/compile \
+  CONFIG_PACKAGE_ucode-mod-fs=y CONFIG_PACKAGE_ucode-mod-digest=y \
+  CONFIG_PACKAGE_ucode-mod-math= CONFIG_PACKAGE_ucode-mod-nl80211= CONFIG_PACKAGE_ucode-mod-resolv= \
+  CONFIG_PACKAGE_ucode-mod-rtnl= CONFIG_PACKAGE_ucode-mod-struct= CONFIG_PACKAGE_ucode-mod-ubus= \
+  CONFIG_PACKAGE_ucode-mod-uci= CONFIG_PACKAGE_ucode-mod-uloop= CONFIG_PACKAGE_ucode-mod-debug= \
+  CONFIG_PACKAGE_ucode-mod-log= CONFIG_PACKAGE_ucode-mod-zlib= CONFIG_PACKAGE_ucode-mod-socket= NO_DEPS=1 V=s
 make -C "$sdk" -j"$jobs" "package/$package/download" "package/$package/compile" NO_DEPS=1 V=s
 if [ -z "$identity_from" ]; then
   make -C "$sdk" "package/$identity_package/clean" V=s

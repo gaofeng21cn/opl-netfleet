@@ -64,3 +64,12 @@ check(activated.ok && measures == 0, 'activation must consume measured evidence 
 selected_leaf = 'changed-leaf';
 const changed = activation_paths.activate_preferred_choice('fixture', automatic_entry, 'candidate', policy, false, false, {group:'candidate', candidate_id:'leaf'});
 check(!changed.ok && changed.error == 'selected_leaf_unavailable' && measures == 0, 'changed leaf cannot inherit prior speed evidence');
+
+for(let mode in ['off','strict','always',null]) {
+ const profile={rules:['PROCESS-NAME,haproxy,REJECT','MATCH,DIRECT']};
+ if(mode!=null)profile['find-process-mode']=mode;
+ check(policy_factory.admission(profile,starting)==(mode=='off'?null:'source_or_unsupported_routing_rule'),
+       'only explicitly disabled process lookup preserves relay routing');
+}
+check(policy_factory.admission({'find-process-mode':'off',rules:['PROCESS-NAME,,REJECT']},starting)!=null,
+      'empty process matcher remains unproven');

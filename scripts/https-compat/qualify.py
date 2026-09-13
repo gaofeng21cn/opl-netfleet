@@ -38,13 +38,14 @@ def main():
     p.add_argument('--previous', required=True, type=Path)
     p.add_argument('--output', required=True, type=Path)
     p.add_argument('--benchmark', action='store_true')
+    p.add_argument('--retained-base', type=Path, help='exact signed plugins retained by the target')
     p.add_argument('--validate-only', action='store_true')
     a = p.parse_args()
     current = artifact(a.candidate, 'compat-manifest.json')
     previous = artifact(a.previous, 'compat-manifest.json')
     identity = artifact(a.candidate, 'device-identity-manifest.json')
     old_identity = artifact(a.previous, 'device-identity-manifest.json')
-    base = validate(a.packages, a.base_qualification, current['source_commit'])
+    base = validate(a.packages, a.base_qualification, current['source_commit'], retained=a.retained_base)
     tree = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', current['source_commit']+'^{tree}'], text=True).strip()
     if current['source_tree'] != tree or identity != old_identity:
         raise ValueError('engine source mismatch or unexpected identity plugin update')
@@ -70,6 +71,8 @@ def main():
         (stage/'upgrade.json').write_text(json.dumps({
             'old':{'file':'rollback/'+previous['artifact'],'sha256':previous['sha256']},
             'new':{'file':current['artifact'],'sha256':current['sha256']}}))
+        if a.retained_base is not None:
+            shutil.copytree(a.retained_base, stage/'retained-base')
         diagnostic = output.with_suffix('.diagnostic.json')
         command = ['bash',str(ROOT/'scripts/openwrt-vm.sh'),'--ref',current['source_commit'],
                    '--packages',str(a.packages.resolve()),'--base-qualification',str(a.base_qualification.resolve()),
@@ -82,6 +85,8 @@ def main():
             or proof.get('source_tree')!=tree or proof.get('base')!=base
             or checks.get('engine_package_cycle') is not True or checks.get('dual_stack_probe_faults') is not True):
             raise ValueError('missing plugin update or failure evidence')
+        if a.retained_base is not None and checks.get('retained_base_packages') is not True:
+            raise ValueError('missing retained base package evidence')
         result.update(plugin_qualified=True,checks=checks,diagnostic_sha256=sha(diagnostic),
                       benchmark=proof['lanes']['compatibility'].get('benchmark'))
         temporary=output.with_suffix('.tmp');temporary.write_text(json.dumps(result,indent=2)+'\n');temporary.replace(output)
