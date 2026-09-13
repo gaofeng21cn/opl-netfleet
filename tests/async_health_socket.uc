@@ -9,7 +9,7 @@ if(ARGV[0]=='--server') {
         socket.poll(1500,[server,socket.POLLIN]);
         const conn=server.accept();if(!conn) die('fixture_accept_failed');
         const query=conn.recv(4096);sleep(100);
-        if(trim(query)!='show stat;show info') die('fixture_query_mismatch');
+        if(trim(query)!='show stat -1 3 -1;show info') die('fixture_query_mismatch');
         const response='# pxname,svname,scur,req_tot,hrsp_2xx,hrsp_3xx,hrsp_4xx,econ,eresp\n'+
             'ingress,FRONTEND,0,0,0,0,0,0,0\nloopback_convert,BACKEND,0,0,0,0,0,0,0\n\n'+
             'Pid: 42\ndescription: '+revision+'\nVersion: fixture\n';
