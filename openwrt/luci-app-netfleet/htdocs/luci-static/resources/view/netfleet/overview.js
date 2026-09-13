@@ -115,6 +115,15 @@ return view.extend({
       E('button', { 'class': 'btn cbi-button', 'type': 'button', 'click': function() { return self.refreshPlugins(); } }, '重新读取')
     ]) : E('span');
     this.root.replaceChildren(E('style', {}, this.module.pluginHostStyles), E('div', { 'class': 'netfleet-shell-brand' }, 'NetFleet'), tabs, subnav, warning, this.pageContainer);
+    // Only scroll the navigation strip; scrollIntoView would also move the page.
+    requestAnimationFrame(function() {
+      const active = tabs.querySelector('.cbi-tab');
+      if (active && tabs.scrollWidth > tabs.clientWidth) {
+        const item = active.getBoundingClientRect(), strip = tabs.getBoundingClientRect();
+        if (item.left < strip.left) tabs.scrollLeft -= strip.left - item.left;
+        else if (item.right > strip.right) tabs.scrollLeft += item.right - strip.right;
+      }
+    });
   },
   handleSaveApply: null,
   handleSave: null,

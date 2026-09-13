@@ -501,18 +501,27 @@ function render(controller) {
 	const active = controller.configDraft.active === true;
 	const canApply = changed || controller.config.pending_apply === true || !active;
 	const independent = ['network', 'files'].includes(controller.configSection);
+	function chooseSection(id) {
+		controller.configSection = id;
+		if (id === 'network') management.load(controller, 'network');
+		if (id === 'files') management.load(controller, 'maintenance');
+		controller.redraw();
+	}
 	return E('div', { 'class': 'netfleet-config-page' }, [
 		E('div', { 'class': 'netfleet-config-intro' }, [
 			E('div', {}, [ E('strong', {}, independent ? '设备与文件' : '运行策略'), E('span', {}, independent ? '本区独立提交，不包含运行策略草稿。' + (changed ? '运行策略仍有未保存更改。' : '') : '运行策略分类共享一份草稿。' + (active ? '应用后切换运行配置。' : '保存不接管网络。')) ]),
 			E('button', { 'class': 'btn cbi-button', 'click': function() { controller.showConfigWizard(0); } }, '首次设置向导')
 		]),
 		E('div', { 'class': 'netfleet-config-layout' }, [
+			E('label', { 'class': 'netfleet-config-mobile-nav' }, [ '配置分类',
+				E('select', { 'change': function(event) { chooseSection(event.target.value); } }, [
+					E('optgroup', { 'label': '运行策略' }, SECTIONS.slice(0, 7).map(function(item) { return E('option', { 'value': item[0], 'selected': controller.configSection === item[0] ? true : null }, item[1]); })),
+					E('optgroup', { 'label': '设备与文件' }, SECTIONS.slice(7).map(function(item) { return E('option', { 'value': item[0], 'selected': controller.configSection === item[0] ? true : null }, item[1]); }))
+				])
+			]),
 			E('nav', { 'class': 'netfleet-config-nav', 'aria-label': '配置分类' }, SECTIONS.flatMap(function(item) {
 				return [ item[0] === 'foundation' || item[0] === 'network' ? E('span', { 'class': 'netfleet-config-group' }, item[0] === 'foundation' ? '运行策略' : '设备与文件') : '', E('button', { 'aria-current': controller.configSection === item[0] ? 'page' : null, 'class': controller.configSection === item[0] ? 'is-active' : '', 'click': function() {
-					controller.configSection = item[0];
-					if (item[0] === 'network') management.load(controller, 'network');
-					if (item[0] === 'files') management.load(controller, 'maintenance');
-					controller.redraw();
+					chooseSection(item[0]);
 				} }, item[1]) ];
 			})),
 			E('div', { 'class': 'netfleet-config-content' }, content(controller))

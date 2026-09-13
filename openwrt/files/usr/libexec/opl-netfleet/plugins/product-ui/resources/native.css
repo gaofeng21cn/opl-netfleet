@@ -27,6 +27,28 @@
 	box-sizing: border-box;
 }
 
+/* Match a host-selected dark theme even when it does not publish LuCI tokens. */
+[data-netfleet-theme="dark"] .netfleet-native {
+	--nf-accent: var(--primary-color-high, #a5b2ff);
+	--nf-accent-soft: rgba(165, 178, 255, .12);
+	--nf-page: var(--background-color-low, #1e1e1e);
+	--nf-surface: var(--background-color-high, #252526);
+	--nf-surface-muted: var(--background-color-medium, #2b2b2d);
+	--nf-text: var(--text-color-high, #e4e4e7);
+	--nf-muted: var(--text-color-medium, #b4b4bd);
+	--nf-border: var(--border-color-medium, #4a4a50);
+	--nf-border-subtle: var(--border-color-low, #3b3b40);
+	--nf-success: #6bdaa3;
+	--nf-warning: #f3bf70;
+	--nf-danger: #ff9b96;
+	color-scheme: dark;
+}
+
+.netfleet-native :is(h3, h4) {
+	color: var(--nf-text);
+	background: transparent;
+}
+
 .netfleet-native > h2 {
 	margin: 0 0 18px !important;
 	padding: 0 !important;
@@ -891,6 +913,8 @@
 	border-right: 1px solid var(--nf-border-subtle);
 	background: var(--nf-surface-muted);
 }
+
+.netfleet-config-mobile-nav { display: none; }
 
 .netfleet-config-nav button {
 	min-height: 46px;
@@ -1779,3 +1803,42 @@
 .netfleet-native .netfleet-measurement details p { color: var(--nf-muted); line-height: 1.6; }
 .netfleet-native .netfleet-measurement ul { margin: 8px 0; padding-left: 18px; }
 .netfleet-native .netfleet-measurement li { margin: 10px 0; line-height: 1.6; overflow-wrap: anywhere; }
+
+/* Phone layouts keep primary actions and current evidence in the first screen. */
+@media (max-width: 700px) {
+	.netfleet-native { min-width: 0; font-size: 15px; }
+	.netfleet-native .netfleet-page-heading { gap: 8px; margin-bottom: 12px; }
+	.netfleet-native .netfleet-page-tools { width: 100%; justify-content: space-between; gap: 6px 12px; }
+	.netfleet-native .netfleet-build { font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
+	.netfleet-native .netfleet-page-actions { justify-content: flex-start; margin-bottom: 16px; }
+	.netfleet-native :is(.btn, .cbi-button, .netfleet-name-link, .netfleet-dashboard-link, .netfleet-result-close, .netfleet-icon-button) { min-height: 44px; }
+	.netfleet-native :is(.netfleet-result-close, .netfleet-icon-button) { min-width: 44px; }
+	.netfleet-native :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) { font-size: 16px; max-width: 100%; }
+	.netfleet-native .netfleet-exit-heading { gap: 12px; padding: 14px; }
+	.netfleet-native .netfleet-exit-heading > div { min-width: 0; }
+	.netfleet-native .netfleet-exit-heading h3 { background: transparent !important; }
+	.netfleet-native .netfleet-exit-current .netfleet-current-route { grid-column: 1 / -1; }
+	.netfleet-native .netfleet-exit-current dl { padding: 12px 14px; }
+	.netfleet-native .netfleet-exit-current dt { font-size: 13px; }
+	.netfleet-native .netfleet-exit-current dl:last-child { grid-column: 1 / -1; }
+	.netfleet-native :is(.netfleet-section-heading, .netfleet-mode-footer, .netfleet-event-pagination) { flex-wrap: wrap; gap: 10px; }
+	.netfleet-native .netfleet-section-heading > .netfleet-inline-actions { flex-wrap: wrap; }
+	.netfleet-native .netfleet-table-tools { gap: 8px; }
+	.netfleet-native .netfleet-table-tools > input { flex: 1 1 100%; width: 100%; }
+	.netfleet-native .netfleet-table-tools > select { flex: 1 1 140px; width: auto; }
+	.netfleet-native :is(.netfleet-data-table, .netfleet-management-table, .netfleet-list-pane) { max-width: 100%; overscroll-behavior-x: contain; }
+	.netfleet-native .netfleet-inspector { padding: 14px 0; margin: 12px 0 0; }
+	.netfleet-native .netfleet-subtabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+	.netfleet-native .netfleet-subtabs button { flex: 0 0 auto; min-height: 44px; }
+	.netfleet-native .netfleet-config-nav { display: none; }
+	.netfleet-native .netfleet-config-mobile-nav { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; padding: 12px; margin: 0; border-bottom: 1px solid var(--nf-border); }
+	.netfleet-native .netfleet-config-mobile-nav select { width: 100%; min-width: 0; min-height: 44px; }
+	.netfleet-native .netfleet-config-content { padding: 16px 12px; }
+	.netfleet-native .netfleet-config-actions { padding: 12px; gap: 12px; }
+	.netfleet-native .netfleet-config-actions > div { display: flex; flex-wrap: wrap; gap: 8px; }
+	.netfleet-native .netfleet-selection-note { padding: 0; }
+	.netfleet-native .netfleet-component-meta { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+	.netfleet-native .netfleet-component-meta dd { margin-bottom: 12px; }
+	.netfleet-native .netfleet-operation.is-result { padding: 10px 12px; gap: 8px; }
+	.netfleet-native .netfleet-result-body { gap: 4px; }
+}

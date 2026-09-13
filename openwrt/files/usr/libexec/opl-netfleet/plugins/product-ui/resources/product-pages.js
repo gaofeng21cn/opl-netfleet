@@ -53,6 +53,13 @@ function writeDisplayCache(status, events, fetchedAt, readDurationMs) {
 }
 
 function ensureStyles() {
+	// Argon dark mode has no semantic colour tokens. Follow the rendered host,
+	// including an explicit theme choice that differs from the OS preference.
+	const background = getComputedStyle(document.body).backgroundColor.match(/[\d.]+/g);
+	if (background && background.length >= 3) {
+		const brightness = Number(background[0]) * .2126 + Number(background[1]) * .7152 + Number(background[2]) * .0722;
+		document.documentElement.dataset.netfleetTheme = brightness < 128 && background[3] !== '0' ? 'dark' : 'light';
+	}
 	const href = resourceUrl('native.css');
 	let link = document.getElementById('netfleet-native-style');
 	if (!link) {

@@ -17,7 +17,8 @@ it('mounts the packaged product page through its actual ESM and LuCI module adap
       if (attrs.id) nodes.set(attrs.id, node);
       return node;
     };
-    globalThis.document = { head: E('head'), getElementById(id) { return nodes.get(id); }, querySelectorAll() { return []; } };
+    globalThis.document = { body: E('body'), documentElement: { dataset: {} }, head: E('head'), getElementById(id) { return nodes.get(id); }, querySelectorAll() { return []; } };
+    globalThis.getComputedStyle = () => ({ backgroundColor: 'rgb(30, 30, 30)' });
     globalThis.window = { localStorage: { getItem() { return null; }, setItem() {}, removeItem() {} }, location: { hostname: 'router.example' } };
     const polls = new Set();
     const poll = { add(callback) { polls.add(callback); }, remove(callback) { polls.delete(callback); } };
@@ -40,6 +41,7 @@ it('mounts the packaged product page through its actual ESM and LuCI module adap
     await new Promise(resolve => setImmediate(resolve));
     const text = node => typeof node === 'string' ? node : (node?.children || []).map(text).join('');
     assert.match(text(container), /首次设置 NetFleet/);
+    assert.equal(document.documentElement.dataset.netfleetTheme, 'dark');
     assert.equal(nodes.get('netfleet-native-style').attrs.href.endsWith('/product-ui/resources/native.css'), true);
     assert.equal(polls.size, 0);
     const content = container.children[0];

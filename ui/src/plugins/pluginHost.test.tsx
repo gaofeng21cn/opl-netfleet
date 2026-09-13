@@ -170,14 +170,14 @@ it('renders independent React plugin navigation without status or product method
 });
 
 it('loads and replaces independent LuCI pages without product status or onboarding', async () => {
-  const createNode = (tag: string, attrs: Record<string, any> = {}, children: any = []) => ({ tag, attrs, children: Array.isArray(children) ? children : [children], replaceChildren(...values: any[]) { this.children = values; }, appendChild(value: any) { this.children.push(value); } });
+  const createNode = (tag: string, attrs: Record<string, any> = {}, children: any = []) => ({ tag, attrs, children: Array.isArray(children) ? children : [children], querySelector() { return null; }, replaceChildren(...values: any[]) { this.children = values; }, appendChild(value: any) { this.children.push(value); } });
   const host = { show: vi.fn(async () => {}), dispose: vi.fn(async () => {}) };
   const client = api();
   const poll = { add: vi.fn(), remove: vi.fn() };
   let permitted = true;
   let options: any;
   const source = readFileSync(new URL('../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/view/netfleet/overview.js', import.meta.url), 'utf8');
-  const shell = new Function('view', 'poll', 'api', 'E', 'window', 'document', 'MutationObserver', 'L', source)({ extend: (value: any) => value }, poll, client, createNode, { location: { hash: '' }, addEventListener() {}, removeEventListener() {} }, { body: {} }, class { observe() {} disconnect() {} }, { hasViewPermission: () => permitted });
+  const shell = new Function('view', 'poll', 'api', 'E', 'window', 'document', 'MutationObserver', 'L', 'requestAnimationFrame', source)({ extend: (value: any) => value }, poll, client, createNode, { location: { hash: '' }, addEventListener() {}, removeEventListener() {} }, { body: {} }, class { observe() {} disconnect() {} }, { hasViewPermission: () => permitted }, (callback: () => void) => callback());
   shell.render([{ pluginPages, pluginNavigation, pageHash, pageFromHash, resourceUrl, createPageHost: (value: any) => { options = value; return host; } }, { snapshot: snapshot() }]);
   expect(options.readOnly()).toBe(false);
   permitted = false;
