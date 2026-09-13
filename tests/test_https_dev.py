@@ -14,8 +14,33 @@ sys.path.insert(0,str(DIR))
 import base
 import qualify
 import update
+import compare
 
 class EngineArtifacts(unittest.TestCase):
+    def test_alternating_benchmark_requires_complete_versions(self):
+        rows=[{'version':version,'name':f'{rep}-{scene}'} for version in ['old','new']
+              for rep in range(1,4) for scene in ['off','idle','load','ui']]
+        value={'seconds':300,'repeats':3,'comparison':'alternating_signed_packages_same_guest','rows':rows}
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'benchmark.json';path.write_text(json.dumps(value))
+            self.assertEqual(len(compare.benchmark(path,'old')),12)
+            self.assertEqual(len(compare.benchmark(path,'new')),12)
+            rows.pop();path.write_text(json.dumps(value))
+            with self.assertRaises(ValueError):compare.benchmark(path,'new')
+
+    def test_benchmark_preserves_failed_samples_and_separate_ui_cost(self):
+        row={'name':'1-load','groups':{'manager':{'cpu_percent':2,'memory':100,
+             'peak_memory':200,'peak_rss':150,'throttled':1}},
+             'requests':{'upload':[{'code':502,'ttfb':.2,'total':.3}], 'sse':[]},
+             'ui':[{'seconds':.1,'cpu_ticks':4,'ok':False}], 'codes':'0\n28', 'errors':'protocol mismatch'}
+        result=compare.summarize([row],'load')
+        self.assertEqual(result['requests']['upload']['http_errors'],1)
+        self.assertEqual(result['failed_commands'],1)
+        self.assertTrue(result['error_output'])
+        self.assertEqual(result['groups']['manager']['memory_max'],200)
+        self.assertEqual(result['ui']['cpu_seconds'],.04)
+        self.assertEqual(result['ui']['failed'],1)
+
     def test_independent_identity_source_on_newer_base(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

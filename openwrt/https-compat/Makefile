@@ -44,7 +44,6 @@ define Build/Compile
 	$(call Build/Compile/Default)
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_CPPFLAGS) -fPIC -shared -Wall -Wextra -Werror $(TARGET_LDFLAGS) -o $(PKG_BUILD_DIR)/netfleet_probe.so $(PKG_BUILD_DIR)/probe-io.c -lucode
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_CPPFLAGS) -fPIC -shared -Wall -Wextra -Werror $(TARGET_LDFLAGS) -o $(PKG_BUILD_DIR)/netfleet_interception.so $(PKG_BUILD_DIR)/interception-io.c -lucode -lnftnl -lmnl -ljson-c
-	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_CPPFLAGS) -Wall -Wextra -Werror $(TARGET_LDFLAGS) -o $(PKG_BUILD_DIR)/port-range $(PKG_BUILD_DIR)/port-range.c
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_CPPFLAGS) -Wall -Wextra -Werror $(TARGET_LDFLAGS) -o $(PKG_BUILD_DIR)/launcher $(PKG_BUILD_DIR)/launcher.c
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_CPPFLAGS) -Wall -Wextra -Werror $(TARGET_LDFLAGS) -o $(PKG_BUILD_DIR)/tls-probe $(PKG_BUILD_DIR)/tls-probe.c -lssl -lcrypto
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_CPPFLAGS) -Wall -Wextra -Werror $(TARGET_LDFLAGS) -o $(PKG_BUILD_DIR)/atomic-replace $(PKG_BUILD_DIR)/atomic-replace.c
@@ -56,7 +55,6 @@ define Package/opl-netfleet-https-compat/install
 	$(INSTALL_DATA) ./files/usr/libexec/opl-netfleet-compat/*.uc ./files/usr/libexec/opl-netfleet-compat/extension.json $(1)/usr/libexec/opl-netfleet-compat/
 	$(INSTALL_BIN) ./files/etc/init.d/opl-netfleet-compat $(1)/etc/init.d/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/launcher $(PKG_BUILD_DIR)/tls-probe $(PKG_BUILD_DIR)/atomic-replace $(1)/usr/libexec/opl-netfleet-compat/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/port-range $(1)/usr/libexec/opl-netfleet-compat/port-range
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/haproxy $(1)/usr/libexec/opl-netfleet-compat/haproxy
 	$(INSTALL_DIR) $(1)/usr/share/licenses/opl-netfleet-https-compat
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/LICENSE $(PKG_BUILD_DIR)/doc/gpl.txt $(PKG_BUILD_DIR)/doc/lgpl.txt $(1)/usr/share/licenses/opl-netfleet-https-compat/

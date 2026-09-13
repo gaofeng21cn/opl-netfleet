@@ -500,8 +500,9 @@ SDK 和输出目录，源码只读挂载；运行时没有 SDK、Python 或构�
 PACKAGES=/tmp/qualified-base COMPAT_PACKAGES=/tmp/compat-candidate \
   BASE_QUALIFICATION=/tmp/base-qualification.json PREVIOUS=/tmp/previous-compat \
   OUTPUT=/tmp/compat-proof bash scripts/https-compat/dev.sh qualify
-# 相同参数将 qualify 换为 benchmark，执行四场景、每场景三次五分钟测量。
-python3 scripts/https-compat/compare.py /tmp/baseline.json /tmp/compat-proof/plugin-qualification.json
+# 相同参数将 qualify 换为 benchmark，在同一 guest 交替安装旧/新签名包；
+# 每个版本四场景、每场景三次五分钟测量，耗时至少两小时。
+python3 scripts/https-compat/compare.py /tmp/compat-proof/plugin-qualification.json
 ```
 
 固定基座检查会拒绝任何宿主、Mihomo 或 Device identity 运行源码变化；它们需要新的
@@ -520,9 +521,11 @@ python3 scripts/https-compat/compare.py /tmp/baseline.json /tmp/compat-proof/plu
 
 开发诊断额外运行一分钟开启计时的管理轮次，阶段记录在回执 `profile`。常规启动不记录；
 计时只包括阶段耗时和当前管理进程及已回收子进程的 CPU 累计差。嵌套阶段不能相加，
-异步地址同步可能跨越轮次，因此以 cgroup 总量作为成本比较权威。计时采样使用系统
+异步地址同步可能跨越轮次，常驻探针子进程也不包含在已回收子进程的计数中，因此以
+包含全部 worker 的 cgroup 总量作为成本比较权威。计时采样使用系统
 单调时钟的 10 ms 精度；锁持有时间不包括放锁等待探针的区间。基准四场景在计时关闭时
-执行。实际替换只选择发生变化且依赖满足的包，保留用户配置与加载选择。
+执行；每两秒采样 RSS 和 cgroup 内存峰值，管理组以外的 UI 查询另记 CPU 与时延。
+实际替换只选择发生变化且依赖满足的包，保留用户配置与加载选择。
 
 长时间测量先通过真实邻居通信确认测试客户端地址，并等待该地址的 H1→H2 往返成功；
 不能只看全局“正在接管”，因为另一地址族仍可接管而测试地址已过期。上传和 SSE 分别

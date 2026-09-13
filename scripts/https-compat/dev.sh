@@ -15,7 +15,8 @@ qualify  Run full base-package qualification, then the native HTTPS diagnostic l
          vm/qualify require PACKAGES, COMPAT_PACKAGES, OUTPUT; REF defaults to HEAD.
          QEMU currently requires macOS on Apple Silicon. OUTPUT must be outside Git.
          With BASE_QUALIFICATION and PREVIOUS, qualify reuses the fixed base and
-         tests engine-only upgrade/rollback. benchmark adds 3 x 300s per scene.
+         tests engine-only upgrade/rollback. benchmark alternates signed old/new
+         packages in one guest, adding 3 x 300s per scene for each version.
 
 Portable checks are not TLS/network or package qualification. The compatibility
 diagnostic receipt alone never authorizes deployment. No real devices are contacted.
