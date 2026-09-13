@@ -235,12 +235,12 @@ const productController = {
 		const title = ({ overview: '网络概览', exits: '出口', providers: '机场', regions: '地区', config: '配置', components: '插件与更新', events: '诊断' })[this.currentView];
 		const actions = this.status.actions || {};
 		const buttonAttrs = function(attrs, requiresLiveData) {
-			if (self.busy || self.refreshing || (requiresLiveData && (!self.liveDataReady || self.context.readOnly)))
+			if (self.refreshing || (requiresLiveData && (self.busy || !self.liveDataReady || self.context.readOnly)))
 				attrs.disabled = true;
 			return attrs;
 		};
 		const buttons = this.currentView === 'components' ? [] : [
-			E('button', buttonAttrs({ 'class': 'btn cbi-button', 'click': function() { return self.currentView === 'components' ? managed.loadComponents(self) : self.refreshData(); } }, false), this.busy || this.refreshing ? '正在读取…' : '刷新')
+			E('button', buttonAttrs({ 'class': 'btn cbi-button', 'click': function() { return self.currentView === 'components' ? managed.loadComponents(self) : self.refreshData(); } }, false), this.refreshing ? '正在读取…' : '刷新')
 		];
 		if ([ 'overview', 'exits', 'regions' ].includes(this.currentView) && actions.can_select_auto === true)
 			buttons.push(E('button', buttonAttrs({ 'class': 'btn cbi-button cbi-button-action', 'click': function() { self.confirmAction('select'); } }, true), this.status.selection?.automation_paused ? '恢复自动选优' : '重新选优'));
@@ -275,6 +275,7 @@ const productController = {
 		if (this.currentView === 'overview') content.splice(2, 0, operatingModeControls(this));
 		if (this.currentView !== 'components' && this.currentView !== 'config')
 			content.unshift(managed.operationNode(this, 'selection'), managed.operationNode(this, 'subscription'));
+		content.unshift(managed.operationNode(this, 'configuration'));
 
 		let sourceName = '设备实时 RPC';
 		let freshness = '刚刚更新';
@@ -524,19 +525,8 @@ const productController = {
 	},
 
 	runConfigApply: function(request) {
-		const self = this;
-		this.busy = true;
-		ui.showModal('应用 NetFleet 配置', [ E('p', { 'class': 'spinning' }, '正在切换并等待设备回读…') ]);
-		return netfleet.configApply(request).then(function(result) {
-			ui.hideModal();
-			const completed = product.resultText('应用配置', result);
-			return self.refreshData(true, true).then(function() {
-				managed.notify(null, E('p', {}, completed + (self.refreshError ? '；状态读取失败，请重新读取，不要重复应用。' : '；设备运行状态已重新读取。')), self.refreshError ? 'warning' : 'info');
-			}, function() { managed.notify(null, E('p', {}, completed + '；状态读取失败，请重新读取，不要重复应用。'), 'warning'); });
-		}).catch(function(error) {
-			ui.hideModal();
-			managed.notify(null, E('p', {}, '应用失败：' + self.configFailure(error)), 'error');
-		}).finally(function() { self.busy = false; self.redraw(); });
+		if (this.busy) return Promise.resolve();
+		return managed.runConfiguration(this, function() { return netfleet.configApply(request); });
 	},
 
 	showConfigWizard: function(step) {
@@ -635,11 +625,16 @@ const productController = {
 return baseclass.extend({
 	mount: async function(context, pageId) {
 		const controller = Object.create(productController);
+		Object.defineProperty(controller, 'busy', {
+			get: function() { return this.localBusy || managed.operationBusy(this); },
+			set: function(value) { this.localBusy = value; }
+		});
 		controller.context = context;
 		controller.pageId = pageId;
 		context.scope.effect(function() {
 			ui.hideModal();
 			clearTimeout(controller.operationTimer);
+			clearTimeout(controller.resultTimer);
 			if (controller.root) controller.root.remove();
 			const style = document.getElementById('netfleet-native-style');
 			if (style) style.remove();

@@ -11,7 +11,7 @@ const OPERATION_DIR = context.use("platform.paths").OPERATION_DIR;
 let current = null;
 
 path = function(kind) {
-	return index(["subscription", "selection", "packages"], kind) >= 0 ? `${OPERATION_DIR}/opl-netfleet-operation-${kind}.json` : null;
+	return index(["subscription", "selection", "packages", "configuration"], kind) >= 0 ? `${OPERATION_DIR}/opl-netfleet-operation-${kind}.json` : null;
 };
 
 

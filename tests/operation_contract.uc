@@ -13,6 +13,19 @@ const selection_path = "/tmp/opl-netfleet-operation-selection.json";
 const previous = fs.readfile(path);
 const previous_packages = fs.readfile(package_path);
 const previous_selection = fs.readfile(selection_path);
+const config_path = "/tmp/opl-netfleet-operation-configuration.json";
+const previous_config = fs.readfile(config_path);
+
+begin("configuration", "validating");
+const config_id = get("configuration").id;
+update("snapshotting");
+update("compiling");
+check(get("configuration").id == config_id && get("configuration").phase == "compiling",
+	"configuration progress retains the transaction identity");
+update("rolling_back");
+finish(false, "compile_failed", { rollback: { ok: true } });
+check(get("configuration").state == "failed" && get("configuration").recovery == "restored",
+	"configuration recovery does not turn the requested change into success");
 
 begin("subscription", "preparing", { total: 2 });
 let snapshot = get("subscription");
@@ -94,6 +107,7 @@ check(get("selection").parent_id == null, "standalone selection has no parent");
 if (previous == null) fs.unlink(path); else fs.writefile(path, previous);
 if (previous_packages == null) fs.unlink(package_path); else fs.writefile(package_path, previous_packages);
 if (previous_selection == null) fs.unlink(selection_path); else fs.writefile(selection_path, previous_selection);
+if (previous_config == null) fs.unlink(config_path); else fs.writefile(config_path, previous_config);
 print("operation_contract_ok\n");
 
 release_services();

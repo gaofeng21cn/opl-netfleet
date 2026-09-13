@@ -35,6 +35,71 @@ function harness(active = false) {
 }
 
 describe('native LuCI managed operations', () => {
+  it('does not replay successful operations on first entry, but preserves failures', async () => {
+    const h = harness();
+    h.api.operationGet.mockResolvedValue({ subscription: { id: 'old-success', state: 'succeeded', started_at: 1, finished_at: 2 }, selection: { id: 'old-error', state: 'failed', error: 'operation_failed' } });
+    await h.managed.readOperations(h.controller);
+    expect(h.managed.operationNode(h.controller, 'subscription').attrs.hidden).toBe(true);
+    expect(label(h.managed.operationNode(h.controller, 'selection'))).toContain('执行失败');
+  });
+
+  it('keeps observed completion across pages, expires it without RPC polling, and remembers dismissal', async () => {
+    vi.useFakeTimers();
+    const storage = new Map<string, string>();
+    vi.stubGlobal('sessionStorage', { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) });
+    try {
+      const h = harness();
+      const running = { id: 'seen', state: 'running', phase: 'compiling', started_at: 100 };
+      h.api.operationGet.mockResolvedValueOnce({ configuration: running });
+      await h.managed.readOperations(h.controller);
+      const completed = { ...running, state: 'succeeded', finished_at: 120 };
+      const next = harness();
+      next.api.operationGet.mockResolvedValue({ configuration: completed });
+      await next.managed.readOperations(next.controller);
+      const result = next.managed.operationNode(next.controller, 'configuration');
+      expect(label(result)).toContain('完成于');
+      const close = all([result]).find(node => node.attrs['aria-label'] === '关闭配置应用结果')!;
+      close.attrs.click();
+      const refreshed = harness();
+      refreshed.controller.operations = { configuration: completed };
+      expect(refreshed.managed.operationNode(refreshed.controller, 'configuration').attrs.hidden).toBe(true);
+      clearTimeout(h.controller.operationTimer);
+      await vi.advanceTimersByTimeAsync(61000);
+      expect(next.api.operationGet).toHaveBeenCalledTimes(1);
+      expect(next.managed.operationNode(next.controller, 'configuration').attrs.hidden).toBe(true);
+    } finally { vi.unstubAllGlobals(); vi.useRealTimers(); }
+  });
+
+  it('collapses configuration progress without cancelling, and shows the actual owner phase', async () => {
+    const h = harness();
+    let finish!: () => void;
+    const request = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+    h.api.operationGet.mockResolvedValue({ configuration: { id: 'apply-1', state: 'running', phase: 'activating', started_at: 100 } });
+    const pending = h.managed.runConfiguration(h.controller, request);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
+    h.button('收起进度').attrs.click();
+    expect(h.ui.hideModal).toHaveBeenCalledOnce();
+    expect(label(h.managed.operationNode(h.controller, 'configuration'))).toContain('启用配置并检查网络');
+    expect(h.managed.operationBusy(h.controller)).toBe(true);
+    h.api.operationGet.mockResolvedValue({ configuration: { id: 'apply-1', state: 'succeeded', phase: 'verifying', started_at: 100, finished_at: 130 } });
+    finish();
+    await pending;
+    expect(h.managed.operationBusy(h.controller)).toBe(false);
+    expect(label(h.managed.operationNode(h.controller, 'configuration'))).toContain('已完成');
+    expect(h.controller.refreshData).toHaveBeenCalledWith(true, true);
+    clearTimeout(h.controller.resultTimer);
+  });
+
+  it('does not mutate a new page or resubmit after a configuration request disconnects', async () => {
+    const h = harness();
+    h.api.operationGet.mockResolvedValue({ configuration: { id: 'apply-2', state: 'running', phase: 'compiling' } });
+    const request = vi.fn(async () => { throw new Error('XHR timeout'); });
+    await h.managed.runConfiguration(h.controller, request);
+    expect(request).toHaveBeenCalledOnce();
+    expect(label(h.ui.addNotification.mock.calls[0][1])).toContain('结果尚未确认');
+    expect(h.managed.operationBusy(h.controller)).toBe(true);
+    clearTimeout(h.controller.operationTimer);
+  });
   it('opens a prefetched subscription list synchronously and reuses it on return', async () => {
     const h = harness();
     await h.managed.preloadSubscriptions(h.controller);

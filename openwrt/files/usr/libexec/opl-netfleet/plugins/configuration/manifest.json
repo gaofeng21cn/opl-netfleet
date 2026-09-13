@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "configuration",
   "label": "Policy configuration",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "api_version": 1,
   "package": "opl-netfleet-plugin-configuration",
   "services": {
@@ -26,6 +26,7 @@
       "requires": {
         "configuration.model": 1,
         "events.output": 1,
+        "events.operation": 1,
         "mihomo.backend": 1,
         "mihomo.policy-source": 1,
         "models.activation": 1,
