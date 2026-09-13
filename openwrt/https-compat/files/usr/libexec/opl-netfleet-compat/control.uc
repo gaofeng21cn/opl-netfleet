@@ -125,7 +125,9 @@ return function(context, options) {
                 rule=>({...rule,devices:filter(rule.devices,id=>index(eligible,id)>=0)}))};
     }
     function status() {
-        const config=policy.validate(io.read(CONFIG,DEFAULT)),state=read_state(),live=health(),kernel=call('status');
+        // Status calls return their own snapshot. Caching here would encode and
+        // then clone history just to protect the manager's private cached objects.
+        const config=policy.validate(io.read(CONFIG,DEFAULT)),state=io.read(STATE,{}),live=health(),kernel=call('status');
         const fp=fingerprint(),source=identity.resolve(config),trust=io.read(TRUST,{}),active=effective(config,trust,source);
         let reason=kernel.intercepting?null:state.reason ?? (config.enabled?'not_ready':'disabled');
         if(!kernel.intercepting&&state.intercepting) reason='lease_expired';
@@ -141,7 +143,7 @@ return function(context, options) {
             isolation:isolation.status(),reason,active_connections:live.active_connections,active_requests:live.active_requests,
             address_source:source,device_addresses,device_connections,eligible_devices:sort(keys(eligible)),rules:live.rules,
             recovery:state.recovery ?? {},ca_sha256:fp,last_failure:state.last_failure,engine_restart:state.engine_restart ?? {},
-            rule_recovery:state.rule_recovery ?? {},local_probes:state.local_probes ?? {},trust:verified_trust(config,trust,fp),events:json(sprintf('%J',slice(state.events ?? [],-100)))};
+            rule_recovery:state.rule_recovery ?? {},local_probes:state.local_probes ?? {},trust:verified_trust(config,trust,fp),events:slice(state.events ?? [],-100)};
     }
     function save(state,previous) {
         // Eligibility is not evidence that a rule actually owned a kernel lease.
