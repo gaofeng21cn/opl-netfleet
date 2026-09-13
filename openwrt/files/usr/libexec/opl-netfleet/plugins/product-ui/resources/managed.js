@@ -264,7 +264,7 @@ function operationNode(controller, kind) {
 		const capability = ['selection', 'mode'].includes(kind) && controller.status && (controller.status.capabilities || []).find(function(item) { return item.id === operation.subject; });
 		details.push(E('span', {}, kind === 'packages' ? ({ feed: '更新源', netfleet: 'NetFleet', mihomo: 'Mihomo' })[operation.subject] || String(operation.subject) : (kind === 'mode' ? '出口：' : '') + (capability && capability.display_name || String(operation.subject))));
 	}
-	if (operation && Number(operation.total) > 0) {
+	if (operation && (active || operation.state === 'succeeded') && Number(operation.total) > 0) {
 		const label = kind === 'subscription' ? '已处理 ' : kind === 'selection' ? '已完成 ' : '已完成 ';
 		const unit = operation.phase === 'resetting_candidates' ? ' 个候选组' : kind === 'subscription' ? ' 个机场' : ['selection', 'mode'].includes(kind) ? ' 个出口' : ' 个文件';
 		details.push(E('span', {}, label + Number(operation.completed || 0) + ' / ' + Number(operation.total) + unit));
@@ -276,7 +276,7 @@ function operationNode(controller, kind) {
 	}
 	if (!active) details.push(E('span', {}, operation.finished_at ? resultTime(operation.finished_at) : operation.updated_at ? resultTime(operation.updated_at, '记录更新于') + '（完成时间未记录）' : '完成时间未记录'));
 	if (elapsed != null) details.push(E('span', {}, (active ? '已耗时 ' : '耗时 ') + (elapsed < 60 ? elapsed + ' 秒' : Math.floor(elapsed / 60) + ' 分 ' + elapsed % 60 + ' 秒')));
-	if (operation && operation.error) details.push(E('span', { 'class': 'is-warning' }, errorLabel(operation.error)));
+	if (operation && operation.error) details.push(E('span', { 'class': 'is-warning netfleet-result-reason' }, errorLabel(operation.error)));
 	if (operation && operation.failure_detail) {
 		const failure = operation.failure_detail;
 		details.push(E('details', { 'class': 'netfleet-operation-diagnostic' }, [ E('summary', {}, '查看失败详情'),
@@ -575,60 +575,59 @@ function compositionDialog(controller) {
 
 function pluginDialog(controller, plugin) {
 	const output = E('pre', { 'style': 'max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere' }, '');
-	const status = E('p', {}, '正在读取');
-	const actions = Object.keys(plugin.actions || {});
-	const selector = E('select', { 'class': 'cbi-input-select' }, actions.map(function(action) { return E('option', { 'value': action }, action); }));
-	const params = E('textarea', { 'class': 'cbi-input-textarea', 'rows': 4, 'aria-label': '插件参数 JSON', 'style': 'width:100%;box-sizing:border-box' }, '{}');
+	const status = E('p', { 'role': 'status' }, '正在读取运行状态…');
+	const service = plugin.runtime === 'service';
+	const labels = { load: '加载进程', reload: '重新加载', unload: '卸载进程', get: '刷新状态' };
 	let revision = plugin.revision;
 	let pending = false;
+	let loaded = null;
 	const controls = [];
-	function busy(value) { pending = value; controls.forEach(function(control) { control.disabled = value; }); }
+	function busy(value) {
+		pending = value;
+		controls.forEach(function(control) {
+			const action = control.getAttribute('data-action');
+			control.disabled = value || action !== 'get' && (loaded === null || plugin.enabled === false ||
+				(action === 'load' ? loaded : !loaded));
+		});
+	}
 	function show(result) {
 		revision = result.revision || revision;
-		status.textContent = result.loaded === true ? (result.ready === true ? '已加载，就绪' : '已加载，未就绪') : result.loaded === false ? '未加载' : '操作完成';
+		loaded = typeof result.loaded === 'boolean' ? result.loaded : null;
+		status.textContent = result.loaded === true ? (result.ready === true ? '已加载 · 运行就绪' : '已加载 · 尚未就绪') : result.loaded === false ? '未加载' : service ? '由 NetFleet 管理' : '运行状态暂不可确认';
 		output.textContent = JSON.stringify(result, null, 2);
 	}
 	function run(action) {
 		if (pending) return;
-		let values = {};
-		try {
-			if (actions.indexOf(action) >= 0) values = JSON.parse(params.value);
-			if (!values || typeof values !== 'object' || Array.isArray(values)) throw new Error('参数必须是 JSON 对象');
-		} catch (error) { status.textContent = error.message; return; }
-			const definition = (plugin.actions || {})[action];
-			const access = typeof definition === 'string' ? definition : definition && definition.access;
-			const writing = ['load', 'reload', 'unload'].indexOf(action) >= 0 || access === 'write';
+		const writing = action !== 'get';
 		const execute = function() {
 			busy(true);
-				const request = { id: plugin.id, action: action, revision: revision, confirm: writing, params: values };
-				if (plugin.instance) request.instance = plugin.instance;
+			status.textContent = writing ? labels[action] + '中…' : '正在读取运行状态…';
+			const request = { id: plugin.id, action: action, revision: revision, confirm: writing, params: {} };
+			if (plugin.instance) request.instance = plugin.instance;
 			return (writing ? api.pluginCall(request) : api.pluginRead(request)).then(show).catch(function(error) {
 				status.textContent = errorLabel(error.message || String(error));
 			}).finally(function() { busy(false); if (writing) loadComponents(controller); });
 		};
 		if (!writing) return execute();
-		ui.showModal('确认插件操作', [ E('p', {}, plugin.label + ' · ' + action),
+		ui.showModal('确认' + labels[action], [ E('p', {}, (plugin.label || plugin.id) + '：' + (action === 'unload' ? '将停止此插件进程，其提供的功能将暂时不可用。' : action === 'reload' ? '将重新启动此插件进程，相关功能会短暂中断。' : '将启动此插件进程并检查是否就绪。')),
 			E('div', { 'class': 'right' }, [ button('取消', function() { pluginDialog(controller, plugin); }), ' ',
 				button('确认', function() { open(); execute(); }) ]) ]);
 	}
-
-	controls.push(button('加载', function() { run('load'); }), button('重新加载', function() { run('reload'); }),
-		button('退出', function() { run('unload'); }), button('↻', function() { run('get'); }));
-	controls[3].setAttribute('title', '刷新状态');
-	const configPages = (plugin.ui || []).map(function(page) { return button((plugin.configuration ? '配置 · ' : '打开 · ') + page.title, function() {
-		ui.hideModal(); controller.context.navigate('plugin:' + plugin.id + ':' + (plugin.instance && plugin.instance !== 'default' ? plugin.instance + ':' : '') + page.id);
-	}, plugin.enabled === false); });
-	const children = [E('p', {}, '版本 ' + (plugin.installed_version || plugin.version || '未记录') + (plugin.instance ? ' · 实例 ' + plugin.instance : '')), status,
-		E('div', { 'class': 'cbi-page-actions' }, configPages), E('div', { 'class': 'cbi-page-actions' }, controls),
-		packageManagerLink(controller, '安装、更新与卸载软件包 ↗'),
-		E('details', {}, [E('summary', {}, '技术状态'), output])];
-	if (actions.length) {
-		const execute = button('执行', function() { run(selector.value); });
-		controls.push(execute);
-		children.push(E('label', {}, '插件动作'), selector, E('label', {}, '参数（JSON）'), params, execute);
-	}
+	(service ? ['get'] : ['get', 'load', 'reload', 'unload']).forEach(function(action) {
+		const control = button(labels[action], function() { return run(action); });
+		control.setAttribute('data-action', action); controls.push(control);
+	});
+	const children = [E('p', {}, plugin.id + ' · ' + (service ? '服务插件' : '进程插件') + ' · ' + displayVersion(plugin.installed_version || plugin.version)),
+		E('p', {}, pluginPurpose(plugin)), status, controls[0],
+		E('p', {}, service ? '由 NetFleet 自动管理，功能设置通过对应配置页面应用。' : '由 NetFleet 按需启动；手动维护会影响此进程提供的功能。')];
+	if (plugin.id === 'activation') children.push(button('前往概览切换运行模式', function() {
+		ui.hideModal(); controller.context.navigate('plugin:product-ui:overview');
+	}));
+	if (!service) children.push(E('details', {}, [E('summary', {}, '进程维护'), E('div', { 'class': 'netfleet-inline-actions' }, controls.slice(1))]));
+	children.push(E('details', {}, [E('summary', {}, '技术详情'), E('p', {}, '软件包：' + (plugin.package || '未提供')),
+		E('p', {}, '完整版本：' + (plugin.installed_version || plugin.version || '未记录')), output]));
 	children.push(E('div', { 'class': 'right' }, button('关闭', ui.hideModal)));
-	function open() { ui.showModal(plugin.label, children); }
+	function open() { ui.showModal((plugin.label || plugin.id) + ' · 运行状态', E('div', { 'class': 'netfleet-plugin-runtime' }, children)); }
 	open(); run('get');
 }
 
@@ -688,12 +687,14 @@ function updateDashboard(controller, version) {
 }
 
 function coreVersion(value) { return String(value || '').replace(/^v/, '').replace(/-r\d+$/, ''); }
+function displayVersion(value) { return value ? coreVersion(value) : '版本未提供'; }
 function componentMismatch(component) {
 	return component.id === 'mihomo' && component.installed_version && component.running_version &&
 		coreVersion(component.installed_version) !== coreVersion(component.running_version);
 }
 
 const PLUGIN_PRESENTATION = {
+	'device-identity': ['设备识别', '识别网络设备，为按设备配置规则提供稳定身份'],
 	activation: ['网络启停', '切换运行模式，应用或退出代理接管'],
 	compilation: ['运行配置生成', '根据策略与节点来源生成代理运行配置'],
 	components: ['组件更新', '检查并更新基础软件与面板资源'],
@@ -717,6 +718,10 @@ const PLUGIN_PRESENTATION = {
 	setup: ['首次接入', '准备运行基础并接入已有设置'],
 	subscriptions: ['节点来源', '管理机场订阅与节点缓存']
 };
+function pluginPurpose(plugin) {
+	return plugin.description || PLUGIN_PRESENTATION[plugin.id]?.[1] ||
+		(plugin.runtime === 'service' ? '为 NetFleet 提供 ' + (plugin.label || plugin.id) + ' 服务' : '通过独立进程提供 ' + (plugin.label || plugin.id) + ' 功能');
+}
 
 function componentsPage(controller) {
 	const snapshot = controller.components;
@@ -734,7 +739,8 @@ function componentsPage(controller) {
 	else if (active) check.setAttribute('title', '设备正在执行操作');
 	const content = [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h3', {}, section === 'software' ? '版本与更新' : '插件目录'), E('div', { 'class': 'netfleet-inline-actions' }, [
 		refresh, section === 'software' ? check : packageManagerLink(controller)
-	]) ]), operationNode(controller, 'packages') ];
+	]) ]) ];
+	if (section === 'software') content.push(operationNode(controller, 'packages'));
 	content.unshift(E('nav', { 'class': 'netfleet-subtabs', 'aria-label': '插件与更新分类' }, [['software', '基础组件'], ['plugins', '功能插件']].map(function(item) {
 		return E('button', { 'type': 'button', 'aria-current': section === item[0] ? 'page' : null, 'click': function() { controller.componentsSection = item[0]; controller.redraw(); } }, item[1]);
 	})));
@@ -753,11 +759,11 @@ function componentsPage(controller) {
 	}, active));
 	const packageFailed = packageOperation && ['failed', 'interrupted'].includes(packageOperation.state);
 	const sameFeedFailure = packageFailed && packageOperation.error === feed.error && (!feed.checked_at || feed.checked_at >= packageOperation.started_at && feed.checked_at <= packageOperation.finished_at);
-	if (feed.error && !sameFeedFailure && !isRunning(packageOperation)) content.push(resultNode(controller, 'feed', String(feed.checked_at || 0), '软件包源检查', [
+	if (section === 'software' && feed.error && !sameFeedFailure && !isRunning(packageOperation)) content.push(resultNode(controller, 'feed', String(feed.checked_at || 0), '软件包源检查', [
 		E('span', {}, errorLabel(feed.error)), E('span', {}, resultTime(feed.checked_at, '检查于') || '检查时间未记录')
 	], true));
 	const dashboardError = controller.dashboardError || dashboard && dashboard.error;
-	if (dashboard && dashboard.managed && !controller.dashboardBusy && !controller.componentsChecking && (dashboardError || controller.dashboardResultAt)) {
+	if (section === 'software' && dashboard && dashboard.managed && !controller.dashboardBusy && !controller.componentsChecking && (dashboardError || controller.dashboardResultAt)) {
 		const recordedCheck = controller.dashboardAction !== 'update' && dashboard.checked_at && (!controller.dashboardError || dashboard.error);
 		const time = recordedCheck ? dashboard.checked_at : controller.dashboardResultAt;
 		content.push(resultNode(controller, 'dashboard', JSON.stringify([time, controller.dashboardAction || 'check', Boolean(dashboardError)]),
@@ -777,46 +783,45 @@ function componentsPage(controller) {
 		const hasUpdate = component.update_available || component.id === 'netfleet' && luci && luci.update_available;
 		const uiOnly = component.id === 'netfleet' && !component.update_available && luci && luci.update_available;
 		const canUpdate = snapshot.supported && feed.configured && !feed.error && component.managed && hasUpdate && component.available_version;
-		const targetVersion = component.available_version + (component.id === 'netfleet' && luci && luci.available_version ? '；LuCI 界面 ' + luci.available_version : '');
+		const targetVersion = displayVersion(component.available_version) + (component.id === 'netfleet' && luci && luci.available_version ? '；LuCI 界面 ' + displayVersion(luci.available_version) : '');
 		const update = canUpdate ? button(mismatch ? '更新软件包' : uiOnly ? '更新界面' : '更新', function() {
 			ui.showModal('更新 ' + component.label, [ E('p', {}, (component.id === 'mihomo' ? '核心更新会中断已有代理连接，设备将校验当前配置并检查重启后的运行状态。' : '将更新 NetFleet 与 LuCI 界面；基础包更新会停止并恢复运行服务，已有连接可能中断。完成后重新载入页面，私有配置保留。') + '目标版本：' + targetVersion),
-				mismatch ? E('p', { 'class': 'is-warning' }, '当前运行 ' + component.running_version + '，安装记录 ' + component.installed_version + '。本次将安装所列候选软件包，请核对版本。') : '',
+				mismatch ? E('p', { 'class': 'is-warning' }, '当前运行 ' + displayVersion(component.running_version) + '，安装记录 ' + displayVersion(component.installed_version) + '。本次将安装所列候选软件包，请核对版本。') : '',
+				E('details', {}, [E('summary', {}, '完整包版本'), E('p', {}, component.available_version), luci && component.id === 'netfleet' ? E('p', {}, 'LuCI ' + luci.available_version) : '']),
 				E('div', { 'class': 'right' }, [ button('取消', ui.hideModal), ' ', button('确认更新', function() { ui.hideModal(); return startPackageOperation(controller, component); }) ]) ]);
 		}, active) : '';
-		const current = [ E('strong', {}, component.id === 'mihomo' ? component.running_version || '核心运行版本暂不可读取' : component.installed_version || '未安装') ];
-		if (component.id === 'mihomo' && component.installed_version) current.push(E('small', {}, '安装记录 ' + component.installed_version));
+		const current = [ E('strong', {}, component.id === 'mihomo' ? component.running_version ? displayVersion(component.running_version) : '核心运行版本暂不可读取' : component.installed_version ? displayVersion(component.installed_version) : '未安装') ];
+		if (component.id === 'mihomo' && component.installed_version) current.push(E('small', {}, '安装记录 ' + displayVersion(component.installed_version)));
+		current.push(E('details', {}, [E('summary', {}, '版本详情'), E('small', {}, '完整包版本：' + (component.installed_version || '未安装')), component.running_version ? E('small', {}, '运行版本：' + component.running_version) : '', component.available_version ? E('small', {}, '候选包版本：' + component.available_version) : '']));
 		if (component.id === 'netfleet' && controller.status && controller.status.build && controller.status.build.source_commit)
 			current.push(E('details', {}, [ E('summary', {}, '构建来源'), E('small', {}, controller.status.build.source_commit) ]));
 		if (mismatch) current.push(E('span', { 'class': 'is-warning' }, '运行版本与安装记录不一致'));
 		if (component.reason) current.push(E('small', {}, errorLabel(component.reason)));
-		const available = component.available_version && !feed.error ? [ uiOnly ? '界面可更新至 ' + luci.available_version : hasUpdate ? '候选版本 ' + component.available_version : '当前更新源暂无新版' ] : [];
+		const available = component.available_version && !feed.error ? [ uiOnly ? '界面可更新至 ' + displayVersion(luci.available_version) : hasUpdate ? '候选版本 ' + displayVersion(component.available_version) : '当前更新源暂无新版' ] : [];
 		if (hasUpdate && !feed.error) available.push(E('small', {}, component.id === 'mihomo' ? '更新核心会中断已有代理连接' : '基础包更新会停止并恢复服务，私有配置保留'));
 		return E('tr', {}, [ E('td', {}, [ E('strong', {}, component.label), E('small', {}, component.id === 'netfleet' ? '管理运行策略、出口选优与网络恢复' : '执行代理连接与流量转发') ]),
 			E('td', {}, current), E('td', { 'class': 'netfleet-component-actions' }, [ E('div', {}, available), update ]) ]);
 	});
 	if (luci) rows.splice(1, 0, E('tr', {}, [ E('td', {}, [ E('strong', {}, 'LuCI 界面'), E('small', {}, '在浏览器中管理 NetFleet') ]),
-		E('td', {}, E('strong', {}, luci.installed_version || '未安装')),
-		E('td', {}, [ luci.available_version && !feed.error ? (luci.update_available ? '候选版本 ' + luci.available_version : '当前更新源暂无新版') : '',
+		E('td', {}, [E('strong', {}, luci.installed_version ? displayVersion(luci.installed_version) : '未安装'), E('details', {}, [E('summary', {}, '版本详情'), E('small', {}, '完整包版本：' + (luci.installed_version || '未安装')), luci.available_version ? E('small', {}, '候选包版本：' + luci.available_version) : ''])]),
+		E('td', {}, [ luci.available_version && !feed.error ? (luci.update_available ? '候选版本 ' + displayVersion(luci.available_version) : '当前更新源暂无新版') : '',
 			E('small', {}, '由 NetFleet 更新入口管理') ]) ]));
 	const moduleRows = [];
 	(snapshot.extensions || []).filter(function(extension) { return extension.kind === 'plugin'; }).forEach(function(plugin) {
-		const presentation = PLUGIN_PRESENTATION[plugin.id];
-		const controls = [];
-		if (plugin.ui?.length) controls.push(button(plugin.configuration ? '配置' : '打开页面', function() {
-			controller.context.navigate('plugin:' + plugin.id + ':' + (plugin.instance && plugin.instance !== 'default' ? plugin.instance + ':' : '') + plugin.ui[0].id);
-		}, active || plugin.enabled === false));
-		if (plugin.revision) controls.push(button('运行管理', function() { pluginDialog(controller, plugin); }, active));
-		const identity = [E('small', {}, '插件标识：' + plugin.id), plugin.package ? E('small', {}, '软件包：' + plugin.package) : '',
-			E('small', {}, plugin.runtime === 'service' ? '运行类型：服务插件' : '运行类型：独立进程')];
-		if (plugin.instance && plugin.instance !== 'default') identity.push(E('small', {}, '实例：' + plugin.instance));
+		const config = (plugin.ui || []).map(function(page) { return button(plugin.ui.length === 1 ? (plugin.configuration ? '配置' : '打开页面') : page.title, function() {
+			controller.context.navigate('plugin:' + plugin.id + ':' + (plugin.instance && plugin.instance !== 'default' ? plugin.instance + ':' : '') + page.id);
+		}, active || plugin.enabled === false); });
+		const rawVersion = plugin.installed_version || plugin.version;
 		const availability = plugin.enabled === false ? '已停用' : plugin.reason || plugin.state === 'unavailable' || plugin.state === 'invalid' ? '暂不可用' : plugin.runtime === 'service' ? '可用' : '可按需加载';
-		const state = [E('strong', {}, availability)];
+		const state = [E('span', { 'class': 'netfleet-plugin-state' }, availability)];
 		if (plugin.reason && plugin.reason !== 'plugin_disabled') state.push(E('small', { 'class': 'is-warning' }, errorLabel(plugin.reason)));
-		state.push(E('details', {}, [E('summary', {}, '技术详情')].concat(identity)));
-		moduleRows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, presentation ? presentation[0] : plugin.label || plugin.id),
-			presentation ? E('small', {}, presentation[1]) : '', plugin.instance && plugin.instance !== 'default' ? E('small', {}, '实例：' + plugin.instance) : '' ]),
-			E('td', {}, E('strong', {}, plugin.installed_version || plugin.version || '未知版本')),
-			E('td', {}, state), E('td', { 'class': 'netfleet-component-actions' }, controls.length ? controls : E('small', {}, '通过软件包管理器维护')) ]));
+		if (plugin.revision) state.push(button('查看状态', function() { pluginDialog(controller, plugin); }, active));
+		moduleRows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, plugin.label || plugin.id), E('small', { 'class': 'netfleet-plugin-id' }, plugin.id),
+			plugin.instance && plugin.instance !== 'default' ? E('small', {}, '实例：' + plugin.instance) : '' ]),
+			E('td', {}, [E('span', { 'class': 'netfleet-plugin-kind' }, plugin.runtime === 'service' ? '服务插件' : '进程插件'), E('small', {}, pluginPurpose(plugin))]),
+			E('td', {}, [E('strong', {}, displayVersion(rawVersion)), E('details', {}, [E('summary', {}, '版本详情'), E('small', {}, rawVersion || '未记录'), E('small', {}, plugin.package || '')])]),
+			E('td', { 'class': 'netfleet-component-actions' }, config.length ? config : E('small', {}, '无需单独配置')),
+			E('td', { 'class': 'netfleet-component-actions' }, state) ]));
 	});
 	(snapshot.extensions || []).filter(function(extension) { return extension.kind === 'optional'; }).forEach(function(extension) {
 		const state = ({ ready: '可配置', not_installed: '未安装', incompatible: '模块版本不兼容', backend_unsupported: '当前后端不支持', dependency_missing: '缺少依赖', unknown: '状态未确认' })[extension.state];
@@ -831,31 +836,33 @@ function componentsPage(controller) {
 			E('summary', { 'class': missing.length ? 'is-warning' : '' }, missing.length ? '缺少 ' + missing.length + ' 项模块依赖' : '运行依赖（' + dependencies.length + '）'),
 			E('small', { 'style': 'overflow-wrap:anywhere' }, extension.package)
 		].concat(dependencies.map(function(dependency) { return E('small', { 'class': dependency.available === false ? 'is-warning' : '' },
-				dependency.id + '：' + (dependency.available == null ? '未确认' : dependency.available ? dependency.installed_version || '已安装' : '缺少')); })
+				dependency.id + '：' + (dependency.available == null ? '未确认' : dependency.available ? dependency.installed_version ? displayVersion(dependency.installed_version) : '已安装' : '缺少')); })
 		)));
-		moduleRows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, extension.label), E('small', { 'title': extension.package }, '可选模块') ]),
-			E('td', {}, E('strong', {}, extension.installed_version || (absent ? '未安装' : '安装版本未确认'))), E('td', {}, current), E('td', { 'class': 'netfleet-component-actions' }, '') ]));
+		moduleRows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, extension.label), E('small', {}, extension.id) ]),
+			E('td', {}, [E('span', { 'class': 'netfleet-plugin-kind' }, '可选模块'), E('small', {}, pluginPurpose(extension))]),
+			E('td', {}, [E('strong', {}, extension.installed_version ? displayVersion(extension.installed_version) : absent ? '未安装' : '安装版本未确认'), E('details', {}, [E('summary', {}, '版本详情'), E('small', {}, extension.installed_version || '未记录'), E('small', {}, extension.package)])]),
+			E('td', {}, E('small', {}, '由对应功能插件配置')), E('td', {}, current.length ? current : E('small', {}, state)) ]));
 	});
 	if (dashboard) {
 		const controls = [];
 		if (dashboard.available && controller.dashboardUrl) controls.push(E('a', { 'class': 'netfleet-dashboard-link', 'href': controller.dashboardUrl, 'target': '_blank', 'rel': 'noopener' }, '打开面板 ↗'));
 		if (dashboard.managed && dashboard.update_available && dashboard.available_version && !dashboard.error && !controller.dashboardError) controls.push(button(dashboard.available ? '更新面板' : '安装面板', function() {
 			const version = dashboard.available_version;
-			ui.showModal('更新 Zashboard', [ E('p', {}, '目标版本：' + version + '。只更新面板资源，不重启核心；失败时保留当前面板。'),
+			ui.showModal('更新 Zashboard', [ E('p', {}, '目标版本：' + displayVersion(version) + '。只更新面板资源，不重启核心；失败时保留当前面板。'),
 				E('div', { 'class': 'right' }, [ button('取消', ui.hideModal), ' ', button('确认更新', function() { ui.hideModal(); return updateDashboard(controller, version); }) ]) ]);
 		}, active));
 		rows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, 'Zashboard'), E('small', {}, '查看实时连接、流量与代理组') ]),
-			E('td', {}, [ E('strong', {}, dashboard.available ? dashboard.installed_version || '版本未记录' : '未安装'),
+			E('td', {}, [ E('strong', {}, dashboard.available ? dashboard.installed_version ? displayVersion(dashboard.installed_version) : '版本未记录' : '未安装'),
 				dashboard.available ? E('small', {}, '已安装，可使用') : '', !dashboard.managed ? E('small', {}, errorLabel(dashboard.reason || 'dashboard_managed_externally')) : '' ]),
-			E('td', { 'class': 'netfleet-component-actions' }, [ E('div', {}, dashboard.available_version && !dashboard.error && !controller.dashboardError ? dashboard.update_available ? '候选版本 ' + dashboard.available_version : '当前更新源暂无新版' : '') ].concat(controls)) ]));
+			E('td', { 'class': 'netfleet-component-actions' }, [ E('div', {}, dashboard.available_version && !dashboard.error && !controller.dashboardError ? dashboard.update_available ? '候选版本 ' + displayVersion(dashboard.available_version) : '当前更新源暂无新版' : '') ].concat(controls)) ]));
 	}
 	if (section === 'software') content.push(E('div', { 'class': 'netfleet-component-table netfleet-software-table' }, E('table', { 'class': 'table' }, [
 		E('thead', {}, E('tr', {}, ['软件', '当前版本', '更新与操作'].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, rows)
 	])), E('div', { 'class': 'netfleet-component-checks', 'role': 'status' }, sourceStates));
 	if (section === 'plugins') content.push(E('section', { 'class': 'netfleet-component-modules' }, [
 		E('p', { 'class': 'netfleet-follow-note' }, '在插件中配置功能或查看运行情况；安装、更新与卸载由 OpenWrt 软件包管理器处理。'),
-		E('div', { 'class': 'netfleet-component-table' }, E('table', { 'class': 'table' }, [
-			E('thead', {}, E('tr', {}, ['插件与用途', '安装版本', '可用性', '操作'].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, moduleRows.length ? moduleRows : [E('tr', {}, E('td', { 'colspan': 4 }, '当前没有可管理的功能插件'))])
+		E('div', { 'class': 'netfleet-component-table netfleet-plugin-table' }, E('table', { 'class': 'table' }, [
+			E('thead', {}, E('tr', {}, ['插件', '分类与用途', '版本', '配置', '运行管理'].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, moduleRows.length ? moduleRows : [E('tr', {}, E('td', { 'colspan': 5 }, '当前没有可管理的功能插件'))])
 		])),
 		E('details', { 'class': 'netfleet-component-details' }, [E('summary', {}, '高级：服务组合与实例'),
 			E('p', {}, '调整插件启停、服务提供者和实例配置。应用前会校验依赖并展示影响。'),
@@ -1039,5 +1046,5 @@ function nativeSetup(controller) {
 	}).catch(function(error) { ui.showModal('首次接入失败', [ E('p', {}, failure(error)), button('关闭', ui.hideModal) ]); });
 }
 
-return baseclass.extend({ quotaResetLabel: quotaResetLabel, errorLabel: errorLabel, notify: notify, preloadSubscriptions: loadSubscriptions, subscriptions: showSubscriptions, migration: migration, nativeSetup: nativeSetup,
+return baseclass.extend({ displayVersion: displayVersion, quotaResetLabel: quotaResetLabel, errorLabel: errorLabel, notify: notify, preloadSubscriptions: loadSubscriptions, subscriptions: showSubscriptions, migration: migration, nativeSetup: nativeSetup,
 	operationNode: operationNode, operationBusy: operationBusy, readOperations: readOperations, runConfiguration: runConfiguration, runSubscription: runSubscription, runSelection: runSelection, components: componentsPage, loadComponents: loadComponents });

@@ -1,5 +1,6 @@
 import { Activity, Cable, Network, RefreshCw, ShieldCheck, SlidersHorizontal } from 'lucide-react';
 import type { StatusSnapshot } from '../types';
+import { displayVersion } from '../lib/version';
 
 export function StatusStrip({ snapshot }: { snapshot: StatusSnapshot }) {
   const supervisor = snapshot.runtime.supervisor;
@@ -15,6 +16,7 @@ export function StatusStrip({ snapshot }: { snapshot: StatusSnapshot }) {
   ];
   return (
     <div className="nf-status-strip">
+      <div className="nf-status-item"><Network aria-hidden="true" /><div><span>NetFleet 版本</span><strong>{displayVersion(snapshot.build?.version)}</strong></div></div>
       {items.map(({ label, value, ok, icon: Icon }) => (
         <div className="nf-status-item" key={label}>
           <Icon aria-hidden="true" />

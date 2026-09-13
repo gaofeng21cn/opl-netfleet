@@ -52,8 +52,9 @@ it('shows independent UI versions without a false alarm and preserves real core 
   value.components[0].available_version = '1.0.0-r1';
   value.components[1].available_version = '1.2.0-r1';
   value.components[1].update_available = true;
-  expect(render(value)).toContain('界面可更新至 1.2.0-r1');
-  expect(render(value)).toContain('候选版本 1.2.0-r1');
+  expect(render(value)).toContain('界面可更新至 1.2.0');
+  expect(render(value)).toContain('候选版本 1.2.0');
+  expect(render(value)).toContain('候选包版本：1.2.0-r1');
 });
 
 it('does not mistake a missing unpacker for externally managed dashboard resources', () => {

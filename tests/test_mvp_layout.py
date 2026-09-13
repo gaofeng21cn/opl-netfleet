@@ -662,6 +662,7 @@ function createPage(storage, api, notifications) {
     };
     let dashboardOpens = 0;
     const managed = {
+        displayVersion: function(value) { return value ? value.replace(/^v/, '').replace(/-r\d+$/, '') : '版本未提供'; },
 		quotaResetLabel: function(day) { return Number.isInteger(day) && day >= 1 && day <= 31 ? '每月 ' + day + ' 日重置' : ''; },
         notify: ui.addNotification,
         preloadSubscriptions: function() { return Promise.resolve(); },

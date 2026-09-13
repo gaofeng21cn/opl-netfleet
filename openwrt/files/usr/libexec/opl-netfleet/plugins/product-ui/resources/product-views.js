@@ -333,6 +333,7 @@ function statusSummary(status) {
 	const supervisor = status.runtime.supervisor || {};
 	const lanRuntime = status.runtime.lan_runtime || {};
 	const items = [
+		[ 'NetFleet', managed.displayVersion(status.build?.version) ],
 		[ '运行模式', operatingModeLabel(status.operating_mode) ],
 		[ 'Mihomo', status.runtime.mihomo_running ? '运行中' : '未运行' ],
 		[ 'LAN 透明代理', lanRuntime.transparent_proxy_ready ? '可用' : status.active ? '不可用' : '未接管' ],

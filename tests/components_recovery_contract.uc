@@ -49,6 +49,7 @@ let package_ok = false, world_ok = true, identity_ok = true, runtime_ok = true, 
 const UPGRADE_STATE = "/unused", fs = {unlink: path => true};
 function q(value) { return value; }
 function stop_services(work) { stops++; return true; }
+function archive_arguments(paths) { return join(" ", paths); }
 function run_command(command, work) { push(commands, command); return index(command, "apk --") < 0 || package_ok; }
 function restore_world(names, before, work) { world_calls++; if (!world_ok) die("world unavailable"); return true; }
 function installed() { return {package: identity_ok ? "old" : "new"}; }

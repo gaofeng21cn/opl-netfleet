@@ -60,10 +60,10 @@ export function OperationProgress({ operation, error, scope = '', subjectLabel, 
   const details = <>
       <strong>{state}</strong>
       {operation.subject && <span>{operation.kind === 'packages' ? ({ feed: '更新源', netfleet: 'NetFleet', mihomo: 'Mihomo' } as Record<string, string>)[operation.subject] || operation.subject : (operation.kind === 'mode' ? '出口：' : '') + (subjectLabel || operation.subject)}</span>}
-      {(operation.total ?? 0) > 0 && <span>{operation.kind === 'subscription' ? '已处理' : '已完成'} {operation.completed} / {operation.total} 个{operation.phase === 'resetting_candidates' ? '候选组' : operation.kind === 'subscription' ? '机场' : ['selection', 'mode'].includes(operation.kind) ? '出口' : '文件'}</span>}
+      {(active || operation.state === 'succeeded') && (operation.total ?? 0) > 0 && <span>{operation.kind === 'subscription' ? '已处理' : '已完成'} {operation.completed} / {operation.total} 个{operation.phase === 'resetting_candidates' ? '候选组' : operation.kind === 'subscription' ? '机场' : ['selection', 'mode'].includes(operation.kind) ? '出口' : '文件'}</span>}
       {!active && <span>{operation.finished_at ? resultTime(operation.finished_at) : operation.updated_at ? `${resultTime(operation.updated_at, '记录更新于')}（完成时间未记录）` : '完成时间未记录'}</span>}
       {elapsed !== null && <span>{active ? '已耗时' : '耗时'} {elapsed < 60 ? `${elapsed} 秒` : `${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒`}</span>}
-      {operation.error && <span>{componentError(operation.error)}</span>}
+      {operation.error && <span className="nf-result-reason">{componentError(operation.error)}</span>}
       {operation.failure_detail && <details><summary>查看失败详情</summary><p>{[
         operation.failure_detail.group && `候选组：${operation.failure_detail.group}`,
         operation.failure_detail.http_status ? `HTTP ${operation.failure_detail.http_status}` : '未收到控制接口响应',

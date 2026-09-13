@@ -267,6 +267,30 @@ refresh_index = function(request, work) {
 	if (values == null) fail("feed_check_failed");
 	return values;
 };
+function archive_repository(path) { return replace(path, /[^/]+$/, "packages.adb"); }
+function archive_arguments(paths) {
+	const result = [];
+	for (let path in paths) {
+		const repository = archive_repository(path);
+		if (fs.stat(repository) == null) { push(result, q(path)); continue; }
+		const info = parsed(`apk adbdump --format json ${q(path)}`)?.info;
+		if (info?.name != "mihomo-meta" || !version_valid(info.version)) fail("rollback_package_unavailable");
+		push(result, `-X ${q(repository)} ${q(`${info.name}=${info.version}`)}`);
+	}
+	return join(" ", result);
+}
+function archive_valid(path, work) {
+	if (run_command(`apk --no-network verify ${q(path)}`, work)) return true;
+	const repository = archive_repository(path);
+	if (fs.stat(repository) == null) return false;
+	const info = parsed(`apk adbdump --format json ${q(path)}`)?.info;
+	if (info?.name != "mihomo-meta" || !version_valid(info.version)) return false;
+	const rows = parsed(`apk --no-network query --from none -X ${q(repository)} --all-matches --format json --fields name,version ${q(info.name)}`);
+	if (length(rows ?? []) != 1 || rows[0].version != info.version) return false;
+	// Repository fetch authenticates the index and every package data block, even
+	// when the upstream archive has no individual signature. Never allow untrusted.
+	return run_command(`apk --no-network fetch --from none -X ${q(repository)} --all-matches --stdout ${q(info.name)} >/dev/null`, work);
+}
 archive = function(name, version, path, work, fallback_version, source) {
 	const target = `${path}/${name}-${version}.apk`;
 	if (fs.stat(target) == null) {
@@ -286,12 +310,25 @@ archive = function(name, version, path, work, fallback_version, source) {
 			if (source || name == "mihomo-meta" || release == null || !run_command(`curl -q -fsSL --connect-timeout 10 --max-time 90 -o ${q(target)} ${q(`https://github.com/gaofeng21cn/opl-netfleet/releases/download/v${release}/${name}-${version}.apk`)}`, work)) return null;
 		}
 	}
-	if (!run_command(`apk --no-network verify ${q(target)}`, work)) return null;
 	const metadata = parsed(`apk adbdump --format json ${q(target)}`);
 	const architecture = trim(fs.readfile("/etc/apk/arch") ?? "") || capture("apk --print-arch");
 	if (metadata?.info?.name != name || metadata.info.version != version ||
 		index(["noarch", architecture], metadata.info.arch) < 0) return null;
-	return target;
+	if (run_command(`apk --no-network verify ${q(target)}`, work)) return target;
+	// Only an existing third-party core may use signed-repository authentication.
+	// Our candidates and our own packages must remain individually signed.
+	if (source || name != "mihomo-meta") return null;
+	const rows = parsed(`apk --no-network query --from repositories --all-matches --format json --fields name,version,repositories ${q(name)}`);
+	const exact = filter(rows ?? [], row => row.name == name && row.version == version)[0];
+	const retained = `${path}/repository-${name}`;
+	if (!directory(retained) || !fs.rename(target, `${retained}/${name}-${version}.apk`)) return null;
+	const retained_package = `${retained}/${name}-${version}.apk`;
+	for (let repository in exact?.repositories ?? []) {
+		if (!match(repository, /^https:\/\/[^?#]+\/packages\.adb$/)) continue;
+		if (run_command(`curl -q -fsSL --connect-timeout 10 --max-time 45 -o ${q(`${retained}/packages.adb`)} ${q(repository)}`, work) &&
+			archive_valid(retained_package, work)) return retained_package;
+	}
+	return null;
 };
 private_paths = function() {
 	return filter(["/etc/config/netfleet", "/etc/opl-netfleet/policy.json", "/etc/opl-netfleet/backend.json", "/etc/opl-netfleet/system.json",
@@ -381,8 +418,9 @@ rollback = function(before, work, names, versions, old, install_started, already
 		if (install_started) fs.unlink(UPGRADE_STATE);
 		attempt("rollback_configuration_failed", () => run_command(`tar -xf ${q(`${work}/private.tar`)} -C /`, work));
 		if (install_started) {
-			attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null ${already_stopped ? "--force-reinstall " : ""}add ${join(" ", map(old, q))}`, work));
+			attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null ${already_stopped ? "--force-reinstall " : ""}add ${archive_arguments(old)}`, work));
 			attempt("rollback_world_failed", () => restore_world(names, before.world, work, true));
+			attempt("rollback_runtime_files_failed", () => run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work));
 		}
 	}
 	// APK may complete the requested change and still report earlier script failures.
@@ -453,6 +491,7 @@ upgrade = function(request, work, candidates) {
 		operation.update("downloading", { completed: length(old) + length(next) });
 	}
 	operation.update("validating");
+	if (!run_command(`apk --no-network --repositories-file /dev/null --simulate add ${archive_arguments(old)}`, work)) fail("rollback_package_unavailable");
 	// Only installed dependencies and the explicitly downloaded packages may participate.
 	if (!run_command(`apk --no-network --repositories-file /dev/null --simulate add ${join(" ", map(next, q))}`, work)) fail("package_validation_failed");
 	if (request.component == "mihomo") {
@@ -483,7 +522,7 @@ upgrade = function(request, work, candidates) {
 	if (system("/etc/init.d/opl-netfleet-update-recovery enable >/dev/null 2>&1") != 0) fail("update_recovery_unavailable");
 	if (!atomic_json(`${work}/before.json`, before) || !run_command(`tar -cf ${q(`${work}/private.tar`)} -C / ${join(" ", map(paths, path => q(substr(path, 1))))}`, work)) fail("update_state_write_failed");
 	if (!run_command(`tar -cf ${q(`${work}/runtime.tar`)} -C / ${join(" ", map(before.runtime_paths, path => q(substr(path, 1))))}`, work)) fail("update_state_write_failed");
-	journal(work, { phase: "prepared", before, names, versions, candidates, old, next, inputs: input_identity([`${work}/private.tar`, `${work}/runtime.tar`, `${work}/code`, ...old, ...next]) });
+	journal(work, { phase: "prepared", before, names, versions, candidates, old, next, inputs: input_identity([`${work}/private.tar`, `${work}/runtime.tar`, `${work}/code`, olddir, ...next]) });
 	if (!atomic_json(PENDING, { id: request.id }) || system("sync") != 0) fail("update_state_write_failed");
 	let error = null;
 	let install_started = false;
@@ -553,7 +592,7 @@ recover = function() {
 	}
 	const before = state.before, old = state.old, names = state.names, versions = state.versions;
 	if (type(old) != "array" || type(names) != "array" || type(versions) != "object") fail("update_recovery_state_invalid");
-	for (let path in old) if (index(path, `${work}/old/`) != 0 || !run_command(`apk verify ${q(path)}`, work)) fail("rollback_package_unavailable");
+	for (let path in old) if (index(path, `${work}/old/`) != 0 || !archive_valid(path, work)) fail("rollback_package_unavailable");
 	journal(work, { ...state, phase: "recovering" });
 	if (!recovery_stop(work)) fail("rollback_stop_failed");
 	if (!run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work) ||

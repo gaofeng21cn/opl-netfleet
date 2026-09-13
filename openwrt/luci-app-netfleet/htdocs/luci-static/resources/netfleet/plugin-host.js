@@ -5,11 +5,13 @@ const modulePath = /^resources\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.js$/;
 const sharedEvents = new Map();
 
 export const pluginHostStyles = `
-.netfleet-plugin-shell > .cbi-tabmenu { display: flex; flex-wrap: wrap; gap: 4px; padding: 0; margin: 0 0 20px; }
+.netfleet-plugin-shell > .netfleet-primary-nav { position: static; display: flex; flex-wrap: wrap; gap: 4px; padding: 0; margin: 0 0 20px; list-style: none; border-bottom: 1px solid var(--nf-border, #ddd); }
 .netfleet-plugin-shell { min-width: 0; }
-.netfleet-plugin-shell > .cbi-tabmenu > li { margin: 0 !important; padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; }
-.netfleet-plugin-shell > .cbi-tabmenu > li > a { display: block; padding: 9px 14px; border-bottom: 3px solid transparent; }
-.netfleet-plugin-shell > .cbi-tabmenu > .cbi-tab > a { border-bottom-color: var(--primary, #5e72e4); color: var(--primary, #5e72e4); background: var(--primary-color-low, rgba(94,114,228,.1)); }
+.netfleet-primary-nav > li { display: block; flex: 0 0 auto; float: none; margin: 0; padding: 0; list-style: none; }
+.netfleet-primary-nav > li > a { display: block; padding: 11px 16px; min-height: 44px; box-sizing: border-box; border-bottom: 3px solid transparent; color: var(--nf-text, #333); font-size: 16px; line-height: 1.4; text-decoration: none; }
+.netfleet-primary-nav > li > a:hover { background: var(--primary-color-low, rgba(94,114,228,.08)); }
+.netfleet-primary-nav > .is-current > a { border-bottom-color: var(--primary, #5e72e4); color: var(--primary, #5e72e4); font-weight: 600; }
+.netfleet-primary-nav a:focus-visible { outline: 2px solid var(--primary, #5e72e4); outline-offset: -2px; }
 .netfleet-plugin-directory, .nf-plugin-directory { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
 .nf-plugin-directory > p { grid-column: 1 / -1; }
 .netfleet-plugin-directory > section, .nf-plugin-directory > section { margin: 0; padding: 20px; background: var(--nf-surface, #fff); border: 1px solid var(--nf-border, #ddd); border-radius: 6px; }
@@ -17,11 +19,11 @@ export const pluginHostStyles = `
 .netfleet-plugin-directory button, .nf-plugin-directory button, .netfleet-plugin-subnav button { margin: 0 8px 8px 0; min-height: 40px; }
 .netfleet-plugin-subnav { margin: 16px 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .netfleet-plugin-subnav [aria-current=page] { font-weight: 600; }
-[data-netfleet-theme=dark] .netfleet-plugin-shell > .cbi-tabmenu > .cbi-tab > a { color: var(--primary-color-high, #a5b2ff); border-bottom-color: currentColor; }
+[data-netfleet-theme=dark] .netfleet-primary-nav > li > a { color: #ddd; }
+[data-netfleet-theme=dark] .netfleet-primary-nav > .is-current > a { color: var(--primary-color-high, #a5b2ff); border-bottom-color: currentColor; }
 @media (max-width: 700px) {
-  .netfleet-plugin-shell > .cbi-tabmenu { flex-wrap: nowrap; gap: 0; width: 100%; min-height: 0; margin: 0 0 16px !important; padding: 0 !important; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
-  .netfleet-plugin-shell > .cbi-tabmenu > li { flex: 0 0 auto; float: none; height: auto; min-height: 0; }
-  .netfleet-plugin-shell > .cbi-tabmenu > li > a { display: flex; align-items: center; min-height: 44px; padding: 8px 12px !important; margin: 0 !important; white-space: nowrap; font-size: 15px; line-height: 1.4; }
+  .netfleet-plugin-shell > .netfleet-primary-nav { flex-wrap: nowrap; gap: 0; width: 100%; margin-bottom: 16px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+  .netfleet-primary-nav > li > a { padding: 10px 12px; white-space: nowrap; font-size: 15px; }
   .netfleet-plugin-subnav { flex-wrap: nowrap; overflow-x: auto; }
   .netfleet-plugin-subnav button { flex-shrink: 0; }
 }

@@ -35,6 +35,7 @@ function E(tag, attrs, children) {
         Object.defineProperty(node, name, { get: () => node.attrs[name] != null, set: value => { if (value) node.attrs[name] = ''; else delete node.attrs[name]; } });
     }
     node.setAttribute = (name, value) => { node.attrs[name] = String(value); };
+    node.getAttribute = name => node.attrs[name] ?? null;
     Object.defineProperty(node, 'textContent', { get: () => text(node), set: value => { node.children = [value]; } });
     function parent(items) { items.forEach(item => { if (Array.isArray(item)) parent(item); else if (item && typeof item === 'object') item.parent = node; }); }
     parent(node.children);
@@ -674,7 +675,7 @@ assert(text(metadata).includes('aarch64_generic'));
 assert(text(metadata).includes('https://packages.example/netfleet'));
 assert(find(root, node => node.tag === 'details' && text(node).includes('缺少 1 项')).open);
 fire(button(root, '更新软件包'));
-assert(text(modal.content).includes('当前运行 v1.19.30，安装记录 1.19.29'));
+assert(text(modal.content).includes('当前运行 1.19.30，安装记录 1.19.29'));
 owner.components.components[2].installed_version = '1.19.30-r1';
 assert(!text(managed.components(owner)).includes('运行版本与安装记录不一致'));
 owner.components.components[2].update_available = false;
@@ -685,7 +686,8 @@ owner.components.components[1].update_available = true;
 owner.components.components[1].available_version = '1.2.0-r1';
 assert(button(managed.components(owner), '更新界面'), 'an older LuCI package must still be updatable with the paired NetFleet package');
 fire(button(managed.components(owner), '更新界面'));
-assert(text(modal.content).includes('LuCI 界面 1.2.0-r1'));
+assert(text(modal.content).includes('LuCI 界面 1.2.0'));
+assert(text(modal.content).includes('LuCI 1.2.0-r1'), 'original request identity remains in technical details');
 owner.operations = { packages: { kind: 'packages', state: 'failed', error: 'rollback_runtime_failed', recovery: 'failed', started_at: 100, finished_at: 102 } };
 assert(text(managed.components(owner)).includes('恢复失败'));
 owner.liveDataReady = false;
@@ -712,9 +714,10 @@ assert(!button(page, '运行管理'));
 fire(button(nav, '功能插件'));
 page = managed.components(owner);
 assert(!button(page, '检查更新'), 'plugin package updates use the platform package manager');
-assert(text(page).includes('HTTPS 兼容') && text(page).includes('为指定设备和网站提供 HTTPS 协议兼容'));
+assert(text(page).includes('HTTPS compatibility') && text(page).includes('https-compat') && text(page).includes('为指定设备和网站提供 HTTPS 协议兼容'));
 assert(text(page).includes('Custom name'), 'unknown plugins retain the declared name');
-assert(button(page, '运行管理'));
+assert(button(page, '查看状态'));
+assert.deepEqual(all(page, node => node.tag === 'th').map(text), ['插件', '分类与用途', '版本', '配置', '运行管理']);
 assert(!find(page, node => node.tag === 'details' && text(node).includes('编辑服务组合')).open);
 """)
 
@@ -743,8 +746,8 @@ let page = managed.components(owner);
 const link = find(page, node => node.tag === 'a' && text(node) === '软件包管理 ↗');
 assert.equal(link.attrs.href, '/cgi-bin/luci/admin/system/package-manager');
 assert(!text(page).includes('此设备未提供软件包管理页面'));
-fire(button(page, '运行管理')); await tick();
-assert.equal(find(modal.content, node => node.tag === 'a').attrs.href, link.attrs.href, 'dialog uses the same discovered route');
+fire(button(page, '查看状态')); await tick();
+assert(!find(modal.content, node => node.tag === 'a'), 'package management stays in the directory, not every runtime dialog');
 
 ui.menu.load = async () => ({ children: { admin: { children: { hidden: { title: 'Software', satisfied: false, action: { type: 'view', path: 'package-manager' } } } } } });
 const missing = controller(); missing.componentsSection = 'plugins';
@@ -790,7 +793,7 @@ assert(text(row).includes('未安装'));
 assert(text(row).includes('未安装可选模块'));
 assert(!text(row).includes('extension_component_not_installed'));
 assert(!text(row).includes('mitmproxy'));
-assert(!find(row, node => node.tag === 'details'));
+assert(!find(row, node => node.tag === 'details' && text(node).includes('运行依赖')));
 assert.equal(all(row, node => node.attrs.class === 'is-warning').length, 0);
 assert.equal(all(root, node => node.attrs.role === 'alert').length, 0);
 assert(!text(root).includes('运行依赖正常'), 'base dependencies belong to the basic components tab');
@@ -814,7 +817,7 @@ for (const [state, code, message] of [
   assert(text(row).includes(message));
   assert(text(row).includes('mitmproxy：缺少'));
   assert(text(row).includes('openssl：未确认'));
-  assert(find(row, node => node.tag === 'details').open);
+  assert(find(row, node => node.tag === 'details' && text(node).includes('mitmproxy')).open);
   assert.equal(all(root, node => node.attrs.role === 'alert').length, 0);
 }
 """)
@@ -950,94 +953,48 @@ assert.equal(modal, null);
     def test_dynamic_plugin_management_uses_current_identity_and_confirmation(self):
         self.run_js(r"""
 const calls = [];
-const plugin = { id: 'device-info', label: '设备信息', kind: 'plugin', version: '1.0.0', revision: 'r1',
+const plugin = { id: 'device-info', label: '设备信息', kind: 'plugin', runtime: 'process', version: '1.0.0-r2', revision: 'r1',
   package: 'opl-netfleet-plugin-device-info', actions: { inspect: 'read', reset: 'write' } };
 const owner = controller(); owner.componentsSection = 'plugins';
 owner.components = { supported: true, feed: {}, components: [], dependencies: [], extensions: [plugin] };
 const managed = module('managed.js', {
   pluginRead: async request => { calls.push(['read', request]); return { loaded: false, ready: true, revision: 'r2' }; },
-  pluginCall: async request => { calls.push(['write', request]); return { loaded: true, ready: true, revision: 'r2' }; },
+  pluginCall: async request => { calls.push(['write', request]); return { loaded: true, ready: true, revision: 'r3' }; },
   componentsGet: async () => owner.components,
 });
 let page = managed.components(owner);
-assert(text(find(page, node => node.tag === 'details')).includes(plugin.package));
-assert.equal(calls.length, 0, 'inventory must not execute plugin');
-fire(button(page, '运行管理'));
-await tick();
+assert.equal(calls.length, 0, 'inventory never starts or calls a plugin');
+assert(text(page).includes('device-info') && text(page).includes('进程插件'));
+assert.equal(text(find(page, n => n.tag === 'td' && text(n).startsWith('1.0.0')).children[0]), '1.0.0');
+fire(button(page, '查看状态')); await tick();
 assert.equal(calls[0][1].action, 'get');
-fire(button(modal.content, '加载'));
-assert.equal(modal.title, '确认插件操作');
+assert(!find(modal.content, n => n.tag === 'select' || n.tag === 'textarea'), 'no raw RPC editor');
+assert(button(modal.content, '重新加载').disabled);
+fire(button(modal.content, '加载进程'));
+assert.equal(modal.title, '确认加载进程');
 assert.equal(calls.length, 1, 'write waits for confirmation');
-fire(button(modal.content, '确认'));
-await tick();
+fire(button(modal.content, '确认')); await tick();
 assert.equal(calls[1][0], 'write');
-assert.equal(calls[1][1].revision, 'r2', 'uses current owner identity');
+assert.equal(calls[1][1].revision, 'r2', 'writes use fresh owner revision');
 assert.equal(calls[1][1].confirm, true);
-assert(text(modal.content).includes('已加载，就绪'));
-const select = find(modal.content, node => node.tag === 'select');
-select.value = 'inspect';
-fire(button(modal.content, '执行'));
-await tick();
-assert.equal(calls.at(-1)[0], 'read');
-assert.equal(calls.at(-1)[1].action, 'inspect');
-const params = find(modal.content, node => node.tag === 'textarea');
-params.value = '[]';
-const before = calls.length;
-fire(button(modal.content, '执行'));
-assert.equal(calls.length, before, 'invalid params never dispatched');
-assert(text(modal.content).includes('JSON 对象'));
+assert(text(modal.content).includes('运行就绪'));
+assert(button(modal.content, '加载进程').disabled);
+assert(!button(modal.content, '重新加载').disabled);
+assert(text(modal.content).includes('完整版本：1.0.0-r2'));
 
-const service = { id: 'metrics', label: '运行指标', kind: 'plugin', runtime: 'service', version: '1.0.0',
-  revision: 'service-r1', package: 'opl-netfleet-plugin-metrics', services: { 'metrics.snapshot': 1 } };
-assert(!Object.hasOwn(service, 'actions'));
+const service = { ...plugin, id: 'activation', label: 'Activation', runtime: 'service', instance: 'review', revision: 'service-r1',
+  actions: { 'get-mode': 'read', 'set-mode': 'write' } };
 owner.components.extensions = [service];
-const serviceCalls = [];
-const serviceManaged = module('managed.js', {
-  pluginRead: async request => { serviceCalls.push(['read', request]); return { loaded: true, ready: true, revision: 'service-r2' }; },
-  pluginCall: async request => { serviceCalls.push(['write', request]); return { loaded: true, ready: true, revision: 'service-r3' }; },
-  componentsGet: async () => owner.components,
-});
-page = serviceManaged.components(owner);
-assert.equal(serviceCalls.length, 0, 'service inventory must not execute plugin');
-fire(button(page, '运行管理'));
-await tick();
-assert.deepEqual(serviceCalls, [['read', {
-  id: 'metrics', action: 'get', revision: 'service-r1', confirm: false, params: {},
-}]]);
-assert(!find(modal.content, node => node.tag === 'select'), 'a service without actions has no action selector');
-assert(!find(modal.content, node => node.tag === 'textarea'), 'a service without actions has no parameter input');
-fire(button(modal.content, '重新加载'));
-assert.equal(serviceCalls.length, 1, 'service reload waits for confirmation');
-fire(button(modal.content, '确认'));
-await tick();
-assert.deepEqual(serviceCalls[1], ['write', {
-  id: 'metrics', action: 'reload', revision: 'service-r2', confirm: true, params: {},
-}]);
-assert.deepEqual(JSON.parse(text(find(modal.content, node => node.tag === 'pre'))), {
-  loaded: true, ready: true, revision: 'service-r3',
-});
-fire(find(modal.content, node => node.tag === 'button' && node.attrs.title === '刷新状态'));
-await tick();
-assert.equal(serviceCalls.at(-1)[1].action, 'get');
-assert.equal(serviceCalls.at(-1)[1].revision, 'service-r3', 'read after reload uses the current service identity');
-
-const note = JSON.parse(fs.readFileSync(path.join(resources, '../../../../../../../../examples/plugins/workspace-note/manifest.json'), 'utf8'));
-owner.components.extensions = [{ ...note, kind: 'plugin', runtime: 'service', revision: 'note-r1', instance: 'review' }];
-page = serviceManaged.components(owner);
-fire(button(page, '运行管理'));
-await tick();
-find(modal.content, node => node.tag === 'select').value = 'config-set';
-find(modal.content, node => node.tag === 'textarea').value = '{"title":"Updated","body":"Note","generation":1}';
-const beforeWrite = serviceCalls.length;
-fire(button(modal.content, '执行'));
-assert.equal(modal.title, '确认插件操作');
-assert.equal(serviceCalls.length, beforeWrite, 'service writes wait for confirmation');
-fire(button(modal.content, '确认'));
-await tick();
-assert.equal(serviceCalls.at(-1)[0], 'write');
-assert.equal(serviceCalls.at(-1)[1].confirm, true);
-assert.equal(serviceCalls.at(-1)[1].instance, 'review');
-assert.equal(serviceCalls.at(-1)[1].action, 'config-set');
+const opened = []; owner.context = { navigate: id => opened.push(id) };
+page = managed.components(owner);
+fire(button(page, '查看状态')); await tick();
+assert.equal(calls.at(-1)[1].instance, 'review');
+assert(!find(modal.content, n => n.tag === 'select' || n.tag === 'textarea'));
+assert(!button(modal.content, '加载进程') && !button(modal.content, '重新加载') && !button(modal.content, '卸载进程'),
+  'service lifecycle belongs to the host');
+assert(text(modal.content).includes('由 NetFleet 自动管理'));
+fire(button(modal.content, '前往概览切换运行模式'));
+assert.deepEqual(opened, ['plugin:product-ui:overview']);
 """)
 
     def test_https_service_exposes_configuration_without_loading_engine(self):
@@ -1053,13 +1010,13 @@ const managed = module('managed.js', {});
 let page = managed.components(owner);
 fire(button(page, '配置'));
 assert.deepEqual(opened, ['plugin:https-compat:settings']);
-assert(button(page, '运行管理'));
-assert(text(page).includes('可用性'));
+assert(button(page, '查看状态'));
+assert(text(page).includes('运行管理'));
 assert(!text(page).includes('已启用'));
 plugin.enabled = false;
 page = managed.components(owner);
 assert(button(page, '配置').disabled, 'disabled management plugin must not be loaded by opening its configuration');
-assert(!button(page, '运行管理').disabled);
+assert(!button(page, '查看状态').disabled);
 plugin.id = 'another-plugin'; plugin.enabled = true;
 fire(button(managed.components(owner), '配置'));
 assert.equal(opened.at(-1), 'plugin:another-plugin:settings', 'configuration navigation is manifest-driven');

@@ -99,12 +99,12 @@ return view.extend({
       }
     }
     const extensionSelected = selected && selected.page.navigation !== 'primary';
-    const tabs = E('ul', { 'class': 'cbi-tabmenu' }, navigation.primary.map(function(page) {
-      return E('li', { 'class': (page.id === self.current || extensionSelected && page.id === navigation.directoryId) ? 'cbi-tab' : 'cbi-tab-disabled' }, E('a', {
+    const tabs = E('ul', { 'class': 'netfleet-primary-nav', 'aria-label': 'NetFleet 导航' }, navigation.primary.map(function(page) {
+      return E('li', { 'class': (page.id === self.current || extensionSelected && page.id === navigation.directoryId) ? 'is-current' : '' }, E('a', {
         'href': self.module.pageHash(page.id), 'aria-current': page.id === self.current ? 'page' : null, 'click': function(event) { if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return; event.preventDefault(); self.navigate(page.id); }
       }, page.title));
     }));
-    if (navigation.directoryId === 'plugins') tabs.appendChild(E('li', { 'class': !selected || selected.page.navigation !== 'primary' ? 'cbi-tab' : 'cbi-tab-disabled' }, E('a', { 'href': '#', 'click': function(event) { event.preventDefault(); self.navigate('plugins'); } }, '插件')));
+    if (navigation.directoryId === 'plugins') tabs.appendChild(E('li', { 'class': !selected || selected.page.navigation !== 'primary' ? 'is-current' : '' }, E('a', { 'href': '#', 'click': function(event) { event.preventDefault(); self.navigate('plugins'); } }, '插件')));
     const group = navigation.groups.find(function(value) { return value.pages.some(function(page) { return page.id === self.current; }); });
     const subnav = group ? E('nav', { 'class': 'netfleet-plugin-subnav', 'aria-label': '插件页面' }, [
       E('button', { 'type': 'button', 'class': 'btn cbi-button', 'click': function() { self.navigate(navigation.directoryId); } }, navigation.directoryId === 'plugins' ? '← 插件' : '← 插件与更新'),
@@ -117,7 +117,7 @@ return view.extend({
     this.root.replaceChildren(E('style', {}, this.module.pluginHostStyles), tabs, subnav, warning, this.pageContainer);
     // Only scroll the navigation strip; scrollIntoView would also move the page.
     requestAnimationFrame(function() {
-      const active = tabs.querySelector('.cbi-tab');
+      const active = tabs.querySelector('.is-current');
       if (active && tabs.scrollWidth > tabs.clientWidth) {
         const item = active.getBoundingClientRect(), strip = tabs.getBoundingClientRect();
         if (item.left < strip.left) tabs.scrollLeft -= strip.left - item.left;
