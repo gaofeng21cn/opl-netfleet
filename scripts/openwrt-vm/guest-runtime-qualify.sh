@@ -189,7 +189,7 @@ if [ "\$*" = 'list chain inet nikki lan_dns_hijack' ]; then
 	printf '\t\tcounter comment "redirect to :1053"\n'
 	exit 0
 fi
-if [ "\$*" = '-j list table inet nikki' ]; then
+if [ "\$*" = '-j -t list table inet nikki' ]; then
 	"$real_nft" "\$@" | ucode -e '
 		import { readfile } from "fs";
 		const data = json(readfile("/dev/stdin"));
