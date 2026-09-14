@@ -27,7 +27,7 @@ if(action=='load') {
     const result=request('plugin-call',{id,action:loaded?'load':'unload',revision:row.revision,confirm:true});
     check(result.loaded===loaded,'plugin_toggle_result_mismatch');
     const current=filter(run(['plugins-list']).plugins,item=>item.id==id&&item.instance=='default')[0];
-    check(current.loaded===loaded,'plugin_toggle_inventory_mismatch');
+    check(current.enabled===loaded,'plugin_toggle_inventory_mismatch');
     const p=fs.popen("ubus call service list '{\"name\":\"opl-netfleet-compat\"}'");
     const instances=json(p.read('all'))?.['opl-netfleet-compat']?.instances ?? {};
     check(p.close()==0,'plugin_service_read_failed');
