@@ -300,7 +300,23 @@ if [ -n "$probe_port" ]; then
         test "$(wire -sS -o /dev/null -D "$work/error.headers" -w '%{http_code}' "https://wire.example/compat-wire/$code")" = "$code"
         grep -iq '^retry-after: 7' "$work/error.headers"
     done
+    stage=plugin_toggle_active_stream
+    wire -fsSN 'https://wire.example/compat-wire/events' >"$work/toggle-events.txt" 2>"$work/toggle-events.log" &
+    stream_pid=$!
+    sleep 1
+    kill -0 "$stream_pid"
+    grep -q '^data: 0$' "$work/toggle-events.txt"
+    ucode /tmp/tests/https_native_guest.uc plugin-unload >"$work/plugin-unload.log"
+    interrupted=0
+    wait "$stream_pid" || interrupted=$?
+    test "$interrupted" != 0
+    probe 4 http/1.1
+    probe 6 http/1.1
+    ucode /tmp/tests/https_native_guest.uc plugin-load >"$work/plugin-load.log"
+    wait_intercepting
+    processes
     probe 4 h2
+    probe 6 h2
 fi
 stage=resources
 if [ -f /tmp/compat-runtime/upgrade.json ]; then

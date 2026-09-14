@@ -39,6 +39,7 @@ function errorLabel(code) {
 		plugin_kernel_maintenance: '内核正在更新，请稍后重试',
 		plugin_disabled: '插件未启用',
 		healthy_connections_still_draining: '现有连接仍在传输，尚未排空。为保留连接，请在传输结束后重试',
+		compatibility_stop_unconfirmed: '尚未确认兼容服务已停止，请查看当前状态',
 		plugin_required_by: '其他已启用插件仍依赖此插件',
 		plugin_binding_conflict: '服务已绑定其他插件',
 		plugin_service_unbound: '服务尚未绑定提供者',
@@ -669,7 +670,7 @@ function pluginDialog(controller, plugin, initialAction) {
 			}).finally(function() { busy(false); });
 		};
 		if (!writing) return execute();
-		ui.showModal('确认' + labels[action], [ E('p', {}, (plugin.label || plugin.id) + '：' + (action === 'unload' ? '将停止此插件提供的功能，保留软件包和配置。若仍被其他插件依赖，宿主会拒绝禁用。' : action === 'reload' ? '将重新启动此插件进程，相关功能会短暂中断。' : '将启用此插件并检查是否就绪。')),
+		ui.showModal('确认' + labels[action], [ E('p', {}, (plugin.label || plugin.id) + '：' + (action === 'unload' ? '将停止此插件提供的功能，保留软件包和配置。正在使用此插件的连接可能中断。若仍被其他插件依赖，宿主会拒绝禁用。' : action === 'reload' ? '将重新启动此插件进程，相关功能会短暂中断。' : '将启用此插件并检查是否就绪。')),
 			E('div', { 'class': 'right' }, [ button('取消', function() { pluginDialog(controller, plugin); }), ' ',
 				button('确认', function() { open(); execute(); }) ]) ]);
 	}

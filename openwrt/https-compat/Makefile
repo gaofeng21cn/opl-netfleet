@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet-https-compat
-PKG_VERSION:=0.6.2
+PKG_VERSION:=0.6.3
 PKG_RELEASE:=
 PKG_LICENSE:=MIT GPL-2.0-or-later LGPL-2.1-only
 HAPROXY_VERSION:=3.2.21
@@ -19,7 +19,7 @@ define Package/opl-netfleet-https-compat
   CATEGORY:=Network
   TITLE:=NetFleet optional HTTPS compatibility engine
   DEPENDS:=+opl-netfleet-plugin-https-compat +opl-netfleet-plugin-mihomo +ucode +ucode-mod-fs +ucode-mod-digest +ucode-mod-socket +ucode-mod-uloop +libopenssl +libpthread +libatomic +openssl-util +ca-bundle +coreutils-timeout +libucode +libjson-c +libmnl +libnftnl
-  EXTRA_DEPENDS:=opl-netfleet-plugin-https-compat (>=0.9.1), opl-netfleet-plugin-mihomo (>=0.9.0)
+  EXTRA_DEPENDS:=opl-netfleet-plugin-https-compat (>=0.9.4), opl-netfleet-plugin-mihomo (>=0.9.0)
 endef
 
 define Package/opl-netfleet-https-compat/description

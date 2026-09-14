@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet
-PKG_VERSION:=0.8.17
+PKG_VERSION:=0.8.18
 PKG_RELEASE:=
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=OPL NetFleet
@@ -373,6 +373,7 @@ define Package/opl-netfleet-plugin-$(1)
   REPLACES:=opl-netfleet
   DEPENDS:=+opl-netfleet-kernel $(shell python3 ./plugin-packages.py dependencies $(1))
   EXTRA_DEPENDS:=$(if $(filter platform-openwrt,$(1)),opl-netfleet-plugin-models (>=0.7.8),$(if $(filter selection,$(1)),opl-netfleet-plugin-models (>=0.7.6),$(if $(filter product-ui,$(1)),opl-netfleet-kernel (>=0.8.8)$(comma) luci-app-netfleet (>=0.8.4),$(if $(filter maintenance,$(1)),opl-netfleet-kernel (>=0.8.1),$(if $(filter mihomo,$(1)),opl-netfleet-plugin-platform (>=0.8.3))))))
+  EXTRA_DEPENDS+=$(if $(filter https-compat,$(1)),opl-netfleet-kernel (>=0.8.18))
   EXTRA_DEPENDS+=$(if $(filter subscriptions,$(1)),opl-netfleet-plugin-models (>=0.7.9)$(comma) opl-netfleet-plugin-platform (>=0.8.4))$(if $(filter refresh scheduler,$(1)),opl-netfleet-plugin-subscriptions (>=0.7.1))
   PKGARCH:=all
 endef

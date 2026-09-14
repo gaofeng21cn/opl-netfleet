@@ -622,7 +622,7 @@ function package_operation(action, id, root, options) {
 				if (!atomic_json(marker, { phase: 'resume_failed' })) return failure('plugin_package_marker_failed');
 				saved.drained = false;
 				if (!atomic_json(resource_path, saved)) return failure('plugin_package_marker_failed');
-				try { resumed = hook == null ? failure('plugin_resume_owner_missing') : ref.host.call(hook.service, hook.method, saved.state); }
+				try { resumed = ref.host.system.enabled[ref.id] != true ? { ok: true } : hook == null ? failure('plugin_resume_owner_missing') : ref.host.call(hook.service, hook.method, saved.state); }
 				catch (error) { resumed = failure(error.message); }
 				if (!resumed?.ok) {
 					return resumed ?? failure('plugin_resume_unconfirmed');
@@ -701,7 +701,10 @@ function service_request(input, found, host) {
 		if (action != 'unload') for (let name in keys(found.manifest.services)) candidate.use(name, found.manifest.services[name].version);
 	}, () => candidate.release());
 	const lifecycle_options = { ...host.options, lifecycle_instances: affected, lifecycle_action: action };
-	const drained = package_operation('plugin-package-drain', id, host.root, lifecycle_options);
+	// Include the newly enabled resource owner so its saved stop intent participates
+	// in the same drain/resume transaction instead of only toggling the flag.
+	const drain_options = action == 'load' ? { ...lifecycle_options, system: profile } : lifecycle_options;
+	const drained = package_operation('plugin-package-drain', id, host.root, drain_options);
 	if (!drained.ok) {
 		const restored = package_operation('plugin-package-resume', id, host.root, lifecycle_options);
 		return { ...drained, rollback: restored };
