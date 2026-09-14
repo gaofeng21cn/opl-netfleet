@@ -211,7 +211,7 @@ function executionAt(value) {
 function refreshResult(value) {
 	return ({
 		updated: '更新完成并已重载',
-		cache_updated: '缓存已更新',
+		cache_updated: '订阅正常',
 		partially_updated: '部分机场更新成功',
 		unchanged: '订阅无变化',
 		failed: '更新失败，继续使用旧版本',
@@ -738,8 +738,8 @@ function subscriptionState(entry) {
 		return entry.cache_present ? '待更新，沿用上次缓存' : '等待首次更新';
 	if (entry.cache_present !== true)
 		return '没有可用缓存';
-	return entry.last_result === 'updated' ? '缓存已更新' :
-		(entry.last_result ? refreshResult(entry.last_result) : '缓存可用');
+	return entry.last_result === 'updated' ? '订阅正常' :
+		(entry.last_result ? refreshResult(entry.last_result) : '订阅可用');
 }
 
 function subscriptionSummary(refresh, subscriptions) {
@@ -817,20 +817,16 @@ function measurementCell(value, status) {
 	const unmeasured = entries.filter(function(entry) { return !entry.ok && entry.quota_state !== 'exhausted'; }).length;
 	const explanation = function(reason) { return measurementReasons[reason || 'measurement_unavailable'] || '未取得有效测速，原因暂无法解释'; };
 	const details = [ E('summary', {}, '查看测速详情' + (entries.length ? '（' + entries.length + ' 项）' : '')),
-		E('p', {}, '每项对应一个机场在一个地区的候选线路，不代表节点数。流量状态来自最近一次订阅更新，不随测速刷新；测速结果不等于业务保护检查结果。') ];
+		E('p', {}, '每项对应一个机场在一个地区的候选线路，显示本轮测速结果。') ];
 	if (entries.length) details.push(E('ul', {}, entries.map(function(entry) {
 		const provider = (status.providers || []).find(function(item) { return item.id === entry.provider_id; });
-		const subscription = provider && (status.subscriptions || []).find(function(item) { return item.section === provider.subscription_section; });
 		const currentQuota = provider && provider.quota;
 		const content = [ E('strong', {}, providerName(status, entry.provider_id) + ' · ' + regionName(status, entry.region_id)) ];
 		if (currentQuota && currentQuota.state === 'exhausted')
 			content.push(E('div', {}, measurementReasons.quota_exhausted));
-		else if (currentQuota)
-			content.push(E('div', {}, '订阅配额记录：' + (currentQuota.state === 'available' && finite(currentQuota.remaining_bytes) ? '剩余 ' : '') + quota(provider)));
-		if (currentQuota) content.push(E('small', { 'class': 'netfleet-measurement-note' }, '订阅更新于 ' + executionAt(subscription && subscription.last_success)));
 		if (entry.quota_state === 'exhausted' && (!currentQuota || currentQuota.state !== 'exhausted'))
 			content.push(E('div', {}, '该次测速时流量已耗尽，不参与选优'));
-		content.push(E('div', {}, '该次测速记录：' + (entry.ok ? '测速成功 · ' + delay(entry.delay_ms) : explanation(entry.measurement_reason))));
+		content.push(E('div', {}, entry.ok ? delay(entry.delay_ms, '未取得有效测速') : explanation(entry.measurement_reason)));
 		return E('li', {}, content);
 	})));
 	else details.push(E('p', {}, '此记录没有逐项详情。' + Object.entries(value.exclusions || {}).map(function(item) {
@@ -1047,7 +1043,7 @@ function eventReason(status, event) {
 			native_restored: '已恢复原生配置',
 			native_restore_failed_passthrough: '原生配置恢复失败，已停止代理后端 并恢复网络直通',
 			updated: '订阅更新完成并重载',
-			cache_updated: '订阅缓存已更新',
+			cache_updated: '订阅正常',
 			partially_updated: '部分机场更新成功',
 			unchanged: '订阅无变化',
 			update_failed: '更新失败，旧缓存保持生效',
