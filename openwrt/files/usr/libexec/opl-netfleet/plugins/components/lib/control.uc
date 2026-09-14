@@ -181,7 +181,10 @@ function plugin_plan(request, work, preview) {
 		for (let name, binding in context.system.bindings ?? {}) if (binding == id) fail("plugin_package_required");
 	}
 	const argument = request.action == "remove" ? `del ${q(request.name)}` : `add ${q(`${request.name}=${request.version}`)}`;
-	const output = capture(`LC_ALL=C apk --no-network --simulate ${argument}`);
+	// APK masks every uncached remote archive under --no-network, even with
+	// --simulate. Simulation reads the signed index but never downloads or installs
+	// payloads; prefer the checked cache and bound any index refresh.
+	const output = capture(`LC_ALL=C apk --timeout 10 --cache-max-age 1440 --simulate ${argument}`);
 	if (output == null) fail("plugin_dependencies_unavailable");
 	const plan = package_model.validate(package_model.changes(output), preview ? { ...request, confirm: true } : request, versions, product_packages());
 	if (!preview && sprintf("%J", request.plan) != sprintf("%J", plan)) fail("candidate_changed");
