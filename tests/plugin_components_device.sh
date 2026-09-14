@@ -55,7 +55,7 @@ run() {
 	wanted=$(jsonfilter -i "$work/start.json" -e '@.result.operation.id')
 	test -n "$wanted"
 	for attempt in $(seq 1 180); do
-		ucode "$main" operation-get >"$work/progress.json"
+		printf '{}\n' | "$rpc" call operation_get >"$work/progress.json"
 		id=$(jsonfilter -i "$work/progress.json" -e '@.result.packages.id')
 		state=$(jsonfilter -i "$work/progress.json" -e '@.result.packages.state')
 		if [ "$id" = "$wanted" ]; then
