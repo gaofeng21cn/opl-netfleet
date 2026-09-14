@@ -80,6 +80,7 @@ mkdir -p "$sdk/package/opl-netfleet"
 cp -R "$work/openwrt/Makefile" "$sdk/package/opl-netfleet/"
 cp "$work/openwrt/plugin-packages.py" "$sdk/package/opl-netfleet/"
 cp "$work/openwrt/plugin_payload.py" "$sdk/package/opl-netfleet/"
+cp "$work/openwrt/compile-plugins.py" "$sdk/package/opl-netfleet/"
 cp -R "$work/openwrt/files" "$sdk/package/opl-netfleet/"
 mkdir -p "$sdk/package/luci-app-netfleet"
 cp -R "$work/openwrt/luci-app-netfleet/." "$sdk/package/luci-app-netfleet/"
@@ -95,6 +96,7 @@ if grep -Eq '^CONFIG_USE_APK=y$' "$sdk/.config" 2>/dev/null; then
   chmod 0600 "$sdk/private-key.pem"
   "$sdk/staging_dir/host/bin/openssl" ec -in "$sdk/private-key.pem" -pubout >"$sdk/public-key.pem"
 fi
+make -C "$sdk" package/feeds/base/ucode/host/compile V=s
 make -C "$sdk" package/opl-netfleet/clean package/luci-app-netfleet/clean V=s
 # These payloads use the prepared SDK tools, not compiled dependency libraries.
 # Keep runtime APK dependencies, but do not rebuild the SDK's entire kmod set.
@@ -105,6 +107,13 @@ mkdir -p "$payload/usr/libexec" "$payload/usr/libexec/rpcd" \
   "$payload/etc/opl-netfleet" "$payload/etc/init.d" "$payload/www" \
   "$payload/usr/share/luci" "$payload/usr/share/rpcd" "$payload/usr/share/opl-netfleet"
 cp -R "$work/openwrt/files/usr/libexec/opl-netfleet" "$payload/usr/libexec/"
+compiled_plugins=()
+while IFS= read -r directory; do compiled_plugins+=("$directory"); done < <(find "$sdk/build_dir" -type d -path "*/opl-netfleet-${version}/compiled-plugins")
+[[ ${#compiled_plugins[@]} -eq 1 ]] || die 'expected one compiled plugin payload'
+rm -rf "$payload/usr/libexec/opl-netfleet/plugins"
+cp -R "${compiled_plugins[0]}" "$payload/usr/libexec/opl-netfleet/plugins"
+cp "${compiled_plugins[0]%/*}/bytecode.json" "$output/bytecode.json"
+
 cp "$work/openwrt/files/usr/libexec/opl-netfleet-transfer" "$payload/usr/libexec/"
 cp "$work/openwrt/files/usr/libexec/opl-netfleet-plugin-package" "$payload/usr/libexec/"
 cp "$work/openwrt/files/usr/libexec/rpcd/opl-netfleet" "$payload/usr/libexec/rpcd/opl-netfleet"
@@ -118,7 +127,7 @@ cp -R "$work/openwrt/files/etc/opl-netfleet/." "$payload/etc/opl-netfleet/"
 cp "$build_identity" "$payload/usr/share/opl-netfleet/build.json"
 cp -R "$work/openwrt/luci-app-netfleet/htdocs/." "$payload/www/"
 find "$payload/www" -type f -name '*.d.ts' -delete
-for plugin_dir in "$work/openwrt/files/usr/libexec/opl-netfleet/plugins/"*; do
+for plugin_dir in "$payload/usr/libexec/opl-netfleet/plugins/"*; do
   python3 "$work/openwrt/plugin_payload.py" project "$plugin_dir" "$payload/www"
 done
 cp -R "$work/openwrt/luci-app-netfleet/root/." "$payload/"

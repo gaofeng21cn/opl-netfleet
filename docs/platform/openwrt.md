@@ -51,6 +51,17 @@ OpenWrt 默认绑定在 `/usr/share/opl-netfleet/system.json`，私有覆盖在
 
 ### 版本化分发
 
+官方服务包使用 SDK 对应的 `ucode/host` 预编译 manifest 声明的工厂模块，
+设备只加载字节码，不在安装、启用或每次状态读取时编译源码。编译移除调试源码路径，
+安装包不依赖构建目录继续存在；编译器与目标解释器必须作为同一 SDK/固件组合验证。
+同插件的静态 import 由编译器解析，
+系统原生模块仍由设备 UCode 加载。源码与第三方源码插件的执行路径继续可用，
+不跨请求缓存服务实例，不绕过代码摘要、锁和 mutation 前置检查。
+
+编译仅发生在 SDK 独立构建目录；源码目录不被改写。安装、公开资源投影、FILES.sha256
+与候选身份共同消费这份编译结果。资格必须在目标 OpenWrt 中读取真实安装包并覆盖
+加载、独立更新、错误模块、恢复和卸载；本机编译成功不代替设备解释器兼容证明。
+
 NetFleet 自有包的 `PKG_VERSION` 使用[插件版本合同](../architecture/packaging.md#插件版本)中的
 三段数字；`PKG_RELEASE` 留空，功能插件的 `VERSION` 直接消费 manifest 版本。
 OpenWrt 原生支持无打包后缀的 APK/IPK；发布清单的 artifact `version` 是完整安装版本，

@@ -81,6 +81,7 @@ class MvpLayoutTests(unittest.TestCase):
             (root / "rules.mk").touch()
             (root / "include/package.mk").touch()
             stage = root / "stage"
+            shutil.copytree(RUNTIME / "plugins/product-ui", root / "compiled-plugins/product-ui")
             for source, package in ((ROOT / "openwrt", "opl-netfleet-plugin-product-ui"),
                                     (LUCI, "luci-app-netfleet")):
                 harness = root / f"{package}.mk"
@@ -89,7 +90,7 @@ class MvpLayoutTests(unittest.TestCase):
                     "all:\n\t$(call Package/" + package + "/install," + str(stage) + ")\n")
                 subprocess.run([
                     "make", "--no-print-directory", "-f", str(source / "Makefile"),
-                    "-f", str(harness), f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", "all",
+                    "-f", str(harness), f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", f"PKG_BUILD_DIR={root}", "all",
                 ], cwd=source, capture_output=True, text=True, check=True)
             public = stage / "www/luci-static/resources/netfleet"
             package_version = re.search(r"^PKG_VERSION:=(\S+)$", (LUCI / "Makefile").read_text(), re.M).group(1)
@@ -190,13 +191,15 @@ class MvpLayoutTests(unittest.TestCase):
             (plugin / "config/private.json").write_text('{"private":true}\n')
             (plugin / "resources/page.js").write_text('export default {};\n')
             (plugin / "resources/nested/page.css").write_text('body { color: black; }\n')
+            # This fixture exercises install layout; SDK tests cover compilation.
+            shutil.copytree(plugin, root / "compiled-plugins/layout-test")
             harness = root / "install.mk"
             harness.write_text(
                 "INSTALL_DIR:=mkdir -p\nCP:=cp -R\n"
                 "all:\n\t$(call Package/opl-netfleet-plugin-layout-test/install," + str(root / "stage") + ")\n")
             subprocess.run([
                 "make", "--no-print-directory", "-f", str(root / "Makefile"),
-                "-f", str(harness), f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", "all",
+                "-f", str(harness), f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", f"PKG_BUILD_DIR={root}", "all",
             ], cwd=root, capture_output=True, text=True, check=True)
             runtime = root / "stage/usr/libexec/opl-netfleet/plugins/layout-test"
             plugin_public = root / "stage/www/luci-static/resources/netfleet/plugins/layout-test"

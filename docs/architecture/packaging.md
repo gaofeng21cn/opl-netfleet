@@ -36,6 +36,11 @@ NetFleet 自有插件采用三段数字 `主版本.次版本.修订号`（`X.Y.Z
 新包只生成三段数字版本。页面对历史包展示其产品版本，完整旧身份留在技术详情，
 不为历史 `rN` 新增另一套用户可见命名。第三方软件保留上游版本与包身份。
 
+官方服务插件的 OpenWrt 构建可把 manifest 声明的工厂模块转换为 UCode 字节码；
+配置、服务接口、依赖 owner 与加载租约保持不变。源码仍是开发和审阅入口，
+安装身份及资源 revision 必须由转换后的实际 payload 计算。转换与编译器合同归
+[OpenWrt](../platform/openwrt.md#版本化分发)，不要求第三方插件或其他平台采用相同表示。
+
 ## 配置权威与部署投影
 
 private OPL Instance 是用户私有 desired configuration 的权威。deployment bundle 是

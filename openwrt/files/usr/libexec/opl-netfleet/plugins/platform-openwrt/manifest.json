@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "platform-openwrt",
   "label": "OpenWrt configuration and device",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "api_version": 1,
   "package": "opl-netfleet-plugin-platform-openwrt",
   "services": {

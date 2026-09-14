@@ -5,6 +5,7 @@ PKG_VERSION:=0.8.20
 PKG_RELEASE:=
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=OPL NetFleet
+PKG_BUILD_DEPENDS:=ucode/host
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -198,6 +199,9 @@ exit 0
 endef
 
 define Build/Compile
+	$(RM) -r $(PKG_BUILD_DIR)/compiled-plugins
+	$(CP) ./files/usr/libexec/opl-netfleet/plugins $(PKG_BUILD_DIR)/compiled-plugins
+	python3 ./compile-plugins.py --root $(PKG_BUILD_DIR)/compiled-plugins --compiler $(STAGING_DIR_HOSTPKG)/bin/ucode --libraries $(STAGING_DIR_HOSTPKG)/lib/ucode >$(PKG_BUILD_DIR)/bytecode.json
 endef
 
 define Package/opl-netfleet/preinst
@@ -380,8 +384,8 @@ endef
 
 define Package/opl-netfleet-plugin-$(1)/install
 	$$(INSTALL_DIR) $$(1)/usr/libexec/opl-netfleet/plugins/$(1)
-	$$(CP) ./files/usr/libexec/opl-netfleet/plugins/$(1)/. $$(1)/usr/libexec/opl-netfleet/plugins/$(1)/
-	python3 ./plugin_payload.py project ./files/usr/libexec/opl-netfleet/plugins/$(1) $$(1)/www
+	$$(CP) $$(PKG_BUILD_DIR)/compiled-plugins/$(1)/. $$(1)/usr/libexec/opl-netfleet/plugins/$(1)/
+	python3 ./plugin_payload.py project $$(PKG_BUILD_DIR)/compiled-plugins/$(1) $$(1)/www
 $(call PluginFiles/$(1),$$(1))
 endef
 
