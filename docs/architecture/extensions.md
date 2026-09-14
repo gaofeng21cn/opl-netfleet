@@ -32,7 +32,9 @@ UCode 服务插件使用 `opl-netfleet-service-plugin.v1` 声明具名服务、�
 
 `load` 启用插件并为尚未绑定的服务设置提供者，不抢占已有绑定；`unload` 和 `reload`
 通过包生命周期协调资源退出与恢复。纯服务无需自定义生命周期；持有长期资源的插件
-声明成对 `drain/resume`，退出结果作为恢复输入。完整声明与行为由
+声明成对 `drain/resume`，退出结果作为恢复输入。排空钩子的第二参数包含
+宿主发起的 `action`（`load/unload/reload/package`），资源 owner 可据此缩短交互等待，
+但不得降低排空成功条件。完整声明与行为由
 [微内核合同](microkernel.md)维护。
 
 ## 进程插件协议

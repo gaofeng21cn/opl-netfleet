@@ -344,8 +344,8 @@ return function(context, options) {
         }
         io.atomic(TRUST,trust);io.atomic(EFFECTIVE,effective(config,trust,identity.resolve(config)));return status();
     }
-    function drain() {
-        bypass();const deadline=io.now()+30,live=health(),pid=live.pid;
+    function drain(wait_seconds) {
+        bypass();const deadline=io.now()+(wait_seconds ?? 30),live=health(),pid=live.pid;
         if(!pid&&live.active_connections===0) return {drained:true};
         if(type(pid)!='int'||pid<=1) die('draining_engine_unconfirmed');
         function birth() {
@@ -393,9 +393,12 @@ return function(context, options) {
                 {revision:revision(),requested:io.read(CONFIG,DEFAULT).enabled,running:length(filter(values(instances),item=>item.running))>0,
                     keep_maintenance:!!previous.maintenance||request.lifecycle!==true};
             save({...previous,recovery:{...(previous.recovery ?? {}),intercepting:false,healthy_since:null},suspended:saved,maintenance:true,intercepting:false,reason:'maintenance'},previous);
-            drain();call('remove');if(length(instances)) service('delete');return saved;
+            drain(request.interactive===true?1:30);call('remove');if(length(instances)) service('delete');return saved;
         }
         if(action=='resume') {
+            // A failed drain has not returned its handoff to the host yet.
+            // Recover the intent saved before entering maintenance in that case.
+            if(request.revision==null&&previous.suspended) request=previous.suspended;
             if(request.running&&request.requested&&request.revision==revision()&&io.read(CONFIG,DEFAULT).enabled) {
                 const keep=request.keep_maintenance ?? true;
                 if(keep) previous.maintenance=true;else delete previous.maintenance;

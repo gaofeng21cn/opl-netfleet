@@ -2,7 +2,21 @@ import { createManager } from './manager.js';
 import { displayCache } from './display.js';
 
 export async function mount(context) {
-  const [ui, transport] = await Promise.all(['ui', 'netfleet.api'].map(name => L.require(name)));
+  const [ui, rpc] = await Promise.all(['ui', 'rpc'].map(name => L.require(name)));
+  const read = rpc.declare({ object: 'opl-netfleet.plugins', method: 'plugin_read', params: ['request'], nobatch: true });
+  const call = rpc.declare({ object: 'opl-netfleet.plugins', method: 'plugin_call', params: ['request'], nobatch: true });
+  const identity = async (writing, request) => {
+    if (context.signal.aborted) throw new Error('plugin_scope_disposed');
+    if (writing && context.readOnly) throw new Error('plugin_read_only');
+    const previous = L.env.rpctimeout;
+    L.env.rpctimeout = Math.max(Number(previous) || 20, writing ? 200 : 70);
+    try {
+      const response = await (writing ? call : read)(request);
+      if (context.signal.aborted) throw new Error('plugin_scope_disposed');
+      if (response?.ok !== true) throw new Error(response?.error || 'plugin_operation_failed');
+      return response.result;
+    } finally { L.env.rpctimeout = previous; }
+  };
   if (context.signal.aborted) return;
   const api = {
     compatibilityGet: () => context.configuration.read(),
@@ -11,9 +25,8 @@ export async function mount(context) {
     compatibilityDisable: params => context.api.call('disable', params),
     compatibilityProbe: params => context.api.call('probe', params),
     compatibilityCa: () => context.api.read('public-ca'),
-    pluginRead: params => transport.pluginRead(params),
-    pluginCall: params => context.readOnly || context.signal.aborted
-      ? Promise.reject(new Error('plugin_read_only')) : transport.pluginCall(params),
+    pluginRead: params => identity(false, params),
+    pluginCall: params => identity(true, params),
   };
   let modalOpen = false;
   const modal = Object.create(ui);
