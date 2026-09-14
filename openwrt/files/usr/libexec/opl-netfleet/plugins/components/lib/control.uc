@@ -449,7 +449,9 @@ stop_services = function(work) {
 	run_command(`/etc/init.d/${SERVICE} stop`, work);
 	for (let attempt = 0; attempt < 20; attempt++) {
 		if (!service_running("opl-netfleet") && !service_running(SERVICE)) {
-			return KIND != "native-mihomo" || parsed("ucode /usr/libexec/opl-netfleet/main.uc native-gateway-status")?.result?.clean == true;
+			// The installed command is intentionally hidden while its plugin is
+			// draining. Read cleanup through this transaction's retained owner.
+			return KIND != "native-mihomo" || gateway.status()?.result?.clean == true;
 		}
 		system("sleep 1");
 	}
@@ -501,9 +503,16 @@ rollback = function(before, work, names, versions, old, install_started, already
 		if (install_started) fs.unlink(UPGRADE_STATE);
 		attempt("rollback_configuration_failed", () => run_command(`tar -xf ${q(`${work}/private.tar`)} -C /`, work));
 		if (install_started) {
-			attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null ${already_stopped ? "--force-reinstall " : ""}add ${archive_arguments(old)}`, work));
+			// Restore the known-good hook implementation before APK invokes it.
+			// A failed candidate may have installed a core start hook that cannot
+			// run, including while earlier dependency packages are rolling back.
+			const hooks_restored = attempt("rollback_runtime_files_failed", () =>
+				run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work) &&
+				sprintf("%J", input_identity(before.runtime_paths)) == sprintf("%J", before.runtime_inputs));
+			if (hooks_restored) attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null ${already_stopped ? "--force-reinstall " : ""}add ${archive_arguments(old)}`, work));
 			attempt("rollback_world_failed", () => restore_world(names, before.world, work, true));
 			attempt("rollback_runtime_files_failed", () => run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work));
+			attempt("rollback_runtime_failed", () => resume_resources(work));
 		}
 	}
 	// APK may complete the requested change and still report earlier script failures.
@@ -637,6 +646,7 @@ upgrade = function(request, work, candidates) {
 		if (!restore_services(before, work)) fail("runtime_verification_failed");
 	} catch (failure) { error = error_code(failure); }
 	if (error == null) { journal(work, { ...read_json(`${work}/journal.json`), phase: "complete" }); fs.unlink(PENDING); system("sync"); return; }
+	journal(work, { ...read_json(`${work}/journal.json`), failure_reason: error });
 	operation.update("rolling_back");
 	if (!install_started) {
 		if (!resume_resources(work) || !same_inputs(before) || !restore_services(before, work)) fail("rollback_runtime_failed");
@@ -645,7 +655,7 @@ upgrade = function(request, work, candidates) {
 	}
 	const recovery_error = rollback(before, work, names, versions, old, install_started);
 	if (recovery_error != null) fail(recovery_error);
-	journal(work, { ...read_json(`${work}/journal.json`), phase: "rolled_back" });
+	journal(work, { ...read_json(`${work}/journal.json`), phase: "rolled_back", error: `${error}_rolled_back` });
 	fs.unlink(PENDING); system("sync");
 	fail(`${error}_rolled_back`);
 };
@@ -678,6 +688,7 @@ recover = function() {
 	if (!state || state.before?.backend != KIND || !private_directory(work) || type(state.inputs) != "object" ||
 		index(["prepared", "draining", "installing", "recovering", "complete", "rolled_back"], state.phase) < 0) fail("update_recovery_state_invalid");
 	for (let path, digest in state.inputs) if (index(path, `${work}/`) != 0 || sha256(path) != digest) fail("update_recovery_artifact_changed");
+	const recovered_error = state.error ?? (state.failure_reason ? `${state.failure_reason}_rolled_back` : "update_interrupted_rolled_back");
 	if (index(["complete", "rolled_back"], state.phase) >= 0) {
 		const expected = state.phase == "complete" ? state.candidates : state.versions;
 		const current = installed();
@@ -685,7 +696,7 @@ recover = function() {
 		for (let name in state.names) if (current?.[name] != expected[name]) fail("rollback_identity_mismatch");
 		if (!same_inputs(state.before) || !restore_services(state.before, work)) fail("rollback_runtime_failed");
 		fs.unlink(PENDING); system("sync");
-		operation.finish(state.phase == "complete", state.phase == "complete" ? null : "update_interrupted_rolled_back",
+		operation.finish(state.phase == "complete", state.phase == "complete" ? null : recovered_error,
 			state.phase == "rolled_back" ? { rollback: { ok: true } } : null);
 		return { recovered: true };
 	}
@@ -696,7 +707,7 @@ recover = function() {
 		if (length(filter(names, name => current?.[name] != versions[name])) || !same_inputs(before) ||
 			!resume_resources(work) || !restore_services(before, work)) fail("rollback_runtime_failed");
 		journal(work, { ...state, phase: "rolled_back" }); fs.unlink(PENDING); system("sync");
-		operation.finish(false, "update_interrupted_rolled_back", { rollback: { ok: true } });
+		operation.finish(false, recovered_error, { rollback: { ok: true } });
 		return { recovered: true };
 	}
 	for (let path in old) if (index(path, `${work}/old/`) != 0 || !archive_valid(path, work)) fail("rollback_package_unavailable");
@@ -710,8 +721,8 @@ recover = function() {
 	if (recovery_error != null) fail(recovery_error);
 	if (!run_command(`/etc/init.d/${SERVICE} ${before.core_enabled ? "enable" : "disable"}`, work) ||
 		!run_command(`/etc/init.d/opl-netfleet ${before.supervisor_enabled ? "enable" : "disable"}`, work)) fail("rollback_runtime_failed");
-	journal(work, { ...state, phase: "rolled_back" });
-	fs.unlink(PENDING); system("sync"); operation.finish(false, "update_interrupted_rolled_back", { rollback: { ok: true } });
+	journal(work, { ...state, phase: "rolled_back", error: recovered_error });
+	fs.unlink(PENDING); system("sync"); operation.finish(false, recovered_error, { rollback: { ok: true } });
 	return { recovered: true };
 };
 

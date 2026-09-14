@@ -56,6 +56,7 @@ function installed() { return {package: identity_ok ? "old" : "new"}; }
 function input_identity(paths) { return {code: bytes_ok ? "old" : "partial"}; }
 function same_inputs(before) { return input_ok; }
 function restore_services(before, work) { starts++; return runtime_ok; }
+function resume_resources(work) { return true; }
 function atomic_json(path, value) { saved = value; return true; }
 function check(value, message) { if (!value) die(message); }
 ` + recovery + `
@@ -64,6 +65,8 @@ check(rollback(before, "/unused", ["package"], {package: "old"}, ["old.apk"], tr
     "nonzero package result remains an error");
 check(starts == 1 && world_calls == 1 && saved.runtime_restored,
     "package errors must not skip world or runtime restoration");
+check(index(commands[1], "runtime.tar") >= 0 && index(commands[2], "apk --") >= 0,
+    "known-good runtime hooks must be restored before invoking rollback APK hooks");
 package_ok = true; world_ok = false;
 rollback(before, "/unused", ["package"], {package: "old"}, ["old.apk"], true);
 check(starts == 2 && saved.runtime_restored, "world exceptions must not skip runtime restoration");
@@ -79,8 +82,10 @@ check(stops == previous_stops + 2 && !saved.runtime_restored, "failed restart mu
 runtime_ok = true;
 bytes_ok = false;
 let previous_starts = starts;
+commands = [];
 rollback(before, "/unused", ["package"], {package: "old"}, ["old.apk"], true);
 check(starts == previous_starts && !saved.runtime_restored, "version equality must not hide partially restored runtime files");
+check(!length(filter(commands, command => index(command,"apk --") >= 0)), "unverified hook bytes must not execute rollback APK");
 bytes_ok = true;
 check(rollback(before, "/unused", ["package"], {package: "old"}, ["old.apk"], true) == null,
     "verified successful rollback remains successful");

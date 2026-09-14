@@ -345,7 +345,9 @@ stage=component_failed_candidate_rollback
 printf '%s\n' "$feed_url/components-fixtures/bad/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
 request components_update "$bad"
 assert_json "$work/operation-result.json" '@.result.packages.state' failed
-assert_json "$work/operation-result.json" '@.result.packages.error' runtime_verification_failed_rolled_back
+# The core lifecycle hook attempts the restart during APK installation; the
+# deliberately broken start hook therefore fails before final verification.
+assert_json "$work/operation-result.json" '@.result.packages.error' package_install_failed_rolled_back
 assert_json "$work/operation-result.json" '@.result.packages.recovery' restored
 cmp /etc/apk/world "$work/update-world"
 for name in $product_packages; do
