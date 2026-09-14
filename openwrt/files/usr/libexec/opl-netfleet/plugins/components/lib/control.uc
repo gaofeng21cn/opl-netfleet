@@ -177,9 +177,10 @@ get = function() {
 		const current = versions?.[item[2]] ?? null;
 		const candidate = candidates[item[2]] ?? null;
 		const managed = versions != null && current != null && (item[0] != "mihomo" || KIND == "native-mihomo");
+		const update = managed && newer(candidate, current);
 		push(rows, { id: item[0], label: item[1], installed_version: current ?? (item[0] == "mihomo" ? binary_version : null),
-			running_version: item[0] == "mihomo" ? running : null, available_version: candidate,
-			update_available: managed && newer(candidate, current), managed: managed,
+			running_version: item[0] == "mihomo" ? running : null, available_version: update ? candidate : null,
+			update_available: update, managed: managed,
 			reason: !managed ? (item[0] == "mihomo" ? "core_managed_externally" : "package_not_installed") : null });
 	}
 	const dashboard = dashboard_resource();

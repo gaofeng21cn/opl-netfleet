@@ -33,8 +33,10 @@ macOS 完整入口为 `scripts/check-platform.sh macos`，复用 shared 检查�
 链路、进程崩溃回收、React 客户端、应用构建和 helper 自检。HTTPS 资格探针需要公网访问，
 不安装 helper、不修改系统网络。远端 CI 不发布安装包，也不部署设备。
 
-共享源码目前位于 `openwrt/files/usr/libexec/opl-netfleet`，不能按目录名判断修改仅影响
-OpenWrt。新平台差异首先落到现有能力接口及组合根；平台适配器不重写业务算法或策略合并。
+共享插件源码位于 `plugins/`，同步到 `openwrt/files/usr/libexec/opl-netfleet/plugins/`
+作为设备载荷；共享内核仍位于 `openwrt/files/usr/libexec/opl-netfleet/kernel/`。
+不能按载荷目录名判断修改仅影响 OpenWrt。新平台差异首先落到现有能力接口及组合根；
+平台适配器不重写业务算法或策略合并。
 公共模型使用同一组正例、负例和输入不变性用例；适配器另验证真实存储、运行与失败恢复，
 不要求两个操作系统生成逐字相同的路径、时间格式或错误原语。
 

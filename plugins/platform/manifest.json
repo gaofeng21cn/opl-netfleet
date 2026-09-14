@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "platform",
   "label": "Platform runtime and process",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "api_version": 1,
   "package": "opl-netfleet-plugin-platform",
   "services": {
@@ -28,5 +28,7 @@
     }
   },
   "commands": {},
-  "package_dependencies": []
+  "package_dependencies": [
+    "ucode-mod-ubus"
+  ]
 }

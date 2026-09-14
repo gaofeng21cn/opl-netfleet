@@ -1,7 +1,7 @@
 {
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "components",
-  "label": "Components and updates",
+  "label": "插件与更新",
   "version": "0.7.9",
   "api_version": 1,
   "package": "opl-netfleet-plugin-components",

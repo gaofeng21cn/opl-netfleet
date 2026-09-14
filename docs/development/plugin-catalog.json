@@ -157,7 +157,7 @@
         "mihomo.profile-storage",
         "mihomo.readback"
       ],
-      "version": "0.9.4"
+      "version": "0.9.5"
     },
     {
       "api_version": 1,
@@ -202,14 +202,16 @@
       "label": "Platform runtime and process",
       "optional": false,
       "package": "opl-netfleet-plugin-platform",
-      "package_dependencies": [],
+      "package_dependencies": [
+        "ucode-mod-ubus"
+      ],
       "services": [
         "platform.paths",
         "platform.process",
         "platform.runtime",
         "platform.service"
       ],
-      "version": "0.8.5"
+      "version": "0.8.6"
     },
     {
       "api_version": 1,
@@ -243,7 +245,7 @@
         "platform.files",
         "platform.storage"
       ],
-      "version": "0.8.1"
+      "version": "0.8.2"
     },
     {
       "api_version": 1,
@@ -267,7 +269,7 @@
         "opl-netfleet-plugin-subscriptions"
       ],
       "services": [],
-      "version": "0.9.10"
+      "version": "0.9.11"
     },
     {
       "api_version": 1,
@@ -304,7 +306,7 @@
       "services": [
         "scheduler.control"
       ],
-      "version": "0.7.3"
+      "version": "0.7.4"
     },
     {
       "api_version": 1,
@@ -358,7 +360,7 @@
         "status.control",
         "status.events"
       ],
-      "version": "0.8.6"
+      "version": "0.8.7"
     },
     {
       "api_version": 1,
