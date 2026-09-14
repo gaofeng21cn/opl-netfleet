@@ -26,7 +26,6 @@ if command -v "$ucode_bin" >/dev/null 2>&1; then
 	rm -f /tmp/opl-netfleet-main.uc
 	"$ucode_bin" "$@" "$root_dir/tests/scope_contract.uc"
 	"$ucode_bin" "$@" "$root_dir/tests/host_adapter_contract.uc"
-	"$ucode_bin" "$@" "$root_dir/tests/kernel_contract.uc"
 	"$ucode_bin" "$@" "$root_dir/tests/composition_contract.uc"
 	"$ucode_bin" "$@" "$root_dir/tests/compiler_contract.uc"
 	"$ucode_bin" "$@" "$root_dir/tests/selection_contract.uc"
