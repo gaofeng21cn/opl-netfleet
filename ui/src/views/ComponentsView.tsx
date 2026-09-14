@@ -41,11 +41,18 @@ function PluginRow({ plugin, product }: { plugin: PluginComponent; product?: Com
   const version = plugin.installed_version || plugin.version;
   const unavailable = Boolean(plugin.reason) || ['unavailable', 'invalid'].includes(plugin.state);
   return <tr>
-    <td><strong>{plugin.id === 'product-ui' ? 'NetFleet 业务界面' : plugin.label || plugin.id}</strong><small>{plugin.id}</small>{plugin.instance && plugin.instance !== 'default' && <small>实例：{plugin.instance}</small>}</td>
+    <td><strong>{plugin.label || plugin.id}</strong><small>{plugin.id}</small>{plugin.instance && plugin.instance !== 'default' && <small>实例：{plugin.instance}</small>}</td>
     <td><span>{product ? product.packages.some(item => item.name === plugin.package) ? '默认产品能力' : '独立安装的插件' : plugin.runtime === 'service' ? '服务插件' : '进程插件'}</span><small>{plugin.description || pluginPurposes[plugin.id] || `为 NetFleet 提供 ${plugin.label || plugin.id} ${plugin.runtime === 'service' ? '服务' : '功能'}`}</small></td>
     <td><strong>{displayVersion(version)}</strong><details><summary>版本详情</summary><small>{version}</small><small>{plugin.package}</small></details></td>
     <td className="nf-component-actions">{plugin.ui?.length ? plugin.ui.map(page => <button key={page.id} type="button" disabled title={previewReason}>{plugin.ui.length === 1 ? plugin.configuration ? '配置' : '打开页面' : page.title}</button>) : <small>无需单独配置</small>}</td>
-    <td className="nf-component-actions"><span>{typeof plugin.enabled !== 'boolean' ? '状态未确认' : plugin.enabled === false ? '已禁用' : unavailable ? '已启用 · 异常' : '已启用'}</span>{plugin.reason && plugin.reason !== 'plugin_disabled' && <small className="is-warning">{componentError(plugin.reason)}</small>}{plugin.revision && <button type="button" disabled title={previewReason}>查看状态</button>}{['product-ui', 'components', 'status', 'events', 'setup'].includes(plugin.id) ? <small>管理界面必需</small> : plugin.revision && <button type="button" disabled title={previewReason}>{plugin.enabled === false ? '启用' : plugin.enabled === true ? '禁用' : '读取状态'}</button>}</td>
+    <td className="nf-component-actions">
+      <span>{typeof plugin.enabled !== 'boolean' ? '状态未确认' : plugin.enabled === false ? '已禁用' : unavailable ? '已启用 · 异常' : '已启用'}</span>
+      {typeof plugin.enabled !== 'boolean' && <small>请打开“查看状态”确认后操作</small>}
+      {plugin.reason && plugin.reason !== 'plugin_disabled' && <small className="is-warning">{componentError(plugin.reason)}</small>}
+      {plugin.revision && <button type="button" disabled title={previewReason}>查看状态</button>}
+      {plugin.revision && typeof plugin.enabled === 'boolean' && <button type="button" disabled title={plugin.enabled && ['product-ui', 'components', 'status', 'events', 'setup'].includes(plugin.id) ? '不可禁用：管理界面必需' : previewReason}>{plugin.enabled ? '禁用' : '启用'}</button>}
+      {['product-ui', 'components', 'status', 'events', 'setup'].includes(plugin.id) && <small>不可禁用：管理界面必需</small>}
+    </td>
   </tr>;
 }
 

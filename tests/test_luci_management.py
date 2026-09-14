@@ -1110,12 +1110,15 @@ assert(!button(modal.content, '禁用').disabled);
 readFailure = true;
 await fire(button(modal.content, '刷新状态'));
 assert(button(modal.content, '禁用').disabled, 'a failed refresh invalidates the previous state');
-await fire(button(managed.components(owner), '读取状态'));
+assert(!button(managed.components(owner), '读取状态'));
+await fire(button(managed.components(owner), '查看状态'));
 assert.notEqual(modal.title, '确认禁用');
 assert(button(modal.content, '禁用').disabled);
 assert.equal(calls.filter(c => c[0] === 'write').length, 1, 'failed reads never mutate or retry');
 plugin.id = 'product-ui';
-assert(!button(managed.components(owner), '禁用'), 'the management page must retain its own recovery surface');
+plugin.enabled = true;
+assert(button(managed.components(owner), '禁用').disabled, 'the management page retains a visible protected control');
+assert(text(managed.components(owner)).includes('不可禁用：管理界面必需'));
 """)
 
     def test_plugin_switch_terminal_result_and_process_inventory(self):
@@ -1154,6 +1157,42 @@ await fire(button(modal.content, '确认')); await tick();
 assert(text(modal.content).includes('结果未确认'));
 assert(text(managed.components(owner)).includes('状态未确认'));
 assert(button(modal.content, '禁用').disabled);
+""")
+
+    def test_plugin_state_busy_read_is_bounded_and_instance_scoped(self):
+        self.run_js(r"""
+const owner = controller(); owner.componentsSection = 'plugins';
+const plugin = { id: 'device-identity', kind: 'plugin', runtime: 'process', revision: 'r1', instance: 'review', enabled: null };
+owner.components = { supported: true, feed: {}, components: [], extensions: [plugin] };
+let attempts = 0, busy = 2;
+const managed = module('managed.js', {
+ componentsGet: async () => owner.components,
+ pluginRead: async request => {
+  attempts++; assert.equal(request.instance, 'review');
+  if (busy-- > 0) throw Error('mutation_busy');
+  return { loaded: false, ready: false, revision: 'r1' };
+ },
+ pluginCall: async () => { throw Error('reads must never write'); },
+});
+await managed.loadComponents(owner);
+assert.equal(attempts, 3);
+assert.equal(plugin.enabled, false, 'brief contention resolves without manual state recovery');
+assert(button(managed.components(owner), '启用'));
+attempts = 0; busy = 9;
+await managed.loadComponents(owner);
+assert.equal(attempts, 3, 'persistent contention is bounded');
+assert.equal(plugin.enabled, null, 'failed fresh reads must not retain a stale toggle');
+const page = managed.components(owner);
+assert.equal(all(page, n => n.tag === 'button' && text(n) === '查看状态').length, 1);
+assert(!button(page, '读取状态'));
+assert(!button(page, '启用') && !button(page, '禁用'));
+assert(text(page).includes('暂时无法读取'));
+attempts = 0; busy = 0;
+await fire(button(page, '查看状态')); await tick();
+assert.equal(attempts, 1);
+assert.equal(plugin.enabled, false);
+assert(!text(managed.components(owner)).includes('暂时无法读取'));
+assert(!button(modal.content, '启用').hidden && button(modal.content, '禁用').hidden);
 """)
 
     def test_https_service_exposes_configuration_without_loading_engine(self):
