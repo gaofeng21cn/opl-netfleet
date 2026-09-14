@@ -19,7 +19,7 @@ const policy = {
 		fast: { mode: "automatic" },
 		hong_kong: { mode: "automatic" }
 	},
-	selection: { region_switch_margin_ms: 150 }
+	selection: { region_switch_margin_ms: 150, leaf_switch_margin_ms: 0 }
 };
 
 function candidate(id, provider, region, rtt, remaining, role, leaf_verified, capability) {

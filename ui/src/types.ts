@@ -194,6 +194,9 @@ export interface StatusSnapshot {
     netfleet_present?: boolean;
     controller_available?: boolean;
     lan_runtime?: {
+      lan_proxy_enabled?: boolean;
+      router_proxy_enabled?: boolean;
+      dns_hijack_enabled?: boolean;
       transparent_proxy_ready?: boolean;
       dns_ready?: boolean;
       dashboard_lan_ready?: boolean;

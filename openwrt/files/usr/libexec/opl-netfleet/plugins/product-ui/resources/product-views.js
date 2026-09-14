@@ -332,14 +332,20 @@ function detailGrid(items) {
 function statusSummary(status) {
 	const supervisor = status.runtime.supervisor || {};
 	const lanRuntime = status.runtime.lan_runtime || {};
+	const stopped = status.runtime.backend_enabled === false && status.runtime.mihomo_running === false;
+	const health = function(value) { return value === true ? '正常' : value === false ? '异常' : '状态未确认'; };
+	const interception = function(enabled, ready) {
+		if (stopped || enabled === false) return '未启用';
+		return enabled === true ? '已启用 · ' + health(ready) : '状态未确认';
+	};
 	const items = [
 		[ 'NetFleet', managed.displayVersion(status.build?.version) ],
 		[ '运行模式', operatingModeLabel(status.operating_mode) ],
 		[ 'Mihomo', status.runtime.mihomo_running ? '运行中' : '未运行' ],
-		[ 'LAN 透明代理', lanRuntime.transparent_proxy_ready ? '可用' : status.active ? '不可用' : '未接管' ],
-		[ 'DNS 接管', lanRuntime.dns_ready ? '可用' : status.active ? '不可用' : '未接管' ],
-		[ '控制接口', status.runtime.controller_available ? '可读取' : '不可用' ],
-		[ 'Dashboard', lanRuntime.dashboard_lan_ready ? 'LAN 可访问' : 'LAN 不可访问' ],
+		[ 'LAN 透明代理', interception(lanRuntime.lan_proxy_enabled, lanRuntime.transparent_proxy_ready) ],
+		[ 'DNS 接管', interception(lanRuntime.dns_hijack_enabled, lanRuntime.dns_ready) ],
+		[ '控制接口', stopped ? '未运行' : health(status.runtime.controller_available) ],
+		[ 'Dashboard', stopped ? '未运行' : lanRuntime.dashboard_lan_ready === true ? '正常 · 局域网访问' : lanRuntime.api_listen && lanRuntime.api_listen !== '0.0.0.0:9090' ? '未开放局域网' : health(lanRuntime.dashboard_lan_ready) ],
 		[ '周期选优', supervisor.running ? (status.selection && status.selection.automation_paused ? '手动暂停' : '运行中') : '未运行' ],
 		[ '当前配置', status.active ? 'NetFleet 运行配置' : text(status.recovery_profile_display_name, '当前原生配置') ]
 	];

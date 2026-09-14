@@ -67,13 +67,15 @@ ownership = function() {
 	return private_file(OWNERSHIP) ? read_json(OWNERSHIP) : null;
 };
 routes_present = function(state) {
+	const commands = [];
 	for (let family in state?.families ?? []) {
-		const rules = capture(`ip -${family} rule show`);
-		const routes = capture(`ip -${family} route show table ${state.table}`);
-		if (rules == null || routes == null || index(rules, `lookup ${state.table}`) < 0 ||
-			index(routes, "local default dev lo") < 0) return false;
+		if (index([4, 6], family) < 0 || !match(`${state.table ?? ""}`, /^[0-9]+$/)) return false;
+		push(commands, `netfleet_route_readback=$(ip -${family} rule show) && printf '%s' "$netfleet_route_readback" | grep -Fq ${shell_quote(`lookup ${state.table}`)}`);
+		push(commands, `netfleet_route_readback=$(ip -${family} route show table ${state.table}) && printf '%s' "$netfleet_route_readback" | grep -Fq 'local default dev lo'`);
 	}
-	return true;
+	// One bounded observation, instead of a timeout/shell/tempfile cycle for each
+	// family and table. Every requested rule and route must still be present.
+	return !length(commands) || capture_process(join(" && ", commands), 5).status == 0;
 };
 readiness = function(table_present, observed_core, native_io) {
 	const core = observed_core ?? process_state();

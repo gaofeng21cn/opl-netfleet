@@ -7,6 +7,7 @@ import shutil
 import socket
 import subprocess
 import threading
+import tempfile
 import time
 import unittest
 
@@ -17,6 +18,31 @@ UCODE = os.environ.get("UCODE") or shutil.which("ucode")
 
 @unittest.skipUnless(UCODE, "ucode required (also exercised by OpenWrt qualification)")
 class BackendHealthTests(unittest.TestCase):
+    def test_gateway_batches_route_reads_and_rejects_partial_or_failed_observations(self):
+        source = (ROOT / 'openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/lib/gateway.uc').read_text()
+        implementation = source[source.index('routes_present = function('):source.index('readiness = function(')]
+        with tempfile.TemporaryDirectory() as directory:
+            fake_ip = Path(directory) / 'ip'
+            for failure in ['', '-4 rule', '-6 route', 'error']:
+                with self.subTest(failure=failure):
+                    fake_ip.write_text('#!/bin/sh\n'
+                        f'case "$1 $2" in "{failure}") exit 0 ;; esac\n'
+                        'case "$2" in rule) echo "100: from all lookup 11900" ;; '
+                        'route) echo "local default dev lo" ;; esac\n'
+                        + ('exit 1\n' if failure == 'error' else 'exit 0\n'))
+                    fake_ip.chmod(0o700)
+                    code = '''let routes_present, calls = 0;
+                        function shell_quote(value) { return "'" + replace(value, "'", "'\\\\''") + "'"; }
+                        function capture_process(command, seconds) {
+                            calls++; assert(seconds == 5);
+                            return {status: system('PATH=' + shell_quote(DIRECTORY) + ':"$PATH" /bin/sh -c ' + shell_quote(command))};
+                        }
+                    '''.replace('DIRECTORY', json.dumps(directory))
+                    result = json.loads(self.run_ucode(code + implementation + '''
+                        printf('%J', {ok: routes_present({table: '11900', families: [4, 6]}), calls});
+                    ''', health=False))
+                    self.assertEqual(result, {'ok': not failure, 'calls': 1})
+
     def test_candidate_reset_retries_only_transient_failures_and_keeps_diagnostics(self):
         module = ROOT / 'openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/lib/controller.uc'
         for replies, expected, attempts in [([204], True, 1), ([503, 204], True, 2),

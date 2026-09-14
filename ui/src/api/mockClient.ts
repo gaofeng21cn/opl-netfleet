@@ -59,7 +59,7 @@ export class MockNetFleetClient implements NetFleetClient {
       feed: { configured: true, url: 'https://example.test/netfleet/packages.adb', checked_at: null, error: null },
       components: [
         { id: 'netfleet', label: 'NetFleet', installed_version: '0.5.2-r1', running_version: null, available_version: null, update_available: false, managed: true, reason: null },
-        { id: 'luci', label: 'LuCI 界面', installed_version: '0.5.2-r1', running_version: null, available_version: null, update_available: false, managed: true, reason: null },
+        { id: 'luci', label: 'LuCI 接入组件', installed_version: '0.5.2-r1', running_version: null, available_version: null, update_available: false, managed: true, reason: null },
         { id: 'mihomo', label: 'Mihomo', installed_version: '1.19.30-r1', running_version: 'v1.19.30', available_version: null, update_available: false, managed: true, reason: null },
       ],
       dependencies: [{ id: 'ucode', label: 'ucode', installed_version: null, available: true }, { id: 'yq', label: 'yq', installed_version: null, available: true }],

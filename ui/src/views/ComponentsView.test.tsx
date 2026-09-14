@@ -7,7 +7,7 @@ const dashboard: DashboardComponent = { id: 'zashboard', label: 'Zashboard', ins
 function snapshot(): ComponentsSnapshot {
   const common = { installed_version: '1.0.0-r1', running_version: null, available_version: null, update_available: false, managed: true, reason: null };
   return { supported: true, backend: 'native-mihomo', architecture: 'aarch64', feed: { configured: true, url: 'https://packages.example/packages.adb', checked_at: null, error: null },
-    components: [{ ...common, id: 'netfleet', label: 'NetFleet' }, { ...common, id: 'luci', label: 'LuCI 界面' }, { ...common, id: 'mihomo', label: 'Mihomo', installed_version: '1.19.29', running_version: 'v1.19.30', available_version: '1.19.30-r1', update_available: true }],
+    components: [{ ...common, id: 'netfleet', label: 'NetFleet' }, { ...common, id: 'luci', label: 'LuCI 接入组件' }, { ...common, id: 'mihomo', label: 'Mihomo', installed_version: '1.19.29', running_version: 'v1.19.30', available_version: '1.19.30-r1', update_available: true }],
     dependencies: [{ id: 'curl', label: 'curl', installed_version: '8.0', available: true }], dashboard: { ...dashboard } };
 }
 const render = (value: ComponentsSnapshot) => renderToStaticMarkup(<ComponentsView snapshot={value} operation={null} error={null} operationError={null} loading={false} onRead={() => {}} />);

@@ -173,7 +173,7 @@ get = function() {
 	const binary = capture("mihomo -v");
 	const binary_version = match(binary ?? "", /^Mihomo[[:space:]]+([^[:space:]]+)/)?.[1] ?? null;
 	const rows = [];
-	for (let item in [["netfleet", "NetFleet", PACKAGES[0]], ["luci", "LuCI 界面", PACKAGES[1]], ["mihomo", "Mihomo", PACKAGES[2]]]) {
+	for (let item in [["netfleet", "NetFleet", PACKAGES[0]], ["luci", "LuCI 接入组件", PACKAGES[1]], ["mihomo", "Mihomo", PACKAGES[2]]]) {
 		const current = versions?.[item[2]] ?? null;
 		const candidate = candidates[item[2]] ?? null;
 		const managed = versions != null && current != null && (item[0] != "mihomo" || KIND == "native-mihomo");

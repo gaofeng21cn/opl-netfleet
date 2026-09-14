@@ -4,6 +4,9 @@ import { displayVersion } from '../lib/version';
 export function StatusStrip({ snapshot }: { snapshot: StatusSnapshot }) {
   const supervisor = snapshot.runtime.supervisor;
   const lanRuntime = snapshot.runtime.lan_runtime;
+  const stopped = snapshot.runtime.backend_enabled === false && snapshot.runtime.mihomo_running === false;
+  const health = (value?: boolean) => value === true ? '正常' : value === false ? '异常' : '状态未确认';
+  const interception = (enabled?: boolean, ready?: boolean) => stopped || enabled === false ? '未启用' : enabled === true ? `已启用 · ${health(ready)}` : '状态未确认';
   const mode = { openwrt: 'OpenWrt 原生直连', mihomo: 'Mihomo 原生代理', netfleet: 'NetFleet 增强代理' };
   const groups = [
     { title: '运行概况', items: [
@@ -13,12 +16,12 @@ export function StatusStrip({ snapshot }: { snapshot: StatusSnapshot }) {
     ] },
     { title: '网络接管', items: [
       ['Mihomo', snapshot.runtime.mihomo_running ? '运行中' : '未运行'],
-      ['LAN 透明代理', lanRuntime?.transparent_proxy_ready ? '可用' : snapshot.active ? '不可用' : '未接管'],
-      ['DNS 接管', lanRuntime?.dns_ready ? '可用' : snapshot.active ? '不可用' : '未接管'],
+      ['LAN 透明代理', interception(lanRuntime?.lan_proxy_enabled, lanRuntime?.transparent_proxy_ready)],
+      ['DNS 接管', interception(lanRuntime?.dns_hijack_enabled, lanRuntime?.dns_ready)],
     ] },
     { title: '管理服务', items: [
-      ['控制接口', snapshot.runtime.controller_available ? '可读取' : '不可用'],
-      ['实时面板', lanRuntime?.dashboard_lan_ready ? 'LAN 可访问' : 'LAN 不可访问'],
+      ['控制接口', stopped ? '未运行' : health(snapshot.runtime.controller_available)],
+      ['实时面板', stopped ? '未运行' : lanRuntime?.dashboard_lan_ready === true ? '正常 · 局域网访问' : lanRuntime?.api_listen && lanRuntime.api_listen !== '0.0.0.0:9090' ? '未开放局域网' : health(lanRuntime?.dashboard_lan_ready)],
       ['周期选优', supervisor?.running ? snapshot.selection?.automation_paused ? '手动暂停' : '运行中' : '未运行'],
     ] },
   ];

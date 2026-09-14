@@ -686,7 +686,7 @@ owner.components.components[1].update_available = true;
 owner.components.components[1].available_version = '1.2.0-r1';
 assert(button(managed.components(owner), '更新界面'), 'an older LuCI package must still be updatable with the paired NetFleet package');
 fire(button(managed.components(owner), '更新界面'));
-assert(text(modal.content).includes('LuCI 界面 1.2.0'));
+assert(text(modal.content).includes('LuCI 接入组件 1.2.0'));
 assert(text(modal.content).includes('LuCI 1.2.0-r1'), 'original request identity remains in technical details');
 owner.operations = { packages: { kind: 'packages', state: 'failed', error: 'rollback_runtime_failed', recovery: 'failed', started_at: 100, finished_at: 102 } };
 assert(text(managed.components(owner)).includes('恢复失败'));
@@ -859,10 +859,50 @@ await owner.runMode('openwrt', 'mihomo');
 assert.equal(calls.length, 2, 'read-only view cannot mutate');
 assert(text(modes.summary({ operating_mode: null, runtime: {} })).includes('状态未确认'));
 assert(!text(modes.summary({ operating_mode: 'mihomo', runtime: { mihomo_running: true } })).includes('已关闭'));
+const runtime = { backend_enabled: true, mihomo_running: true, controller_available: true,
+  lan_runtime: { lan_proxy_enabled: false, dns_hijack_enabled: false, transparent_proxy_ready: true, dns_ready: true, dashboard_lan_ready: true } };
+let summary = text(modes.summary({ runtime }));
+assert(summary.includes('LAN 透明代理未启用') && summary.includes('DNS 接管未启用'), 'readiness does not imply enabled interception');
+runtime.lan_runtime.lan_proxy_enabled = true;
+runtime.lan_runtime.dns_hijack_enabled = true;
+runtime.lan_runtime.dns_ready = false;
+summary = text(modes.summary({ runtime }));
+assert(summary.includes('LAN 透明代理已启用 · 正常') && summary.includes('DNS 接管已启用 · 异常'));
+assert(summary.includes('控制接口正常') && !summary.includes('可读取'));
+delete runtime.lan_runtime.lan_proxy_enabled;
+assert(text(modes.summary({ runtime })).includes('LAN 透明代理状态未确认'));
+runtime.backend_enabled = false; runtime.mihomo_running = false;
+summary = text(modes.summary({ runtime }));
+assert(summary.includes('DNS 接管未启用') && summary.includes('控制接口未运行'));
 const direct = { data_path: 'passthrough', alive: true, user_mode: 'native_profile' };
 assert.equal(modes.health(direct), '已直连');
 assert.equal(modes.region({}, direct), '直连');
 assert.equal(modes.mode(direct), '原生直连');
+""")
+
+    def test_cached_page_starts_live_read_without_waiting_for_setup_check(self):
+        self.run_js(r"""
+let resolveSetup, resolveStatus, resolveEvents;
+const calls = [];
+global.window = { localStorage: { getItem: () => JSON.stringify({ schema: 1, status: { active: true }, events: { events: [] }, fetched_at_ms: 1 }), removeItem: () => {} } };
+const modes = modesModule({
+  onboardingGet: () => { calls.push('setup'); return new Promise(resolve => resolveSetup = resolve); },
+  status: () => { calls.push('status'); return new Promise(resolve => resolveStatus = resolve); },
+  events: () => { calls.push('events'); return new Promise(resolve => resolveEvents = resolve); },
+  nativeSetupGet: async () => ({ available: true })
+});
+const owner = Object.create(modes.controller);
+let rendered = false;
+const loaded = owner.load().then(result => { rendered = true; return result; });
+assert.deepEqual(calls, ['status', 'events', 'setup']);
+assert.equal(rendered, false, 'setup remains authoritative even when a display cache exists');
+resolveSetup({ required: true });
+const initial = await loaded;
+assert.equal(initial.onboarding.required, true);
+assert.equal(initial.status, undefined, 'a removed configuration must not render old active status');
+resolveStatus({ active: false }); resolveEvents({ events: [] });
+await owner.initialRefresh;
+delete global.window;
 """)
 
     def test_mode_progress_survives_rpc_disconnect_and_new_page_scope(self):
@@ -1050,7 +1090,8 @@ fire(button(page, '配置'));
 assert.deepEqual(opened, ['plugin:https-compat:settings']);
 assert(button(page, '查看状态'));
 assert(text(page).includes('运行管理'));
-assert(!text(page).includes('已启用'));
+assert(text(page).includes('已启用'), 'service plugin enabled does not imply its optional engine is running');
+assert(!text(page).includes('运行中'));
 plugin.enabled = false;
 page = managed.components(owner);
 assert(button(page, '配置').disabled, 'disabled management plugin must not be loaded by opening its configuration');

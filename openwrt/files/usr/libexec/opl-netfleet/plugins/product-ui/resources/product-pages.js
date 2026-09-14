@@ -80,18 +80,22 @@ const productController = {
 	load: function() {
 		const self = this;
 		const onboardingStarted = Date.now();
+		const cached = readDisplayCache();
+		const startRefresh = function() {
+			const started = Date.now();
+			return Promise.all([ netfleet.status(), netfleet.events() ]).then(function(result) {
+				return { result: result, readDurationMs: Date.now() - started };
+			}, function(error) { return { error: error }; });
+		};
+		// A previously configured page can read current status while checking setup.
+		// Setup still decides which page is rendered; cached data never grants writes.
+		self.initialRefresh = cached ? startRefresh() : null;
 		return netfleet.onboardingGet().then(function(onboarding) {
 			if (onboarding.required)
 				return netfleet.nativeSetupGet().catch(function() { return null; }).then(function(setup) {
 					return { onboarding: onboarding, nativeSetup: setup, fetchedAt: new Date(), readDurationMs: Date.now() - onboardingStarted, cached: false };
 				});
-			const cached = readDisplayCache();
-			const started = Date.now();
-			self.initialRefresh = Promise.all([ netfleet.status(), netfleet.events() ]).then(function(result) {
-				return { result: result, readDurationMs: Date.now() - started };
-			}, function(error) {
-				return { error: error };
-			});
+			self.initialRefresh = self.initialRefresh || startRefresh();
 			if (cached)
 				return {
 					status: cached.status,
@@ -138,7 +142,8 @@ const productController = {
 		if (!initial.cached && !this.onboarding)
 			writeDisplayCache(this.status, this.events, this.fetchedAt, this.readDurationMs);
 		this.redraw();
-		this.loadManagement();
+		// Do not make the fresh status compete with subscription/config preloads.
+		if (!initial.cached) this.loadManagement();
 		if (this.currentView === 'components') managed.loadComponents(this);
 		if (initial.cached)
 			this.initialRefresh.then(function(refresh) {
@@ -151,6 +156,7 @@ const productController = {
 				else {
 					self.acceptLiveData(refresh.result, refresh.readDurationMs);
 				}
+				self.loadManagement();
 				self.redraw();
 			});
 		return this.root;

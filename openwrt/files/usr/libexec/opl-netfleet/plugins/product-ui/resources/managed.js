@@ -723,7 +723,7 @@ const PLUGIN_PRESENTATION = {
 	platform: ['运行环境', '提供设备进程与运行环境能力'],
 	'platform-openwrt': ['OpenWrt 设备设置', '接入系统配置与设备信息'],
 	'platform-storage': ['文件存储', '读写配置文档与设备文件'],
-	'product-ui': ['NetFleet 管理界面', '提供概览、出口与配置等管理页面'],
+	'product-ui': ['NetFleet 业务界面', '提供概览、出口与配置等页面的内容和交互；由 LuCI 接入组件加载'],
 	recovery: ['网络恢复', '在退出或异常时恢复网络直连'],
 	refresh: ['订阅更新', '更新订阅并准备最新节点'],
 	scheduler: ['自动运行', '按计划执行订阅更新与自动选优'],
@@ -798,9 +798,9 @@ function componentsPage(controller) {
 		const hasUpdate = component.update_available || component.id === 'netfleet' && luci && luci.update_available;
 		const uiOnly = component.id === 'netfleet' && !component.update_available && luci && luci.update_available;
 		const canUpdate = snapshot.supported && feed.configured && !feed.error && component.managed && hasUpdate && component.available_version;
-		const targetVersion = displayVersion(component.available_version) + (component.id === 'netfleet' && luci && luci.available_version ? '；LuCI 界面 ' + displayVersion(luci.available_version) : '');
+		const targetVersion = displayVersion(component.available_version) + (component.id === 'netfleet' && luci && luci.available_version ? '；LuCI 接入组件 ' + displayVersion(luci.available_version) : '');
 		const update = canUpdate ? button(mismatch ? '更新软件包' : uiOnly ? '更新界面' : '更新', function() {
-			ui.showModal('更新 ' + component.label, [ E('p', {}, (component.id === 'mihomo' ? '核心更新会中断已有代理连接，设备将校验当前配置并检查重启后的运行状态。' : '将更新 NetFleet 与 LuCI 界面；基础包更新会停止并恢复运行服务，已有连接可能中断。完成后重新载入页面，私有配置保留。') + '目标版本：' + targetVersion),
+			ui.showModal('更新 ' + component.label, [ E('p', {}, (component.id === 'mihomo' ? '核心更新会中断已有代理连接，设备将校验当前配置并检查重启后的运行状态。' : '将更新 NetFleet 与 LuCI 接入组件；基础包更新会停止并恢复运行服务，已有连接可能中断。完成后重新载入页面，私有配置保留。') + '目标版本：' + targetVersion),
 				mismatch ? E('p', { 'class': 'is-warning' }, '当前运行 ' + displayVersion(component.running_version) + '，安装记录 ' + displayVersion(component.installed_version) + '。本次将安装所列候选软件包，请核对版本。') : '',
 				E('details', {}, [E('summary', {}, '完整包版本'), E('p', {}, component.available_version), luci && component.id === 'netfleet' ? E('p', {}, 'LuCI ' + luci.available_version) : '']),
 				E('div', { 'class': 'right' }, [ button('取消', ui.hideModal), ' ', button('确认更新', function() { ui.hideModal(); return startPackageOperation(controller, component); }) ]) ]);
@@ -817,7 +817,7 @@ function componentsPage(controller) {
 		return E('tr', {}, [ E('td', {}, [ E('strong', {}, component.label), E('small', {}, component.id === 'netfleet' ? '管理运行策略、出口选优与网络恢复' : '执行代理连接与流量转发') ]),
 			E('td', {}, current), E('td', { 'class': 'netfleet-component-actions' }, [ E('div', {}, available), update ]) ]);
 	});
-	if (luci) rows.splice(1, 0, E('tr', {}, [ E('td', {}, [ E('strong', {}, 'LuCI 界面'), E('small', {}, '在浏览器中管理 NetFleet') ]),
+	if (luci) rows.splice(1, 0, E('tr', {}, [ E('td', {}, [ E('strong', {}, 'LuCI 接入组件'), E('small', {}, '提供 LuCI 菜单、权限与插件页面加载；业务页面由 product-ui 提供') ]),
 		E('td', {}, [E('strong', {}, luci.installed_version ? displayVersion(luci.installed_version) : '未安装'), E('details', {}, [E('summary', {}, '版本详情'), E('small', {}, '完整包版本：' + (luci.installed_version || '未安装')), luci.available_version ? E('small', {}, '候选包版本：' + luci.available_version) : ''])]),
 		E('td', {}, [ luci.available_version && !feed.error ? (luci.update_available ? '候选版本 ' + displayVersion(luci.available_version) : '当前更新源暂无新版') : '',
 			E('small', {}, '由 NetFleet 更新入口管理') ]) ]));
@@ -827,7 +827,7 @@ function componentsPage(controller) {
 			controller.context.navigate('plugin:' + plugin.id + ':' + (plugin.instance && plugin.instance !== 'default' ? plugin.instance + ':' : '') + page.id);
 		}, active || plugin.enabled === false); });
 		const rawVersion = plugin.installed_version || plugin.version;
-		const availability = plugin.enabled === false ? '已停用' : plugin.reason || plugin.state === 'unavailable' || plugin.state === 'invalid' ? '暂不可用' : '可用';
+		const availability = plugin.enabled === false ? '已禁用' : plugin.reason || plugin.state === 'unavailable' || plugin.state === 'invalid' ? '已启用 · 异常' : '已启用';
 		const state = [E('span', { 'class': 'netfleet-plugin-state' }, availability)];
 		if (plugin.reason && plugin.reason !== 'plugin_disabled') state.push(E('small', { 'class': 'is-warning' }, errorLabel(plugin.reason)));
 		if (plugin.revision) state.push(button('查看状态', function() { pluginDialog(controller, plugin); }, active));

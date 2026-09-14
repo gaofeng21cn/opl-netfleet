@@ -72,18 +72,18 @@ lan_runtime_state = function(dns_probe_url) {
 	let dns_enabled = false;
 	let dns_listen = null;
 	let native_expected = null;
+	let requested_scopes = null;
 	try {
 		const uci = cursor();
 		allow_lan = `${uci.get(UCI_PACKAGE, "mixin", "allow_lan") ?? "0"}` == "1";
 		api_listen = uci.get(UCI_PACKAGE, "mixin", "api_listen");
 		dns_enabled = `${uci.get(UCI_PACKAGE, "mixin", "dns_enabled") ?? "0"}` == "1";
 		dns_listen = uci.get(UCI_PACKAGE, "mixin", "dns_listen");
-		if (KIND == "native-mihomo") {
-			const dns = `${uci.get(UCI_PACKAGE, "proxy", "ipv4_dns_hijack") ?? "0"}` == "1" ||
-				`${uci.get(UCI_PACKAGE, "proxy", "ipv6_dns_hijack") ?? "0"}` == "1";
-			native_expected = { lan: `${uci.get(UCI_PACKAGE, "proxy", "lan_proxy") ?? "0"}` == "1",
-				router: `${uci.get(UCI_PACKAGE, "proxy", "router_proxy") ?? "0"}` == "1", dns: dns };
-		}
+		const dns = `${uci.get(UCI_PACKAGE, "proxy", "ipv4_dns_hijack") ?? "0"}` == "1" ||
+			`${uci.get(UCI_PACKAGE, "proxy", "ipv6_dns_hijack") ?? "0"}` == "1";
+		requested_scopes = { lan: `${uci.get(UCI_PACKAGE, "proxy", "lan_proxy") ?? "0"}` == "1",
+			router: `${uci.get(UCI_PACKAGE, "proxy", "router_proxy") ?? "0"}` == "1", dns: dns };
+		if (KIND == "native-mihomo") native_expected = requested_scopes;
 	} catch (error) {
 		return {
 			transparent_proxy_ready: false,
@@ -129,9 +129,12 @@ lan_runtime_state = function(dns_probe_url) {
 			tproxy_tcp_wildcard: tproxy_tcp_wildcard, tproxy_udp_wildcard: tproxy_udp_wildcard,
 			tproxy_rule_present: tproxy_rule_present, controller_wildcard: controller_wildcard,
 			lan_proxy_enabled: native_expected.lan, router_proxy_enabled: native_expected.router,
+			dns_hijack_enabled: native_expected.dns && (native_expected.lan || native_expected.router),
 			requested_proxy_chains_ready: proxy_chains, requested_dns_chains_ready: dns_chains };
 	}
 	return {
+		lan_proxy_enabled: requested_scopes.lan, router_proxy_enabled: requested_scopes.router,
+		dns_hijack_enabled: requested_scopes.dns && (requested_scopes.lan || requested_scopes.router),
 		transparent_proxy_ready: allow_lan && tproxy_tcp_wildcard &&
 			tproxy_udp_wildcard && tproxy_rule_present,
 		dashboard_lan_ready: api_listen == "0.0.0.0:9090" && controller_wildcard,

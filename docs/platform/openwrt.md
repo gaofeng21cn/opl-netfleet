@@ -481,6 +481,11 @@ LuCI 服务菜单直接打开宿主视图，只显示一条产品主导航；已
 启用状态；配置投影的 `backend` 来自同一 owner。UI 不保留 Nikki 专用状态字段别名，
 恢复文案使用实际后端名称，不能把“NetFleet 原生后端运行”描述成 Nikki 运行。
 
+`runtime.lan_runtime` 的 `lan_proxy_enabled`、`router_proxy_enabled` 和
+`dns_hijack_enabled` 投影后端当前配置要求的接管范围，与 `transparent_proxy_ready`
+和 `dns_ready` 的实测结果分开。路由就绪检查在同一次有界只读命令内核对所需地址族的
+策略规则和本地路由，不跨请求缓存健康结果。
+
 `status.operating_mode` 是[用户运行模式](../architecture/runtime-and-recovery.md#用户运行模式)的只读投影，
 未知或不一致时为 `null`。概览使用三项单选与切换按钮；`activation` 插件的 `get-mode`
 返回同一运行判定，`set-mode` 接受 `{mode, expected_mode}`。写请求通过 `plugin_call`

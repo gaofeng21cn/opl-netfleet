@@ -26,7 +26,7 @@ const pluginPurposes: Record<string, string> = {
   platform: '提供设备进程与运行环境能力',
   'platform-openwrt': '接入系统配置与设备信息',
   'platform-storage': '读写配置文档与设备文件',
-  'product-ui': '提供概览、出口与配置等管理页面',
+  'product-ui': '提供概览、出口与配置等页面的内容和交互；由 LuCI 接入组件加载',
   recovery: '在退出或异常时恢复网络直连',
   refresh: '更新订阅并准备最新节点',
   scheduler: '按计划执行订阅更新与自动选优',
@@ -41,11 +41,11 @@ function PluginRow({ plugin }: { plugin: PluginComponent }) {
   const version = plugin.installed_version || plugin.version;
   const unavailable = Boolean(plugin.reason) || ['unavailable', 'invalid'].includes(plugin.state);
   return <tr>
-    <td><strong>{plugin.label || plugin.id}</strong><small>{plugin.id}</small>{plugin.instance && plugin.instance !== 'default' && <small>实例：{plugin.instance}</small>}</td>
+    <td><strong>{plugin.id === 'product-ui' ? 'NetFleet 业务界面' : plugin.label || plugin.id}</strong><small>{plugin.id}</small>{plugin.instance && plugin.instance !== 'default' && <small>实例：{plugin.instance}</small>}</td>
     <td><span>{plugin.runtime === 'service' ? '服务插件' : '进程插件'}</span><small>{plugin.description || pluginPurposes[plugin.id] || `为 NetFleet 提供 ${plugin.label || plugin.id} ${plugin.runtime === 'service' ? '服务' : '功能'}`}</small></td>
     <td><strong>{displayVersion(version)}</strong><details><summary>版本详情</summary><small>{version}</small><small>{plugin.package}</small></details></td>
     <td className="nf-component-actions">{plugin.ui?.length ? plugin.ui.map(page => <button key={page.id} type="button" disabled title={previewReason}>{plugin.ui.length === 1 ? plugin.configuration ? '配置' : '打开页面' : page.title}</button>) : <small>无需单独配置</small>}</td>
-    <td className="nf-component-actions"><span>{plugin.enabled === false ? '已停用' : unavailable ? '暂不可用' : '可用'}</span>{plugin.reason && plugin.reason !== 'plugin_disabled' && <small className="is-warning">{componentError(plugin.reason)}</small>}{plugin.revision && <button type="button" disabled title={previewReason}>查看状态</button>}{['product-ui', 'components', 'status', 'events', 'setup'].includes(plugin.id) ? <small>管理界面必需</small> : plugin.revision && <button type="button" disabled title={previewReason}>{plugin.runtime === 'service' ? plugin.enabled === false ? '启用' : '禁用' : '启用 / 禁用'}</button>}</td>
+    <td className="nf-component-actions"><span>{plugin.enabled === false ? '已禁用' : unavailable ? '已启用 · 异常' : '已启用'}</span>{plugin.reason && plugin.reason !== 'plugin_disabled' && <small className="is-warning">{componentError(plugin.reason)}</small>}{plugin.revision && <button type="button" disabled title={previewReason}>查看状态</button>}{['product-ui', 'components', 'status', 'events', 'setup'].includes(plugin.id) ? <small>管理界面必需</small> : plugin.revision && <button type="button" disabled title={previewReason}>{plugin.runtime === 'service' ? plugin.enabled === false ? '启用' : '禁用' : '启用 / 禁用'}</button>}</td>
   </tr>;
 }
 
@@ -129,7 +129,7 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
           const uiOnly = component.id === 'netfleet' && !component.update_available && luci?.update_available;
           const canUpdate = component.id !== 'luci' && snapshot.supported && feed?.configured && !feed.error && component.managed && hasUpdate && component.available_version;
           return <tr key={component.id}>
-            <td><strong>{component.label}</strong><small>{component.id === 'netfleet' ? '管理运行策略、出口选优与网络恢复' : component.id === 'luci' ? '在浏览器中管理 NetFleet' : '执行代理连接与流量转发'}</small></td>
+            <td><strong>{component.id === 'luci' ? 'LuCI 接入组件' : component.label}</strong><small>{component.id === 'netfleet' ? '管理运行策略、出口选优与网络恢复' : component.id === 'luci' ? '提供 LuCI 菜单、权限与插件页面加载；业务页面由 product-ui 提供' : '执行代理连接与流量转发'}</small></td>
             <td><strong>{component.id === 'mihomo' ? component.running_version ? displayVersion(component.running_version) : '核心运行版本暂不可读取' : component.installed_version ? displayVersion(component.installed_version) : '未安装'}</strong>
               {component.id === 'mihomo' && component.installed_version && <small>安装记录 {displayVersion(component.installed_version)}</small>}
               {mismatch && <span className="is-warning">运行版本与安装记录不一致</span>}
