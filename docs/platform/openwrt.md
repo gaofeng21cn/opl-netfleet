@@ -349,6 +349,8 @@ LAN ingress 以 effective `allow_lan`、TCP/UDP `7892` wildcard listener 和所�
 
 原生健康读取从 procd 回读核心命令身份，并复用本次 nft 表快照核验 DNS/TProxy；状态页不为就绪判断重复计算完整配置摘要。显式 gateway 状态仍提供配置摘要，观察之间不缓存健康结果。
 
+服务状态读取使用文件 API 和有界 ubus 调用；自启动选择仍由 rc.common 的 enabled 动作确认。同次状态或调度观察复用已读取的核心身份，下一次调用重新读取，不缓存健康结论。
+
 ## 平台服务绑定与宿主
 
 首次设置由 `setup.native` 持有，后端迁移由 `setup.migration` 持有；两者只负责本平台输入、运行基线与交接，成功后调用共享 onboarding、编译与激活服务，失败恢复原状态。

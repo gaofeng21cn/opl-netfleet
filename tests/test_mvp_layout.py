@@ -149,7 +149,7 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertIn(algorithm, graph["selection"])
         self.assertEqual("platform-openwrt", services["platform.profile"][0])
         self.assertEqual("platform-storage", services["platform.storage"][0])
-        self.assertFalse(plugins["platform"]["package_dependencies"])
+        self.assertEqual(["ucode-mod-ubus"], plugins["platform"]["package_dependencies"])
         self.assertNotIn("platform-openwrt", closure("platform-storage"))
 
         system = json.loads(subprocess.check_output(["python3", str(script), "system"], text=True))
@@ -432,7 +432,7 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertIn("result(config.poll_interval_seconds * 1000)", supervisor)
         self.assertIn("sleep(delay)", supervisor_entry)
         self.assertNotIn('system("sleep ', supervisor)
-        self.assertIn("lan_runtime_state = function(dns_probe_url)", nikki)
+        self.assertIn("lan_runtime_state = function(dns_probe_url, observation)", nikki)
         self.assertIn("dns_hijack_rule_present", nikki)
         self.assertIn('nslookup ${shell_quote(hostname)} 127.0.0.1', nikki)
         self.assertIn('(sleep 5; kill "$probe" 2>/dev/null) >/dev/null 2>&1 & watchdog=$!', nikki)

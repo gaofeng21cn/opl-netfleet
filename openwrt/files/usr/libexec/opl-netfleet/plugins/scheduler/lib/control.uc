@@ -62,8 +62,9 @@ tick = function(previous) {
 		run_owner("resume", "supervisor");
 		return result(config.poll_interval_seconds * 1000);
 	}
-	const runtime_ready = owned && backend_enabled() == true && running() && runtime_controller_ready();
-	const lan_runtime = runtime_ready ? lan_runtime_state(settings_value.dns_probe_url) : null;
+	const observation = {};
+	const runtime_ready = owned && backend_enabled() == true && running(observation) && runtime_controller_ready();
+	const lan_runtime = runtime_ready ? lan_runtime_state(settings_value.dns_probe_url, observation) : null;
 	const healthy = runtime_ready && lan_runtime?.transparent_proxy_ready == true && lan_runtime?.dns_ready == true;
 	if (healthy && !was_runtime_ready) next_selection_at = now;
 	was_runtime_ready = healthy;

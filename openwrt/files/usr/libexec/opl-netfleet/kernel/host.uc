@@ -221,13 +221,22 @@ function plugin_files(directory, owner, relative, files, identities) {
 		}
 	}
 };
-function inspect(root, id, owner, adapter, cached) {
+function describe(root, id, owner) {
 	const directory = `${root}/plugins/${id}`, path = `${directory}/manifest.json`;
 	if (fs.lstat(directory) == null) return failure('plugin_not_installed');
 	try {
-		if (!trusted(`${root}/plugins`, 'directory', owner) || !trusted(path, 'file', owner) || fs.lstat(path).size > 16384) return failure('plugin_files_unsafe');
+		if (!trusted(`${root}/plugins`, 'directory', owner) || !trusted(directory, 'directory', owner) ||
+			!trusted(path, 'file', owner) || fs.lstat(path).size > 16384) return failure('plugin_files_unsafe');
 		const manifest = read_json(path), error = descriptor_error(manifest, id);
 		if (error != null) return failure(error);
+		return { ok: true, manifest, directory, process: manifest.schema == 'opl-netfleet-plugin.v1', described: true };
+	} catch (error) { return failure(error.message); }
+};
+function inspect(root, id, owner, adapter, cached) {
+	const description = describe(root, id, owner);
+	if (!description.ok) return description;
+	const directory = description.directory, manifest = description.manifest;
+	try {
 		const files = [], identities = [];
 		plugin_files(directory, owner, '', files, identities);
 		const process = manifest.schema == 'opl-netfleet-plugin.v1';
@@ -270,7 +279,12 @@ create = function(root, options) {
 	let closed = false;
 	let inventory;
 	if (options.inspected == null)
-		for (let id in sort(fs.lsdir(`${root}/plugins`) ?? [])) if (valid_id(id)) found[id] = inspect(root, id, owner, adapter, options.code_locks != false);
+		for (let id in sort(fs.lsdir(`${root}/plugins`) ?? [])) if (valid_id(id)) found[id] = options.lazy_inspection ? describe(root, id, owner) : inspect(root, id, owner, adapter, options.code_locks != false);
+	function inspected(id) {
+		if (found[id]?.described) found[id] = inspect(root, id, owner, adapter, options.code_locks != false);
+		return found[id];
+	};
+	function inspect_all() { for (let id in keys(found)) inspected(id); };
 	function blocked(id) {
 		if (options.allow_maintenance || delegated) return false;
 		return fs.lstat(maintenance_root) != null && (!trusted(maintenance_root, 'directory', owner) || fs.lstat(`${maintenance_root}/${id}`) != null);
@@ -279,7 +293,7 @@ create = function(root, options) {
 		const id = system.bindings[name];
 		if (id == null) raise(`plugin_service_unbound:${name}`);
 		if (system.enabled[id] != true) raise(`plugin_disabled:${id}`);
-		const plugin = found[id];
+		const plugin = inspected(id);
 		if (!plugin?.ok) raise(`${plugin?.error ?? 'plugin_not_installed'}:${id}`);
 		if (instance_id != 'default' && plugin.manifest.lifecycle != null && plugin.manifest.lifecycle.scope != 'instance') raise(`plugin_resource_scope_required:${id}`);
 		if (plugin.manifest.api_version != API_VERSION) raise(`plugin_api_incompatible:${id}`);
@@ -336,8 +350,8 @@ create = function(root, options) {
 				inventory: versions => inventory(versions),
 				composition: {
 					get: () => ({ config: private_system(options), plugins: map(inventory(), item => ({ id: item.id, api_version: item.api_version, version: item.version })) }),
-					validate: config => composition_report(host_api, config),
-					pause: (ids, excluded) => resource_pause(host_api, ids ?? keys(found), excluded),
+					validate: config => { inspect_all(); return composition_report(host_api, config); },
+					pause: (ids, excluded) => { inspect_all(); return resource_pause(host_api, ids ?? keys(found), excluded); },
 					lock: () => data_lock(options, true),
 				},
 		};
@@ -362,6 +376,7 @@ create = function(root, options) {
 		return resolve(name, major);
 	};
 	inventory = function(versions) {
+		inspect_all();
 		const rows = [];
 		const available = {};
 		function dependency(name) {
@@ -394,8 +409,12 @@ create = function(root, options) {
 		let result = null;
 		for (let id, item in found) {
 			if (!item.ok || system.enabled[id] != true || item.process) continue;
-			const value = item.manifest.commands[name];
-			if (value == null || system.bindings[value.service] != id) continue;
+			const declared = item.manifest.commands[name];
+			if (declared == null || system.bindings[declared.service] != id) continue;
+			const current = inspected(id);
+			if (!current?.ok) raise(`${current?.error ?? 'plugin_not_installed'}:${id}`);
+			const value = current.manifest.commands[name];
+			if (sprintf('%J', value) != sprintf('%J', declared)) raise(`plugin_code_changed:${id}`);
 			if (result != null || index(RESERVED, name) >= 0) raise(`plugin_command_conflict:${name}`);
 			result = { ...value, id: id };
 		}
@@ -414,7 +433,7 @@ create = function(root, options) {
 	};
 	host_api = { use: use, call: call, release: release, inventory: inventory, command: command, system: system,
 		all_system: all_system, instance: instance_id, adapter: adapter,
-		found: found, blocked: blocked, acquire: acquire, graph: graph, root: root, options: options };
+		found: found, blocked: blocked, acquire: acquire, graph: graph, root: root, options: { ...options, lazy_inspection: false } };
 	return host_api;
 };
 
@@ -788,7 +807,7 @@ export function execute(argv, root, options) {
 		options = host_options(options);
 		if (index(RESERVED, argv[0]) >= 0) result = management(argv[0], argv, root, options);
 		else {
-			host = create(root, options);
+			host = create(root, { ...options, lazy_inspection: true });
 			const command = host.command(argv[0]);
 			if (command == null) result = { ...failure('unknown_command'), detail: { command: argv[0],
 				plugins: map(filter(host.inventory(null), item => item.state != 'available'), item => ({ id: item.id, reason: item.reason })) } };
@@ -811,7 +830,7 @@ export function tick(root, states, options) {
 		options = host_options(options);
 		lock = options.adapter.network_lock(options.network_lock, true);
 		if (lock != null) {
-			host = create(root, { ...options, states: states });
+			host = create(root, { ...options, states: states, lazy_inspection: true });
 			const scheduler = host.system.scheduler;
 			if (scheduler != null) {
 				const id = host.system.bindings[scheduler.service];

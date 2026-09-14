@@ -180,6 +180,21 @@ try {
 	check(length(execute(['plugins-list'], root, cached_options).result.plugins) == 562 && scans == 34,
 		'34 packages and 17 contexts inspect package bytes once, not once per instance');
 	check(execute(['plugins-list'], root, cached_options).ok && scans == 34, 'warm scaled inventory needs no digest subprocesses');
+	const targeted_adapter = { ...cached_adapter, paths: { ...cached_adapter.paths, inspection_cache: null } };
+	scans = 0;
+	check(execute(['scheduler-inspect'], root, { adapter: targeted_adapter }).updated == true && scans == 2,
+		'command deeply inspects only selected code and its lock-time generation, independent of unrelated packages');
+	write(`${root}/plugins/scheduler/lib/main.uc`, 'return function(ctx) { return { tick: state => ({delay_ms: 321, state}) }; };');
+	scans = 0;
+	check(tick(root, {}, { adapter: targeted_adapter }) == 321 && scans == 2,
+		'scheduler deeply inspects only its dependency closure');
+	const conflict_path = `${root}/plugins/scale-0/manifest.json`, conflict = json(fs.readfile(conflict_path));
+	const target_service = keys(conflict.services)[0];
+	conflict.commands['scheduler-inspect'] = { service: target_service, method: 'read', access: 'read' };
+	write(conflict_path, conflict);
+	check(index(execute(['scheduler-inspect'], root, { adapter: targeted_adapter }).error, 'plugin_command_conflict:') == 0,
+		'lightweight command discovery still rejects conflicting enabled declarations');
+
 } catch (error) { host?.release(); remove(root); die(error.message); }
 remove(root);
 printf('host adapter contract: %d assertions passed\n', assertions);
