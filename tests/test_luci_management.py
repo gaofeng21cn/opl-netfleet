@@ -905,6 +905,48 @@ await owner.initialRefresh;
 delete global.window;
 """)
 
+    def test_status_display_does_not_wait_for_events_and_late_events_respect_scope(self):
+        self.run_js(r"""
+let resolveEvents;
+global.window = { localStorage: { getItem: () => null, removeItem() {}, setItem() {} } };
+const modes = modesModule({
+  onboardingGet: async () => ({ required: false }),
+  status: async () => ({ active: true }),
+  events: () => new Promise(resolve => resolveEvents = resolve)
+});
+const owner = Object.create(modes.controller);
+owner.context = { signal: { aborted: false } };
+let initial;
+owner.load().then(value => initial = value);
+await tick();
+assert(initial && initial.status.active, 'first live status must render before a slow event response');
+assert(owner.eventsLoading, 'pending events retain an explicit loading state');
+const inFlight = owner.eventsRead;
+assert.strictEqual(owner.refreshEvents(), inFlight, 'concurrent event refreshes share one read');
+owner.context.signal.aborted = true;
+resolveEvents({ events: [{ id: 'late-event' }] });
+await inFlight;
+assert.equal(owner.events, undefined, 'disposed page cannot accept a late event response');
+delete global.window;
+""")
+
+    def test_event_error_does_not_invalidate_successful_live_status(self):
+        self.run_js(r"""
+global.window = { localStorage: { getItem: () => null, removeItem() {}, setItem() {} } };
+const modes = modesModule({
+  onboardingGet: async () => ({ required: false }), status: async () => ({ active: true }),
+  events: async () => { throw new Error('event timeout'); }
+});
+const owner = Object.create(modes.controller);
+const initial = await owner.load();
+await tick();
+assert.equal(initial.cached, false);
+assert.equal(initial.status.active, true);
+assert.equal(owner.eventsError.message, 'event timeout');
+assert.equal(owner.refreshError, undefined, 'event failure is separate from current runtime status');
+delete global.window;
+""")
+
     def test_mode_progress_survives_rpc_disconnect_and_new_page_scope(self):
         self.run_js(r"""
 let operation = { id: 'older-mode', kind: 'mode', state: 'failed', phase: 'checking_mode', started_at: 1, updated_at: 2 };

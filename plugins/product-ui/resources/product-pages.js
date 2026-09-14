@@ -83,8 +83,10 @@ const productController = {
 		const cached = readDisplayCache();
 		const startRefresh = function() {
 			const started = Date.now();
-			return Promise.all([ netfleet.status(), netfleet.events() ]).then(function(result) {
-				return { result: result, readDurationMs: Date.now() - started };
+			const status = netfleet.status();
+			self.refreshEvents();
+			return status.then(function(value) {
+				return { result: [value, null], readDurationMs: Date.now() - started };
 			}, function(error) { return { error: error }; });
 		};
 		// A previously configured page can read current status while checking setup.
@@ -108,7 +110,7 @@ const productController = {
 			return self.initialRefresh.then(function(refresh) {
 				if (refresh.error) throw refresh.error;
 				return {
-					status: refresh.result[0], events: refresh.result[1], fetchedAt: new Date(),
+					status: refresh.result[0], events: self.events || { events: [] }, fetchedAt: new Date(),
 					readDurationMs: refresh.readDurationMs, config: refresh.result[2], cached: false
 				};
 			});
@@ -121,7 +123,7 @@ const productController = {
 		this.nativeSetup = initial.nativeSetup || null;
 		this.status = initial.status || null;
 		ensureStyles();
-		this.events = initial.events || { events: [] };
+		this.events = this.events || initial.events || { events: [] };
 		this.connections = { connections: [], count: null, truncated: false };
 		this.connectionsLoading = false;
 		this.connectionsError = null;
@@ -163,9 +165,10 @@ const productController = {
 	},
 
 	loadManagement: function() {
-		managed.preloadSubscriptions(this).catch(function() {});
+		if (this.context?.signal?.aborted) return;
+		if (this.currentView === 'providers') managed.preloadSubscriptions(this).catch(function() {});
 		managed.readOperations(this);
-		this.loadConfig();
+		if (this.currentView === 'config') this.loadConfig();
 		return this.prepareDashboard();
 	},
 
@@ -199,9 +202,10 @@ const productController = {
 	},
 
 	acceptLiveData: function(result, readDurationMs) {
+		if (this.context?.signal?.aborted) return;
 		this.status = result[0];
 		ensureStyles();
-		this.events = result[1];
+		if (result[1]) this.events = result[1];
 		this.fetchedAt = new Date();
 		this.readDurationMs = readDurationMs;
 		this.liveDataReady = true;
@@ -305,7 +309,9 @@ const productController = {
 			'class': 'netfleet-dashboard-link', 'type': 'button', 'disabled': true,
 			'title': dashboardReady(this.status) ? '正在读取连接信息' : dashboardUnavailableReason(this.status)
 		}, 'Zashboard ↗');
-		this.root.replaceChildren(pageHeading(title, this.status, dashboard, buttons), E('div', { 'class': 'netfleet-page-content' }, content), source);
+		this.root.replaceChildren(pageHeading(title, this.status, dashboard, buttons), E('div', { 'class': 'netfleet-page-content' }, content),
+			this.eventsLoading || this.eventsError ? E('p', { 'class': 'netfleet-muted', role: 'status' },
+				this.eventsLoading ? '事件正在刷新，暂时显示上次记录。' : '事件刷新失败，当前显示上次记录；运行状态已单独读取。') : E('span'), source);
 	},
 
 	openDashboard: function() {
@@ -413,13 +419,33 @@ const productController = {
 		});
 	},
 
+	refreshEvents: function() {
+		if (this.eventsRead) return this.eventsRead;
+		const self = this;
+		this.eventsLoading = true;
+		this.eventsError = null;
+		this.eventsRead = netfleet.events().then(function(events) {
+			if (self.context?.signal?.aborted) return;
+			self.events = events;
+			if (self.liveDataReady && self.fetchedAt) writeDisplayCache(self.status, events, self.fetchedAt, self.readDurationMs);
+		}).catch(function(error) {
+			if (!self.context?.signal?.aborted) self.eventsError = error;
+		}).finally(function() {
+			self.eventsLoading = false;
+			self.eventsRead = null;
+			if (self.root && !self.context?.signal?.aborted) self.redraw();
+		});
+		return this.eventsRead;
+	},
+
 	refreshData: function(silent, forceConfig) {
 		const self = this;
 		const started = Date.now();
 		this.busy = true;
 		this.refreshing = true;
 		this.redraw();
-		const requests = [ netfleet.status(), netfleet.events() ];
+		const requests = [ netfleet.status(), Promise.resolve(null) ];
+		this.refreshEvents();
 		if (forceConfig)
 			requests.push(netfleet.configGet());
 		return Promise.all(requests).then(function(result) {

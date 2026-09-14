@@ -10,6 +10,8 @@
 
 概览状态区分别表达启用意图和运行结果：LAN 透明代理、DNS 接管使用后端投影的开关判断“已启用 / 未启用”，已启用时再显示“正常 / 异常”；缺失证据显示“状态未确认”，不能把 ready 为 true 当成启用意图，也不能把主动关闭显示为故障。控制接口显示“正常 / 异常”，后端已停止时显示“未运行”；实时面板另说明局域网访问范围。功能插件显示“已启用 / 已禁用”，异常单独说明，不用“可用”代替是否正在启用。
 
+运行状态与事件独立读取：事件延迟或失败不阻塞已经完成的实时运行状态，事件区域明确显示刷新或失败。显示缓存不授权写入；页面退出后不再应用迟到结果。配置草稿和订阅管理详情按所在页面加载，普通概览不预读这些管理数据。
+
 ## 对象身份与当前出口
 
 状态中的机场正式名称由 UCI 引用的当前后端 subscription section 的 `name` 提供；section 没有名称时才回退到稳定 section ID。恢复配置的用户显示名由 status owner 通过同一 target-local 后端 metadata 解析并投影为 `recovery_profile_display_name`；无法取得可靠名称时返回 `null`，UI 显示“当前原生配置”，不得从 `subscription:`/`file:` 引用或 provider 计费属性猜名称。capability 的可见 Mihomo 组名来自 policy `display_name`；地区可见名称由可选 `flag` 与 `display_name` 组合，缺失时回退到稳定 region ID，共享 UI 再把任意一对 regional-indicator 字符通用转换为 ASCII 两位地区代码，统一显示为“地区代码 + 中文名称”，不能依赖 emoji 字体或为单个地区写特例。这些显示名只用于编译的用户表面和 status/UI projection，不参与 provider、地区或节点选择，也不能成为算法分支。内部对象仍用稳定 ID，provider/region 内部组一律 hidden。NetFleet inactive 时，status 另从当前后端 owner 和一次 controller `/proxies` 读取每个绑定策略来源组的原生实际链；LuCI 显示“当前原生出口”，capability 只标注为“下次启用配置”。原生组缺失、controller 不可用和网络直通必须分别显示，不能统一降级成“未知”。

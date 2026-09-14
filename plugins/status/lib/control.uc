@@ -60,7 +60,8 @@ status_action = function(policy, evidence) {
 		state.providers = proxy_providers(secret, 1)?.providers ?? null;
 	}
 	const enabled = backend_enabled();
-	const mihomo_running = running();
+	const observation = {};
+	const mihomo_running = running(observation);
 	let cleanup = null;
 	if (enabled == false || !mihomo_running) {
 		try {
@@ -85,7 +86,7 @@ status_action = function(policy, evidence) {
 		netfleet_present: state_has_netfleet(state, manifest, profile),
 		backend_enabled: enabled,
 		mihomo_running: mihomo_running,
-		lan_runtime: mihomo_running ? lan_runtime_state() : null,
+		lan_runtime: mihomo_running ? lan_runtime_state(null, observation) : null,
 		cleanup: cleanup,
 		quotas: provider_quotas(policy),
 		provider_names: provider_display_names(policy),

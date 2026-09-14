@@ -51,6 +51,29 @@ try {
 	check(profiles.remove_provider_links({ sample: { path: beta } }) && fs.lstat(link) == null, "matching owner can remove its link");
 	check(storage.write_text(link, "foreign") && !profiles.prepare_provider_links({ sample: { path: alpha } }) &&
 		fs.readfile(link) == "foreign", "existing file survives link preparation");
+	if (system("command -v yq >/dev/null 2>&1") == 0) {
+		const cache_state = {};
+		const cached_storage = loadfile(`${root}/plugins/platform-storage/lib/storage.uc`)()({ state: cache_state, use: host.use });
+		const yaml_path = `${workspace}/cached.yaml`;
+		check(storage.write_text(yaml_path, "items:\n  - name: alpha\n"), "prepare YAML document");
+		const parsed = cached_storage.read_yaml(yaml_path, true);
+		check(parsed?.items?.[0]?.name == "alpha", "YAML conversion returns actual document");
+		parsed.items[0].name = "caller mutation";
+		check(cached_storage.read_yaml(yaml_path, true)?.items?.[0]?.name == "alpha", "cache isolates nested caller changes");
+		check(length(cache_state.yaml_cache) == 1, "unchanged source reuses one conversion");
+		check(storage.write_text(yaml_path, "items:\n  - name: bravo\n") &&
+			cached_storage.read_yaml(yaml_path, true)?.items?.[0]?.name == "bravo", "same-length replacement invalidates conversion immediately");
+		check(storage.write_text(yaml_path, "items: [broken") && cached_storage.read_yaml(yaml_path, true) == null &&
+			length(cache_state.yaml_cache) == 0, "malformed replacement cannot return prior valid YAML");
+		for (let n = 0; n < 6; n++) {
+			const path = `${workspace}/cache-${n}.yaml`;
+			storage.write_text(path, `name: item${n}\n`);
+			check(cached_storage.read_yaml(path)?.name == `item${n}`, "bounded cache retains document meaning");
+		}
+		check(length(cache_state.yaml_cache) == 4, "conversion cache is bounded in persistent plugin state");
+		const gone = `${workspace}/cache-5.yaml`; fs.unlink(gone);
+		check(cached_storage.read_yaml(gone) == null && length(cache_state.yaml_cache) == 3, "deletion invalidates cached document");
+	} else warn("YAML conversion requires yq; exercised by OpenWrt qualification.\n");
 	const policy = json(fs.readfile(`${root}/../../../etc/opl-netfleet/policy.example.json`));
 	check(documents.validate_policy(null).ok == false, "missing policy is invalid");
 	check(documents.validate_policy(policy).ok, "candidate policy matches platform paths");

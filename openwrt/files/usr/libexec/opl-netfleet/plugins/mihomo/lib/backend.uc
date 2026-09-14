@@ -30,9 +30,12 @@ update_subscription = function(section) {
 	return system(`/etc/init.d/${SERVICE} update_subscription ${shell_quote(section)} >/dev/null 2>&1`) == 0;
 };
 
-running = function() {
-	if (KIND == "native-mihomo")
-		return context.use("mihomo.gateway").process_state().running;
+running = function(observation) {
+	if (KIND == "native-mihomo") {
+		const core = context.use("mihomo.gateway").process_state();
+		if (observation != null) observation.core = core;
+		return core.running;
+	}
 	return system("pidof mihomo >/dev/null 2>&1") == 0;
 };
 
@@ -66,7 +69,7 @@ dns_query_ready = function(url) {
 // The selected backend owns transparent-proxy rules and listeners. This adapter only
 // reads their effective state so a live Mihomo process cannot be mistaken for
 // a working LAN data path.
-lan_runtime_state = function(dns_probe_url) {
+lan_runtime_state = function(dns_probe_url, observation) {
 	let allow_lan = false;
 	let api_listen = null;
 	let dns_enabled = false;
@@ -109,7 +112,7 @@ lan_runtime_state = function(dns_probe_url) {
 	const dns_query_ok = KIND == "native-mihomo" ?
 		(dns_enabled && dns_udp_wildcard && native_dns_ready(dns_port)) : dns_query_ready(dns_probe_url);
 	if (native_expected != null) {
-		const owner = context.use("mihomo.gateway").readiness(snapshot.present);
+		const owner = context.use("mihomo.gateway").readiness(snapshot.present, observation?.core);
 		const owner_ready = owner?.ok == true && owner?.result?.ready == true;
 		let proxy_chains = true;
 		let dns_chains = true;

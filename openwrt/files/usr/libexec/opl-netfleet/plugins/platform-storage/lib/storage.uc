@@ -1,13 +1,47 @@
-import { popen, writefile, readfile, stat } from "fs";
+import { popen, writefile, readfile, stat, mkdtemp, unlink, rmdir } from "fs";
 
 return function(context) {
 	const shell_quote = context.use("platform.process").shell_quote;
+	const state = context.state ?? {};
+	state.yaml_cache ??= [];
+	// Store only expensive YAML conversions. JSON already has a native parser.
+	// Exact source bytes, not mtime, decide reuse; callers receive a fresh object.
+	function forget_yaml(path) {
+		state.yaml_cache = filter(state.yaml_cache, item => item.path != path);
+	}
 
 	function read_yaml(path, quiet) {
 		// Native artifacts retain .yaml paths for Mihomo but contain validated JSON.
 		const source = readfile(path);
-		if (source == null) return null;
-		try { return json(source); } catch (error) {}
+		if (source == null) { forget_yaml(path); return null; }
+		try { const value = json(source); forget_yaml(path); return value; } catch (error) {}
+		const cached = filter(state.yaml_cache, item => item.path == path && item.source == source)[0];
+		if (cached != null) return json(cached.encoded);
+		forget_yaml(path);
+		// Convert an immutable private copy, never a path that can be replaced
+		// after reading the bytes used as the cache identity.
+		if (length(source) <= 524288) {
+			const directory = mkdtemp("/tmp/netfleet-yaml.XXXXXX");
+			if (directory == null) return null;
+			const input = `${directory}/source`;
+			let encoded = null, process, status;
+			try {
+				if (writefile(input, source) == length(source)) {
+					process = popen(`yq -M -p yaml -o json ${shell_quote(input)}${quiet ? " 2>/dev/null" : ""}`);
+					encoded = process?.read("all");
+				}
+			} catch (error) {}
+			status = process?.close();
+			unlink(input); rmdir(directory);
+			if (status != 0 || encoded == null) return null;
+			let value;
+			try { value = json(encoded); } catch (error) { return null; }
+			if (length(encoded) <= 524288) {
+				if (length(state.yaml_cache) >= 4) shift(state.yaml_cache);
+				push(state.yaml_cache, { path, source, encoded });
+			}
+			return value;
+		}
 		const process = popen(`yq -M -p yaml -o json ${shell_quote(path)}${quiet ? " 2>/dev/null" : ""}`);
 		if (!process) return null;
 		let result = null;
