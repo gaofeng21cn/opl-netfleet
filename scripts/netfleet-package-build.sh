@@ -100,7 +100,9 @@ make -C "$sdk" package/feeds/base/ucode/host/compile V=s
 make -C "$sdk" package/opl-netfleet/clean package/luci-app-netfleet/clean V=s
 # These payloads use the prepared SDK tools, not compiled dependency libraries.
 # Keep runtime APK dependencies, but do not rebuild the SDK's entire kmod set.
-make -C "$sdk" package/mihomo-meta/compile package/opl-netfleet/compile package/luci-app-netfleet/compile NO_DEPS=1 V=s
+# Retain this build's compiled payload until FILES and native-runtime validation
+# consume it; the next invocation's package clean removes it.
+make -C "$sdk" package/mihomo-meta/compile package/opl-netfleet/compile package/luci-app-netfleet/compile NO_DEPS=1 CONFIG_AUTOREMOVE= V=s
 
 payload=$work/payload
 mkdir -p "$payload/usr/libexec" "$payload/usr/libexec/rpcd" \
@@ -233,7 +235,9 @@ if [[ "$package_format" == apk ]]; then
   cp "$public_key" "$trusted_dir/opl-netfleet-apk.pem"
   "$sdk/staging_dir/host/bin/apk" verify --keys-dir "$trusted_dir" "${signed_artifacts[@]}"
   artifacts=("${signed_artifacts[@]}")
-  python3 "$work/scripts/verify-native-runtime.py" --apk "$sdk/staging_dir/host/bin/apk" "${artifacts[@]:0:${#product_packages[@]}}" >"$output/native-runtime.json"
+  python3 "$work/scripts/verify-native-runtime.py" --apk "$sdk/staging_dir/host/bin/apk" \
+    --source-root "$work/openwrt/files" --bytecode-manifest "$output/bytecode.json" \
+    "${artifacts[@]:0:${#product_packages[@]}}" >"$output/native-runtime.json"
 fi
 python3 - "$output" "$commit" "$tree" "$version" "$release" "$package_format" "$package_arch" "$build_target_arch" "$policy_schema" "$public_key" "$runtime_payload_sha256" "$files_sha256" "$bootstrap_sha256" "$core_lock" "${artifacts[@]}" <<'PY'
 import hashlib, json, re, sys

@@ -22,7 +22,7 @@ def runtime_caller(line, ucode=False):
     return bool(RUNTIME.search(line))
 
 
-def inspect_payload(root):
+def inspect_payload(root, compiled=None):
     checked = 0
     for path in sorted(root.rglob('*')):
         if not path.is_file() and not path.is_symlink():
@@ -37,9 +37,13 @@ def inspect_payload(root):
                 raise ValueError(f'non-native executable link: {relative}')
             continue
         data = path.read_bytes()
+        bytecode = data.split(b'\n', 1)[1] if data.startswith(b'#!') and b'\n' in data else data
         if data.startswith(b'\x7fELF'):
             if b'libpython' in data:
                 raise ValueError(f'Python-linked binary: {relative}')
+        elif bytecode.startswith(b'\x1bucb'):
+            if (compiled or {}).get(str(relative)) != hashlib.sha256(data).hexdigest():
+                raise ValueError(f'unverified compiled runtime: {relative}')
         elif path.suffix == '.uc' or data.startswith(b'#!'):
             for line in data.decode('utf-8').splitlines():
                 if runtime_caller(line, ucode=path.suffix == '.uc'):
@@ -48,7 +52,23 @@ def inspect_payload(root):
     return checked
 
 
-def inspect_apk(apk, archive):
+def verified_bytecode(source_root, manifest):
+    # Inspect the complete source payload, including static imports, then bind
+    # each SDK output to the exact source and installed byte identities.
+    inspect_payload(source_root)
+    result = {}
+    for entry in manifest:
+        relative = Path('usr/libexec/opl-netfleet/plugins') / entry['plugin'] / entry['module']
+        source = source_root / relative
+        if not source.resolve().is_relative_to(source_root.resolve()) or source.is_symlink():
+            raise ValueError('unsafe compiled source path')
+        if hashlib.sha256(source.read_bytes()).hexdigest() != entry['source_sha256']:
+            raise ValueError(f'compiled source mismatch: {relative}')
+        result[str(relative)] = entry['compiled_sha256']
+    return result
+
+
+def inspect_apk(apk, archive, compiled=None):
     def run(*args):
         return subprocess.run([str(apk), *map(str, args)], check=True, capture_output=True, text=True).stdout
     metadata = json.loads(run('adbdump', '--format', 'json', archive))
@@ -64,16 +84,21 @@ def inspect_apk(apk, archive):
             raise ValueError('package lifecycle invokes a non-native runtime')
     with tempfile.TemporaryDirectory(prefix='netfleet-native-payload-') as temporary:
         run('--allow-untrusted', 'extract', '--destination', temporary, archive)
-        files = inspect_payload(Path(temporary))
+        files = inspect_payload(Path(temporary), compiled)
     return {'package': name, 'artifact': archive.name, 'sha256': hashlib.sha256(archive.read_bytes()).hexdigest(), 'files_checked': files, 'dependencies': depends}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apk', type=Path, required=True)
+    parser.add_argument('--source-root', type=Path)
+    parser.add_argument('--bytecode-manifest', type=Path)
     parser.add_argument('packages', type=Path, nargs='+')
     args = parser.parse_args()
-    print(json.dumps({'ok': True, 'packages': [inspect_apk(args.apk, path) for path in args.packages]}))
+    if bool(args.source_root) != bool(args.bytecode_manifest):
+        parser.error('source root and bytecode manifest must be supplied together')
+    compiled = verified_bytecode(args.source_root, json.loads(args.bytecode_manifest.read_text())) if args.source_root else None
+    print(json.dumps({'ok': True, 'packages': [inspect_apk(args.apk, path, compiled) for path in args.packages]}))
 
 
 if __name__ == '__main__':

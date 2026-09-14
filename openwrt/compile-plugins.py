@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Compile official service factories in the SDK's disposable payload copy."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -19,6 +20,7 @@ def compile_plugins(root: Path, compiler: Path, libraries: Path):
             if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(directory):
                 raise ValueError(f'unsafe service module: {manifest["id"]}/{relative}')
             before = path.stat().st_size
+            source_digest = hashlib.sha256(path.read_bytes()).hexdigest()
             temporary = path.with_suffix('.bytecode-tmp')
             try:
                 # SDK compiler and target interpreter are qualified together.
@@ -31,7 +33,9 @@ def compile_plugins(root: Path, compiler: Path, libraries: Path):
                 temporary.chmod(path.stat().st_mode & 0o777)
                 temporary.replace(path)
                 rows.append({'plugin': manifest['id'], 'module': relative,
-                             'source_bytes': before, 'compiled_bytes': path.stat().st_size})
+                             'source_bytes': before, 'compiled_bytes': path.stat().st_size,
+                             'source_sha256': source_digest,
+                             'compiled_sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
             finally:
                 temporary.unlink(missing_ok=True)
     return rows
