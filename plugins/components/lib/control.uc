@@ -689,7 +689,12 @@ upgrade = function(request, work, candidates) {
 	}
 	if (system("/etc/init.d/opl-netfleet-update-recovery enable >/dev/null 2>&1") != 0) fail("update_recovery_unavailable");
 	if (!atomic_json(`${work}/before.json`, before) || !run_command(`tar -cf ${q(`${work}/private.tar`)} -C / ${join(" ", map(paths, path => q(substr(path, 1))))}`, work)) fail("update_state_write_failed");
-	if (!run_command(`tar -cf ${q(`${work}/runtime.tar`)} -C / ${length(before.runtime_paths) ? join(" ", map(before.runtime_paths, path => q(substr(path, 1)))) : "-T /dev/null"}`, work)) fail("update_state_write_failed");
+	// BusyBox tar refuses to create an empty archive. A first installation has no
+	// previous code; two zero blocks are the standard empty tar end marker.
+	const runtime_backup = length(before.runtime_paths) ?
+		`tar -cf ${q(`${work}/runtime.tar`)} -C / ${join(" ", map(before.runtime_paths, path => q(substr(path, 1))))}` :
+		`dd if=/dev/zero of=${q(`${work}/runtime.tar`)} bs=1024 count=1`;
+	if (!run_command(runtime_backup, work)) fail("update_state_write_failed");
 	journal(work, { phase: "prepared", write_started: false, drained: [], before, names, versions, candidates, old, next, inputs: input_identity([`${work}/private.tar`, `${work}/runtime.tar`, `${work}/code`, olddir, nextdir]) });
 	if (!atomic_json(PENDING, { id: request.id }) || system("sync") != 0) fail("update_state_write_failed");
 	let error = null;
