@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 
-const source = fs.readfile(ARGV[0] ?? replace(sourcepath(), /[^/]+$/, '../plugins/components/lib/control.uc'));
+const source = fs.readfile(ARGV[0] ?? replace(sourcepath(), /[^/]+$/, '../openwrt/files/usr/libexec/opl-netfleet/plugins/components/lib/control.uc'));
+if (source == null) die('components implementation unreadable');
 function extract(begin, end) {
 	const start = index(source, begin), stop = index(source, end, start);
 	if (start < 0 || stop < 0) die('implementation missing');

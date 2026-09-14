@@ -70,7 +70,7 @@ unchanged() {
 wait_operation() {
 	wanted=$1
 	for attempt in $(seq 1 180); do
-		if ! ucode "$owner" components-operation >"$work/operation-result.json"; then sleep 1; continue; fi
+		if ! ubus -t 10 call opl-netfleet operation_get '{}' >"$work/operation-result.json"; then sleep 1; continue; fi
 		id=$(jsonfilter -i "$work/operation-result.json" -e '@.result.packages.id')
 		state=$(jsonfilter -i "$work/operation-result.json" -e '@.result.packages.state')
 		if [ "$id" = "$wanted" ]; then
@@ -237,6 +237,11 @@ stage=cancel_update_before_replacement
 ucode "$owner" components-install "$local_stage" >"$work/cancel-start.json"
 assert_json "$work/cancel-start.json" '@.ok' true
 cancel_id=$(jsonfilter -i "$work/cancel-start.json" -e '@.result.operation.id')
+for attempt in $(seq 1 10); do
+ ubus -t 10 call opl-netfleet operation_get '{}' >"$work/control-readback.json"
+ [ "$(jsonfilter -i "$work/control-readback.json" -e '@.result.packages.can_cancel')" != true ] || break
+ sleep 1
+done
 ubus -t 20 call opl-netfleet components_cancel "{\"id\":\"$cancel_id\"}" >"$work/cancel-result.json"
 assert_json "$work/cancel-result.json" '@.ok' true
 wait_operation "$cancel_id"
