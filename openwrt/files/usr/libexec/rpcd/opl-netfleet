@@ -3,6 +3,23 @@
 main=/usr/libexec/opl-netfleet/main.uc
 lock=/var/lock/opl-netfleet-deploy.lock
 
+transaction_owner() {
+	# Only execute the root-owned immutable transaction copy, never request paths.
+	transaction=$(ucode -e 'import * as fs from "fs";
+		const root="/etc/opl-netfleet/package-transactions", p=root+"/request.json", s=fs.lstat(p);
+		if(s?.type!="file"||s.uid!=0||(s.mode&077))exit(1);
+		let r;try{r=json(fs.readfile(p));}catch(e){exit(1);}
+		if(!match(r.id??"",/^[a-f0-9]{32}$/))exit(1);
+		const work=root+"/"+r.id, file=work+"/code/plugins/components/recover.uc";
+		const marker=work+"/control-api.json", m=fs.lstat(marker);
+		if(m?.type!="file"||m.uid!=0||(m.mode&077))exit(1);
+		let api;try{api=json(fs.readfile(marker));}catch(e){exit(1);}if(api?.version!=1)exit(1);
+		for(let path in [root,work,work+"/code",work+"/code/plugins",work+"/code/plugins/components",file]) {
+			const s=fs.lstat(path);if(s==null||s.uid!=0||(s.mode&022)||s.type!=(path==file?"file":"directory"))exit(1);
+		}
+		print(file);' 2>/dev/null) || transaction=
+}
+
 lock_mutation() {
 	exec 9>"$lock"
 	if ! flock -n 9; then
@@ -102,7 +119,7 @@ component_update() {
 
 case "$1" in
 	list)
-		printf '%s\n' '{"components_get":{},"components_check":{},"components_recover":{},"components_update":{"component":"String","version":"String"},"operation_get":{},"native_setup_get":{},"native_setup_apply":{"request":{}},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":{}},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":{}},"onboarding_get":{},"onboarding_apply":{"request":{}},"status":{},"events":{},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":{}},"config_save":{"request":{}},"config_apply":{"request":{}},"enable":{},"select_auto":{"capability":"String"},"select_region":{"capability":"String","region":"String"},"refresh":{},"disable":{},"network_get":{},"network_validate":{"request":{}},"network_apply":{"request":{}},"maintenance_get":{},"profile_get":{"id":"String"},"profile_save":{"request":{}},"profile_delete":{"request":{}},"backup_export":{},"backup_restore":{"request":{}},"core_action":{"request":{}},"diagnostics_get":{},"dashboard_check":{},"dashboard_update":{"version":"String"}}'
+		printf '%s\n' '{"components_get":{},"components_check":{},"components_recover":{},"components_cancel":{"id":"String"},"components_update":{"component":"String","version":"String"},"operation_get":{},"native_setup_get":{},"native_setup_apply":{"request":{}},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":{}},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":{}},"onboarding_get":{},"onboarding_apply":{"request":{}},"status":{},"events":{},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":{}},"config_save":{"request":{}},"config_apply":{"request":{}},"enable":{},"select_auto":{"capability":"String"},"select_region":{"capability":"String","region":"String"},"refresh":{},"disable":{},"network_get":{},"network_validate":{"request":{}},"network_apply":{"request":{}},"maintenance_get":{},"profile_get":{"id":"String"},"profile_save":{"request":{}},"profile_delete":{"request":{}},"backup_export":{},"backup_restore":{"request":{}},"core_action":{"request":{}},"diagnostics_get":{},"dashboard_check":{},"dashboard_update":{"version":"String"}}'
 		;;
 	call)
 		case "$2" in
@@ -126,7 +143,16 @@ case "$1" in
 				;;
 			dashboard_update) management_argument dashboard-update version 1 ;;
 			components_get) respond_owner ucode "$main" components-get ;;
-			operation_get) respond_owner ucode "$main" components-operation ;;
+			operation_get)
+				transaction_owner
+				if [ -n "$transaction" ]; then respond_owner ucode "$transaction" operation; fi
+				respond_owner ucode "$main" components-operation ;;
+			components_cancel)
+				payload=$(cat)
+				id=$(jsonfilter -s "$payload" -e '@.id' 2>/dev/null || true)
+				transaction_owner
+				if [ -n "$transaction" ]; then respond_owner ucode "$transaction" cancel "$id"; fi
+				printf '%s\n' '{"ok":false,"error":"update_cancel_unavailable"}' ;;
 			components_check)
 				lock_mutation
 				respond_owner ucode "$main" components-check 9>&-

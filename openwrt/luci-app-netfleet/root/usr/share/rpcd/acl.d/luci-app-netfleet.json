@@ -52,6 +52,7 @@
           "components_check",
           "components_update",
           "components_recover",
+          "components_cancel",
           "native_setup_apply",
           "subscriptions_set",
           "subscriptions_refresh",

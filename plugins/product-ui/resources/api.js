@@ -33,6 +33,7 @@ const calls = {
 	dashboardUpdate: declare({ object: 'opl-netfleet', method: 'dashboard_update', params: [ 'version' ] }),
 	componentsGet: declare({ object: 'opl-netfleet', method: 'components_get' }),
 	componentsRecover: declare({ object: 'opl-netfleet', method: 'components_recover' }),
+	componentsCancel: declare({ object: 'opl-netfleet', method: 'components_cancel', params: [ 'id' ] }),
 	componentsCheck: declare({ object: 'opl-netfleet', method: 'components_check' }),
 	componentsUpdate: declare({ object: 'opl-netfleet', method: 'components_update', params: [ 'component', 'version' ] }),
 	operationGet: declare({ object: 'opl-netfleet', method: 'operation_get' }),
@@ -126,6 +127,7 @@ function transferWrite(method, value) {
 }
 
 return baseclass.extend({
+	componentsCancel: function(id) { return executeRequest('componentsCancel', id); },
 	systemGet: function() { return execute('systemGet'); },
 	systemValidate: function(request) { return executeRequest('systemValidate', request); },
 	systemApply: function(request) { return withRpcTimeout(300, function() { return executeRequest('systemApply', request); }); },

@@ -39,7 +39,7 @@
       "services": [
         "components.control"
       ],
-      "version": "0.7.9"
+      "version": "0.7.10"
     },
     {
       "api_version": 1,
@@ -267,7 +267,7 @@
         "opl-netfleet-plugin-subscriptions"
       ],
       "services": [],
-      "version": "0.9.10"
+      "version": "0.9.11"
     },
     {
       "api_version": 1,

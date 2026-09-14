@@ -214,6 +214,43 @@ if ucode "$owner" components-install "$local_stage" >"$work/local-rejected.json"
 assert_json "$work/local-rejected.json" '@.error' unexpected_plugin_archive
 [ "$(pidof mihomo)" = "$core_pid_before" ]
 rm "$local_stage/old/unexpected.apk"
+# Hold a real reader lease. The update must defer before APK writes, and the
+# retained RPC owner must remain readable while the installed plugin drains.
+stage=bounded_update_preparation
+ucode -e 'import * as fs from "fs";
+ const lock=fs.open("/var/lock/opl-netfleet-code/dashboard.lock","ae",0600);
+ assert(lock.lock("s"));fs.writefile(ARGV[0]+"/reader-ready","ready");
+ while(fs.stat(ARGV[0]+"/reader-release")==null)sleep(100);
+ lock.close();' "$work" &
+reader_pid=$!
+for attempt in $(seq 1 30); do [ ! -f "$work/reader-ready" ] || break; sleep 1; done
+test -f "$work/reader-ready"
+ucode "$owner" components-install "$local_stage" >"$work/deferred-start.json"
+assert_json "$work/deferred-start.json" '@.ok' true
+deferred_id=$(jsonfilter -i "$work/deferred-start.json" -e '@.result.operation.id')
+wait_operation "$deferred_id"
+assert_json "$work/operation-result.json" '@.result.packages.error' update_deferred_rolled_back
+apk list --manifest | grep -Fqx "$plugin $prior"
+[ "$(pidof mihomo)" = "$core_pid_before" ]
+unchanged
+stage=cancel_update_before_replacement
+ucode "$owner" components-install "$local_stage" >"$work/cancel-start.json"
+assert_json "$work/cancel-start.json" '@.ok' true
+cancel_id=$(jsonfilter -i "$work/cancel-start.json" -e '@.result.operation.id')
+ubus -t 20 call opl-netfleet components_cancel "{\"id\":\"$cancel_id\"}" >"$work/cancel-result.json"
+assert_json "$work/cancel-result.json" '@.ok' true
+wait_operation "$cancel_id"
+ucode -e 'import {readfile} from "fs";const operation=json(readfile(ARGV[0])).result.packages;
+ assert(operation.state=="failed" && index(operation.error,"update_cancelled")==0);' "$work/operation-result.json"
+ubus -t 20 call opl-netfleet operation_get '{}' >"$work/control-readback.json"
+assert_json "$work/control-readback.json" '@.result.packages.id' "$cancel_id"
+ubus -t 20 call opl-netfleet components_cancel "{\"id\":\"$deferred_id\"}" >"$work/stale-cancel.json"
+assert_json "$work/stale-cancel.json" '@.error' update_operation_changed
+touch "$work/reader-release"
+wait "$reader_pid"
+apk list --manifest | grep -Fqx "$plugin $prior"
+unchanged
+stage=independent_plugin_update
 cp -R /usr/libexec/opl-netfleet/plugins/components "$local_stage/components"
 cp /tmp/observe-openwrt.uc "$local_stage/observe.uc"
 (cd "$local_stage" && sha256sum request.json old/* new/* components/manifest.json components/lib/control.uc observe.uc >SHA256SUMS)

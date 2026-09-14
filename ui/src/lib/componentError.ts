@@ -1,4 +1,11 @@
 const labels: Record<string, string> = {
+  update_cancelled: '已取消更新，未替换软件包',
+  update_deferred: '健康连接尚未结束，本次更新已延后；请在连接较少时重试',
+  update_prepare_failed: '无法安全准备替换，未更新软件包；请读取当前运行状态',
+  update_resume_failed: '更新后资源恢复未通过确认，正在恢复旧版',
+  update_cancel_unavailable: '更新已进入替换阶段，请等待完成或恢复',
+  update_operation_changed: '当前更新任务已变化，请刷新进度',
+  update_transition_busy: '更新正在切换阶段，请刷新进度后重试',
   candidate_group_reset_failed: '候选出口初始化失败',
   runtime_mode_changed: '设备运行模式已变化，请读取当前状态后再切换',
   runtime_mode_unconfirmed: '切换后的运行模式未通过确认',
@@ -71,5 +78,5 @@ const labels: Record<string, string> = {
 };
 
 export function componentError(code: string): string {
-  return code.endsWith('_rolled_back') ? `${componentError(code.slice(0, -12))}；已恢复更新前版本和运行状态` : labels[code] || code;
+  return code.endsWith('_rolled_back') ? `${componentError(code.slice(0, -12))}；已恢复更新前版本和运行状态` : labels[code] || (/^[a-z][a-z0-9_]+$/.test(code) ? '操作未能完成，请查看技术详情或诊断记录' : code);
 }

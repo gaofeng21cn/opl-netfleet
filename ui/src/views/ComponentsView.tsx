@@ -37,12 +37,12 @@ const pluginPurposes: Record<string, string> = {
   subscriptions: '管理机场订阅与节点缓存',
 };
 
-function PluginRow({ plugin }: { plugin: PluginComponent }) {
+function PluginRow({ plugin, product }: { plugin: PluginComponent; product?: ComponentsSnapshot['product'] }) {
   const version = plugin.installed_version || plugin.version;
   const unavailable = Boolean(plugin.reason) || ['unavailable', 'invalid'].includes(plugin.state);
   return <tr>
     <td><strong>{plugin.id === 'product-ui' ? 'NetFleet 业务界面' : plugin.label || plugin.id}</strong><small>{plugin.id}</small>{plugin.instance && plugin.instance !== 'default' && <small>实例：{plugin.instance}</small>}</td>
-    <td><span>{plugin.runtime === 'service' ? '服务插件' : '进程插件'}</span><small>{plugin.description || pluginPurposes[plugin.id] || `为 NetFleet 提供 ${plugin.label || plugin.id} ${plugin.runtime === 'service' ? '服务' : '功能'}`}</small></td>
+    <td><span>{product ? product.packages.some(item => item.name === plugin.package) ? '默认产品能力' : '独立安装的插件' : plugin.runtime === 'service' ? '服务插件' : '进程插件'}</span><small>{plugin.description || pluginPurposes[plugin.id] || `为 NetFleet 提供 ${plugin.label || plugin.id} ${plugin.runtime === 'service' ? '服务' : '功能'}`}</small></td>
     <td><strong>{displayVersion(version)}</strong><details><summary>版本详情</summary><small>{version}</small><small>{plugin.package}</small></details></td>
     <td className="nf-component-actions">{plugin.ui?.length ? plugin.ui.map(page => <button key={page.id} type="button" disabled title={previewReason}>{plugin.ui.length === 1 ? plugin.configuration ? '配置' : '打开页面' : page.title}</button>) : <small>无需单独配置</small>}</td>
     <td className="nf-component-actions"><span>{plugin.enabled === false ? '已禁用' : unavailable ? '已启用 · 异常' : '已启用'}</span>{plugin.reason && plugin.reason !== 'plugin_disabled' && <small className="is-warning">{componentError(plugin.reason)}</small>}{plugin.revision && <button type="button" disabled title={previewReason}>查看状态</button>}{['product-ui', 'components', 'status', 'events', 'setup'].includes(plugin.id) ? <small>管理界面必需</small> : plugin.revision && <button type="button" disabled title={previewReason}>{plugin.runtime === 'service' ? plugin.enabled === false ? '启用' : '禁用' : '启用 / 禁用'}</button>}</td>
@@ -122,6 +122,12 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
       {section === 'software' && dashboard?.managed && dashboard.error && <ResultNotice scope={scope} slot="dashboard" identity={String(dashboard.checked_at || 0)} title="面板检查" warning>
         <span>{componentError(dashboard.error)}</span><span>{resultTime(dashboard.checked_at, '检查于') || '检查时间未记录'}</span>
       </ResultNotice>}
+      {section === 'software' && snapshot.product && <details className="nf-component-details" open={snapshot.product.missing.length > 0 || undefined}>
+        <summary>{snapshot.product.missing.length ? `默认产品缺少 ${snapshot.product.missing.length} 个软件包` : '默认产品软件包齐全'}</summary>
+        <p>此处核对安装组成；网络是否正常请查看概览，插件是否启用请查看功能插件。{snapshot.product.updates.length > 0 && `更新源有 ${snapshot.product.updates.length} 个产品包可更新。`}</p>
+        {snapshot.product.missing.length > 0 && <p>请通过软件包管理重新安装 NetFleet 默认产品以补齐依赖。</p>}
+        <ul>{snapshot.product.packages.map(item => <li key={item.name}><strong>{item.name}</strong> {item.installed_version || '未安装'}{snapshot.product?.updates.includes(item.name) && <small>可更新至 {item.available_version}</small>}</li>)}</ul>
+      </details>}
       <div className="nf-table-wrap nf-software-table" hidden={section !== 'software'}><table><thead><tr>{['软件', '当前版本', '更新与操作'].map(label => <th key={label}>{label}</th>)}</tr></thead>
         <tbody>{snapshot.components.map(component => {
           const mismatch = component.id === 'mihomo' && component.installed_version && component.running_version && coreVersion(component.installed_version) !== coreVersion(component.running_version);
@@ -145,9 +151,9 @@ export function ComponentsView({ snapshot, operation, error, operationError, loa
         {dashboard && <span>{!dashboard.managed ? componentError(dashboard.reason || 'dashboard_managed_externally') : `面板：${dashboard.error ? '上次检查失败 · ' : ''}${checkedTime(dashboard.checked_at, dashboard.error)}`}</span>}
       </div>}
       <section className="nf-component-modules" hidden={section !== 'plugins'}>
-        <p>在插件中配置功能或查看运行情况；安装、更新与卸载由 OpenWrt 软件包管理器处理。</p>
+        <p>默认产品能力随 NetFleet 一起更新；独立安装的插件由软件包管理器维护。启用表示允许使用，运行状态请打开“查看状态”；禁用前会检查依赖与网络影响。</p>
         {snapshot.extensions?.some(extension => extension.kind !== 'resource') ? <div className="nf-table-wrap nf-plugin-table"><table><thead><tr>{['插件', '分类与用途', '版本', '配置', '运行管理'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>
-          {snapshot.extensions.filter(extension => extension.kind !== 'resource').map(extension => extension.kind === 'plugin' ? <PluginRow key={`${extension.id}:${extension.instance || 'default'}`} plugin={extension} /> : <ExtensionRow key={extension.id} extension={extension} onManage={() => setDetail(extension.id)} />)}
+          {snapshot.extensions.filter(extension => extension.kind !== 'resource').map(extension => extension.kind === 'plugin' ? <PluginRow key={`${extension.id}:${extension.instance || 'default'}`} plugin={extension} product={snapshot.product} /> : <ExtensionRow key={extension.id} extension={extension} onManage={() => setDetail(extension.id)} />)}
         </tbody></table></div> : <p>当前没有可管理的功能插件</p>}
       </section>
       <details className="nf-component-details" hidden={section !== 'software'}><summary>技术详情：更新源与安装信息</summary>

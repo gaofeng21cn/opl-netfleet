@@ -329,6 +329,9 @@ export interface NetFleetClient {
 }
 
 export interface OperationSnapshot {
+  can_cancel?: boolean;
+  cancel_requested?: boolean;
+  write_started?: boolean;
   id: string;
   kind: 'subscription' | 'selection' | 'packages' | 'configuration' | 'mode';
   state: 'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted';
@@ -355,6 +358,7 @@ export interface OperationsSnapshot {
 }
 
 export interface ComponentsSnapshot {
+  product?: { packages: Array<{ name: string; installed_version?: string | null; available_version?: string | null }>; missing: string[]; updates: string[] };
   supported: boolean;
   backend: string;
   architecture: string;

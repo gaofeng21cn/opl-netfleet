@@ -156,19 +156,95 @@ progress = function() {
 		if (index(["complete", "rolled_back"], terminal?.phase) >= 0)
 			return { id: request.id, kind: "packages", state: terminal.phase == "complete" ? "succeeded" : "failed", phase: "verifying",
 				started_at: request.started_at, updated_at: terminal.finished_at ?? null, finished_at: terminal.finished_at ?? null,
-				error: terminal.phase == "complete" ? null : "update_interrupted_rolled_back", recovery: terminal.phase == "rolled_back" ? "restored" : null };
+				error: terminal.phase == "complete" ? null : terminal.error ?? "update_interrupted_rolled_back", recovery: terminal.phase == "rolled_back" ? "restored" : null,
+				can_cancel: false, write_started: terminal.write_started == true };
 		const running = process?.running == true;
 		return { id: request.id, kind: "packages", state: running ? "queued" : "interrupted", phase: "preparing", started_at: request.started_at,
-			updated_at: request.started_at, finished_at: null, completed: 0, total: null, subject: request.component, error: running ? null : "operation_interrupted" };
+			updated_at: request.started_at, finished_at: null, completed: 0, total: null, subject: request.component, error: running ? null : "operation_interrupted",
+			can_cancel: running && request.action != "check", cancel_requested: fs.lstat(`${ROOT}/${request.id}/cancel.json`) != null, write_started: false };
 	}
-	return state;
+	const journal = request ? read_json(`${ROOT}/${request.id}/journal.json`) : null;
+	return state == null ? null : { ...state,
+		can_cancel: state.id == request?.id && request.action != "check" && process?.running == true && index(["running", "queued"], state.state) >= 0 && !journal?.write_started &&
+			index(["installing", "verifying", "rolling_back"], state.phase) < 0,
+		cancel_requested: request != null && fs.lstat(`${ROOT}/${request.id}/cancel.json`) != null,
+		write_started: journal?.write_started == true };
 };
+
+// The short transaction lock serializes cancellation with the first package write.
+// It is independent of the network lock held by the durable update worker.
+function cancel_update(id) {
+	const request = private_file(REQUEST) ? read_json(REQUEST) : null;
+	if (!match(id ?? "", /^[a-f0-9]{32}$/) || request?.id != id || request.action == "check") fail("update_operation_changed");
+	const work = `${ROOT}/${id}`;
+	if (!private_directory(work)) fail("unsafe_update_directory");
+	if (fs.lstat(`${work}/control.lock`) != null && !private_file(`${work}/control.lock`)) fail("unsafe_update_directory");
+	const lock = fs.open(`${work}/control.lock`, "ae", 0600);
+	if (lock == null || !lock.lock("xn")) { lock?.close(); fail("update_transition_busy"); }
+	let result;
+	try {
+		const state = read_json(`${work}/journal.json`);
+		if (state?.write_started || index(["complete", "rolled_back", "installing", "recovering"], state?.phase) >= 0 || update_process()?.running != true)
+			fail("update_cancel_unavailable");
+		if (!atomic_json(`${work}/cancel.json`, { id })) fail("update_state_write_failed");
+		result = { requested: true, id };
+	} catch (error) { lock.close(); die(error_code(error)); }
+	lock.close(); return result;
+}
+function cancellation(work) {
+	if (private_file(`${work}/cancel.json`)) fail("update_cancelled");
+}
+function lifecycle(action, id) {
+	const pipe = fs.popen(`NETFLEET_PACKAGE_RESTORE=1 ucode ${q(MAIN)} plugin-package-${action} ${q(id)} 2>/dev/null`);
+	if (pipe == null) return null;
+	let result;
+	try { result = json(pipe.read("all")); } catch (error) {}
+	const code = pipe.close();
+	return code == 0 || result?.ok == false ? result : null;
+}
+function resume_resources(work) {
+	const state = read_json(`${work}/journal.json`);
+	let success = true;
+	for (let id in reverse([...(state?.drained ?? [])])) {
+		const result = lifecycle("resume", id);
+		if (result?.ok != true) success = false;
+	}
+	return success;
+}
+function prepare_resources(work, names, versions, candidates) {
+	const ids = [];
+	for (let name in names) {
+		if (versions[name] == candidates[name]) continue;
+		const id = name == "mihomo-meta" ? "mihomo" : name == COMPATIBILITY_PACKAGE ? "https-compat" :
+			match(name, /^opl-netfleet-plugin-([a-z][a-z0-9-]*)$/)?.[1];
+		if (id != null && index(ids, id) < 0) push(ids, id);
+		if (name == "opl-netfleet-kernel") for (let item in context.inventory(versions))
+			if (item.kind == "plugin" && match(item.id ?? "", /^[a-z][a-z0-9-]*$/) && index(ids, item.id) < 0) push(ids, item.id);
+	}
+	for (let id in ids) {
+		cancellation(work);
+		const state = read_json(`${work}/journal.json`);
+		journal(work, { ...state, phase: "draining", drained: [...(state.drained ?? []), id] });
+		operation.update("draining", { subject: id, total: 0, completed: 0 });
+		let result;
+		for (let attempt = 0; attempt < 3; attempt++) {
+			result = lifecycle("drain", id);
+			if (result?.ok || result?.error != "plugin_calls_draining") break;
+			cancellation(work); system("sleep 1");
+		}
+		cancellation(work);
+		if (result?.ok != true) fail(result?.error == "healthy_connections_still_draining" || result?.error == "plugin_calls_draining" ? "update_deferred" : "update_prepare_failed");
+	}
+}
 get = function() {
 	const versions = installed();
 	const url = feed();
 	const checked = private_file(CACHE) ? read_json(CACHE) : null;
 	const cache = checked?.feed == url ? checked : null;
 	const candidates = cache?.versions ?? {};
+	const product = product_packages();
+	const missing = filter(product, name => versions != null && versions[name] == null);
+	const updates = filter(product, name => newer(candidates[name], versions?.[name]));
 	const running = controller_version(api_secret(), 2);
 	const binary = capture("mihomo -v");
 	const binary_version = match(binary ?? "", /^Mihomo[[:space:]]+([^[:space:]]+)/)?.[1] ?? null;
@@ -177,7 +253,7 @@ get = function() {
 		const current = versions?.[item[2]] ?? null;
 		const candidate = candidates[item[2]] ?? null;
 		const managed = versions != null && current != null && (item[0] != "mihomo" || KIND == "native-mihomo");
-		const update = managed && newer(candidate, current);
+		const update = managed && (item[0] == "netfleet" ? length(updates) > 0 && version_valid(candidate) : newer(candidate, current));
 		push(rows, { id: item[0], label: item[1], installed_version: current ?? (item[0] == "mihomo" ? binary_version : null),
 			running_version: item[0] == "mihomo" ? running : null, available_version: update ? candidate : null,
 			update_available: update, managed: managed,
@@ -187,6 +263,7 @@ get = function() {
 	return { supported: versions != null, backend: KIND, architecture: capture("apk --print-arch"),
 		feed: { configured: url != null, url: url, checked_at: cache?.checked_at, error: cache?.error }, components: rows,
 		dashboard: dashboard, extensions: context.inventory(versions),
+		product: { packages: map(product, name => ({ name, installed_version: versions?.[name], available_version: candidates[name] })), missing, updates },
 		dependencies: map(DEPENDENCIES, name => ({ id: name, label: name, installed_version: versions?.[name], available: versions?.[name] != null })) };
 };
 local_stage = function(path) {
@@ -231,7 +308,7 @@ start = function(action, component, version) {
 		const oldwork = `${ROOT}/${previous.id}`;
 		const state = operation.get("packages");
 		const terminal = private_file(`${oldwork}/journal.json`) ? read_json(`${oldwork}/journal.json`) : null;
-		const safe = index(["complete", "rolled_back"], terminal?.phase) >= 0 ||
+		const safe = index(["complete", "rolled_back"], terminal?.phase) >= 0 || terminal == null ||
 			state?.id == previous.id && (state.state == "succeeded" ||
 			state.state == "failed" && match(state.error ?? "", /_rolled_back$/));
 		if (!safe && fs.lstat(`${oldwork}/before.json`) != null) fail("previous_update_incomplete");
@@ -243,7 +320,8 @@ start = function(action, component, version) {
 	const request = { id: id, action: action, component: staged ? "plugins" : component, version: version, started_at: time(), feed: staged ? null : feed(), packages: staged?.packages, names: staged?.names, candidates: staged?.candidates };
 	// Keep the executing code independent of packages that will replace themselves.
 	const work = `${ROOT}/${id}`;
-	if (!directory(work) || system(`cp -R ${q(context.root)} ${q(`${work}/code`)}`) != 0 || !atomic_json(`${work}/code/system.json`, context.system) || !atomic_json(REQUEST, request) || !atomic_json(`${work}/request.json`, request)) fail("update_stage_failed");
+	if (!directory(work) || system(`cp -R ${q(context.root)} ${q(`${work}/code`)}`) != 0 || !atomic_json(`${work}/code/system.json`, context.system) ||
+		!atomic_json(`${work}/control-api.json`, { version: 1 }) || !atomic_json(REQUEST, request) || !atomic_json(`${work}/request.json`, request)) fail("update_stage_failed");
 	if (staged) {
 		for (let kind in ["old", "new"]) {
 			if (!directory(`${work}/${kind}`)) fail("update_stage_failed");
@@ -484,6 +562,7 @@ upgrade = function(request, work, candidates) {
 	const build = read_json("/usr/share/opl-netfleet/build.json");
 	operation.update("downloading", { total: length(names) * 2, completed: 0 });
 	for (let name in names) {
+		cancellation(work);
 		if (versions[name] == null) fail("package_not_installed");
 		const rollback = archive(name, versions[name], olddir, work, build?.version, null);
 		if (rollback == null) fail("rollback_package_unavailable");
@@ -496,6 +575,7 @@ upgrade = function(request, work, candidates) {
 		operation.update("downloading", { completed: length(old) + length(next) });
 	}
 	operation.update("validating");
+	cancellation(work);
 	if (!run_command(`apk --no-network --repositories-file /dev/null --simulate add ${archive_arguments(old)}`, work)) fail("rollback_package_unavailable");
 	// Only installed dependencies and the explicitly downloaded packages may participate.
 	if (!run_command(`apk --no-network --repositories-file /dev/null --simulate add ${join(" ", map(next, q))}`, work)) fail("package_validation_failed");
@@ -527,13 +607,21 @@ upgrade = function(request, work, candidates) {
 	if (system("/etc/init.d/opl-netfleet-update-recovery enable >/dev/null 2>&1") != 0) fail("update_recovery_unavailable");
 	if (!atomic_json(`${work}/before.json`, before) || !run_command(`tar -cf ${q(`${work}/private.tar`)} -C / ${join(" ", map(paths, path => q(substr(path, 1))))}`, work)) fail("update_state_write_failed");
 	if (!run_command(`tar -cf ${q(`${work}/runtime.tar`)} -C / ${join(" ", map(before.runtime_paths, path => q(substr(path, 1))))}`, work)) fail("update_state_write_failed");
-	journal(work, { phase: "prepared", before, names, versions, candidates, old, next, inputs: input_identity([`${work}/private.tar`, `${work}/runtime.tar`, `${work}/code`, olddir, ...next]) });
+	journal(work, { phase: "prepared", write_started: false, drained: [], before, names, versions, candidates, old, next, inputs: input_identity([`${work}/private.tar`, `${work}/runtime.tar`, `${work}/code`, olddir, ...next]) });
 	if (!atomic_json(PENDING, { id: request.id }) || system("sync") != 0) fail("update_state_write_failed");
 	let error = null;
 	let install_started = false;
 	try {
-		operation.update("installing");
-		journal(work, { ...read_json(`${work}/journal.json`), phase: "installing" });
+		prepare_resources(work, names, versions, candidates);
+		if (fs.lstat(`${work}/control.lock`) != null && !private_file(`${work}/control.lock`)) fail("unsafe_update_directory");
+		const lock = fs.open(`${work}/control.lock`, "ae", 0600);
+		if (lock == null || !lock.lock("x")) { lock?.close(); fail("update_transition_busy"); }
+		try {
+			cancellation(work);
+			journal(work, { ...read_json(`${work}/journal.json`), phase: "installing", write_started: true });
+		} catch (error) { lock.close(); die(error_code(error)); }
+		lock.close();
+		operation.update("installing", { subject: request.component, total: 0, completed: 0 });
 		if (request.component != "plugins" && !stop_services(work)) fail("runtime_stop_failed");
 		install_started = true;
 		// Explicit package hooks may resume drained resource owners while pending
@@ -541,6 +629,7 @@ upgrade = function(request, work, candidates) {
 		// APK otherwise strips the restore flag from the hook environment.
 		if (!run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null add ${join(" ", map(next, q))}`, work)) fail("package_install_failed");
 		if (!restore_world(names, before.world, work, false, filter(names, name => versions[name] != candidates[name]), candidates)) fail("package_world_restore_failed");
+		if (!resume_resources(work)) fail("update_resume_failed");
 		operation.update("verifying");
 		const after = installed();
 		for (let name in names) if (after?.[name] != candidates[name]) fail("package_identity_mismatch");
@@ -549,6 +638,11 @@ upgrade = function(request, work, candidates) {
 	} catch (failure) { error = error_code(failure); }
 	if (error == null) { journal(work, { ...read_json(`${work}/journal.json`), phase: "complete" }); fs.unlink(PENDING); system("sync"); return; }
 	operation.update("rolling_back");
+	if (!install_started) {
+		if (!resume_resources(work) || !same_inputs(before) || !restore_services(before, work)) fail("rollback_runtime_failed");
+		journal(work, { ...read_json(`${work}/journal.json`), phase: "rolled_back", write_started: false, error: `${error}_rolled_back` });
+		fs.unlink(PENDING); system("sync"); fail(`${error}_rolled_back`);
+	}
 	const recovery_error = rollback(before, work, names, versions, old, install_started);
 	if (recovery_error != null) fail(recovery_error);
 	journal(work, { ...read_json(`${work}/journal.json`), phase: "rolled_back" });
@@ -582,7 +676,7 @@ recover = function() {
 	const work = `${ROOT}/${pending.id}`;
 	const state = private_file(`${work}/journal.json`) ? read_json(`${work}/journal.json`) : null;
 	if (!state || state.before?.backend != KIND || !private_directory(work) || type(state.inputs) != "object" ||
-		index(["prepared", "installing", "recovering", "complete", "rolled_back"], state.phase) < 0) fail("update_recovery_state_invalid");
+		index(["prepared", "draining", "installing", "recovering", "complete", "rolled_back"], state.phase) < 0) fail("update_recovery_state_invalid");
 	for (let path, digest in state.inputs) if (index(path, `${work}/`) != 0 || sha256(path) != digest) fail("update_recovery_artifact_changed");
 	if (index(["complete", "rolled_back"], state.phase) >= 0) {
 		const expected = state.phase == "complete" ? state.candidates : state.versions;
@@ -597,6 +691,14 @@ recover = function() {
 	}
 	const before = state.before, old = state.old, names = state.names, versions = state.versions;
 	if (type(old) != "array" || type(names) != "array" || type(versions) != "object") fail("update_recovery_state_invalid");
+	if (state.write_started == false) {
+		const current = installed();
+		if (length(filter(names, name => current?.[name] != versions[name])) || !same_inputs(before) ||
+			!resume_resources(work) || !restore_services(before, work)) fail("rollback_runtime_failed");
+		journal(work, { ...state, phase: "rolled_back" }); fs.unlink(PENDING); system("sync");
+		operation.finish(false, "update_interrupted_rolled_back", { rollback: { ok: true } });
+		return { recovered: true };
+	}
 	for (let path in old) if (index(path, `${work}/old/`) != 0 || !archive_valid(path, work)) fail("rollback_package_unavailable");
 	journal(work, { ...state, phase: "recovering" });
 	if (!recovery_stop(work)) fail("rollback_stop_failed");
@@ -619,6 +721,7 @@ command = function(argv) {
 let response;
 try {
 	if (ARGV[0] == "recover") response = { ok: true, result: recover() };
+	else if (ARGV[0] == "cancel") response = { ok: true, result: cancel_update(ARGV[1]) };
 	else if (ARGV[0] == "get") response = { ok: true, result: get() };
 	else if (ARGV[0] == "operation") response = { ok: true, result: { mode: operation.get("mode"), configuration: operation.get("configuration"), subscription: operation.get("subscription"), selection: operation.get("selection"), packages: progress() } };
 	else if (ARGV[0] == "install" || ARGV[0] == "check" || ARGV[0] == "update") response = { ok: true, result: start(ARGV[0], ARGV[1], ARGV[2]) };

@@ -114,6 +114,26 @@ describe('native LuCI managed operations', () => {
     expect(h.controller.refreshData).not.toHaveBeenCalled();
   });
 
+  it('cancels only the displayed update and waits for the owner terminal result', async () => {
+    const h = harness();
+    const operation = { id: 'update-1', kind: 'packages', state: 'running', phase: 'draining', subject: 'mihomo', can_cancel: true, total: 4, completed: 4 };
+    const cancel = vi.fn(async () => ({ requested: true }));
+    Object.assign(h.api, { componentsCancel: cancel });
+    h.controller.operations = { packages: operation };
+    const node = h.managed.operationNode(h.controller, 'packages');
+    expect(label(node)).not.toContain('4 / 4');
+    h.api.operationGet.mockResolvedValue({ packages: { ...operation, cancel_requested: true } });
+    await all([node]).find(item => label(item) === '取消本次更新' && item.tag === 'button')!.attrs.click();
+    expect(cancel).toHaveBeenCalledWith('update-1');
+    expect(label(h.managed.operationNode(h.controller, 'packages'))).toContain('等待当前步骤');
+    h.controller.operations = { packages: { ...operation, state: 'failed', error: 'update_deferred_rolled_back', recovery: 'restored', can_cancel: false, finished_at: 100 } };
+    const terminal = h.managed.operationNode(h.controller, 'packages');
+    expect(label(terminal)).toContain('已延后');
+    expect(label(terminal)).toContain('技术详情');
+    expect(all([terminal]).some(item => item.tag === 'button' && label(item) === '取消本次更新')).toBe(false);
+    clearTimeout(h.controller.operationTimer);
+  });
+
   it('does not resurrect a loading dialog after the user closes it', async () => {
     const h = harness();
     let finish!: (value: any) => void;

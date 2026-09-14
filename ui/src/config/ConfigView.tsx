@@ -96,7 +96,17 @@ export function ConfigView({ draft, savedDraft, status, client, onChange, onSave
           return <React.Fragment key={item.id}>{['foundation','network'].includes(item.id) && <span className="nf-config-group">{item.id === 'foundation' ? '运行策略' : '设备与文件'}</span>}<button className={section === item.id ? 'is-active' : ''} type="button" key={item.id} onClick={() => { setSection(item.id); if (item.id === 'network' || item.id === 'files') setVisited({ ...visited, [item.id]: true }); }}><Icon aria-hidden="true" /><span>{item.label}</span></button></React.Fragment>;
         })}
       </nav>
-      <div className="nf-config-content">{content}
+      <div className="nf-config-content"><p className="nf-follow-note">{{
+        foundation: '选择生成规则的基础及退出时恢复的配置。设备应用后会重新生成并切换运行配置。',
+        providers: '设置哪些机场参与运行及其故障层级；订阅地址和下载由“管理订阅”独立维护。',
+        regions: '设置节点名称如何归入地区以及哪些地区参与选优。应用后重新生成地区候选。',
+        exits: '设置各出口的地区和业务绑定。应用后重新选优；健康地区按跨地区门槛保持粘性。',
+        routing: '设置域名应走的出口。应用后生成运行规则，已有连接可能保留原路径。',
+        automation: '设置设备自行更新订阅与选优的周期。应用后由设备调度，不依赖浏览器在线。',
+        safety: '设置切换门槛及连通性检查。地区内节点切换与跨地区切换分别控制。',
+        network: '独立管理代理接入、DNS 与监听。每项操作单独确认；不同时提交运行策略草稿。',
+        files: '独立管理配置文件、备份及恢复。备份恢复可能改变设备配置，执行前会说明影响。',
+      }[section]}</p>{content}
         {visited.network && <div hidden={section !== 'network'}><NetworkSection client={client} /></div>}
         {visited.files && <div hidden={section !== 'files'}><FilesSection client={client} /></div>}
       </div>

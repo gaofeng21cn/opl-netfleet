@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "components",
   "label": "插件与更新",
-  "version": "0.7.9",
+  "version": "0.7.10",
   "api_version": 1,
   "package": "opl-netfleet-plugin-components",
   "services": {
@@ -23,6 +23,11 @@
     }
   },
   "commands": {
+    "components-cancel": {
+      "service": "components.control",
+      "method": "command",
+      "access": "write"
+    },
     "components-get": {
       "service": "components.control",
       "method": "command",
