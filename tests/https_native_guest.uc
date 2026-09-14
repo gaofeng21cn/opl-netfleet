@@ -19,6 +19,24 @@ if(action=='load') {
         check(row,'installed_plugin_missing');
         if(!row.loaded) request('plugin-call',{id,action:'load',revision:row.revision,confirm:true});
     }
+} else if(action=='plugin-unload'||action=='plugin-load') {
+    const id='https-compat',loaded=action=='plugin-load';
+    const configPath='/etc/opl-netfleet/compatibility/config.json',caPath='/etc/opl-netfleet/compatibility/ca/mitmproxy-ca.pem';
+    const before=fs.readfile(configPath),ca=fs.readfile(caPath);
+    const row=filter(run(['plugins-list']).plugins,item=>item.id==id&&item.instance=='default')[0];
+    const result=request('plugin-call',{id,action:loaded?'load':'unload',revision:row.revision,confirm:true});
+    check(result.loaded===loaded,'plugin_toggle_result_mismatch');
+    const current=filter(run(['plugins-list']).plugins,item=>item.id==id&&item.instance=='default')[0];
+    check(current.enabled===loaded,'plugin_toggle_inventory_mismatch');
+    const p=fs.popen("ubus call service list '{\"name\":\"opl-netfleet-compat\"}'");
+    const instances=json(p.read('all'))?.['opl-netfleet-compat']?.instances ?? {};
+    check(p.close()==0,'plugin_service_read_failed');
+    if(loaded&&json(before).enabled) check(instances.engine?.running&&instances.manager?.running,'plugin_load_did_not_restart_services');
+    if(!loaded) check(!length(filter(values(instances),item=>item.running)),'plugin_unload_left_running_services');
+    check(fs.readfile(configPath)==before,'plugin_toggle_changed_configuration');
+    check(fs.readfile(caPath)==ca,'plugin_toggle_changed_ca');
+    if(!loaded) check(json(fs.readfile('/var/run/opl-netfleet-compat/state.json')).intercepting===false,'plugin_unload_left_interception');
+    printf('%J\n',{ok:true,loaded});
 } else if(action=='enable') {
     let state=run(['compatibility-get']);
     const config={schema:1,enabled:false,devices:[],rules:[]};

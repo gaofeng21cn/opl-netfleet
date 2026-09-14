@@ -344,8 +344,8 @@ return function(context, options) {
         }
         io.atomic(TRUST,trust);io.atomic(EFFECTIVE,effective(config,trust,identity.resolve(config)));return status();
     }
-    function drain() {
-        bypass();const deadline=io.now()+30,live=health(),pid=live.pid;
+    function drain(wait_seconds) {
+        bypass();const deadline=io.now()+(wait_seconds ?? 30),live=health(),pid=live.pid;
         if(!pid&&live.active_connections===0) return {drained:true};
         if(type(pid)!='int'||pid<=1) die('draining_engine_unconfirmed');
         function birth() {
@@ -361,6 +361,30 @@ return function(context, options) {
             sleep(200);
         }
         return {drained:true};
+    }
+    function stop_interactive(instances) {
+        // An explicit administrator stop may terminate this plugin's clients.
+        // Package replacement must continue to use the non-destructive drain.
+        try { drain(1); } catch(error) {
+            if(error.message!='healthy_connections_still_draining') die(error.message);
+        }
+        const processes=[];
+        for(let instance in values(instances)) if(instance.running&&type(instance.pid)=='int'&&instance.pid>1) {
+            const stat=fs.readfile(`/proc/${instance.pid}/stat`);
+            if(stat) push(processes,{pid:instance.pid,birth:split(trim(substr(stat,rindex(stat,') ')+2)),/\s+/)[19]});
+        }
+        // Deleting the procd service prevents respawn and stops engine + manager.
+        service('delete');
+        const until=io.now()+2;
+        while(length(filter(processes,item=>{
+            const stat=fs.readfile(`/proc/${item.pid}/stat`);
+            return stat&&split(trim(substr(stat,rindex(stat,') ')+2)),/\s+/)[19]==item.birth;
+        }))) {
+            if(io.now()>=until) die('compatibility_stop_unconfirmed');
+            sleep(100);
+        }
+        const remaining=service('list')?.['opl-netfleet-compat']?.instances ?? {};
+        if(length(filter(values(remaining),item=>item.running))) die('compatibility_stop_unconfirmed');
     }
     function mutate(action,request,lock) {
         io.mkdir(RUN);
@@ -393,9 +417,14 @@ return function(context, options) {
                 {revision:revision(),requested:io.read(CONFIG,DEFAULT).enabled,running:length(filter(values(instances),item=>item.running))>0,
                     keep_maintenance:!!previous.maintenance||request.lifecycle!==true};
             save({...previous,recovery:{...(previous.recovery ?? {}),intercepting:false,healthy_since:null},suspended:saved,maintenance:true,intercepting:false,reason:'maintenance'},previous);
-            drain();call('remove');if(length(instances)) service('delete');return saved;
+            if(request.interactive===true) stop_interactive(instances);
+            else {drain();if(length(instances)) service('delete');}
+            call('remove');return saved;
         }
         if(action=='resume') {
+            // A failed drain has not returned its handoff to the host yet.
+            // Recover the intent saved before entering maintenance in that case.
+            if(request.revision==null&&previous.suspended) request=previous.suspended;
             if(request.running&&request.requested&&request.revision==revision()&&io.read(CONFIG,DEFAULT).enabled) {
                 const keep=request.keep_maintenance ?? true;
                 if(keep) previous.maintenance=true;else delete previous.maintenance;

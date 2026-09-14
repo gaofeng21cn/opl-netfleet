@@ -122,7 +122,7 @@ try {
 		" const path = ctx.root + '/state/' + ctx.id + '-' + ctx.instance + '.json';\n" +
 		" function state() { return fs.lstat(path) == null ? { running: true, drains: 0, resumes: 0 } : json(fs.readfile(path)); };\n" +
 		" function save(value) { if (!fs.writefile(path, sprintf('%J', value))) die('fixture_write_failed'); };\n" +
-		" function drain(previous) { const current = state(); previous = previous ?? { running: current.running, instance: ctx.instance }; current.running = false; current.drains++; save(current); return { ok: true, result: previous }; };\n" +
+		" function drain(previous, operation) { const current = state(); current.action = operation?.action; previous = previous ?? { running: current.running, instance: ctx.instance }; current.running = false; current.drains++; save(current); return { ok: true, result: previous }; };\n" +
 		" function resume(previous) { if (previous.instance != ctx.instance) die('fixture_instance_handoff_mismatch'); const current = state(); current.running = previous.running; current.resumes++; save(current); if (ctx.config.fail_resume) die('fixture_resume_failed'); return { ok: true, result: current }; };\n" +
 		" return { drain, resume, inspect: () => ({ ok: true, result: state() }) };\n};\n";
 	install('resource', 'resource.control', resource_source, { lifecycle: { scope: 'instance',
@@ -222,6 +222,7 @@ try {
 	check(lease.lock('xn'), 'final instance release admits the shared package replacement');
 	lease.close(); lease = null;
 	check(package_action('drain', 'resource').ok, 'package drain succeeds after every instance releases its code');
+	check(resource_state('alpha').action == 'package', 'package hook receives package context');
 	check(package_action('resume', 'resource').ok, 'package resume returns each named owner its saved state');
 	check(resource_state('alpha').running && !resource_state('beta').running && resource_state('alpha').resumes == 1 && resource_state('beta').resumes == 1,
 		'named resources resume independently without exchanging their state');
@@ -284,6 +285,8 @@ try {
 		'failed resume restores exact configuration bytes and prior resource state');
 	check(resource_state('alpha').drains >= alpha_before.drains + 2, 'partially resumed new resources drain again before restoring old data');
 	check(request({ id: 'workspace-note', action: 'config-get' }).ok, 'rollback releases the data barrier');
+	check(change('resource', 'reload', {}, 'alpha').ok, 'interactive resource restart succeeds');
+	check(resource_state('alpha').action == 'reload', 'interactive lifecycle action reaches its resource owner');
 } catch (error) {
 	for (let host in held_hosts) try { host.release(); } catch (cleanup_error) {}
 	lease?.close(); remove(root); die(`${error.message}\n${error.stacktrace?.[0]?.context ?? ''}`);

@@ -1062,7 +1062,7 @@ assert.equal(calls[1][1].confirm, true);
 assert(text(modal.content).includes('运行就绪'));
 assert(button(modal.content, '启用').disabled);
 assert(!button(modal.content, '重新启动').disabled);
-assert.equal(calls.at(-1)[1].action, 'get', 'read back after mutation');
+assert.equal(calls.at(-1)[1].action, 'load', 'host-confirmed lifecycle result avoids a redundant read');
 assert(text(modal.content).includes('完整版本：1.0.0-r2'));
 
 const service = { ...plugin, id: 'activation', label: 'Activation', runtime: 'service', instance: 'review', revision: 'service-r1',
@@ -1103,18 +1103,57 @@ assert.equal(calls[1][1].instance, 'review');
 assert.equal(calls[1][1].action, 'unload');
 assert.equal(plugin.enabled, true, 'dependency rejection cannot optimistically mark disabled');
 assert(text(modal.content).includes('其他已启用插件仍依赖此插件') && text(modal.content).includes('consumer'));
-assert(button(modal.content, '禁用').disabled);
+assert(text(modal.content).includes('未禁用'));
+assert(!button(modal.content, '禁用').disabled, 'automatic readback restores controls without a manual refresh');
 await fire(button(modal.content, '刷新状态'));
 assert(!button(modal.content, '禁用').disabled);
 readFailure = true;
 await fire(button(modal.content, '刷新状态'));
 assert(button(modal.content, '禁用').disabled, 'a failed refresh invalidates the previous state');
-await fire(button(managed.components(owner), '禁用'));
+await fire(button(managed.components(owner), '读取状态'));
 assert.notEqual(modal.title, '确认禁用');
 assert(button(modal.content, '禁用').disabled);
 assert.equal(calls.filter(c => c[0] === 'write').length, 1, 'failed reads never mutate or retry');
 plugin.id = 'product-ui';
 assert(!button(managed.components(owner), '禁用'), 'the management page must retain its own recovery surface');
+""")
+
+    def test_plugin_switch_terminal_result_and_process_inventory(self):
+        self.run_js(r"""
+const owner = controller(); owner.componentsSection = 'plugins';
+const plugin = { id: 'device-identity', kind: 'plugin', runtime: 'process', revision: 'r1', enabled: null };
+owner.components = { supported: true, feed: {}, components: [], extensions: [plugin] };
+let loaded = true, failed = false, unavailable = false;
+const calls = [];
+const managed = module('managed.js', {
+ componentsGet: async () => owner.components,
+ pluginRead: async request => { calls.push(request); if (unavailable) throw Error('offline'); return { loaded, ready: loaded, revision: 'r1' }; },
+ pluginCall: async request => { if (failed) throw Error('healthy_connections_still_draining'); loaded = request.action === 'load'; return { loaded, ready: loaded, revision: 'r1' }; },
+});
+assert(text(managed.components(owner)).includes('状态未确认'));
+assert(!button(managed.components(owner), '启用 / 禁用'));
+await managed.loadComponents(owner);
+assert(button(managed.components(owner), '禁用'));
+await fire(button(managed.components(owner), '禁用'));
+await fire(button(modal.content, '确认')); await tick();
+assert(text(modal.content).includes('已禁用'));
+assert(button(managed.components(owner), '启用'));
+plugin.runtime = 'service'; plugin.state = 'unavailable'; plugin.reason = 'plugin_disabled';
+await fire(button(managed.components(owner), '启用'));
+await fire(button(modal.content, '确认')); await tick();
+assert(!text(managed.components(owner)).includes('异常'), 'enabling clears the obsolete disabled reason');
+loaded = true; plugin.enabled = true; failed = true;
+await fire(button(managed.components(owner), '禁用'));
+await fire(button(modal.content, '确认')); await tick();
+assert(text(modal.content).includes('未禁用'));
+assert(text(modal.content).includes('现有连接仍在传输'));
+assert(button(managed.components(owner), '禁用'));
+await fire(button(managed.components(owner), '禁用'));
+unavailable = true;
+await fire(button(modal.content, '确认')); await tick();
+assert(text(modal.content).includes('结果未确认'));
+assert(text(managed.components(owner)).includes('状态未确认'));
+assert(button(modal.content, '禁用').disabled);
 """)
 
     def test_https_service_exposes_configuration_without_loading_engine(self):
@@ -1371,12 +1410,18 @@ const timers = new Map(); let serial = 0, view, dispose, refreshes = 0;
 const signal = { aborted: false };
 const dom = () => ({ append() {}, contains() { return false; }, querySelectorAll() { return []; }, replaceChildren() {}, remove() {} });
 global.document = { hidden: false, createElement: dom, addEventListener() {}, removeEventListener() {} };
-global.L.require = async () => ({});
+const requirements = [], rpcCalls = []; global.L.env = { rpctimeout: 20 };
+global.L.require = async name => { requirements.push(name); if (name === 'netfleet.api') throw Error('HTTP 404'); return name === 'rpc' ? { declare: spec => async request => { rpcCalls.push({ spec, request }); return { ok: true, result: { loaded: true } }; } } : {}; };
+let pageApi;
 const manager = { render: () => ({}), refresh: async c => { view = c; refreshes++; c.follow(); } };
 const mount = new Function('createManager', 'displayCache', 'setTimeout', 'clearTimeout', source + ';return mount;')(
- () => manager, () => ({ read: () => null, write() {} }),
+ options => { pageApi = options.api; return manager; }, () => ({ read: () => null, write() {} }),
  (fn, ms) => { timers.set(++serial, {fn, ms}); return serial; }, id => timers.delete(id));
 await mount({signal, container: dom(), scope: {effect: cb => { dispose = cb; }}});
+assert.deepEqual(requirements, ['ui', 'rpc'], 'plugin does not require an unversioned shell resource');
+assert.deepEqual(await pageApi.pluginRead({ id: 'device-identity', action: 'get' }), { loaded: true });
+assert.equal(rpcCalls[0].spec.object, 'opl-netfleet.plugins');
+assert.equal(L.env.rpctimeout, 20, 'transport restores the LuCI timeout');
 assert.equal([...timers.values()][0].ms, 10000, 'failed or initial reads keep following');
 for (const reason of ['lan_access_not_equivalent', 'rules_bypassed', 'future_reason']) {
  view.compatibilityLive = true; view.compatibility = {requested: true, intercepting: false, reason}; view.follow();
@@ -1389,6 +1434,7 @@ document.hidden = false; view.compatibility = {requested: false, active_connecti
 assert.equal(timers.size, 0, 'disabled and drained stays idle');
 view.compatibility.active_connections = 2; view.follow(); assert.equal(timers.size, 1);
 signal.aborted = true; dispose(); assert.equal(timers.size, 0);
+await assert.rejects(pageApi.pluginCall({ id: 'device-identity', action: 'load' }), /plugin_scope_disposed/);
 """)
 
     def test_unmanaged_compatibility_preserves_revision_bound_disable(self):
