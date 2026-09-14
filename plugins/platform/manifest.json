@@ -1,0 +1,32 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "platform",
+  "label": "Platform runtime and process",
+  "version": "0.8.5",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-platform",
+  "services": {
+    "platform.runtime": {
+      "version": 1,
+      "module": "lib/runtime.uc",
+      "requires": {}
+    },
+    "platform.service": {
+      "version": 1,
+      "module": "lib/service.uc",
+      "requires": {}
+    },
+    "platform.paths": {
+      "version": 1,
+      "module": "lib/paths.uc",
+      "requires": {}
+    },
+    "platform.process": {
+      "version": 1,
+      "module": "lib/process.uc",
+      "requires": {}
+    }
+  },
+  "commands": {},
+  "package_dependencies": []
+}

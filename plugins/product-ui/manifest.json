@@ -1,0 +1,34 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "product-ui",
+  "label": "NetFleet 业务界面",
+  "version": "0.9.10",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-product-ui",
+  "services": {},
+  "commands": {},
+  "ui": [
+    {"id": "overview", "title": "概览", "module": "resources/pages/overview.js", "scope": "host", "navigation": "primary"},
+    {"id": "exits", "title": "出口", "module": "resources/pages/exits.js", "scope": "host", "navigation": "primary"},
+    {"id": "providers", "title": "机场", "module": "resources/pages/providers.js", "scope": "host", "navigation": "primary"},
+    {"id": "regions", "title": "地区", "module": "resources/pages/regions.js", "scope": "host", "navigation": "primary"},
+    {"id": "config", "title": "配置", "module": "resources/pages/config.js", "scope": "host", "navigation": "primary"},
+    {"id": "components", "title": "插件与更新", "module": "resources/pages/components.js", "scope": "host", "navigation": "primary"},
+    {"id": "events", "title": "诊断", "module": "resources/pages/events.js", "scope": "host", "navigation": "primary"}
+  ],
+  "package_dependencies": [
+    "luci-base",
+    "opl-netfleet-plugin-status",
+    "opl-netfleet-plugin-events",
+    "opl-netfleet-plugin-configuration",
+    "opl-netfleet-plugin-setup",
+    "opl-netfleet-plugin-subscriptions",
+    "opl-netfleet-plugin-components",
+    "opl-netfleet-plugin-dashboard",
+    "opl-netfleet-plugin-network",
+    "opl-netfleet-plugin-maintenance",
+    "opl-netfleet-plugin-selection",
+    "opl-netfleet-plugin-refresh",
+    "opl-netfleet-plugin-activation"
+  ]
+}

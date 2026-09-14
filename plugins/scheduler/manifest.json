@@ -1,0 +1,29 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "scheduler",
+  "label": "Automatic scheduling",
+  "version": "0.7.3",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-scheduler",
+  "services": {
+    "scheduler.control": {
+      "version": 1,
+      "module": "lib/control.uc",
+      "requires": {
+        "mihomo.backend": 1,
+        "mihomo.controller": 1,
+        "models.policy": 1,
+        "models.activation": 1,
+        "recovery.state": 1,
+        "platform.documents": 1,
+        "platform.profile": 1,
+        "platform.credentials": 1,
+        "platform.process": 1,
+        "subscriptions.facts": 1,
+        "models.subscription": 1
+      }
+    }
+  },
+  "commands": {},
+  "package_dependencies": []
+}

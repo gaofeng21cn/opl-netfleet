@@ -1,0 +1,401 @@
+import * as fs from "fs";
+import { cursor } from "uci";
+import { connect } from "ubus";
+import { sha256 as digest_sha256 } from "digest";
+
+return function(context) {
+// Bind the service functions before assigning closures that may reference them.
+let shell, capture, parse, directory, uci_value, enabled, merge, source_path, process_state, controller_ready, ownership, routes_present, readiness, status, render_profile, prepare, cleanup, attach, reconcile, watch, interception_snapshot, command;
+
+const private_file = context.use("platform.files").private_file;
+const private_directory = context.use("platform.files").private_directory;
+const atomic_json = context.use("platform.files").atomic_json;
+const read_json = context.use("platform.storage").read_json;
+const read_yaml = context.use("platform.storage").read_yaml;
+const shell_quote = context.use("platform.process").shell_quote;
+const capture_process = context.use("platform.process").capture;
+const sha256 = context.use("platform.storage").sha256;
+
+const BASE = "/etc/opl-netfleet/native";
+const RUN = `${BASE}/run`;
+const STATE = "/var/run/opl-netfleet-core";
+const OWNERSHIP = `${STATE}/ownership.json`;
+const CONFIG = `${RUN}/config.yaml`;
+const VENDOR = "/usr/share/opl-netfleet/nikki";
+const SERVICE = "opl-netfleet-core";
+const COMMAND = ["/usr/bin/mihomo", "-d", RUN, "-f", CONFIG];
+
+shell = function(command) { return system(command + " >/dev/null 2>&1") == 0; };
+capture = function(command) {
+	const result = capture_process(command, 5);
+	return result.status == 0 ? result.output : null;
+};
+parse = function(text) { try { return json(text); } catch (error) { return null; } };
+directory = function(path) {
+	return fs.lstat(path) == null ? fs.mkdir(path, 0700) : private_directory(path);
+};
+uci_value = function(section, option, fallback) { return cursor().get("netfleet", section, option) ?? fallback; };
+enabled = function(section, option) { return `${uci_value(section, option, "0")}` == "1"; };
+merge = function(base, overlay) {
+	const out = type(base) == "object" ? { ...base } : {};
+	for (let key, value in overlay ?? {})
+		out[key] = type(value) == "object" ? merge(out[key], value) : value;
+	return out;
+};
+source_path = function(ref) {
+	const parts = split(ref ?? "", ":");
+	if (length(parts) != 2 || !match(parts[1], /^[A-Za-z0-9_.-]+$/) || index(parts[1], "..") >= 0) return null;
+	return parts[0] == "file" ? `${BASE}/profiles/${parts[1]}` :
+		parts[0] == "subscription" ? `${BASE}/subscriptions/${parts[1]}.yaml` : null;
+};
+process_state = function() {
+	const bus = connect(null, 5);
+	let data;
+	try { data = bus?.call("service", "list", { name: SERVICE }); } catch (error) {}
+	bus?.disconnect();
+	const instance = data?.[SERVICE]?.instances?.core;
+	const pid = instance?.pid;
+	const actual = pid ? fs.readfile(`/proc/${pid}/cmdline`) : null;
+	return { registered: data?.[SERVICE] != null, pid: pid,
+		running: instance?.running == true && actual == join("\u0000", COMMAND) + "\u0000" };
+};
+controller_ready = function() {
+	return type(parse(capture(`curl -q -fsS --max-time 2 --noproxy '*' --proxy '' ` +
+		`--unix-socket ${shell_quote(`${RUN}/controller.sock`)} http://localhost/version`))?.version) == "string";
+};
+ownership = function() {
+	return private_file(OWNERSHIP) ? read_json(OWNERSHIP) : null;
+};
+routes_present = function(state) {
+	const commands = [];
+	for (let family in state?.families ?? []) {
+		if (index([4, 6], family) < 0 || !match(`${state.table ?? ""}`, /^[0-9]+$/)) return false;
+		push(commands, `netfleet_route_readback=$(ip -${family} rule show) && printf '%s' "$netfleet_route_readback" | grep -Fq ${shell_quote(`lookup ${state.table}`)}`);
+		push(commands, `netfleet_route_readback=$(ip -${family} route show table ${state.table}) && printf '%s' "$netfleet_route_readback" | grep -Fq 'local default dev lo'`);
+	}
+	// One bounded observation, instead of a timeout/shell/tempfile cycle for each
+	// family and table. Every requested rule and route must still be present.
+	return !length(commands) || capture_process(join(" && ", commands), 5).status == 0;
+};
+readiness = function(table_present, observed_core, native_io) {
+	const core = observed_core ?? process_state();
+	const state = ownership();
+	// The backend already reads this table for its DNS/TProxy checks in this observation.
+	const tables = table_present == null ? parse(capture("nft -j list tables")) : null;
+	const table = table_present != null ? table_present == true :
+		length(filter(tables?.nftables ?? [], row => row.table?.family == "inet" && row.table?.name == "netfleet")) > 0;
+	const attached = state != null && state.core_pid == core.pid && table &&
+		(native_io ? native_io.routes(state.table,state.families ?? []) : routes_present(state));
+	return { ok: true, result: { ready: core.running && (native_io ? native_io.controller() : controller_ready()) && attached,
+		core_running: core.running, registered: core.registered, attached: attached,
+		clean: !table && state == null } };
+};
+status = function() {
+	const observed = readiness();
+	observed.result.config_sha256 = private_file(CONFIG) ? digest_sha256(fs.readfile(CONFIG)) : null;
+	return observed;
+};
+render_profile = function() {
+	if (read_json("/etc/opl-netfleet/backend.json")?.kind != "native-mihomo")
+		return { ok: false, error: "native_backend_not_selected" };
+	const path = source_path(uci_value("config", "profile", null));
+	if (path == null) return { ok: false, error: "invalid_profile_reference" };
+	const source = read_yaml(path, true);
+	const overlay = parse(capture(`ucode -S ${shell_quote(`${VENDOR}/mixin.uc`)}`));
+	if (type(source) != "object" || type(overlay) != "object") return { ok: false, error: "profile_unreadable" };
+	const extra = fs.lstat(`${BASE}/mixin.json`) == null ? {} : read_json(`${BASE}/mixin.json`);
+	if (type(extra) != "object") return { ok: false, error: "mixin_unreadable" };
+	const replacements = {
+		authentication: [["authentication"]], tun_dns_hijack: [["tun", "dns-hijack"]],
+		fake_ip_filter: [["dns", "fake-ip-filter"]], hosts: [["hosts"]],
+		dns_nameserver: [["dns", "default-nameserver"], ["dns", "proxy-server-nameserver"],
+			["dns", "direct-nameserver"], ["dns", "nameserver"], ["dns", "fallback"]],
+		dns_nameserver_policy: [["dns", "nameserver-policy"]],
+		dns_proxy_server_nameserver_policy: [["dns", "proxy-server-nameserver-policy"]],
+		sniffer_force_domain_name: [["sniffer", "force-domain"]],
+		sniffer_ignore_domain_name: [["sniffer", "skip-domain"]], sniffer_sniff: [["sniffer", "sniff"]]
+	};
+	for (let option, paths in replacements) {
+		if (!enabled("mixin", option)) continue;
+		for (let fields in paths) {
+			if (length(fields) == 1) delete source[fields[0]];
+			else if (type(source[fields[0]]) == "object") delete source[fields[0]][fields[1]];
+		}
+	}
+	// Only an explicitly saved advanced protocol map replaces the source map.
+	// Existing private partial overlays retain their original deep-merge behavior.
+	if (extra["netfleet-replace-sniff"] == true && type(extra.sniffer?.sniff) == "object" && type(source.sniffer) == "object") delete source.sniffer.sniff;
+	const profile = merge(merge(source, extra), overlay);
+	delete profile["netfleet-replace-sniff"];
+	for (let field in ["proxies", "proxy-groups", "rules"]) {
+		const additions = profile[`netfleet-${field}`] ?? [];
+		if (length(additions) > 0) profile[field] = [...additions, ...(profile[field] ?? [])];
+		delete profile[`netfleet-${field}`];
+	}
+	// Route installation remains exclusively in this owner, not in Mihomo TUN.
+	if (profile.tun != null) profile.tun = { ...profile.tun, enable: false, "auto-route": false, "auto-redirect": false };
+	for (let listener in profile.listeners ?? [])
+		if (listener.type == "tun") return { ok: false, error: "tun_mode_not_supported" };
+	if (uci_value("proxy", "tcp_mode", "tproxy") != "tproxy" || uci_value("proxy", "udp_mode", "tproxy") != "tproxy")
+		return { ok: false, error: "tproxy_mode_required" };
+	if (profile.dns?.enable != true || !profile.dns?.listen || !profile["tproxy-port"] || profile["allow-lan"] != true)
+		return { ok: false, error: "gateway_listeners_required" };
+	// Reserved local health query traverses the resolver without an upstream dependency.
+	profile.dns["nameserver-policy"] = { ...(profile.dns["nameserver-policy"] ?? {}),
+		"+.health.opl-netfleet.invalid": "rcode://name_error" };
+	profile["external-controller-unix"] = `${RUN}/controller.sock`;
+	return { ok: true, result: { profile: profile } };
+};
+prepare = function() {
+	if (!enabled("config", "enabled")) return { ok: false, error: "backend_disabled" };
+	const nikki = parse(capture("ubus call service list '{\"name\":\"nikki\"}'"));
+	for (let name, instance in nikki?.nikki?.instances ?? {})
+		if (instance.running == true) return { ok: false, error: "existing_backend_owner" };
+	if (shell("pidof mihomo")) return { ok: false, error: "existing_backend_owner" };
+	if (!directory(BASE) || !directory(RUN) || !directory(STATE)) return { ok: false, error: "private_directory_required" };
+	const rendered = render_profile();
+	if (!rendered.ok) return rendered;
+	const profile = rendered.result.profile;
+	if (!atomic_json(`${RUN}/candidate.json`, profile)) return { ok: false, error: "profile_write_failed" };
+	if (!shell(`/usr/bin/mihomo -t -d ${shell_quote(RUN)} -f ${shell_quote(`${RUN}/candidate.json`)}`)) {
+		fs.unlink(`${RUN}/candidate.json`);
+		return { ok: false, error: "invalid_runtime_profile" };
+	}
+	if (!fs.rename(`${RUN}/candidate.json`, CONFIG)) return { ok: false, error: "profile_install_failed" };
+	return { ok: true, result: { prepared: true, config_sha256: sha256(CONFIG) } };
+};
+cleanup = function() {
+	// The optional TLS layer cannot remain attached while the original gateway is changing.
+	const compatibility_clean = !shell("nft list table inet netfleet_compat") ||
+		shell("nft delete table inet netfleet_compat");
+	if (compatibility_clean) fs.unlink(`${STATE}/interception.json`);
+	const cleaned = compatibility_clean ? { ok: true, result: { clean: true } } :
+		{ ok: false, error: "compatibility_cleanup_failed", result: { clean: false, base_clean: true } };
+	const state = ownership();
+	if (state == null) return shell("nft list table inet netfleet") ?
+		{ ok: false, error: "network_owner_unknown" } : cleaned;
+	if (state.service != SERVICE || !match(`${state.table}`, /^[0-9]+$/) ||
+		!match(`${state.pref}`, /^[0-9]+$/) || !match(state.mark ?? "", /^0x[0-9A-Fa-f]+$/) ||
+		!match(state.mask ?? "", /^0x[0-9A-Fa-f]+$/)) return { ok: false, error: "network_owner_invalid" };
+	// Remove interception before route state or the core is stopped.
+	if (shell("nft list table inet netfleet") && !shell("nft delete table inet netfleet"))
+		return { ok: false, error: "interception_cleanup_failed" };
+	for (let family in state.families) {
+		shell(`ip -${family} rule del pref ${state.pref} fwmark ${state.mark}/${state.mask} table ${state.table}`);
+		shell(`ip -${family} route del local default dev lo table ${state.table}`);
+		if (length(trim(capture(`ip -${family} route show table ${state.table}`) ?? "")) > 0 ||
+			index(capture(`ip -${family} rule show`) ?? "", `lookup ${state.table}`) >= 0)
+			return { ok: false, error: "route_cleanup_unconfirmed" };
+	}
+	for (let name, value in state.bridge ?? {}) {
+		if (!shell(`sysctl -q -w ${shell_quote(`${name}=${value}`)}`)) return { ok: false, error: "bridge_restore_failed" };
+	}
+	fs.unlink(OWNERSHIP);
+	return cleaned;
+};
+attach = function() {
+	const current = status();
+	if (current.result.ready) return current;
+	if (ownership() != null && !cleanup().ok) return { ok: false, error: "previous_cleanup_failed" };
+	if (shell("nft list table inet netfleet")) return { ok: false, error: "network_owner_conflict" };
+	for (let i = 0; i < 15; i++) {
+		if (process_state().running && controller_ready()) break;
+		if (i == 14) return { ok: false, error: "core_not_ready" };
+		system("sleep 1");
+	}
+	const pid = process_state().pid;
+	if (fs.stat("/sys/fs/cgroup/cgroup.controllers") != null) {
+		const membership = fs.readfile(`/proc/${pid}/cgroup`) ?? "";
+		if (index(membership, `0::/services/${SERVICE}`) < 0)
+			return { ok: false, error: "core_cgroup_unconfirmed" };
+	} else {
+		const name = uci_value("routing", "cgroup_name", SERVICE);
+		const id = uci_value("routing", "cgroup_id", "0x12061206");
+		if (name != SERVICE || !match(id, /^0x[0-9A-Fa-f]+$/)) return { ok: false, error: "invalid_core_cgroup" };
+		const path = `/sys/fs/cgroup/net_cls/${name}`;
+		if (!shell(`mkdir -p ${shell_quote(path)}`) || fs.writefile(`${path}/net_cls.classid`, id) != length(id) ||
+			fs.writefile(`${path}/cgroup.procs`, `${pid}`) != length(`${pid}`))
+			return { ok: false, error: "core_cgroup_unavailable" };
+	}
+	const table = uci_value("routing", "tproxy_route_table", "11900");
+	const pref = uci_value("routing", "tproxy_rule_pref", "11900");
+	const mark = uci_value("routing", "tproxy_fw_mark", "0x40000000");
+	const mask = uci_value("routing", "tproxy_fw_mask", "0x40000000");
+	if (!match(table, /^[0-9]+$/) || int(table) < 1 || index([253,254,255], int(table)) >= 0 ||
+		!match(pref, /^[0-9]+$/) || !match(mark, /^0x[0-9A-Fa-f]+$/) || !match(mask, /^0x[0-9A-Fa-f]+$/))
+		return { ok: false, error: "invalid_routing_identity" };
+	const families = [];
+	if (enabled("proxy", "ipv4_proxy")) push(families, 4);
+	if (enabled("proxy", "ipv6_proxy")) push(families, 6);
+	for (let family in families) {
+		const rules = capture(`ip -${family} rule show`);
+		const routes = capture(`ip -${family} route show table ${table}`);
+		if (rules == null || index(rules, `lookup ${table}`) >= 0 ||
+			match(rules, regexp(`(^|\n)${pref}:`)) || length(trim(routes ?? "")) > 0)
+			return { ok: false, error: "route_owner_conflict" };
+	}
+	const nft = capture(`utpl -S ${shell_quote(`${VENDOR}/hijack.ut`)}`);
+	if (nft == null || fs.writefile(`${STATE}/rules.nft`, nft) != length(nft) ||
+		!shell(`nft -c -f ${shell_quote(`${STATE}/rules.nft`)}`)) return { ok: false, error: "invalid_interception_rules" };
+	const state = { service: SERVICE, core_pid: pid, table: table, pref: pref, mark: mark, mask: mask, families: families, bridge: {} };
+	for (let family in families) {
+		const name = family == 4 ? "net.bridge.bridge-nf-call-iptables" : "net.bridge.bridge-nf-call-ip6tables";
+		const value = trim(capture(`sysctl -e -n ${name}`) ?? "");
+		if (value == "1") state.bridge[name] = value;
+	}
+	if (!atomic_json(OWNERSHIP, state)) return { ok: false, error: "ownership_write_failed" };
+	let applied = true;
+	for (let name, value in state.bridge) applied = shell(`sysctl -q -w ${shell_quote(`${name}=0`)}`) && applied;
+	for (let family in families) {
+		applied = shell(`ip -${family} route add local default dev lo table ${table}`) && applied;
+		applied = shell(`ip -${family} rule add pref ${pref} fwmark ${mark}/${mask} table ${table}`) && applied;
+	}
+	if (applied) applied = shell(`nft -f ${shell_quote(`${STATE}/rules.nft`)}`);
+	if (!applied || !status().result.ready) {
+		const cleaned = cleanup();
+		return { ok: false, error: cleaned.ok ? "interception_start_failed" : "interception_cleanup_failed" };
+	}
+	return status();
+};
+
+reconcile = function() {
+	if (!process_state().running) return cleanup();
+	const result = attach();
+	if (result.ok) return result;
+	const cleaned = cleanup();
+	return { ok: false, error: result.error, cleanup: cleaned };
+};
+
+watch = function() {
+	const loop = require("uloop");
+	const ubus = require("ubus");
+	if (!loop.init()) return { ok: false, error: "lifecycle_loop_unavailable" };
+	const connection = ubus.connect();
+	if (connection == null) return { ok: false, error: "lifecycle_bus_unavailable" };
+	function synchronize() {
+		if (!shell(`/etc/init.d/${SERVICE} reconcile`))
+			shell(`logger -t ${SERVICE} lifecycle_reconcile_failed`);
+	};
+	const pending = loop.timer(-1, synchronize);
+	if (pending == null) return { ok: false, error: "lifecycle_timer_unavailable" };
+	// procd emits object notifications, not service trigger events.
+	const subscriber = connection.subscriber((request) => {
+		const ours = request.data?.service == SERVICE && request.data?.instance == "core" &&
+			index(["instance.start", "instance.stop", "instance.fail", "instance.respawn"], request.type) >= 0;
+		request.reply({});
+		// The start notification precedes completion of the child's exec.
+		// Leave the notify callback before inspecting its final command and PID.
+		if (ours) pending.set(1000);
+	}, () => loop.end());
+	if (subscriber == null || !subscriber.subscribe("service"))
+		return { ok: false, error: "lifecycle_subscription_failed" };
+	// A core can already be running when this observer starts or respawns.
+	pending.set(1000);
+	loop.run();
+	return { ok: false, error: "lifecycle_subscription_ended" };
+};
+
+interception_snapshot = function(listener) {
+	const uci = cursor();
+	if (!match(listener?.service ?? '', /^[a-z][a-z0-9-]{0,47}$/) || !match(listener?.instance ?? '', /^[a-z][a-z0-9-]{0,47}$/))
+		return { ok: false, error: 'lease_listener_invalid' };
+	const service = parse(capture(`ubus call service list ${shell_quote(sprintf('%J', { name: listener.service }))}`));
+	const engine = service?.[listener.service]?.instances?.[listener.instance];
+	const membership = engine?.running == true && type(engine.pid) == "int" ? fs.readfile(`/proc/${engine.pid}/cgroup`) : null;
+	let engine_group = null;
+	for (let line in split(membership ?? "", "\n"))
+		if (index(line, "0::/") == 0) engine_group = substr(line, 4);
+	const credentials = { user: [], group: [] };
+	const process_status = engine?.running == true && type(engine.pid) == "int" ? fs.readfile(`/proc/${engine.pid}/status`) : null;
+	for (let line in split(process_status ?? "", "\n")) {
+		const kind = index(line, "Uid:") == 0 ? "user" : index(line, "Gid:") == 0 ? "group" : null;
+		if (kind != null) credentials[kind] = map(split(trim(substr(line, 4)), /[[:space:]]+/), value => int(value));
+	}
+	const accounts = { user: {}, group: {} };
+	for (let kind, path in { user: "/etc/passwd", group: "/etc/group" })
+		for (let line in split(fs.readfile(path) ?? "", "\n")) {
+			const fields = split(line, ":");
+			if (length(fields) >= 3 && match(fields[2], /^[0-9]+$/)) accounts[kind][fields[0]] = int(fields[2]);
+		}
+	const listener_uid = accounts.user[listener.user];
+	const listener_identity_ready = engine?.running == true && engine_group != null && listener_uid != null &&
+		listener_uid > 0 && length(credentials.user) == 4 && !length(filter(credentials.user, id => id != listener_uid));
+	let custom = false;
+	for (let kind in ["router_access_control", "lan_access_control"]) {
+		let defaults = 0;
+		uci.foreach("netfleet", kind, (section) => {
+			if (`${section.enabled}` != "1") return;
+			// Router service exclusions are equivalent only when the actual engine cannot match them.
+			if (kind == "router_access_control" && engine_group != null &&
+				length(section.cgroup ?? []) + length(section.user ?? []) + length(section.group ?? []) > 0) {
+				let excluded = true;
+				for (let key in ["ip", "ip6", "mac"])
+					if (length(section[key] ?? []) > 0) excluded = false;
+				for (let key in ["user", "group"])
+					for (let name in section[key] ?? [])
+						if (accounts[key][name] == null || length(credentials[key]) != 4 || index(credentials[key], accounts[key][name]) >= 0)
+							excluded = false;
+				for (let group in section.cgroup)
+					if (!match(group, /^[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*$/) || group == engine_group || index(engine_group, `${group}/`) == 0)
+						excluded = false;
+				if (excluded) return;
+			}
+			for (let key in ["ip", "ip6", "mac", "user", "group", "cgroup"])
+				if (length(section[key] ?? []) > 0) custom = true;
+			if (`${section.proxy}` != "1") custom = true;
+			defaults++;
+		});
+		if (defaults != 1) custom = true;
+	}
+	const declaration=parse(fs.readfile('/usr/libexec/opl-netfleet-compat/extension.json'));
+	const native_io=declaration?.gateway_io=='native'||fs.stat('/usr/lib/ucode/netfleet_interception.so')?require('netfleet_interception'):null;
+	let observed;
+	if(native_io) observed=native_io.observe();
+	else {
+		// Keep the set read separate: nft's combined read cache can omit its elements.
+		const nft = parse(capture("nft -j list set inet netfleet lan_inbound_device"));
+		const guard_chain = parse(capture("nft -j list chain inet netfleet mangle_prerouting_lan"));
+		let interfaces = [];
+		for (let item in nft?.nftables ?? []) if (item.set?.family == "inet" && item.set?.table == "netfleet" && item.set?.name == "lan_inbound_device") interfaces = item.set.elem ?? [];
+		const table_present = length(filter(guard_chain?.nftables ?? [], item => item.chain?.family == "inet" && item.chain?.table == "netfleet" && item.chain?.name == "mangle_prerouting_lan")) > 0;
+		const guard_rules = filter(guard_chain?.nftables ?? [], item => item.rule?.family == "inet" && item.rule?.table == "netfleet" && item.rule?.chain == "mangle_prerouting_lan");
+		const guard = filter(guard_rules[0]?.rule?.expr ?? [], expr => expr.counter == null);
+		const condition = guard[0]?.match;
+		const ownership_guard = length(guard) == 2 && condition?.op == "!=" && condition?.right == 0 &&
+			condition?.left?.["&"]?.[0]?.ct?.key == "mark" && condition?.left?.["&"]?.[1] == 16777216 &&
+			guard[1] != null && "return" in guard[1];
+		observed={present:table_present,guard:ownership_guard,interfaces};
+	}
+	const core = process_state();
+	const result = readiness(observed.present, core, native_io);
+	return { ok: true, result: { backend: "native-mihomo", ready: result.result?.ready == true && enabled("config", "enabled"),
+		compatibility_ownership_guard: observed.guard, generation: observed.generation, core_pid: core.pid, engine_pid: engine?.pid,
+		router_proxy: enabled("proxy", "router_proxy"), lan_proxy: enabled("proxy", "lan_proxy"),
+		ipv4_proxy: enabled("proxy", "ipv4_proxy"), ipv6_proxy: enabled("proxy", "ipv6_proxy"),
+		interfaces: sort(observed.interfaces), custom_lan_access: custom, listener_identity_ready: listener_identity_ready,
+		source_bypass: length(uci_value("proxy", "bypass_fwmark", [])) > 0,
+		dscp_bypass: map(uci_value("proxy", "bypass_dscp", []), value => int(value)) } };
+};
+
+
+command = function(argv) {
+	const ARGV = [substr(argv[0], 15), ...slice(argv, 1)];
+
+let result;
+try {
+	if (system("test \"$(id -u)\" = 0") != 0) result = { ok: false, error: "root_required" };
+	else if (ARGV[0] == "prepare") result = prepare();
+	else if (ARGV[0] == "preview") result = render_profile();
+	else if (ARGV[0] == "attach") result = attach();
+	else if (ARGV[0] == "cleanup") result = cleanup();
+	else if (ARGV[0] == "reconcile") result = reconcile();
+	else if (ARGV[0] == "watch") result = watch();
+	else if (ARGV[0] == "status") result = status();
+	else result = { ok: false, error: "unknown_gateway_action" };
+} catch (error) { result = { ok: false, error: "gateway_operation_failed" }; }
+printf("%J\n", result);
+exit(result.ok ? 0 : 1);
+};
+
+return { command, cleanup, status, readiness, process_state, interception_snapshot };
+};
