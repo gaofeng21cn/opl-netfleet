@@ -269,7 +269,7 @@
         "opl-netfleet-plugin-subscriptions"
       ],
       "services": [],
-      "version": "0.9.15"
+      "version": "0.9.16"
     },
     {
       "api_version": 1,
@@ -360,7 +360,7 @@
         "status.control",
         "status.events"
       ],
-      "version": "0.8.7"
+      "version": "0.8.8"
     },
     {
       "api_version": 1,
