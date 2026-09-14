@@ -731,7 +731,8 @@ upgrade = function(request, work, candidates) {
 		// Keep installed signed plugin archives available when a feed advances.
 		if (directory(`${ROOT}/archives`)) for (let path in next) {
 			const name = replace(path, /^.*\//, "");
-			if (match(name, /^opl-netfleet-plugin-/)) run_command(`cp ${q(path)} ${q(`${ROOT}/archives/${name}`)}`, work);
+			if (match(name, /^opl-netfleet-plugin-/) && run_command(`cp ${q(path)} ${q(`${ROOT}/archives/${name}`)}`, work))
+				fs.chmod(`${ROOT}/archives/${name}`, 0600);
 		}
 		journal(work, { ...read_json(`${work}/journal.json`), phase: "complete" }); fs.unlink(PENDING); system("sync"); return;
 	}
