@@ -114,7 +114,7 @@ while IFS= read -r directory; do compiled_plugins+=("$directory"); done < <(find
 [[ ${#compiled_plugins[@]} -eq 1 ]] || die 'expected one compiled plugin payload'
 rm -rf "$payload/usr/libexec/opl-netfleet/plugins"
 cp -R "${compiled_plugins[0]}" "$payload/usr/libexec/opl-netfleet/plugins"
-cp "${compiled_plugins[0]%/*}/bytecode.json" "$output/bytecode.json"
+cp "${compiled_plugins[0]%/*}/bytecode.json" "$work/bytecode.json"
 
 cp "$work/openwrt/files/usr/libexec/opl-netfleet-transfer" "$payload/usr/libexec/"
 cp "$work/openwrt/files/usr/libexec/opl-netfleet-plugin-package" "$payload/usr/libexec/"
@@ -236,7 +236,7 @@ if [[ "$package_format" == apk ]]; then
   "$sdk/staging_dir/host/bin/apk" verify --keys-dir "$trusted_dir" "${signed_artifacts[@]}"
   artifacts=("${signed_artifacts[@]}")
   python3 "$work/scripts/verify-native-runtime.py" --apk "$sdk/staging_dir/host/bin/apk" \
-    --source-root "$work/openwrt/files" --bytecode-manifest "$output/bytecode.json" \
+    --source-root "$work/openwrt/files" --bytecode-manifest "$work/bytecode.json" \
     "${artifacts[@]:0:${#product_packages[@]}}" >"$output/native-runtime.json"
 fi
 python3 - "$output" "$commit" "$tree" "$version" "$release" "$package_format" "$package_arch" "$build_target_arch" "$policy_schema" "$public_key" "$runtime_payload_sha256" "$files_sha256" "$bootstrap_sha256" "$core_lock" "${artifacts[@]}" <<'PY'
