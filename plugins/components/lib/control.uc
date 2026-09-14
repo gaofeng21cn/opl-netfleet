@@ -111,7 +111,8 @@ restore_world = function(names, before, work, rollback, changed, candidates) {
 	}
 	const roots = filter(names, name => expected[name] != null);
 	if (length(roots) && !run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(roots, name => q(expected[name])))}`, work)) return false;
-	const dependencies = filter(names, name => expected[name] == null);
+	const current_world = package_world();
+	const dependencies = filter(names, name => expected[name] == null && current_world[name] != null);
 	if (length(dependencies) && !run_command(`apk --no-network --repositories-file /dev/null del ${join(" ", map(dependencies, q))}`, work)) return false;
 	const after = package_world();
 	for (let name in names) if (after[name] != expected[name]) return false;
