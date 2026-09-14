@@ -235,6 +235,12 @@ feed, candidate = map(Path, sys.argv[1:3])
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 names = ['compat-public-key.pem', 'compat-packages.adb']
+composition = json.loads((candidate / 'composition.json').read_text()) if (candidate / 'composition.json').is_file() else None
+if composition:
+    base = json.loads(os.environ.get('NETFLEET_COMPAT_BASE_IDENTITY') or '{}')
+    if (composition.get('schema') != 'opl-netfleet-https-composition.v1' or composition.get('base') != base
+            or (base.get('source_commit'), base.get('source_tree')) != tuple(sys.argv[3:5])):
+        raise SystemExit('Optional composition base identity mismatch')
 for filename, package in [('compat-manifest.json', 'opl-netfleet-https-compat'),
                           ('device-identity-manifest.json', 'opl-netfleet-plugin-device-identity')]:
     manifest = json.loads((candidate / filename).read_text())
@@ -244,7 +250,9 @@ for filename, package in [('compat-manifest.json', 'opl-netfleet-https-compat'),
     if digest(candidate / name) != manifest['sha256']:
         raise SystemExit('Optional feed artifact digest mismatch')
     if filename == 'compat-manifest.json':
-        if (manifest['source_commit'], manifest['source_tree']) != tuple(sys.argv[3:5]):
+        if composition and manifest != composition.get('engine'):
+            raise SystemExit('Optional composition engine mismatch')
+        if not composition and (manifest['source_commit'], manifest['source_tree']) != tuple(sys.argv[3:5]):
             raise SystemExit('Optional feed source identity mismatch')
         native = manifest.get('native_runtime', {})
         if native.get('name') != 'native-runtime.json' or native.get('sha256') != digest(candidate / 'native-runtime.json'):
@@ -252,7 +260,11 @@ for filename, package in [('compat-manifest.json', 'opl-netfleet-https-compat'),
     elif os.environ.get('NETFLEET_COMPAT_DEVICE_IDENTITY'):
         if manifest != json.loads(os.environ['NETFLEET_COMPAT_DEVICE_IDENTITY']):
             raise SystemExit('Optional feed retained identity mismatch')
+    if composition and filename == 'device-identity-manifest.json' and manifest != composition.get('identity'):
+        raise SystemExit('Optional composition device identity mismatch')
     names.append(name)
+if composition and composition.get('feed_sha256') != {name: digest(candidate / name) for name in names}:
+    raise SystemExit('Optional composition feed identity mismatch')
 for name in names:
     path = candidate / name
     if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:

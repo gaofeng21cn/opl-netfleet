@@ -42,6 +42,10 @@ class EngineArtifacts(unittest.TestCase):
                 value={'artifact':path.name,'sha256':base.sha(path),'source_commit':old_commit,
                        'source_tree':old_tree,'architecture':'aarch64_generic'}
                 (candidate / manifest_name).write_text(json.dumps(value));rows.append(value)
+            native=candidate/'native-runtime.json'
+            native.write_text(json.dumps({'ok':True,'packages':rows}))
+            rows[0]['native_runtime']={'name':native.name,'sha256':base.sha(native)}
+            (candidate/'compat-manifest.json').write_text(json.dumps(rows[0]))
             (candidate/'compat-public-key.pem').write_text('public key fixture')
             (candidate/'compat-packages.adb').write_text('signed index fixture')
             before={path.name:path.read_bytes() for path in candidate.iterdir()}

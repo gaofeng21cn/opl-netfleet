@@ -1,4 +1,4 @@
-import { changes, validate } from '../plugins/components/lib/packages.uc';
+import { changes, validate } from '../openwrt/files/usr/libexec/opl-netfleet/plugins/components/lib/packages.uc';
 function check(value, message) { if (!value) die(message); }
 function rejects(action, code) {
 	let actual; try { action(); } catch (error) { actual = error.message; }

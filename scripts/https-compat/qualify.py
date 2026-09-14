@@ -58,6 +58,16 @@ def composition_request(packages, base_qualification, candidate, retained=None):
     identity_matches_base(identity, base)
     if current.get('architecture') != manifest['build_target_arch']:
         raise ValueError('optional engine architecture differs from the qualified base')
+    native = current.get('native_runtime', {})
+    native_path = candidate / 'native-runtime.json'
+    if (native.get('name') != native_path.name or not native_path.is_file() or native_path.is_symlink()
+            or native.get('sha256') != sha(native_path)):
+        raise ValueError('composition requires the exact native runtime receipt')
+    runtime = json.loads(native_path.read_text())
+    if (runtime.get('ok') is not True or {
+            (row.get('artifact'), row.get('sha256')) for row in runtime.get('packages', [])} != {
+            (row['artifact'], row['sha256']) for row in (current, identity)}):
+        raise ValueError('composition native runtime receipt does not cover both APKs')
     names = ('compat-public-key.pem', 'compat-packages.adb', current['artifact'], identity['artifact'])
     for name in names:
         if (candidate / name).is_symlink() or not (candidate / name).is_file():

@@ -35,10 +35,32 @@ import * as fs from 'fs';
 import {sha256} from 'digest';
 const root='/tmp/compat-runtime';
 const identity=fs.readfile('/tmp/compat-device-identity.json');
+const compositionText=fs.readfile(root+'/composition.json');
+const composition=compositionText?json(compositionText):null;
+function same(a,b) {
+ if(type(a)!=type(b)) return false;
+ if(type(a)=='object') {
+  if(length(keys(a))!=length(keys(b))) return false;
+  for(let key in keys(a)) if(!same(a[key],b[key])) return false;
+  return true;
+ }
+ if(type(a)=='array') {
+  if(length(a)!=length(b)) return false;
+  for(let i=0;i<length(a);i++) if(!same(a[i],b[i])) return false;
+  return true;
+ }
+ return a==b;
+}
+if(composition) {
+ const base=json(fs.readfile('/tmp/compat-base-identity.json'));
+ if(composition.schema!='opl-netfleet-https-composition.v1'||!same(composition.base,base)||base.source_commit!=ARGV[0]||base.source_tree!=ARGV[1]) die('native_composition_base_mismatch');
+ for(let name,digest in composition.feed_sha256) if(fs.basename(name)!=name||sha256(fs.readfile(root+'/'+name))!=digest) die('native_composition_feed_mismatch');
+}
 for(let name in ['compat-manifest.json','device-identity-manifest.json']) {
  const m=json(fs.readfile(root+'/'+name));
- const expected=name=='device-identity-manifest.json'&&identity?json(identity):{source_commit:ARGV[0],source_tree:ARGV[1]};
- if(name=='device-identity-manifest.json'&&identity&&sprintf('%J',m)!=sprintf('%J',expected)) die('native_identity_manifest_mismatch');
+ const expected=composition?(name=='compat-manifest.json'?composition.engine:composition.identity):name=='device-identity-manifest.json'&&identity?json(identity):{source_commit:ARGV[0],source_tree:ARGV[1]};
+ if(composition&&!same(m,expected)) die('native_composition_manifest_mismatch');
+ if(name=='device-identity-manifest.json'&&identity&&!same(m,expected)) die('native_identity_manifest_mismatch');
  if(m.source_commit!=expected.source_commit||m.source_tree!=expected.source_tree||fs.basename(m.artifact)!=m.artifact||sha256(fs.readfile(root+'/'+m.artifact))!=m.sha256) die('native_package_identity_mismatch');
 }
 UC
@@ -214,5 +236,6 @@ stage=complete
 ucode - "$commit" "$tree" <<'UC'
 import * as fs from 'fs';
 const benchmark=fs.readfile('/tmp/https-native-network/benchmark.json');
-printf('%J\n',{ok:true,source_commit:ARGV[0],source_tree:ARGV[1],checks:{full_feed_bootstrap:true,full_feed_install_inactive:true,full_feed_repeat_preserves_configuration:true,...(fs.stat('/tmp/compat-runtime/upgrade.json')?{engine_package_cycle:true}:{}),...(fs.stat('/tmp/compat-runtime/retained-base/retained-base.json')?{retained_base_packages:json(fs.readfile('/tmp/compat-native-fixture/retained-base.json'))?.ok===true}:{}),dual_stack_probe_faults:true,native_kernel_io:true,native_dependency_closure:true,real_control_entry:true,procd_launcher:true,local_h1_to_h2:true,resource_limits:true,resource_pressure:true,user_disable:true,plugin_unload_load:true,uninstall_reinstall:true,stable_ca:true,base_configuration_unchanged:true,local_address_rotation:true,address_conflict_expiry:true,dual_stack_kernel_lease:true,real_gateway_h2:true,kernel_tcp_reset_delivery:true,original_routing:true,sni_and_unknown_device_bypass:true,address_update_without_restart:true,streaming_upload_and_sse:true,cancellation_and_business_errors:true,simultaneous_stall_fail_open:true,third_fault_latch:true,manual_recovery:true,base_pid_unchanged:true},profile:json(fs.readfile('/tmp/https-native-network/profile.json')),metrics:json(fs.readfile('/tmp/https-native-network/performance.json')),benchmark:benchmark?json(benchmark):null,production_ready:false});
+const composition=fs.readfile('/tmp/compat-runtime/composition.json');
+printf('%J\n',{ok:true,composition:composition?json(composition):null,source_commit:ARGV[0],source_tree:ARGV[1],checks:{full_feed_bootstrap:true,full_feed_install_inactive:true,full_feed_repeat_preserves_configuration:true,...(fs.stat('/tmp/compat-runtime/upgrade.json')?{engine_package_cycle:true}:{}),...(fs.stat('/tmp/compat-runtime/retained-base/retained-base.json')?{retained_base_packages:json(fs.readfile('/tmp/compat-native-fixture/retained-base.json'))?.ok===true}:{}),dual_stack_probe_faults:true,native_kernel_io:true,native_dependency_closure:true,real_control_entry:true,procd_launcher:true,local_h1_to_h2:true,resource_limits:true,resource_pressure:true,user_disable:true,plugin_unload_load:true,uninstall_reinstall:true,stable_ca:true,base_configuration_unchanged:true,local_address_rotation:true,address_conflict_expiry:true,dual_stack_kernel_lease:true,real_gateway_h2:true,kernel_tcp_reset_delivery:true,original_routing:true,sni_and_unknown_device_bypass:true,address_update_without_restart:true,streaming_upload_and_sse:true,cancellation_and_business_errors:true,simultaneous_stall_fail_open:true,third_fault_latch:true,manual_recovery:true,base_pid_unchanged:true},profile:json(fs.readfile('/tmp/https-native-network/profile.json')),metrics:json(fs.readfile('/tmp/https-native-network/performance.json')),benchmark:benchmark?json(benchmark):null,production_ready:false});
 UC
