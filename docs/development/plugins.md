@@ -35,6 +35,9 @@ python3 scripts/sync-plugin-sources.py check
 ```
 
 外部插件仍可直接成为独立仓库，不要求加入 NetFleet 源码树。
+仓库内置插件目录由 [`plugin-catalog.json`](plugin-catalog.json) 机器可读地登记。它由
+manifest 生成，供代码审查、构建器和工具发现，不替代设备上的签名 APK 索引。设备更新仍只
+接受受信任 feed、精确版本、架构和签名验证；catalog 出现条目不会自动安装或启用插件。
 `manifest.json` 的动作和页面声明就是宿主接入入口，无需修改宿主的 RPC 或导航表。
 SDK 排除顶层 `.git`、`.gitignore`、`.gitattributes` 和 `.github` 开发元数据，其余目录
 按可安装 payload 校验。前端依赖和构建中间文件放在 payload 外，仅把最终资源输出到

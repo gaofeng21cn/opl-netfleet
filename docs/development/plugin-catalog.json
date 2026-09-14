@@ -1,0 +1,382 @@
+{
+  "plugins": [
+    {
+      "api_version": 1,
+      "id": "activation",
+      "label": "Activation",
+      "optional": false,
+      "package": "opl-netfleet-plugin-activation",
+      "package_dependencies": [],
+      "services": [
+        "activation.control",
+        "activation.mode"
+      ],
+      "version": "0.7.4"
+    },
+    {
+      "api_version": 1,
+      "id": "compilation",
+      "label": "Policy compilation",
+      "optional": false,
+      "package": "opl-netfleet-plugin-compilation",
+      "package_dependencies": [],
+      "services": [
+        "compilation.compiler",
+        "compilation.control"
+      ],
+      "version": "0.7.4"
+    },
+    {
+      "api_version": 1,
+      "id": "components",
+      "label": "插件与更新",
+      "optional": false,
+      "package": "opl-netfleet-plugin-components",
+      "package_dependencies": [
+        "ca-bundle",
+        "curl"
+      ],
+      "services": [
+        "components.control"
+      ],
+      "version": "0.7.9"
+    },
+    {
+      "api_version": 1,
+      "id": "configuration",
+      "label": "Policy configuration",
+      "optional": false,
+      "package": "opl-netfleet-plugin-configuration",
+      "package_dependencies": [],
+      "services": [
+        "configuration.editor",
+        "configuration.model",
+        "configuration.onboarding",
+        "configuration.onboarding-model"
+      ],
+      "version": "0.7.3"
+    },
+    {
+      "api_version": 1,
+      "id": "dashboard",
+      "label": "Zashboard",
+      "optional": false,
+      "package": "opl-netfleet-plugin-dashboard",
+      "package_dependencies": [
+        "ca-bundle",
+        "coreutils-timeout",
+        "curl",
+        "unzip"
+      ],
+      "services": [
+        "dashboard.control",
+        "dashboard.version"
+      ],
+      "version": "0.7.1"
+    },
+    {
+      "api_version": 1,
+      "id": "events",
+      "label": "Events and operations",
+      "optional": false,
+      "package": "opl-netfleet-plugin-events",
+      "package_dependencies": [],
+      "services": [
+        "events.model",
+        "events.operation",
+        "events.output",
+        "events.record",
+        "events.store"
+      ],
+      "version": "0.7.5"
+    },
+    {
+      "api_version": 1,
+      "id": "https-compat",
+      "label": "HTTPS compatibility",
+      "optional": true,
+      "package": "opl-netfleet-plugin-https-compat",
+      "package_dependencies": [
+        "coreutils-timeout",
+        "ucode-mod-digest",
+        "ucode-mod-socket",
+        "ucode-mod-uloop"
+      ],
+      "services": [
+        "https-compat.control",
+        "https-compat.lease"
+      ],
+      "version": "0.9.3"
+    },
+    {
+      "api_version": 1,
+      "id": "maintenance",
+      "label": "Profiles and maintenance",
+      "optional": false,
+      "package": "opl-netfleet-plugin-maintenance",
+      "package_dependencies": [
+        "coreutils-timeout"
+      ],
+      "services": [
+        "maintenance.editor",
+        "maintenance.model"
+      ],
+      "version": "0.8.2"
+    },
+    {
+      "api_version": 1,
+      "id": "mihomo",
+      "label": "Mihomo backend",
+      "optional": false,
+      "package": "opl-netfleet-plugin-mihomo",
+      "package_dependencies": [
+        "ca-bundle",
+        "coreutils-timeout",
+        "curl",
+        "ip-full",
+        "kmod-nft-socket",
+        "kmod-nft-tproxy",
+        "mihomo",
+        "nftables-json",
+        "ucode-mod-digest",
+        "ucode-mod-socket",
+        "ucode-mod-ubus",
+        "ucode-mod-uloop"
+      ],
+      "services": [
+        "mihomo.artifacts",
+        "mihomo.backend",
+        "mihomo.controller",
+        "mihomo.gateway",
+        "mihomo.interception",
+        "mihomo.latency",
+        "mihomo.lifecycle",
+        "mihomo.paths",
+        "mihomo.policy-source",
+        "mihomo.probes",
+        "mihomo.profile-storage",
+        "mihomo.readback"
+      ],
+      "version": "0.9.4"
+    },
+    {
+      "api_version": 1,
+      "id": "models",
+      "label": "Product models",
+      "optional": false,
+      "package": "opl-netfleet-plugin-models",
+      "package_dependencies": [],
+      "services": [
+        "models.activation",
+        "models.evidence",
+        "models.extensions",
+        "models.ordering",
+        "models.policy",
+        "models.regions",
+        "models.selection-view",
+        "models.selector",
+        "models.status",
+        "models.subscription",
+        "models.subscriptions"
+      ],
+      "version": "0.7.10"
+    },
+    {
+      "api_version": 1,
+      "id": "network",
+      "label": "Network configuration",
+      "optional": false,
+      "package": "opl-netfleet-plugin-network",
+      "package_dependencies": [
+        "coreutils-timeout"
+      ],
+      "services": [
+        "network.editor",
+        "network.model"
+      ],
+      "version": "0.8.1"
+    },
+    {
+      "api_version": 1,
+      "id": "platform",
+      "label": "Platform runtime and process",
+      "optional": false,
+      "package": "opl-netfleet-plugin-platform",
+      "package_dependencies": [],
+      "services": [
+        "platform.paths",
+        "platform.process",
+        "platform.runtime",
+        "platform.service"
+      ],
+      "version": "0.8.5"
+    },
+    {
+      "api_version": 1,
+      "id": "platform-openwrt",
+      "label": "OpenWrt configuration and device",
+      "optional": false,
+      "package": "opl-netfleet-plugin-platform-openwrt",
+      "package_dependencies": [
+        "ip-full",
+        "ucode-mod-uci"
+      ],
+      "services": [
+        "platform.credentials",
+        "platform.device",
+        "platform.profile",
+        "platform.subscriptions"
+      ],
+      "version": "0.8.2"
+    },
+    {
+      "api_version": 1,
+      "id": "platform-storage",
+      "label": "Platform files and documents",
+      "optional": false,
+      "package": "opl-netfleet-plugin-platform-storage",
+      "package_dependencies": [
+        "yq"
+      ],
+      "services": [
+        "platform.documents",
+        "platform.files",
+        "platform.storage"
+      ],
+      "version": "0.8.1"
+    },
+    {
+      "api_version": 1,
+      "id": "product-ui",
+      "label": "NetFleet 业务界面",
+      "optional": false,
+      "package": "opl-netfleet-plugin-product-ui",
+      "package_dependencies": [
+        "luci-base",
+        "opl-netfleet-plugin-activation",
+        "opl-netfleet-plugin-components",
+        "opl-netfleet-plugin-configuration",
+        "opl-netfleet-plugin-dashboard",
+        "opl-netfleet-plugin-events",
+        "opl-netfleet-plugin-maintenance",
+        "opl-netfleet-plugin-network",
+        "opl-netfleet-plugin-refresh",
+        "opl-netfleet-plugin-selection",
+        "opl-netfleet-plugin-setup",
+        "opl-netfleet-plugin-status",
+        "opl-netfleet-plugin-subscriptions"
+      ],
+      "services": [],
+      "version": "0.9.10"
+    },
+    {
+      "api_version": 1,
+      "id": "recovery",
+      "label": "Fail-open recovery",
+      "optional": false,
+      "package": "opl-netfleet-plugin-recovery",
+      "package_dependencies": [],
+      "services": [
+        "recovery.control",
+        "recovery.state"
+      ],
+      "version": "0.7.1"
+    },
+    {
+      "api_version": 1,
+      "id": "refresh",
+      "label": "Subscription refresh",
+      "optional": false,
+      "package": "opl-netfleet-plugin-refresh",
+      "package_dependencies": [],
+      "services": [
+        "refresh.control"
+      ],
+      "version": "0.7.3"
+    },
+    {
+      "api_version": 1,
+      "id": "scheduler",
+      "label": "Automatic scheduling",
+      "optional": false,
+      "package": "opl-netfleet-plugin-scheduler",
+      "package_dependencies": [],
+      "services": [
+        "scheduler.control"
+      ],
+      "version": "0.7.3"
+    },
+    {
+      "api_version": 1,
+      "id": "selection",
+      "label": "Automatic selection",
+      "optional": false,
+      "package": "opl-netfleet-plugin-selection",
+      "package_dependencies": [],
+      "services": [
+        "selection.control",
+        "selection.round"
+      ],
+      "version": "0.8.7"
+    },
+    {
+      "api_version": 1,
+      "id": "selection-algorithm",
+      "label": "Selection algorithms",
+      "optional": false,
+      "package": "opl-netfleet-plugin-selection-algorithm",
+      "package_dependencies": [],
+      "services": [
+        "selection.algorithm"
+      ],
+      "version": "0.8.4"
+    },
+    {
+      "api_version": 1,
+      "id": "setup",
+      "label": "Setup and migration",
+      "optional": false,
+      "package": "opl-netfleet-plugin-setup",
+      "package_dependencies": [],
+      "services": [
+        "setup.migration",
+        "setup.migration-model",
+        "setup.native",
+        "setup.native-model"
+      ],
+      "version": "0.7.1"
+    },
+    {
+      "api_version": 1,
+      "id": "status",
+      "label": "Status and connections",
+      "optional": false,
+      "package": "opl-netfleet-plugin-status",
+      "package_dependencies": [],
+      "services": [
+        "status.connections",
+        "status.control",
+        "status.events"
+      ],
+      "version": "0.8.6"
+    },
+    {
+      "api_version": 1,
+      "id": "subscriptions",
+      "label": "Subscriptions",
+      "optional": false,
+      "package": "opl-netfleet-plugin-subscriptions",
+      "package_dependencies": [
+        "ca-bundle",
+        "curl"
+      ],
+      "services": [
+        "subscriptions.facts",
+        "subscriptions.providers",
+        "subscriptions.store"
+      ],
+      "version": "0.7.2"
+    }
+  ],
+  "schema": "opl-netfleet-plugin-catalog.v1"
+}
