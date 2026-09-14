@@ -208,7 +208,7 @@ export function eventReason(status: StatusSnapshot, event: DecisionEvent): strin
     native_restored: '已恢复原生配置',
     native_restore_failed_passthrough: '原生配置恢复失败，已停止代理后端 并恢复网络直通',
     updated: '订阅更新完成并重载',
-    cache_updated: '订阅缓存已更新',
+    cache_updated: '订阅正常',
     partially_updated: '部分机场更新成功',
     unchanged: '订阅无变化',
     update_failed: '更新失败，旧缓存保持生效',

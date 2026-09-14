@@ -833,7 +833,7 @@ function createPage(storage, api, notifications) {
 	assert(providerPageText.includes('资源数：当前可用 / 已加载'));
 	assert(providerPageText.includes('47/50 节点 · 订阅 52 条'));
 	assert(!providerPageText.includes('3/4 节点'));
-	assert(providerPageText.includes('缓存已更新'));
+	assert(providerPageText.includes('订阅正常'));
 	assert(providerPageText.includes('管理订阅'));
 	const subscriptionLink = findNode(findNode(root, node => node.attrs.class === 'netfleet-page-content'), function(node) {
 		return node.tag === 'button' && nodeText(node) === '管理订阅';
@@ -857,7 +857,7 @@ function createPage(storage, api, notifications) {
     const cells = findNode(providerTable, node => node.tag === 'tbody').children[0].children;
     assert.deepStrictEqual(headers.map(nodeText), ['机场','定位','可用资源','最近一次测速','订阅状态','剩余流量','到期时间']);
     assert.strictEqual(cells.length, headers.length);
-    assert.strictEqual(nodeText(cells[4]), '缓存已更新');
+    assert.strictEqual(nodeText(cells[4]), '订阅正常');
     assert(nodeText(cells[6]).includes('2027'));
 
 	assert.strictEqual(providerDetailToggle.attrs['aria-expanded'], 'true');

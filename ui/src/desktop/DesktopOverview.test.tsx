@@ -65,7 +65,7 @@ describe('来源与业务归属证据', () => {
     const value = snapshot();
     value.subscriptions.source = { name: '来源', enabled: true, hasUrl: true };
     value.status!.subscriptions = [{ section: 'source', cache_present: true }] as NonNullable<typeof value.status>['subscriptions'];
-    expect(sourcePreparation(value, 'source')).toBe('已有订阅缓存');
+    expect(sourcePreparation(value, 'source')).toBe('已有可用订阅');
     value.status!.subscriptions = [];
     expect(sourcePreparation(value, 'source')).toBe('下载记录未提供');
     value.subscriptions.source.imported = true;

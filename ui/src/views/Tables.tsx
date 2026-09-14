@@ -40,10 +40,10 @@ function MeasurementCell({ value, snapshot }: { value?: Measurement | null; snap
     <small>{value.measured_count} 项测速成功{exhausted > 0 && ` · ${exhausted} 项流量耗尽`}{unmeasured > 0 && ` · ${unmeasured} 项无有效结果`}</small></div>
     <small className="nf-measurement-time">采样于 {sampledAt(value.sampled_at)}</small>
     <details><summary>查看测速详情{entries.length > 0 && `（${entries.length} 项）`}</summary>
-      <p>每项对应一个机场在一个地区的候选线路，不代表节点数。测速结果不等于业务保护检查结果。</p>
+      <p>每项对应一个机场在一个地区的候选线路，显示本轮测速结果。</p>
       {entries.length ? <ul>{entries.map((entry, index) => <li key={index}>
         <strong>{providerName(snapshot, entry.provider_id)} · {regionName(snapshot, entry.region_id)}</strong>
-        <div>{entry.ok ? `测速成功 · ${delay(entry.delay_ms)}` : explanation(entry.measurement_reason)}</div>
+        <div>{entry.ok ? delay(entry.delay_ms, '未取得有效测速') : explanation(entry.measurement_reason)}</div>
         {entry.quota_state === 'exhausted' && <div>{measurementReasons.quota_exhausted}</div>}
       </li>)}</ul> : <p>此记录没有逐项详情。{Object.entries(value.exclusions).map(([reason, count]) => `${explanation(reason)}：${count} 项`).join('；')}</p>}
     </details>
@@ -55,7 +55,7 @@ const duration = (value?: number | null) => value == null ? '未提供'
     : value % 3600 === 0 ? `${value / 3600} 小时`
       : value % 60 === 0 ? `${value / 60} 分钟` : `${value} 秒`;
 const refreshResult = (value?: string | null) => ({
-  updated: '更新完成并已重载', cache_updated: '缓存已更新', partially_updated: '部分机场更新成功',
+  updated: '更新完成并已重载', cache_updated: '订阅正常', partially_updated: '部分机场更新成功',
   unchanged: '订阅无变化', update_failed: '更新失败，继续使用旧缓存',
   failed: '更新失败，继续使用旧版本',
   upstream_unavailable: '上游不可用，未更新', active_precondition_failed: '运行状态不满足安全更新条件',
@@ -67,7 +67,7 @@ const failedRefreshResults = new Set([
 ]);
 
 const subscriptionResult = (value?: string | null) => value === 'updated'
-  ? '缓存已更新'
+  ? '订阅正常'
   : refreshResult(value);
 
 const subscriptions = (snapshot: StatusSnapshot) => snapshot.subscriptions || [];
@@ -79,7 +79,7 @@ const subscriptionState = (entry?: SubscriptionStatus) => {
   if (!entry) return '订阅信息暂不可读';
   if (entry.pending_update || entry.last_result === 'pending') return entry.cache_present ? '待更新，沿用上次缓存' : '等待首次更新';
   if (!entry.cache_present) return '没有可用缓存';
-  return entry.last_result ? subscriptionResult(entry.last_result) : '缓存可用';
+  return entry.last_result ? subscriptionResult(entry.last_result) : '订阅可用';
 };
 const subscriptionStateClass = (entry?: SubscriptionStatus) => (
   !entry || !entry.cache_present || failedRefreshResults.has(entry.last_result || '') ? 'is-warning' : ''

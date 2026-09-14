@@ -7,7 +7,7 @@ export function sourcePreparation(snapshot: DesktopSnapshot, id: string): string
   const provider = snapshot.status?.providers.find(item => (item.subscription_section || item.id) === id);
   const cache = snapshot.status?.subscriptions?.find(item => item.section === id || item.section === provider?.subscription_section);
   if (source.imported && !source.hasUrl) return '本地导入 · 不会自动下载';
-  if (cache?.cache_present) return cache.last_success ? `缓存已更新 · ${sampledAt(cache.last_success)}` : '已有订阅缓存';
+  if (cache?.cache_present) return cache.last_success ? `订阅正常 · ${sampledAt(cache.last_success)}` : '已有可用订阅';
   if (source.updatedAt) return `已下载 · ${new Date(source.updatedAt).toLocaleString('zh-CN')}`;
   return source.nodeCount != null ? `${source.nodeCount} 条节点记录` : '下载记录未提供';
 }

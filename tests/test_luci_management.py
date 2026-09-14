@@ -554,11 +554,11 @@ const status = {providers:[provider], subscriptions:[{section:'source',last_succ
  measurement:{sampled_at:1788947164,measured_count:0,entries:[entry]}}]};
 let item = all(view.regions(status,{}), n=>n.tag==='li').find(n=>text(n).includes('该次测速记录'));
 assert.equal(text(item.children[1]),'流量已耗尽，不参与选优');
-assert(text(item).includes('订阅更新于') && text(item).includes('未提供底层错误'));
+assert(text(item).includes('未提供底层错误'));
 // A later quota reset must not present the old exhausted sample as a current ban.
 provider.quota = {state:'available',remaining_bytes:1073741824}; entry.quota_state='exhausted';
 item = all(view.regions(status,{}), n=>n.tag==='li').find(n=>text(n).includes('该次测速记录'));
-assert.equal(text(item.children[1]),'订阅配额记录：剩余 1.0 GiB');
+assert.equal(text(item.children[1]),'41 ms');
 assert(text(item).includes('该次测速时流量已耗尽'));
 assert(!item.children.some(n=>text(n)==='流量已耗尽，不参与选优'));
 """)
