@@ -56,6 +56,20 @@ calls=[];cancelled=true;try{prepare_resources('/work',['mihomo-meta'],{'mihomo-m
 check(!length(calls),'cancel before preparing any resource');
 `)();
 
+const stopping = extract('stop_services = function(', 'restore_services = function(');
+loadstring(`
+let stop_services, clean=true, running=false, reads=0;
+const KIND='native-mihomo', SERVICE='opl-netfleet-core';
+const gateway={status:()=>{reads++;return {ok:true,result:{clean}};}};
+function run_command(){return true;}function service_running(){return running;}
+function system(){return 0;}
+function parsed(){die('installed gateway command must not be used during maintenance');}
+` + stopping + `
+if(!stop_services('/work')||reads!=1)die('retained gateway confirms drained cleanup');
+clean=false;if(stop_services('/work'))die('unclean gateway must reject update');
+running=true;if(stop_services('/work'))die('running services must reject update');
+`)();
+
 const getter = extract('get = function(', 'local_stage = function(');
 loadstring(`
 let get;const CACHE='cache',PACKAGES=['opl-netfleet','luci-app-netfleet','mihomo-meta'],KIND='native-mihomo',DEPENDENCIES=[];

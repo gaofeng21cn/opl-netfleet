@@ -449,7 +449,9 @@ stop_services = function(work) {
 	run_command(`/etc/init.d/${SERVICE} stop`, work);
 	for (let attempt = 0; attempt < 20; attempt++) {
 		if (!service_running("opl-netfleet") && !service_running(SERVICE)) {
-			return KIND != "native-mihomo" || parsed("ucode /usr/libexec/opl-netfleet/main.uc native-gateway-status")?.result?.clean == true;
+			// The installed command is intentionally hidden while its plugin is
+			// draining. Read cleanup through this transaction's retained owner.
+			return KIND != "native-mihomo" || gateway.status()?.result?.clean == true;
 		}
 		system("sleep 1");
 	}
