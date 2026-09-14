@@ -18,6 +18,7 @@ finish() {
 	trap - EXIT
 	[ -z "$server" ] || kill "$server" 2>/dev/null || true
 	if [ "$saved" = 1 ]; then cp -p "$work/repository" "$repository"; else rm -f "$repository"; fi
+	if [ -f "$work/distfeeds.list" ]; then mv "$work/distfeeds.list" /etc/apk/repositories.d/distfeeds.list; fi
 	if [ "$rc" != 0 ]; then
 		echo "Plugin component transaction failed: $stage" >&2
 		for file in "$work"/*.json "$work"/*.log /etc/opl-netfleet/package-transactions/*/log; do
@@ -29,6 +30,9 @@ finish() {
 }
 trap finish EXIT
 mkdir -p /etc/apk/repositories.d
+# The native network fixture intentionally denies public egress. Dependencies
+# are already installed; only the signed local repository participates here.
+if [ -f /etc/apk/repositories.d/distfeeds.list ]; then mv /etc/apk/repositories.d/distfeeds.list "$work/distfeeds.list"; fi
 uhttpd -f -p 127.0.0.1:19981 -h "$packages" >"$work/http.log" 2>&1 &
 server=$!
 select_feed() {
