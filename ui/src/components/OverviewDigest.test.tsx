@@ -127,7 +127,7 @@ describe('概览信息层级', () => {
     expect(html).toContain('<th>订阅状态</th>');
     expect(html).toContain('42/46 节点 · 订阅 48 条');
     expect(html).not.toContain('18/20 节点');
-    expect(html).toContain('缓存已更新');
+    expect(html).toContain('订阅正常');
     expect(html).not.toContain('更新完成并已重载</td>');
     expect(html).not.toContain('缓存版本');
     expect(html).toContain('aria-expanded="false"');
