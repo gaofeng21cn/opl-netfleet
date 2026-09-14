@@ -84,7 +84,14 @@ function module(name, api) {
     }
     const product = new Function('baseclass', fs.readFileSync(path.join(resources, 'product.js'), 'utf8'))(baseclass);
     const advanced = new Function('baseclass', 'ui', 'E', fs.readFileSync(path.join(resources, 'advanced.js'), 'utf8'))(baseclass, ui, E);
-    return new Function('baseclass', 'ui', 'api', 'E', 'managed', 'product', 'advanced', fs.readFileSync(path.join(resources, name), 'utf8'))(baseclass, ui, api, E, name === 'managed.js' ? null : module('managed.js', api), product, advanced);
+    let shared;
+    const evaluate = (file, managed) => new Function('baseclass', 'ui', 'api', 'E', 'managed', 'product', 'advanced', 'loadModule', fs.readFileSync(path.join(resources, file), 'utf8'))(baseclass, ui, api, E, managed, product, advanced, async name => evaluate(name + '.js', shared));
+    if (name === 'managed.js') {
+        shared = evaluate(name, null);
+        Object.assign(shared, evaluate('components.js', shared), evaluate('subscriptions.js', shared));
+        return shared;
+    }
+    return evaluate(name, module('managed.js', api));
 }
 function configModule(management) {
     return new Function('baseclass', 'ui', 'management', 'E', 'compatibility', fs.readFileSync(path.join(resources, 'config.js'), 'utf8'))(baseclass, ui, management, E, { render: () => null });
@@ -891,7 +898,7 @@ const modes = modesModule({
   events: () => { calls.push('events'); return new Promise(resolve => resolveEvents = resolve); },
   nativeSetupGet: async () => ({ available: true })
 });
-const owner = Object.create(modes.controller);
+const owner = Object.create(modes.controller); owner.pageId = 'overview';
 let rendered = false;
 const loaded = owner.load().then(result => { rendered = true; return result; });
 assert.deepEqual(calls, ['status', 'events', 'setup']);
@@ -914,7 +921,7 @@ const modes = modesModule({
   status: async () => ({ active: true }),
   events: () => new Promise(resolve => resolveEvents = resolve)
 });
-const owner = Object.create(modes.controller);
+const owner = Object.create(modes.controller); owner.pageId = 'overview';
 owner.context = { signal: { aborted: false } };
 let initial;
 owner.load().then(value => initial = value);
@@ -937,7 +944,7 @@ const modes = modesModule({
   onboardingGet: async () => ({ required: false }), status: async () => ({ active: true }),
   events: async () => { throw new Error('event timeout'); }
 });
-const owner = Object.create(modes.controller);
+const owner = Object.create(modes.controller); owner.pageId = 'overview';
 const initial = await owner.load();
 await tick();
 assert.equal(initial.cached, false);
@@ -1280,7 +1287,53 @@ assert.equal(fetches, 8, 'navigation does not fetch or compile the same revision
 const retry = await import('data:text/javascript;base64,' + Buffer.from(source + '\n// different revision').toString('base64'));
 fail = true; await assert.rejects(retry.mountPage({ signal: second.signal }, 'overview'), /product_ui_resource_unavailable/);
 fail = false; assert.equal((await retry.mountPage({ signal: second.signal }, 'overview')).id, 'overview');
-assert.equal(fetches, 24, 'failed load retries with a new resource batch');
+assert.equal(fetches, 18, 'only failed required factories are retried');
+""")
+
+    def test_refresh_coalesces_and_stronger_read_observes_again(self):
+        self.run_js(r"""
+const pending = [], calls = [];
+const modes = modesModule({ status: () => { calls.push('status'); return new Promise(resolve => pending.push(resolve)); }, configGet: async () => { calls.push('config'); return { revision: 'new' }; } });
+const owner = Object.assign(Object.create(modes.controller), { currentView: 'config', context: { signal: { aborted: false } }, redraw() {},
+  acceptLiveData(result) { this.status = result[0]; this.config = result[2]; } });
+const first = owner.refreshData(true);
+assert.strictEqual(owner.refreshData(true), first);
+const stronger = owner.refreshData(true, true);
+assert.deepEqual(calls, ['status']);
+pending.shift()({ generation: 1 }); await first; await tick();
+assert.deepEqual(calls, ['status', 'status', 'config']);
+pending.shift()({ generation: 2 }); await stronger;
+assert.equal(owner.status.generation, 2); assert.equal(owner.config.revision, 'new');
+""")
+
+    def test_mutation_invalidates_old_reads_and_disposed_page_ignores_errors(self):
+        self.run_js(r"""
+const pending = [];
+const modes = modesModule({ status: () => new Promise((resolve, reject) => pending.push({ resolve, reject })) });
+const owner = Object.assign(Object.create(modes.controller), { currentView: 'config', context: { signal: { aborted: false } }, redraw() {},
+  acceptLiveData(result) { this.status = result[0]; } });
+const old = owner.refreshData(true); owner.invalidateReads();
+const fresh = owner.refreshData(true);
+pending.shift().resolve({ generation: 1 }); await old; await tick();
+assert.equal(owner.status, undefined, 'read started before mutation cannot be published');
+pending.shift().resolve({ generation: 2 }); await fresh;
+assert.equal(owner.status.generation, 2);
+const late = owner.refreshData(true); owner.context.signal.aborted = true;
+pending.shift().reject(new Error('late transport failure')); await late;
+assert.equal(owner.refreshError, undefined);
+""")
+
+    def test_only_event_consumers_read_events_and_core_requests_logs(self):
+        self.run_js(r"""
+const calls = [];
+global.window = { localStorage: { getItem: () => null, removeItem() {}, setItem() {} } };
+const modes = modesModule({ onboardingGet: async () => ({ required: false }), status: async () => ({ active: true }),
+  events: async logs => { calls.push(logs); return { events: [] }; } });
+const owner = Object.assign(Object.create(modes.controller), { pageId: 'config', context: { signal: { aborted: false } } });
+await owner.load(); assert.deepEqual(calls, []);
+owner.currentView = 'events'; owner.diagnosticSection = 'events'; await owner.refreshEvents();
+owner.diagnosticSection = 'core'; await owner.refreshEvents();
+assert.deepEqual(calls, [false, true]);
 """)
 
     def test_identity_source_setup_and_dynamic_device_binding(self):

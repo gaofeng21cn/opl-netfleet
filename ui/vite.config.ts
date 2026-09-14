@@ -16,13 +16,13 @@ function sendJson(response: import('node:http').ServerResponse, status: number, 
   response.end(JSON.stringify(payload));
 }
 
-async function readRemote(target: string, method: 'status' | 'events' | 'connections' | 'config_get' | 'components_get' | 'operation_get' | 'network_get' | 'maintenance_get' | 'diagnostics_get') {
+async function readRemote(target: string, method: 'status' | 'events' | 'connections' | 'config_get' | 'components_get' | 'operation_get' | 'network_get' | 'maintenance_get' | 'diagnostics_get', includeLogs = false) {
   const { stdout } = await execFileAsync('ssh', [
     '-o', 'BatchMode=yes',
     '-o', 'PasswordAuthentication=no',
     '-o', 'ConnectTimeout=8',
     target,
-    `ubus -S call opl-netfleet ${method}`,
+    `ubus -S call opl-netfleet ${method}${method === 'events' && includeLogs ? ` '{"include_logs":true}'` : ''}`,
   ], { timeout: 20_000, maxBuffer: 4 * 1024 * 1024 });
   const payload = JSON.parse(stdout) as { ok?: boolean; error?: string; result?: unknown };
   if (payload.ok !== true || payload.result == null) throw new Error(payload.error || `${method}_read_failed`);
@@ -71,6 +71,12 @@ function liveBridgePlugin(target?: string, targetLabel = '设备'): Plugin {
             duration_ms: Date.now() - started,
           },
         });
+      });
+      server.middlewares.use('/__netfleet_live/events-logs', async (request, response) => {
+        if (request.method !== 'GET') return sendJson(response, 405, { error: 'method_not_allowed' });
+        if (!validTarget) return sendJson(response, 404, { error: 'live_target_not_configured' });
+        try { sendJson(response, 200, await readRemote(validTarget, 'events', true)); }
+        catch { sendJson(response, 502, { error: 'events_logs_read_failed' }); }
       });
       server.middlewares.use('/__netfleet_live/connections', async (request, response) => {
         if (request.method !== 'GET') return sendJson(response, 405, { error: 'method_not_allowed' });

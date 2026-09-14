@@ -473,6 +473,23 @@ function overviewFact(label, value) {
 	return E('div', {}, [ E('dt', {}, label), E('dd', {}, value) ]);
 }
 
+function overviewDecision(status, events, navigate) {
+	const latest = latestDecision(events.events || []);
+	const decision = latest ? [
+		E('time', {}, finite(latest.at) ? new Date(Number(latest.at) * 1000).toLocaleString() : '未提供'),
+		E('strong', {}, displayEventName(events, 'capabilities', latest.capability)),
+		E('p', {}, eventResult(events, latest)),
+		E('dl', { 'class': 'netfleet-overview-decision-meta' }, [
+			overviewFact('延迟', eventDelay(latest)),
+			overviewFact('原因', eventReason(status, latest))
+		])
+	] : [ E('p', { 'class': 'netfleet-overview-empty' }, '暂无决策记录') ];
+
+	return E('article', { 'class': 'netfleet-overview-card netfleet-overview-decision' }, [
+		E('div', { 'class': 'netfleet-overview-card-heading' }, [ E('h3', {}, '最近决策'), overviewLink('查看', 'events', navigate) ])
+	].concat(decision));
+}
+
 function overviewDigest(status, events, navigate) {
 	const providers = status.providers || [];
 	const availabilityMeasured = Boolean(status.active && status.runtime.netfleet_present && status.runtime.controller_available);
@@ -493,8 +510,6 @@ function overviewDigest(status, events, navigate) {
 		return Number(region.delay_sample_count) >= 2;
 	}), function(region) { return region.average_best_delay_ms; });
 
-	const latest = latestDecision(events.events || []);
-
 	const providerFacts = [
 		overviewFact('当前使用', joined(selectedProviders.map(function(provider) { return providerName(status, provider.id); }))),
 		overviewFact('最近测量最快', fastestProvider ? providerName(status, fastestProvider.id) + ' · ' + delay(fastestProvider.last_best_delay_ms ?? fastestProvider.best_delay_ms) : '未测量'),
@@ -505,15 +520,6 @@ function overviewDigest(status, events, navigate) {
 		overviewFact('最近测量最快', fastestRegion ? regionName(status, fastestRegion.id) + ' · ' + delay(fastestRegion.last_best_delay_ms) : '未测量'),
 		overviewFact('历史平均最低', fastestAverageRegion ? regionName(status, fastestAverageRegion.id) + ' · ' + averageDelay(fastestAverageRegion.average_best_delay_ms, fastestAverageRegion.delay_sample_count) : '样本不足')
 	];
-	const decision = latest ? [
-		E('time', {}, finite(latest.at) ? new Date(Number(latest.at) * 1000).toLocaleString() : '未提供'),
-		E('strong', {}, displayEventName(events, 'capabilities', latest.capability)),
-		E('p', {}, eventResult(events, latest)),
-		E('dl', { 'class': 'netfleet-overview-decision-meta' }, [
-			overviewFact('延迟', eventDelay(latest)),
-			overviewFact('原因', eventReason(status, latest))
-		])
-	] : [ E('p', { 'class': 'netfleet-overview-empty' }, '暂无决策记录') ];
 
 	const card = function(title, target, count, countDetail, facts, extraClass) {
 		return E('article', { 'class': 'netfleet-overview-card' + (extraClass ? ' ' + extraClass : '') }, [
@@ -522,9 +528,7 @@ function overviewDigest(status, events, navigate) {
 			E('dl', { 'class': 'netfleet-overview-facts' }, facts)
 		]);
 	};
-	const decisionCard = E('article', { 'class': 'netfleet-overview-card netfleet-overview-decision' }, [
-		E('div', { 'class': 'netfleet-overview-card-heading' }, [ E('h3', {}, '最近决策'), overviewLink('查看', 'events', navigate) ])
-	].concat(decision));
+	const decisionCard = overviewDecision(status, events, navigate);
 
 	const unavailableProviders = providers.filter(function(provider) {
 		return provider.quota && provider.quota.state === 'exhausted' ? false :
@@ -1130,4 +1134,4 @@ function eventsPage(status, events, connections, connectionsLoading, connections
 	];
 }
 
-return baseclass.extend({ ageLabel, finite, text, pageHeading, delay, averageDelay, countPair, dashboardReady, dashboardUnavailableReason, regionalDisplayName, byId, providerName, regionName, capabilityName, route, runtimeFallback, modeName, pathHealthLabel, reasonText, quota, providerExpiry, sampledAt, executionAt, refreshResult, simpleTable, section, metricGrid, onboardingMessage, nativeProfileLabel, backendName, onboardingPage, detailGrid, statusSummary, operatingModeLabel, operatingModeControls, fastest, joined, currentRegionPlan, currentRegion, currentProvider, overviewLink, overviewExitSummary, overviewFact, overviewDigest, regionChoiceBlocked, regionChoiceButton, selectionExplanation, selectionToolbar, capabilityPanel, overviewPage, seconds, exitsPage, cacheDigest, subscriptionForProvider, subscriptionFailed, subscriptionState, subscriptionSummary, providerNodes, quotaMeter, tableTools, tableItems, measurementCell, providersPage, regionsPage, displayEventName, latestDecision, eventResult, eventDelay, eventReason, eventsPage });
+return baseclass.extend({ ageLabel, finite, text, pageHeading, delay, averageDelay, countPair, dashboardReady, dashboardUnavailableReason, regionalDisplayName, byId, providerName, regionName, capabilityName, route, runtimeFallback, modeName, pathHealthLabel, reasonText, quota, providerExpiry, sampledAt, executionAt, refreshResult, simpleTable, section, metricGrid, onboardingMessage, nativeProfileLabel, backendName, onboardingPage, detailGrid, statusSummary, operatingModeLabel, operatingModeControls, fastest, joined, currentRegionPlan, currentRegion, currentProvider, overviewLink, overviewExitSummary, overviewFact, overviewDigest, regionChoiceBlocked, regionChoiceButton, selectionExplanation, selectionToolbar, capabilityPanel, overviewDecision, overviewPage, seconds, exitsPage, cacheDigest, subscriptionForProvider, subscriptionFailed, subscriptionState, subscriptionSummary, providerNodes, quotaMeter, tableTools, tableItems, measurementCell, providersPage, regionsPage, displayEventName, latestDecision, eventResult, eventDelay, eventReason, eventsPage });

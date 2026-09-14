@@ -41,23 +41,23 @@ event_display_names = function(policy) {
 	};
 };
 
-events_action = function() {
+events_action = function(include_logs) {
 	const store = read_events();
 	const validation = validate_events(store);
-	const manifest = read_json(MANIFEST_PATH);
+	const manifest = include_logs ? read_json(MANIFEST_PATH) : null;
 	const policy = load_policy();
 	ok("events", {
 		events: validation.ok ? store?.events ?? [] : [],
 		store_valid: validation.ok,
 		store_error: validation.ok ? null : validation.error,
 		display_names: event_display_names(policy),
-		core_lines: core_netfleet_lines(expected_runtime_groups(manifest)),
+		core_lines: include_logs ? core_netfleet_lines(expected_runtime_groups(manifest)) : [],
 		core_lines_persistent: false
 	});
 };
 
 command_events = function(argv) {
-	events_action();
+	events_action(argv[1] == "logs");
 };
 
 return { event_display_names, events_action, command_events };

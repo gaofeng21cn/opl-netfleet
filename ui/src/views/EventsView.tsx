@@ -28,6 +28,16 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
 }) {
   const [page, setPage] = useState(0);
   const [section, setSection] = useState(sections[0] || 'events');
+  const [logs, setLogs] = useState<EventsSnapshot | null>(null);
+  const [logError, setLogError] = useState('');
+  useEffect(() => {
+    if (section !== 'core' || !client) return;
+    let current = true;
+    setLogError('');
+    client.events(true).then(value => { if (current) setLogs(value); }, () => { if (current) setLogError('日志读取失败'); });
+    return () => { current = false; };
+  }, [section, client, snapshot]);
+
   const rows = snapshot.events.slice().reverse();
   const pageCount = Math.max(1, Math.ceil(rows.length / 20));
   const currentPage = Math.min(page, pageCount - 1);
@@ -82,10 +92,10 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
         <dl><dt>当前连接</dt><dd className={connectionsError ? 'is-warning' : 'is-ok'}>{connectionsLoading ? '正在读取' : connectionsError ? '读取失败' : `${connections.connections.length} 条`}</dd></dl>
       </section>
       <p className="nf-management-note">原始日志：{snapshot.core_lines_persistent === false ? '核心当前保留的临时窗口，不作为持久事件记录。' : '由设备日志策略负责保留。'}</p>
-      <section className="nf-log-section"><h2>Mihomo 原始日志</h2><pre>{(snapshot.core_lines || []).join('\n') || '暂无相关原始日志。'}</pre></section>
+      <section className="nf-log-section"><h2>Mihomo 原始日志</h2><pre>{logError || ((logs || snapshot).core_lines || []).join('\n') || '暂无相关原始日志。'}</pre></section>
       <CoreMaintenance client={client} /></>}
     </div>
   );
 }
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';

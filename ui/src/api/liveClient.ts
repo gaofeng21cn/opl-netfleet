@@ -50,7 +50,12 @@ export class LiveNetFleetClient implements NetFleetClient {
     return snapshot.status;
   }
 
-  async events() {
+  async events(includeLogs = false) {
+    if (includeLogs) {
+      const response = await this.fetcher('/__netfleet_live/events-logs', { cache: 'no-store' });
+      if (!response.ok) throw new Error('设备日志读取失败');
+      return await response.json() as EventsSnapshot;
+    }
     const snapshot = await this.read();
     if (!snapshot.events) throw new Error(snapshot.errors?.events || '设备事件读取失败');
     return snapshot.events;

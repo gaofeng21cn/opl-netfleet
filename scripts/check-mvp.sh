@@ -38,6 +38,7 @@ if command -v "$ucode_bin" >/dev/null 2>&1; then
 	"$ucode_bin" "$@" "$root_dir/tests/path_activation_contract.uc"
 	"$ucode_bin" "$@" "$root_dir/tests/gateway_cleanup_contract.uc"
 	"$ucode_bin" "$@" "$root_dir/tests/events_contract.uc"
+	"$ucode_bin" "$@" "$root_dir/tests/events_read_contract.uc"
 	"$ucode_bin" "$@" "$root_dir/tests/subscription_contract.uc"
 	"$ucode_bin" "$@" "$root_dir/tests/refresh_history_contract.uc"
 	"$ucode_bin" "$@" "$root_dir/tests/config_contract.uc"

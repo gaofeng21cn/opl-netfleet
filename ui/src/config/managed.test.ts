@@ -30,6 +30,10 @@ function harness(active = false) {
   } };
   const source = readFileSync(new URL('../../../openwrt/files/usr/libexec/opl-netfleet/plugins/product-ui/resources/managed.js', import.meta.url), 'utf8');
   const managed = new Function('baseclass', 'ui', 'api', 'E', 'L', source)({ extend: (value: unknown) => value }, ui, api, E, { url: (path: string) => path });
+  for (const name of ['components', 'subscriptions']) {
+    const child = readFileSync(new URL(`../../../openwrt/files/usr/libexec/opl-netfleet/plugins/product-ui/resources/${name}.js`, import.meta.url), 'utf8');
+    Object.assign(managed, new Function('baseclass', 'ui', 'api', 'E', 'L', 'managed', child)({ extend: (value: unknown) => value }, ui, api, E, { url: (path: string) => path }, managed));
+  }
   const controller: Record<string, any> = { status: { active }, refreshData: vi.fn(async () => ({})), redraw: vi.fn() };
   return { managed, api, ui, controller, nodes: () => all(modal), button: (name: string) => all(modal).find((node) => node.tag === 'button' && label(node) === name)! };
 }

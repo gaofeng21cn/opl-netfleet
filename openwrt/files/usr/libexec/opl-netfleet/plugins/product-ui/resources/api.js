@@ -48,7 +48,7 @@ const calls = {
 	onboardingGet: declare({ object: 'opl-netfleet', method: 'onboarding_get' }),
 	onboardingApply: declare({ object: 'opl-netfleet', method: 'onboarding_apply', params: [ 'request' ] }),
 	status: declare({ object: 'opl-netfleet', method: 'status' }),
-	events: declare({ object: 'opl-netfleet', method: 'events' }),
+	events: declare({ object: 'opl-netfleet', method: 'events', params: ['include_logs'] }),
 	connections: declare({ object: 'opl-netfleet', method: 'connections' }),
 	configGet: declare({ object: 'opl-netfleet', method: 'config_get' }),
 	configValidate: declare({ object: 'opl-netfleet', method: 'config_validate', params: [ 'request' ] }),
@@ -177,7 +177,7 @@ return baseclass.extend({
 		return withRpcTimeout(300, function() { return executeRequest('onboardingApply', request); });
 	},
 	status: function() { return execute('status'); },
-	events: function() { return execute('events'); },
+	events: function(includeLogs) { return executeRequest('events', includeLogs === true); },
 	connections: function() { return execute('connections'); },
 	configGet: function() { return execute('configGet'); },
 	configValidate: function(request) { return executeRequest('configValidate', request); },

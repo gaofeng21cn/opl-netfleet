@@ -119,7 +119,7 @@ component_update() {
 
 case "$1" in
 	list)
-		printf '%s\n' '{"components_get":{},"components_check":{},"components_recover":{},"components_cancel":{"id":"String"},"components_update":{"component":"String","version":"String"},"operation_get":{},"native_setup_get":{},"native_setup_apply":{"request":{}},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":{}},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":{}},"onboarding_get":{},"onboarding_apply":{"request":{}},"status":{},"events":{},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":{}},"config_save":{"request":{}},"config_apply":{"request":{}},"enable":{},"select_auto":{"capability":"String"},"select_region":{"capability":"String","region":"String"},"refresh":{},"disable":{},"network_get":{},"network_validate":{"request":{}},"network_apply":{"request":{}},"maintenance_get":{},"profile_get":{"id":"String"},"profile_save":{"request":{}},"profile_delete":{"request":{}},"backup_export":{},"backup_restore":{"request":{}},"core_action":{"request":{}},"diagnostics_get":{},"dashboard_check":{},"dashboard_update":{"version":"String"}}'
+		printf '%s\n' '{"components_get":{},"components_check":{},"components_recover":{},"components_cancel":{"id":"String"},"components_update":{"component":"String","version":"String"},"operation_get":{},"native_setup_get":{},"native_setup_apply":{"request":{}},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":{}},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":{}},"onboarding_get":{},"onboarding_apply":{"request":{}},"status":{},"events":{"include_logs":"Boolean"},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":{}},"config_save":{"request":{}},"config_apply":{"request":{}},"enable":{},"select_auto":{"capability":"String"},"select_region":{"capability":"String","region":"String"},"refresh":{},"disable":{},"network_get":{},"network_validate":{"request":{}},"network_apply":{"request":{}},"maintenance_get":{},"profile_get":{"id":"String"},"profile_save":{"request":{}},"profile_delete":{"request":{}},"backup_export":{},"backup_restore":{"request":{}},"core_action":{"request":{}},"diagnostics_get":{},"dashboard_check":{},"dashboard_update":{"version":"String"}}'
 		;;
 	call)
 		case "$2" in
@@ -190,7 +190,13 @@ case "$1" in
 				respond_owner ucode "$main" status
 				;;
 				events)
-					respond_owner ucode "$main" events
+					payload=$(cat)
+					include_logs=$(jsonfilter -s "$payload" -e '@.include_logs' 2>/dev/null || true)
+					if [ "$include_logs" = "true" ]; then
+						respond_owner ucode "$main" events logs
+					else
+						respond_owner ucode "$main" events
+					fi
 					;;
 				connections)
 					respond_owner ucode "$main" connections

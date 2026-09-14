@@ -12,6 +12,7 @@
 
 const DISPLAY_CACHE_KEY = 'opl-netfleet:luci-display:v1';
 const DISPLAY_CACHE_SCHEMA = 1;
+const clone = value => JSON.parse(JSON.stringify(value));
 
 function discardDisplayCache() {
 	try {
@@ -74,7 +75,7 @@ function ensureStyles() {
 		link.setAttribute('href', href);
 }
 
-const { ageLabel, finite, text, pageHeading, dashboardReady, dashboardUnavailableReason, regionalDisplayName, regionName, capabilityName, route, modeName, pathHealthLabel, section, metricGrid, onboardingPage, statusSummary, operatingModeLabel, operatingModeControls, currentRegion, regionChoiceBlocked, overviewPage, exitsPage, providersPage, regionsPage, eventsPage } = productViews;
+const { ageLabel, finite, text, pageHeading, dashboardReady, dashboardUnavailableReason, regionalDisplayName, regionName, capabilityName, route, modeName, pathHealthLabel, section, metricGrid, onboardingPage, statusSummary, operatingModeLabel, operatingModeControls, currentRegion, regionChoiceBlocked, overviewDecision, overviewPage, exitsPage, providersPage, regionsPage, eventsPage } = productViews;
 
 const productController = {
 	load: function() {
@@ -84,7 +85,7 @@ const productController = {
 		const startRefresh = function() {
 			const started = Date.now();
 			const status = netfleet.status();
-			self.refreshEvents();
+			if (self.usesEvents()) self.refreshEvents();
 			return status.then(function(value) {
 				return { result: [value, null], readDurationMs: Date.now() - started };
 			}, function(error) { return { error: error }; });
@@ -128,7 +129,7 @@ const productController = {
 		this.connectionsLoading = false;
 		this.connectionsError = null;
 		this.config = initial.config;
-		this.configDraft = initial.config ? netfleetConfig.clone(initial.config) : null;
+		this.configDraft = initial.config ? clone(initial.config) : null;
 		this.configSection = 'foundation';
 		this.currentView = this.pageId;
 		this.eventPage = 0;
@@ -169,7 +170,7 @@ const productController = {
 		if (this.currentView === 'providers') managed.preloadSubscriptions(this).catch(function() {});
 		managed.readOperations(this);
 		if (this.currentView === 'config') this.loadConfig();
-		return this.prepareDashboard();
+		return Promise.resolve();
 	},
 
 	loadConfig: function() {
@@ -177,17 +178,20 @@ const productController = {
 		self.configError = null;
 		return netfleet.configGet().then(function(config) {
 			self.config = config;
-			if (!self.configDraft) self.configDraft = netfleetConfig.clone(config);
-			if (self.currentView === 'config') self.redraw();
+			if (!self.configDraft) self.configDraft = clone(config);
+			if (self.currentView === 'config') self.scheduleRedraw();
 		}).catch(function(error) {
 			self.configError = error;
-			if (self.currentView === 'config') self.redraw();
+			if (self.currentView === 'config') self.scheduleRedraw();
 		});
 	},
 
 	prepareDashboard: function() {
 		const self = this;
-		return netfleet.dashboardGet().then(function(result) {
+		if (this.dashboardRead) return this.dashboardRead;
+		this.dashboardUrl = null;
+		this.dashboardRead = netfleet.dashboardGet().then(function(result) {
+			if (self.context?.signal?.aborted) return;
 			if (!result.available || !Number.isInteger(result.port) || result.port < 1 || result.port > 65535 || ![ 'http', 'https' ].includes(result.protocol)) {
 				self.dashboardUrl = null;
 				return;
@@ -198,7 +202,8 @@ const productController = {
 			// Zashboard only accepts a new connection on setup when a saved backend already exists.
 			url.hash = '/setup';
 			self.dashboardUrl = url.toString();
-		}).catch(function() { self.dashboardUrl = null; }).finally(function() { self.redraw(); });
+		}).catch(function() { self.dashboardUrl = null; }).finally(function() { self.dashboardRead = null; });
+		return this.dashboardRead;
 	},
 
 	acceptLiveData: function(result, readDurationMs) {
@@ -213,12 +218,38 @@ const productController = {
 		this.eventPage = 0;
 		if (result[2]) {
 			this.config = result[2];
-			this.configDraft = netfleetConfig.clone(result[2]);
+			this.configDraft = clone(result[2]);
 		}
 		writeDisplayCache(this.status, this.events, this.fetchedAt, this.readDurationMs);
 	},
 
-	redraw: function() {
+	updateEvents: function() {
+		if (!this.root || this.context?.signal?.aborted) return;
+		if (this.currentView === 'overview') {
+			const old = this.root.querySelector?.('.netfleet-overview-decision');
+			if (old) old.replaceWith(overviewDecision(this.status, this.events, target => this.context.navigate(target)));
+		} else if (this.currentView === 'events' && this.eventSections) {
+			const sections = eventsPage(this.status, this.events, this.connections, this.connectionsLoading, this.connectionsError,
+				this.eventPage, page => { this.eventPage = page; this.redraw(); });
+			for (const index of this.diagnosticSection === 'core' ? [1, 3] : this.diagnosticSection === 'events' ? [0] : []) {
+				this.eventSections[index].replaceWith(sections[index]);
+				this.eventSections[index] = sections[index];
+			}
+		}
+		if (this.eventNoticeNode) this.eventNoticeNode.textContent = this.eventsError ? '事件刷新失败，当前显示上次记录；运行状态已单独读取。' : '';
+	},
+
+	usesEvents: function() { return ['overview', 'events'].includes(this.currentView || this.pageId); },
+
+	invalidateReads: function() { this.readEpoch = (this.readEpoch || 0) + 1; this.dashboardUrl = null; },
+
+	scheduleRedraw: function() {
+		if (this.redrawPending) return;
+		this.redrawPending = true;
+		queueMicrotask(() => { this.redrawPending = false; if (this.root && !this.context?.signal?.aborted) this.redraw(); });
+	},
+
+	redraw: function(preserveContent) {
 		const self = this;
 		if (this.context.signal?.aborted) return;
 		if (this.onboarding && this.onboarding.required) {
@@ -258,7 +289,8 @@ const productController = {
 			buttons.push(E('button', buttonAttrs({ 'class': 'btn cbi-button cbi-button-action', 'click': function() { self.confirmAction('refresh'); } }, true), '立即更新订阅'));
 
 		let content;
-		if (this.currentView === 'exits') content = exitsPage(this.status, this);
+		if (preserveContent && this.contentNode) content = null;
+		else if (this.currentView === 'exits') content = exitsPage(this.status, this);
 		else if (this.currentView === 'providers') content = providersPage(this.status, this);
 		else if (this.currentView === 'regions') content = regionsPage(this.status, this);
 		else if (this.currentView === 'config') content = [ netfleetConfig.render(this) ];
@@ -267,12 +299,13 @@ const productController = {
 			const sections = eventsPage(this.status, this.events, this.connections, this.connectionsLoading, this.connectionsError, this.eventPage, function(page) {
 				self.eventPage = page; self.redraw();
 			});
+			this.eventSections = sections;
 			const tabs = E('nav', { 'class': 'netfleet-subtabs', 'aria-label': '诊断分类' }, [['events', '选路记录'], ['website', '网站诊断'], ['core', '核心与日志']].map(function(item) {
 				return E('button', { 'type': 'button', 'aria-current': self.diagnosticSection === item[0] ? 'page' : null, 'click': function() {
 					if (self.diagnosticSection === item[0]) return;
 					self.diagnosticSection = item[0];
 					if (item[0] === 'website') self.refreshConnections();
-					if (item[0] === 'core') management.load(self, 'maintenance');
+					if (item[0] === 'core') { self.refreshEvents(true); management.load(self, 'maintenance'); }
 					self.redraw();
 				} }, item[1]);
 			}));
@@ -282,10 +315,10 @@ const productController = {
 		else content = overviewPage(this.status, this.events, function(target) {
 			self.context.navigate(target);
 		});
-		if (this.currentView === 'overview') content.splice(2, 0, operatingModeControls(this));
-		if (this.currentView !== 'components' && this.currentView !== 'config')
-			content.unshift(managed.operationNode(this, 'selection'), managed.operationNode(this, 'subscription'));
-		content.unshift(managed.operationNode(this, 'mode'), managed.operationNode(this, 'configuration'));
+		if (content && this.currentView === 'overview') content.splice(2, 0, operatingModeControls(this));
+		if (content && this.currentView !== 'components' && this.currentView !== 'config')
+			if (content) content.unshift(managed.operationNode(this, 'selection'), managed.operationNode(this, 'subscription'));
+		if (content) content.unshift(managed.operationNode(this, 'mode'), managed.operationNode(this, 'configuration'));
 
 		let sourceName = '设备实时 RPC';
 		let freshness = '刚刚更新';
@@ -302,16 +335,35 @@ const productController = {
 			[ '设备控制', deviceControl ]
 		], 'is-six') ], 'netfleet-source' + (this.liveDataReady ? '' : ' is-stale'));
 
-		const dashboard = dashboardReady(this.status) && this.dashboardUrl ? E('a', {
-			'class': 'netfleet-dashboard-link', 'href': this.dashboardUrl, 'target': '_blank', 'rel': 'noopener',
-			'title': '在新标签页打开完整 Zashboard'
-		}, 'Zashboard ↗') : E('button', {
-			'class': 'netfleet-dashboard-link', 'type': 'button', 'disabled': true,
-			'title': dashboardReady(this.status) ? '正在读取连接信息' : dashboardUnavailableReason(this.status)
+		const dashboard = E('button', {
+			'class': 'netfleet-dashboard-link', 'type': 'button', 'disabled': !dashboardReady(this.status) || null,
+			'title': dashboardReady(this.status) ? '在新标签页打开完整 Zashboard' : dashboardUnavailableReason(this.status),
+			'click': function() { return self.openDashboard(); }
 		}, 'Zashboard ↗');
-		this.root.replaceChildren(pageHeading(title, this.status, dashboard, buttons), E('div', { 'class': 'netfleet-page-content' }, content),
-			this.eventsLoading || this.eventsError ? E('p', { 'class': 'netfleet-muted', role: 'status' },
-				this.eventsLoading ? '事件正在刷新，暂时显示上次记录。' : '事件刷新失败，当前显示上次记录；运行状态已单独读取。') : E('span'), source);
+		if (!this.contentNode) {
+			this.headingNode = E('div');
+			this.contentNode = E('div', { 'class': 'netfleet-page-content' });
+			this.eventNoticeNode = E('p', { 'class': 'netfleet-muted', role: 'status' });
+			this.sourceNode = E('div');
+			this.root.replaceChildren(this.headingNode, this.contentNode, this.eventNoticeNode, this.sourceNode);
+		}
+		this.headingNode.replaceChildren(pageHeading(title, this.status, dashboard, buttons));
+		if (content) this.contentNode.replaceChildren(...content);
+		this.contentNode.inert = !this.liveDataReady;
+		// Keep focused inputs and draft selection intact while blocking duplicate actions.
+		if (this.refreshing) {
+			this.refreshButtons ||= new Map();
+			for (const button of this.contentNode.querySelectorAll?.('button') || []) {
+				if (!this.refreshButtons.has(button)) this.refreshButtons.set(button, button.disabled);
+				button.disabled = true;
+			}
+		} else if (this.refreshButtons) {
+			for (const [button, disabled] of this.refreshButtons) if (button.isConnected) button.disabled = disabled;
+			this.refreshButtons = null;
+		}
+		this.eventNoticeNode.textContent = !this.usesEvents() ? '' : this.eventsLoading ? '事件正在刷新，暂时显示上次记录。' :
+			this.eventsError ? '事件刷新失败，当前显示上次记录；运行状态已单独读取。' : '';
+		this.sourceNode.replaceChildren(source);
 	},
 
 	openDashboard: function() {
@@ -319,13 +371,15 @@ const productController = {
 			managed.notify(null, E('p', {}, dashboardUnavailableReason(this.status)), 'warning');
 			return Promise.resolve();
 		}
-		if (this.dashboardUrl) {
-			window.open(this.dashboardUrl, '_blank', 'noopener');
-			return Promise.resolve();
-		}
 		const self = this;
+		const tab = window.open('about:blank', '_blank');
+		if (tab) tab.opener = null;
 		return this.prepareDashboard().then(function() {
-			managed.notify(null, self.dashboardUrl ? E('a', { 'href': self.dashboardUrl, 'target': '_blank', 'rel': 'noopener' }, '打开 Zashboard') : E('p', {}, '无法打开 Zashboard，请检查核心及控制接口状态。'), self.dashboardUrl ? 'info' : 'error');
+			if (self.context?.signal?.aborted || !self.dashboardUrl) {
+				tab?.close();
+				if (!self.context?.signal?.aborted) managed.notify(null, E('p', {}, '无法打开 Zashboard，请检查核心及控制接口状态。'), 'error');
+			} else if (tab) tab.location.replace(self.dashboardUrl);
+			else managed.notify(null, E('a', { 'href': self.dashboardUrl, 'target': '_blank', 'rel': 'noopener' }, '打开 Zashboard'), 'info');
 		});
 	},
 
@@ -419,60 +473,72 @@ const productController = {
 		});
 	},
 
-	refreshEvents: function() {
-		if (this.eventsRead) return this.eventsRead;
+	refreshEvents: function(includeLogs) {
+		includeLogs = includeLogs === true || this.currentView === 'events' && this.diagnosticSection === 'core';
+		const epoch = this.readEpoch || 0;
+		if (this.eventsRead) {
+			if (this.eventsEpoch === epoch && (!includeLogs || this.eventsWithLogs)) return this.eventsRead;
+			return this.eventsRead.then(() => this.refreshEvents(includeLogs));
+		}
 		const self = this;
+		this.eventsEpoch = epoch;
+		this.eventsWithLogs = includeLogs;
 		this.eventsLoading = true;
 		this.eventsError = null;
-		this.eventsRead = netfleet.events().then(function(events) {
-			if (self.context?.signal?.aborted) return;
+		this.eventsRead = netfleet.events(includeLogs).then(function(events) {
+			if (self.context?.signal?.aborted || epoch !== (self.readEpoch || 0)) return;
 			self.events = events;
 			if (self.liveDataReady && self.fetchedAt) writeDisplayCache(self.status, events, self.fetchedAt, self.readDurationMs);
 		}).catch(function(error) {
-			if (!self.context?.signal?.aborted) self.eventsError = error;
+			if (!self.context?.signal?.aborted && epoch === (self.readEpoch || 0)) self.eventsError = error;
 		}).finally(function() {
 			self.eventsLoading = false;
 			self.eventsRead = null;
-			if (self.root && !self.context?.signal?.aborted) self.redraw();
+			if (self.root && self.usesEvents()) self.updateEvents();
 		});
 		return this.eventsRead;
 	},
 
 	refreshData: function(silent, forceConfig) {
+		const epoch = this.readEpoch || 0;
+		if (this.statusRead) {
+			if (this.statusEpoch === epoch && (!forceConfig || this.statusWithConfig)) return this.statusRead;
+			// A stronger or post-mutation read must observe the device again.
+			return this.statusRead.catch(function() {}).then(() => this.refreshData(silent, forceConfig));
+		}
 		const self = this;
 		const started = Date.now();
+		this.statusEpoch = epoch;
+		this.statusWithConfig = !!forceConfig;
 		this.busy = true;
 		this.refreshing = true;
-		this.redraw();
+		this.redraw(true);
 		const requests = [ netfleet.status(), Promise.resolve(null) ];
-		this.refreshEvents();
-		if (forceConfig)
-			requests.push(netfleet.configGet());
-		return Promise.all(requests).then(function(result) {
+		if (this.usesEvents()) this.refreshEvents();
+		if (forceConfig) requests.push(netfleet.configGet());
+		this.statusRead = Promise.all(requests).then(function(result) {
+			if (self.context?.signal?.aborted || epoch !== (self.readEpoch || 0)) return;
 			self.acceptLiveData(result, Date.now() - started);
-			self.prepareDashboard();
-			if (self.currentView === 'events' && self.diagnosticSection === 'website')
-				return self.refreshConnections();
-			if (self.currentView === 'events' && self.diagnosticSection === 'core')
-				return management.load(self, 'maintenance');
-		}).then(function() {
-			if (!silent)
-				managed.notify(null, E('p', {}, '设备状态已刷新。'), 'info');
+			if (self.currentView === 'events' && self.diagnosticSection === 'website') return self.refreshConnections();
+			if (self.currentView === 'events' && self.diagnosticSection === 'core') return management.load(self, 'maintenance');
+			if (!silent) managed.notify(null, E('p', {}, '设备状态已刷新。'), 'info');
 		}).catch(function(error) {
+			if (self.context?.signal?.aborted || epoch !== (self.readEpoch || 0)) return;
 			self.liveDataReady = false;
 			self.refreshError = error;
 			managed.notify(null, E('p', {}, '读取失败：' + text(error && error.message, '设备未返回可用状态')), 'error');
-			if (silent)
-				throw error;
+			if (silent) throw error;
 		}).finally(function() {
+			self.statusRead = null;
 			self.busy = false;
 			self.refreshing = false;
-			self.redraw();
+			if (!self.context?.signal?.aborted) self.redraw(self.currentView === 'config' && !forceConfig);
 		});
+		return this.statusRead;
 	},
 
 	discardConfig: function() {
-		this.configDraft = netfleetConfig.clone(this.config);
+		this.configDraft = clone(this.config);
 		this.redraw();
 	},
 
@@ -481,7 +547,7 @@ const productController = {
 		return netfleet.configGet().then(function(fresh) {
 			if (!self.config || fresh.revision !== self.config.revision) {
 				self.config = fresh;
-				self.configDraft = netfleetConfig.clone(fresh);
+				self.configDraft = clone(fresh);
 				self.redraw();
 				throw new Error('设备配置已经变化，已重新读取；请检查后再操作。');
 			}
@@ -517,9 +583,9 @@ const productController = {
 		const self = this;
 		this.busy = true;
 		this.redraw();
-		return this.currentConfigRequest().then(function(request) { return netfleet.configSave(request); }).then(function(result) {
+		return this.currentConfigRequest().then(function(request) { self.invalidateReads(); return netfleet.configSave(request); }).then(function(result) {
 			self.config = result.config;
-			self.configDraft = netfleetConfig.clone(result.config);
+			self.configDraft = clone(result.config);
 			managed.notify(null, E('p', {}, product.resultText('保存配置', result)), 'info');
 		}).catch(function(error) {
 			managed.notify(null, E('p', {}, '保存失败：' + self.configFailure(error)), 'error');
@@ -569,6 +635,7 @@ const productController = {
 	runMode: async function(mode, expectedMode) {
 		if (this.busy || this.refreshing || this.modeSwitching || !this.liveDataReady || this.context.readOnly) return;
 		this.modeSwitching = true;
+		this.invalidateReads();
 		this.modeRequest = true;
 		this.modeTarget = mode;
 		this.modeStartedAt = Math.floor(Date.now() / 1000);

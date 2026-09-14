@@ -57,6 +57,7 @@ function confirm(title, description, action) {
 }
 function run(controller, title, request, refresh) {
 	if (disabled(controller)) return Promise.resolve();
+	controller.invalidateReads?.();
 	controller.busy = true;
 	controller.redraw();
 	ui.showModal(title, [ E('p', { 'class': 'spinning', 'role': 'status' }, '正在执行并确认设备状态…') ]);

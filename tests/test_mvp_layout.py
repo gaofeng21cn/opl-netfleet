@@ -754,17 +754,18 @@ function createPage(storage, api, notifications) {
     const persisted = JSON.parse(storage.value(cacheKey));
     assert.deepStrictEqual(persisted.events.core_lines, [], 'raw logs must not be persisted');
     assert.strictEqual(persisted.status.active, true);
-    const runtimeEntry = findNode(root, function(node) { return node.tag === 'a' && nodeText(node) === 'Zashboard ↗'; });
+    const runtimeEntry = findNode(root, function(node) { return node.tag === 'button' && nodeText(node) === 'Zashboard ↗'; });
     assert(runtimeEntry && runtimeEntry.attrs['aria-disabled'] !== 'true', 'healthy dashboard entry must be enabled');
-    const dashboardUrl = new URL(runtimeEntry.attrs.href);
+    assert.equal(page.dashboardUrl, undefined, 'normal page does not read dashboard credentials');
+    await page.prepareDashboard();
+    const dashboardUrl = new URL(page.dashboardUrl);
     assert.strictEqual(dashboardUrl.hostname, 'router.example');
     assert.strictEqual(dashboardUrl.pathname, '/ui/zashboard/');
     assert.strictEqual(dashboardUrl.hash, '#/setup', 'saved backend credentials must not bypass the new connection');
     const tabs = findNode(root, function(node) { return node.tag === 'ul' && node.attrs.class === 'cbi-tabmenu'; });
     assert.strictEqual(tabs, null, 'plugin pages delegate navigation to the shell');
     assert.strictEqual(dashboardUrl.searchParams.get('secret'), 'private-secret');
-    assert.strictEqual(runtimeEntry.attrs.target, '_blank');
-    assert.strictEqual(runtimeEntry.attrs.rel, 'noopener');
+    assert.equal(typeof runtimeEntry.attrs.click, 'function', 'Dashboard resolves fresh credentials on demand');
     assert.strictEqual(page.dashboardOpens(), 0, 'normal navigation must not create an intermediate blank window');
     assert(!storage.value(cacheKey).includes('private-secret'), 'dashboard credentials must remain memory-only');
     await new Promise(function(resolve) { setImmediate(resolve); });
@@ -804,7 +805,7 @@ function createPage(storage, api, notifications) {
     assert(nodeText(root).includes('Netflix'));
 	assert(nodeText(root).includes('Steam'));
 	assert(!nodeText(root).includes('接管的原始策略组'));
-	assert(String(root.children[root.children.length - 1].attrs.class).includes('netfleet-source'), 'data source must follow page content');
+	assert(String(root.children[root.children.length - 1].children[0].attrs.class).includes('netfleet-source'), 'data source must follow page content');
 	assert(findNode(root.children[0], node => node.tag === 'button' && nodeText(node) === '刷新'), 'page actions share the title row');
 
 	page.status.providers = [ {

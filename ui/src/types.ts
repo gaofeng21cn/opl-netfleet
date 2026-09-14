@@ -315,7 +315,7 @@ export interface NetFleetClient {
   pluginCall?(request: import('../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/plugin-host.js').PluginRequest): Promise<unknown>;
   read?(): Promise<ClientReadResult>;
   status(): Promise<StatusSnapshot>;
-  events(): Promise<EventsSnapshot>;
+  events(includeLogs?: boolean): Promise<EventsSnapshot>;
   connections(): Promise<ConnectionsSnapshot>;
   components(): Promise<ComponentsSnapshot>;
   operations(): Promise<OperationsSnapshot>;
