@@ -1,3 +1,5 @@
+import * as fs from "fs";
+import { connect } from "ubus";
 
 
 return function(context) {
@@ -13,12 +15,15 @@ service_state = function(name) {
 	if (index([SERVICE_NAME, "opl-netfleet-compat"], name) < 0) die("unsupported_service");
 	const instance = name == SERVICE_NAME ? "supervisor" : "engine";
 	const init = `/etc/init.d/${name}`;
-	const installed = system(`test -x '${init}'`) == 0;
+	const info = fs.stat(init);
+	const installed = info?.type == "file" && (info.mode & 0111) != 0;
+	// Keep rc.common as the owner of startup-link semantics.
 	const enabled = installed && system(`'${init}' enabled >/dev/null 2>&1`) == 0;
-	const running = installed && system(
-		`ubus call service list '{"name":"${name}"}' 2>/dev/null | ` +
-		`jsonfilter -e '@["${name}"].instances.${instance}.running' 2>/dev/null | grep -qx true`
-	) == 0;
+	let state = null;
+	const bus = installed ? connect(null, 5) : null;
+	try { state = bus?.call("service", "list", { name }); } catch (error) {}
+	bus?.disconnect();
+	const running = state?.[name]?.instances?.[instance]?.running == true;
 	return { installed: installed, enabled: enabled, running: running };
 };
 
