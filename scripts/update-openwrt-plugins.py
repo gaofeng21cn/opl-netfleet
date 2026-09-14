@@ -118,7 +118,7 @@ def main() -> None:
         packages.append({'name': name, 'version': version, 'before_version': before,
                          'sha256': sha(new), 'before_sha256': sha(old)})
     files['request.json'] = json.dumps({'schema': 'opl-netfleet-plugin-install.v1', 'packages': packages}).encode()
-    for name in ['manifest.json', 'lib/control.uc']:
+    for name in ['manifest.json', 'lib/control.uc', 'recover.uc']:
         files[f'components/{name}'] = source(commit, f'openwrt/files/usr/libexec/opl-netfleet/plugins/components/{name}')
     files['run.sh'] = source(commit, 'scripts/update-openwrt-plugins-remote.sh')
     files['observe.uc'] = source(commit, 'scripts/observe-openwrt.uc')
