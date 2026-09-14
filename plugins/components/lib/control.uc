@@ -552,6 +552,11 @@ restore_services = function(before, work) {
 	}
 	return false;
 };
+function drain_scoped(work) {
+	let ok = true;
+	for (let id in read_json(`${work}/journal.json`)?.drained ?? []) if (lifecycle("drain", id)?.ok != true) ok = false;
+	return ok;
+}
 rollback = function(before, work, names, versions, old, install_started, already_stopped) {
 	const errors = [];
 	function attempt(code, action) {
@@ -592,11 +597,6 @@ rollback = function(before, work, names, versions, old, install_started, already
 	atomic_json(`${work}/rollback.json`, { errors: errors, identity: identity, private_inputs: inputs, runtime_restored: runtime });
 	return errors[0] ?? null;
 };
-function drain_scoped(work) {
-	let ok = true;
-	for (let id in read_json(`${work}/journal.json`)?.drained ?? []) if (lifecycle("drain", id)?.ok != true) ok = false;
-	return ok;
-}
 function core_space_available(bytes, work) {
 	for (let location in ["/usr/libexec", work]) {
 		const available_kb = capture(`df -Pk ${q(location)} | awk 'NR == 2 { print $4 }'`);
