@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-const reads = new Set(['status', 'events', 'connections', 'pluginsList', 'pluginRead', 'configGet', 'configValidate', 'networkGet', 'networkValidate', 'maintenanceGet', 'profileGet', 'backupExport', 'diagnosticsGet', 'dashboardGet', 'componentsGet', 'operationGet', 'nativeSetupGet', 'subscriptionsGet', 'migrationGet', 'onboardingGet']);
+const reads = new Set(['status', 'events', 'connections', 'pluginsList', 'pluginRead', 'configGet', 'configValidate', 'networkGet', 'networkValidate', 'maintenanceGet', 'profileGet', 'backupExport', 'diagnosticsGet', 'dashboardGet', 'componentsGet', 'componentsPluginPlan', 'operationGet', 'nativeSetupGet', 'subscriptionsGet', 'migrationGet', 'onboardingGet']);
 const parameters = ['baseclass', 'ui', 'poll', 'rpc', 'fs', 'request', 'resourceUrl', 'netfleet', 'api', 'product', 'managed', 'management', 'netfleetConfig', 'advanced', 'productViews', 'loadModule'];
 const factories = new Map();
 function loadFactory(name) {

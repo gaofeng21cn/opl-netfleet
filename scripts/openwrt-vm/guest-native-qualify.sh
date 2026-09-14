@@ -54,7 +54,7 @@ stage=dependencies
 ip route replace default via 192.168.1.2 dev br-lan
 printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
 apk --timeout 120 update >"$work/packages.log" 2>&1 || true
-apk --timeout 120 add curl unzip coreutils-timeout ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket socat bind-dig \
+apk --timeout 120 add curl unzip coreutils-timeout flock ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket socat bind-dig \
 	ucode-mod-fs ucode-mod-digest ucode-mod-uci ucode-mod-socket ucode-mod-ubus ucode-mod-uloop >>"$work/packages.log" 2>&1
 gzip -dc /tmp/mihomo-linux-arm64-v1.19.30.gz >"$work/bin/mihomo"
 chmod 0755 "$work/bin/mihomo"
@@ -71,11 +71,15 @@ chmod 0755 /usr/libexec/opl-netfleet-plugin-package
 mkdir -p /usr/libexec/rpcd
 cp /tmp/openwrt/files/usr/libexec/rpcd/opl-netfleet.plugins /usr/libexec/rpcd/opl-netfleet.plugins
 chmod 0755 /usr/libexec/rpcd/opl-netfleet.plugins
+cp /tmp/openwrt/files/usr/libexec/rpcd/opl-netfleet /usr/libexec/rpcd/opl-netfleet
+chmod 0755 /usr/libexec/rpcd/opl-netfleet
 mkdir -p /usr/share/opl-netfleet /etc/opl-netfleet/native/profiles /etc/opl-netfleet/native/subscriptions
 cp -R /tmp/openwrt/files/usr/share/opl-netfleet/. /usr/share/opl-netfleet/
 cp /tmp/openwrt/files/etc/config/netfleet /etc/config/netfleet
 cp /tmp/openwrt/files/etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet-core
 cp /tmp/openwrt/files/etc/init.d/opl-netfleet /etc/init.d/opl-netfleet
+cp /tmp/openwrt/files/etc/init.d/opl-netfleet-update-recovery /etc/init.d/opl-netfleet-update-recovery
+chmod 0755 /etc/init.d/opl-netfleet-update-recovery
 chmod 0755 "$main" /usr/libexec/opl-netfleet/supervisor.uc "$gateway" /etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet
 chmod 0700 /etc/opl-netfleet/native /etc/opl-netfleet/native/profiles /etc/opl-netfleet/native/subscriptions
 chmod 0600 /etc/config/netfleet

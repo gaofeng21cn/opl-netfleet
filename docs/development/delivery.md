@@ -35,9 +35,17 @@ PR 与 `main` 更新运行 `NetFleet 双平台检查`。检查结果只证明所
 ```sh
 scripts/publish-netfleet-release.sh --tag vX.Y.Z \
   --candidate /absolute/path/to/candidate \
-  --qualification /absolute/path/to/qualification.json
+  --qualification /absolute/path/to/qualification.json \
+  --compat-candidate /absolute/path/to/optional-candidate \
+  --compat-qualification /absolute/path/to/optional-qualification.json \
+  --apk /absolute/path/to/executable-apk
 ```
 
+完整发行版提供上述可选包参数；只发布默认产品时省略最后三个参数，并明确没有完整安装组合。
+复用未变化的可选 APK 时，先用 `scripts/https-compat/qualify.py --composition`
+对新的默认候选执行完整组合验证；传入 `--packages`、`--base-qualification`、
+`--candidate` 和 `--output`。该入口保留引擎原始版本与构建身份，使用新基础包源码
+测试首次完整安装、重复安装与故障恢复，不伪造引擎升级或改写旧清单。
 入口检查候选与资格回执绑定、版本与 tag 一致、候选已被最新远端主线包含，再创建不可变
 Release 并下载公开资产校验。主线前进后仍使用已冻结并验收的候选；候选自身变更才重新
 构建和验收，不改旧回执。发布成功

@@ -1,4 +1,5 @@
 import * as fs from "fs";
+import * as package_model from "./packages.uc";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
@@ -110,7 +111,8 @@ restore_world = function(names, before, work, rollback, changed, candidates) {
 	}
 	const roots = filter(names, name => expected[name] != null);
 	if (length(roots) && !run_command(`apk --no-network --repositories-file /dev/null add ${join(" ", map(roots, name => q(expected[name])))}`, work)) return false;
-	const dependencies = filter(names, name => expected[name] == null);
+	const current_world = package_world();
+	const dependencies = filter(names, name => expected[name] == null && current_world[name] != null);
 	if (length(dependencies) && !run_command(`apk --no-network --repositories-file /dev/null del ${join(" ", map(dependencies, q))}`, work)) return false;
 	const after = package_world();
 	for (let name in names) if (after[name] != expected[name]) return false;
@@ -138,6 +140,57 @@ available = function(url) {
 		(result[row.name] == null || newer(row.version, result[row.name]))) result[row.name] = row.version;
 	return result;
 };
+function plugin_catalog() {
+	const rows = parsed("apk --no-network query --from repositories --all-matches --format json --fields name,version,description,depends,repositories 'opl-netfleet-plugin-*'");
+	const result = {};
+	for (let row in rows ?? []) {
+		if (!match(row.name ?? "", /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) || !version_valid(row.version)) continue;
+		if (result[row.name] == null || newer(row.version, result[row.name].version)) result[row.name] = row;
+	}
+	return result;
+}
+function plugin_packages(versions, product, catalog) {
+	const names = sort(keys(catalog ?? {}));
+	for (let name in keys(versions ?? {})) if (match(name, /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) && index(names, name) < 0) push(names, name);
+	return map(filter(names, name => index(product, name) < 0), name => ({
+		name, id: substr(name, length("opl-netfleet-plugin-")), description: catalog?.[name]?.description,
+		installed_version: versions?.[name] ?? null, available_version: catalog?.[name]?.version ?? null,
+		update_available: newer(catalog?.[name]?.version, versions?.[name]), dependencies: catalog?.[name]?.depends ?? []
+	}));
+}
+function plugin_plan(request, work, preview) {
+	if (type(request) != "object") fail("invalid_plugin_package_request");
+	const versions = installed();
+	if (versions == null) fail("package_manager_unavailable");
+	if (!match(request.name ?? "", /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) || index(product_packages(), request.name) >= 0)
+		fail("plugin_package_protected");
+	if (request.action != "remove" && !version_valid(request.version)) fail("invalid_plugin_package_request");
+	if (request.action == "remove") {
+		const id = substr(request.name, length("opl-netfleet-plugin-"));
+		if (context.system.enabled?.[id] == true) fail("plugin_disable_before_remove");
+		const row = filter(context.inventory(versions), item => item.id == id && item.kind == "plugin")[0];
+		if (row == null) fail("plugin_not_installed");
+		if (row.runtime == "process") {
+			if (!directory(ROOT)) fail("unsafe_update_directory");
+			const path = capture(`mktemp ${q(`${ROOT}/plugin-state.XXXXXX`)}`);
+			if (path == null || !private_file(path)) fail("update_state_write_failed");
+			if (!atomic_json(path, { request: { id, action: "get", revision: row.revision } })) fail("update_state_write_failed");
+			const state = parsed(`ucode ${q(MAIN)} plugin-read ${q(path)}`);
+			fs.unlink(path);
+			if (state?.ok != true || state.result?.loaded != false) fail("plugin_disable_before_remove");
+		}
+		for (let name, binding in context.system.bindings ?? {}) if (binding == id) fail("plugin_package_required");
+	}
+	const argument = request.action == "remove" ? `del ${q(request.name)}` : `add ${q(`${request.name}=${request.version}`)}`;
+	// APK masks every uncached remote archive under --no-network, even with
+	// --simulate. Simulation reads the signed index but never downloads or installs
+	// payloads; prefer the checked cache and bound any index refresh.
+	const output = capture(`LC_ALL=C apk --timeout 10 --cache-max-age 1440 --simulate ${argument}`);
+	if (output == null) fail("plugin_dependencies_unavailable");
+	const plan = package_model.validate(package_model.changes(output), preview ? { ...request, confirm: true } : request, versions, product_packages());
+	if (!preview && sprintf("%J", request.plan) != sprintf("%J", plan)) fail("candidate_changed");
+	return plan;
+}
 update_process = function() {
 	const data = parsed(`ubus call service list '${sprintf('%J', { name: UPDATE_SERVICE })}'`);
 	return data?.[UPDATE_SERVICE]?.instances?.update;
@@ -215,6 +268,7 @@ function prepare_resources(work, names, versions, candidates) {
 	const ids = [];
 	for (let name in names) {
 		if (versions[name] == candidates[name]) continue;
+		if (versions[name] == null) continue;
 		const id = name == "mihomo-meta" ? "mihomo" : name == COMPATIBILITY_PACKAGE ? "https-compat" :
 			match(name, /^opl-netfleet-plugin-([a-z][a-z0-9-]*)$/)?.[1];
 		if (id != null && index(ids, id) < 0) push(ids, id);
@@ -262,6 +316,7 @@ get = function() {
 	const dashboard = dashboard_resource();
 	return { supported: versions != null, backend: KIND, architecture: capture("apk --print-arch"),
 		feed: { configured: url != null, url: url, checked_at: cache?.checked_at, error: cache?.error }, components: rows,
+		plugin_packages: plugin_packages(versions, product, cache?.plugin_catalog),
 		dashboard: dashboard, extensions: context.inventory(versions),
 		product: { packages: map(product, name => ({ name, installed_version: versions?.[name], available_version: candidates[name] })), missing, updates },
 		dependencies: map(DEPENDENCIES, name => ({ id: name, label: name, installed_version: versions?.[name], available: versions?.[name] != null })) };
@@ -299,7 +354,10 @@ start = function(action, component, version) {
 	if (fs.lstat(PENDING) != null) fail("previous_update_incomplete");
 	if (update_process()?.running == true) fail("mutation_busy");
 	const staged = action == "install" ? local_stage(component) : null;
-	if (action != "install" && feed() == null) fail("feed_not_configured");
+	const plugin = action == "plugin" && private_file(component) ? read_json(component)?.request : null;
+	if (action == "plugin" && type(plugin) != "object") fail("invalid_plugin_package_request");
+	if (plugin) plugin_plan(plugin);
+	if (action != "install" && plugin?.action != "remove" && feed() == null) fail("feed_not_configured");
 	if (action == "update" && (index(["netfleet", "mihomo"], component) < 0 || !version_valid(version))) fail("invalid_component_request");
 	if (action != "check" && (fs.lstat(PENDING) != null || fs.lstat(UPGRADE_STATE) != null)) fail("previous_update_incomplete");
 	// Only the latest completed transaction is retained; unfinished recovery is never removed.
@@ -317,7 +375,7 @@ start = function(action, component, version) {
 	}
 	const id = replace(capture("cat /proc/sys/kernel/random/uuid"), "-", "");
 	if (!match(id ?? "", /^[a-f0-9]{32}$/)) fail("update_identity_unavailable");
-	const request = { id: id, action: action, component: staged ? "plugins" : component, version: version, started_at: time(), feed: staged ? null : feed(), packages: staged?.packages, names: staged?.names, candidates: staged?.candidates };
+	const request = { id: id, action: action, plugin, component: staged || plugin ? "plugins" : component, version: version, started_at: time(), feed: staged ? null : feed(), packages: staged?.packages, names: staged?.names, candidates: staged?.candidates };
 	// Keep the executing code independent of packages that will replace themselves.
 	const work = `${ROOT}/${id}`;
 	if (!directory(work) || system(`cp -R ${q(context.root)} ${q(`${work}/code`)}`) != 0 || !atomic_json(`${work}/code/system.json`, context.system) ||
@@ -343,21 +401,22 @@ run_command = function(command, work) {
 };
 refresh_index = function(request, work) {
 	operation.update("checking");
-	const success = run_command(`apk --timeout 30 --repositories-file ${q(REPOSITORY)} update`, work);
+	const success = run_command("apk --timeout 30 update", work);
 	const values = success ? available(request.feed) : null;
-	const checked = { feed: request.feed, checked_at: time(), versions: values ?? {}, error: values == null ? "feed_check_failed" : null };
+	const checked = { feed: request.feed, checked_at: time(), versions: values ?? {}, plugin_catalog: success ? plugin_catalog() : {}, error: values == null ? "feed_check_failed" : null };
 	if (!atomic_json(CACHE, checked)) fail("update_state_write_failed");
 	if (values == null) fail("feed_check_failed");
 	return values;
 };
 function archive_repository(path) { return replace(path, /[^/]+$/, "packages.adb"); }
+function system_archive(name) { return type(name) == "string" && !match(name, /^(opl-netfleet|luci-app-netfleet)/); }
 function archive_arguments(paths) {
 	const result = [];
 	for (let path in paths) {
 		const repository = archive_repository(path);
 		if (fs.stat(repository) == null) { push(result, q(path)); continue; }
 		const info = parsed(`apk adbdump --format json ${q(path)}`)?.info;
-		if (info?.name != "mihomo-meta" || !version_valid(info.version)) fail("rollback_package_unavailable");
+		if (!system_archive(info?.name) || !version_valid(info.version)) fail("rollback_package_unavailable");
 		push(result, `-X ${q(repository)} ${q(`${info.name}=${info.version}`)}`);
 	}
 	return join(" ", result);
@@ -367,15 +426,17 @@ function archive_valid(path, work) {
 	const repository = archive_repository(path);
 	if (fs.stat(repository) == null) return false;
 	const info = parsed(`apk adbdump --format json ${q(path)}`)?.info;
-	if (info?.name != "mihomo-meta" || !version_valid(info.version)) return false;
+	if (!system_archive(info?.name) || !version_valid(info.version)) return false;
 	const rows = parsed(`apk --no-network query --from none -X ${q(repository)} --all-matches --format json --fields name,version ${q(info.name)}`);
-	if (length(rows ?? []) != 1 || rows[0].version != info.version) return false;
+	if (!length(filter(rows ?? [], row => row.name == info.name && row.version == info.version))) return false;
 	// Repository fetch authenticates the index and every package data block, even
 	// when the upstream archive has no individual signature. Never allow untrusted.
 	return run_command(`(apk --no-network fetch --from none -X ${q(repository)} --all-matches --stdout ${q(info.name)} >/dev/null)`, work);
 }
 archive = function(name, version, path, work, fallback_version, source) {
 	const target = `${path}/${name}-${version}.apk`;
+	const cached = `${ROOT}/archives/${name}-${version}.apk`;
+	if (fs.stat(target) == null && private_file(cached)) run_command(`cp ${q(cached)} ${q(target)}`, work);
 	if (fs.stat(target) == null) {
 		const from = source ? `--from none -X ${q(source)}` : "--from repositories";
 		const rows = parsed(`apk --no-network query ${from} --all-matches --format json --fields name,version,repositories ${q(name)}`);
@@ -400,7 +461,7 @@ archive = function(name, version, path, work, fallback_version, source) {
 	if (run_command(`apk --no-network verify ${q(target)}`, work)) return target;
 	// Only an existing third-party core may use signed-repository authentication.
 	// Our candidates and our own packages must remain individually signed.
-	if (source || name != "mihomo-meta") return null;
+	if (source || !system_archive(name)) return null;
 	const rows = parsed(`apk --no-network query --from repositories --all-matches --format json --fields name,version,repositories ${q(name)}`);
 	const exact = filter(rows ?? [], row => row.name == name && row.version == version)[0];
 	const retained = `${path}/repository-${name}`;
@@ -415,6 +476,7 @@ archive = function(name, version, path, work, fallback_version, source) {
 };
 private_paths = function() {
 	return filter(["/etc/config/netfleet", "/etc/opl-netfleet/policy.json", "/etc/opl-netfleet/backend.json", "/etc/opl-netfleet/system.json",
+		"/etc/opl-netfleet/plugins",
 		`${ROOT_DIR}/profiles`, `${ROOT_DIR}/subscriptions`, `${ROOT_DIR}/mixin.json`, `${ROOT_DIR}/mixin.yaml`,
 		...(KIND == "nikki-mihomo" ? ["/etc/config/nikki"] : [])], path => fs.lstat(path) != null);
 };
@@ -491,6 +553,11 @@ restore_services = function(before, work) {
 	}
 	return false;
 };
+function drain_scoped(work) {
+	let ok = true;
+	for (let id in read_json(`${work}/journal.json`)?.drained ?? []) if (lifecycle("drain", id)?.ok != true) ok = false;
+	return ok;
+}
 rollback = function(before, work, names, versions, old, install_started, already_stopped) {
 	const errors = [];
 	function attempt(code, action) {
@@ -498,18 +565,20 @@ rollback = function(before, work, names, versions, old, install_started, already
 		push(errors, code);
 		return false;
 	}
-	const stopped = already_stopped || attempt("rollback_stop_failed", () => stop_services(work));
+	const stopped = already_stopped || attempt("rollback_stop_failed", () => before.scoped ? drain_scoped(work) : stop_services(work));
 	if (stopped) {
 		if (install_started) fs.unlink(UPGRADE_STATE);
 		attempt("rollback_configuration_failed", () => run_command(`tar -xf ${q(`${work}/private.tar`)} -C /`, work));
 		if (install_started) {
+			const added = filter(names, name => versions[name] == null);
+			if (length(added)) attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null del ${join(" ", map(added, q))}`, work));
 			// Restore the known-good hook implementation before APK invokes it.
 			// A failed candidate may have installed a core start hook that cannot
 			// run, including while earlier dependency packages are rolling back.
 			const hooks_restored = attempt("rollback_runtime_files_failed", () =>
 				run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work) &&
 				sprintf("%J", input_identity(before.runtime_paths)) == sprintf("%J", before.runtime_inputs));
-			if (hooks_restored) attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null ${already_stopped ? "--force-reinstall " : ""}add ${archive_arguments(old)}`, work));
+			if (hooks_restored && length(old)) attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null ${already_stopped ? "--force-reinstall " : ""}add ${archive_arguments(old)}`, work));
 			attempt("rollback_world_failed", () => restore_world(names, before.world, work, true));
 			attempt("rollback_runtime_files_failed", () => run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work));
 			attempt("rollback_runtime_failed", () => resume_resources(work));
@@ -523,7 +592,7 @@ rollback = function(before, work, names, versions, old, install_started, already
 	const inputs = attempt("rollback_configuration_failed", () => same_inputs(before));
 	if (!identity) push(errors, "rollback_identity_mismatch");
 	const runtime = identity && inputs && attempt("rollback_runtime_failed", () => restore_services(before, work));
-	if (!runtime) {
+	if (!runtime && !before.scoped) {
 		attempt("rollback_stop_failed", () => stop_services(work));
 	}
 	atomic_json(`${work}/rollback.json`, { errors: errors, identity: identity, private_inputs: inputs, runtime_restored: runtime });
@@ -548,11 +617,11 @@ upgrade = function(request, work, candidates) {
 	if (request.component != "plugins" && candidates[request.component == "netfleet" ? PACKAGES[0] : PACKAGES[2]] != request.version)
 		fail("candidate_changed");
 	for (let name in names) {
-		if (!version_valid(candidates[name])) fail("candidate_changed");
+		if (!version_valid(candidates[name]) && request.plugin?.action != "remove") fail("candidate_changed");
 		// A plugin updated independently may be newer than the current product feed.
 		if (newer(versions[name], candidates[name])) candidates[name] = versions[name];
 	}
-	if (!length(filter(names, name => newer(candidates[name], versions[name])))) {
+	if (!request.plugin && !length(filter(names, name => newer(candidates[name], versions[name])))) {
 		journal(work, { phase: "complete", names, versions, candidates, no_change: true });
 		return;
 	}
@@ -569,25 +638,26 @@ upgrade = function(request, work, candidates) {
 	if (!directory(olddir) || !directory(nextdir)) fail("update_stage_failed");
 	const old = [], next = [];
 	const build = read_json("/usr/share/opl-netfleet/build.json");
-	operation.update("downloading", { total: length(names) * 2, completed: 0 });
+	operation.update("downloading", { total: length(filter(names, name => versions[name] != null)) + length(filter(names, name => candidates[name] != null)), completed: 0 });
 	for (let name in names) {
 		cancellation(work);
-		if (versions[name] == null) fail("package_not_installed");
-		const rollback = archive(name, versions[name], olddir, work, build?.version, null);
-		if (rollback == null) fail("rollback_package_unavailable");
-		push(old, rollback);
+		if (versions[name] == null && !request.plugin) fail("package_not_installed");
+		const rollback = versions[name] == null ? null : archive(name, versions[name], olddir, work, build?.version, null);
+		if (versions[name] != null && rollback == null) fail("rollback_package_unavailable");
+		if (rollback != null) push(old, rollback);
 		operation.update("downloading", { completed: length(old) + length(next) });
+		if (candidates[name] == null) continue;
 		const candidate = candidates[name] == versions[name] ? rollback :
-			archive(name, candidates[name], nextdir, work, null, request.feed);
+			archive(name, candidates[name], nextdir, work, null, request.plugin ? null : request.feed);
 		if (candidate == null) fail("candidate_download_failed");
 		push(next, candidate);
 		operation.update("downloading", { completed: length(old) + length(next) });
 	}
 	operation.update("validating");
 	cancellation(work);
-	if (!run_command(`apk --no-network --repositories-file /dev/null --simulate add ${archive_arguments(old)}`, work)) fail("rollback_package_unavailable");
+	if (length(old) && !run_command(`apk --no-network --repositories-file /dev/null --simulate add ${archive_arguments(old)}`, work)) fail("rollback_package_unavailable");
 	// Only installed dependencies and the explicitly downloaded packages may participate.
-	if (!run_command(`apk --no-network --repositories-file /dev/null --simulate add ${join(" ", map(next, q))}`, work)) fail("package_validation_failed");
+	if (length(next) && !run_command(`apk --no-network --repositories-file /dev/null --simulate add ${archive_arguments(next)}`, work)) fail("package_validation_failed");
 	if (request.component == "mihomo") {
 		const bytes = parsed(`apk adbdump --format json ${q(next[0])}`)?.info?.["installed-size"];
 		if (!core_space_available(bytes, work)) fail("insufficient_update_space");
@@ -597,11 +667,16 @@ upgrade = function(request, work, candidates) {
 	if (before_status == null && !unconfigured) fail("runtime_readback_failed");
 	const paths = private_paths();
 	const before = { backend: KIND, core_enabled: capture(`/etc/init.d/${SERVICE} enabled`) != null, supervisor_enabled: capture("/etc/init.d/opl-netfleet enabled") != null, active: before_status?.active ?? false, unconfigured: unconfigured, core: service_running(SERVICE), supervisor: service_running("opl-netfleet"), selections: {}, paths: paths, inputs: input_identity(paths), world: package_world() };
+	before.scoped = request.plugin != null;
 	before.original_world = before.world;
 	before.world = recovery_world(names, before.world);
 	before.runtime_paths = filter(["/usr/libexec/opl-netfleet", "/usr/libexec/opl-netfleet-plugin-package",
 		"/usr/share/opl-netfleet", "/etc/init.d/opl-netfleet", "/etc/init.d/opl-netfleet-update-recovery", `/etc/init.d/${SERVICE}`,
 		...(request.component == "mihomo" ? ["/usr/libexec/mihomo"] : [])], path => fs.lstat(path) != null);
+	if (before.scoped) before.runtime_paths = filter([
+		`/usr/libexec/opl-netfleet/plugins/${substr(request.plugin.name, length("opl-netfleet-plugin-"))}`,
+		`/www/luci-static/resources/netfleet/plugins/${substr(request.plugin.name, length("opl-netfleet-plugin-"))}`
+	], path => fs.lstat(path) != null);
 	before.runtime_inputs = input_identity(before.runtime_paths);
 	if (before.core) {
 		const all = proxies(api_secret(), 2)?.proxies;
@@ -615,12 +690,21 @@ upgrade = function(request, work, candidates) {
 	}
 	if (system("/etc/init.d/opl-netfleet-update-recovery enable >/dev/null 2>&1") != 0) fail("update_recovery_unavailable");
 	if (!atomic_json(`${work}/before.json`, before) || !run_command(`tar -cf ${q(`${work}/private.tar`)} -C / ${join(" ", map(paths, path => q(substr(path, 1))))}`, work)) fail("update_state_write_failed");
-	if (!run_command(`tar -cf ${q(`${work}/runtime.tar`)} -C / ${join(" ", map(before.runtime_paths, path => q(substr(path, 1))))}`, work)) fail("update_state_write_failed");
-	journal(work, { phase: "prepared", write_started: false, drained: [], before, names, versions, candidates, old, next, inputs: input_identity([`${work}/private.tar`, `${work}/runtime.tar`, `${work}/code`, olddir, ...next]) });
+	// BusyBox tar refuses to create an empty archive. A first installation has no
+	// previous code; two zero blocks are the standard empty tar end marker.
+	const runtime_backup = length(before.runtime_paths) ?
+		`tar -cf ${q(`${work}/runtime.tar`)} -C / ${join(" ", map(before.runtime_paths, path => q(substr(path, 1))))}` :
+		`dd if=/dev/zero of=${q(`${work}/runtime.tar`)} bs=1024 count=1`;
+	if (!run_command(runtime_backup, work)) fail("update_state_write_failed");
+	journal(work, { phase: "prepared", write_started: false, drained: [], before, names, versions, candidates, old, next, inputs: input_identity([`${work}/private.tar`, `${work}/runtime.tar`, `${work}/code`, olddir, nextdir]) });
 	if (!atomic_json(PENDING, { id: request.id }) || system("sync") != 0) fail("update_state_write_failed");
 	let error = null;
 	let install_started = false;
 	try {
+		if (request.plugin) {
+			const fresh = plugin_plan(request.plugin, work);
+			if (sprintf("%J", fresh) != sprintf("%J", { names, candidates })) fail("candidate_changed");
+		}
 		prepare_resources(work, names, versions, candidates);
 		if (fs.lstat(`${work}/control.lock`) != null && !private_file(`${work}/control.lock`)) fail("unsafe_update_directory");
 		const lock = fs.open(`${work}/control.lock`, "ae", 0600);
@@ -636,16 +720,31 @@ upgrade = function(request, work, candidates) {
 		// Explicit package hooks may resume drained resource owners while pending
 		// continues to block unrelated starts until this transaction is verified.
 		// APK otherwise strips the restore flag from the hook environment.
-		if (!run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null add ${join(" ", map(next, q))}`, work)) fail("package_install_failed");
-		if (!restore_world(names, before.world, work, false, filter(names, name => versions[name] != candidates[name]), candidates)) fail("package_world_restore_failed");
-		if (!resume_resources(work)) fail("update_resume_failed");
+		const replacing = request.plugin?.action == "remove" ? `del ${q(request.plugin.name)}` : `add ${archive_arguments(next)}`;
+		if (!run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null ${replacing}`, work)) fail("package_install_failed");
+		const desired_world = { ...before.world };
+		if (request.plugin?.action == "install") desired_world[request.plugin.name] = request.plugin.name;
+		if (request.plugin?.action == "remove") delete desired_world[request.plugin.name];
+		if (!restore_world(names, desired_world, work, false, filter(names, name => versions[name] != candidates[name]), candidates)) fail("package_world_restore_failed");
+		if (request.plugin?.action == "remove") {
+			if (lifecycle("remove", substr(request.plugin.name, length("opl-netfleet-plugin-")))?.ok != true) fail("update_resume_failed");
+		} else if (!resume_resources(work)) fail("update_resume_failed");
 		operation.update("verifying");
 		const after = installed();
 		for (let name in names) if (after?.[name] != candidates[name]) fail("package_identity_mismatch");
+		if (request.plugin) for (let name in keys(versions)) if (index(names, name) < 0 && after?.[name] != versions[name]) fail("package_identity_mismatch");
 		if (!same_inputs(before)) fail("private_configuration_changed");
 		if (!restore_services(before, work)) fail("runtime_verification_failed");
 	} catch (failure) { error = error_code(failure); }
-	if (error == null) { journal(work, { ...read_json(`${work}/journal.json`), phase: "complete" }); fs.unlink(PENDING); system("sync"); return; }
+	if (error == null) {
+		// Keep installed signed plugin archives available when a feed advances.
+		if (directory(`${ROOT}/archives`)) for (let path in next) {
+			const name = replace(path, /^.*\//, "");
+			if (match(name, /^opl-netfleet-plugin-/) && run_command(`cp ${q(path)} ${q(`${ROOT}/archives/${name}`)}`, work))
+				fs.chmod(`${ROOT}/archives/${name}`, 0600);
+		}
+		journal(work, { ...read_json(`${work}/journal.json`), phase: "complete" }); fs.unlink(PENDING); system("sync"); return;
+	}
 	journal(work, { ...read_json(`${work}/journal.json`), failure_reason: error });
 	operation.update("rolling_back");
 	if (!install_started) {
@@ -712,7 +811,7 @@ recover = function() {
 	}
 	for (let path in old) if (index(path, `${work}/old/`) != 0 || !archive_valid(path, work)) fail("rollback_package_unavailable");
 	journal(work, { ...state, phase: "recovering" });
-	if (!recovery_stop(work)) fail("rollback_stop_failed");
+	if (!(before.scoped ? drain_scoped(work) : recovery_stop(work))) fail("rollback_stop_failed");
 	if (!run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work) ||
 		sprintf("%J", input_identity(before.runtime_paths)) != sprintf("%J", before.runtime_inputs)) fail("rollback_identity_mismatch");
 	// The marker protects a kernel generation; only release it after restoring all old bytes.
@@ -734,17 +833,22 @@ try {
 	if (ARGV[0] == "recover") response = { ok: true, result: recover() };
 	else if (ARGV[0] == "cancel") response = { ok: true, result: cancel_update(ARGV[1]) };
 	else if (ARGV[0] == "get") response = { ok: true, result: get() };
+	else if (ARGV[0] == "plugin-plan") response = { ok: true, result: plugin_plan(private_file(ARGV[1]) ? read_json(ARGV[1])?.request : null, null, true) };
 	else if (ARGV[0] == "operation") response = { ok: true, result: { mode: operation.get("mode"), configuration: operation.get("configuration"), subscription: operation.get("subscription"), selection: operation.get("selection"), packages: progress() } };
-	else if (ARGV[0] == "install" || ARGV[0] == "check" || ARGV[0] == "update") response = { ok: true, result: start(ARGV[0], ARGV[1], ARGV[2]) };
+	else if (index(["install", "check", "update", "plugin"], ARGV[0]) >= 0) response = { ok: true, result: start(ARGV[0], ARGV[1], ARGV[2]) };
 	else if (ARGV[0] == "run") {
 		const request = private_file(ARGV[1]) ? read_json(ARGV[1]) : null;
 		if (request == null || !match(request.id ?? "", /^[a-f0-9]{32}$/) || ARGV[1] != `${ROOT}/${request.id}/request.json` ||
-			index(["check", "update", "install"], request.action) < 0 || (request.action != "install" && request.feed != feed())) fail("update_request_changed");
+			index(["check", "update", "install", "plugin"], request.action) < 0 || (request.action != "install" && request.feed != feed())) fail("update_request_changed");
 		const work = `${ROOT}/${request.id}`;
 		operation.begin("packages", "checking", { id: request.id, subject: request.component ?? "feed" });
 		const staged = request.action == "install" ? local_stage(work) : null;
 		if (staged) { request.component = "plugins"; request.names = staged.names; }
-		const candidates = staged ? staged.candidates : refresh_index(request, work);
+		let candidates = staged ? staged.candidates : request.plugin?.action == "remove" ? {} : refresh_index(request, work);
+		if (request.plugin) {
+			const plan = plugin_plan(request.plugin, work);
+			request.names = plan.names; candidates = plan.candidates;
+		}
 		if (request.action != "check") upgrade(request, work, candidates);
 		operation.finish(true, null, null);
 		response = { ok: true };

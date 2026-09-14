@@ -1,4 +1,12 @@
 const labels: Record<string, string> = {
+  plugin_package_protected: '此软件属于默认产品，请通过 NetFleet 整体更新维护',
+  plugin_disable_before_remove: '请先禁用此插件并确认状态，再卸载软件包',
+  plugin_package_required: '其他软件或服务仍依赖此插件，不能单独卸载',
+  plugin_dependency_change_required: '需要先更新其他已安装组件；本次未修改软件包',
+  plugin_dependencies_unavailable: '依赖无法解析，请检查软件源；当前软件包未改变',
+  installed_version_changed: '安装状态已变化，请重新读取后确认',
+  invalid_plugin_package_request: '插件安装请求无效，请重新读取后操作',
+  package_plan_unreadable: '无法确认软件包变更计划，未开始安装',
   update_cancelled: '已取消更新，未替换软件包',
   update_deferred: '健康连接尚未结束，本次更新已延后；请在连接较少时重试',
   update_prepare_failed: '无法安全准备替换，未更新软件包；请读取当前运行状态',

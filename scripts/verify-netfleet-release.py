@@ -32,7 +32,7 @@ def regular_files(directory: Path) -> dict[str, Path]:
         fail(f"release directory is unavailable: {directory}")
     files: dict[str, Path] = {}
     for path in directory.iterdir():
-        if not path.is_file():
+        if path.is_symlink() or not path.is_file():
             fail(f"release directory contains a non-file entry: {path.name}")
         files[path.name] = path
     return files
@@ -60,6 +60,48 @@ def artifact_version(item: dict) -> str:
     if not isinstance(release, str) or re.fullmatch(r"[0-9]+", release) is None:
         fail("release artifact revision is invalid")
     return f"{version}-r{release}"
+
+
+def optional_files(files: dict[str, Path], manifest_path: Path, architecture: str) -> set[str]:
+    """Validate the small public composition without consuming private qualification receipts."""
+    path = files.get('optional-packages.json')
+    if path is None:
+        return set()
+    value = json.loads(path.read_text())
+    if (not isinstance(value, dict)
+            or set(value) != {'schema', 'base_manifest_sha256', 'architecture', 'artifacts', 'files'}
+            or value.get('schema') != 'opl-netfleet-optional-feed.v1'
+            or value.get('base_manifest_sha256') != digest(manifest_path)
+            or value.get('architecture') != architecture):
+        fail('optional feed composition does not match the release')
+    hashes = value.get('files')
+    if not isinstance(hashes, dict):
+        fail('optional feed file set is invalid')
+    artifacts = value.get('artifacts')
+    if not isinstance(artifacts, list) or len(artifacts) != 2:
+        fail('optional feed package set is invalid')
+    names = {'compat-public-key.pem', 'compat-packages.adb'}
+    for item, package in zip(artifacts, ('opl-netfleet-https-compat', 'opl-netfleet-plugin-device-identity')):
+        if not isinstance(item, dict) or set(item) != {'artifact', 'sha256', 'source_commit', 'source_tree'}:
+            fail('optional feed artifact metadata is invalid')
+        name = item['artifact']
+        if (not isinstance(name, str)
+                or not re.fullmatch(re.escape(package) + r'-[0-9]+\.[0-9]+\.[0-9]+(-r[0-9]+)?\.apk', name)
+                or not isinstance(item['source_commit'], str) or not HEX40.fullmatch(item['source_commit'])
+                or not isinstance(item['source_tree'], str) or not HEX40.fullmatch(item['source_tree'])):
+            fail('optional feed artifact identity is invalid')
+        if hashes.get(name) != require_digest(item['sha256'], name):
+            fail('optional feed package hash is inconsistent')
+        names.add(name)
+    if set(hashes) != names:
+        fail('optional feed file set is invalid')
+    for name, expected in hashes.items():
+        if name not in files or require_digest(expected, name) != digest(files[name]):
+            fail(f'optional feed bytes do not match: {name}')
+    key = files['compat-public-key.pem'].read_bytes()
+    if b'PRIVATE KEY' in key or not key.startswith(b'-----BEGIN PUBLIC KEY-----'):
+        fail('optional feed public key is invalid')
+    return names | {'optional-packages.json'}
 
 
 def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, object]:
@@ -233,6 +275,7 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
             expected_names.add("packages.adb")
     if feed_bootstrap is not None:
         expected_names.add("install-netfleet.sh")
+    expected_names.update(optional_files(files, manifest_path, build_target_arch))
     if set(files) != expected_names:
         fail("release file set does not match the manifest")
 

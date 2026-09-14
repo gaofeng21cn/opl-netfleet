@@ -17,6 +17,71 @@ import update
 import compare
 
 class EngineArtifacts(unittest.TestCase):
+    def test_composition_keeps_old_optional_bytes_and_runs_the_new_base_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def git(*args):
+                return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
+            git('init', '-q');git('config', 'user.name', 'Fixture');git('config', 'user.email', 'fixture@example.invalid')
+            source = root / 'plugins/device-identity/control'
+            source.parent.mkdir(parents=True);source.write_text('identity stays unchanged')
+            (root / 'gateway').write_text('old base caller')
+            git('add', '.');git('commit', '-qm', 'optional artifact sources')
+            old_commit, old_tree = git('rev-parse', 'HEAD'), git('rev-parse', 'HEAD^{tree}')
+            (root / 'gateway').write_text('new base caller')
+            git('add', '.');git('commit', '-qm', 'new base qualification')
+            fixed = {'source_commit':git('rev-parse', 'HEAD'), 'source_tree':git('rev-parse', 'HEAD^{tree}'),
+                     'manifest_sha256':'a'*64,'qualification_sha256':'b'*64,'runtime_sha256':{'gateway':'c'*64}}
+            packages = root / 'packages';packages.mkdir()
+            (packages / 'manifest.json').write_text(json.dumps({**fixed,'build_target_arch':'aarch64_generic'}))
+            candidate = root / 'candidate';candidate.mkdir()
+            rows=[]
+            for name, manifest_name in [('opl-netfleet-https-compat', 'compat-manifest.json'),
+                                        ('opl-netfleet-plugin-device-identity', 'device-identity-manifest.json')]:
+                path=candidate/(name+'-1.0.0.apk');path.write_bytes(name.encode())
+                value={'artifact':path.name,'sha256':base.sha(path),'source_commit':old_commit,
+                       'source_tree':old_tree,'architecture':'aarch64_generic'}
+                (candidate / manifest_name).write_text(json.dumps(value));rows.append(value)
+            native=candidate/'native-runtime.json'
+            native.write_text(json.dumps({'ok':True,'packages':rows}))
+            rows[0]['native_runtime']={'name':native.name,'sha256':base.sha(native)}
+            (candidate/'compat-manifest.json').write_text(json.dumps(rows[0]))
+            (candidate/'compat-public-key.pem').write_text('public key fixture')
+            (candidate/'compat-packages.adb').write_text('signed index fixture')
+            before={path.name:path.read_bytes() for path in candidate.iterdir()}
+            read_tree=qualify.source_tree;check_identity=qualify.identity_matches_base
+            with patch.object(qualify, 'validate', return_value=fixed) as validate, \
+                 patch.object(qualify, 'source_tree', side_effect=lambda commit:read_tree(commit,root)), \
+                 patch.object(qualify, 'identity_matches_base', side_effect=lambda identity,base:check_identity(identity,base,root)):
+                request=qualify.composition_request(packages, root/'base-proof.json', candidate)
+            validate.assert_called_once_with(packages,root/'base-proof.json',fixed['source_commit'],retained=None)
+            self.assertNotEqual(request['base']['source_commit'],request['engine']['source_commit'])
+            self.assertEqual(request['engine'],rows[0]);self.assertEqual(request['identity'],rows[1])
+            self.assertEqual(before,{path.name:path.read_bytes() for path in candidate.iterdir()})
+
+    def test_composition_requires_full_real_guest_checks_and_exact_both_identities(self):
+        import copy
+        request={'schema':qualify.COMPOSITION_SCHEMA,
+                 'base':{'source_commit':'b'*40,'source_tree':'c'*40,'manifest_sha256':'d'*64},
+                 'engine':{'source_commit':'a'*40,'sha256':'e'*64},'identity':{'sha256':'f'*64},
+                 'feed_sha256':{'compat-packages.adb':'1'*64}}
+        checks=dict.fromkeys(qualify.COMPOSITION_CHECKS,True)
+        proof={'diagnostic_passed':True,'source_commit':'b'*40,'source_tree':'c'*40,'base':request['base'],
+               'lanes':{'compatibility':{'ok':True,'source_commit':'b'*40,'source_tree':'c'*40,
+                        'checks':checks,'composition':request}}}
+        self.assertEqual(qualify.composition_evidence(request,proof),checks)
+        for change in ['old-source','base','engine','index','missing-bootstrap','failed-check','not-passed']:
+            altered=copy.deepcopy(proof)
+            if change=='old-source':altered['source_commit']='a'*40
+            if change=='base':altered['base']['manifest_sha256']='0'*64
+            if change=='engine':altered['lanes']['compatibility']['composition']['engine']['sha256']='0'*64
+            if change=='index':altered['lanes']['compatibility']['composition']['feed_sha256']['compat-packages.adb']='0'*64
+            if change=='missing-bootstrap':del altered['lanes']['compatibility']['checks']['full_feed_bootstrap']
+            if change=='failed-check':altered['lanes']['compatibility']['checks']['real_gateway_h2']=False
+            if change=='not-passed':altered['diagnostic_passed']=False
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                qualify.composition_evidence(request,altered)
+
     def test_base_binding_includes_actual_gateway_templates(self):
         import hashlib
         source=ROOT/'openwrt/files'

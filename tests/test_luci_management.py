@@ -465,6 +465,32 @@ assert.equal(owner.components.dashboard.installed_version, 'v3.0.0');
 assert.equal(owner.dashboardBusy, false);
 """)
 
+    def test_plugin_package_confirmation_uses_owner_plan_and_disabled_uninstall(self):
+        self.run_js(r"""
+const owner = controller(); owner.componentsSection = 'plugins';
+const item = {name:'opl-netfleet-plugin-example',id:'example',installed_version:null,available_version:'1.2.3',dependencies:[]};
+owner.components = {supported:true,feed:{configured:true},components:[],extensions:[],plugin_packages:[item]};
+const plan = {names:[item.name,'missing-helper'],candidates:{[item.name]:'1.2.3','missing-helper':'1.0'}};
+let writes=0, resolvePlan;
+const managed=module('managed.js', {
+ componentsPluginPlan: request => {assert.equal(request.confirm,false);return new Promise(resolve=>{resolvePlan=resolve;});},
+ componentsPlugin: async request => {writes++;assert.deepEqual(request.plan,plan);assert.equal(request.before_version,null);assert.equal(request.action,'install');return {operation:{id:'install-1',state:'running'}};},
+ operationGet:async()=>({packages:{id:'install-1',state:'running'}}),
+});
+const reading=fire(button(managed.components(owner),'安装'));
+assert(button(modal.content,'确认安装').disabled);assert.equal(writes,0);
+resolvePlan(plan);await reading;
+assert(text(modal.content).includes('missing-helper'));
+await fire(button(modal.content,'确认安装'));assert.equal(writes,1);
+owner.operations={};item.installed_version='1.2.3';
+owner.components.extensions=[{kind:'plugin',id:'example',package:item.name,enabled:true}];
+assert(button(managed.components(owner),'卸载').disabled);
+owner.components.extensions[0].enabled=false;
+assert(!button(managed.components(owner),'卸载').disabled);
+owner.liveDataReady=false;assert(button(managed.components(owner),'卸载').disabled);
+clearTimeout(owner.operationTimer); clearTimeout(owner.resultTimer);
+""")
+
     def test_component_first_read_is_pending_not_unsupported(self):
         self.run_js(r"""
 const managed = module('managed.js', {});

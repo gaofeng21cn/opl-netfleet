@@ -118,8 +118,8 @@ component_update() {
 }
 
 case "$1" in
-	list)
-		printf '%s\n' '{"components_get":{},"components_check":{},"components_recover":{},"components_cancel":{"id":"String"},"components_update":{"component":"String","version":"String"},"operation_get":{},"native_setup_get":{},"native_setup_apply":{"request":{}},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":{}},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":{}},"onboarding_get":{},"onboarding_apply":{"request":{}},"status":{},"events":{"include_logs":"Boolean"},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":{}},"config_save":{"request":{}},"config_apply":{"request":{}},"enable":{},"select_auto":{"capability":"String"},"select_region":{"capability":"String","region":"String"},"refresh":{},"disable":{},"network_get":{},"network_validate":{"request":{}},"network_apply":{"request":{}},"maintenance_get":{},"profile_get":{"id":"String"},"profile_save":{"request":{}},"profile_delete":{"request":{}},"backup_export":{},"backup_restore":{"request":{}},"core_action":{"request":{}},"diagnostics_get":{},"dashboard_check":{},"dashboard_update":{"version":"String"}}'
+		list)
+		printf '%s\n' '{"components_plugin_plan":{"request":{}},"components_plugin":{"request":{}},"components_get":{},"components_check":{},"components_recover":{},"components_cancel":{"id":"String"},"components_update":{"component":"String","version":"String"},"operation_get":{},"native_setup_get":{},"native_setup_apply":{"request":{}},"dashboard_get":{},"subscriptions_get":{},"subscriptions_set":{"request":{}},"subscriptions_refresh":{"id":"String"},"migration_get":{},"migration_apply":{"request":{}},"onboarding_get":{},"onboarding_apply":{"request":{}},"status":{},"events":{"include_logs":"Boolean"},"connections":{},"probe":{},"config_get":{},"config_validate":{"request":{}},"config_save":{"request":{}},"config_apply":{"request":{}},"enable":{},"select_auto":{"capability":"String"},"select_region":{"capability":"String","region":"String"},"refresh":{},"disable":{},"network_get":{},"network_validate":{"request":{}},"network_apply":{"request":{}},"maintenance_get":{},"profile_get":{"id":"String"},"profile_save":{"request":{}},"profile_delete":{"request":{}},"backup_export":{},"backup_restore":{"request":{}},"core_action":{"request":{}},"diagnostics_get":{},"dashboard_check":{},"dashboard_update":{"version":"String"}}'
 		;;
 	call)
 		case "$2" in
@@ -143,6 +143,8 @@ case "$1" in
 				;;
 			dashboard_update) management_argument dashboard-update version 1 ;;
 			components_get) respond_owner ucode "$main" components-get ;;
+			components_plugin) config_request components-plugin 1 4096 ;;
+			components_plugin_plan) config_request components-plugin-plan 0 4096 ;;
 			operation_get)
 				transaction_owner
 				if [ -n "$transaction" ]; then respond_owner ucode "$transaction" operation; fi

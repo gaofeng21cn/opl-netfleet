@@ -57,6 +57,8 @@ function diagnosis(controller, displayName) {
 		E('dl', { 'class': 'netfleet-diagnosis-checks' }, result.checks.map(function(check) { return E('div', {}, [ E('dt', {}, check.label), E('dd', {}, check.value) ]); })),
 		E('p', { 'class': 'netfleet-connection-note' }, (controller.status.active ? '当前由 NetFleet 接管。' : 'NetFleet 当前未接管，连接由现有运行配置负责。') + ' DNS 接入就绪不等于此网站解析成功。'),
 		E('div', { role: 'status' }, [ E('p', {}, loading ? '正在读取当前设备证据…' : result.message), E('p', {}, result.next) ]),
+		E('details', {}, [E('summary', {}, '如何判断网站体验'), E('p', {}, '出口延迟只对应配置的测速地址；保护检查通过，只说明当时所检查的路径成功，不代表所有网站或所有候选出口已通过验证。'),
+			E('p', {}, '网站慢：先在发生问题的设备上复现并读取实际链路，再对比同一设备、同一网站和相近时段的表现。不要仅凭延迟值反复刷新订阅或换区。')]),
 		result.host && result.matches.length ? E('div', { 'class': 'netfleet-table-wrap' }, E('table', { 'class': 'table' }, [
 			E('thead', {}, E('tr', {}, ['目标', '协议 / 端口', '实际命中规则', '实际链路'].map(function(label) { return E('th', {}, label); }))),
 			E('tbody', {}, result.matches.map(function(item) { return E('tr', {}, [

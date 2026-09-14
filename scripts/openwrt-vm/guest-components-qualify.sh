@@ -30,6 +30,10 @@ finish() {
 	exit "$rc"
 }
 trap finish EXIT INT TERM
+# The setup lane intentionally replaces public DNS and outbound traffic with
+# local fixtures. Dependencies are already installed; keep every component
+# transaction on the signed local feed and restore system feeds on exit.
+mv /etc/apk/repositories.d/distfeeds.list "$work/distfeeds.list"
 assert_json() { [ "$(jsonfilter -i "$1" -e "$2")" = "$3" ]; }
 install_fixture() {
 	(
@@ -175,11 +179,8 @@ for name in $product_packages; do
 	apk list --manifest | grep -Fqx "$name $(package_version "$name" old)"
 done
 uclient-fetch -q -O "$work/install-netfleet.sh" "$feed_url/install-netfleet.sh"
-# The isolated proxy only serves local fixtures; system dependencies are installed.
-mv /etc/apk/repositories.d/distfeeds.list "$work/distfeeds.list"
 NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 \
 	sh "$work/install-netfleet.sh" >"$work/installer-upgrade.log" 2>&1
-mv "$work/distfeeds.list" /etc/apk/repositories.d/distfeeds.list
 for name in $product_packages; do
 	apk list --manifest | grep -Fqx "$name $(package_version "$name" current)"
 done

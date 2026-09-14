@@ -246,13 +246,13 @@ function pluginDialog(controller, plugin, initialAction) {
 	});
 }
 
-function startPackageOperation(controller, component) {
+function startPackageOperation(controller, component, pluginRequest) {
 	if (componentsLocked(controller)) return Promise.resolve();
 	controller.componentsError = null;
 	controller.componentsStarting = true;
 	controller.packageTarget = component ? { component: component.id, version: component.available_version } : null;
 	controller.redraw();
-	const request = component ? api.componentsUpdate(component.id, component.available_version) : api.componentsCheck();
+	const request = pluginRequest ? api.componentsPlugin(pluginRequest) : component ? api.componentsUpdate(component.id, component.available_version) : api.componentsCheck();
 	return request.then(function(result) {
 		controller.packageOperationId = result.operation.id;
 		controller.operations = Object.assign({}, controller.operations, { packages: result.operation });
@@ -263,6 +263,58 @@ function startPackageOperation(controller, component) {
 function componentsLocked(controller) {
 	return controller.busy || !controller.liveDataReady || controller.context?.readOnly || controller.componentsStarting || controller.componentsChecking ||
 		controller.dashboardBusy || isRunning(controller.operations && controller.operations.packages);
+}
+
+function pluginPackages(controller, snapshot) {
+	const active = componentsLocked(controller);
+	const rows = (snapshot.plugin_packages || []).map(function(item) {
+		const plugin = (snapshot.extensions || []).find(function(row) { return row.kind === 'plugin' && row.package === item.name; });
+		const actions = [];
+		function action(kind, label) {
+			return button(label, function() {
+				const request = { name: item.name, action: kind, before_version: item.installed_version, version: item.available_version, confirm: true };
+				const planView = E('p', { role: 'status' }, '正在确认实际软件包变化…');
+				let closed = false;
+				const confirm = button('确认' + label, function() {
+					closed = true; ui.hideModal(); return startPackageOperation(controller, null, request);
+				}, true);
+				ui.showModal(label + ' ' + (plugin?.label || item.id), [
+					E('p', {}, kind === 'remove' ? '卸载此插件的软件包，保留私有配置。设备会再次检查禁用状态与依赖，拒绝连带删除其他软件。' :
+						'目标版本：' + displayVersion(item.available_version) + '。设备会校验签名并补齐缺少的依赖；若需要变更其他已安装组件，将停止并说明原因。安装不自动启用功能。'),
+					E('p', {}, '任务在设备后台执行，可离开页面；进度和结果会持续回读。'),
+					planView, E('div', { 'class': 'right' }, [button('取消', function() { closed = true; ui.hideModal(); }), ' ', confirm])
+				]);
+				return api.componentsPluginPlan({ ...request, confirm: false }).then(function(plan) {
+					if (closed) return;
+					request.plan = plan;
+					planView.replaceChildren(E('ul', {}, plan.names.map(function(name) {
+						return E('li', {}, name + (plan.candidates[name] ? ' → ' + displayVersion(plan.candidates[name]) : '：卸载'));
+					})));
+					confirm.disabled = false;
+				}).catch(function(error) { if (!closed) planView.textContent = errorLabel(error.message); });
+			}, active || (kind === 'remove' ? plugin?.enabled !== false : !snapshot.feed.configured || !!snapshot.feed.error));
+		}
+		if (!item.installed_version && item.available_version) actions.push(action('install', '安装'));
+		if (item.update_available) actions.push(action('update', '更新'));
+		if (item.installed_version) {
+			actions.push(action('remove', '卸载'));
+			if (plugin?.enabled !== false) actions.push(E('small', {}, '先在运行管理中禁用，再卸载'));
+		}
+		return E('tr', {}, [
+			E('td', {}, [E('strong', {}, plugin?.label || item.id), E('small', {}, plugin?.description || pluginPurpose(plugin || item)), E('small', {}, item.name)]),
+			E('td', {}, [E('strong', {}, item.installed_version ? displayVersion(item.installed_version) : '未安装'),
+				item.available_version ? E('small', {}, (item.update_available ? '可更新至 ' : '更新源版本 ') + displayVersion(item.available_version)) : E('small', {}, '检查更新以读取候选版本'),
+				item.dependencies?.length ? E('details', {}, [E('summary', {}, '依赖'), E('p', {}, item.dependencies.join('、'))]) : '']),
+			E('td', { 'class': 'netfleet-component-actions' }, actions)
+		]);
+	});
+	return E('section', { 'class': 'netfleet-component-modules' }, [E('h3', {}, '安装与维护独立插件'),
+		E('p', {}, '从设备已信任的软件源读取。默认产品能力随 NetFleet 更新；HTTPS 引擎由 HTTPS 插件中的独立更新入口管理。'),
+		button('检查插件更新', function() { return startPackageOperation(controller); }, active || !snapshot.feed.configured),
+		rows.length ? E('div', { 'class': 'netfleet-component-table' }, E('table', { 'class': 'table' }, [
+			E('thead', {}, E('tr', {}, ['插件', '安装与候选版本', '软件包操作'].map(label => E('th', {}, label)))), E('tbody', {}, rows)
+		])) : E('p', {}, snapshot.feed.checked_at && !snapshot.feed.error ? '当前软件源没有额外插件。安装完整发行版可配置官方可选插件源。' : '检查更新后显示软件源中的独立插件。')
+	]);
 }
 
 function dashboardFailure(controller, error) {
@@ -488,10 +540,11 @@ function componentsPage(controller) {
 		E('thead', {}, E('tr', {}, ['软件', '当前版本', '更新与操作'].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, rows)
 	])), E('div', { 'class': 'netfleet-component-checks', 'role': 'status' }, sourceStates));
 	if (section === 'plugins') content.push(E('section', { 'class': 'netfleet-component-modules' }, [
-		E('p', { 'class': 'netfleet-follow-note' }, '默认产品能力随 NetFleet 一起更新；独立安装的插件由软件包管理器维护。启用表示允许使用，运行状态请打开“查看状态”；禁用前会检查依赖与网络影响。'),
+		E('p', { 'class': 'netfleet-follow-note' }, '启用表示允许使用；禁用保留软件与配置。安装、更新和卸载独立插件请使用下方的软件包管理。'),
 		E('div', { 'class': 'netfleet-component-table netfleet-plugin-table' }, E('table', { 'class': 'table' }, [
 			E('thead', {}, E('tr', {}, ['插件', '分类与用途', '版本', '配置', '运行管理'].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, moduleRows.length ? moduleRows : [E('tr', {}, E('td', { 'colspan': 5 }, '当前没有可管理的功能插件'))])
 		])),
+		pluginPackages(controller, snapshot),
 		E('details', { 'class': 'netfleet-component-details' }, [E('summary', {}, '高级：服务组合与实例'),
 			E('p', {}, '调整插件启停、服务提供者和实例配置。应用前会校验依赖并展示影响。'),
 			button('编辑服务组合', function() { return compositionDialog(controller); }, active)])

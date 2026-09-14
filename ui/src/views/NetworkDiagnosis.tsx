@@ -20,6 +20,7 @@ export function NetworkDiagnosis({ status, connections, loading, error, stale, r
     <dl className="nf-diagnosis-checks">{result.checks.map(check => <div key={check.label}><dt>{check.label}</dt><dd>{check.value}</dd></div>)}</dl>
     <p className="nf-management-note">{status.active ? '当前由 NetFleet 接管。' : 'NetFleet 当前未接管，连接由现有运行配置负责。'} DNS 接入就绪不等于此网站解析成功。</p>
     <div role="status"><p>{loading ? '正在读取当前设备证据…' : result.message}</p><p>{result.next}</p></div>
+    <details><summary>如何判断网站体验</summary><p>出口延迟只对应配置的测速地址；保护检查通过，只说明当时所检查的路径成功，不代表所有网站或所有候选出口已通过验证。</p><p>网站慢：先在发生问题的设备上复现并读取实际链路，再对比同一设备、同一网站和相近时段的表现。不要仅凭延迟值反复刷新订阅或换区。</p></details>
     {result.host && result.matches.length > 0 && <div className="nf-table-wrap"><table><thead><tr><th>目标</th><th>协议 / 端口</th><th>实际命中规则</th><th>实际链路</th></tr></thead><tbody>{result.matches.map((item, index) => <tr key={index}>
       <td>{item.destination}</td><td>{[item.network?.toUpperCase(), item.destination_port].filter(Boolean).join(' / ') || '未记录'}</td><td>{[item.rule, item.rule_payload].filter(Boolean).join(' / ') || '未记录'}</td>
       <td>{item.chains.map(value => value === 'DIRECT' ? '直连' : regionalDisplayName(value)).join(' → ') || '未记录链路'}</td>
