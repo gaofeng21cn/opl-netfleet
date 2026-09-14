@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  printf '%s\n' 'Usage: scripts/publish-netfleet-release.sh --tag <tag> --candidate <dir> --qualification <receipt.json> [--repo <owner/name>]'
+  printf '%s\n' 'Usage: scripts/publish-netfleet-release.sh --tag <tag> --candidate <dir> --qualification <receipt.json> [--compat-candidate <dir> --compat-qualification <receipt.json> --apk <apk>] [--repo <owner/name>]'
 }
 
 die() {
@@ -14,12 +14,18 @@ tag=''
 candidate=''
 qualification=''
 repo=''
+compat_candidate=''
+compat_qualification=''
+apk_tool=''
 while (($#)); do
   case "$1" in
     --tag) (($# >= 2)) || die '--tag requires a value'; tag=$2; shift 2;;
     --candidate) (($# >= 2)) || die '--candidate requires a directory'; candidate=$2; shift 2;;
     --qualification) (($# >= 2)) || die '--qualification requires a receipt'; qualification=$2; shift 2;;
     --repo) (($# >= 2)) || die '--repo requires owner/name'; repo=$2; shift 2;;
+    --compat-candidate) (($# >= 2)) || die '--compat-candidate requires a directory'; compat_candidate=$2; shift 2;;
+    --compat-qualification) (($# >= 2)) || die '--compat-qualification requires a receipt'; compat_qualification=$2; shift 2;;
+    --apk) (($# >= 2)) || die '--apk requires an executable'; apk_tool=$2; shift 2;;
     -h|--help) usage; exit 0;;
     *) die "unknown option: $1";;
   esac
@@ -30,6 +36,8 @@ candidate=$(cd "$candidate" 2>/dev/null && pwd) || die 'candidate directory is u
 qualification=$(cd "$(dirname "$qualification")" 2>/dev/null && pwd)/$(basename "$qualification") ||
   die 'qualification receipt is unavailable'
 [[ -f "$qualification" ]] || die 'qualification receipt is unavailable'
+[[ ! -e "$candidate/optional-packages.json" ]] ||
+  die 'supply the default candidate plus --compat-candidate and --compat-qualification; precomposed optional publication is not admitted'
 command -v gh >/dev/null 2>&1 || die 'gh is required'
 command -v git >/dev/null 2>&1 || die 'git is required'
 
@@ -77,12 +85,39 @@ if not (
     raise SystemExit("package VM qualification does not bind the candidate bytes")
 PY
 
+publication=$candidate
+publication_work=''
+readback=''
+cleanup() {
+  [[ -z "$publication_work" ]] || rm -rf -- "$publication_work"
+  [[ -z "$readback" ]] || rm -rf -- "$readback"
+}
+trap cleanup EXIT
+if [[ -n "$compat_candidate$compat_qualification$apk_tool" ]]; then
+  [[ -n "$compat_candidate" && -f "$compat_qualification" && -x "$apk_tool" ]] ||
+    die 'full publication requires --compat-candidate, --compat-qualification and --apk'
+  publication_work=$(mktemp -d "${TMPDIR:-/tmp}/netfleet-publication.XXXXXX")
+  publication="$publication_work/release"
+  python3 "$repo_dir/scripts/https-compat/release.py" \
+    --packages "$candidate" --base-qualification "$qualification" \
+    --candidate "$compat_candidate" --qualification "$compat_qualification" \
+    --apk "$apk_tool" --output "$publication" >/dev/null
+fi
+
 remote_main=$(git -C "$repo_dir" ls-remote --refs origin refs/heads/main | awk 'NR == 1 { print $1 }')
 [[ -n "$remote_main" ]] || die 'cannot resolve canonical main'
 # Fetch the observed commit, so later unrelated platform changes do not invalidate a qualified candidate.
 git -C "$repo_dir" fetch --no-tags origin "$remote_main"
 git -C "$repo_dir" merge-base --is-ancestor "$source_commit" "$remote_main" ||
   die 'candidate source has not been absorbed into canonical main'
+if [[ -f "$publication/optional-packages.json" ]]; then
+  while read -r optional_commit optional_tree; do
+    [[ "$(git -C "$repo_dir" rev-parse "$optional_commit^{tree}")" == "$optional_tree" ]] ||
+      die 'optional package source tree does not match Git'
+    git -C "$repo_dir" merge-base --is-ancestor "$optional_commit" "$remote_main" ||
+      die 'optional package source has not been absorbed into canonical main'
+  done < <(python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); print("\n".join(r["source_commit"]+" "+r["source_tree"] for r in m["artifacts"]))' "$publication/optional-packages.json")
+fi
 release_state=$(gh release view "$tag" --repo "$repo" --json tagName 2>/dev/null || true)
 [[ -z "$release_state" ]] || die "release already exists and is immutable: $tag"
 
@@ -101,13 +136,12 @@ fi
 gh release create "$tag" --repo "$repo" --verify-tag \
   --title "NetFleet $tag" \
   --notes "版本化 NetFleet OpenWrt 软件包，已通过 ARM64 OpenWrt 25.12.5 软件包与运行验收。" \
-  "$candidate"/*
+  "$publication"/*
 
 readback=$(mktemp -d "${TMPDIR:-/tmp}/netfleet-release-readback.XXXXXX")
-trap 'rm -rf -- "$readback"' EXIT
 gh release download "$tag" --repo "$repo" --dir "$readback"
 "$repo_dir/scripts/verify-netfleet-release.py" \
-  --directory "$readback" --expected-directory "$candidate" \
+  --directory "$readback" --expected-directory "$publication" \
   --source-commit "$source_commit" --source-tree "$source_tree" >/dev/null
 release_url=$(gh release view "$tag" --repo "$repo" --json isDraft,isPrerelease,url \
   --jq 'select(.isDraft == false and .isPrerelease == false) | .url')

@@ -8,6 +8,7 @@
       "ubus": {
         "opl-netfleet": [
           "components_get",
+          "components_plugin_plan",
           "operation_get",
           "native_setup_get",
           "dashboard_get",
@@ -51,6 +52,7 @@
         "opl-netfleet": [
           "components_check",
           "components_update",
+          "components_plugin",
           "components_recover",
           "components_cancel",
           "native_setup_apply",

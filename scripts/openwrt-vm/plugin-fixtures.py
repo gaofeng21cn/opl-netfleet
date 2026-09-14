@@ -138,11 +138,27 @@ def build(output, sdk):
         solver_fs = pack("netfleet-plugin-solver-fs", "1.0.0-r1", host, provides=("ucode-mod-fs=1",))
         for identity in ("device-info", "workspace-note"):
             receipt["plugins"][identity] = {}
-            for version in ("0.1.0", "0.1.1"):
+            for version in ("0.1.0", "0.1.1", "0.1.2"):
                 staged = stage_plugin(ROOT / "examples/plugins" / identity, scratch / f"{identity}-{version}", version)
+                if version == "0.1.2":
+                    # A signed candidate whose real APK hook fails after the write.
+                    # The component transaction must restore its previous package.
+                    for kind in ("post-install", "post-upgrade"):
+                        staged["scripts"][kind].write_text("#!/bin/sh\nexit 1\n")
                 artifact = pack(staged["package"], version, staged["payload"],
                                 staged["dependencies"], staged["scripts"])
                 receipt["plugins"][identity][version] = {**artifact, "revision": staged["revision"]}
+        for label, maximum in (("old", "0.1.0"), ("new", "0.1.1"), ("broken", "0.1.2")):
+            repository = output / label
+            repository.mkdir()
+            for versions in receipt["plugins"].values():
+                for version, artifact in versions.items():
+                    if version <= maximum:
+                        shutil.copy2(output / artifact["name"], repository)
+            subprocess.run([str(apk), "mkndx", "--keys-dir", str(output), "--sign-key", str(private_key),
+                            "--output", str(repository / "packages.adb"),
+                            *map(str, sorted(repository.glob("*.apk")))],
+                           check=True, capture_output=True, text=True)
         note = output / receipt["plugins"]["workspace-note"]["0.1.0"]["name"]
         for label, permitted in (("old_host", False), ("host", True)):
             sandbox = scratch / f"solver-{label}"

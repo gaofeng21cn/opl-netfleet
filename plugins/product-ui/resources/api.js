@@ -35,6 +35,8 @@ const calls = {
 	componentsRecover: declare({ object: 'opl-netfleet', method: 'components_recover' }),
 	componentsCancel: declare({ object: 'opl-netfleet', method: 'components_cancel', params: [ 'id' ] }),
 	componentsCheck: declare({ object: 'opl-netfleet', method: 'components_check' }),
+	componentsPlugin: declare({ object: 'opl-netfleet', method: 'components_plugin', params: [ 'request' ] }),
+	componentsPluginPlan: declare({ object: 'opl-netfleet', method: 'components_plugin_plan', params: [ 'request' ] }),
 	componentsUpdate: declare({ object: 'opl-netfleet', method: 'components_update', params: [ 'component', 'version' ] }),
 	operationGet: declare({ object: 'opl-netfleet', method: 'operation_get' }),
 	nativeSetupGet: declare({ object: 'opl-netfleet', method: 'native_setup_get' }),
@@ -149,6 +151,8 @@ return baseclass.extend({
 	pluginRead: function(request) { return withRpcTimeout(70, function() { return executeRequest('pluginRead', request); }); },
 	pluginCall: function(request) { return withRpcTimeout(300, function() { return executeRequest('pluginCall', request); }); },
 	componentsCheck: function() { return execute('componentsCheck'); },
+	componentsPlugin: function(request) { return executeRequest('componentsPlugin', request); },
+	componentsPluginPlan: function(request) { return executeRequest('componentsPluginPlan', request); },
 	componentsUpdate: function(component, version) {
 		return calls.componentsUpdate(component, version).then(function(response) {
 			if (!response || response.ok !== true) throw new Error(response?.error || 'operation_failed');

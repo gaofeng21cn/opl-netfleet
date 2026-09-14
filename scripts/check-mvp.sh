@@ -50,6 +50,7 @@ if command -v "$ucode_bin" >/dev/null 2>&1; then
 	"$ucode_bin" "$@" "$root_dir/tests/dashboard_version_contract.uc"
 	"$ucode_bin" "$@" "$root_dir/tests/components_recovery_contract.uc" "$runtime_dir/plugins/components/lib/control.uc"
 	"$ucode_bin" "$@" "$root_dir/tests/components_update_control_contract.uc" "$runtime_dir/plugins/components/lib/control.uc"
+	"$ucode_bin" "$@" "$root_dir/tests/component_packages_contract.uc"
 	"$ucode_bin" "$@" "$root_dir/tests/https_lifecycle_contract.uc"
 	"$ucode_bin" "$@" "$root_dir/tests/extensions_contract.uc"
 	"$ucode_bin" "$@" "$root_dir/tests/plugins_contract.uc"

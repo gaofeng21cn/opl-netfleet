@@ -109,6 +109,13 @@ pending 未清除时的恢复。这是软件中断故障注入，不是物理断
 这些都是 synthetic platform proof；真实 provider、DNS、TPROXY、硬件和应用验收按
 [Canary 推广与复原](../operations/canary-promotion.md)独立完成。
 
+`--plugin-packages` 接受 `scripts/openwrt-vm/plugin-fixtures.py` 生成的签名示例软件源。
+原生运行阶段通过 LuCI 所用 RPC 验证独立插件的安装计划、安装、过期请求拒绝、升级、
+真实 APK 钩子失败后的回退和卸载，并核对基础核心进程与保护探针。
+这与直接调用 APK 的插件生命周期用例互补，不能用包可安装代替界面事务验收。
+完整可选发行组合还在干净 VM 中验证同源 `full` 安装、安装后保持未接管，
+以及重复安装保留配置与开关；HTTPS 数据面仍由其专属故障场景验证。
+
 runtime lane 记录 30 次状态请求的 p50/p95，以及至少 60 秒监督器 CPU/RSS 采样；
 预热后 RSS 增长超过 2 MiB 会失败，回执保留预热值、峰值和最终值以便比较。
 这是有界性能基线，不是路由器吞吐或长期稳定性结论。性能比较必须分别读取

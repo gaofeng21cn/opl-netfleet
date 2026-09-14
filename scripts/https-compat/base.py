@@ -92,6 +92,12 @@ def retained_runtime(directory, runtime):
 
 
 def validate(packages, receipt, commit, repo=ROOT, retained=None):
+    """Bind the installed base to the source used to execute its qualification.
+
+    Engine-update qualification passes its candidate source and requires the
+    base unchanged. Composition qualification passes the exact package source;
+    the independently built optional artifacts keep their own source identities.
+    """
     packages, receipt = Path(packages), Path(receipt)
     manifest = json.loads((packages / 'manifest.json').read_text())
     proof = json.loads(receipt.read_text())

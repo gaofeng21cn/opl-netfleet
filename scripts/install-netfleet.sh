@@ -79,6 +79,12 @@ if [ "$install_profile" = full ]; then
  fetch "$compat_feed/compat-public-key.pem" "$work/compat-public-key.pem"
  grep -Fq -- '-----BEGIN PUBLIC KEY-----' "$work/compat-public-key.pem" || die 'invalid compatibility public key'
  grep -Fq -- '-----END PUBLIC KEY-----' "$work/compat-public-key.pem" || die 'invalid compatibility public key'
+ # Fail before persisting a dead optional source. The package manager verifies
+ # this index with its supplied public key before any repository change.
+ fetch "$compat_feed/compat-packages.adb" "$work/compat-packages.adb"
+ mkdir "$work/trusted"
+ cp "$work/compat-public-key.pem" "$work/trusted/compat-public-key.pem"
+ apk verify --keys-dir "$work/trusted" "$work/compat-packages.adb" >/dev/null || die 'invalid compatibility signed index'
 fi
 
 keys_dir=${NETFLEET_APK_KEYS_DIR:-/etc/apk/keys}

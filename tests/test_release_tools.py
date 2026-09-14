@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
@@ -557,6 +558,16 @@ class ReleaseToolsTests(unittest.TestCase):
                                     'opl-netfleet-kernel opl-netfleet-plugin-dashboard opl-netfleet-plugin-selection')
                     self.assertEqual(expected, log.read_text().splitlines())
             (feed / 'compat-public-key.pem').write_bytes((feed / 'opl-netfleet-apk.pem').read_bytes())
+            # A full install must reject a missing optional index before changing
+            # package sources, rather than leaving a permanently broken feed.
+            log.write_text('')
+            original_repository = repository.read_bytes()
+            missing = subprocess.run([str(INSTALLER)], env={**env, 'NETFLEET_INSTALLED': '',
+                'NETFLEET_INSTALL_PROFILE': 'full'}, text=True, capture_output=True)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertEqual(repository.read_bytes(), original_repository)
+            self.assertEqual(log.read_text(), '')
+            (feed / 'compat-packages.adb').write_bytes(b'signed optional index')
             log.write_text('')
             result = subprocess.run([str(INSTALLER)], env={**env, 'NETFLEET_INSTALLED': '',
                 'NETFLEET_INSTALL_PROFILE': 'full'}, text=True, capture_output=True)
@@ -750,6 +761,110 @@ echo '{"tagName":"v0.4.5"}'
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn(expected, result.stderr)
                     self.assertEqual(git("tag"), "")
+
+
+class OptionalReleaseTests(unittest.TestCase):
+    def test_full_publication_binds_packages_and_excludes_private_receipts(self):
+        import importlib.util
+        directory = ROOT / 'scripts/https-compat'
+        with mock.patch.object(sys, 'path', [str(directory), *sys.path]):
+            import qualify as qualification_tools
+            spec = importlib.util.spec_from_file_location('optional_release', directory / 'release.py')
+            release = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(release)
+        for failure in (None, 'caller', 'artifact', 'signature', 'index', 'index-bytes', 'qualification',
+                        'composition-ok', 'composition-base', 'composition-feed', 'composition-diagnostic',
+                        'composition-check', 'composition-incomplete'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                packages, candidate, output = root / 'base', root / 'optional', root / 'public'
+                packages.mkdir(); candidate.mkdir()
+                commit, tree = 'a' * 40, 'b' * 40
+                write_release(packages, commit, tree)
+                base = {'schema': 'opl-netfleet-openwrt-vm-qualification.v2',
+                    'qualified': True, 'package_qualified': True,
+                    'source_commit': commit, 'source_tree': tree,
+                    'package': {'manifest_sha256': sha256(packages / 'manifest.json')}}
+                base_path = root / 'base-proof.json'
+                base_path.write_text(json.dumps(base))
+                rows = []
+                for name, filename in [('opl-netfleet-https-compat', 'compat-manifest.json'),
+                                       ('opl-netfleet-plugin-device-identity', 'device-identity-manifest.json')]:
+                    path = candidate / f'{name}-1.0.0.apk'
+                    path.write_bytes(name.encode())
+                    rows.append({'artifact': path.name, 'sha256': sha256(path),
+                                 'source_commit': commit, 'source_tree': tree})
+                if str(failure).startswith('composition-'):
+                    rows[0].update(source_commit='d'*40,source_tree='e'*40)
+                native = candidate / 'native-runtime.json'
+                native.write_text(json.dumps({'ok': True, 'packages': rows}))
+                rows[0].update(architecture='aarch64_generic',
+                    native_runtime={'name': native.name, 'sha256': sha256(native)})
+                for row, filename in zip(rows, ('compat-manifest.json', 'device-identity-manifest.json')):
+                    (candidate / filename).write_text(json.dumps(row))
+                (candidate / 'compat-public-key.pem').write_text('-----BEGIN PUBLIC KEY-----\nfixture\n')
+                (candidate / 'compat-packages.adb').write_bytes(b'fixture signed index')
+                (candidate / 'private-device-receipt.json').write_text('{"private": "must never publish"}')
+                callers = {'/usr/libexec/opl-netfleet/main.uc': 'c' * 64}
+                proof = {'schema': 'opl-netfleet-https-plugin-qualification.v1', 'plugin_qualified': True,
+                    'source_commit': commit, 'source_tree': tree, 'engine': rows[0], 'identity': rows[1],
+                    'base': {'runtime_sha256': callers},
+                    'checks': {name: True for name in ('engine_package_cycle', 'uninstall_reinstall',
+                              'dual_stack_probe_faults', 'native_dependency_closure', 'user_disable')}}
+                if failure == 'caller': proof['base'] = {'runtime_sha256': {}}
+                if failure == 'qualification': proof['plugin_qualified'] = False
+                if failure == 'artifact': (candidate / rows[0]['artifact']).write_text('changed')
+                proof_path = root / 'private-proof.json'
+                if str(failure).startswith('composition-'):
+                    fixed = {'source_commit':commit,'source_tree':tree,
+                             'manifest_sha256':sha256(packages/'manifest.json'),
+                             'qualification_sha256':sha256(base_path),'runtime_sha256':callers}
+                    request = {'schema':qualification_tools.COMPOSITION_SCHEMA,'base':fixed,
+                               'engine':rows[0],'identity':rows[1],
+                               'feed_sha256':{name:sha256(candidate/name) for name in
+                                   ('compat-public-key.pem','compat-packages.adb',rows[0]['artifact'],rows[1]['artifact'])}}
+                    checks = dict.fromkeys(qualification_tools.COMPOSITION_CHECKS,True)
+                    diagnostic = proof_path.with_suffix('.diagnostic.json')
+                    wire = {'diagnostic_passed':True,'source_commit':commit,'source_tree':tree,'base':fixed,
+                            'lanes':{'compatibility':{'ok':True,'source_commit':commit,'source_tree':tree,
+                                     'composition':request,'checks':checks}}}
+                    diagnostic.write_text(json.dumps(wire))
+                    proof = {'schema':qualification_tools.COMPOSITION_QUALIFICATION,'composition_qualified':True,
+                             'source_commit':commit,'source_tree':tree,'composition':request,'checks':checks,
+                             'diagnostic_sha256':sha256(diagnostic)}
+                    if failure=='composition-base':request['base']['manifest_sha256']='0'*64
+                    if failure=='composition-feed':request['feed_sha256']['compat-packages.adb']='0'*64
+                    if failure=='composition-diagnostic':diagnostic.write_text('changed evidence')
+                    if failure=='composition-check':proof['checks']={**checks,'real_gateway_h2':False}
+                    if failure=='composition-incomplete':proof['composition_qualified']=False
+                proof_path.write_text(json.dumps(proof))
+                index = [{'name': name, 'version': '1.0.0'} for name in
+                         ('opl-netfleet-https-compat', 'opl-netfleet-plugin-device-identity')]
+                if failure == 'index': index.pop()
+                expected_index = json.dumps({'packages': index})
+                if failure == 'index-bytes': index[0]['hashes'] = 'stale APK bytes'
+                with mock.patch.object(release, 'runtime_files', return_value=callers), \
+                     mock.patch.object(release.subprocess, 'run', side_effect=(
+                         subprocess.CalledProcessError(1, 'apk verify') if failure == 'signature' else None)), \
+                     mock.patch.object(release.subprocess, 'check_output', side_effect=[
+                         json.dumps({'packages': index}), expected_index]):
+                    if failure not in (None, 'composition-ok'):
+                        with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                            release.prepare(packages, base_path, candidate, proof_path, Path('/apk'), output)
+                        self.assertFalse(output.exists())
+                    else:
+                        result = release.prepare(packages, base_path, candidate, proof_path, Path('/apk'), output)
+                        self.assertTrue(result['ok'])
+                        self.assertEqual((packages / 'manifest.json').read_bytes(), (output / 'manifest.json').read_bytes())
+                        self.assertFalse((output / 'private-device-receipt.json').exists())
+                        self.assertFalse((output / 'private-proof.json').exists())
+                        self.assertTrue((output / 'optional-packages.json').exists())
+                        (output / 'compat-packages.adb').write_text('changed after publication')
+                        verifier_spec = importlib.util.spec_from_file_location('optional_readback_verifier', VERIFIER)
+                        verifier = importlib.util.module_from_spec(verifier_spec)
+                        verifier_spec.loader.exec_module(verifier)
+                        with self.assertRaisesRegex(ValueError, 'optional feed bytes'):
+                            verifier.verify(output, commit, tree)
 
 
 class PackageLifecycleTests(unittest.TestCase):

@@ -134,6 +134,8 @@ test "$(jsonfilter -i "$data" -e '@.generation')" = 2
 ucode "$main" plugins-list >"$work/list.json"
 ucode -e 'import * as fs from "fs"; if (length(filter(json(fs.readfile(ARGV[0])).result.plugins, item => item.id == "workspace-note"))) exit(1);' "$work/list.json"
 test "$(pidof mihomo)" = "$core_pid"
+sh /tmp/tests/plugin_components_device.sh >"$work/components.json" 2>"$work/components.log"
 if [ "$host_installed" = 1 ]; then apk --no-network del netfleet-plugin-vm-host >"$work/remove-host.log" 2>&1; fi
-printf '{"ok":true,"install":true,"load":true,"upgrade":true,"remove":true,"workspace_note":{"signed_install":true,"generic_rpc":true,"configuration_saved":true,"configuration_preserved_on_upgrade":true,"revision_assets_replaced":true,"updated_code_accepts_saved_configuration":true,"uninstall_removes_plugin_and_assets":true,"user_data_preserved_on_uninstall":true},"core_pid_unchanged":true,"artifact_sha256":"%s"}\n' \
+printf '{"ok":true,"install":true,"load":true,"upgrade":true,"remove":true,"component_transactions":%s,"workspace_note":{"signed_install":true,"generic_rpc":true,"configuration_saved":true,"configuration_preserved_on_upgrade":true,"revision_assets_replaced":true,"updated_code_accepts_saved_configuration":true,"uninstall_removes_plugin_and_assets":true,"user_data_preserved_on_uninstall":true},"core_pid_unchanged":true,"artifact_sha256":"%s"}\n' \
+	"$(cat "$work/components.json")" \
 	"$(sha256sum /tmp/plugin-packages.tar | cut -d ' ' -f 1)"

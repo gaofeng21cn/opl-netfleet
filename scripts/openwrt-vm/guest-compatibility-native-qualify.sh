@@ -43,22 +43,64 @@ for(let name in ['compat-manifest.json','device-identity-manifest.json']) {
 }
 UC
 stage=install
-curl -fsS "$feed_url/install-netfleet.sh" -o "$work/install.sh"
-NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 sh "$work/install.sh" >>"$work/packages.log" 2>&1
-cp /tmp/compat-runtime/compat-public-key.pem /etc/apk/keys/netfleet-native-test.pem
-apk verify /tmp/compat-runtime/*.apk >>"$work/packages.log" 2>&1
-# Exercise the public full-profile installer against the same signed optional feed.
-# This loopback server exists only in the isolated guest and is stopped after install.
-uhttpd -f -p 127.0.0.1:18081 -h /tmp/compat-runtime >"$work/optional-feed.log" 2>&1 &
-optional_feed_pid=$!
-for attempt in $(seq 1 20); do
- curl -fsS http://127.0.0.1:18081/compat-packages.adb -o /dev/null && break
- sleep 1
+for package in opl-netfleet opl-netfleet-kernel opl-netfleet-https-compat; do
+ if apk info -e "$package" >/dev/null 2>&1; then
+  printf 'Full installation requires a clean NetFleet package state: %s\n' "$package" >&2
+  exit 1
+ fi
 done
+test -z "$(pidof mihomo || true)"
+sha256sum /etc/config/dhcp >"$work/dns-before-install.sha256"
+curl -fsS "$feed_url/install-netfleet.sh" -o "$work/install.sh"
+# One public URL and one full installation from a clean NetFleet package state.
+# No preinstalled default product or extra optional-source override is allowed.
+unset NETFLEET_COMPAT_FEED_BASE
 NETFLEET_INSTALL_PROFILE=full NETFLEET_FEED_BASE="$feed_url" \
- NETFLEET_COMPAT_FEED_BASE=http://127.0.0.1:18081 NETFLEET_ALLOW_INSECURE_FEED=1 \
+ NETFLEET_ALLOW_INSECURE_FEED=1 \
  sh "$work/install.sh" >>"$work/packages.log" 2>&1
-kill "$optional_feed_pid"
+apk info -e opl-netfleet opl-netfleet-kernel luci-app-netfleet \
+ opl-netfleet-plugin-https-compat opl-netfleet-https-compat opl-netfleet-plugin-device-identity >>"$work/packages.log" 2>&1
+test "$(cat /etc/apk/repositories.d/opl-netfleet-compat.list)" = "$feed_url/compat-packages.adb"
+apk verify /tmp/compat-runtime/*.apk >>"$work/packages.log" 2>&1
+inactive_install() {
+ test -z "$(pidof mihomo || true)"
+ command -v nft >/dev/null
+ for table in netfleet netfleet_compat; do
+  if nft list table inet "$table" >/dev/null 2>&1; then
+   printf 'Full installation unexpectedly created interception table: %s\n' "$table" >&2
+   return 1
+  fi
+ done
+ sha256sum -c "$work/dns-before-install.sha256" >&2
+ /usr/libexec/opl-netfleet/main.uc compatibility-get >"$work/default-off.json"
+ test "$(jsonfilter -i "$work/default-off.json" -e '@.result.requested')" = false
+ test "$(jsonfilter -i "$work/default-off.json" -e '@.result.intercepting')" != true
+ ubus call service list '{"name":"opl-netfleet-compat"}' >"$work/installed-service.json"
+ test "$(jsonfilter -i "$work/installed-service.json" -e '@["opl-netfleet-compat"].instances.engine.running')" != true
+}
+install_snapshot() {
+ /usr/libexec/opl-netfleet/main.uc plugins-list >"$work/installed-plugins.json"
+ ucode - "$work/installed-plugins.json" <<'UC'
+import * as fs from 'fs';
+const inventory=json(fs.readfile(ARGV[0]));
+if(inventory?.ok!==true) die('full_install_plugin_inventory_failed');
+const rows=map(inventory.result.plugins,row=>({id:row.id,instance:row.instance,version:row.version,loaded:row.loaded}));
+sort(rows,(a,b)=>(a.id+':'+a.instance)<(b.id+':'+b.instance)?-1:1);
+printf('%J\n',rows);
+UC
+ test -d /etc/opl-netfleet
+ find /etc/opl-netfleet -type f -exec sha256sum '{}' \; | sort
+ if [ -f /etc/config/netfleet ]; then sha256sum /etc/config/netfleet; else printf 'netfleet_uci=absent\n'; fi
+}
+inactive_install
+install_snapshot >"$work/full-install-before.txt"
+stage=repeat_full_install
+NETFLEET_INSTALL_PROFILE=full NETFLEET_FEED_BASE="$feed_url" \
+ NETFLEET_ALLOW_INSECURE_FEED=1 \
+ sh "$work/install.sh" >>"$work/packages.log" 2>&1
+inactive_install
+install_snapshot >"$work/full-install-after.txt"
+cmp "$work/full-install-before.txt" "$work/full-install-after.txt"
 if [ -f /tmp/compat-runtime/retained-base/retained-base.json ]; then
  stage=retained_base
  touch /tmp/netfleet-retained-base-vm-authorized
@@ -172,5 +214,5 @@ stage=complete
 ucode - "$commit" "$tree" <<'UC'
 import * as fs from 'fs';
 const benchmark=fs.readfile('/tmp/https-native-network/benchmark.json');
-printf('%J\n',{ok:true,source_commit:ARGV[0],source_tree:ARGV[1],checks:{...(fs.stat('/tmp/compat-runtime/upgrade.json')?{engine_package_cycle:true}:{}),...(fs.stat('/tmp/compat-runtime/retained-base/retained-base.json')?{retained_base_packages:json(fs.readfile('/tmp/compat-native-fixture/retained-base.json'))?.ok===true}:{}),dual_stack_probe_faults:true,native_kernel_io:true,native_dependency_closure:true,real_control_entry:true,procd_launcher:true,local_h1_to_h2:true,resource_limits:true,resource_pressure:true,user_disable:true,plugin_unload_load:true,uninstall_reinstall:true,stable_ca:true,base_configuration_unchanged:true,local_address_rotation:true,address_conflict_expiry:true,dual_stack_kernel_lease:true,real_gateway_h2:true,kernel_tcp_reset_delivery:true,original_routing:true,sni_and_unknown_device_bypass:true,address_update_without_restart:true,streaming_upload_and_sse:true,cancellation_and_business_errors:true,simultaneous_stall_fail_open:true,third_fault_latch:true,manual_recovery:true,base_pid_unchanged:true},profile:json(fs.readfile('/tmp/https-native-network/profile.json')),metrics:json(fs.readfile('/tmp/https-native-network/performance.json')),benchmark:benchmark?json(benchmark):null,production_ready:false});
+printf('%J\n',{ok:true,source_commit:ARGV[0],source_tree:ARGV[1],checks:{full_feed_bootstrap:true,full_feed_install_inactive:true,full_feed_repeat_preserves_configuration:true,...(fs.stat('/tmp/compat-runtime/upgrade.json')?{engine_package_cycle:true}:{}),...(fs.stat('/tmp/compat-runtime/retained-base/retained-base.json')?{retained_base_packages:json(fs.readfile('/tmp/compat-native-fixture/retained-base.json'))?.ok===true}:{}),dual_stack_probe_faults:true,native_kernel_io:true,native_dependency_closure:true,real_control_entry:true,procd_launcher:true,local_h1_to_h2:true,resource_limits:true,resource_pressure:true,user_disable:true,plugin_unload_load:true,uninstall_reinstall:true,stable_ca:true,base_configuration_unchanged:true,local_address_rotation:true,address_conflict_expiry:true,dual_stack_kernel_lease:true,real_gateway_h2:true,kernel_tcp_reset_delivery:true,original_routing:true,sni_and_unknown_device_bypass:true,address_update_without_restart:true,streaming_upload_and_sse:true,cancellation_and_business_errors:true,simultaneous_stall_fail_open:true,third_fault_latch:true,manual_recovery:true,base_pid_unchanged:true},profile:json(fs.readfile('/tmp/https-native-network/profile.json')),metrics:json(fs.readfile('/tmp/https-native-network/performance.json')),benchmark:benchmark?json(benchmark):null,production_ready:false});
 UC

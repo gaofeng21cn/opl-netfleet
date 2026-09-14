@@ -224,6 +224,48 @@ if [ -n "$package_archive" ]; then
 		echo "OpenWrt qualification package manifest mismatch" >&2
 		exit 1
 	}
+	if [ "$lane_mode" = compatibility ] && [ -n "${NETFLEET_COMPAT_PACKAGE:-}" ] &&
+		[ -f "$NETFLEET_COMPAT_PACKAGE/native-runtime.json" ]; then
+		# Exercise the real full bootstrap at one URL. Only public optional assets
+		# join this feed; rollback files, receipts and colliding native metadata do not.
+		python3 - "$feed_dir" "$NETFLEET_COMPAT_PACKAGE" "$source_commit" "$source_tree" <<'PY'
+import hashlib, json, os, re, shutil, sys
+from pathlib import Path
+feed, candidate = map(Path, sys.argv[1:3])
+def digest(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+names = ['compat-public-key.pem', 'compat-packages.adb']
+for filename, package in [('compat-manifest.json', 'opl-netfleet-https-compat'),
+                          ('device-identity-manifest.json', 'opl-netfleet-plugin-device-identity')]:
+    manifest = json.loads((candidate / filename).read_text())
+    name = manifest['artifact']
+    if not re.fullmatch(re.escape(package) + r'-[0-9]+\.[0-9]+\.[0-9]+(-r[0-9]+)?\.apk', name):
+        raise SystemExit('Invalid optional feed artifact name')
+    if digest(candidate / name) != manifest['sha256']:
+        raise SystemExit('Optional feed artifact digest mismatch')
+    if filename == 'compat-manifest.json':
+        if (manifest['source_commit'], manifest['source_tree']) != tuple(sys.argv[3:5]):
+            raise SystemExit('Optional feed source identity mismatch')
+        native = manifest.get('native_runtime', {})
+        if native.get('name') != 'native-runtime.json' or native.get('sha256') != digest(candidate / 'native-runtime.json'):
+            raise SystemExit('Optional feed native runtime identity mismatch')
+    elif os.environ.get('NETFLEET_COMPAT_DEVICE_IDENTITY'):
+        if manifest != json.loads(os.environ['NETFLEET_COMPAT_DEVICE_IDENTITY']):
+            raise SystemExit('Optional feed retained identity mismatch')
+    names.append(name)
+for name in names:
+    path = candidate / name
+    if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+        raise SystemExit('Optional feed requires regular nonempty public assets')
+    if (feed / name).exists():
+        raise SystemExit('Optional feed would overwrite an existing default asset')
+key = (candidate / 'compat-public-key.pem').read_bytes()
+if b'PRIVATE KEY' in key or not key.startswith(b'-----BEGIN PUBLIC KEY-----'):
+    raise SystemExit('Optional feed key is not a public key')
+for name in names:
+    shutil.copyfile(candidate / name, feed / name)
+PY
+	fi
 	if [ "$lane_mode" = all ] || [ "$lane_mode" = setup ] || [ "$lane_mode" = package ]; then
 		set -- "$feed_dir" "$feed_dir/components-fixtures"
 		if [ -n "${NETFLEET_VM_PACKAGE_BASELINE:-}" ]; then

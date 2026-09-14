@@ -131,6 +131,15 @@ Feed 安装器对软件源索引读取做有界重试，索引持续不可用时
 恢复只补启缺失的服务；已经运行的核心和监督器继续工作，随后仍须验证配置、选路及网络状态。
 该回退只覆盖组件更新入口；外部迁移执行器必须独立通过相同旧包组合与故障注入验证。
 
+LuCI 的独立插件包管理使用 `components_plugin_plan` 与 `components_plugin`：请求包含动作
+`install/update/remove`、包名、当前版本、候选版本及确认的计划。预览只调用 APK 离线求解；
+后台 worker 在刷新签名索引后重算计划，旧新版本或依赖变化时拒绝写入。候选列表来自已配置
+并信任的 APK 仓库，不接收任意下载 URL。只接受 `opl-netfleet-plugin-*`，默认产品包拒绝单独
+操作，HTTPS 引擎仍使用其独立更新 owner。安装可新增缺少的依赖，但拒绝变更无关已安装包；
+卸载要求插件禁用且没有包或服务依赖。APK 钩子负责排空和恢复，事务保存私有配置及包数据库
+意图；可选插件恢复不主动停止整套基础网络。已安装的签名插件归档留在设备，以便软件源前进
+后仍有旧版回退材料。进度、取消和中断恢复沿用组件事务。
+
 有限插件更新通过同一组件事务的 `components-install <private-stage>` 入口提交精确包集合。
 暂存描述只接受默认产品中已安装的功能插件及 LuCI 宿主包，逐包绑定候选与旧版的名称、版本和 SHA-256；
 候选和回退目录必须恰好包含声明的归档，目标端再验证签名、架构和当前安装版本。
@@ -212,6 +221,20 @@ package source。workflow 只产生短期候选，不直接创建 Release。候�
 报告发布成功；已有 Release 不允许覆盖资产。VM 的 HTTP feed 覆盖只允许用于本机受控资格
 验证，公开安装入口默认只接受 HTTPS。NetFleet 的 `noarch` 代码包可跨 CPU 架构复用，
 核心依赖仍按其真实架构匹配，发布验收以 manifest 中记录的 SDK 构建目标为准。
+
+完整安装的可选 feed 与默认包可以同处一个不可变 Release。发布入口的
+`--compat-candidate`、`--compat-qualification`、`--apk` 参数复用已签名的 HTTPS 引擎和
+Device Identity APK；先验证可选模块生命周期资格、原生依赖回执、签名索引和精确包集合，
+再将两份 APK、`compat-public-key.pem`、`compat-packages.adb` 与最小公开清单
+`optional-packages.json` 加入发布目录。默认包 manifest 不重写，保留其精确 VM 资格绑定；
+公开清单仅包含包身份、源码身份、架构、摘要和默认 manifest 摘要，不发布私有资格回执、
+运行快照或设备信息。可选包跨产品版本复用只允许 HTTPS 实际 caller 的文件集合与摘要均
+等于已验收基础版本；caller 变化必须重新验收组合。公开回读同时校验默认包和可选 feed。
+
+`NETFLEET_INSTALL_PROFILE=full` 使用同一发布地址的可选 feed；独立镜像可显式设置
+`NETFLEET_COMPAT_FEED_BASE`。安装器在写入软件源前下载并验证可选签名索引，然后由 APK
+解析完整依赖，缺失时拒绝而不静默降级。首次安装只加载管理入口，不自动开启 HTTPS 拦截。
+仅发布默认包时不能宣称该 Release 支持完整安装。
 
 术语固定：OPL Instance 是用户私有 desired-configuration 权威；deployment bundle
 只是从该权威生成、供部署器消费的四文件产物，不是第二个 Instance，也不得手工维护。

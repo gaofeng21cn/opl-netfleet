@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "product-ui",
   "label": "NetFleet product UI",
-  "version": "0.9.15",
+  "version": "0.10.0",
   "api_version": 1,
   "package": "opl-netfleet-plugin-product-ui",
   "services": {},

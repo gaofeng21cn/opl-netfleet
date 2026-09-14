@@ -79,6 +79,7 @@ function read_json(){return {feed:'feed',versions:candidates};}function newer(ne
 function product_packages(){return ['opl-netfleet','luci-app-netfleet','opl-netfleet-plugin-ui'];}function version_valid(value){return value!=null;}
 function controller_version(){return null;}function api_secret(){return null;}function capture(){return null;}function dashboard_resource(){return {};}
 const context={inventory:()=>[]};function check(value,message){if(!value)die(message);}
+function plugin_packages(){return [];}
 ` + getter + `
 let result=get();check(result.components[0].update_available && result.components[0].available_version=='1','same aggregate version must expose plugin update');
 check(join(',',result.product.updates)=='opl-netfleet-plugin-ui','report actual changed packages');

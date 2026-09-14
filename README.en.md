@@ -207,6 +207,11 @@ The LuCI **Components and Updates** page shows installed versions, the running
 Mihomo version, and key dependencies, with an explicit feed check. NetFleet
 updates the microkernel, feature plugins, and LuCI together using the default
 product inventory; third-party plugins can be maintained independently.
+The **Feature plugins** section discovers standalone plugins from trusted feeds.
+Install, update, and uninstall actions first show the actual package plan, then
+run in the background with progress. Uninstall requires a disabled, unreferenced
+plugin and preserves private configuration. The HTTPS engine retains its dedicated
+update entry in the HTTPS plugin.
 Updating Mihomo under the native backend
 requires separate confirmation and validates the current configuration first;
 failures restore the previous packages and runtime. Unattended and system-wide
