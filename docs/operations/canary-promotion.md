@@ -146,6 +146,6 @@ Nikki 官方页面切回独立恢复配置。管理接口不可用时保留当�
 
 ## 独立插件更新
 
-独立插件更新沿用“基础组合 owner、插件 owner、设备 owner”三层责任。基础组合 owner 先提供与目标实际安装组合匹配的最新 qualification receipt；插件 owner 只提供签名插件包和插件资格，不重新打包或替换基础 NetFleet。设备 owner 在单一 operator/deploy 锁内执行 dry-run、排空、安装和回读；前置身份、依赖或网关检查失败都在 APK 写入前旁路并结束，不停止基础 NetFleet。
+独立插件更新沿用“基础组合 owner、插件 owner、设备 owner”三层责任。基础组合 owner 先提供与目标实际安装组合匹配的最新 qualification receipt；插件 owner 只提供签名插件包和插件资格，不重新打包或替换基础 NetFleet。设备 owner 在单一 operator/deploy 锁内执行 dry-run、排空、安装和回读；前置身份、依赖或网关检查失败都在 APK 写入前旁路并结束，不停止基础 NetFleet。独立插件事务默认只观察 10 秒，远端等待最多 60 秒；慢事务由持久 journal 和 `operation_get` 对账，基础组合更新才使用完整观察窗口。
 
 更新回执至少记录基础组合身份、插件旧/新包摘要、目标安装前组合、排空结果、安装阶段、运行状态、基础 PID/配置/CA 校验和以及回退结果。SSH 超时或进程退出后的结果必须先从目标回读 journal，再决定是否继续，不能重复派发安装。插件故障只清理自己的 lease 和服务，回退只恢复自己的旧包，不回滚订阅、平台、UI、Mihomo、DNS 或 TPROXY。

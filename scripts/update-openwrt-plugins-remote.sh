@@ -3,7 +3,7 @@
 set -eu
 umask 077
 stage=${1:?private stage required}
-seconds=${2:?observation window required}
+seconds=${2:-${NETFLEET_PLUGIN_OBSERVE_SECONDS:-10}}
 case "$seconds" in ''|*[!0-9]*) exit 2 ;; esac
 [ "$seconds" -ge 10 ] && [ "$seconds" -le 1800 ]
 main=/usr/libexec/opl-netfleet/main.uc
@@ -25,7 +25,8 @@ case "$id" in ''|*[!a-f0-9]*) cat start.json; exit 1 ;; esac
 [ "${#id}" = 32 ]
 printf '{"id":"%s","phase":"installing"}\n' "$id"
 transaction=/etc/opl-netfleet/package-transactions/$id
-for attempt in $(seq 1 300); do
+# A completed transaction is durable; keep the operator request bounded.
+for attempt in $(seq 1 60); do
  phase=$(jsonfilter -i "$transaction/journal.json" -e '@.phase' 2>/dev/null || true)
  case "$phase" in complete) break ;; rolled_back) printf '{"ok":false,"id":"%s","error":"update_rolled_back"}\n' "$id"; exit 1 ;; esac
  ucode "$main" components-operation >operation.json 2>/dev/null || true

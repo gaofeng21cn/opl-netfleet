@@ -65,7 +65,9 @@ def main() -> None:
     parser.add_argument('--qualification', required=True, type=Path)
     parser.add_argument('--plugin', action='append', required=True, help='exact package name; repeat for each plugin')
     parser.add_argument('--output', required=True, type=Path, help='private local receipt, outside Git')
-    parser.add_argument('--observe-seconds', type=int, default=120)
+    # Independent plugin updates need only a short health confirmation; the
+    # durable target journal remains authoritative for slower transactions.
+    parser.add_argument('--observe-seconds', type=int, default=10)
     parser.add_argument('--ssh-option', action='append', default=[], help='SSH -o option, e.g. ControlPath=...')
     parser.add_argument('--dry-run', action='store_true', help='verify source, packages and qualification without contacting target')
     args = parser.parse_args()
