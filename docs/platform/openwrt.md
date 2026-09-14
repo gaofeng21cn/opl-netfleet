@@ -357,7 +357,7 @@ Nikki 路径到原生目录；不会从品牌名猜配置，也不靠重新下�
 
 LAN ingress 以 effective `allow_lan`、TCP/UDP `7892` wildcard listener 和所选后端 nft TProxy rule 为准；DNS 接管以 effective `dns_enabled`、TCP/UDP DNS listener 与所选后端要求的 DNS redirect chains 为准。原生后端还通过进程内 UDP socket 在一秒内查询自身 DNS 端口：gateway 在生成配置中为保留命名空间 `health.opl-netfleet.invalid` 添加 `+.health.opl-netfleet.invalid: rcode://name_error` nameserver policy；该高级规则不进入用户可编辑的精确域名列表，TXT 查询经过正常 DNS resolver 并在本地返回 NXDOMAIN，不访问上游。探针校验响应 ID、问题与完整报文，只把该预期应答当作本地处理链健康；它不代表外部域名解析或业务成功。Nikki 后端仍使用保护探针域名经路由器 resolver 的解析证据。一次 backend 回读共享 `/proc/net` 监听快照和 nft table 快照，并直接调用既有 gateway service，不启动第二个宿主进程，也不复用跨轮缓存。
 
-原生健康读取从 procd 回读核心命令身份，并复用本次 nft 表快照核验 DNS/TProxy；状态页不为就绪判断重复计算完整配置摘要。显式 gateway 状态仍提供配置摘要，观察之间不缓存健康结果。
+原生健康读取从 procd 回读核心命令身份，并复用本次 nft 表快照核验 DNS/TProxy；快照保留表、链与规则表达式，但不展开健康判断不消费的集合元素。需要成员证明的接管与选路读取仍保留集合内容；状态页不为就绪判断重复计算完整配置摘要。显式 gateway 状态仍提供配置摘要，观察之间不缓存健康结果。
 
 服务状态读取使用文件 API 和有界 ubus 调用；自启动选择仍由 rc.common 的 enabled 动作确认。同次状态或调度观察复用已读取的核心身份，下一次调用重新读取，不缓存健康结论。
 
@@ -381,6 +381,8 @@ profile、credentials、documents 和 paths；调度器通过 process 调用业�
 OpenWrt 安装路径。文件工具不会因读取 JSON 而加载凭据、订阅或 UCI 实现。
 
 ## 内核宿主适配
+
+OpenWrt 内核包显式依赖 `ucode-mod-digest`，插件文件摘要由原生 SHA-256 模块计算，保持有序逐文件摘要及最终摘要格式；不缓存执行授权，也不启动外部摘要命令。
 
 宿主通过 `options.adapter` 注入路径、信任身份、进程调用、包查询、文件摘要、mutation 锁
 和协调者身份方法。共享内核不读取 `/proc` 或调用包管理器；OpenWrt 的 main/supervisor

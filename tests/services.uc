@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import { create } from "../openwrt/files/usr/libexec/opl-netfleet/kernel/host.uc";
-import { create as create_adapter } from "../openwrt/files/usr/libexec/opl-netfleet/adapters/openwrt.uc";
+import { create as create_adapter } from "./host-test-adapter.uc";
 
 const root = fs.realpath(replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet"));
 const workspace = fs.mkdtemp("/tmp/netfleet-service-test.XXXXXX");

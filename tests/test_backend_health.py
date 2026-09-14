@@ -43,6 +43,41 @@ class BackendHealthTests(unittest.TestCase):
                     ''', health=False))
                     self.assertEqual(result, {'ok': not failure, 'calls': 1})
 
+    def test_terse_nft_snapshot_preserves_rules_and_rejects_failed_reads(self):
+        expressions = [
+            {"match": {"left": {"meta": {"key": "nfproto"}}, "op": "==", "right": "ipv6"}},
+            {"tproxy": {"port": 7893}}, {"redirect": {"port": 1053}},
+            {"match": {"left": {"payload": {"protocol": "ip", "field": "saddr"}},
+                       "op": "in", "right": "@devices"}},
+        ]
+        records = [{"table": {"family": "inet", "name": "fixture"}},
+                   {"chain": {"name": "forward"}},
+                   {"rule": {"chain": "forward", "expr": expressions}},
+                   {"set": {"name": "devices", "type": "ipv4_addr"}}]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            payload, args = root / 'snapshot.json', root / 'args'
+            command = root / 'nft'
+            env = dict(os.environ, PATH=directory + os.pathsep + os.environ['PATH'])
+            for data, status, expected in [
+                (json.dumps({"nftables": records}), 0,
+                 {"present": True, "chains": {"forward": expressions}}),
+                (json.dumps({"nftables": records[:2]}), 0,
+                 {"present": True, "chains": {"forward": []}}),
+                (json.dumps({"nftables": []}), 0, {"present": False, "chains": {}}),
+                ('broken', 0, {"present": False, "chains": {}}),
+                (json.dumps({"nftables": records}), 1, {"present": False, "chains": {}}),
+            ]:
+                with self.subTest(status=status, data=data):
+                    payload.write_text(data)
+                    command.write_text('#!/bin/sh\n' +
+                                       f'echo "$*" > "{args}"\ncat "{payload}"\nexit {status}\n')
+                    command.chmod(0o700)
+                    result = json.loads(self.run_ucode(
+                        'printf("%J", h.rule_snapshot("fixture"));', env=env))
+                    self.assertEqual(result, expected)
+                    self.assertEqual(args.read_text().strip(), '-j -t list table inet fixture')
+
     def test_candidate_reset_retries_only_transient_failures_and_keeps_diagnostics(self):
         module = ROOT / 'openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/lib/controller.uc'
         for replies, expected, attempts in [([204], True, 1), ([503, 204], True, 2),
@@ -86,13 +121,13 @@ class BackendHealthTests(unittest.TestCase):
                     server.server_close()
                     worker.join()
 
-    def run_ucode(self, body, health=True):
+    def run_ucode(self, body, health=True, env=None):
         args = [UCODE]
         if os.environ.get("UCODE_LIB"):
             args += ["-L", os.environ["UCODE_LIB"]]
         prefix = f'import * as h from "{MODULE}"; ' if health else ''
         result = subprocess.run(args + ["-e", prefix + body],
-                                text=True, capture_output=True, timeout=4)
+                                text=True, capture_output=True, timeout=4, env=env)
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout
 

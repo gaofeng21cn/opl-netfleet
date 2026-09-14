@@ -1,7 +1,7 @@
 #!/usr/bin/ucode
 import * as fs from 'fs';
 import { create } from '../openwrt/files/usr/libexec/opl-netfleet/kernel/host.uc';
-import { create as create_adapter } from '../openwrt/files/usr/libexec/opl-netfleet/adapters/openwrt.uc';
+import { create as create_adapter } from './host-test-adapter.uc';
 
 let assertions = 0;
 function check(value, message) { if (!value) die(message); assertions++; };

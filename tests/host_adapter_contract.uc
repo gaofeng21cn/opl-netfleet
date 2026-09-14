@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import { create, execute, run, tick } from '../openwrt/files/usr/libexec/opl-netfleet/kernel/host.uc';
 import { invoke, lifecycle } from '../openwrt/files/usr/libexec/opl-netfleet/kernel/process.uc';
 import { trusted, atomic_json, shell_quote as q } from '../openwrt/files/usr/libexec/opl-netfleet/kernel/io.uc';
-import { create as create_openwrt } from '../openwrt/files/usr/libexec/opl-netfleet/adapters/openwrt.uc';
+import { create as create_openwrt } from './host-test-adapter.uc';
 
 let assertions = 0;
 function check(value, message) { if (!value) die(message); assertions++; };
@@ -138,8 +138,22 @@ try {
 	write(source, 'payload\n');
 	const pipe = fs.popen(`cd ${q(root)} && sha256sum identity.txt | sha256sum`);
 	const expected = substr(trim(pipe.read('all')), 0, 64);
-	check(pipe.close() == 0 && openwrt.inspect_digest(root, [source]) == expected, 'OpenWrt digest preserves installed plugin revisions');
+	check(pipe.close() == 0 && openwrt.inspect_digest(root, [source]) == expected, 'adapter digest preserves installed plugin revisions');
 	check(openwrt.inspect_digest(root, [source, `${root}/missing`]) == null, 'partial file digest failure cannot produce a plugin revision');
+	check(openwrt.inspect_digest(root, []) == null, 'empty file list is not a plugin revision');
+	fs.mkdir(`${root}/nested`, 0700);
+	const digest_files = [];
+	for (let name, contents in { empty: '', binary: '\x00\xff\x80\n\r', maximum: sprintf('%01048576d', 1) }) {
+		const path = `${root}/nested/${name}`;
+		write(path, contents); push(digest_files, path);
+	}
+	const reference = fs.popen(`cd ${q(root)} && sha256sum nested/empty nested/binary nested/maximum | sha256sum`);
+	const identity = substr(trim(reference.read('all')), 0, 64);
+	check(reference.close() == 0 && openwrt.inspect_digest(root, digest_files) == identity,
+		'ordered digest preserves empty, binary, nested and one-MiB files');
+	check(openwrt.inspect_digest(root, reverse([...digest_files])) != identity, 'file order remains part of code identity');
+	write(digest_files[1], 'changed');
+	check(openwrt.inspect_digest(root, digest_files) != identity, 'byte replacement changes code identity');
 	check(atomic_json(`${root}/record.json`, { ok: true }), 'generic atomic JSON remains available without a platform owner');
 	let scans = 0;
 	const cached_adapter = { ...adapter, paths: { ...adapter.paths, inspection_cache: `${root}/inspection` },
@@ -184,6 +198,36 @@ try {
 	scans = 0;
 	check(execute(['scheduler-inspect'], root, { adapter: targeted_adapter }).updated == true && scans == 2,
 		'command deeply inspects only selected code and its lock-time generation, independent of unrelated packages');
+	const scheduler_manifest_path = `${root}/plugins/scheduler/manifest.json`;
+	const scheduler_manifest = json(fs.readfile(scheduler_manifest_path));
+	scheduler_manifest.actions = { inspect: { service: 'scheduler.tick', method: 'inspect', access: 'read' } };
+	write(scheduler_manifest_path, scheduler_manifest);
+	write(request, { request: { id: 'scheduler', action: 'inspect' } });
+	scans = 0;
+	check(execute(['plugin-read', request], root, { adapter: targeted_adapter }).updated == true && scans == 2,
+		'plugin-read checks target and lock-time bytes without scanning 33 unrelated packages');
+	write(request, { request: { id: 'process', action: 'inspect' } });
+	scans = 0;
+	check(execute(['plugin-read', request], root, { adapter: targeted_adapter }).ok && scans == 2,
+		'process plugin read retains code lease and dependency checks without full inventory');
+	write(request, { request: { id: 'scheduler', action: 'inspect' } });
+	const changing_adapter = { ...targeted_adapter, network_lock: (path, writing) => {
+		scheduler_manifest.actions.inspect.lock = 'plugin';
+		write(scheduler_manifest_path, scheduler_manifest);
+		return adapter.network_lock(path, writing);
+	} };
+	check(execute(['plugin-read', request], root, { adapter: changing_adapter }).error == 'plugin_revision_changed',
+		'action lock declaration changed during admission cannot execute under the old lock');
+	delete scheduler_manifest.actions.inspect.lock; write(scheduler_manifest_path, scheduler_manifest);
+	const blocked_code = fs.open(`${root}/locks/scheduler.lock`, 'ae', 0600);
+	check(blocked_code.lock('xn'), 'hold target replacement code lease');
+	check(execute(['plugin-read', request], root, { adapter: targeted_adapter }).error == 'plugin_code_busy:scheduler',
+		'plugin-read cannot execute while target code is being replaced');
+	blocked_code.close();
+	check(fs.chmod(`${root}/plugins/scheduler/lib/main.uc`, 0666), 'make read target unsafe');
+	check(execute(['plugin-read', request], root, { adapter: targeted_adapter }).error == 'plugin_files_unsafe',
+		'targeted plugin-read still rejects unsafe resources');
+	fs.chmod(`${root}/plugins/scheduler/lib/main.uc`, 0600);
 	write(`${root}/plugins/scheduler/lib/main.uc`, 'return function(ctx) { return { tick: state => ({delay_ms: 321, state}) }; };');
 	scans = 0;
 	check(tick(root, {}, { adapter: targeted_adapter }) == 321 && scans == 2,

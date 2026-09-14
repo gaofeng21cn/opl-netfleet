@@ -68,14 +68,15 @@ function package_available(name) {
 	return system(`apk --no-network info -e ${q(name)} >/dev/null 2>&1 || opkg status ${q(name)} 2>/dev/null | grep -q '^Status: .* installed$'`) == 0;
 };
 function inspect_digest(directory, files) {
-	const pipe = fs.popen(`cd ${q(directory)} && sha256sum ${join(' ', map(files, path => q(substr(path, length(directory) + 1))))} 2>/dev/null`);
-	if (pipe == null) return null;
-	const identities = pipe.read('all'), status = pipe.close();
-	if (status != 0 || type(identities) != 'string' || length(identities) == 0) return null;
-	const digest_pipe = fs.popen(`printf '%s' ${q(identities)} | sha256sum`);
-	if (digest_pipe == null) return null;
-	const output = trim(digest_pipe.read('all') ?? ''), digest_status = digest_pipe.close();
-	return digest_status == 0 && match(output, /^[a-f0-9]{64} /) ? substr(output, 0, 64) : null;
+	const sha256 = require('digest').sha256;
+	if (!length(files)) return null;
+	let identities = '';
+	for (let path in files) {
+		const contents = fs.readfile(path);
+		if (contents == null) return null;
+		identities += sha256(contents) + '  ' + substr(path, length(directory) + 1) + '\n';
+	}
+	return sha256(identities);
 };
 function invoke_process(entry, action, envelope, limit) {
 	const work = fs.mkdtemp('/tmp/opl-netfleet-plugin.XXXXXX');

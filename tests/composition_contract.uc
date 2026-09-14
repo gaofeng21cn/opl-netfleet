@@ -2,7 +2,7 @@
 import * as fs from 'fs';
 import { create, execute } from '../openwrt/files/usr/libexec/opl-netfleet/kernel/host.uc';
 import { trusted } from '../openwrt/files/usr/libexec/opl-netfleet/kernel/io.uc';
-import { create as create_openwrt } from '../openwrt/files/usr/libexec/opl-netfleet/adapters/openwrt.uc';
+import { create as create_openwrt } from './host-test-adapter.uc';
 
 let assertions = 0;
 function check(value, message) { if (!value) die(message); assertions++; };

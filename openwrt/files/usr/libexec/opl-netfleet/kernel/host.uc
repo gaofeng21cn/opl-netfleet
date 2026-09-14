@@ -433,7 +433,7 @@ create = function(root, options) {
 	};
 	host_api = { use: use, call: call, release: release, inventory: inventory, command: command, system: system,
 		all_system: all_system, instance: instance_id, adapter: adapter,
-		found: found, blocked: blocked, acquire: acquire, graph: graph, root: root, options: { ...options, lazy_inspection: false } };
+		found: found, inspect: inspected, blocked: blocked, acquire: acquire, graph: graph, root: root, options: { ...options, lazy_inspection: false } };
 	return host_api;
 };
 
@@ -739,7 +739,7 @@ function management(action, argv, root, options) {
 		input = read_json(path)?.request;
 		if (type(input) != 'object' || !valid_id(input.id) || type(input.action) != 'string' ||
 			(input.instance != null && !valid_id(input.instance)) || (input.params != null && type(input.params) != 'object')) return failure('plugin_request_invalid');
-		host = create(root, { ...options, instance: input.instance ?? 'default' });
+		host = create(root, { ...options, instance: input.instance ?? 'default', lazy_inspection: action == 'plugin-read' });
 		local = host.found[input.id]?.manifest?.actions?.[input.action]?.lock == 'plugin';
 	}
 	const lock = local ? private_action_lock(options, input.id, action != 'plugin-read') : adapter.network_lock(options.network_lock, action != 'plugin-read');
@@ -761,8 +761,8 @@ function management(action, argv, root, options) {
 		if (type(input) != 'object' || !valid_id(input.id) || type(input.action) != 'string' ||
 			(input.instance != null && !valid_id(input.instance)) || (input.params != null && type(input.params) != 'object')) return failure('plugin_request_invalid');
 		host?.release();
-		host = create(root, { ...options, instance: input.instance ?? 'default' });
-		const item = host.found[input.id];
+		host = create(root, { ...options, instance: input.instance ?? 'default', lazy_inspection: action == 'plugin-read' });
+		const item = action == 'plugin-read' ? host.inspect(input.id) : host.found[input.id];
 		if (local != (item?.manifest?.actions?.[input.action]?.lock == 'plugin')) return failure('plugin_revision_changed');
 		if (action == 'plugin-drain') {
 			if (input.action != 'unload' || input.confirm != true) return failure('plugin_confirmation_or_revision_required');

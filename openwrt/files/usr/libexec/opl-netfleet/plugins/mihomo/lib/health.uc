@@ -25,7 +25,7 @@ export function listeners() {
 };
 
 export function rule_snapshot(table) {
-	const process = popen(`nft -j list table inet ${table} 2>/dev/null`);
+	const process = popen(`nft -j -t list table inet ${table} 2>/dev/null`);
 	let data = null;
 	try { data = process == null ? null : json(process.read("all")); } catch (error) {}
 	if (process == null || process.close() != 0) return { present: false, chains: {} };

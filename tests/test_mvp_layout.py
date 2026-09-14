@@ -118,11 +118,13 @@ class MvpLayoutTests(unittest.TestCase):
             harness = root / "install.mk"
             harness.write_text(
                 "INSTALL_DIR:=mkdir -p\nINSTALL_BIN:=install -m 0755\nINSTALL_DATA:=install -m 0644\n"
-                "all:\n\t$(call Package/opl-netfleet-kernel/install," + str(root / "stage") + ")\n")
-            subprocess.run([
+                "$(eval $(Package/opl-netfleet-kernel))\n"
+                "all:\n\t@echo kernel-dependencies: $(DEPENDS)\n\t$(call Package/opl-netfleet-kernel/install," + str(root / "stage") + ")\n")
+            result = subprocess.run([
                 "make", "--no-print-directory", "-f", str(ROOT / "openwrt/Makefile"),
                 "-f", str(harness), f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", "all",
             ], cwd=ROOT / "openwrt", capture_output=True, text=True, check=True)
+            self.assertIn("+ucode-mod-digest", result.stdout.split("kernel-dependencies:", 1)[1].splitlines()[0])
             installed = root / "stage/usr/libexec/opl-netfleet/adapters"
             expected = {path.name: path.read_bytes() for path in (RUNTIME / "adapters").glob("*.uc")}
             self.assertIn("openwrt.uc", expected)
