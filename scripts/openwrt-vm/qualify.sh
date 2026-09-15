@@ -515,8 +515,14 @@ run_guest() {
 	if [ "$result_name" = package-runtime ]; then
 		guest_arguments="$guest_arguments '$feed_url'"
 	fi
+	guest_source_commit=$source_commit
+    guest_source_tree=$source_tree
+    if [ "$guest_kind" = setup ] && [ -n "${NETFLEET_CORE_PACKAGE:-}" ]; then
+      guest_source_commit=$(python3 -c 'import json,os;print(json.loads(os.environ["NETFLEET_COMPAT_BASE_IDENTITY"])["source_commit"])')
+      guest_source_tree=$(python3 -c 'import json,os;print(json.loads(os.environ["NETFLEET_COMPAT_BASE_IDENTITY"])["source_tree"])')
+    fi
 	if ! ssh $ssh_common root@127.0.0.1 \
-		"sh /tmp/$guest_script '$source_commit' '$source_tree' $guest_arguments" \
+		"sh /tmp/$guest_script '$guest_source_commit' '$guest_source_tree' $guest_arguments" \
 		>"$work/$result_name-result.json" 2>"$work/$result_name-result.stderr"; then
 		cat "$work/$result_name-result.stderr" >&2
 		exit 1
@@ -605,9 +611,12 @@ lanes = {}
 for name in sorted(required):
     result = json.loads((work / f"{name}-result.json").read_text())
     checks = result.get("checks")
+    expected={'source_commit':sys.argv[2], 'source_tree':sys.argv[3]}
+    if name=='setup' and os.environ.get('NETFLEET_CORE_PACKAGE'):
+        expected=json.loads(os.environ['NETFLEET_COMPAT_BASE_IDENTITY'])
     if not (result.get("ok") is True
-            and result.get("source_commit") == sys.argv[2]
-            and result.get("source_tree") == sys.argv[3]
+            and result.get("source_commit") == expected["source_commit"]
+            and result.get("source_tree") == expected["source_tree"]
             and isinstance(checks, dict) and checks
             and all(item is True for item in checks.values())):
         raise SystemExit(f"OpenWrt {name} qualification returned an invalid receipt")
