@@ -22,7 +22,7 @@ command -v "$_ucode" >/dev/null 2>&1 || [ -x "$_ucode" ] || {
 if [ -n "${UCODE_LIB:-}" ]; then
   _lib=$UCODE_LIB
 else
-  _lib=$(CDPATH= cd -- "$(dirname "$_ucode")/../lib/ucode" 2>/dev/null || true)
+  _lib=$(CDPATH= cd -- "$(dirname "$_ucode")/../lib/ucode" 2>/dev/null && pwd || true)
   [ -d "$_lib" ] || _lib=''
 fi
 export UCODE=$_ucode
