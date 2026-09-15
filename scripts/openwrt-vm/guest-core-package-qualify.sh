@@ -11,6 +11,9 @@ sha=$(jsonfilter -i "$p/core-manifest.json" -e '@.sha256')
 [ "$arch" = aarch64_cortex-a53 ]
 [ "$(sha256sum "$p/$name" | cut -d ' ' -f1)" = "$sha" ]
 apk verify "$p/$name"
+apk adbdump --format json "$p/$name" >"$p/package-metadata.json"
+[ "$(jsonfilter -i "$p/package-metadata.json" -e '@.info.arch')" = "$arch" ]
+[ "$(jsonfilter -i "$p/package-metadata.json" -e '@.info.version')" = "$version" ]
 mkdir "$p/extracted"
 apk extract --destination "$p/extracted" "$p/$name" >/dev/null
 cmp "$p/extracted/usr/libexec/mihomo" /usr/libexec/mihomo
