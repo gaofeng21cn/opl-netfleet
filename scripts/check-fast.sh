@@ -4,6 +4,11 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
 
+# Fail fast on an incomplete host UCode runtime before running business tests.
+if command -v "${UCODE:-ucode}" >/dev/null 2>&1 || [ -x "${UCODE:-}" ]; then
+	. "$root/scripts/resolve-ucode-runtime.sh" fs socket digest
+fi
+
 git diff --check
 python3 -m unittest tests.test_mvp_layout tests.test_platform_composition tests.test_openwrt_vm tests.test_release_tools tests.test_macos_build tests.test_native_lifecycle tests.test_backend_health tests.test_luci_management tests.test_plugin_sdk tests.test_plugin_update tests.test_plugin_bytecode
 python3 scripts/sync-plugin-sources.py check

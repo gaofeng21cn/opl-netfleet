@@ -8,11 +8,14 @@ case "$lane" in
   shared|macos) [ "$#" -le 1 ] || exit 2 ;;
   *) printf '%s\n' 'Usage: scripts/check-platform.sh [shared|macos]' >&2; exit 2 ;;
 esac
-for program in python3 bun node "${UCODE:-ucode}"; do
+# Resolve the same complete runtime used by all host checks.
+. "$root/scripts/resolve-ucode-runtime.sh" fs socket digest
+
+for program in python3 bun node "$UCODE"; do
   command -v "$program" >/dev/null 2>&1 || { printf 'Required tool missing: %s\n' "$program" >&2; exit 2; }
 done
 if [ -n "${UCODE_LIB:-}" ]; then set -- -L "$UCODE_LIB"; else set --; fi
-"${UCODE:-ucode}" "$@" -e 'import * as fs from "fs"; import * as socket from "socket"; assert(type(fs.open) == "function");'
+"$UCODE" "$@" -e 'import * as fs from "fs"; import * as socket from "socket"; assert(type(fs.open) == "function");'
 if [ "$lane" = macos ]; then
   [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ] || { printf '%s\n' 'macOS integration requires Apple Silicon.' >&2; exit 2; }
   : "${NETFLEET_RUNTIME_ROOT:?Provide the runtime from scripts/macos/bootstrap.py}"
