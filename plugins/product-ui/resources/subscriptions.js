@@ -25,7 +25,7 @@ function editSource(controller, state, existing) {
 		return E('div', { 'class': 'netfleet-source-row' }, [ E('label', { 'for': 'netfleet-source-' + field[0] }, field[1]), input ]);
 	});
 	const userAgent = userAgentControl(existing && existing.user_agent);
-	controls.splice(3, 0, E('div', { 'class': 'netfleet-source-row' }, [ E('label', { 'for': 'netfleet-source-user-agent' }, 'User-Agent'), userAgent.render() ]));
+	controls.splice(4, 0, E('div', { 'class': 'netfleet-source-row' }, [ E('label', { 'for': 'netfleet-source-user-agent' }, 'User-Agent'), userAgent.render() ]));
 	const resetDay = E('select', { 'class': 'cbi-input-select', 'id': 'netfleet-source-reset-day' },
 		[ E('option', { 'value': '' }, '未设置') ].concat(Array.from({ length: 31 }, function(_, index) {
 			const day = index + 1;

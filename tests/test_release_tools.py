@@ -264,6 +264,27 @@ class ReleaseToolsTests(unittest.TestCase):
         self.assertIn('for name in .config private-key.pem public-key.pem', text)
         self.assertIn("APK builds require --apk-private-key", text)
 
+    def test_packager_rejects_old_make_before_mutating_sdk(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            sdk = root / 'sdk'; sdk.mkdir()
+            (sdk / 'Makefile').write_text('fixture')
+            (sdk / '.config').write_text('original config')
+            commands = root / 'bin'; commands.mkdir()
+            uname = commands / 'uname'
+            uname.write_text('#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo x86_64;; esac\n')
+            uname.chmod(0o755)
+            make = commands / 'old-make'
+            make.write_text('#!/bin/sh\necho "GNU Make 3.81"\n')
+            make.chmod(0o755)
+            result = subprocess.run(['bash', str(PACKAGER), '--sdk', str(sdk), '--preflight'],
+                                    env={**os.environ, 'PATH': str(commands) + ':' + os.environ['PATH'],
+                                         'MAKE': str(make)}, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('GNU Make 4 or newer', result.stderr)
+            self.assertEqual((sdk / '.config').read_text(), 'original config')
+            self.assertEqual(sorted(p.name for p in sdk.iterdir()), ['.config', 'Makefile'])
+
     def test_feed_builder_uses_verified_manifest_packages(self):
         source = FEED_BUILDER.read_text()
         self.assertIn('verify-netfleet-release.py', source)

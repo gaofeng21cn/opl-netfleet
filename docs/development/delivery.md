@@ -25,6 +25,31 @@ PR 与 `main` 更新运行 `NetFleet 双平台检查`。检查结果只证明所
 
 ## OpenWrt 公开发布
 
+### 构建前预检与候选复用
+
+先检查源码与设备载荷，而不是先启动编译。修改 `plugins/` 后执行
+`python3 scripts/sync-plugin-sources.py sync`，只递增真实变更插件的 manifest 版本，
+再执行 `python3 scripts/plugin-catalog.py write`。检查和提交必须包含这些投影。
+构建入口会对归档 ref 再运行载荷一致性检查；本地工作区同步不能补救旧 ref 的缺失。
+
+Linux x86_64 SDK 不能由 macOS 的 Make、OpenSSL 直接执行。构建入口在非 Linux x86_64
+宿主上自动使用本地 `opl-netfleet-openwrt-sdk-builder:latest` Docker 镜像；可通过
+`NETFLEET_SDK_IMAGE` 指定已准备的构建镜像。首次准备镜像执行
+`docker build --platform linux/amd64 -f scripts/openwrt-sdk.Dockerfile -t opl-netfleet-openwrt-sdk-builder:latest .`。源码与签名材料只读挂载，SDK 与输出目录可写。
+原生 Linux 路径检查 GNU Make 4+、工具和 SDK OpenSSL，所有 Make 调用遵循 `MAKE`。
+架构优先从 SDK `.config` 读取，未配置时才查询 Make。共享 SDK 由构建锁保护，冲突立即
+返回；不要启动第二个构建、抢锁或清空别人使用的 SDK。
+
+复用已准备的 SDK 与下载缓存；输出使用独立候选目录。构建会清理本次产品编译目录，
+但保留 SDK 工具与下载缓存。当前默认产品构建入口仍生成完整候选包集合，并非按包摘要
+增量构建器；普通设备更新只安装有变化的包，两者不要混淆。只改文档或开发工具且产品
+载荷未变时，不为新的 Git 提交重建已冻结的包；验证仍以原候选的准确身份为准。
+
+`build-timings.json` 记录预检、编译、打包和总秒数。失败时先定位最早失败阶段，
+修复后只重跑受影响检查；不把一次快速预检失败统计为编译耗时。合格候选供多个设备
+复用一次，部署不重新构建。设备更新与阶段计时的唯一 SOP 见
+[有限插件组合更新](../operations/canary-promotion.md#有限插件组合更新)。
+
 1. 选定干净主线源码，更新实际变更的软件包版本，先完成源码、载荷同步、UI 和受影响故障路径检查，再冻结候选。未变更的插件不递增版本；不要在检查尚未完成时同时启动多批构建。
 2. 使用 `scripts/netfleet-package-build.sh` 本地构建，或手动运行
    `.github/workflows/netfleet-openwrt-candidate.yml`，输入源码 ref、SDK URL 及 SHA-256。

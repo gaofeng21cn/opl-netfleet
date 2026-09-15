@@ -14,6 +14,7 @@ function editSource(controller, state, existing) {
 	const fields = [
 		[ 'id', '订阅标识', 'text', existing && existing.id, !existing ],
 		[ 'name', '名称', 'text', existing && existing.name, true ],
+		[ 'alias', '账户备注（可选）', 'text', existing && existing.alias, false ],
 		[ 'url', '订阅地址', 'url', existing && existing.url, true ],
 		[ 'info_url', '用量查询地址（可选）', 'url', existing && existing.info_url, false ]
 	];
@@ -24,7 +25,7 @@ function editSource(controller, state, existing) {
 		return E('div', { 'class': 'netfleet-source-row' }, [ E('label', { 'for': 'netfleet-source-' + field[0] }, field[1]), input ]);
 	});
 	const userAgent = userAgentControl(existing && existing.user_agent);
-	controls.splice(3, 0, E('div', { 'class': 'netfleet-source-row' }, [ E('label', { 'for': 'netfleet-source-user-agent' }, 'User-Agent'), userAgent.render() ]));
+	controls.splice(4, 0, E('div', { 'class': 'netfleet-source-row' }, [ E('label', { 'for': 'netfleet-source-user-agent' }, 'User-Agent'), userAgent.render() ]));
 	const resetDay = E('select', { 'class': 'cbi-input-select', 'id': 'netfleet-source-reset-day' },
 		[ E('option', { 'value': '' }, '未设置') ].concat(Array.from({ length: 31 }, function(_, index) {
 			const day = index + 1;
@@ -37,7 +38,7 @@ function editSource(controller, state, existing) {
 			errorBox.textContent = '请填写名称和地址；订阅标识仅限英文字母、数字和下划线。';
 			return;
 		}
-		const source = { id: values.id.value.trim(), name: values.name.value.trim(),
+		const source = { id: values.id.value.trim(), name: values.name.value.trim(), alias: values.alias.value.trim(),
 			url: values.url.value.trim(), user_agent: (userAgent.getValue() || 'clash.meta').trim(), info_url: values.info_url.value.trim(),
 			quota_reset_day: resetDay.value === '' ? null : Number(resetDay.value) };
 		save.disabled = true;
@@ -69,19 +70,20 @@ function showSubscriptions(controller, refresh) {
 			return;
 		}
 		const rows = (state.sources || []).map(function(source) {
-			return E('tr', {}, [ E('td', {}, source.name || source.id), E('td', {}, source.node_count == null ? '未提供' : String(source.node_count)),
+			const label = source.display_name || [ source.name || source.id, source.alias ].filter(Boolean).join(' · ');
+			return E('tr', {}, [ E('td', {}, label), E('td', {}, source.node_count == null ? '未提供' : String(source.node_count)),
 				E('td', { 'title': '手动设置，仅供套餐参考；实际结算以机场为准' }, quotaResetLabel(source.quota_reset_day) || '未设置'),
 				E('td', {}, source.has_url ? '已保存' : '未配置'),
 				E('td', {}, source.pending_update ? (source.using_previous_cache ? '待更新，继续使用上次可用缓存' : '待更新订阅后生效') : source.cache_current ? '已生效' : '尚未更新'),
 				E('td', {}, [ button('编辑', function() { editSource(controller, state, source); }), ' ',
 					button('更新', function() {
-						ui.showModal('更新订阅', [ E('p', {}, '只更新“' + (source.name || source.id) + '”。内容未变化时不重载；使用中的内容变化后会重启核心并重新选优，已有连接可能中断。尚未使用的订阅只更新缓存。'),
+						ui.showModal('更新订阅', [ E('p', {}, '只更新“' + label + '”。内容未变化时不重载；使用中的内容变化后会重启核心并重新选优，已有连接可能中断。尚未使用的订阅只更新缓存。'),
 							E('div', { 'class': 'right' }, [ button('取消', function() { showSubscriptions(controller); }), ' ', button('确认更新', function() {
 								return runSubscription(controller, function() { return api.subscriptionsRefresh(source.id); });
 							}) ]) ]);
 					}), ' ',
 					button('删除', function() {
-						ui.showModal('删除订阅', [ E('p', {}, '确认删除“' + (source.name || source.id) + '”？仍被配置或运行状态引用的订阅不能删除。'),
+						ui.showModal('删除订阅', [ E('p', {}, '确认删除“' + label + '”？仍被配置或运行状态引用的订阅不能删除。'),
 							E('div', { 'class': 'right' }, [ button('取消', function() { showSubscriptions(controller); }), ' ', button('确认删除', function(event) {
 								event.target.disabled = true;
 								controller.invalidateReads?.();
@@ -96,7 +98,7 @@ function showSubscriptions(controller, refresh) {
 					}, false, true) ]) ]);
 		});
 		ui.showModal('管理订阅', [
-			E('p', {}, '地址与 User-Agent 修改后待更新订阅生效；名称与重置日保存即生效。'),
+			E('p', {}, '地址与 User-Agent 修改后待更新订阅生效；名称、账户备注与重置日保存即生效。账户备注仅用于本机区分。'),
 			E('table', { 'class': 'table' }, [ E('thead', {}, E('tr', {}, [ '名称', '节点', '流量重置日', '订阅地址', '状态', '操作' ].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, rows) ]),
 			E('div', { 'class': 'right' }, [ button('刷新列表', function() { return showSubscriptions(controller, true); }), ' ', button('新增订阅', function() { editSource(controller, state, null); }), ' ', button('关闭', function() {
 				ui.hideModal();

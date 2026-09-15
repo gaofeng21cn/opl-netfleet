@@ -73,7 +73,9 @@ def changed_selection(selected: list[dict], installed: dict, version) -> tuple[l
 def feed_update(args, ssh: list[str]) -> dict:
     """Consume the installed components owner; APK owns archive and dependency selection."""
     started = time.monotonic()
+    timings = {}
     snapshot = json.loads(run(ssh + ['ucode /usr/libexec/opl-netfleet/main.uc components-get']))
+    timings['version_read_ms'] = round((time.monotonic() - started) * 1000)
     if snapshot.get('ok') is not True:
         raise ValueError('cannot read installed components owner')
     rows = {row['name']: row for row in snapshot['result']['plugin_packages']}
@@ -87,16 +89,20 @@ def feed_update(args, ssh: list[str]) -> dict:
     base = {'target': args.target, 'packages': [row['name']]}
     if row['installed_version'] == row['available_version']:
         return {**base, 'state': 'no_change', 'device_mutation': False,
-                'timings': {'total_ms': round((time.monotonic() - started) * 1000)}}
+                'timings': {**timings, 'total_ms': round((time.monotonic() - started) * 1000)}}
     request = {'name': row['name'], 'action': 'update', 'version': row['available_version'],
                'before_version': row['installed_version'], 'confirm': False}
+    stage_started = time.monotonic()
     preview = json.loads(run(ssh + ['/usr/libexec/rpcd/opl-netfleet call components_plugin_plan'],
                              input=json.dumps({'request': request}).encode()))
+    timings['plan_ms'] = round((time.monotonic() - stage_started) * 1000)
     if preview.get('ok') is not True:
         raise ValueError(preview.get('error', 'plugin plan unavailable'))
     request.update(confirm=True, plan=preview['result'])
     if args.dry_run:
-        return {**base, 'state': 'preview', 'device_mutation': False, 'plan': preview['result']}
+        return {**base, 'state': 'preview', 'device_mutation': False, 'plan': preview['result'],
+                'timings': {**timings, 'total_ms': round((time.monotonic() - started) * 1000)}}
+    stage_started = time.monotonic()
     files = {'run.sh': (ROOT / 'scripts/update-openwrt-plugins-remote.sh').read_bytes(),
              'observe.uc': (ROOT / 'scripts/observe-openwrt.uc').read_bytes(),
              'feed-request.json': json.dumps({'request': request}).encode()}
@@ -116,6 +122,8 @@ def feed_update(args, ssh: list[str]) -> dict:
     receipt = {**base, 'stage': stage, 'state': 'prepared', 'plan': preview['result']}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(receipt, indent=2) + '\n')
+    timings['prepare_ms'] = round((time.monotonic() - stage_started) * 1000)
+    stage_started = time.monotonic()
     with tempfile.TemporaryFile() as archive:
         with tarfile.open(fileobj=archive, mode='w') as tar:
             info = tarfile.TarInfo('old'); info.type = tarfile.DIRTYPE; info.mode = 0o700
@@ -125,17 +133,20 @@ def feed_update(args, ssh: list[str]) -> dict:
                 tar.addfile(info, io.BytesIO(data))
         archive.seek(0)
         subprocess.run(ssh + [f'umask 077; mkdir {shlex.quote(stage)} && tar -xf - -C {shlex.quote(stage)}'], stdin=archive, check=True)
+    timings['transfer_ms'] = round((time.monotonic() - stage_started) * 1000)
+    stage_started = time.monotonic()
     # Never resubmit after an ambiguous dispatch. The request and start.json are
     # retained remotely; the journal survives client/browser disconnection.
     result = subprocess.run(ssh + [shlex.join(['sh', f'{stage}/run.sh', stage, str(args.observe_seconds)])],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    timings['transaction_and_observe_ms'] = round((time.monotonic() - stage_started) * 1000)
     values = []
     for line in result.stdout.decode(errors='replace').splitlines():
         try: values.append(json.loads(line))
         except ValueError: pass
     return {**receipt, 'state': 'accepted' if result.returncode == 0 else 'needs_reconcile',
             'exit_code': result.returncode, 'results': values,
-            'timings': {'total_ms': round((time.monotonic() - started) * 1000)}}
+            'timings': {**timings, 'total_ms': round((time.monotonic() - started) * 1000)}}
 
 
 def main() -> None:

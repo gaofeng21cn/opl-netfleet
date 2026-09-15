@@ -6,6 +6,8 @@ stage=${1:?private stage required}
 seconds=${2:-${NETFLEET_PLUGIN_OBSERVE_SECONDS:-10}}
 case "$seconds" in ''|*[!0-9]*) exit 2 ;; esac
 [ "$seconds" -ge 10 ] && [ "$seconds" -le 1800 ]
+now_ms() { awk '{ printf "%.0f\n", $1 * 1000 }' /proc/uptime; }
+started_ms=$(now_ms)
 main=/usr/libexec/opl-netfleet/main.uc
 # An operator window serializes cooperating deployment/canary executors without
 # holding the network mutation lock during normal supervisor observation.
@@ -13,6 +15,7 @@ exec 8>/var/lock/opl-netfleet-operator.lock
 flock -n 8 || { printf '%s\n' '{"ok":false,"error":"operator_window_busy"}'; exit 1; }
 cd "$stage"
 sha256sum -c SHA256SUMS >transfer.log 2>&1
+prepared_ms=$(now_ms)
 if [ -f feed-request.json ]; then
  # The installed owner validates the confirmed APK plan under the shared lock.
  # No shipped controller copy, archive selection or plugin-specific worker.
@@ -53,7 +56,11 @@ done
 [ "$phase" = complete ] || { printf '{"ok":false,"id":"%s","error":"update_result_pending"}\n' "$id"; exit 1; }
 # Normal scheduler cycles continue here. Browser navigation can be inspected in
 # the same operator window; write actions are separate explicit acceptance work.
+installed_ms=$(now_ms)
 observed=0
 ucode "$stage/observe.uc" "$seconds" "$stage/acceptance.json" || observed=$?
 [ ! -f acceptance.json ] || cat acceptance.json
+finished_ms=$(now_ms)
+printf '{"device_timings":{"prepare_ms":%s,"transaction_ms":%s,"observe_ms":%s,"total_ms":%s}}\n' \
+ "$((prepared_ms - started_ms))" "$((installed_ms - prepared_ms))" "$((finished_ms - installed_ms))" "$((finished_ms - started_ms))"
 exit "$observed"

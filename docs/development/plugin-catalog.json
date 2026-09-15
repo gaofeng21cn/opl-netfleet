@@ -179,7 +179,7 @@
         "models.subscription",
         "models.subscriptions"
       ],
-      "version": "0.7.11"
+      "version": "0.7.12"
     },
     {
       "api_version": 1,
@@ -229,7 +229,7 @@
         "platform.profile",
         "platform.subscriptions"
       ],
-      "version": "0.8.3"
+      "version": "0.8.4"
     },
     {
       "api_version": 1,
@@ -269,7 +269,7 @@
         "opl-netfleet-plugin-subscriptions"
       ],
       "services": [],
-      "version": "0.10.4"
+      "version": "0.10.5"
     },
     {
       "api_version": 1,
@@ -377,7 +377,7 @@
         "subscriptions.providers",
         "subscriptions.store"
       ],
-      "version": "0.7.3"
+      "version": "0.7.4"
     }
   ],
   "schema": "opl-netfleet-plugin-catalog.v1"

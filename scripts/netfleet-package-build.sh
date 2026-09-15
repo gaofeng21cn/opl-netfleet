@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
-usage() { printf '%s\n' 'Usage: scripts/netfleet-package-build.sh --sdk <openwrt-sdk> [--ref <git-ref>] [--output <dir>] [--apk-private-key <pem>]'; }
+usage() { printf '%s\n' 'Usage: scripts/netfleet-package-build.sh --sdk <openwrt-sdk> [--ref <git-ref>] [--output <dir>] [--apk-private-key <pem>] [--preflight]'; }
 die() { printf 'netfleet-package-build: %s\n' "$1" >&2; exit 1; }
-sdk=''; ref='HEAD'; output=''; apk_private_key=''
+sdk=''; ref='HEAD'; output=''; apk_private_key=''; preflight=0
+SECONDS=0
 while (($#)); do
   case "$1" in
     --sdk) (($# >= 2)) || die '--sdk requires a path'; sdk=$2; shift 2;;
     --ref) (($# >= 2)) || die '--ref requires a ref'; ref=$2; shift 2;;
     --output) (($# >= 2)) || die '--output requires a directory'; output=$2; shift 2;;
     --apk-private-key) (($# >= 2)) || die '--apk-private-key requires a path'; apk_private_key=$2; shift 2;;
+    --preflight) preflight=1; shift;;
     -h|--help) usage; exit 0;;
     *) die "unknown option: $1";;
   esac
@@ -24,6 +26,41 @@ fi
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 commit=$(git -C "$repo_dir" rev-parse --verify "${ref}^{commit}") || die "ref does not resolve: $ref"
 tree=$(git -C "$repo_dir" rev-parse "$commit^{tree}")
+# Resolve the immutable source before touching the shared SDK or signing keys.
+if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
+  command -v docker >/dev/null 2>&1 || die 'the Linux x86_64 SDK requires Docker on this host'
+  builder_image=${NETFLEET_SDK_IMAGE:-opl-netfleet-openwrt-sdk-builder:latest}
+  docker image inspect "$builder_image" --format '{{.Id}}' >/dev/null 2>&1 ||
+    die "local SDK builder image is unavailable: $builder_image; prepare the Linux builder before packaging"
+  [[ -n "$output" ]] || output="${XDG_CACHE_HOME:-$HOME/.cache}/opl-netfleet/packages/$commit-$tree"
+  mkdir -p "$output"
+  output=$(cd "$output" && pwd)
+  common=$(git -C "$repo_dir" rev-parse --path-format=absolute --git-common-dir)
+  container_args=(run --rm --user 0:0 --platform linux/amd64
+    -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e "GIT_CONFIG_VALUE_0=$repo_dir"
+    -v "$repo_dir:$repo_dir:ro" -v "$common:$common:ro"
+    -v "$sdk:$sdk" -v "$output:$output" -w "$repo_dir")
+  build_args=(--sdk "$sdk" --ref "$commit" --output "$output")
+  [[ "$preflight" == 0 ]] || build_args+=(--preflight)
+  if [[ -n "$apk_private_key" ]]; then
+    container_args+=(-v "$apk_private_key:$apk_private_key:ro")
+    build_args+=(--apk-private-key "$apk_private_key")
+  fi
+  exec docker "${container_args[@]}" "$builder_image" bash "$repo_dir/scripts/netfleet-package-build.sh" "${build_args[@]}"
+fi
+make_bin=${MAKE:-make}
+command -v "$make_bin" >/dev/null 2>&1 || die "GNU Make is unavailable: $make_bin"
+make_version=$("$make_bin" --version | head -1)
+[[ "$make_version" == 'GNU Make '* ]] || die "GNU Make is required: $make_bin"
+make_major=${make_version#GNU Make }; make_major=${make_major%%.*}
+[[ "$make_major" =~ ^[0-9]+$ && "$make_major" -ge 4 ]] || die "GNU Make 4 or newer is required: $make_version"
+for tool in git python3 tar flock; do command -v "$tool" >/dev/null || die "missing build tool: $tool"; done
+if [[ -n "$apk_private_key" ]]; then
+  "$sdk/staging_dir/host/bin/openssl" version >/dev/null 2>&1 ||
+    die 'SDK host openssl cannot execute; check the SDK host architecture and loader'
+fi
+exec 9>"$sdk/.netfleet-build.lock"
+flock -n 9 || die 'SDK is in use by another NetFleet build; reuse its result or select a separate SDK'
 output_explicit=$output
 work=$(mktemp -d "${TMPDIR:-/tmp}/opl-netfleet-sdk.XXXXXX")
 backup=$(mktemp -d "${TMPDIR:-/tmp}/opl-netfleet-sdk-backup.XXXXXX")
@@ -43,7 +80,8 @@ trap restore_sdk EXIT
 for name in .config private-key.pem public-key.pem; do
   [[ ! -e "$sdk/$name" ]] || cp -p "$sdk/$name" "$backup/$name"
 done
-git -C "$repo_dir" archive "$commit" openwrt scripts/install-netfleet.sh scripts/verify-native-runtime.py | tar -C "$work" -xf -
+git -C "$repo_dir" archive "$commit" openwrt plugins scripts/sync-plugin-sources.py scripts/install-netfleet.sh scripts/verify-native-runtime.py | tar -C "$work" -xf -
+python3 "$work/scripts/sync-plugin-sources.py" check
 version=$(awk -F':=' '/^PKG_VERSION[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/Makefile")
 release=$(awk -F':=' '/^PKG_RELEASE[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/Makefile")
 [[ -n "$version" ]] || die 'package version metadata is missing'
@@ -64,7 +102,14 @@ Path(path).write_text(json.dumps({
     'source_tree': tree,
 }, sort_keys=True, indent=2) + '\n')
 PY
-build_target_arch=$(make -s -C "$sdk" val.ARCH_PACKAGES 2>/dev/null | tail -1)
+build_target_arch=''
+if [[ -f "$sdk/.config" ]]; then
+  build_target_arch=$(sed -n 's/^CONFIG_TARGET_ARCH_PACKAGES="\([^"]*\)"$/\1/p' "$sdk/.config" | head -1)
+fi
+if [[ -z "$build_target_arch" ]]; then
+  build_target_arch=$("$make_bin" -s -C "$sdk" val.ARCH_PACKAGES 2>&1 | tail -1) ||
+    die "failed to read SDK package architecture; SDK make rejected '$make_bin'"
+fi
 [[ -n "$build_target_arch" && "$build_target_arch" != *' undefined' ]] || die 'SDK package architecture is unreadable'
 [[ -n "$output_explicit" ]] || output="${XDG_CACHE_HOME:-$HOME/.cache}/opl-netfleet/packages/$commit-$tree/$build_target_arch"
 mkdir -p "$output"; chmod 0700 "$output"
@@ -72,6 +117,11 @@ core_lock=$work/openwrt/mihomo-meta/source.json
 core_arch=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["architecture"])' "$core_lock")
 core_version=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$core_lock")
 [[ "$build_target_arch" == "$core_arch" ]] || die "no pinned core asset for SDK architecture: $build_target_arch"
+if [[ "$preflight" == 1 ]]; then
+  printf 'preflight_ok source=%s architecture=%s make=%s\n' "$commit" "$build_target_arch" "$make_version"
+  exit 0
+fi
+[[ ! -e "$output/manifest.json" ]] || die 'candidate output already exists; verify and reuse it or choose a new directory'
 for package_name in opl-netfleet luci-app-netfleet mihomo-meta; do
   if [[ -e "$sdk/package/$package_name" ]]; then mv "$sdk/package/$package_name" "$backup/$package_name"; fi
   staged_packages+=("$package_name")
@@ -96,15 +146,17 @@ if grep -Eq '^CONFIG_USE_APK=y$' "$sdk/.config" 2>/dev/null; then
   chmod 0600 "$sdk/private-key.pem"
   "$sdk/staging_dir/host/bin/openssl" ec -in "$sdk/private-key.pem" -pubout >"$sdk/public-key.pem"
 fi
+preflight_seconds=$SECONDS
 (cd "$sdk" && ./scripts/feeds install -p base ucode)
-make -C "$sdk" package/feeds/base/ucode/host/compile V=s
-make -C "$sdk" package/opl-netfleet/clean package/luci-app-netfleet/clean V=s
+"$make_bin" -C "$sdk" package/feeds/base/ucode/host/compile V=s
+"$make_bin" -C "$sdk" package/opl-netfleet/clean package/luci-app-netfleet/clean V=s
 # These payloads use the prepared SDK tools, not compiled dependency libraries.
 # Keep runtime APK dependencies, but do not rebuild the SDK's entire kmod set.
 # Retain this build's compiled payload until FILES and native-runtime validation
 # consume it; the next invocation's package clean removes it.
-make -C "$sdk" package/mihomo-meta/compile package/opl-netfleet/compile package/luci-app-netfleet/compile NO_DEPS=1 CONFIG_AUTOREMOVE= V=s
+"$make_bin" -C "$sdk" package/mihomo-meta/compile package/opl-netfleet/compile package/luci-app-netfleet/compile NO_DEPS=1 CONFIG_AUTOREMOVE= V=s
 
+compile_seconds=$((SECONDS - preflight_seconds))
 payload=$work/payload
 mkdir -p "$payload/usr/libexec" "$payload/usr/libexec/rpcd" \
   "$payload/etc/opl-netfleet" "$payload/etc/init.d" "$payload/www" \
@@ -300,4 +352,5 @@ manifest['feed_index'] = {'name': index_path.name, 'sha256': hashlib.sha256(inde
 manifest_path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + '\n')
 PY
 fi
+printf '{"preflight_seconds":%s,"compile_seconds":%s,"packaging_seconds":%s,"total_seconds":%s}\n' "$preflight_seconds" "$compile_seconds" "$((SECONDS - preflight_seconds - compile_seconds))" "$SECONDS" >"$output/build-timings.json"
 printf '%s\n' "$output/manifest.json"

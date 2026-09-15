@@ -165,11 +165,12 @@ describe('native LuCI managed operations', () => {
     await h.managed.subscriptions(h.controller);
     h.button('编辑').attrs.click();
     const inputs = h.nodes().filter((node) => node.tag === 'input');
-    expect(inputs.map((input) => input.value)).toEqual(['alpha', 'Alpha', 'https://example.test/subscription', 'custom-client/1.0', 'https://example.test/quota']);
-    expect(inputs[3].attrs.choices).toEqual({ clash: 'clash', 'clash.meta': 'clash.meta', mihomo: 'mihomo' });
+    expect(inputs.map((input) => input.value)).toEqual(['alpha', 'Alpha', '', 'https://example.test/subscription', 'custom-client/1.0', 'https://example.test/quota']);
+    expect(inputs[4].attrs.choices).toEqual({ clash: 'clash', 'clash.meta': 'clash.meta', mihomo: 'mihomo' });
     inputs[1].value = 'New Name';
+    h.nodes().find(node => node.attrs.id === 'netfleet-source-alias')!.value = 'Work account';
     h.button('保存订阅').attrs.click();
-    await vi.waitFor(() => expect(h.api.subscriptionsSet).toHaveBeenCalledWith({ revision: 'revision-1', source: { id: 'alpha', name: 'New Name', url: 'https://example.test/subscription', user_agent: 'custom-client/1.0', info_url: 'https://example.test/quota', quota_reset_day: null } }));
+    await vi.waitFor(() => expect(h.api.subscriptionsSet).toHaveBeenCalledWith({ revision: 'revision-1', source: { id: 'alpha', name: 'New Name', alias: 'Work account', url: 'https://example.test/subscription', user_agent: 'custom-client/1.0', info_url: 'https://example.test/quota', quota_reset_day: null } }));
   });
 
   it('allows choosing a preset and clearing the usage address without changing the subscription', async () => {
@@ -177,10 +178,11 @@ describe('native LuCI managed operations', () => {
     await h.managed.subscriptions(h.controller);
     h.button('编辑').attrs.click();
     const inputs = h.nodes().filter((node) => node.tag === 'input');
-    inputs[3].value = 'mihomo';
-    inputs[4].value = '';
+    h.nodes().find(node => node.attrs.id === 'netfleet-source-user-agent')!.value = 'mihomo';
+    h.nodes().find(node => node.attrs.id === 'netfleet-source-info_url')!.value = '';
+    h.nodes().find(node => node.attrs.id === 'netfleet-source-alias')!.value = '';
     h.button('保存订阅').attrs.click();
-    await vi.waitFor(() => expect(h.api.subscriptionsSet).toHaveBeenCalledWith({ revision: 'revision-1', source: { id: 'alpha', name: 'Alpha', url: 'https://example.test/subscription', user_agent: 'mihomo', info_url: '', quota_reset_day: null } }));
+    await vi.waitFor(() => expect(h.api.subscriptionsSet).toHaveBeenCalledWith({ revision: 'revision-1', source: { id: 'alpha', name: 'Alpha', alias: '', url: 'https://example.test/subscription', user_agent: 'mihomo', info_url: '', quota_reset_day: null } }));
   });
 
   it('reads, edits and clears the monthly quota reset day without refreshing subscriptions', async () => {
