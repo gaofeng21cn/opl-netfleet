@@ -523,7 +523,6 @@ stage=complete
 # Remove only roots introduced by the finite-update fixtures. The installed
 # product still requires these plugins; later product removal must not inherit
 # this test's independent installation intent.
-apk --no-network --repositories-file /dev/null del opl-netfleet-plugin-dashboard \
-	opl-netfleet-plugin-models opl-netfleet-plugin-components opl-netfleet-plugin-product-ui \
+apk --no-network --repositories-file /dev/null del opl-netfleet-plugin-dashboard $shared_packages \
 	>"$work/independent-root-remove.log" 2>&1
 printf '%s\n' '{"ok":true,"checks":{"component_operator_window":true,"component_finite_observation":true,"component_finite_shared_models":true,"component_finite_plugin_update":true,"component_finite_rejects_extra_archive":true,"component_finite_rejects_stale_version":true,"component_finite_keeps_core_pid":true,"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"installer_complete_product_upgrade":true,"component_preserves_newer_independent_plugin":true,"component_world_preserved":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_durable_terminal_reconcile":true,"component_interrupted_install_recovery":true,"component_failed_package_hook_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_signed_index_archive":true,"component_tampered_archive_rejected":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"
