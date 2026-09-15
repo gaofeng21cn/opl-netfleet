@@ -9,7 +9,7 @@ case "$lane" in
   *) printf '%s\n' 'Usage: scripts/check-platform.sh [shared|macos]' >&2; exit 2 ;;
 esac
 # Resolve the same complete runtime used by all host checks.
-. "$root/scripts/resolve-ucode-runtime.sh" fs socket digest
+. "$root/scripts/resolve-ucode-runtime.sh" fs socket
 
 for program in python3 bun node "$UCODE"; do
   command -v "$program" >/dev/null 2>&1 || { printf 'Required tool missing: %s\n' "$program" >&2; exit 2; }

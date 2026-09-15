@@ -47,4 +47,10 @@ if [ "$#" -gt 0 ]; then
     printf 'UCode runtime preflight failed: %s\n' "$_ucode" >&2; exit 2;
   }
 fi
+if [ "${NETFLEET_UCODE_REPORT:-0}" = 1 ]; then
+  printf "UCODE=%s\nUCODE_LIB=%s\n" "$UCODE" "$UCODE_LIB"
+  for _module in fs socket digest uci ubus uloop; do
+    [ -z "$UCODE_LIB" ] || [ -f "$UCODE_LIB/$_module.so" ] && printf "module.%s=%s\n" "$_module" present || printf "module.%s=%s\n" "$_module" missing
+  done
+fi
 unset _root _ucode _lib _args _candidate _module
