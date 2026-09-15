@@ -589,6 +589,11 @@ if [ -n "$feed_url" ]; then
 	assert_json /tmp/netfleet-transfer-fixture/qualification.json '@.ok' true
 fi
 
+if [ -f /tmp/netfleet-core-package/core-manifest.json ]; then
+  stage=core_architecture_variant
+  sh /tmp/guest-core-package-qualify.sh
+fi
+
 stage=disable_and_cleanup
 run_main disable >"$work/disable-result.json"
 assert_json "$work/disable-result.json" '@.ok' true

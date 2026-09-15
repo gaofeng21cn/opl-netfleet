@@ -18,6 +18,7 @@ Options:
   --packages <dir>  Also install and qualify the exact APK candidate directory
   --diagnostic <lane>  Run native, setup, migration, runtime, package, or compatibility diagnostics
   --compat-runtime <dir>  Isolated musl engine binary for compatibility diagnostics
+  --core-package <dir>  Qualify a same-binary core architecture variant against --base-qualification
   --compat-package <dir>  Signed optional APK candidate; requires --packages
   --base-qualification <file>  Reuse an unchanged qualified base for HTTPS diagnostics
   --benchmark     Measure four HTTPS scenes, 3 x 300 seconds each, in the guest
@@ -39,6 +40,7 @@ packages=""
 diagnostic=all
 compat_runtime=""
 compat_package=""
+core_package=""
 plugin_packages=""
 base_qualification=""
 benchmark=0
@@ -75,6 +77,9 @@ while (($#)); do
 			compat_runtime=$(cd "$2" && pwd)
 			shift 2
 			;;
+		--core-package)
+			(($# >= 2)) || die "--core-package requires a directory"
+			core_package=$(cd "$2" && pwd); shift 2 ;;
 		--compat-package)
 			(($# >= 2)) || die "--compat-package requires a directory"
 			compat_package=$(cd "$2" && pwd)
@@ -101,7 +106,8 @@ done
 
 [[ -n "$output" ]] || die "--output is required"
 [[ "$benchmark" == 0 || "$diagnostic" == compatibility ]] || die 'benchmark requires compatibility diagnostics'
-[[ -z "$base_qualification" || "$diagnostic" == compatibility && -n "$packages" && -n "$compat_package" ]] || die 'base qualification requires signed compatibility diagnostics'
+[[ -z "$base_qualification" || -n "$packages" && ( "$diagnostic" == compatibility && -n "$compat_package" || "$diagnostic" == setup && -n "$core_package" ) ]] || die 'base qualification requires signed compatibility diagnostics'
+[[ -z "$core_package" || "$diagnostic" == setup && -f "$base_qualification" ]] || die "core variants require a qualified unchanged base and setup lane"
 [[ "$diagnostic" != compatibility || -x "$compat_runtime/haproxy" || -f "$compat_package/compat-manifest.json" ]] || die "compatibility diagnostic requires --compat-runtime or --compat-package"
 [[ -z "$compat_package" || "$diagnostic" == compatibility && -n "$packages" ]] || die "--compat-package requires compatibility diagnostic and --packages"
 [[ "$diagnostic" == compatibility || -z "$compat_runtime" ]] || die "compatibility payload is diagnostic-only"
@@ -202,9 +208,26 @@ if [[ -n "$packages" ]]; then
 	package_commit=$source_commit
 	package_tree=$source_tree
 	if [[ -n "$base_qualification" ]]; then
+		if [[ -n "$core_package" ]]; then
+        base_identity=$(python3 - "$packages/manifest.json" "$base_qualification" "$core_package/core-manifest.json" "$source_commit" "$repo_dir" <<'PYBASE'
+import hashlib,json,subprocess,sys
+m=json.load(open(sys.argv[1])); r=json.load(open(sys.argv[2])); c=json.load(open(sys.argv[3]))
+assert r.get('qualified') is True and r.get('package_qualified') is True
+assert all(r[k]==m[k] for k in ['source_commit','source_tree'])
+assert r['package']['manifest_sha256']==hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest()
+assert c['source_commit']==sys.argv[4]
+subprocess.run(['git','-C',sys.argv[5],'diff','--exit-code',m['source_commit'],sys.argv[4],
+ '--','openwrt/files','plugins','openwrt/luci-app-netfleet','openwrt/Makefile'],check=True,stdout=subprocess.DEVNULL)
+old=json.loads(subprocess.check_output(['git','-C',sys.argv[5],'show',m['source_commit']+':openwrt/mihomo-meta/source.json']))
+assert all(c['upstream'][k]==old[k] for k in ['version','sha256','filename','source_commit'])
+print(json.dumps({k:m[k] for k in ['source_commit','source_tree']}))
+PYBASE
+)
+        else
 		retained_args=()
 		[[ ! -d "$compat_package/retained-base" ]] || retained_args=(--retained-base "$compat_package/retained-base")
 		base_identity=$(python3 "$repo_dir/scripts/https-compat/base.py" --packages "$packages" --qualification "$base_qualification" --ref "$source_commit" "${retained_args[@]}")
+		fi
 		package_commit=$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["source_commit"])' "$base_identity")
 		package_tree=$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["source_tree"])' "$base_identity")
 	fi
@@ -240,6 +263,7 @@ fi
 
 rm -f -- "$output_dir/$output_name"
 cache_root=${XDG_CACHE_HOME:-$HOME/.cache}
+NETFLEET_CORE_PACKAGE="$core_package" \
 NETFLEET_TEST_IDENTITY="$test_identity" \
 NETFLEET_SOURCE_COMMIT=$source_commit \
 NETFLEET_SOURCE_TREE=$source_tree \

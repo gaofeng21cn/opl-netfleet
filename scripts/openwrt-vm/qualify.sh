@@ -488,6 +488,11 @@ if [ -n "${NETFLEET_PLUGIN_PACKAGES:-}" ]; then
 	[ "$expected_plugin_sha" = "$actual_plugin_sha" ] || exit 1
 	ssh $ssh_common root@127.0.0.1 'mkdir -p /tmp/netfleet-plugin-packages && tar -C /tmp/netfleet-plugin-packages -xf /tmp/plugin-packages.tar'
 fi
+if [ -n "${NETFLEET_CORE_PACKAGE:-}" ]; then
+  tar -cf "$work/core-package.tar" -C "$NETFLEET_CORE_PACKAGE" .
+  ssh $ssh_common root@127.0.0.1 'mkdir -p /tmp/netfleet-core-package; tar -xf - -C /tmp/netfleet-core-package' <"$work/core-package.tar"
+  ssh $ssh_common root@127.0.0.1 'cat >/tmp/guest-core-package-qualify.sh' <"$workspace/scripts/openwrt-vm/guest-core-package-qualify.sh"
+fi
 transfer_elapsed_ms=$((transfer_elapsed_ms + $(now_ms) - transfer_started_ms))
 }
 run_guest() {
@@ -553,6 +558,9 @@ fi
 if [ "$lane_mode" = all ] || [ "$lane_mode" = setup ]; then
 	boot_clean_vm
 	run_guest setup setup
+fi
+if [ -n "${NETFLEET_CORE_PACKAGE:-}" ]; then
+  ssh $ssh_common root@127.0.0.1 'cat /tmp/netfleet-core-package/qualification.json' >"$work/core-result.json"
 fi
 if [ "$lane_mode" = all ] || [ "$lane_mode" = runtime ] || [ "$lane_mode" = migration ]; then
 	boot_clean_vm
@@ -660,6 +668,12 @@ if mode != "all":
                  diagnostic_lane=mode)
 if os.environ.get('NETFLEET_COMPAT_BASE_IDENTITY'):
     value['base'] = json.loads(os.environ['NETFLEET_COMPAT_BASE_IDENTITY'])
+if os.environ.get('NETFLEET_CORE_PACKAGE'):
+    core=json.loads((work/'core-result.json').read_text())
+    manifest=json.loads((Path(os.environ['NETFLEET_CORE_PACKAGE'])/'core-manifest.json').read_text())
+    assert core['ok'] and core['package_sha256']==manifest['sha256']
+    value['core_package_qualified']=True
+    value['core_package']={**manifest,'checks':core}
 target = Path(sys.argv[1])
 temporary = target.with_name(target.name + ".tmp")
 temporary.write_text(json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n")
