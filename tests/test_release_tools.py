@@ -133,6 +133,11 @@ class ReleaseToolsTests(unittest.TestCase):
         self.assertEqual(fixtures.fixture_versions('1.19.30-r1'), ('1.19.30-r0', '1.19.30-r2', '1.19.30-r3'))
         with self.assertRaises(ValueError):
             fixtures.fixture_versions('bad')
+        self.assertEqual(fixtures.prior_dependencies(
+            ['models>=0.7.12', 'models>=0.7.6', 'models', 'libc', 'external>=1.0'],
+            {'models': '0.7.12'}),
+            ['models>=0.7.11-r1', 'models>=0.7.6', 'models', 'libc', 'external>=1.0'])
+
 
     def test_luci_release_versions_all_shell_modules_without_cross_version_urls(self):
         package = ROOT / 'openwrt/luci-app-netfleet'

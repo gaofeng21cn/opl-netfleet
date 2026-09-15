@@ -44,6 +44,17 @@ def fixture_versions(version):
     return prior, f"{major}.{minor}.{patch + 1}", f"{major}.{minor}.{patch + 2}"
 
 
+def prior_dependencies(dependencies, versions):
+    """Keep synthetic old packages consistent with their synthetic providers."""
+    result = []
+    for dependency in dependencies:
+        match = re.fullmatch(r"([^<>=~!]+)(>=|=)(.+)", dependency)
+        if match and versions.get(match[1]) == match[3]:
+            dependency = match[1] + match[2] + fixture_versions(match[3])[0]
+        result.append(dependency)
+    return result
+
+
 def build(candidate, output, baseline=None):
     sdk = sdk_path()
     apk = sdk / "staging_dir/host/bin/apk"
@@ -105,9 +116,12 @@ def build(candidate, output, baseline=None):
         product_packages = None
         legacy = None
         artifacts = {item["package"]: item["name"] for item in manifest["artifacts"] + manifest["dependency_artifacts"]}
+        metadata_by_name = {name: json.loads(run("adbdump", "--format", "json", candidate / filename))
+                            for name, filename in artifacts.items()}
+        current_versions = {name: data["info"]["version"] for name, data in metadata_by_name.items()}
         for name, filename in artifacts.items():
             archive = candidate / filename
-            metadata = json.loads(run("adbdump", "--format", "json", archive))
+            metadata = metadata_by_name[name]
             package_version = metadata["info"]["version"]
             prior, following, independent_version = fixture_versions(package_version)
             package_versions[name] = {"current": package_version, "old": prior, "bad": following}
@@ -135,6 +149,8 @@ def build(candidate, output, baseline=None):
                         continue
                     if key == "version":
                         value = target_version
+                    elif key == "depends" and target_version == prior:
+                        value = prior_dependencies(value, current_versions)
                     arguments.extend(("--info", f"{key}:{' '.join(value) if isinstance(value, list) else value}"))
                 arguments.extend(script_args)
                 for trigger in metadata.get("triggers", []):

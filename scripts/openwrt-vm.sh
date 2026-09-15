@@ -14,6 +14,7 @@ Individual diagnostic lanes cannot authorize deployment. No real devices are con
 
 Options:
   --ref <git-ref>   Source ref to qualify (default: origin/main)
+  --test-ref <ref>  Use revised VM tests with identical product source
   --packages <dir>  Also install and qualify the exact APK candidate directory
   --diagnostic <lane>  Run native, setup, migration, runtime, package, or compatibility diagnostics
   --compat-runtime <dir>  Isolated musl engine binary for compatibility diagnostics
@@ -31,6 +32,7 @@ die() {
 	exit 1
 }
 
+test_ref=""
 source_ref=origin/main
 output=""
 packages=""
@@ -45,6 +47,11 @@ while (($#)); do
 		--ref)
 			(($# >= 2)) || die "--ref requires a value"
 			source_ref=$2
+			shift 2
+			;;
+		--test-ref)
+			(($# >= 2)) || die "--test-ref requires a value"
+			test_ref=$2
 			shift 2
 			;;
 		--output)
@@ -170,6 +177,21 @@ git -C "$repo_dir" archive "$source_commit" \
 	scripts/verify-netfleet-release.py examples/plugins plugins/device-identity tests |
 	tar -C "$source_dir" -xf -
 
+test_identity=""
+if [[ -n "$test_ref" ]]; then
+    [[ "$test_ref" != -* ]] || die "test ref cannot begin with '-'"
+    test_commit=$(git -C "$repo_dir" rev-parse --verify "${test_ref}^{commit}")
+    test_tree=$(git -C "$repo_dir" rev-parse "${test_commit}^{tree}")
+    # Only test harness changes may differ. No device code or package input can
+    # be smuggled into the source-qualified candidate through a test revision.
+    git -C "$repo_dir" diff --quiet "$source_commit" "$test_commit" -- . \
+        ':(exclude)scripts/openwrt-vm' ':(exclude)scripts/openwrt-vm.sh' \
+        ':(exclude)tests' ':(exclude)docs' || die "test ref changes product inputs"
+    rm -rf "$source_dir/scripts/openwrt-vm" "$source_dir/tests"
+    git -C "$repo_dir" archive "$test_commit" scripts/openwrt-vm tests | tar -C "$source_dir" -xf -
+    test_identity=$(python3 -c 'import json,sys;print(json.dumps(dict(source_commit=sys.argv[1],source_tree=sys.argv[2])))' "$test_commit" "$test_tree")
+fi
+
 package_archive=""
 package_manifest_sha=""
 base_identity=""
@@ -217,6 +239,7 @@ fi
 
 rm -f -- "$output_dir/$output_name"
 cache_root=${XDG_CACHE_HOME:-$HOME/.cache}
+NETFLEET_TEST_IDENTITY="$test_identity" \
 NETFLEET_SOURCE_COMMIT=$source_commit \
 NETFLEET_SOURCE_TREE=$source_tree \
 NETFLEET_RECEIPT="$output_dir/$output_name" \

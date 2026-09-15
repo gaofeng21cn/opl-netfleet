@@ -649,6 +649,8 @@ value = {
         **{f"{name}_guest_ms": int((work / f"{name}-ms").read_text()) for name in lanes},
     },
 }
+if os.environ.get("NETFLEET_TEST_IDENTITY"):
+    value["test_source"] = json.loads(os.environ["NETFLEET_TEST_IDENTITY"])
 if "package" in lanes:
     value["schema"] = "opl-netfleet-openwrt-vm-qualification.v2"
     value["package_qualified"] = mode == "all"
