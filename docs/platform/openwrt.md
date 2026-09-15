@@ -291,6 +291,8 @@ rollback 和 owner readback。代码包与 deployment bundle 相同重放时不�
 deployment bundle 或刷新订阅。实际耗时以目标机包管理器与 owner 回读为准，完整 VM
 qualification 时间不是设备升级耗时。
 
+HTTPS 可选运行包通过已安装的 `extension.json` 模块 ID 与控制插件核对归属；组件目录包含该运行包，更新继续使用同一 APK 事务，不启动引擎读取版本。
+
 ## 运行后端、网关与迁移
 
 后端选择和 namespace 见[产品对象](../architecture/domain-model.md#后端与订阅归属)。两种后端

@@ -96,6 +96,14 @@ inactive_install() {
  done
  sha256sum -c "$work/dns-before-install.sha256" >&2
  /usr/libexec/opl-netfleet/main.uc compatibility-get >"$work/default-off.json"
+ /usr/libexec/opl-netfleet/main.uc components-get >"$work/engine-catalog.json"
+ ucode - "$work/engine-catalog.json" <<'UC'
+import * as fs from 'fs';
+const value=json(fs.readfile(ARGV[0]));
+const engine=filter(value?.result?.plugin_packages??[],row=>row.name=='opl-netfleet-https-compat')[0];
+if(value?.ok!==true||engine?.runtime_package!==true||engine.id!='https-compat'||!engine.installed_version)
+ die('installed_engine_missing_from_generic_catalog');
+UC
  test "$(jsonfilter -i "$work/default-off.json" -e '@.result.requested')" = false
  test "$(jsonfilter -i "$work/default-off.json" -e '@.result.intercepting')" != true
  ubus call service list '{"name":"opl-netfleet-compat"}' >"$work/installed-service.json"
@@ -238,5 +246,5 @@ ucode - "$commit" "$tree" <<'UC'
 import * as fs from 'fs';
 const benchmark=fs.readfile('/tmp/https-native-network/benchmark.json');
 const composition=fs.readfile('/tmp/compat-runtime/composition.json');
-printf('%J\n',{ok:true,composition:composition?json(composition):null,source_commit:ARGV[0],source_tree:ARGV[1],checks:{full_feed_bootstrap:true,full_feed_install_inactive:true,full_feed_repeat_preserves_configuration:true,...(fs.stat('/tmp/compat-runtime/upgrade.json')?{engine_package_cycle:true}:{}),...(fs.stat('/tmp/compat-runtime/retained-base/retained-base.json')?{retained_base_packages:json(fs.readfile('/tmp/compat-native-fixture/retained-base.json'))?.ok===true}:{}),dual_stack_probe_faults:true,native_kernel_io:true,native_dependency_closure:true,real_control_entry:true,procd_launcher:true,local_h1_to_h2:true,resource_limits:true,resource_pressure:true,user_disable:true,plugin_unload_load:true,uninstall_reinstall:true,stable_ca:true,base_configuration_unchanged:true,local_address_rotation:true,address_conflict_expiry:true,dual_stack_kernel_lease:true,real_gateway_h2:true,kernel_tcp_reset_delivery:true,original_routing:true,sni_and_unknown_device_bypass:true,address_update_without_restart:true,streaming_upload_and_sse:true,cancellation_and_business_errors:true,simultaneous_stall_fail_open:true,third_fault_latch:true,manual_recovery:true,base_pid_unchanged:true},profile:json(fs.readfile('/tmp/https-native-network/profile.json')),metrics:json(fs.readfile('/tmp/https-native-network/performance.json')),benchmark:benchmark?json(benchmark):null,production_ready:false});
+printf('%J\n',{ok:true,composition:composition?json(composition):null,source_commit:ARGV[0],source_tree:ARGV[1],checks:{generic_engine_catalog:true,full_feed_bootstrap:true,full_feed_install_inactive:true,full_feed_repeat_preserves_configuration:true,...(fs.stat('/tmp/compat-runtime/upgrade.json')?{engine_package_cycle:true}:{}),...(fs.stat('/tmp/compat-runtime/retained-base/retained-base.json')?{retained_base_packages:json(fs.readfile('/tmp/compat-native-fixture/retained-base.json'))?.ok===true}:{}),dual_stack_probe_faults:true,native_kernel_io:true,native_dependency_closure:true,real_control_entry:true,procd_launcher:true,local_h1_to_h2:true,resource_limits:true,resource_pressure:true,user_disable:true,plugin_unload_load:true,uninstall_reinstall:true,stable_ca:true,base_configuration_unchanged:true,local_address_rotation:true,address_conflict_expiry:true,dual_stack_kernel_lease:true,real_gateway_h2:true,kernel_tcp_reset_delivery:true,original_routing:true,sni_and_unknown_device_bypass:true,address_update_without_restart:true,streaming_upload_and_sse:true,cancellation_and_business_errors:true,simultaneous_stall_fail_open:true,third_fault_latch:true,manual_recovery:true,base_pid_unchanged:true},profile:json(fs.readfile('/tmp/https-native-network/profile.json')),metrics:json(fs.readfile('/tmp/https-native-network/performance.json')),benchmark:benchmark?json(benchmark):null,production_ready:false});
 UC

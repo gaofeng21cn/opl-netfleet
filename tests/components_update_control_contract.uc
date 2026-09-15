@@ -7,6 +7,24 @@ function extract(begin, end) {
 	if (start < 0 || stop < 0) die('implementation missing');
 	return substr(source, start, stop - start);
 }
+const ownership = extract('function package_owners(', 'function package_paths(');
+loadstring(`
+const COMPATIBILITY_PACKAGE='opl-netfleet-https-compat';
+let rows=[{id:'https-compat',kind:'plugin',package:'opl-netfleet-plugin-https-compat'}];
+let info={type:'file',uid:0,mode:420,size:80}, descriptor={id:'https-compat',api_version:1};
+const context={inventory:()=>rows}, fs={lstat:()=>info};
+function read_json(){return descriptor;}
+function check(value,message){if(!value)die(message);}
+` + ownership + `
+const versions={'opl-netfleet-plugin-https-compat':'0.9.6','opl-netfleet-https-compat':'0.6.3'};
+check(package_owners(versions)[COMPATIBILITY_PACKAGE]=='https-compat','service inventory resolves separate native engine');
+check(package_owners({})[COMPATIBILITY_PACKAGE]==null,'absent runtime is not managed');
+descriptor.id='foreign';check(package_owners(versions)[COMPATIBILITY_PACKAGE]==null,'foreign descriptor is not admitted');descriptor.id='https-compat';
+info.mode=438;check(package_owners(versions)[COMPATIBILITY_PACKAGE]==null,'writable descriptor is not admitted');info.mode=420;
+info.type='link';check(package_owners(versions)[COMPATIBILITY_PACKAGE]==null,'symlink descriptor is not admitted');info.type='file';
+rows=[];check(package_owners(versions)[COMPATIBILITY_PACKAGE]==null,'runtime without control owner is not managed');
+`)();
+
 const controls = extract('function cancel_update(', 'function lifecycle(');
 loadstring(`
 const ROOT='/private'; let id='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', request={id,action:'update'}, state={}, running=true, locked=false, marker=false, unsafe=false, closes=0;

@@ -268,7 +268,7 @@ function componentsLocked(controller) {
 function pluginPackages(controller, snapshot) {
 	const active = componentsLocked(controller);
 	const rows = (snapshot.plugin_packages || []).map(function(item) {
-		const plugin = (snapshot.extensions || []).find(function(row) { return row.package === item.name; });
+		const plugin = (snapshot.extensions || []).find(function(row) { return row.package === item.name || (item.runtime_package && row.id === item.id); });
 		const actions = [];
 		function action(kind, label) {
 			return button(label, function() {
@@ -301,7 +301,7 @@ function pluginPackages(controller, snapshot) {
 			if (plugin?.enabled !== false) actions.push(E('small', {}, '先在运行管理中禁用，再卸载'));
 		}
 		return E('tr', {}, [
-			E('td', {}, [E('strong', {}, pluginLabel(plugin || item)), E('small', {}, plugin?.description || pluginPurpose(plugin || item)), E('small', {}, item.name)]),
+			E('td', {}, [E('strong', {}, pluginLabel(plugin || item) + (item.runtime_package ? ' · 转发引擎' : '')), E('small', {}, plugin?.description || pluginPurpose(plugin || item)), E('small', {}, item.name)]),
 			E('td', {}, [E('strong', {}, item.installed_version ? displayVersion(item.installed_version) : '未安装'),
 				item.available_version ? E('small', {}, (item.update_available ? '可更新至 ' : '更新源版本 ') + displayVersion(item.available_version)) : E('small', {}, '检查更新以读取候选版本'),
 				item.dependencies?.length ? E('details', {}, [E('summary', {}, '依赖'), E('p', {}, item.dependencies.join('、'))]) : '']),
@@ -309,7 +309,7 @@ function pluginPackages(controller, snapshot) {
 		]);
 	});
 	return E('section', { 'class': 'netfleet-component-modules' }, [E('h3', {}, '安装与维护独立插件'),
-		E('p', {}, '从设备已信任的软件源读取。默认功能插件也可独立更新，必需插件不可单独卸载；HTTPS 引擎由 HTTPS 插件中的独立更新入口管理。'),
+		E('p', {}, '从设备已信任的软件源读取。插件和已安装的配套运行引擎统一在此更新，依赖由系统软件包管理器自动处理；必需插件不可单独卸载。'),
 		button('检查插件更新', function() { return startPackageOperation(controller); }, active || !snapshot.feed.configured),
 		rows.length ? E('div', { 'class': 'netfleet-component-table' }, E('table', { 'class': 'table' }, [
 			E('thead', {}, E('tr', {}, ['插件', '安装与候选版本', '软件包操作'].map(label => E('th', {}, label)))), E('tbody', {}, rows)

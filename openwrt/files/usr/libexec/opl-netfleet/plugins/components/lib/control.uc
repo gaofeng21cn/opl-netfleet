@@ -145,6 +145,17 @@ function package_owners(versions) {
 	for (let row in context.inventory(versions))
 		if ((row.kind == "plugin" || row.kind == "optional") && match(row.package ?? "", /^[a-z0-9][a-z0-9+_.-]*$/))
 			result[row.package] = row.id;
+	// The service inventory contains control plugins, not optional engine rows.
+	// Bind the existing engine declaration to its installed control owner without
+	// loading that owner or inventing package dependency resolution.
+	const declaration = "/usr/libexec/opl-netfleet-compat/extension.json";
+	const info = fs.lstat(declaration);
+	if (result["opl-netfleet-plugin-https-compat"] == "https-compat" && versions?.[COMPATIBILITY_PACKAGE] != null &&
+		info?.type == "file" && info.uid == 0 && !(info.mode & 18) && info.size <= 4096) {
+		const descriptor = read_json(declaration);
+		if (descriptor?.id == "https-compat" && descriptor.api_version == 1)
+			result[COMPATIBILITY_PACKAGE] = descriptor.id;
+	}
 	return result;
 }
 function package_paths(names, versions) {
