@@ -53,7 +53,8 @@ function same(a,b) {
 }
 if(composition) {
  const base=json(fs.readfile('/tmp/compat-base-identity.json'));
- if(composition.schema!='opl-netfleet-https-composition.v1'||!same(composition.base,base)||base.source_commit!=ARGV[0]||base.source_tree!=ARGV[1]) die('native_composition_base_mismatch');
+ const tested=composition.test_source ?? base;
+ if(composition.schema!='opl-netfleet-https-composition.v1'||!same(composition.base,base)||tested.source_commit!=ARGV[0]||tested.source_tree!=ARGV[1]) die('native_composition_base_mismatch');
  for(let name,digest in composition.feed_sha256) if(fs.basename(name)!=name||sha256(fs.readfile(root+'/'+name))!=digest) die('native_composition_feed_mismatch');
 }
 for(let name in ['compat-manifest.json','device-identity-manifest.json']) {

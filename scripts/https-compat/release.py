@@ -38,8 +38,8 @@ def prepare(packages, base_qualification, candidate, qualification, apk, output)
         expected_feed = {name: sha(candidate / name) for name in
                          ('compat-public-key.pem', 'compat-packages.adb', engine['artifact'], identity['artifact'])}
         if (proof.get('composition_qualified') is not True
-                or proof.get('source_commit') != manifest['source_commit']
-                or proof.get('source_tree') != manifest['source_tree']
+                or proof.get('source_commit') != request.get('test_source', expected_base)['source_commit']
+                or proof.get('source_tree') != request.get('test_source', expected_base)['source_tree']
                 or request.get('base') != expected_base
                 or request.get('engine') != engine or request.get('identity') != identity
                 or request.get('feed_sha256') != expected_feed):

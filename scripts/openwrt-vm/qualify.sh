@@ -240,7 +240,7 @@ composition = json.loads((candidate / 'composition.json').read_text()) if (candi
 if composition:
     base = json.loads(os.environ.get('NETFLEET_COMPAT_BASE_IDENTITY') or '{}')
     if (composition.get('schema') != 'opl-netfleet-https-composition.v1' or composition.get('base') != base
-            or (base.get('source_commit'), base.get('source_tree')) != tuple(sys.argv[3:5])):
+            or tuple(composition.get('test_source', base).get(key) for key in ('source_commit', 'source_tree')) != tuple(sys.argv[3:5])):
         raise SystemExit('Optional composition base identity mismatch')
 for filename, package in [('compat-manifest.json', 'opl-netfleet-https-compat'),
                           ('device-identity-manifest.json', 'opl-netfleet-plugin-device-identity')]:

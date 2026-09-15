@@ -82,6 +82,20 @@ class EngineArtifacts(unittest.TestCase):
             with self.subTest(change=change),self.assertRaises(ValueError):
                 qualify.composition_evidence(request,altered)
 
+    def test_composition_records_new_test_source_without_relabelling_packages(self):
+        import copy
+        base={'source_commit':'b'*40,'source_tree':'c'*40}
+        tested={'source_commit':'d'*40,'source_tree':'e'*40}
+        request={'schema':qualify.COMPOSITION_SCHEMA,'base':base,'test_source':tested}
+        checks=dict.fromkeys(qualify.COMPOSITION_CHECKS,True)
+        proof={'diagnostic_passed':True,**tested,'base':base,
+               'lanes':{'compatibility':{'ok':True,**tested,'checks':checks,'composition':request}}}
+        self.assertEqual(qualify.composition_evidence(request,proof),checks)
+        altered=copy.deepcopy(proof);altered.update(base)
+        with self.assertRaises(ValueError):qualify.composition_evidence(request,altered)
+        altered=copy.deepcopy(proof);altered['base']=tested
+        with self.assertRaises(ValueError):qualify.composition_evidence(request,altered)
+
     def test_base_binding_includes_actual_gateway_templates(self):
         import hashlib
         source=ROOT/'openwrt/files'

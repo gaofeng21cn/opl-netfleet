@@ -46,10 +46,13 @@ def source_tree(commit, repo=ROOT):
     return subprocess.check_output(['git', '-C', str(repo), 'rev-parse', commit+'^{tree}'], text=True).strip()
 
 
-def composition_request(packages, base_qualification, candidate, retained=None):
+def composition_request(packages, base_qualification, candidate, retained=None, test_ref=None):
     """Keep each artifact's build identity; the test source belongs to the new base."""
     manifest = json.loads((packages / 'manifest.json').read_text())
-    base = validate(packages, base_qualification, manifest['source_commit'], retained=retained)
+    execution = test_ref or manifest['source_commit']
+    if test_ref:
+        execution = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', execution+'^{commit}'], text=True).strip()
+    base = validate(packages, base_qualification, execution, retained=retained)
     current = artifact(candidate, 'compat-manifest.json')
     identity = artifact(candidate, 'device-identity-manifest.json')
     for row in (current, identity):
@@ -73,7 +76,8 @@ def composition_request(packages, base_qualification, candidate, retained=None):
         if (candidate / name).is_symlink() or not (candidate / name).is_file():
             raise ValueError('composition input must contain regular signed assets')
     return {'schema': COMPOSITION_SCHEMA, 'base': base, 'engine': current, 'identity': identity,
-            'feed_sha256': {name: sha(candidate / name) for name in names}}
+            'feed_sha256': {name: sha(candidate / name) for name in names},
+            'test_source': {'source_commit': execution, 'source_tree': source_tree(execution)}}
 
 
 def composition_evidence(request, proof):
@@ -83,11 +87,12 @@ def composition_evidence(request, proof):
     lane = proof.get('lanes', {}).get('compatibility', {})
     checks = lane.get('checks', {})
     base = request['base']
+    tested = request.get('test_source', base)
     if (proof.get('diagnostic_passed') is not True
-            or proof.get('source_commit') != base['source_commit']
-            or proof.get('source_tree') != base['source_tree'] or proof.get('base') != base
-            or lane.get('source_commit') != base['source_commit']
-            or lane.get('source_tree') != base['source_tree'] or lane.get('ok') is not True
+            or proof.get('source_commit') != tested['source_commit']
+            or proof.get('source_tree') != tested['source_tree'] or proof.get('base') != base
+            or lane.get('source_commit') != tested['source_commit']
+            or lane.get('source_tree') != tested['source_tree'] or lane.get('ok') is not True
             or lane.get('composition') != request
             or not isinstance(checks, dict) or not checks or not all(value is True for value in checks.values())
             or not all(checks.get(name) is True for name in COMPOSITION_CHECKS)):
@@ -103,6 +108,7 @@ def main():
     p.add_argument('--base-qualification', required=True, type=Path)
     p.add_argument('--candidate', required=True, type=Path)
     p.add_argument('--previous', type=Path)
+    p.add_argument('--test-ref', help='committed test tools; installed base runtime must remain unchanged')
     p.add_argument('--composition', action='store_true',
                    help='qualify unchanged optional APKs against the exact new qualified base')
     p.add_argument('--output', required=True, type=Path)
@@ -115,12 +121,14 @@ def main():
     if a.composition:
         if a.previous or a.benchmark:
             p.error('--composition does not compare or update engine versions; omit --previous and --benchmark')
-        request = composition_request(a.packages, a.base_qualification, a.candidate, a.retained_base)
+        request = composition_request(a.packages, a.base_qualification, a.candidate, a.retained_base, a.test_ref)
         base = request['base']
-        execution_commit, tree = base['source_commit'], base['source_tree']
+        execution_commit, tree = request['test_source']['source_commit'], request['test_source']['source_tree']
         result = {'schema': COMPOSITION_QUALIFICATION, 'composition_qualified': False,
                   'source_commit': execution_commit, 'source_tree': tree, 'composition': request}
     else:
+        if a.test_ref:
+            p.error('--test-ref is currently supported only for exact composition qualification')
         if a.previous is None:
             p.error('engine update qualification requires --previous; use --composition for unchanged APKs')
         previous = artifact(a.previous, 'compat-manifest.json')
