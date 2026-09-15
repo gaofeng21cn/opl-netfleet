@@ -74,7 +74,9 @@ output_explicit=$output
 work=$(mktemp -d "${TMPDIR:-/tmp}/opl-netfleet-sdk.XXXXXX")
 backup=$(mktemp -d "${TMPDIR:-/tmp}/opl-netfleet-sdk-backup.XXXXXX")
 staged_packages=()
+variant_artifact=''
 restore_sdk() {
+  [[ -z "$variant_artifact" ]] || rm -f -- "$variant_artifact"
   for package_name in "${staged_packages[@]}"; do
     rm -rf "$sdk/package/$package_name"
     [[ ! -e "$backup/$package_name" ]] || mv "$backup/$package_name" "$sdk/package/$package_name"
@@ -154,6 +156,7 @@ if [[ "$core_only" == 1 ]]; then
   "$make_bin" -C "$sdk" package/mihomo-meta/clean V=s
   "$make_bin" -j"$jobs" -C "$sdk" package/mihomo-meta/compile NETFLEET_CORE_ARCH="$core_package_arch" NO_DEPS=1 CONFIG_AUTOREMOVE= V=s
   artifact="$sdk/bin/packages/$build_target_arch/base/mihomo-meta-${core_version}-r1.apk"
+  variant_artifact=$artifact
   [[ -f "$artifact" ]] || die 'expected core architecture artifact is missing'
   cp "$artifact" "$output/$(basename "$artifact")"
   artifact="$output/$(basename "$artifact")"
