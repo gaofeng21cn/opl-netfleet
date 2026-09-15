@@ -374,15 +374,31 @@ probe 6 http/1.1
 kill -CONT "$engine_pid" "$manager_pid"
 wait_intercepting
 probe 6 h2
-stage=engine_crash
-processes
-kill -KILL "$engine_pid"
-engine_pid=
-sleep 11
-probe 4 http/1.1
-test "$(pidof mihomo)" = "$base_pid"
-ucode /tmp/tests/https_native_guest.uc state >"$work/crash-state.json"
-test "$(jsonfilter -i "$work/crash-state.json" -e '@.recovery.latched')" = true
+# A paused manager can resume inside an already-started tick; lease expiry is
+# proven above, but that pause is not necessarily an observed unhealthy edge.
+# Test the independent-fault latch with acknowledged engine exits instead of
+# assuming the two scheduler-dependent stalls each added one fault.
+stage=engine_crash_reset
+ucode /tmp/tests/https_native_guest.uc recover >"$work/crash-reset.log"
+wait_intercepting
+for fault in 1 2 3; do
+    stage=engine_crash_$fault
+    processes
+    kill -KILL "$engine_pid"
+    engine_pid=
+    sleep 11
+    probe 4 http/1.1
+    probe 6 http/1.1
+    test "$(pidof mihomo)" = "$base_pid"
+    ucode /tmp/tests/https_native_guest.uc state >"$work/crash-state-$fault.json"
+    test "$(jsonfilter -i "$work/crash-state-$fault.json" -e '@.recovery.faults[*]' | wc -l)" -eq "$fault"
+    if [ "$fault" -lt 3 ]; then
+        test "$(jsonfilter -i "$work/crash-state-$fault.json" -e '@.recovery.latched')" = false
+        wait_intercepting
+    else
+        test "$(jsonfilter -i "$work/crash-state-$fault.json" -e '@.recovery.latched')" = true
+    fi
+done
 ucode /tmp/tests/https_native_guest.uc recover >"$work/recover.log"
 wait_intercepting
 probe 4 h2
