@@ -189,7 +189,12 @@ wait_intercepting() {
             ping -c 1 -W 1 -I nfcompat0 10.77.0.2 >/dev/null 2>&1 || true
         fi
         ucode /tmp/tests/https_native_guest.uc state >"$work/state.json"
+        # A recover request clears controller recovery state before the next
+        # tick withdraws any remaining kernel lease. Require controller recovery
+        # as well as live wire admission before injecting the next fault.
         if [ "$(jsonfilter -i "$work/state.json" -e '@.intercepting')" = true ] &&
+            [ "$(jsonfilter -i "$work/state.json" -e '@.recovery.intercepting')" = true ] &&
+            [ "$(jsonfilter -i "$work/state.json" -e '@.recovery.healthy')" = true ] &&
             jsonfilter -i "$work/state.json" -e '@.device_addresses.mac[*]' | grep -qx '10.77.0.2'; then
             # Published address evidence can precede the next lease transaction.
             if probe 4 h2 && probe 6 h2; then return 0; fi
