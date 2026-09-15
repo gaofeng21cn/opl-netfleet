@@ -280,7 +280,7 @@ function pluginPackages(controller, snapshot) {
 				}, true);
 				ui.showModal(label + ' ' + (plugin?.label || item.id), [
 					E('p', {}, kind === 'remove' ? '卸载此插件的软件包，保留私有配置。设备会再次检查禁用状态与依赖，拒绝连带删除其他软件。' :
-						'目标版本：' + displayVersion(item.available_version) + '。设备会校验签名并补齐缺少的依赖；若需要变更其他已安装组件，将停止并说明原因。安装不自动启用功能。'),
+						'目标版本：' + displayVersion(item.available_version) + '。设备会校验签名并补齐缺少的依赖；若需要变更其他已安装组件，将停止并说明原因。安装不自动启用功能；提供共享服务的插件会排空并恢复其依赖资源。'),
 					E('p', {}, '任务在设备后台执行，可离开页面；进度和结果会持续回读。'),
 					planView, E('div', { 'class': 'right' }, [button('取消', function() { closed = true; ui.hideModal(); }), ' ', confirm])
 				]);
@@ -296,7 +296,7 @@ function pluginPackages(controller, snapshot) {
 		}
 		if (!item.installed_version && item.available_version) actions.push(action('install', '安装'));
 		if (item.update_available) actions.push(action('update', '更新'));
-		if (item.installed_version) {
+		if (item.installed_version && !item.required) {
 			actions.push(action('remove', '卸载'));
 			if (plugin?.enabled !== false) actions.push(E('small', {}, '先在运行管理中禁用，再卸载'));
 		}
@@ -309,7 +309,7 @@ function pluginPackages(controller, snapshot) {
 		]);
 	});
 	return E('section', { 'class': 'netfleet-component-modules' }, [E('h3', {}, '安装与维护独立插件'),
-		E('p', {}, '从设备已信任的软件源读取。默认产品能力随 NetFleet 更新；HTTPS 引擎由 HTTPS 插件中的独立更新入口管理。'),
+		E('p', {}, '从设备已信任的软件源读取。默认功能插件也可独立更新，必需插件不可单独卸载；HTTPS 引擎由 HTTPS 插件中的独立更新入口管理。'),
 		button('检查插件更新', function() { return startPackageOperation(controller); }, active || !snapshot.feed.configured),
 		rows.length ? E('div', { 'class': 'netfleet-component-table' }, E('table', { 'class': 'table' }, [
 			E('thead', {}, E('tr', {}, ['插件', '安装与候选版本', '软件包操作'].map(label => E('th', {}, label)))), E('tbody', {}, rows)

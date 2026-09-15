@@ -83,12 +83,12 @@ function ExtensionRow({ extension, onManage }: { extension: ExtensionComponent; 
 
 function PluginPackages({ snapshot }: { snapshot: ComponentsSnapshot }) {
   return <section className="nf-component-modules"><h3>安装与维护独立插件</h3>
-    <p>从设备已信任的软件源读取。默认产品能力随 NetFleet 更新；HTTPS 引擎由 HTTPS 插件中的独立更新入口管理。</p>
+    <p>从设备已信任的软件源读取。默认功能插件也可独立更新，必需插件不可单独卸载；HTTPS 引擎由 HTTPS 插件中的独立更新入口管理。</p>
     <button type="button" disabled title={previewReason}>检查插件更新</button>
     {snapshot.plugin_packages?.length ? <div className="nf-table-wrap"><table><thead><tr><th>插件</th><th>安装与候选版本</th><th>软件包操作</th></tr></thead><tbody>
       {snapshot.plugin_packages.map(item => <tr key={item.name}><td><strong>{item.id}</strong><small>{item.description || pluginPurposes[item.id]}</small><small>{item.name}</small></td>
         <td><strong>{item.installed_version ? displayVersion(item.installed_version) : '未安装'}</strong><small>{item.available_version ? '更新源版本 ' + displayVersion(item.available_version) : '检查更新以读取候选版本'}</small></td>
-        <td className="nf-component-actions">{!item.installed_version && item.available_version && <button disabled title={previewReason}>安装</button>}{item.update_available && <button disabled title={previewReason}>更新</button>}{item.installed_version && <button disabled title={previewReason}>卸载</button>}</td></tr>)}
+        <td className="nf-component-actions">{!item.installed_version && item.available_version && <button disabled title={previewReason}>安装</button>}{item.update_available && <button disabled title={previewReason}>更新</button>}{item.installed_version && !item.required && <button disabled title={previewReason}>卸载</button>}</td></tr>)}
     </tbody></table></div> : <p>检查更新后显示软件源中的独立插件。</p>}
   </section>;
 }

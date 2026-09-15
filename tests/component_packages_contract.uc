@@ -21,4 +21,8 @@ rejects(() => validate(changes('(1/1) Downgrading ' + name + ' (2.0.0 -> 1.1.0)'
 const remove = { ...request, action: 'remove', before_version: '1.1.0' };
 check(validate(changes('(1/1) Purging ' + name + ' (1.1.0)'), remove, { [name]: '1.1.0' }, []).candidates[name] == null, 'remove exact plugin');
 rejects(() => validate(changes('(1/2) Purging downstream (1.0)\n(2/2) Purging ' + name + ' (1.1.0)'), remove, { [name]: '1.1.0' }, []), 'plugin_package_required');
+const required='opl-netfleet-plugin-components';
+const requiredUpdate={...update,name:required};
+check(validate(changes('(1/1) Upgrading '+required+' (1.0.0 -> 1.1.0)'),requiredUpdate,{[required]:'1.0.0'},[required]).names[0]==required,'required plugin supports independent update');
+rejects(()=>validate(changes('(1/1) Purging '+required+' (1.1.0)'),{...remove,name:required},{[required]:'1.1.0'},[required]),'plugin_package_protected');
 print('component_packages_contract_ok\n');

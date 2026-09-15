@@ -152,8 +152,8 @@ function plugin_catalog() {
 function plugin_packages(versions, product, catalog) {
 	const names = sort(keys(catalog ?? {}));
 	for (let name in keys(versions ?? {})) if (match(name, /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) && index(names, name) < 0) push(names, name);
-	return map(filter(names, name => index(product, name) < 0), name => ({
-		name, id: substr(name, length("opl-netfleet-plugin-")), description: catalog?.[name]?.description,
+	return map(names, name => ({
+		name, id: substr(name, length("opl-netfleet-plugin-")), required: index(product, name) >= 0, description: catalog?.[name]?.description,
 		installed_version: versions?.[name] ?? null, available_version: catalog?.[name]?.version ?? null,
 		update_available: newer(catalog?.[name]?.version, versions?.[name]), dependencies: catalog?.[name]?.depends ?? []
 	}));
@@ -162,7 +162,7 @@ function plugin_plan(request, work, preview) {
 	if (type(request) != "object") fail("invalid_plugin_package_request");
 	const versions = installed();
 	if (versions == null) fail("package_manager_unavailable");
-	if (!match(request.name ?? "", /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) || index(product_packages(), request.name) >= 0)
+	if (!match(request.name ?? "", /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) || (index(product_packages(), request.name) >= 0 && request.action != "update"))
 		fail("plugin_package_protected");
 	if (request.action != "remove" && !version_valid(request.version)) fail("invalid_plugin_package_request");
 	if (request.action == "remove") {
@@ -206,7 +206,7 @@ progress = function() {
 	}
 	if (request != null && state?.id != request.id) {
 		const terminal = private_file(`${ROOT}/${request.id}/journal.json`) ? read_json(`${ROOT}/${request.id}/journal.json`) : null;
-		if (index(["complete", "rolled_back"], terminal?.phase) >= 0)
+		if (index(["complete", "rolled_back", "failed"], terminal?.phase) >= 0)
 			return { id: request.id, kind: "packages", state: terminal.phase == "complete" ? "succeeded" : "failed", phase: "verifying",
 				started_at: request.started_at, updated_at: terminal.finished_at ?? null, finished_at: terminal.finished_at ?? null,
 				error: terminal.phase == "complete" ? null : terminal.error ?? "update_interrupted_rolled_back", recovery: terminal.phase == "rolled_back" ? "restored" : null,
@@ -366,7 +366,7 @@ start = function(action, component, version) {
 		const oldwork = `${ROOT}/${previous.id}`;
 		const state = operation.get("packages");
 		const terminal = private_file(`${oldwork}/journal.json`) ? read_json(`${oldwork}/journal.json`) : null;
-		const safe = index(["complete", "rolled_back"], terminal?.phase) >= 0 || terminal == null ||
+		const safe = index(["complete", "rolled_back", "failed"], terminal?.phase) >= 0 || terminal == null ||
 			state?.id == previous.id && (state.state == "succeeded" ||
 			state.state == "failed" && match(state.error ?? "", /_rolled_back$/));
 		if (!safe && fs.lstat(`${oldwork}/before.json`) != null) fail("previous_update_incomplete");
@@ -401,6 +401,14 @@ run_command = function(command, work) {
 };
 refresh_index = function(request, work) {
 	operation.update("checking");
+	// Reuse the recent signed index after an explicit check; still read candidates
+	// from APK, not from the UI or the cached version map.
+	const cached = private_file(CACHE) ? read_json(CACHE) : null;
+	if (request.action != "check" && cached?.feed == request.feed && cached.error == null &&
+		type(cached.checked_at) == "int" && time() >= cached.checked_at && time() - cached.checked_at <= 300) {
+		const values = available(request.feed);
+		if (values != null) return values;
+	}
 	const success = run_command("apk --timeout 30 update", work);
 	const values = success ? available(request.feed) : null;
 	const checked = { feed: request.feed, checked_at: time(), versions: values ?? {}, plugin_catalog: success ? plugin_catalog() : {}, error: values == null ? "feed_check_failed" : null };
@@ -593,7 +601,7 @@ rollback = function(before, work, names, versions, old, install_started, already
 	if (!identity) push(errors, "rollback_identity_mismatch");
 	const runtime = identity && inputs && attempt("rollback_runtime_failed", () => restore_services(before, work));
 	if (!runtime && !before.scoped) {
-		attempt("rollback_stop_failed", () => stop_services(work));
+		attempt("rollback_stop_failed", () => before.scoped ? drain_scoped(work) : stop_services(work));
 	}
 	atomic_json(`${work}/rollback.json`, { errors: errors, identity: identity, private_inputs: inputs, runtime_restored: runtime });
 	return errors[0] ?? null;
@@ -607,7 +615,7 @@ function core_space_available(bytes, work) {
 	return true;
 }
 upgrade = function(request, work, candidates) {
-	const names = request.component == "plugins" ? request.names : request.component == "netfleet" ? product_packages() : [PACKAGES[2]];
+	let names = request.component == "plugins" ? request.names : request.component == "netfleet" ? product_packages() : [PACKAGES[2]];
 	const versions = installed();
 	if (versions == null) fail("package_manager_unavailable");
 	if (request.component == "netfleet" && versions[COMPATIBILITY_PACKAGE] != null &&
@@ -631,6 +639,8 @@ upgrade = function(request, work, candidates) {
 		if (type(candidate?.["installed-size"]) != "int" || candidate["installed-size"] <= 0) fail("candidate_changed");
 		if (!core_space_available(candidate["installed-size"], work)) fail("insufficient_update_space");
 	}
+	// Keep the reviewed composition, but only fetch and replace changed packages.
+	if (!request.plugin) names = filter(names, name => versions[name] != candidates[name]);
 	const space = capture(`df -Pk ${q(ROOT)} | awk 'NR == 2 { print $4 }'`);
 	const footprint = capture(`du -sk ${q(`${work}/code`)} | awk '{print $1}'`);
 	if (!match(space ?? "", /^[0-9]+$/) || !match(footprint ?? "", /^[0-9]+$/) || int(space) < int(footprint) * 3 + 8192) fail("insufficient_update_space");
@@ -667,7 +677,7 @@ upgrade = function(request, work, candidates) {
 	if (before_status == null && !unconfigured) fail("runtime_readback_failed");
 	const paths = private_paths();
 	const before = { backend: KIND, core_enabled: capture(`/etc/init.d/${SERVICE} enabled`) != null, supervisor_enabled: capture("/etc/init.d/opl-netfleet enabled") != null, active: before_status?.active ?? false, unconfigured: unconfigured, core: service_running(SERVICE), supervisor: service_running("opl-netfleet"), selections: {}, paths: paths, inputs: input_identity(paths), world: package_world() };
-	before.scoped = request.plugin != null;
+	before.scoped = index(names, "opl-netfleet-kernel") < 0 && index(names, PACKAGES[2]) < 0;
 	before.original_world = before.world;
 	before.world = recovery_world(names, before.world);
 	before.runtime_paths = filter(["/usr/libexec/opl-netfleet", "/usr/libexec/opl-netfleet-plugin-package",
@@ -715,7 +725,7 @@ upgrade = function(request, work, candidates) {
 		} catch (error) { lock.close(); die(error_code(error)); }
 		lock.close();
 		operation.update("installing", { subject: request.component, total: 0, completed: 0 });
-		if (request.component != "plugins" && !stop_services(work)) fail("runtime_stop_failed");
+		if (!before.scoped && !stop_services(work)) fail("runtime_stop_failed");
 		install_started = true;
 		// Explicit package hooks may resume drained resource owners while pending
 		// continues to block unrelated starts until this transaction is verified.
@@ -740,7 +750,7 @@ upgrade = function(request, work, candidates) {
 		// Keep installed signed plugin archives available when a feed advances.
 		if (directory(`${ROOT}/archives`)) for (let path in next) {
 			const name = replace(path, /^.*\//, "");
-			if (match(name, /^opl-netfleet-plugin-/) && run_command(`cp ${q(path)} ${q(`${ROOT}/archives/${name}`)}`, work))
+			if (match(name, /^(opl-netfleet|luci-app-netfleet)/) && run_command(`cp ${q(path)} ${q(`${ROOT}/archives/${name}`)}`, work))
 				fs.chmod(`${ROOT}/archives/${name}`, 0600);
 		}
 		journal(work, { ...read_json(`${work}/journal.json`), phase: "complete" }); fs.unlink(PENDING); system("sync"); return;
@@ -761,7 +771,7 @@ upgrade = function(request, work, candidates) {
 
 
 journal = function(work, value) {
-	if (index(["complete", "rolled_back"], value.phase) >= 0) value.finished_at = int(time());
+	if (index(["complete", "rolled_back", "failed"], value.phase) >= 0) value.finished_at = int(time());
 	if (!atomic_json(`${work}/journal.json`, value) || system("sync") != 0) fail("update_state_write_failed");
 };
 recovery_stop = function(work) {
@@ -839,22 +849,32 @@ try {
 	else if (ARGV[0] == "run") {
 		const request = private_file(ARGV[1]) ? read_json(ARGV[1]) : null;
 		if (request == null || !match(request.id ?? "", /^[a-f0-9]{32}$/) || ARGV[1] != `${ROOT}/${request.id}/request.json` ||
-			index(["check", "update", "install", "plugin"], request.action) < 0 || (request.action != "install" && request.feed != feed())) fail("update_request_changed");
+			index(["check", "update", "install", "plugin"], request.action) < 0) fail("update_request_changed");
 		const work = `${ROOT}/${request.id}`;
 		operation.begin("packages", "checking", { id: request.id, subject: request.component ?? "feed" });
+		if (request.action != "install" && request.feed != feed()) fail("update_request_changed");
 		const staged = request.action == "install" ? local_stage(work) : null;
 		if (staged) { request.component = "plugins"; request.names = staged.names; }
-		let candidates = staged ? staged.candidates : request.plugin?.action == "remove" ? {} : refresh_index(request, work);
+		const unchanged_core = request.action == "update" && request.component == "mihomo" && installed()?.[PACKAGES[2]] == request.version;
+		let candidates = staged ? staged.candidates : unchanged_core ? { [PACKAGES[2]]: request.version } : request.plugin?.action == "remove" ? {} : refresh_index(request, work);
 		if (request.plugin) {
 			const plan = plugin_plan(request.plugin, work);
 			request.names = plan.names; candidates = plan.candidates;
 		}
 		if (request.action != "check") upgrade(request, work, candidates);
+		else journal(work, { phase: "complete", write_started: false });
 		operation.finish(true, null, null);
 		response = { ok: true };
 	} else response = { ok: false, error: "unknown_component_action" };
 } catch (error) {
 	const reason = error_code(error);
+	if (ARGV[0] == "run") {
+		const request = private_file(ARGV[1]) ? read_json(ARGV[1]) : null;
+		const work = match(request?.id ?? "", /^[a-f0-9]{32}$/) ? `${ROOT}/${request.id}` : null;
+		if (work && ARGV[1] == `${work}/request.json` && private_directory(work) &&
+			fs.lstat(`${work}/before.json`) == null && fs.lstat(`${work}/journal.json`) == null)
+			journal(work, { phase: "failed", write_started: false, error: reason });
+	}
 	if (ARGV[0] == "run" || ARGV[0] == "recover") operation.finish(false, reason,
 		match(reason, /_rolled_back$/) ? { rollback: { ok: true } } :
 		match(reason, /^rollback_(stop|configuration|install|identity|runtime|world)_/) ? { rollback: { ok: false } } : null);

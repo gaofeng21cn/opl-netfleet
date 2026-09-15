@@ -13,7 +13,7 @@ export function changes(output) {
 
 export function validate(changed, request, installed, product) {
 	if (!match(request.name ?? '', /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) ||
-		index(product, request.name) >= 0) die('plugin_package_protected');
+		(index(product, request.name) >= 0 && request.action != 'update')) die('plugin_package_protected');
 	if (index(['install', 'update', 'remove'], request.action) < 0 || request.confirm != true)
 		die('invalid_plugin_package_request');
 	if ((installed[request.name] ?? null) != (request.before_version ?? null)) die('installed_version_changed');

@@ -358,7 +358,7 @@ export interface OperationsSnapshot {
 }
 
 export interface ComponentsSnapshot {
-  plugin_packages?: Array<{ name: string; id: string; description?: string; installed_version: string | null; available_version: string | null; update_available: boolean; dependencies: string[] }>;
+  plugin_packages?: Array<{ name: string; id: string; required?: boolean; description?: string; installed_version: string | null; available_version: string | null; update_available: boolean; dependencies: string[] }>;
   product?: { packages: Array<{ name: string; installed_version?: string | null; available_version?: string | null }>; missing: string[]; updates: string[] };
   supported: boolean;
   backend: string;

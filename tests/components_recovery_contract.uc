@@ -44,11 +44,12 @@ const recovery_start = index(source, "rollback = function(");
 const recovery_end = index(source, "upgrade = function(", recovery_start);
 const recovery = substr(source, recovery_start, recovery_end - recovery_start);
 loadstring(`
-let rollback, stops = 0, starts = 0, commands = [], world_calls = 0, saved;
+let rollback, stops = 0, starts = 0, scoped_drains = 0, commands = [], world_calls = 0, saved;
 let package_ok = false, world_ok = true, identity_ok = true, runtime_ok = true, input_ok = true, bytes_ok = true;
 const UPGRADE_STATE = "/unused", fs = {unlink: path => true};
 function q(value) { return value; }
 function stop_services(work) { stops++; return true; }
+function drain_scoped(work) { scoped_drains++; return true; }
 function archive_arguments(paths) { return join(" ", paths); }
 function run_command(command, work) { push(commands, command); return index(command, "apk --") < 0 || package_ok; }
 function restore_world(names, before, work) { world_calls++; if (!world_ok) die("world unavailable"); return true; }
@@ -134,4 +135,7 @@ const before = {ui: "ui><Q1stale", other: "other><Q1keep"};
 const repaired = recovery_world(["ui"], before);
 if (repaired.ui != "ui" || repaired.other != before.other || before.ui != "ui><Q1stale") die("stale pin must be repaired only in the selected recovery intent");
 if (recovery_world(["ui"], {ui: "ui><Q1current"}).ui != "ui><Q1current") die("matching pin must be preserved for rollback");
+bytes_ok = true; identity_ok = true; runtime_ok = false; const stops_before = stops;
+rollback({...before,scoped:true}, "/unused", ["package"], {package:"old"}, ["old.apk"], true);
+check(stops==stops_before && scoped_drains>=2, "plugin recovery failure must never stop the whole network");
 `)();

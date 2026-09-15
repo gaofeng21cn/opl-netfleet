@@ -25,11 +25,11 @@ case "$id" in ''|*[!a-f0-9]*) cat start.json; exit 1 ;; esac
 [ "${#id}" = 32 ]
 printf '{"id":"%s","phase":"installing"}\n' "$id"
 transaction=/etc/opl-netfleet/package-transactions/$id
-# A completed transaction is durable; keep the operator request bounded.
-for attempt in $(seq 1 60); do
+# Poll the retained transaction owner; installed code can be under maintenance.
+for attempt in $(seq 1 300); do
  phase=$(jsonfilter -i "$transaction/journal.json" -e '@.phase' 2>/dev/null || true)
  case "$phase" in complete) break ;; rolled_back) printf '{"ok":false,"id":"%s","error":"update_rolled_back"}\n' "$id"; exit 1 ;; esac
- ucode "$main" components-operation >operation.json 2>/dev/null || true
+ ucode "$transaction/code/plugins/components/recover.uc" operation >operation.json 2>/dev/null || true
  state=$(jsonfilter -i operation.json -e '@.result.packages.state' 2>/dev/null || true)
  case "$state" in failed|interrupted) cat operation.json; exit 1 ;; esac
  sleep 1

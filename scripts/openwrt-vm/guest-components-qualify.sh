@@ -133,6 +133,15 @@ stage=wrong_candidate_rejected
 request components_update 9999.0.0-r1
 assert_json "$work/operation-result.json" '@.result.packages.state' failed
 assert_json "$work/operation-result.json" '@.result.packages.error' candidate_changed
+# A rejected request must keep its own terminal result after volatile progress
+# disappears, with no pending mutation or maintenance markers.
+failed_id=$(jsonfilter -i "$work/operation-result.json" -e '@.result.packages.id')
+assert_json "/etc/opl-netfleet/package-transactions/$failed_id/journal.json" '@.phase' failed
+rm -f /tmp/opl-netfleet-operation-packages.json
+ubus -t 20 call opl-netfleet operation_get '{}' >"$work/operation-result.json"
+assert_json "$work/operation-result.json" '@.result.packages.id' "$failed_id"
+assert_json "$work/operation-result.json" '@.result.packages.state' failed
+assert_json "$work/operation-result.json" '@.result.packages.error' candidate_changed
 unchanged
 
 stage=fixture_feed
@@ -308,6 +317,21 @@ assert_json "$local_stage/acceptance.json" '@.owner_pids_stable' true
 unchanged
 rpc_ready
 cp /etc/apk/world "$work/update-world"
+stage=required_plugin_feed_update
+plugin=opl-netfleet-plugin-dashboard
+prior=$(package_version "$plugin" old)
+install_fixture "$work/$plugin-$prior.apk" >>"$work/independent.log" 2>&1
+core_pid_before=$(pidof mihomo)
+request_json=$(printf '{"name":"%s","action":"update","before_version":"%s","version":"%s","confirm":true}' "$plugin" "$prior" "$independent")
+ubus -t 20 call opl-netfleet components_plugin_plan "{\"request\":$request_json}" >"$work/required-plan.json"
+assert_json "$work/required-plan.json" '@.ok' true
+ucode -e 'import * as fs from "fs"; const request=json(ARGV[0]);request.plan=json(fs.readfile(ARGV[1])).result;fs.writefile(ARGV[2],sprintf("%J",{request}));' "$request_json" "$work/required-plan.json" "$work/required-request.json"
+ubus -t 20 call opl-netfleet components_plugin "$(cat "$work/required-request.json")" >"$work/required-start.json"
+assert_json "$work/required-start.json" '@.ok' true
+wait_operation "$(jsonfilter -i "$work/required-start.json" -e '@.result.operation.id')"
+assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
+[ "$(pidof mihomo)" = "$core_pid_before" ]
+unchanged
 stage=component_update
 rpcd_before=$(pidof rpcd)
 request components_update "$current"

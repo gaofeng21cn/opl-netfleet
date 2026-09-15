@@ -87,3 +87,35 @@ versions['opl-netfleet-plugin-ui']='4';result=get();check(!result.components[0].
 delete versions['opl-netfleet-plugin-ui'];result=get();check(join(',',result.product.missing)=='opl-netfleet-plugin-ui','missing package is separate from an update');
 `)();
 print('components_update_control_contract_ok\n');
+
+const index_refresh = extract('refresh_index = function(', 'function archive_repository(');
+loadstring(`
+let refresh_index, now=1000, refreshes=0, saved;
+const CACHE='cache';
+let cached={feed:'feed',checked_at:999,error:null}, values={product:'2'};
+function time(){return now;}function private_file(){return true;}function read_json(){return cached;}
+function available(){return values;}function run_command(){refreshes++;return true;}
+function plugin_catalog(){return {};}function atomic_json(p,v){saved=v;return true;}function fail(e){die(e);}
+const operation={update:()=>true};
+function check(v,m){if(!v)die(m);}
+`+index_refresh+`
+check(refresh_index({action:'update',feed:'feed'},'/work').product=='2' && refreshes==0,'recent signed index reused');
+refresh_index({action:'check',feed:'feed'},'/work');check(refreshes==1,'explicit check refreshes');
+now=1301;refresh_index({action:'update',feed:'feed'},'/work');check(refreshes==2,'expired cache refreshes');
+now=900;refresh_index({action:'update',feed:'feed'},'/work');check(refreshes==3,'clock rollback never extends cache');
+now=1000;refresh_index({action:'update',feed:'other'},'/work');check(refreshes==4,'feed change refreshes');
+`)();
+const selection = extract('upgrade = function(', '\tconst space = capture(`df -Pk');
+loadstring(`
+let upgrade,state;
+const PACKAGES=['opl-netfleet','luci-app-netfleet','mihomo-meta'],COMPATIBILITY_PACKAGE='opl-netfleet-https-compat',UPGRADE_STATE='marker';
+let versions={'opl-netfleet':'1','luci-app-netfleet':'1','opl-netfleet-kernel':'1','opl-netfleet-plugin-dashboard':'1'};
+function product_packages(){return keys(versions);}function installed(){return versions;}function newer(a,b){return a!=null&&b!=null&&int(a)>int(b);}
+function version_valid(v){return v!=null;}function fail(e){die(e);}function journal(w,v){state=v;}
+const fs={lstat:()=>null};function check(v,m){if(!v)die(m);}
+`+selection+`return names;};
+let names=upgrade({component:'netfleet',version:'1'},'/work',{...versions,'opl-netfleet-plugin-dashboard':'2'});
+check(length(names)==1&&names[0]=='opl-netfleet-plugin-dashboard','product update only replaces changed plugin');
+upgrade({component:'netfleet',version:'1'},'/work',versions);check(state.no_change&&state.phase=='complete','unchanged composition completes without work');
+`)();
+print('components_update_efficiency_ok\n');
