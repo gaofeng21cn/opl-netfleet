@@ -8,5 +8,9 @@
   "source_url": "https://github.com/MetaCubeX/mihomo/tree/ac017cdd246ce8bd547653d927e7bf77d7ee73d5",
   "source_commit": "ac017cdd246ce8bd547653d927e7bf77d7ee73d5",
   "license": "GPL-3.0-or-later",
-  "packaging_reference": "https://github.com/nikkinikki-org/OpenWrt-nikki/blob/3799926b147d7065ac98508f16951f8714e53659/mihomo-meta/Makefile"
+  "packaging_reference": "https://github.com/nikkinikki-org/OpenWrt-nikki/blob/3799926b147d7065ac98508f16951f8714e53659/mihomo-meta/Makefile",
+  "package_architectures": [
+    "aarch64_generic",
+    "aarch64_cortex-a53"
+  ]
 }

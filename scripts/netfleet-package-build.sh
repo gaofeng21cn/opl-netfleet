@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-usage() { printf '%s\n' 'Usage: scripts/netfleet-package-build.sh --sdk <openwrt-sdk> [--ref <git-ref>] [--output <dir>] [--apk-private-key <pem>] [--preflight] [--jobs <1..16>]'; }
+usage() { printf '%s\n' 'Usage: scripts/netfleet-package-build.sh --sdk <openwrt-sdk> [--ref <git-ref>] [--output <dir>] [--apk-private-key <pem>] [--preflight] [--jobs <1..16>] [--core-only --core-arch <architecture>]'; }
 die() { printf 'netfleet-package-build: %s\n' "$1" >&2; exit 1; }
-sdk=''; ref='HEAD'; output=''; apk_private_key=''; preflight=0; jobs=4
+sdk=''; ref='HEAD'; output=''; apk_private_key=''; preflight=0; jobs=4; core_only=0; core_package_arch=''
 SECONDS=0
 while (($#)); do
   case "$1" in
@@ -11,12 +11,15 @@ while (($#)); do
     --output) (($# >= 2)) || die '--output requires a directory'; output=$2; shift 2;;
     --apk-private-key) (($# >= 2)) || die '--apk-private-key requires a path'; apk_private_key=$2; shift 2;;
     --preflight) preflight=1; shift;;
+    --core-only) core_only=1; shift;;
+    --core-arch) (($# >= 2)) || die '--core-arch requires an architecture'; core_package_arch=$2; shift 2;;
     --jobs) (($# >= 2)) || die '--jobs requires a count'; jobs=$2; shift 2;;
     -h|--help) usage; exit 0;;
     *) die "unknown option: $1";;
   esac
 done
 [[ "$jobs" =~ ^([1-9]|1[0-6])$ ]] || die '--jobs must be an integer from 1 to 16'
+[[ -z "$core_package_arch" || "$core_only" == 1 ]] || die '--core-arch requires --core-only'
 [[ -n "$sdk" ]] || die 'OpenWrt SDK is required; no package was fabricated'
 sdk=$(cd "$sdk" 2>/dev/null && pwd) || die 'SDK is unavailable'
 [[ -f "$sdk/Makefile" ]] || die "not an OpenWrt SDK: $sdk"
@@ -46,6 +49,8 @@ if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
     -v "$output.build-timings.json:$output.build-timings.json" -w "$repo_dir")
   build_args=(--sdk "$sdk" --ref "$commit" --output "$output" --jobs "$jobs")
   [[ "$preflight" == 0 ]] || build_args+=(--preflight)
+  [[ "$core_only" == 0 ]] || build_args+=(--core-only)
+  [[ -z "$core_package_arch" ]] || build_args+=(--core-arch "$core_package_arch")
   if [[ -n "$apk_private_key" ]]; then
     container_args+=(-v "$apk_private_key:$apk_private_key:ro")
     build_args+=(--apk-private-key "$apk_private_key")
@@ -121,11 +126,59 @@ core_lock=$work/openwrt/mihomo-meta/source.json
 core_arch=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["architecture"])' "$core_lock")
 core_version=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$core_lock")
 [[ "$build_target_arch" == "$core_arch" ]] || die "no pinned core asset for SDK architecture: $build_target_arch"
+if [[ "$core_only" == 1 ]]; then
+  [[ -n "$core_package_arch" ]] || core_package_arch=$build_target_arch
+  python3 - "$core_lock" "$core_package_arch" <<'PYARCH'
+import json,sys
+m=json.load(open(sys.argv[1]))
+if sys.argv[2] not in m.get('package_architectures', [m['architecture']]):
+    raise SystemExit('unsupported pinned Mihomo package architecture')
+PYARCH
+fi
 if [[ "$preflight" == 1 ]]; then
   printf 'preflight_ok source=%s architecture=%s make=%s\n' "$commit" "$build_target_arch" "$make_version"
   exit 0
 fi
 [[ ! -e "$output/manifest.json" ]] || die 'candidate output already exists; verify and reuse it or choose a new directory'
+if [[ "$core_only" == 1 ]]; then
+  [[ -n "$apk_private_key" ]] || die 'core-only requires an APK signing key'
+  grep -Eq '^CONFIG_USE_APK=y$' "$sdk/.config" || die 'core-only requires an APK SDK'
+  [[ ! -e "$output/core-manifest.json" ]] || die 'core candidate already exists'
+  [[ ! -e "$sdk/package/mihomo-meta" ]] || mv "$sdk/package/mihomo-meta" "$backup/mihomo-meta"
+  staged_packages+=(mihomo-meta)
+  cp -R "$work/openwrt/mihomo-meta" "$sdk/package/mihomo-meta"
+  cp "$work/openwrt/files/usr/share/opl-netfleet/nikki/LICENSE" "$sdk/package/mihomo-meta/LICENSE"
+  cp "$apk_private_key" "$sdk/private-key.pem"
+  chmod 0600 "$sdk/private-key.pem"
+  "$sdk/staging_dir/host/bin/openssl" ec -in "$sdk/private-key.pem" -pubout >"$sdk/public-key.pem"
+  "$make_bin" -C "$sdk" package/mihomo-meta/clean V=s
+  "$make_bin" -j"$jobs" -C "$sdk" package/mihomo-meta/compile NETFLEET_CORE_ARCH="$core_package_arch" NO_DEPS=1 CONFIG_AUTOREMOVE= V=s
+  artifact="$sdk/bin/packages/$core_package_arch/base/mihomo-meta-${core_version}-r1.apk"
+  [[ -f "$artifact" ]] || die 'expected core architecture artifact is missing'
+  cp "$artifact" "$output/$(basename "$artifact")"
+  artifact="$output/$(basename "$artifact")"
+  apk_tool="$sdk/staging_dir/host/bin/apk"
+  "$apk_tool" adbsign --allow-untrusted --reset-signatures --sign-key "$sdk/private-key.pem" "$artifact"
+  mkdir -p "$work/trusted"
+  cp "$sdk/public-key.pem" "$work/trusted/opl-netfleet-apk.pem"
+  cp "$sdk/public-key.pem" "$output/opl-netfleet-apk.pem"
+  "$apk_tool" verify --keys-dir "$work/trusted" "$artifact"
+  "$apk_tool" adbdump --format json "$artifact" >"$work/core-metadata.json"
+  python3 - "$output" "$artifact" "$work/core-metadata.json" "$core_lock" "$commit" "$tree" "$core_package_arch" <<'PYCORE'
+import hashlib,json,sys
+from pathlib import Path
+out,artifact,metadata,lock,commit,tree,arch=sys.argv[1:]
+info=json.load(open(metadata))['info']; source=json.load(open(lock))
+assert info['name']=='mihomo-meta' and info['version']==source['version']+'-r1' and info['arch']==arch
+p=Path(artifact)
+m={'schema':'opl-netfleet-core-package.v1','source_commit':commit,'source_tree':tree,
+   'package':info['name'],'version':info['version'],'architecture':arch,'name':p.name,
+   'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'upstream':source}
+Path(out,'core-manifest.json').write_text(json.dumps(m,indent=2)+'\n')
+PYCORE
+  printf 'core_build_ok architecture=%s seconds=%s\n' "$core_package_arch" "$SECONDS"
+  exit 0
+fi
 for package_name in opl-netfleet luci-app-netfleet mihomo-meta; do
   if [[ -e "$sdk/package/$package_name" ]]; then mv "$sdk/package/$package_name" "$backup/$package_name"; fi
   staged_packages+=("$package_name")

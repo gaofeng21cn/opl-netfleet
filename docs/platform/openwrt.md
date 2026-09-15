@@ -113,7 +113,11 @@ OpenWrt 默认 package lifecycle 会启动新安装或升级后的 init script�
 `openwrt/mihomo-meta/source.json` 是版本、架构、下载摘要和对应 GPL 源码的唯一来源，
 VM 与 SDK 都消费它。SDK 只校验、解压和封装，不编译 Go。核心包安装来源记录，
 发布 manifest 同时提供固定源码入口和包装实现入口；不把 Nikki 服务作为依赖安装。
-当前核心资产只覆盖 `aarch64_generic`，构建其他目标必须先增加对应经验证资产，不能
+同一官方静态 ARM64 核心可封装为 `source.json` 明确列出的 `aarch64_generic` 与
+`aarch64_cortex-a53` 包；APK 元数据必须与目标 `/etc/apk/arch` 一致，不把编译器
+`apk --print-arch` 的通用 CPU 名称当作设备包架构。构建入口的 `--core-only --core-arch`
+只封装这一核心，不重建其他组件；架构变体必须独立验签、验证安装与回退，并证明核心
+字节与已获运行资格的固定资产一致。其他目标必须先增加对应经验证资产，不能
 把 ARM64 核心标为 `noarch`。NetFleet 代码包可用于其他已具备兼容核心的架构，
 但完整 feed 的空白设备安装能力受核心架构限制。已安装的 `mihomo` 提供者满足依赖时，
 NetFleet 定向升级不升级或替换它；核心更新是独立显式操作。
