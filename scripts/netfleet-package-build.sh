@@ -30,8 +30,6 @@ tree=$(git -C "$repo_dir" rev-parse "$commit^{tree}")
 if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
   command -v docker >/dev/null 2>&1 || die 'the Linux x86_64 SDK requires Docker on this host'
   builder_image=${NETFLEET_SDK_IMAGE:-opl-netfleet-openwrt-sdk-builder:latest}
-  docker image inspect "$builder_image" --format '{{.Id}}' >/dev/null 2>&1 ||
-    die "local SDK builder image is unavailable: $builder_image; prepare the Linux builder before packaging"
   [[ -n "$output" ]] || output="${XDG_CACHE_HOME:-$HOME/.cache}/opl-netfleet/packages/$commit-$tree"
   mkdir -p "$output"
   output=$(cd "$output" && pwd)
@@ -39,7 +37,7 @@ if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
   [[ -e "$output.build-timings.json" ]] || : >"$output.build-timings.json"
   chmod 0600 "$output.build-timings.json"
   common=$(git -C "$repo_dir" rev-parse --path-format=absolute --git-common-dir)
-  container_args=(run --rm --user 0:0 --platform linux/amd64
+  container_args=(run --pull=never --rm --user 0:0 --platform linux/amd64
     -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e "GIT_CONFIG_VALUE_0=$repo_dir"
     -v "$repo_dir:$repo_dir:ro" -v "$common:$common:ro"
     -v "$sdk:$sdk" -v "$output:$output"
