@@ -206,5 +206,6 @@ HTTPS 的顺序固定为：基础组合资格 → HTTPS 独立资格 → 插件�
 
 `openwrt-vm.sh --diagnostic setup --core-package <目录> --packages <已验证基础包> --base-qualification <基础回执>`
 只适用于固定上游核心字节未变的架构封装。入口核对基础回执、包摘要及运行源码不变；
-隔离 guest 使用目标包架构，走真实组件升级和恢复，再回读核心、DNS、代理与私有配置。
+隔离 ARM64 guest 保留基础包架构并加入目标架构，验证目标 APK 的安装、回退与原生核心
+启停，再回读核心、DNS、代理与私有配置；自动事务恢复复用绑定的基础资格。
 `core_package_qualified` 仅证明该核心包变体，不授权其他组件或更换上游核心版本。
