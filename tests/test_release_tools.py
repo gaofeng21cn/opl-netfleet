@@ -249,6 +249,16 @@ all:
             self.assertEqual(result.stdout, '')
             self.assertIn('invalid system package dependency', result.stderr)
 
+    def test_packager_rejects_unbounded_jobs_before_sdk_access(self):
+        for jobs in ('0', '-1', '17', 'all', '1;true'):
+            with self.subTest(jobs=jobs), tempfile.TemporaryDirectory() as temp:
+                output = Path(temp) / 'candidate'
+                result = subprocess.run([str(PACKAGER), '--jobs', jobs, '--output', str(output)],
+                                        text=True, capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('--jobs must be an integer', result.stderr)
+                self.assertFalse(output.exists())
+
     def test_packager_requires_sdk_without_creating_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'out'

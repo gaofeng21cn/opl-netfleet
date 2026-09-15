@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-usage() { printf '%s\n' 'Usage: scripts/netfleet-package-build.sh --sdk <openwrt-sdk> [--ref <git-ref>] [--output <dir>] [--apk-private-key <pem>] [--preflight]'; }
+usage() { printf '%s\n' 'Usage: scripts/netfleet-package-build.sh --sdk <openwrt-sdk> [--ref <git-ref>] [--output <dir>] [--apk-private-key <pem>] [--preflight] [--jobs <1..16>]'; }
 die() { printf 'netfleet-package-build: %s\n' "$1" >&2; exit 1; }
-sdk=''; ref='HEAD'; output=''; apk_private_key=''; preflight=0
+sdk=''; ref='HEAD'; output=''; apk_private_key=''; preflight=0; jobs=4
 SECONDS=0
 while (($#)); do
   case "$1" in
@@ -11,10 +11,12 @@ while (($#)); do
     --output) (($# >= 2)) || die '--output requires a directory'; output=$2; shift 2;;
     --apk-private-key) (($# >= 2)) || die '--apk-private-key requires a path'; apk_private_key=$2; shift 2;;
     --preflight) preflight=1; shift;;
+    --jobs) (($# >= 2)) || die '--jobs requires a count'; jobs=$2; shift 2;;
     -h|--help) usage; exit 0;;
     *) die "unknown option: $1";;
   esac
 done
+[[ "$jobs" =~ ^([1-9]|1[0-6])$ ]] || die '--jobs must be an integer from 1 to 16'
 [[ -n "$sdk" ]] || die 'OpenWrt SDK is required; no package was fabricated'
 sdk=$(cd "$sdk" 2>/dev/null && pwd) || die 'SDK is unavailable'
 [[ -f "$sdk/Makefile" ]] || die "not an OpenWrt SDK: $sdk"
@@ -42,7 +44,7 @@ if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
     -v "$repo_dir:$repo_dir:ro" -v "$common:$common:ro"
     -v "$sdk:$sdk" -v "$output:$output"
     -v "$output.build-timings.json:$output.build-timings.json" -w "$repo_dir")
-  build_args=(--sdk "$sdk" --ref "$commit" --output "$output")
+  build_args=(--sdk "$sdk" --ref "$commit" --output "$output" --jobs "$jobs")
   [[ "$preflight" == 0 ]] || build_args+=(--preflight)
   if [[ -n "$apk_private_key" ]]; then
     container_args+=(-v "$apk_private_key:$apk_private_key:ro")
@@ -164,7 +166,7 @@ clean_seconds=$((SECONDS - preflight_seconds - sdk_prepare_seconds))
 # Keep runtime APK dependencies, but do not rebuild the SDK's entire kmod set.
 # Retain this build's compiled payload until FILES and native-runtime validation
 # consume it; the next invocation's package clean removes it.
-"$make_bin" -C "$sdk" package/mihomo-meta/compile package/opl-netfleet/compile package/luci-app-netfleet/compile NO_DEPS=1 CONFIG_AUTOREMOVE= V=s
+"$make_bin" -j"$jobs" -C "$sdk" package/mihomo-meta/compile package/opl-netfleet/compile package/luci-app-netfleet/compile NO_DEPS=1 CONFIG_AUTOREMOVE= V=s
 
 compile_seconds=$((SECONDS - preflight_seconds))
 product_compile_seconds=$((compile_seconds - sdk_prepare_seconds - clean_seconds))
