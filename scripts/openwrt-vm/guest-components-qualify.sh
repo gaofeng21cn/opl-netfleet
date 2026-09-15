@@ -292,9 +292,23 @@ rpc_ready
 local_stage="$work/shared-install"
 mkdir -m 700 -p "$local_stage/old" "$local_stage/new"
 printf '%s\n' '{"schema":"opl-netfleet-plugin-install.v1","packages":[]}' >"$local_stage/request.json"
-# Exercise shared-model dependents and self-updating components/UI in the same
-# finite operation, including their real package hooks and resource ownership.
-for extra in opl-netfleet-plugin-models opl-netfleet-plugin-components opl-netfleet-plugin-product-ui; do
+# Let the real APK plan supply the UI dependency set. A fixed models/UI pair
+# ceases to be installable as soon as the UI needs a newer storage provider.
+stage=shared_plugin_dependency_plan
+ui_current=$(package_version opl-netfleet-plugin-product-ui current)
+ui_old=$(package_version opl-netfleet-plugin-product-ui old)
+ubus -t 30 call opl-netfleet components_plugin_plan \
+ "{\"request\":{\"name\":\"opl-netfleet-plugin-product-ui\",\"action\":\"update\",\"before_version\":\"$ui_old\",\"version\":\"$ui_current\",\"confirm\":false}}" >"$work/shared-plan.json"
+assert_json "$work/shared-plan.json" '@.ok' true
+shared_packages=$(ucode -e 'import {readfile} from "fs";
+ const names=json(readfile(ARGV[0])).result.names;
+ assert(index(names,"opl-netfleet-plugin-product-ui")>=0);
+ for (let name in ["opl-netfleet-plugin-models","opl-netfleet-plugin-components"])
+  if(index(names,name)<0)push(names,name);
+ print(join(" ",names));' "$work/shared-plan.json")
+# Also exercise self-updating components through its frozen transaction code.
+stage=shared_plugin_update
+for extra in $shared_packages; do
  extra_prior=$(package_version "$extra" old)
  extra_next=$(package_version "$extra" current)
  install_fixture "$work/$extra-$extra_prior.apk" >>"$work/independent.log" 2>&1
