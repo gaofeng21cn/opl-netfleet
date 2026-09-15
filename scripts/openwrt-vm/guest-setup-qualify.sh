@@ -591,7 +591,7 @@ fi
 
 if [ -f /tmp/netfleet-core-package/core-manifest.json ]; then
   stage=core_architecture_variant
-  sh /tmp/guest-core-package-qualify.sh
+  sh /tmp/guest-core-package-qualify.sh >/tmp/netfleet-core-package/flow.log
 fi
 
 stage=disable_and_cleanup
