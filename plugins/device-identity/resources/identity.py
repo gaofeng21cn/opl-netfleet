@@ -202,6 +202,30 @@ def unique_devices(devices):
                        "reason": "address_identity_conflict" if conflict or len(accepted) != len(device["addresses"]) else device["reason"]})
     return result
 
+def discover_interfaces():
+    """Return usable LAN interfaces for the explicit auto-setup action."""
+    rows = ip_command("address", "show")
+    default_devs = {row.get("dev") for row in ip_command("route", "show", "default")
+                    if row.get("dev")}
+    result = []
+    for row in rows:
+        name = row.get("ifname", "")
+        flags = set(row.get("flags", []))
+        addresses = row.get("addr_info", [])
+        has_lan_address = any(
+            item.get("family") == "inet" and item.get("scope") == "global"
+            for item in addresses
+        ) or any(
+            item.get("family") == "inet6" and item.get("scope") == "link"
+            and not item.get("tentative") and not item.get("dadfailed")
+            for item in addresses
+        )
+        if (name and name != "lo" and "UP" in flags and
+                name not in default_devs and has_lan_address and
+                not name.startswith(("docker", "veth", "tailscale", "wg"))):
+            result.append(name)
+    return sorted(set(result))[:16]
+
 
 def status(config):
     supported = config.get("source") == "local"
@@ -277,6 +301,8 @@ def dispatch(action, params):
     config = read(BASE / "config.json", DEFAULT)
     if action in ("get", "resolve"):
         return status(config)
+    if action == "discover":
+        return {"interfaces": discover_interfaces()}
     RUN.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (RUN / "lock").open("a") as lock:
         try:
@@ -302,7 +328,11 @@ def dispatch(action, params):
         if action == "configure":
             if params.get("config_revision") != revision(config):
                 raise ValueError("identity_revision_conflict")
-            config = validate(params.get("config"), config)
+            requested = params.get("config") or {}
+            if (requested.get("source") == "local" and requested.get("enabled") is True
+                    and not requested.get("interfaces")):
+                requested = {**requested, "interfaces": discover_interfaces()}
+            config = validate(requested, config)
         else:
             raise ValueError("unknown_identity_action")
         (RUN / "evidence.json").unlink(missing_ok=True)

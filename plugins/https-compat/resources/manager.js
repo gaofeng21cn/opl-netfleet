@@ -81,6 +81,18 @@ async function sourceAction(controller, action, params) {
 	finally { controller.compatibilityBusy = false; await Promise.all([refresh(controller), readSource(controller)]); }
 }
 
+function autoSetupSource(controller) {
+	const source = controller.identitySource;
+	if (!source || controller.identitySourceError || mutationBlocked(controller, 'compatibilityApply')) return;
+	api.pluginRead({ id: 'device-identity', action: 'discover', params: {} }).then(function(found) {
+		if (!found.interfaces || !found.interfaces.length) throw new Error('local_observation_interface_unavailable');
+		return sourceAction(controller, 'configure', { config_revision: source.config_revision,
+			config: { source: 'local', enabled: true, interfaces: found.interfaces } });
+	}).catch(function(error) {
+		managed.notify(null, E('p', {}, '自动配置地址来源失败：' + sourceReason(error.message)), 'error');
+	}).finally(function() { if (!controller.disposed?.()) controller.redraw(); });
+}
+
 function editSource(controller) {
 	const source = controller.identitySource;
 	if (!source || controller.identitySourceError || mutationBlocked(controller, 'compatibilityApply')) return;
@@ -273,7 +285,7 @@ function render(controller) {
 	refreshButton.setAttribute('aria-label', '刷新兼容状态');
 	const freshness = E('div', { 'class': 'netfleet-compat-freshness', 'role': 'status' }, [
 		E('span', {}, [ controller.compatibilityAt ? '上次读取：' + new Date(controller.compatibilityAt).toLocaleString() : '尚未读取设备状态',
-			controller.compatibilityRead ? ' · 正在刷新' : controller.compatibilityError ? ' · 刷新失败，保留上次内容' : '',
+			controller.compatibilityError ? ' · 刷新失败，保留上次内容' : '',
 			controller.compatibilityLive === false && state ? ' · 历史摘要，待确认当前状态' : '' ]), refreshButton ]);
 	if (!state) return E('section', { 'class': 'netfleet-compatibility' }, [ heading, tabs(),
 		E('p', { 'role': 'status' }, controller.compatibilityError ? '暂时无法读取设备，请重试。' : '正在读取已保存的规则和设备…'), freshness ]);
@@ -374,6 +386,7 @@ function render(controller) {
 					(controller.identitySource.devices || []).some(item => !item.addresses.length) ? E('small', {}, (controller.identitySource.devices || []).filter(item => !item.addresses.length).length + ' 台设备无可用地址') : '',
 					controller.identitySource.last_success ? E('small', {}, '最近同步 ' + new Date(controller.identitySource.last_success * 1000).toLocaleString()) : '' ] : controller.identitySourceError ? '设备地址插件未安装或不可读取；手工地址仍可使用' : '按需读取地址来源'),
 				E('div', { 'class': 'netfleet-inline-actions' }, [ button('读取来源', function() { return readSource(controller); }, !!controller.identityRead),
+					button('自动发现并启用', function() { return autoSetupSource(controller); }, busy || !controller.identitySource || !!controller.identitySourceError),
 					button('管理来源', function() { editSource(controller); }, busy || !controller.identitySource || !!controller.identitySourceError),
 					button('同步', function() { return sourceAction(controller, 'sync'); }, busy || !controller.identitySource || !controller.identitySource.loaded || !!controller.identitySourceError) ]) ]) ]),
 			table([ '设备', '系统信任', '应用', '操作' ], devices, '暂无接入设备'),

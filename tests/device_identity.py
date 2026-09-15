@@ -97,6 +97,31 @@ class Source(unittest.TestCase):
         self.assertEqual(identity.binding(config), identity.binding({**config, "enabled": False}))
         self.assertNotEqual(identity.binding(config), identity.binding({**config, "interfaces": ["other0"]}))
 
+    def test_discover_interfaces_filters_default_and_virtual_links(self):
+        links = [
+            {"ifname": "br-lan", "flags": ["UP"], "addr_info": [{"family": "inet", "scope": "global"}]},
+            {"ifname": "wan", "flags": ["UP"], "addr_info": [{"family": "inet", "scope": "global"}]},
+            {"ifname": "docker0", "flags": ["UP"], "addr_info": [{"family": "inet", "scope": "global"}]},
+            {"ifname": "eth-down", "flags": [], "addr_info": [{"family": "inet", "scope": "global"}]},
+            {"ifname": "lan6", "flags": ["UP"], "addr_info": [{"family": "inet6", "scope": "link", "tentative": False, "dadfailed": False}]},
+        ]
+        with patch.object(identity, "ip_command", side_effect=[links, [{"dev": "wan"}]]) as command:
+            self.assertEqual(identity.discover_interfaces(), ["br-lan", "lan6"])
+        self.assertEqual([call.args for call in command.call_args_list], [("address", "show"), ("route", "show", "default")])
+
+    def test_discover_interfaces_returns_empty_without_usable_lan(self):
+        with patch.object(identity, "ip_command", side_effect=[
+                [{"ifname": "wan", "flags": ["UP"], "addr_info": [{"family": "inet", "scope": "global"}]}],
+                [{"dev": "wan"}]]):
+            self.assertEqual(identity.dispatch("discover", {}), {"interfaces": []})
+
+    def test_empty_enabled_nonlocal_configuration_does_not_probe_local_interfaces(self):
+        state = identity.dispatch("get", {})
+        with patch.object(identity, "discover_interfaces", side_effect=AssertionError("must not discover for invalid source")):
+            with self.assertRaisesRegex(ValueError, "invalid_source_config"):
+                identity.dispatch("configure", {"config_revision": state["config_revision"],
+                                                  "config": {"source": "remote", "enabled": True, "interfaces": []}})
+
     def test_local_neighbour_cannot_assign_the_next_hop_to_a_client(self):
         config = {"source": "local", "enabled": True, "interfaces": ["br-lan"]}
         neighbour = {"dst": "192.0.2.2", "lladdr": MAC, "dev": "br-lan", "state": ["REACHABLE"]}

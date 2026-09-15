@@ -190,6 +190,24 @@ return function(options) {
         }
         return unique_devices(values(devices));
     }
+    function discover_interfaces() {
+        const result = [];
+        const defaults = {};
+        for (let route in ip_command(['route', 'show', 'default']))
+            if (route.dev) defaults[route.dev] = true;
+        for (let row in ip_command(['address', 'show'])) {
+            const name = row.ifname ?? '';
+            const addresses = row.addr_info ?? [];
+            const has_lan_address = any(addresses, item =>
+                (item.family == 'inet' && item.scope == 'global') ||
+                (item.family == 'inet6' && item.scope == 'link' &&
+                 !item.tentative && !item.dadfailed));
+            if (name && name != 'lo' && !defaults[name] && has_lan_address &&
+                index(row.flags ?? [], 'UP') >= 0 &&
+                !match(name, /^(docker|veth|tailscale|wg)/)) push(result, name);
+        }
+        return slice(sort(uniq(result)), 0, 16);
+    }
     function sync(config) {
         if (!supported(config)) { fs.unlink(`${RUN}/evidence.json`); return status(config); }
         if (!config.enabled) return status(config);
@@ -207,6 +225,7 @@ return function(options) {
     function dispatch(action, params) {
         let config = read(`${BASE}/config.json`, DEFAULT);
         if (action == 'get' || action == 'resolve') return status(config);
+        if (action == 'discover') return {interfaces: discover_interfaces()};
         mkdir(RUN); const lock = fs.open(`${RUN}/lock`, 'ae', 0600);
         if (!lock || !lock.lock('xn')) { if (lock) lock.close(); if (action == 'sync') return status(config); die('identity_mutation_busy'); }
         function locked() {
@@ -220,7 +239,10 @@ return function(options) {
             if (action == 'sync') return sync(config);
             if (action != 'configure') die('unknown_identity_action');
             if (params.config_revision != revision(config)) die('identity_revision_conflict');
-            config = validate(params.config); fs.unlink(`${RUN}/evidence.json`); atomic(`${BASE}/config.json`, config);
+            let requested = params.config ?? {};
+            if (requested.source == 'local' && requested.enabled === true &&
+                !length(requested.interfaces ?? [])) requested = {...requested, interfaces: discover_interfaces()};
+            config = validate(requested); fs.unlink(`${RUN}/evidence.json`); atomic(`${BASE}/config.json`, config);
             fs.unlink(`${RUN}/session.json`);
             return status(config);
         }
