@@ -16,8 +16,22 @@ case "$phase" in
 esac
 # APK may continue after a failed pre-hook. Keep old files present until the
 # owner has stopped and all calls using this plugin generation have completed.
-while ! ucode "$main" "$action" "$id"; do
-	case "$phase" in postinst|postrm) exit 1 ;; esac
+attempt=0
+while :; do
+	if result=$(ucode "$main" "$action" "$id"); then
+		printf '%s\n' "$result"
+		exit 0
+	fi
+	printf '%s\n' "$result"
+	case "$phase" in
+		postinst|postrm)
+			# A scheduler mutation can briefly win the lock between APK hooks.
+			# Retry only that admission failure; actual lifecycle errors are final.
+			error=$(printf '%s' "$result" | ucode -e 'import { stdin } from "fs"; try { print(json(stdin.read("all")).error ?? ""); } catch (e) {}')
+			attempt=$((attempt + 1))
+			[ "$error" = mutation_busy ] && [ "$attempt" -lt 15 ] || exit 1
+			;;
+	esac
 	printf '%s\n' "$id: waiting for plugin drain and owner readback" >&2
 	sleep 2
 done

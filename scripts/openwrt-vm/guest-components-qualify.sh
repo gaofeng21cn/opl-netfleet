@@ -24,7 +24,7 @@ finish() {
 		echo "Component qualification failed at: $stage" >&2
 		ubus call service list '{"name":"opl-netfleet-update-recovery"}' >&2
 		for file in "$work"/*-result.json "$work"/*.log /tmp/opl-netfleet-operation-packages.json /etc/opl-netfleet/package-transactions/*/log; do
-			[ ! -f "$file" ] || { echo "--- $file" >&2; tail -50 "$file" >&2; }
+			[ ! -f "$file" ] || { echo "--- $file" >&2; head -60 "$file" >&2; tail -50 "$file" >&2; }
 		done
 	fi
 	exit "$rc"
