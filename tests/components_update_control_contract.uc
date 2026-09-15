@@ -119,3 +119,14 @@ check(length(names)==1&&names[0]=='opl-netfleet-plugin-dashboard','product updat
 upgrade({component:'netfleet',version:'1'},'/work',versions);check(state.no_change&&state.phase=='complete','unchanged composition completes without work');
 `)();
 print('components_update_efficiency_ok\n');
+
+const backup_paths = extract('\tbefore.runtime_paths = filter(', '\tbefore.runtime_inputs = input_identity');
+loadstring(`
+const before={scoped:true}, SERVICE='core', fs={lstat:()=>({})};
+let request={component:'plugins'};
+`+backup_paths+`
+if(!length(before.runtime_paths))die('batch plugin updates must retain rollback runtime');
+request={component:'plugins',plugin:{name:'opl-netfleet-plugin-dashboard'}};
+`+backup_paths+`
+if(length(before.runtime_paths)!=2 || before.runtime_paths[0]!='/usr/libexec/opl-netfleet/plugins/dashboard')die('single plugin retains its own runtime');
+`)();

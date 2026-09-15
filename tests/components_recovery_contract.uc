@@ -90,6 +90,9 @@ check(!length(filter(commands, command => index(command,"apk --") >= 0)), "unver
 bytes_ok = true;
 check(rollback(before, "/unused", ["package"], {package: "old"}, ["old.apk"], true) == null,
     "verified successful rollback remains successful");
+bytes_ok = true; identity_ok = true; runtime_ok = false; const stops_before = stops;
+rollback({...before,scoped:true}, "/unused", ["package"], {package:"old"}, ["old.apk"], true);
+check(stops==stops_before && scoped_drains>=2, "plugin recovery failure must never stop the whole network");
 `)();
 print("components_recovery_contract_ok\n");
 
@@ -135,7 +138,4 @@ const before = {ui: "ui><Q1stale", other: "other><Q1keep"};
 const repaired = recovery_world(["ui"], before);
 if (repaired.ui != "ui" || repaired.other != before.other || before.ui != "ui><Q1stale") die("stale pin must be repaired only in the selected recovery intent");
 if (recovery_world(["ui"], {ui: "ui><Q1current"}).ui != "ui><Q1current") die("matching pin must be preserved for rollback");
-bytes_ok = true; identity_ok = true; runtime_ok = false; const stops_before = stops;
-rollback({...before,scoped:true}, "/unused", ["package"], {package:"old"}, ["old.apk"], true);
-check(stops==stops_before && scoped_drains>=2, "plugin recovery failure must never stop the whole network");
 `)();

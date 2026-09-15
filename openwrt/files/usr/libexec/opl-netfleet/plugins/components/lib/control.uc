@@ -600,7 +600,7 @@ rollback = function(before, work, names, versions, old, install_started, already
 	const inputs = attempt("rollback_configuration_failed", () => same_inputs(before));
 	if (!identity) push(errors, "rollback_identity_mismatch");
 	const runtime = identity && inputs && attempt("rollback_runtime_failed", () => restore_services(before, work));
-	if (!runtime && !before.scoped) {
+	if (!runtime) {
 		attempt("rollback_stop_failed", () => before.scoped ? drain_scoped(work) : stop_services(work));
 	}
 	atomic_json(`${work}/rollback.json`, { errors: errors, identity: identity, private_inputs: inputs, runtime_restored: runtime });
@@ -683,7 +683,7 @@ upgrade = function(request, work, candidates) {
 	before.runtime_paths = filter(["/usr/libexec/opl-netfleet", "/usr/libexec/opl-netfleet-plugin-package",
 		"/usr/share/opl-netfleet", "/etc/init.d/opl-netfleet", "/etc/init.d/opl-netfleet-update-recovery", `/etc/init.d/${SERVICE}`,
 		...(request.component == "mihomo" ? ["/usr/libexec/mihomo"] : [])], path => fs.lstat(path) != null);
-	if (before.scoped) before.runtime_paths = filter([
+	if (before.scoped && request.plugin) before.runtime_paths = filter([
 		`/usr/libexec/opl-netfleet/plugins/${substr(request.plugin.name, length("opl-netfleet-plugin-"))}`,
 		`/www/luci-static/resources/netfleet/plugins/${substr(request.plugin.name, length("opl-netfleet-plugin-"))}`
 	], path => fs.lstat(path) != null);
