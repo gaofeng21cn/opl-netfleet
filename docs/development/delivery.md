@@ -37,6 +37,7 @@ Linux x86_64 SDK 不能由 macOS 的 Make、OpenSSL 直接执行。构建入口�
 `NETFLEET_SDK_IMAGE` 指定已准备的构建镜像。首次准备镜像执行
 `docker build --platform linux/amd64 -f scripts/openwrt-sdk.Dockerfile -t opl-netfleet-openwrt-sdk-builder:latest .`。源码与签名材料只读挂载，SDK 与输出目录可写。
 原生 Linux 路径检查 GNU Make 4+、工具和 SDK OpenSSL，所有 Make 调用遵循 `MAKE`。
+SDK UCode 准备后使用本 SDK 的动态库路径，并执行 fs/socket 导入自检，避免 SDK 搬迁后失效的旧 RPATH。
 架构优先从 SDK `.config` 读取，未配置时才查询 Make。共享 SDK 由构建锁保护，冲突立即
 返回；不要启动第二个构建、抢锁或清空别人使用的 SDK。
 
@@ -45,7 +46,7 @@ Linux x86_64 SDK 不能由 macOS 的 Make、OpenSSL 直接执行。构建入口�
 增量构建器；普通设备更新只安装有变化的包，两者不要混淆。只改文档或开发工具且产品
 载荷未变时，不为新的 Git 提交重建已冻结的包；验证仍以原候选的准确身份为准。
 
-`build-timings.json` 记录预检、编译、打包和总秒数。失败时先定位最早失败阶段，
+候选目录旁的 `<候选目录>.build-timings.json` 记录预检、编译、打包和总秒数。失败时先定位最早失败阶段，
 修复后只重跑受影响检查；不把一次快速预检失败统计为编译耗时。合格候选供多个设备
 复用一次，部署不重新构建。设备更新与阶段计时的唯一 SOP 见
 [有限插件组合更新](../operations/canary-promotion.md#有限插件组合更新)。

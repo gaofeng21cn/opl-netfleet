@@ -149,6 +149,12 @@ fi
 preflight_seconds=$SECONDS
 (cd "$sdk" && ./scripts/feeds install -p base ucode)
 "$make_bin" -C "$sdk" package/feeds/base/ucode/host/compile V=s
+# SDK hostpkg tools may retain an absolute RPATH from a previous build location.
+# Keep resolution local to this SDK instead of relying on the host's libraries.
+export LD_LIBRARY_PATH="$sdk/staging_dir/hostpkg/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+"$sdk/staging_dir/hostpkg/bin/ucode" -L "$sdk/staging_dir/hostpkg/lib/ucode/*.so" \
+  -e "import * as fs from 'fs'; import * as socket from 'socket'; print('sdk_ucode_ready\\n');" ||
+  die 'SDK UCode compiler or fs/socket modules cannot execute after preparation'
 "$make_bin" -C "$sdk" package/opl-netfleet/clean package/luci-app-netfleet/clean V=s
 # These payloads use the prepared SDK tools, not compiled dependency libraries.
 # Keep runtime APK dependencies, but do not rebuild the SDK's entire kmod set.
@@ -352,5 +358,5 @@ manifest['feed_index'] = {'name': index_path.name, 'sha256': hashlib.sha256(inde
 manifest_path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + '\n')
 PY
 fi
-printf '{"preflight_seconds":%s,"compile_seconds":%s,"packaging_seconds":%s,"total_seconds":%s}\n' "$preflight_seconds" "$compile_seconds" "$((SECONDS - preflight_seconds - compile_seconds))" "$SECONDS" >"$output/build-timings.json"
+printf '{"preflight_seconds":%s,"compile_seconds":%s,"packaging_seconds":%s,"total_seconds":%s}\n' "$preflight_seconds" "$compile_seconds" "$((SECONDS - preflight_seconds - compile_seconds))" "$SECONDS" >"$output.build-timings.json"
 printf '%s\n' "$output/manifest.json"
