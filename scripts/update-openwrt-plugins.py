@@ -132,6 +132,15 @@ def main() -> None:
         args.output.write_text(json.dumps(receipt, indent=2) + '\n')
         print(json.dumps(receipt))
         return
+    # Local archive installation is the default-product bootstrap route. Optional
+    # plugins use the installed components-plugin Feed owner and its solver plan.
+    components = json.loads(run(ssh + ['ucode /usr/libexec/opl-netfleet/main.uc components-get']))
+    if components.get('ok') is not True:
+        raise ValueError('cannot confirm target product package ownership')
+    managed = {row['name'] for row in components['result']['product']['packages']}
+    outside = [row['package'] for row in selected if row['package'] not in managed]
+    if outside:
+        raise ValueError('optional plugins require the components-plugin Feed update entry: ' + ', '.join(outside))
     phase = time.monotonic()
     files: dict[str, bytes] = {}
     packages = []
