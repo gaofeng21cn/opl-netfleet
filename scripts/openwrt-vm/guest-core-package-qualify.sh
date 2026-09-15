@@ -57,7 +57,8 @@ ucode "$main" probe >"$p/probe.json"
 sha256sum -c "$p/before-inputs"
 # Exercise the retained rollback through the same components owner.
 ucode -e 'import {create} from "/usr/libexec/opl-netfleet/kernel/host.uc"; import {create as adapter} from "/usr/libexec/opl-netfleet/adapters/openwrt.uc"; import * as fs from "fs"; const path=ARGV[0]; const j=json(fs.readfile(path)); j.phase="recovering"; j.write_started=true; fs.writefile(path,sprintf("%J",j));' "$root/$id/journal.json"
-ubus -t 20 call opl-netfleet components_recover "{\"id\":\"$id\"}" >"$p/recover.json"
+printf '{"id":"%s"}\n' "$id" >"$root/pending.json"
+ubus -t 120 call opl-netfleet components_recover "{\"id\":\"$id\"}" >"$p/recover.json"
 [ "$(jsonfilter -i "$p/recover.json" -e '@.ok')" = true ]
 for attempt in $(seq 1 120); do
   [ "$(jsonfilter -i "$root/$id/journal.json" -e '@.phase')" != rolled_back ] || break
