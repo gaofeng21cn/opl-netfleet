@@ -5,9 +5,6 @@ core_field = $(shell python3 -c 'import json; print(json.load(open("$(CURDIR)/so
 PKG_NAME:=mihomo-meta
 PKG_VERSION:=$(call core_field,version)
 PKG_RELEASE:=1
-ifneq ($(NETFLEET_CORE_ARCH),)
-  PKGARCH:=$(NETFLEET_CORE_ARCH)
-endif
 PKG_LICENSE:=GPL-3.0-or-later
 PKG_SOURCE:=$(call core_field,filename)
 PKG_SOURCE_URL:=$(dir $(call core_field,url))
@@ -17,6 +14,7 @@ PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 include $(INCLUDE_DIR)/package.mk
 
 define Package/mihomo-meta
+  $(if $(NETFLEET_CORE_ARCH),PKGARCH:=$(NETFLEET_CORE_ARCH))
   SECTION:=net
   CATEGORY:=Network
   TITLE:=Mihomo proxy core (official prebuilt)
