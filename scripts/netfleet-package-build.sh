@@ -153,7 +153,7 @@ if [[ "$core_only" == 1 ]]; then
   "$sdk/staging_dir/host/bin/openssl" ec -in "$sdk/private-key.pem" -pubout >"$sdk/public-key.pem"
   "$make_bin" -C "$sdk" package/mihomo-meta/clean V=s
   "$make_bin" -j"$jobs" -C "$sdk" package/mihomo-meta/compile NETFLEET_CORE_ARCH="$core_package_arch" NO_DEPS=1 CONFIG_AUTOREMOVE= V=s
-  artifact="$sdk/bin/packages/$core_package_arch/base/mihomo-meta-${core_version}-r1.apk"
+  artifact="$sdk/bin/packages/$build_target_arch/base/mihomo-meta-${core_version}-r1.apk"
   [[ -f "$artifact" ]] || die 'expected core architecture artifact is missing'
   cp "$artifact" "$output/$(basename "$artifact")"
   artifact="$output/$(basename "$artifact")"
