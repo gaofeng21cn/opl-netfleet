@@ -872,7 +872,7 @@ try {
 		const request = private_file(ARGV[1]) ? read_json(ARGV[1]) : null;
 		const work = match(request?.id ?? "", /^[a-f0-9]{32}$/) ? `${ROOT}/${request.id}` : null;
 		if (work && ARGV[1] == `${work}/request.json` && private_directory(work) &&
-			fs.lstat(`${work}/before.json`) == null && fs.lstat(`${work}/journal.json`) == null)
+			fs.lstat(`${work}/journal.json`) == null)
 			journal(work, { phase: "failed", write_started: false, error: reason });
 	}
 	if (ARGV[0] == "run" || ARGV[0] == "recover") operation.finish(false, reason,

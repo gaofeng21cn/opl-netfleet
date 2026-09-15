@@ -12,7 +12,7 @@ function errorLabel(code) {
 	if (code === 'plugin_load_failed_rolled_back') return '插件加载失败，已恢复未加载状态';
 	if (typeof code === 'string' && code.endsWith('_rolled_back')) return errorLabel(code.slice(0, -12)) + '；已恢复更新前版本和运行状态';
 	return ({
-  plugin_package_protected: '此软件属于默认产品，请通过 NetFleet 整体更新维护',
+  plugin_package_protected: '此软件为必需组件，可更新但不可单独安装或卸载',
   plugin_disable_before_remove: '请先禁用此插件并确认状态，再卸载软件包',
   plugin_package_required: '其他软件或服务仍依赖此插件，不能单独卸载',
   plugin_dependency_change_required: '需要先更新其他已安装组件；本次未修改软件包',
