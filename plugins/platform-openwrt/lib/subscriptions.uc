@@ -3,17 +3,18 @@ import { cursor } from "uci";
 return function(context) {
 	const UCI_PACKAGE = context.use("platform.runtime").UCI_PACKAGE;
 	const quota_state = context.use("models.subscriptions").quota_state;
+	const display_name = context.use("models.subscriptions").display_name;
 	function subscription_exists(section) { return cursor().get(UCI_PACKAGE, section) == "subscription"; }
 	function subscription_display_name(section) {
-		const value = cursor().get(UCI_PACKAGE, section, "name");
-		return type(value) == "string" && length(trim(value)) > 0 ? trim(value) : section;
+		const uci = cursor();
+		return display_name({ id: section, name: uci.get(UCI_PACKAGE, section, "name"), alias: uci.get(UCI_PACKAGE, section, "alias") });
 	}
 	function subscription_options() {
 		const result = [];
 		cursor().foreach(UCI_PACKAGE, "subscription", (section) => {
 			const name = section?.[".name"];
 			if (type(name) != "string" || !match(name, /^[A-Za-z0-9_]+$/)) return;
-			const display = type(section?.name) == "string" && length(trim(section.name)) > 0 ? trim(section.name) : name;
+			const display = display_name({ id: name, name: section?.name, alias: section?.alias });
 			push(result, { ref: `subscription:${name}`, display_name: display });
 		});
 		for (let i = 1; i < length(result); i++) {

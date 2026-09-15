@@ -18,6 +18,11 @@ check(desired({}, null).ok, "create subscription");
 check(desired({ url: "" }, source).source.url == source.url, "blank URL preserves private credential");
 check(!desired({ url: "" }, null).ok, "new subscription requires URL");
 check(desired({ name: "Renamed" }, source).source_changed == false, "display edit retains cache identity");
+check(desired({ alias: "主账号" }, source).ok && desired({ alias: "主账号" }, source).source.alias == "主账号", "local account alias is accepted");
+check(desired({ alias: "" }, { ...source, alias: "主账号" }).source.alias == "", "empty account alias clears metadata");
+check(desired({ alias: "主账号" }, source).source_changed == false, "account alias retains cache identity");
+check(public_source({ ...source, alias: "主账号" }, {}).display_name == "Example · 主账号", "same provider accounts receive distinct display names");
+check(public_source({ ...source, alias: "主账号" }, {}).alias == "主账号", "account alias is projected without credentials");
 for (let day in [1, 15, 31]) {
 	const saved = desired({ quota_reset_day: day }, source);
 	check(saved.ok && saved.source.quota_reset_day == day && !saved.source_changed, "valid monthly reset day is metadata only");
@@ -33,6 +38,8 @@ check(desired({ url: "https://example.test/new" }, source).source_changed, "URL 
 check(desired({ info_url: "https://example.test/quota" }, source).source_changed, "quota source edits also await refresh");
 check(sprintf("%J", source_identity_input(source)) == sprintf("%J", source_identity_input({ ...source, name: "Renamed" })),
 	"display name does not change downloaded source identity");
+check(sprintf("%J", source_identity_input(source)) == sprintf("%J", source_identity_input({ ...source, alias: "主账号" })),
+	"account alias does not change downloaded source identity");
 check(sprintf("%J", source_identity_input(source)) != sprintf("%J", source_identity_input({ ...source, url: "https://example.test/new" })),
 	"new URL remains distinguishable from last accepted cache");
 check(!desired({ user_agent: "foo\r\nURL: bad" }, source).ok, "reject curl configuration injection");

@@ -2,7 +2,7 @@
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let valid_id, quota_reset_day, safe_text, valid_url, desired_source, userinfo, referenced, source_identity_input, public_source;
+let valid_id, quota_reset_day, safe_text, valid_url, desired_source, userinfo, referenced, source_identity_input, public_source, display_name;
 
 
 
@@ -38,7 +38,7 @@ desired_source = function(envelope, previous) {
 			return { ok: false, error: "unknown_subscription_field" };
 	}
 	for (let key in envelope.source) {
-		if (index(["id", "name", "url", "user_agent", "info_url", "prefer", "quota_reset_day"], key) < 0)
+		if (index(["id", "name", "alias", "url", "user_agent", "info_url", "prefer", "quota_reset_day"], key) < 0)
 			return { ok: false, error: "unknown_source_field" };
 	}
 	if (envelope.delete != null && type(envelope.delete) != "bool")
@@ -49,7 +49,7 @@ desired_source = function(envelope, previous) {
 		(type(envelope.source.quota_reset_day) != "int" || quota_reset_day(envelope.source.quota_reset_day) == null))
 		return { ok: false, error: "invalid_quota_reset_day" };
 	source.quota_reset_day = exists(envelope.source, "quota_reset_day") ? envelope.source.quota_reset_day : quota_reset_day(previous?.quota_reset_day);
-	for (let key in ["name", "url", "user_agent", "info_url", "prefer"])
+	for (let key in ["name", "alias", "url", "user_agent", "info_url", "prefer"])
 		source[key] = envelope.source[key] ?? previous?.[key] ?? "";
 	source.id = envelope.source.id;
 	if (source.url == "") source.url = previous?.url ?? "";
@@ -57,6 +57,9 @@ desired_source = function(envelope, previous) {
 	if (source.prefer == "") source.prefer = "remote";
 	if (!safe_text(source.name) || length(trim(source.name)) == 0 || length(source.name) > 128)
 		return { ok: false, error: "invalid_subscription_name" };
+	if (!safe_text(source.alias) || length(source.alias) > 128)
+		return { ok: false, error: "invalid_subscription_alias" };
+	source.alias = trim(source.alias);
 	if (!valid_url(source.url) || (source.info_url != "" && !valid_url(source.info_url)))
 		return { ok: false, error: "invalid_subscription_url" };
 	if (!safe_text(source.user_agent) || length(source.user_agent) > 512)
@@ -104,11 +107,19 @@ source_identity_input = function(source) {
 	return { url: source?.url ?? "", user_agent: source?.user_agent || "clash.meta", info_url: source?.info_url ?? "" };
 };
 
+display_name = function(source) {
+	const name = trim(source?.name ?? source?.id ?? "");
+	const alias = trim(source?.alias ?? "");
+	return alias != "" && name != "" ? `${name} · ${alias}` : (name != "" ? name : (source?.id ?? ""));
+};
+
 public_source = function(source, cache) {
 	const current = cache?.present == true && cache.current != false;
 	return {
 		id: source[".name"] ?? source.id,
 		name: source.name,
+		alias: trim(source.alias ?? "") || null,
+		display_name: display_name(source),
 		has_url: length(source.url ?? "") > 0,
 		has_info_url: length(source.info_url ?? "") > 0,
 		prefer: source.prefer ?? "remote",
@@ -164,5 +175,5 @@ function normalize_sources(values, previous, imported) {
 	}
 	return { ok: true, sources: result };
 }
-return { valid_id, quota_reset_day, valid_url, desired_source, userinfo, referenced, source_identity_input, public_source, quota_state, normalize_sources };
+return { valid_id, quota_reset_day, valid_url, desired_source, userinfo, referenced, source_identity_input, display_name, public_source, quota_state, normalize_sources };
 };

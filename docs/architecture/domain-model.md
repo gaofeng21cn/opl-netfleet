@@ -11,7 +11,7 @@
 与运行应用分别由订阅事务和共享刷新事务负责；当前后端标识与 namespace 见
 [OpenWrt](../platform/openwrt.md#后端与订阅命名空间)和[macOS](../platform/macos.md)。
 
-每月流量重置日归 SubscriptionOwner 的订阅元信息：原生订阅 `quota_reset_day` 为可选 1–31 的整数，显式 `null` 清空、省略保留已有值；认证订阅管理可读写，状态只投影 quota 的 `reset_day` 与 `reset_day_source: manual`。当前标准 `Subscription-Userinfo` 没有可靠月重置日，不能从到期日、URL 或机场名称推算。该字段不进入 policy、下载身份或测速统计身份，保存不下载、不重编译、不重载；订阅刷新保留手工值。它只作套餐参考，不按日期清零用量、解除耗尽或改变可用性；月末日期的实际结算以机场为准。买断制不显示月重置日，未设置不作告警。
+订阅的稳定身份是后端 UCI section/id；同一机场允许多个 section，各自拥有独立 URL、缓存、额度、刷新记录和 policy 引用。`name` 是机场提供方名称，`alias` 是本机可选账户备注，显示名为“机场名称 · 账户备注”（无备注时保持机场名称）。`alias` 只用于本机辨识，不进入下载身份、缓存身份、额度、排序或选优；修改它不触发刷新或核心重载。每月流量重置日归 SubscriptionOwner 的订阅元信息：原生订阅 `quota_reset_day` 为可选 1–31 的整数，显式 `null` 清空、省略保留已有值；认证订阅管理可读写，状态只投影 quota 的 `reset_day` 与 `reset_day_source: manual`。当前标准 `Subscription-Userinfo` 没有可靠月重置日，不能从到期日、URL 或机场名称推算。该字段不进入 policy、下载身份或测速统计身份，保存不下载、不重编译、不重载；订阅刷新保留手工值。它只作套餐参考，不按日期清零用量、解除耗尽或改变可用性；月末日期的实际结算以机场为准。买断制不显示月重置日，未设置不作告警。
 
 ## 产品定位
 

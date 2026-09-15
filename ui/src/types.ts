@@ -102,6 +102,8 @@ export interface Provider {
 export interface SubscriptionStatus {
   section: string;
   ref?: string | null;
+  name?: string | null;
+  alias?: string | null;
   display_name?: string | null;
   cache_present?: boolean;
   pending_update?: boolean;

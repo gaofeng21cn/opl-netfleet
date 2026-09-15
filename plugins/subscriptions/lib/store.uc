@@ -121,6 +121,7 @@ get = function() {
 			node_count: present ? length(cached.proxies) : null });
 		// Authenticated management only; status keeps the redacted public projection.
 		entry.url = source.url ?? "";
+		entry.alias = source.alias ?? "";
 		entry.user_agent = source.user_agent ?? "clash.meta";
 		entry.info_url = source.info_url ?? "";
 		push(sources, entry);
@@ -163,6 +164,8 @@ set = function(path) {
 		}
 		for (let key in ["name", "url", "user_agent", "info_url", "prefer"])
 			uci.set("netfleet", id, key, desired.source[key]);
+		if (desired.source.alias == "") uci.delete("netfleet", id, "alias");
+		else uci.set("netfleet", id, "alias", desired.source.alias);
 		if (desired.source.quota_reset_day == null) uci.delete("netfleet", id, "quota_reset_day");
 		else uci.set("netfleet", id, "quota_reset_day", `${desired.source.quota_reset_day}`);
 		if (desired.source_changed || existing == null) {
