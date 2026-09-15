@@ -63,12 +63,24 @@ def composition():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("ids", "default-ids", "dependencies", "version", "revision", "system"))
+    parser.add_argument("command", choices=("ids", "default-ids", "dependencies", "version", "revision", "system", "metadata"))
     parser.add_argument("plugin", nargs="?")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     plugins, services, graph = composition()
-    if args.command in ("ids", "default-ids"):
+    if args.command == "metadata":
+        # Whitespace-delimited, validated tokens are directly consumable by Make.
+        # Validate the complete graph once, instead of once per plugin field.
+        words = []
+        for identity, manifest in plugins.items():
+            words.extend((f"id={identity}", f"version.{identity}={manifest['version']}"))
+            if identity not in OPTIONAL_PLUGINS:
+                words.append(f"default={identity}")
+            dependencies = set(manifest.get("package_dependencies", []))
+            dependencies.update(plugins[required]["package"] for required in graph[identity])
+            words.extend(f"depends.{identity}=+{name}" for name in sorted(dependencies))
+        print(" ".join(words))
+    elif args.command in ("ids", "default-ids"):
         print(" ".join(identity for identity in plugins if args.command == "ids" or identity not in OPTIONAL_PLUGINS))
     elif args.command == "revision":
         from plugin_payload import payload_revision

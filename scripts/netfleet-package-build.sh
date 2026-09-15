@@ -157,7 +157,9 @@ export LD_LIBRARY_PATH="$sdk/staging_dir/hostpkg/lib${LD_LIBRARY_PATH:+:$LD_LIBR
 "$sdk/staging_dir/hostpkg/bin/ucode" -L "$sdk/staging_dir/hostpkg/lib/ucode/*.so" \
   -e "import * as fs from 'fs'; import * as socket from 'socket'; print('sdk_ucode_ready\\n');" ||
   die 'SDK UCode compiler or fs/socket modules cannot execute after preparation'
+sdk_prepare_seconds=$((SECONDS - preflight_seconds))
 "$make_bin" -C "$sdk" package/opl-netfleet/clean package/luci-app-netfleet/clean V=s
+clean_seconds=$((SECONDS - preflight_seconds - sdk_prepare_seconds))
 # These payloads use the prepared SDK tools, not compiled dependency libraries.
 # Keep runtime APK dependencies, but do not rebuild the SDK's entire kmod set.
 # Retain this build's compiled payload until FILES and native-runtime validation
@@ -165,6 +167,7 @@ export LD_LIBRARY_PATH="$sdk/staging_dir/hostpkg/lib${LD_LIBRARY_PATH:+:$LD_LIBR
 "$make_bin" -C "$sdk" package/mihomo-meta/compile package/opl-netfleet/compile package/luci-app-netfleet/compile NO_DEPS=1 CONFIG_AUTOREMOVE= V=s
 
 compile_seconds=$((SECONDS - preflight_seconds))
+product_compile_seconds=$((compile_seconds - sdk_prepare_seconds - clean_seconds))
 payload=$work/payload
 mkdir -p "$payload/usr/libexec" "$payload/usr/libexec/rpcd" \
   "$payload/etc/opl-netfleet" "$payload/etc/init.d" "$payload/www" \
@@ -208,11 +211,15 @@ chmod 0755 "$payload/usr/libexec/opl-netfleet/main.uc" \
   "$payload/usr/libexec/rpcd/opl-netfleet" "$payload/usr/libexec/rpcd/opl-netfleet.plugins" \
   "$payload/etc/init.d/opl-netfleet" "$payload/etc/init.d/opl-netfleet-core" "$payload/etc/init.d/opl-netfleet-update-recovery"
 files_manifest=$output/FILES.sha256
-: >"$files_manifest"
-while IFS= read -r path; do
-  relative=${path#"$payload"/}
-  printf '%s  %s\n' "$(sha256sum "$path" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$path" | awk '{print $1}')" "$relative" >>"$files_manifest"
-done < <(find "$payload" -type f | LC_ALL=C sort)
+# Hash in one process; per-file shell/awk launches are costly on an emulated SDK.
+python3 - "$payload" "$files_manifest" <<'PYFILES'
+import hashlib, os, sys
+from pathlib import Path
+root, output = map(Path, sys.argv[1:])
+with output.open('w') as stream:
+    for path in sorted((p for p in root.rglob('*') if p.is_file() and not p.is_symlink()), key=lambda p: os.fsencode(str(p))):
+        stream.write(f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(root)}\n')
+PYFILES
 runtime_files_manifest=$work/RUNTIME_FILES.sha256
 : >"$runtime_files_manifest"
 while read -r expected path extra; do
@@ -230,7 +237,11 @@ policy_schema=$(sed -n 's/^[[:space:]]*"schema_version"[[:space:]]*:[[:space:]]*
 [[ "$policy_schema" =~ ^[0-9]+$ ]] || die 'policy schema is unreadable'
 artifacts=()
 product_packages=(opl-netfleet opl-netfleet-kernel luci-app-netfleet)
-while IFS= read -r package_name; do product_packages+=("$package_name"); done < <(
+product_versions=("$version" "$version" "$luci_version")
+while read -r package_name package_version; do
+  product_packages+=("$package_name")
+  product_versions+=("$package_version")
+done < <(
   python3 - "$work/openwrt/files/usr/libexec/opl-netfleet/plugins" <<'PY'
 import json, sys
 from pathlib import Path
@@ -238,18 +249,16 @@ for path in sorted(Path(sys.argv[1]).glob('*/manifest.json')):
     manifest = json.loads(path.read_text())
     if manifest['schema'] != 'opl-netfleet-service-plugin.v1':
         raise SystemExit(f'unsupported built-in plugin manifest: {path}')
-    print(manifest['package'])
+    print(manifest['package'], manifest['version'])
 PY
 )
-for package_name in "${product_packages[@]}"; do
-  artifact_version=$version
+for package_index in "${!product_packages[@]}"; do
+  package_name=${product_packages[$package_index]}
+  artifact_version=${product_versions[$package_index]}
   artifact_release=$release
   if [[ "$package_name" == luci-app-netfleet ]]; then
     artifact_version=$luci_version
     artifact_release=$luci_release
-  fi
-  if [[ "$package_name" == opl-netfleet-plugin-* ]]; then
-    artifact_version=$(python3 "$work/openwrt/plugin-packages.py" version "${package_name#opl-netfleet-plugin-}")
   fi
   # Only archived sources have a separate OpenWrt package revision.
   [[ -z "$artifact_release" ]] || artifact_version+="-r${artifact_release}"
@@ -360,5 +369,5 @@ manifest['feed_index'] = {'name': index_path.name, 'sha256': hashlib.sha256(inde
 manifest_path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + '\n')
 PY
 fi
-printf '{"preflight_seconds":%s,"compile_seconds":%s,"packaging_seconds":%s,"total_seconds":%s}\n' "$preflight_seconds" "$compile_seconds" "$((SECONDS - preflight_seconds - compile_seconds))" "$SECONDS" >"$output.build-timings.json"
+printf '{"preflight_seconds":%s,"compile_seconds":%s,"sdk_prepare_seconds":%s,"clean_seconds":%s,"product_compile_seconds":%s,"packaging_seconds":%s,"total_seconds":%s}\n' "$preflight_seconds" "$compile_seconds" "$sdk_prepare_seconds" "$clean_seconds" "$product_compile_seconds" "$((SECONDS - preflight_seconds - compile_seconds))" "$SECONDS" >"$output.build-timings.json"
 printf '%s\n' "$output/manifest.json"

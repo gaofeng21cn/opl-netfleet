@@ -9,8 +9,10 @@ PKG_BUILD_DEPENDS:=ucode/host
 
 include $(INCLUDE_DIR)/package.mk
 
-NETFLEET_PLUGINS:=$(shell python3 ./plugin-packages.py ids)
-NETFLEET_DEFAULT_PLUGINS:=$(shell python3 ./plugin-packages.py default-ids)
+NETFLEET_METADATA:=$(shell python3 ./plugin-packages.py metadata)
+netfleet_metadata=$(patsubst $(1)=%,%,$(filter $(1)=%,$(NETFLEET_METADATA)))
+NETFLEET_PLUGINS:=$(call netfleet_metadata,id)
+NETFLEET_DEFAULT_PLUGINS:=$(call netfleet_metadata,default)
 ifeq ($(strip $(NETFLEET_PLUGINS)),)
   $(error NetFleet default plugin composition is invalid)
 endif
@@ -373,9 +375,9 @@ define Package/opl-netfleet-plugin-$(1)
   CATEGORY:=Network
   TITLE:=OPL NetFleet $(1) service plugin
   LICENSE:=$(if $(filter mihomo,$(1)),GPL-3.0-only,Apache-2.0)
-  VERSION:=$(shell python3 ./plugin-packages.py version $(1))
+  VERSION:=$(call netfleet_metadata,version.$(1))
   REPLACES:=opl-netfleet
-  DEPENDS:=+opl-netfleet-kernel $(shell python3 ./plugin-packages.py dependencies $(1))
+  DEPENDS:=+opl-netfleet-kernel $(call netfleet_metadata,depends.$(1))
   EXTRA_DEPENDS:=$(if $(filter platform-openwrt,$(1)),opl-netfleet-plugin-models (>=0.7.12),$(if $(filter selection,$(1)),opl-netfleet-plugin-models (>=0.7.6),$(if $(filter product-ui,$(1)),opl-netfleet-kernel (>=0.8.8)$(comma) luci-app-netfleet (>=0.8.4)$(comma) opl-netfleet-plugin-subscriptions (>=0.7.4),$(if $(filter maintenance,$(1)),opl-netfleet-kernel (>=0.8.1),$(if $(filter mihomo,$(1)),opl-netfleet-plugin-platform (>=0.8.3))))))
   EXTRA_DEPENDS+=$(if $(filter https-compat,$(1)),opl-netfleet-kernel (>=0.8.18))
   EXTRA_DEPENDS+=$(if $(filter subscriptions,$(1)),opl-netfleet-plugin-models (>=0.7.12)$(comma) opl-netfleet-plugin-platform (>=0.8.4)$(comma) opl-netfleet-plugin-platform-openwrt (>=0.8.4))$(if $(filter refresh scheduler,$(1)),opl-netfleet-plugin-subscriptions (>=0.7.1))

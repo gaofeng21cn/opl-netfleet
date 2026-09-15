@@ -203,6 +203,52 @@ class ReleaseToolsTests(unittest.TestCase):
             self.assertTrue((sdk / '.config').is_file())
             self.assertIn('package_arch=aarch64_generic', result.stdout)
 
+    def test_batch_package_metadata_preserves_versions_and_dependency_solver_inputs(self):
+        script = ROOT / 'openwrt/plugin-packages.py'
+        def query(*args):
+            return subprocess.check_output([sys.executable, str(script), *args], text=True).split()
+        tokens = query('metadata')
+        def field(name):
+            return [token.split('=', 1)[1] for token in tokens if token.startswith(name + '=')]
+        self.assertEqual(field('id'), query('ids'))
+        self.assertEqual(field('default'), query('default-ids'))
+        for identity in field('id'):
+            self.assertEqual(field('version.' + identity), query('version', identity))
+            self.assertEqual(field('depends.' + identity), query('dependencies', identity))
+        # Exercise actual Make expansion, including nested plugin template eval.
+        source = (ROOT / 'openwrt/Makefile').read_text()
+        header = source[source.index('NETFLEET_METADATA:='):source.index('define Package/opl-netfleet-kernel')]
+        makefile = header + """
+define fixture
+version.$(1):=$(call netfleet_metadata,version.$(1))
+depends.$(1):=$(call netfleet_metadata,depends.$(1))
+endef
+$(foreach plugin,$(NETFLEET_PLUGINS),$(eval $(call fixture,$(plugin))))
+all:
+	@$(foreach plugin,$(NETFLEET_PLUGINS),echo '$(plugin) $(version.$(plugin)) $(depends.$(plugin))';)
+"""
+        actual = subprocess.check_output(['make', '-s', '-f', '-'], input=makefile,
+                                         text=True, cwd=script.parent).splitlines()
+        expected = [' '.join([identity, *field('version.' + identity), *field('depends.' + identity)])
+                    for identity in field('id')]
+        self.assertEqual([line.split() for line in actual], [line.split() for line in expected])
+
+    def test_batch_package_metadata_rejects_invalid_composition(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            shutil.copy2(ROOT / 'openwrt/plugin-packages.py', directory)
+            plugins = directory / 'files/usr/libexec/opl-netfleet/plugins'
+            shutil.copytree(ROOT / 'openwrt/files/usr/libexec/opl-netfleet/plugins', plugins)
+            path = next(plugins.glob('*/manifest.json'))
+            manifest = json.loads(path.read_text())
+            manifest['package_dependencies'] = ['bad$(shell command)']
+            path.write_text(json.dumps(manifest))
+            result = subprocess.run([sys.executable, str(directory / 'plugin-packages.py'), 'metadata'],
+                                    text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, '')
+            self.assertIn('invalid system package dependency', result.stderr)
+
     def test_packager_requires_sdk_without_creating_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'out'
