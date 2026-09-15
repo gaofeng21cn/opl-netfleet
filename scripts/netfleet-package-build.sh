@@ -35,11 +35,15 @@ if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
   [[ -n "$output" ]] || output="${XDG_CACHE_HOME:-$HOME/.cache}/opl-netfleet/packages/$commit-$tree"
   mkdir -p "$output"
   output=$(cd "$output" && pwd)
+  # Keep timing evidence outside the immutable release, but mounted past --rm.
+  [[ -e "$output.build-timings.json" ]] || : >"$output.build-timings.json"
+  chmod 0600 "$output.build-timings.json"
   common=$(git -C "$repo_dir" rev-parse --path-format=absolute --git-common-dir)
   container_args=(run --rm --user 0:0 --platform linux/amd64
     -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e "GIT_CONFIG_VALUE_0=$repo_dir"
     -v "$repo_dir:$repo_dir:ro" -v "$common:$common:ro"
-    -v "$sdk:$sdk" -v "$output:$output" -w "$repo_dir")
+    -v "$sdk:$sdk" -v "$output:$output"
+    -v "$output.build-timings.json:$output.build-timings.json" -w "$repo_dir")
   build_args=(--sdk "$sdk" --ref "$commit" --output "$output")
   [[ "$preflight" == 0 ]] || build_args+=(--preflight)
   if [[ -n "$apk_private_key" ]]; then
