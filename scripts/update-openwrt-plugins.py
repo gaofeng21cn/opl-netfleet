@@ -14,6 +14,7 @@ import shlex
 import subprocess
 import tarfile
 import tempfile
+import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +57,19 @@ def package_selection(manifest: dict, names: list[str]) -> list[dict]:
     return result
 
 
+def changed_selection(selected: list[dict], installed: dict, version) -> tuple[list[dict], list[str]]:
+    changed, unchanged = [], []
+    for item in selected:
+        name = item['package']
+        if name not in installed:
+            raise ValueError(f'plugin is not installed: {name}')
+        if installed[name] == version(item):
+            unchanged.append(name)
+        else:
+            changed.append(item)
+    return changed, unchanged
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('target', help='exact SSH target authorized for this update')
@@ -71,6 +85,8 @@ def main() -> None:
     parser.add_argument('--ssh-option', action='append', default=[], help='SSH -o option, e.g. ControlPath=...')
     parser.add_argument('--dry-run', action='store_true', help='verify source, packages and qualification without contacting target')
     args = parser.parse_args()
+    started = time.monotonic()
+    timings = {}
     os.umask(0o077)
     if args.target.startswith('-') or not 10 <= args.observe_seconds <= 1800:
         parser.error('invalid target or observation duration (10..1800 seconds)')
@@ -95,6 +111,8 @@ def main() -> None:
     if args.dry_run:
         print(json.dumps({'ok': True, 'dry_run': True, **plan}))
         return
+    timings['validation_ms'] = round((time.monotonic() - started) * 1000)
+    phase = time.monotonic()
     ssh = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15']
     for option in args.ssh_option:
         ssh += ['-o', option]
@@ -104,6 +122,17 @@ def main() -> None:
     installed = {row['name']: row['version'] for row in json.loads(run(ssh + [
         "apk --no-network query --from installed --format json --fields name,version 'opl-netfleet*' 'luci-app-netfleet'"
     ]))}
+    timings['installed_read_ms'] = round((time.monotonic() - phase) * 1000)
+    selected, unchanged = changed_selection(selected, installed, verifier.artifact_version)
+    plan.update(packages=[row['package'] for row in selected], unchanged=unchanged)
+    if not selected:
+        receipt = {**plan, 'state': 'no_change', 'device_mutation': False,
+                   'timings': {**timings, 'total_ms': round((time.monotonic() - started) * 1000)}}
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(receipt, indent=2) + '\n')
+        print(json.dumps(receipt))
+        return
+    phase = time.monotonic()
     files: dict[str, bytes] = {}
     packages = []
     for item in selected:
@@ -129,6 +158,8 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     # Retain the precise target-local reconcile path before any external writes.
     args.output.write_text(json.dumps({**plan, 'stage': stage, 'state': 'prepared'}, indent=2) + '\n')
+    timings['prepare_ms'] = round((time.monotonic() - phase) * 1000)
+    phase = time.monotonic()
     with tempfile.TemporaryFile() as archive:
         with tarfile.open(fileobj=archive, mode='w') as tar:
             directories = sorted({str(Path(name).parent) for name in files if str(Path(name).parent) != '.'} | {'old', 'new', 'components'})
@@ -140,6 +171,8 @@ def main() -> None:
                 tar.addfile(info, io.BytesIO(data))
         archive.seek(0)
         subprocess.run(ssh + [f'umask 077; mkdir {shlex.quote(stage)} && tar -xf - -C {shlex.quote(stage)}'], stdin=archive, check=True)
+    timings['transfer_ms'] = round((time.monotonic() - phase) * 1000)
+    phase = time.monotonic()
     # No automatic rerun: even an SSH error may mean the durable worker started.
     command = shlex.join(['sh', f'{stage}/run.sh', stage, str(args.observe_seconds)])
     result = subprocess.run(ssh + [command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -148,7 +181,9 @@ def main() -> None:
     for line in lines:
         try: values.append(json.loads(line))
         except ValueError: pass
-    receipt = {**plan, 'stage': stage, 'exit_code': result.returncode,
+    timings['transaction_and_observation_ms'] = round((time.monotonic() - phase) * 1000)
+    timings['total_ms'] = round((time.monotonic() - started) * 1000)
+    receipt = {**plan, 'stage': stage, 'timings': timings, 'exit_code': result.returncode,
                'state': 'accepted' if result.returncode == 0 else 'needs_reconcile', 'results': values}
     args.output.write_text(json.dumps(receipt, indent=2) + '\n')
     print(json.dumps(receipt))

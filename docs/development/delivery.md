@@ -25,7 +25,7 @@ PR 与 `main` 更新运行 `NetFleet 双平台检查`。检查结果只证明所
 
 ## OpenWrt 公开发布
 
-1. 选定干净主线源码，更新实际变更的软件包版本，完成对应本地检查。
+1. 选定干净主线源码，更新实际变更的软件包版本，先完成源码、载荷同步、UI 和受影响故障路径检查，再冻结候选。未变更的插件不递增版本；不要在检查尚未完成时同时启动多批构建。
 2. 使用 `scripts/netfleet-package-build.sh` 本地构建，或手动运行
    `.github/workflows/netfleet-openwrt-candidate.yml`，输入源码 ref、SDK URL 及 SHA-256。
    工作流只上传保留 7 天的候选，不因推送 tag 自动发布。
@@ -43,9 +43,13 @@ scripts/publish-netfleet-release.sh --tag vX.Y.Z \
 
 完整发行版提供上述可选包参数；只发布默认产品时省略最后三个参数，并明确没有完整安装组合。
 复用未变化的可选 APK 时，先用 `scripts/https-compat/qualify.py --composition`
-对新的默认候选执行完整组合验证；传入 `--packages`、`--base-qualification`、
+当实际依赖调用链变化时，对新的默认候选执行组合验证；未变调用链可复用原独立资格，发布入口逐文件验证其适用性。组合验证传入 `--packages`、`--base-qualification`、
 `--candidate` 和 `--output`。该入口保留引擎原始版本与构建身份，使用新基础包源码
 测试首次完整安装、重复安装与故障恢复，不伪造引擎升级或改写旧清单。
+测试工具有修复时可另传 `--test-ref <commit>`：安装包仍保留原 commit/tree 与 SHA-256，
+回执另记测试源码；入口验证基座运行源码未变。只修测试或部署工具不重建包、不重跑
+已经成立的完整基础资格。测试返回 `mutation_busy` 时仅重试明确未执行的调用，
+执行结果不明时先读事务，不重放。
 入口检查候选与资格回执绑定、版本与 tag 一致、候选已被最新远端主线包含，再创建不可变
 Release 并下载公开资产校验。主线前进后仍使用已冻结并验收的候选；候选自身变更才重新
 构建和验收，不改旧回执。发布成功

@@ -16,6 +16,13 @@ class PluginUpdateTests(unittest.TestCase):
         for names in [[], ['opl-netfleet'], ['luci-app-nikki'], ['mihomo-meta'], ['opl-netfleet-https-compat'], ['opl-netfleet-plugin-models'] * 2]:
             with self.assertRaises(ValueError): mod.package_selection(manifest, names)
 
+    def test_unchanged_packages_need_no_transport_or_rollback_archive(self):
+        rows=[{'package':'ui','version':'1.2.3'},{'package':'service','version':'2.0.0'}]
+        version=lambda row: row['version']
+        self.assertEqual(mod.changed_selection(rows,{'ui':'1.2.3','service':'1.9.0'},version),([rows[1]],['ui']))
+        self.assertEqual(mod.changed_selection(rows,{'ui':'1.2.3','service':'2.0.0'},version),([],['ui','service']))
+        with self.assertRaises(ValueError):mod.changed_selection(rows,{'ui':'1.2.3'},version)
+
     def test_qualification_must_match_source_and_candidate(self):
         manifest = b'candidate'
         receipt = {'schema': 'opl-netfleet-openwrt-vm-qualification.v2', 'qualified': True,
