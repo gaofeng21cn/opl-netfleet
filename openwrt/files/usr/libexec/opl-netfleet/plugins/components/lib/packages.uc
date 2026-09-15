@@ -11,8 +11,10 @@ export function changes(output) {
 	return result;
 };
 
-export function validate(changed, request, installed, product) {
-	if (!match(request.name ?? '', /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) ||
+export function validate(changed, request, installed, product, owned) {
+	owned ??= {};
+	if ((!match(request.name ?? '', /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) &&
+		!(owned[request.name] && request.action == 'update')) ||
 		(index(product, request.name) >= 0 && request.action != 'update')) die('plugin_package_protected');
 	if (index(['install', 'update', 'remove'], request.action) < 0 || request.confirm != true)
 		die('invalid_plugin_package_request');
@@ -28,8 +30,13 @@ export function validate(changed, request, installed, product) {
 			if (row.name == request.name) {
 				if (row.version != request.version || index(['Installing', 'Upgrading'], row.action) < 0)
 					die('candidate_changed');
-			} else if (row.action != 'Installing' || installed[row.name] != null || index(product, row.name) >= 0 ||
-				row.name == 'opl-netfleet-https-compat' || row.name == 'mihomo-meta') die('plugin_dependency_change_required');
+			} else {
+				// APK chooses dependencies. Admission only bounds their lifecycle impact.
+				if (index(['Installing', 'Upgrading'], row.action) < 0 ||
+					index(['opl-netfleet', 'opl-netfleet-kernel', 'mihomo-meta', 'opl-netfleet-plugin-mihomo'], row.name) >= 0 ||
+					(installed[row.name] != null && !owned[row.name] && !match(row.name, /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/)))
+					die('plugin_dependency_change_required');
+			}
 			candidates[row.name] = row.version;
 		}
 		push(names, row.name);

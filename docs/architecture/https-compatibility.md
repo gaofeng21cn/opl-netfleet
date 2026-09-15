@@ -133,7 +133,7 @@ TLS 旁路采用同一行为。简单数字 `SRC-PORT` 规则由 gateway 提取�
 procd 管理进程生命周期，C launcher 只施加资源与身份限制后 exec，不另建 supervisor。
 构建入口 `scripts/https-compat/build-package.sh` 的参数依次为 OpenWrt SDK、APK
 签名私钥、输出目录和源码 ref。同目录 Dockerfile 只服务于隔离协议测试。
-组件包安装验证与基础 NetFleet qualification 分开，二者都不能替代网络验收。
+组件包安装验证与基础 NetFleet qualification 分开，二者都不能替代网络验收。控制插件与运行包的兼容范围由 APK 依赖元数据声明，两者通过通用组件入口更新；满足依赖时可以只更新其中一个，不设置专属更新命令。
 
 浏览器通过通用 `plugin_read/plugin_call` 的 `config-get/config-set/enable/disable/probe/public-ca`
 动作到达 `https-compat.control`，macOS 接入工具的 `compatibility-*` CLI 命令调用同一

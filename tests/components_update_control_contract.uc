@@ -37,7 +37,7 @@ check(closes>=4,'control lock released on failures and success');
 const preparation = extract('function resume_resources(', 'get = function(');
 loadstring(`
 let state={drained:[]}, calls=[], failure='healthy_connections_still_draining', cancelled=false;
-const COMPATIBILITY_PACKAGE='opl-netfleet-https-compat';
+function package_owners(){return {'example-native-engine':'example'};}
 const context={inventory:()=>[]}, operation={update:()=>true};
 function check(value,message){if(!value)die(message);}
 function read_json(path){return state;}
@@ -52,6 +52,7 @@ check(reason=='update_deferred','healthy connections defer update');
 check(state.phase=='draining'&&length(state.drained)==2,'save every attempted owner before calling drain');
 check(resume_resources('/work'),'restore resources after deferred update');
 check(join(',',calls)=='drain:events,drain:mihomo,resume:mihomo,resume:events','restore in reverse order');
+calls=[];state={drained:[]};prepare_resources('/work',['example-native-engine'],{'example-native-engine':'1'},{'example-native-engine':'2'});check(join(',',calls)=='drain:example','runtime ownership comes from inventory');
 calls=[];cancelled=true;try{prepare_resources('/work',['mihomo-meta'],{'mihomo-meta':'1'},{'mihomo-meta':'2'});}catch(e){}
 check(!length(calls),'cancel before preparing any resource');
 `)();
@@ -123,6 +124,7 @@ print('components_update_efficiency_ok\n');
 const backup_paths = extract('\tbefore.runtime_paths = filter(', '\tbefore.runtime_inputs = input_identity');
 loadstring(`
 const before={scoped:true}, SERVICE='core', fs={lstat:()=>({})};
+const names=['opl-netfleet-plugin-dashboard'],versions={};function package_paths(){return ['/usr/libexec/opl-netfleet/plugins/dashboard','/www/plugin-file'];}
 let request={component:'plugins'};
 `+backup_paths+`
 if(!length(before.runtime_paths))die('batch plugin updates must retain rollback runtime');

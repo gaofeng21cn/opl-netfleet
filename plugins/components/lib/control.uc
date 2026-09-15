@@ -140,20 +140,45 @@ available = function(url) {
 		(result[row.name] == null || newer(row.version, result[row.name]))) result[row.name] = row.version;
 	return result;
 };
+function package_owners(versions) {
+	const result = {};
+	for (let row in context.inventory(versions))
+		if ((row.kind == "plugin" || row.kind == "optional") && match(row.package ?? "", /^[a-z0-9][a-z0-9+_.-]*$/))
+			result[row.package] = row.id;
+	return result;
+}
+function package_paths(names, versions) {
+	const existing = filter(names, name => versions[name] != null);
+	if (!length(existing)) return [];
+	const rows = parsed(`apk --no-network query --from installed --format json --fields name,contents ${join(" ", map(existing, q))}`);
+	if (type(rows) != "array" || length(rows) != length(existing)) fail("package_contents_unavailable");
+	const paths = [];
+	for (let row in rows) {
+		if (index(existing, row.name) < 0 || type(row.contents) != "array") fail("package_contents_unavailable");
+		for (let path in row.contents) {
+			if (!match(path, /^[a-zA-Z0-9_+.,@%:= \/-]+$/) || match(path, /(^|\/)\.\.?(\/|$)/) || index(path, "/") == 0)
+				fail("package_contents_unavailable");
+			if (fs.lstat(`/${path}`) != null && index(paths, `/${path}`) < 0) push(paths, `/${path}`);
+		}
+	}
+	return paths;
+}
 function plugin_catalog() {
-	const rows = parsed("apk --no-network query --from repositories --all-matches --format json --fields name,version,description,depends,repositories 'opl-netfleet-plugin-*'");
+	const owned = package_owners(installed());
+	const rows = parsed(`apk --no-network query --from repositories --all-matches --format json --fields name,version,description,depends,repositories 'opl-netfleet-plugin-*' ${join(" ", map(keys(owned), q))}`);
 	const result = {};
 	for (let row in rows ?? []) {
-		if (!match(row.name ?? "", /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) || !version_valid(row.version)) continue;
+		if ((!owned[row.name] && !match(row.name ?? "", /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/)) || !version_valid(row.version)) continue;
 		if (result[row.name] == null || newer(row.version, result[row.name].version)) result[row.name] = row;
 	}
 	return result;
 }
 function plugin_packages(versions, product, catalog) {
+	const owned = package_owners(versions);
 	const names = sort(keys(catalog ?? {}));
-	for (let name in keys(versions ?? {})) if (match(name, /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) && index(names, name) < 0) push(names, name);
+	for (let name in keys(versions ?? {})) if ((owned[name] || match(name, /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/)) && index(names, name) < 0) push(names, name);
 	return map(names, name => ({
-		name, id: substr(name, length("opl-netfleet-plugin-")), required: index(product, name) >= 0, description: catalog?.[name]?.description,
+		name, id: owned[name] ?? substr(name, length("opl-netfleet-plugin-")), runtime_package: !match(name, /^opl-netfleet-plugin-/), required: index(product, name) >= 0, description: catalog?.[name]?.description,
 		installed_version: versions?.[name] ?? null, available_version: catalog?.[name]?.version ?? null,
 		update_available: newer(catalog?.[name]?.version, versions?.[name]), dependencies: catalog?.[name]?.depends ?? []
 	}));
@@ -162,7 +187,8 @@ function plugin_plan(request, work, preview) {
 	if (type(request) != "object") fail("invalid_plugin_package_request");
 	const versions = installed();
 	if (versions == null) fail("package_manager_unavailable");
-	if (!match(request.name ?? "", /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) || (index(product_packages(), request.name) >= 0 && request.action != "update"))
+	const owned = package_owners(versions);
+	if ((!match(request.name ?? "", /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) && !(owned[request.name] && request.action == "update")) || (index(product_packages(), request.name) >= 0 && request.action != "update"))
 		fail("plugin_package_protected");
 	if (request.action != "remove" && !version_valid(request.version)) fail("invalid_plugin_package_request");
 	if (request.action == "remove") {
@@ -187,7 +213,7 @@ function plugin_plan(request, work, preview) {
 	// payloads; prefer the checked cache and bound any index refresh.
 	const output = capture(`LC_ALL=C apk --timeout 10 --cache-max-age 1440 --simulate ${argument}`);
 	if (output == null) fail("plugin_dependencies_unavailable");
-	const plan = package_model.validate(package_model.changes(output), preview ? { ...request, confirm: true } : request, versions, product_packages());
+	const plan = package_model.validate(package_model.changes(output), preview ? { ...request, confirm: true } : request, versions, product_packages(), owned);
 	if (!preview && sprintf("%J", request.plan) != sprintf("%J", plan)) fail("candidate_changed");
 	return plan;
 }
@@ -265,11 +291,11 @@ function resume_resources(work) {
 	return success;
 }
 function prepare_resources(work, names, versions, candidates) {
-	const ids = [];
+	const ids = [], owned = package_owners(versions);
 	for (let name in names) {
 		if (versions[name] == candidates[name]) continue;
 		if (versions[name] == null) continue;
-		const id = name == "mihomo-meta" ? "mihomo" : name == COMPATIBILITY_PACKAGE ? "https-compat" :
+		const id = name == "mihomo-meta" ? "mihomo" : owned[name] ??
 			match(name, /^opl-netfleet-plugin-([a-z][a-z0-9-]*)$/)?.[1];
 		if (id != null && index(ids, id) < 0) push(ids, id);
 		if (name == "opl-netfleet-kernel") for (let item in context.inventory(versions))
@@ -683,10 +709,7 @@ upgrade = function(request, work, candidates) {
 	before.runtime_paths = filter(["/usr/libexec/opl-netfleet", "/usr/libexec/opl-netfleet-plugin-package",
 		"/usr/share/opl-netfleet", "/etc/init.d/opl-netfleet", "/etc/init.d/opl-netfleet-update-recovery", `/etc/init.d/${SERVICE}`,
 		...(request.component == "mihomo" ? ["/usr/libexec/mihomo"] : [])], path => fs.lstat(path) != null);
-	if (before.scoped && request.plugin) before.runtime_paths = filter([
-		`/usr/libexec/opl-netfleet/plugins/${substr(request.plugin.name, length("opl-netfleet-plugin-"))}`,
-		`/www/luci-static/resources/netfleet/plugins/${substr(request.plugin.name, length("opl-netfleet-plugin-"))}`
-	], path => fs.lstat(path) != null);
+	if (before.scoped && request.plugin) before.runtime_paths = package_paths(names, versions);
 	before.runtime_inputs = input_identity(before.runtime_paths);
 	if (before.core) {
 		const all = proxies(api_secret(), 2)?.proxies;

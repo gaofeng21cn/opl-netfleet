@@ -29,109 +29,50 @@ cycle_install() {
  wait_intercepting
  probe 4 h2; probe 6 h2
 }
-# Start from the old signed engine, then exercise the actual update worker.
+# Feed update exercises the same components owner used by every plugin. Generic
+# worker failure/rollback is qualified in guest-components-qualify.sh; no second
+# HTTPS updater is staged or run here.
 cycle_install "$cycle_old"
-cycle_transaction() {
- transaction=$(mktemp -d /tmp/netfleet-https-update-test.XXXXXX)
- cp "$cycle_old" "$cycle_new" "$transaction/"
- cp /tmp/scripts/https-compat/update-remote.sh /tmp/scripts/https-compat/update-guard.uc "$transaction/"
- ucode - "$transaction" "$2" "$3" "$1" <<'UC'
+transaction=$(mktemp -d /tmp/netfleet-plugin-update-test.XXXXXX)
+mkdir "$transaction/feed" "$transaction/old"
+cp "$cycle_new" "$transaction/feed/"
+cp /tmp/compat-runtime/compat-packages.adb "$transaction/feed/packages.adb"
+cp "$cycle_old" "$transaction/old/"
+cp /tmp/scripts/update-openwrt-plugins-remote.sh "$transaction/run.sh"
+cp /tmp/scripts/observe-openwrt.uc "$transaction/observe.uc"
+uhttpd -f -p 127.0.0.1:19984 -h "$transaction/feed" >"$transaction/http.log" 2>&1 &
+cycle_server=$!
+printf 'http://127.0.0.1:19984/packages.adb\n' >/etc/apk/repositories.d/netfleet-cycle.list
+apk --timeout 10 update >>"$work/cycle.log" 2>&1
+apk adbdump --format json "$cycle_new" >"$transaction/metadata.json"
+ucode - "$transaction" <<'UC'
 import * as fs from 'fs';
-const base=json(fs.readfile('/tmp/compat-base-identity.json'));
-if(ARGV[3]=='bad-base')base.runtime_sha256['/usr/libexec/opl-netfleet/main.uc']=sprintf('%064d',0);
-if(ARGV[3]=='bad-template') {
- const path='/usr/share/opl-netfleet/nikki/hijack.ut';
- if(!base.runtime_sha256[path])die('gateway_template_not_bound');
- base.runtime_sha256[path]=sprintf('%064d',0);
-}
-fs.writefile(ARGV[0]+'/request.json',sprintf('%J',{old:fs.basename(ARGV[1]),new:fs.basename(ARGV[2]),base_runtime:base.runtime_sha256}));
+const dir=ARGV[0],m=json(fs.readfile(dir+'/metadata.json')).info;
+const p=fs.popen('apk --no-network query --from installed --format json --fields name,version '+m.name);
+const before=json(p.read('all'))[0].version;if(p.close()!=0)die('installed_read_failed');
+fs.writefile(dir+'/request.json',sprintf('%J',{request:{name:m.name,action:'update',version:m.version,before_version:before}}));
 UC
- (cd "$transaction"; sha256sum *.apk request.json update-remote.sh update-guard.uc >SHA256SUMS)
- case "$1" in reject) touch "$transaction/reject-acceptance";; kill) touch "$transaction/hold-acceptance";; esac
- sh "$transaction/update-remote.sh" start "$transaction"
- if [ -n "${draining_stream:-}" ]; then
-  for attempt in $(seq 1 20); do
-   [ ! -f "$transaction/drain.json" ] || break
-   sleep 1
-  done
-  test -f "$transaction/drain.json"
-  kill -0 "$draining_stream"
- fi
- if [ "$1" = kill ]; then
-  for attempt in $(seq 1 90); do
-   [ "$(jsonfilter -i "$transaction/journal.json" -e '@.phase')" != verifying ] || break
-   sleep 1
-  done
-  test "$(jsonfilter -i "$transaction/journal.json" -e '@.phase')" = verifying
-  competing=$(mktemp -d /tmp/netfleet-https-update-test.XXXXXX)
-  cp "$transaction"/*.apk "$transaction/request.json" "$transaction/SHA256SUMS" "$transaction"/update-* "$competing/"
-  if sh "$competing/update-remote.sh" start "$competing" >"$competing/start.log" 2>&1; then exit 1; fi
-  test ! -f "$competing/journal.json"
-  # SIGKILL the worker shell; procd must respawn it and recover old bytes.
-  ubus call service list '{"name":"opl-netfleet-https-update"}' >"$transaction/procd.json"
-  test "$(jsonfilter -i "$transaction/procd.json" -e '@["opl-netfleet-https-update"].instances.update.respawn.threshold')" = 3600
-  test "$(jsonfilter -i "$transaction/procd.json" -e '@["opl-netfleet-https-update"].instances.update.respawn.timeout')" = 2
-  worker_shell=$(cat "$transaction/worker.pid")
-  test -n "$worker_shell"
-  kill -KILL "$worker_shell"
- fi
- for attempt in $(seq 1 150); do
-  result=$(jsonfilter -i "$transaction/journal.json" -e '@.phase')
-  case "$result" in complete|rolled_back|recovery_failed|rejected) break;; esac
-  sleep 1
- done
- case "$1" in accept) test "$result" = complete;; bad-base|bad-template) test "$result" = rejected;; *) test "$result" = rolled_back;; esac
- # A terminal journal can precede the worker releasing its operator lock.
- # Wait for the old service to disappear before starting another transaction.
- for attempt in $(seq 1 20); do
-  ubus call service list '{"name":"opl-netfleet-https-update"}' >"$transaction/cleanup.json"
-  if ! jsonfilter -i "$transaction/cleanup.json" -e '@["opl-netfleet-https-update"].instances' | grep -q .; then break; fi
-  sleep 1
- done
- ! jsonfilter -i "$transaction/cleanup.json" -e '@["opl-netfleet-https-update"].instances' | grep -q .
- test "$(pidof mihomo)" = "$base_pid"
- sha256sum -c "$work/base.sha256" >>"$work/cycle.log"
- sha256sum -c "$work/cycle-private.sha256" >>"$work/cycle.log"
- wait_intercepting
- probe 4 h2;probe 6 h2
-}
-cycle_transaction bad-base "$cycle_old" "$cycle_new"
-cycle_transaction bad-template "$cycle_old" "$cycle_new"
-# Idle keep-alive must close before replacement. Older controllers need the
-# worker's graceful bridge; newer controllers complete native drain directly.
-mkfifo "$work/keepalive.in"
-timeout -k 1 120 ip netns exec nfcompat-client openssl s_client -quiet -ign_eof \
- -connect 198.51.100.10:443 -servername wire.example -verify_return_error \
- -CAfile "$work/client-ca.pem" <"$work/keepalive.in" >"$work/keepalive.out" 2>"$work/keepalive.log" &
-keepalive_client=$!
-timeout -k 1 120 sh -c 'while true; do printf "GET /wire HTTP/1.1\r\nHost: wire.example\r\n\r\n"; sleep 3; done' >"$work/keepalive.in" &
-keepalive_sender=$!
-for attempt in $(seq 1 20); do grep -q wire-ok "$work/keepalive.out" && break; sleep 1; done
-grep -q wire-ok "$work/keepalive.out"
-kill -0 "$keepalive_client"
-cycle_transaction reject "$cycle_old" "$cycle_new"
-if [ -f "$transaction/graceful-drain.json" ]; then
- test "$(jsonfilter -i "$transaction/graceful-drain.json" -e '@.drained')" = true
-else
- test "$(jsonfilter -i "$transaction/drain.json" -e '@.ok')" = true
- test "$(jsonfilter -i "$transaction/drain.json" -e '@.result.state')" = replacing
-fi
-! kill -0 "$keepalive_client" 2>/dev/null
-wait "$keepalive_client" || true
-kill "$keepalive_sender" 2>/dev/null || true
-wait "$keepalive_sender" || true
-rm "$work/keepalive.in"
-cycle_transaction accept "$cycle_old" "$cycle_new"
-if [ -n "$probe_port" ]; then
- wire -fsSN --max-time 40 'https://wire.example/compat-wire/drain-events' >"$work/drain-events.txt" &
- draining_stream=$!
- for attempt in $(seq 1 20); do grep -q '^data: 0$' "$work/drain-events.txt" && break; ucode -e 'sleep(100);'; done
- grep -q '^data: 0$' "$work/drain-events.txt"
- kill -0 "$draining_stream"
-fi
-cycle_transaction kill "$cycle_new" "$cycle_old"
-if [ -n "${draining_stream:-}" ]; then
- wait "$draining_stream"
- test "$(grep -c '^data:' "$work/drain-events.txt")" = 30
-fi
-echo 'engine package cycle: actual acceptance rollback, upgrade, interrupted-worker recovery, stable base and private state passed'
+ucode /usr/libexec/opl-netfleet/main.uc components-plugin-plan "$transaction/request.json" >"$transaction/plan.json"
+ucode - "$transaction" <<'UC'
+import * as fs from 'fs';
+const dir=ARGV[0],value=json(fs.readfile(dir+'/request.json')),plan=json(fs.readfile(dir+'/plan.json'));
+if(!plan.ok||!length(plan.result.names))die('generic_engine_plan_failed');
+value.request.confirm=true;value.request.plan=plan.result;
+fs.writefile(dir+'/feed-request.json',sprintf('%J',value));
+UC
+(cd "$transaction"; sha256sum run.sh observe.uc feed-request.json old/*.apk >SHA256SUMS)
+sh "$transaction/run.sh" "$transaction" 10 >"$transaction/result.json"
+cycle_id=$(jsonfilter -i "$transaction/start.json" -e '@.result.operation.id')
+test -n "$cycle_id"
+cycle_journal=/etc/opl-netfleet/package-transactions/$cycle_id/journal.json
+test "$(jsonfilter -i "$cycle_journal" -e '@.phase')" = complete
+test "$(jsonfilter -i "$cycle_journal" -e '@.drained[0]')" = https-compat
+test "$(pidof mihomo)" = "$base_pid"
+sha256sum -c "$work/base.sha256" >>"$work/cycle.log"
+sha256sum -c "$work/cycle-private.sha256" >>"$work/cycle.log"
+wait_intercepting
+probe 4 h2; probe 6 h2
+kill "$cycle_server"
+wait "$cycle_server" || true
+rm /etc/apk/repositories.d/netfleet-cycle.list
+printf '%s\n' 'engine generic Feed update: APK plan, resource drain, stable base and private state passed'

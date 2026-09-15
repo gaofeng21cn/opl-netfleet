@@ -517,20 +517,16 @@ python3 scripts/https-compat/compare.py /tmp/compat-proof/plugin-qualification.j
 
 固定基座检查会拒绝任何宿主、Mihomo 或 Device identity 运行源码变化；它们需要新的
 完整基础资格。独立资格验证安装、实际验收失败回退、更新执行进程中断恢复及基础网络
-不变，并绑定所有包与测试身份。只替换引擎的设备更新入口是
-`scripts/https-compat/update.py --help`；先用相同输入加 `--dry-run` 验证资格。
-执行后按输出的目标私有 `stage/journal.json` 回读 `complete`、`rolled_back` 或错误状态，
-不因 SSH 中断重新发起安装。
-`deferred` 表示活动连接尚未排空、还没有执行 APK 写入；新连接旁路，健康请求继续，
-待其完成后再发起更新。旧版引擎的空闲连接由更新器通过相同的优雅停止信号排空，
-不能用强杀连接或重装尚未变化的软件包替代排空。
-`installed-before.json` 记录真实目标包组合；测试基座身份
-不能替代目标包、依赖、原路径与实际业务验收。
-安装前还会核对资格绑定的内核、平台调用层、HTTPS 管理和 Mihomo 接管文件字节；
-相关调用链与基座不符时拒绝安装，只更新了无关插件不要求一起重装基础包。
+不变，并绑定所有包与测试身份。设备统一从已发布的签名 Feed 更新，使用
+“插件与更新”或 `scripts/update-openwrt-plugins.py TARGET --plugin PACKAGE --output /private/result.json`。
+HTTPS 运行包也使用该入口。APK 根据包内版本依赖决定是否需要配套控制包，满足依赖的
+未变化包不重新安装；不存在 HTTPS 专用安装器。宿主不复制设备控制器，也不重复求解依赖。
+执行后按输出的事务 ID 回读持久 journal；SSH 中断后先读结果，不重新提交。
+活动请求尚未排空时，组件 owner 报告延期并恢复原运行意图，不能强杀健康连接满足更新时限。
+软件源发布资格与设备安装是两个阶段：发布前验证精确包及实际依赖组合，安装只消费已验证签名包。
 
 目标需要保留其他独立版本时，为资格入口设置 `RETAINED_BASE=/private/retained-base`，
-更新器传同一目录的 `--retained-base`。目录只包含精确签名 APK、公开验签密钥和
+该目录用于组合资格。目录只包含精确签名 APK、公开验签密钥和
 `retained-base.json`。清单的 `schema` 为 `opl-netfleet-retained-base.v1`；`keys` 每项
 包含 `name`、`sha256`，`artifacts` 每项包含 `package`、`version`（完整包版本）、
 `artifact`、`sha256`，以及 `files`（插件自身绝对运行路径到 SHA-256 的映射）。
@@ -540,8 +536,7 @@ python3 scripts/https-compat/compare.py /tmp/compat-proof/plugin-qualification.j
 已绑定的调用文件。隔离 guest 先验签、核对 APK 元数据及全部插件文件，再安装保留集合，
 调度插件的既有 `/etc/init.d/opl-netfleet` 归属单独核对，必须与合格基础包字节一致；
 其他跨插件路径不能随保留集合写入。回读实际组合并运行同一完整 HTTPS 资格。回执绑定清单、归档、公开密钥及实际调用文件；
-只有通过这组资格，安装器才接受目标的这些差异。保留包只用于隔离组合验证，HTTPS 更新器
-不会把它们发送到生产设备或安装它们。
+保留包只用于隔离组合验证，不向生产设备发送或安装它们；真实设备仍须满足签名包声明的依赖并完成业务回读。
 
 开发诊断额外运行一分钟开启计时的管理轮次，阶段记录在回执 `profile`。常规启动不记录；
 计时只包括阶段耗时和当前管理进程及已回收子进程的 CPU 累计差。嵌套阶段不能相加，

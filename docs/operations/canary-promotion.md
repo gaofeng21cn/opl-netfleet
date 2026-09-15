@@ -28,6 +28,13 @@
 
 ### 有限插件组合更新
 
+日常 Feed 更新使用 `python3 scripts/update-openwrt-plugins.py TARGET --plugin PACKAGE --output /private/result.json`。
+包名来自设备组件目录，可选择默认插件、可选插件或已声明的运行包。更新器调用设备
+`components-plugin-plan/components-plugin`，由 APK 决定必要依赖并在同一事务内替换。
+相同版本直接返回 `no_change`。`--dry-run` 只预览当前签名索引，不启动事务。
+下面的精确本地归档入口仅用于默认产品引导或修复，不能作为普通插件更新的常规流程。
+
+
 有限更新适用于已安装的默认产品功能插件及 LuCI 宿主包。执行前按目标自身基线确定最小完整兼容集合：
 
 1. 回读目标已安装包版本、当前后端、运行模式、进行中的操作与业务基线；记录私有输入

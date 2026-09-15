@@ -268,7 +268,7 @@ function componentsLocked(controller) {
 function pluginPackages(controller, snapshot) {
 	const active = componentsLocked(controller);
 	const rows = (snapshot.plugin_packages || []).map(function(item) {
-		const plugin = (snapshot.extensions || []).find(function(row) { return row.kind === 'plugin' && row.package === item.name; });
+		const plugin = (snapshot.extensions || []).find(function(row) { return row.package === item.name; });
 		const actions = [];
 		function action(kind, label) {
 			return button(label, function() {
@@ -280,7 +280,7 @@ function pluginPackages(controller, snapshot) {
 				}, true);
 				ui.showModal(label + ' ' + (pluginLabel(plugin || item)), [
 					E('p', {}, kind === 'remove' ? '卸载此插件的软件包，保留私有配置。设备会再次检查禁用状态与依赖，拒绝连带删除其他软件。' :
-						'目标版本：' + displayVersion(item.available_version) + '。设备会校验签名并补齐缺少的依赖；若需要变更其他已安装组件，将停止并说明原因。安装不自动启用功能；提供共享服务的插件会排空并恢复其依赖资源。'),
+						'目标版本：' + displayVersion(item.available_version) + '。设备会校验签名并补齐缺少的依赖；必要的配套插件与运行包由 APK 自动解析，并列在下方；基础组件变化需要单独维护。安装不自动启用功能；提供共享服务的插件会排空并恢复其依赖资源。'),
 					E('p', {}, '任务在设备后台执行，可离开页面；进度和结果会持续回读。'),
 					planView, E('div', { 'class': 'right' }, [button('取消', function() { closed = true; ui.hideModal(); }), ' ', confirm])
 				]);
@@ -294,9 +294,9 @@ function pluginPackages(controller, snapshot) {
 				}).catch(function(error) { if (!closed) planView.textContent = errorLabel(error.message); });
 			}, active || (kind === 'remove' ? plugin?.enabled !== false : !snapshot.feed.configured || !!snapshot.feed.error));
 		}
-		if (!item.installed_version && item.available_version) actions.push(action('install', '安装'));
+		if (!item.runtime_package && !item.installed_version && item.available_version) actions.push(action('install', '安装'));
 		if (item.update_available) actions.push(action('update', '更新'));
-		if (item.installed_version && !item.required) {
+		if (!item.runtime_package && item.installed_version && !item.required) {
 			actions.push(action('remove', '卸载'));
 			if (plugin?.enabled !== false) actions.push(E('small', {}, '先在运行管理中禁用，再卸载'));
 		}
