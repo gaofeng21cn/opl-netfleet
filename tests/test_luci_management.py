@@ -747,7 +747,7 @@ assert(!button(page, '运行管理'));
 fire(button(nav, '功能插件'));
 page = managed.components(owner);
 assert(!button(page, '检查更新'), 'plugin package updates use the platform package manager');
-assert(text(page).includes('HTTPS compatibility') && text(page).includes('https-compat') && text(page).includes('为指定设备和网站提供 HTTPS 协议兼容'));
+assert(text(page).includes('HTTPS 兼容') && text(page).includes('https-compat') && text(page).includes('为指定设备和网站提供 HTTPS 协议兼容'));
 assert(text(page).includes('Custom name'), 'unknown plugins retain the declared name');
 assert(button(page, '查看状态'));
 assert.deepEqual(all(page, node => node.tag === 'th').map(text), ['插件', '分类与用途', '版本', '配置', '运行管理']);
