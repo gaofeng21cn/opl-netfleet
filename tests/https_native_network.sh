@@ -301,7 +301,7 @@ if [ -n "$probe_port" ]; then
         grep -iq '^retry-after: 7' "$work/error.headers"
     done
     stage=plugin_toggle_active_stream
-    wire -fsSN 'https://wire.example/compat-wire/events' >"$work/toggle-events.txt" 2>"$work/toggle-events.log" &
+    wire -fsSN 'https://wire.example/compat-wire/drain-events' >"$work/toggle-events.txt" 2>"$work/toggle-events.log" &
     stream_pid=$!
     sleep 1
     kill -0 "$stream_pid"

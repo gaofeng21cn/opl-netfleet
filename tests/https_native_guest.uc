@@ -2,15 +2,20 @@
 import * as fs from 'fs';
 const main='/usr/libexec/opl-netfleet/main.uc',path='/tmp/native-compat-request.json';
 function run(args) {
-    const pipe=fs.popen(`ucode ${main} ${join(' ',args)}`);
-    const raw=pipe.read('all'),status=pipe.close();
-    let value;try {value=json(raw);} catch(error) {}
-    if(status||value?.ok!==true) {
-        warn(sprintf('native_guest_command_failed command=%s exit=%s response=%s\n',args[0],status,substr(raw ?? '',0,4096)));
-        die('native_guest_command_failed');
+    // mutation_busy is returned before dispatch; retry only that known no-write result.
+    for(let attempt=0;attempt<40;attempt++) {
+        const pipe=fs.popen(`ucode ${main} ${join(' ',args)}`);
+        const raw=pipe.read('all'),status=pipe.close();
+        let value;try {value=json(raw);} catch(error) {}
+        if(value?.ok===false&&value.error=='mutation_busy'&&attempt<39) {sleep(100);continue;}
+        if(status||value?.ok!==true) {
+            warn(sprintf('native_guest_command_failed command=%s exit=%s response=%s\n',args[0],status,substr(raw ?? '',0,4096)));
+            die('native_guest_command_failed');
+        }
+        return value.result;
     }
-    return value.result;
 }
+
 function request(command,body) {
     fs.writefile(path,sprintf('%J',{request:body}));fs.chmod(path,0600);
     return run([command,path]);
