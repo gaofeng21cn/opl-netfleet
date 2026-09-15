@@ -75,7 +75,7 @@ sha256sum -c "$p/before-inputs"
 /etc/init.d/opl-netfleet-core stop
 cp "$p/before-arch" /etc/apk/arch
 rm /etc/apk/repositories.d/netfleet-core-fixture.list
-apk --no-network add mihomo-meta=1.19.30-r1 >/dev/null
+apk --timeout 60 add mihomo-meta=1.19.30-r1 >/dev/null
 cp "$p/before-world" /etc/apk/world
 /etc/init.d/opl-netfleet-core start
 /etc/init.d/opl-netfleet start
