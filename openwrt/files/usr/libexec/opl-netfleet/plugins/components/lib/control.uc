@@ -247,8 +247,8 @@ function cancel_update(id) {
 function cancellation(work) {
 	if (private_file(`${work}/cancel.json`)) fail("update_cancelled");
 }
-function lifecycle(action, id) {
-	const pipe = fs.popen(`NETFLEET_PACKAGE_RESTORE=1 ucode ${q(MAIN)} plugin-package-${action} ${q(id)} 2>/dev/null`);
+function lifecycle(action, id, entry) {
+	const pipe = fs.popen(`NETFLEET_PACKAGE_RESTORE=1 ucode ${q(entry ?? MAIN)} plugin-package-${action} ${q(id)} 2>/dev/null`);
 	if (pipe == null) return null;
 	let result;
 	try { result = json(pipe.read("all")); } catch (error) {}
@@ -563,7 +563,7 @@ restore_services = function(before, work) {
 };
 function drain_scoped(work) {
 	let ok = true;
-	for (let id in read_json(`${work}/journal.json`)?.drained ?? []) if (lifecycle("drain", id)?.ok != true) ok = false;
+	for (let id in read_json(`${work}/journal.json`)?.drained ?? []) if (lifecycle("drain", id, `${work}/code/main.uc`)?.ok != true) ok = false;
 	return ok;
 }
 rollback = function(before, work, names, versions, old, install_started, already_stopped) {

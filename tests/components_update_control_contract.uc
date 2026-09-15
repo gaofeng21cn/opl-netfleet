@@ -130,3 +130,12 @@ request={component:'plugins',plugin:{name:'opl-netfleet-plugin-dashboard'}};
 `+backup_paths+`
 if(length(before.runtime_paths)!=2 || before.runtime_paths[0]!='/usr/libexec/opl-netfleet/plugins/dashboard')die('single plugin retains its own runtime');
 `)();
+
+const scoped_stop = extract('function drain_scoped(', 'rollback = function(');
+loadstring(`
+const fs={}, calls=[];
+function read_json(){return {drained:['configuration']};}
+function lifecycle(action,id,entry){push(calls,{action,id,entry});return {ok:entry=='/private/code/main.uc'};}
+`+scoped_stop+`
+if(!drain_scoped('/private') || calls[0].entry!='/private/code/main.uc')die('scoped crash recovery must use retained entry even if installed main is damaged');
+`)();
