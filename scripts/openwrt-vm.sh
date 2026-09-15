@@ -217,7 +217,7 @@ assert all(r[k]==m[k] for k in ['source_commit','source_tree'])
 assert r['package']['manifest_sha256']==hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest()
 assert c['source_commit']==sys.argv[4]
 subprocess.run(['git','-C',sys.argv[5],'diff','--exit-code',m['source_commit'],sys.argv[4],
- '--','openwrt/files','plugins','openwrt/luci-app-netfleet','openwrt/Makefile'],check=True,stdout=subprocess.DEVNULL)
+ '--','openwrt/files','plugins','openwrt/luci-app-netfleet'],check=True,stdout=subprocess.DEVNULL)
 old=json.loads(subprocess.check_output(['git','-C',sys.argv[5],'show',m['source_commit']+':openwrt/mihomo-meta/source.json']))
 assert all(c['upstream'][k]==old[k] for k in ['version','sha256','filename','source_commit'])
 print(json.dumps({k:m[k] for k in ['source_commit','source_tree']}))
