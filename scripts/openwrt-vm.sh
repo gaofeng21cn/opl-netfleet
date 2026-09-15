@@ -192,7 +192,7 @@ if [[ -n "$test_ref" ]]; then
     # be smuggled into the source-qualified candidate through a test revision.
     git -C "$repo_dir" diff --quiet "$source_commit" "$test_commit" -- . \
         ':(exclude)scripts/openwrt-vm' ':(exclude)scripts/openwrt-vm.sh' \
-        ':(exclude)scripts/openwrt-apk.py' \
+        ':(exclude)scripts/openwrt-apk.py' ':(exclude)scripts/netfleet-package-build.sh' \
         ':(exclude)tests' ':(exclude)docs' || die "test ref changes product inputs"
     rm -rf "$source_dir/scripts/openwrt-vm" "$source_dir/tests"
     git -C "$repo_dir" archive "$test_commit" scripts/openwrt-vm tests | tar -C "$source_dir" -xf -
