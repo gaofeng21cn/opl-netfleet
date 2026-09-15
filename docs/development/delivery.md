@@ -70,8 +70,12 @@ scripts/publish-netfleet-release.sh --tag vX.Y.Z \
   --qualification /absolute/path/to/qualification.json \
   --compat-candidate /absolute/path/to/optional-candidate \
   --compat-qualification /absolute/path/to/optional-qualification.json \
-  --apk /absolute/path/to/executable-apk
+  --apk scripts/openwrt-apk.py
 ```
+
+发布使用与构建相同的 `NETFLEET_SDK`；`scripts/openwrt-apk.py` 在 Linux 直接运行 SDK APK，
+在 macOS 使用已准备的本地构建镜像执行签名校验与索引工具。输入目录只读、索引输出目录可写，
+不需要每次部署临时拼装 Docker 包装器，也不直接执行异平台二进制。
 
 完整发行版提供上述可选包参数；只发布默认产品时省略最后三个参数，并明确没有完整安装组合。
 复用未变化的可选 APK 时，先用 `scripts/https-compat/qualify.py --composition`
