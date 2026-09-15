@@ -162,7 +162,7 @@ def main() -> None:
     # durable target journal remains authoritative for slower transactions.
     parser.add_argument('--observe-seconds', type=int, default=10)
     parser.add_argument('--ssh-option', action='append', default=[], help='SSH -o option, e.g. ControlPath=...')
-    parser.add_argument('--dry-run', action='store_true', help='verify source, packages and qualification without contacting target')
+    parser.add_argument('--dry-run', action='store_true', help='Feed: preview target plan only; local bootstrap: verify inputs without contacting target')
     args = parser.parse_args()
     started = time.monotonic()
     timings = {}

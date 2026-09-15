@@ -77,9 +77,11 @@ scripts/publish-netfleet-release.sh --tag vX.Y.Z \
 在 macOS 使用已准备的本地构建镜像执行签名校验与索引工具。输入目录只读、索引输出目录可写，
 不需要每次部署临时拼装 Docker 包装器，也不直接执行异平台二进制。
 
-完整发行版提供上述可选包参数；只发布默认产品时省略最后三个参数，并明确没有完整安装组合。
-复用未变化的可选 APK 时，先用 `scripts/https-compat/qualify.py --composition`
-当实际依赖调用链变化时，对新的默认候选执行组合验证；未变调用链可复用原独立资格，发布入口逐文件验证其适用性。组合验证传入 `--packages`、`--base-qualification`、
+完整发行版提供上述可选包参数；只发布默认产品时省略 `--compat-candidate` 和
+`--compat-qualification`，并明确没有完整安装组合。
+复用未变化的可选 APK 且实际依赖调用链变化时，用
+`scripts/https-compat/qualify.py --composition` 对新的默认候选执行组合验证；
+未变调用链可复用原独立资格，发布入口逐文件验证其适用性。组合验证传入 `--packages`、`--base-qualification`、
 `--candidate` 和 `--output`。该入口保留引擎原始版本与构建身份，使用新基础包源码
 测试首次完整安装、重复安装与故障恢复，不伪造引擎升级或改写旧清单。
 测试工具有修复时可另传 `--test-ref <commit>`：安装包仍保留原 commit/tree 与 SHA-256，
