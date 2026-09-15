@@ -97,6 +97,8 @@ def composition_evidence(request, proof):
             or not isinstance(checks, dict) or not checks or not all(value is True for value in checks.values())
             or not all(checks.get(name) is True for name in COMPOSITION_CHECKS)):
         raise ValueError('missing exact composition install, runtime or failure evidence')
+    if request.get('previous_engine') and checks.get('engine_package_cycle') is not True:
+        raise ValueError('missing generic engine update cycle')
     if base.get('retained') and checks.get('retained_base_packages') is not True:
         raise ValueError('missing retained base package evidence')
     return checks
@@ -119,9 +121,14 @@ def main():
     current = artifact(a.candidate, 'compat-manifest.json')
     identity = artifact(a.candidate, 'device-identity-manifest.json')
     if a.composition:
-        if a.previous or a.benchmark:
-            p.error('--composition does not compare or update engine versions; omit --previous and --benchmark')
+        if a.benchmark:
+            p.error('--composition does not benchmark; omit --benchmark')
         request = composition_request(a.packages, a.base_qualification, a.candidate, a.retained_base, a.test_ref)
+        if a.previous:
+            previous = artifact(a.previous, 'compat-manifest.json')
+            if previous['artifact'] == current['artifact']:
+                raise ValueError('update cycle requires distinct engine versions')
+            request['previous_engine'] = previous
         base = request['base']
         execution_commit, tree = request['test_source']['source_commit'], request['test_source']['source_tree']
         result = {'schema': COMPOSITION_QUALIFICATION, 'composition_qualified': False,
@@ -156,7 +163,7 @@ def main():
             shutil.copyfile(file, stage/file.name)
         if a.composition:
             (stage/'composition.json').write_text(json.dumps(request, sort_keys=True) + '\n')
-        else:
+        if a.previous:
             (stage/'rollback').mkdir()
             shutil.copyfile(a.previous/previous['artifact'],stage/'rollback'/previous['artifact'])
             (stage/'upgrade.json').write_text(json.dumps({

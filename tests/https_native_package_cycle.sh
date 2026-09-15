@@ -6,6 +6,8 @@ test -f "$cycle"
 ucode - "$cycle" <<'UC'
 import * as fs from 'fs';import {sha256} from 'digest';
 const value=json(fs.readfile(ARGV[0]));
+const text=fs.readfile('/tmp/compat-runtime/composition.json');
+if(text) {const previous=json(text).previous_engine;if(previous?.sha256!=value.old.sha256||'rollback/'+previous?.artifact!=value.old.file)die('previous_engine_identity_mismatch');}
 for(let key in ['old','new']) {
  const item=value[key];
  if(!match(item.file,/^(rollback\/)?[a-zA-Z0-9_.-]+\.apk$/)||sha256(fs.readfile('/tmp/compat-runtime/'+item.file))!=item.sha256)die('upgrade_artifact_invalid');
