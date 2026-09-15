@@ -221,7 +221,7 @@ function pluginDialog(controller, plugin, initialAction) {
 			}).finally(function() { busy(false); });
 		};
 		if (!writing) return execute();
-		ui.showModal('确认' + labels[action], [ E('p', {}, (plugin.label || plugin.id) + '：' + (action === 'unload' ? '将停止此插件提供的功能，保留软件包和配置。正在使用此插件的连接可能中断。若仍被其他插件依赖，宿主会拒绝禁用。' : action === 'reload' ? '将重新启动此插件进程，相关功能会短暂中断。' : '将启用此插件并检查是否就绪。')),
+		ui.showModal('确认' + labels[action], [ E('p', {}, (pluginLabel(plugin)) + '：' + (action === 'unload' ? '将停止此插件提供的功能，保留软件包和配置。正在使用此插件的连接可能中断。若仍被其他插件依赖，宿主会拒绝禁用。' : action === 'reload' ? '将重新启动此插件进程，相关功能会短暂中断。' : '将启用此插件并检查是否就绪。')),
 			E('div', { 'class': 'right' }, [ button('取消', function() { pluginDialog(controller, plugin); }), ' ',
 				button('确认', function() { open(); execute(); }) ]) ]);
 	}
@@ -240,7 +240,7 @@ function pluginDialog(controller, plugin, initialAction) {
 	children.push(E('details', {}, [E('summary', {}, '技术详情'), E('p', {}, '软件包：' + (plugin.package || '未提供')),
 		E('p', {}, '完整版本：' + (plugin.installed_version || plugin.version || '未记录')), output]));
 	children.push(E('div', { 'class': 'right' }, button('关闭', function() { closed = true; ui.hideModal(); })));
-	function open() { ui.showModal((plugin.label || plugin.id) + ' · 运行状态', E('div', { 'class': 'netfleet-plugin-runtime' }, children)); }
+	function open() { ui.showModal((pluginLabel(plugin)) + ' · 运行状态', E('div', { 'class': 'netfleet-plugin-runtime' }, children)); }
 	open(); return run('get').then(function() {
 		if (!closed && initialAction && loaded !== null && (initialAction === 'load' ? !loaded : loaded)) return run(initialAction);
 	});
@@ -278,7 +278,7 @@ function pluginPackages(controller, snapshot) {
 				const confirm = button('确认' + label, function() {
 					closed = true; ui.hideModal(); return startPackageOperation(controller, null, request);
 				}, true);
-				ui.showModal(label + ' ' + (plugin?.label || item.id), [
+				ui.showModal(label + ' ' + (pluginLabel(plugin || item)), [
 					E('p', {}, kind === 'remove' ? '卸载此插件的软件包，保留私有配置。设备会再次检查禁用状态与依赖，拒绝连带删除其他软件。' :
 						'目标版本：' + displayVersion(item.available_version) + '。设备会校验签名并补齐缺少的依赖；若需要变更其他已安装组件，将停止并说明原因。安装不自动启用功能；提供共享服务的插件会排空并恢复其依赖资源。'),
 					E('p', {}, '任务在设备后台执行，可离开页面；进度和结果会持续回读。'),
@@ -301,7 +301,7 @@ function pluginPackages(controller, snapshot) {
 			if (plugin?.enabled !== false) actions.push(E('small', {}, '先在运行管理中禁用，再卸载'));
 		}
 		return E('tr', {}, [
-			E('td', {}, [E('strong', {}, plugin?.label || item.id), E('small', {}, plugin?.description || pluginPurpose(plugin || item)), E('small', {}, item.name)]),
+			E('td', {}, [E('strong', {}, pluginLabel(plugin || item)), E('small', {}, plugin?.description || pluginPurpose(plugin || item)), E('small', {}, item.name)]),
 			E('td', {}, [E('strong', {}, item.installed_version ? displayVersion(item.installed_version) : '未安装'),
 				item.available_version ? E('small', {}, (item.update_available ? '可更新至 ' : '更新源版本 ') + displayVersion(item.available_version)) : E('small', {}, '检查更新以读取候选版本'),
 				item.dependencies?.length ? E('details', {}, [E('summary', {}, '依赖'), E('p', {}, item.dependencies.join('、'))]) : '']),
@@ -386,9 +386,12 @@ const PLUGIN_PRESENTATION = {
 	status: ['运行状态', '汇总当前出口、机场与设备运行状态'],
 	subscriptions: ['节点来源', '管理机场订阅与节点缓存']
 };
+function pluginLabel(plugin) {
+	return PLUGIN_PRESENTATION[plugin.id]?.[0] || plugin.label || plugin.id;
+}
 function pluginPurpose(plugin) {
 	return plugin.description || PLUGIN_PRESENTATION[plugin.id]?.[1] ||
-		(plugin.runtime === 'service' ? '为 NetFleet 提供 ' + (plugin.label || plugin.id) + ' 服务' : '通过独立进程提供 ' + (plugin.label || plugin.id) + ' 功能');
+		(plugin.runtime === 'service' ? '为 NetFleet 提供 ' + (pluginLabel(plugin)) + ' 服务' : '通过独立进程提供 ' + (pluginLabel(plugin)) + ' 功能');
 }
 
 function componentsPage(controller) {
@@ -496,7 +499,7 @@ function componentsPage(controller) {
 			return pluginDialog(controller, plugin, plugin.enabled ? 'unload' : 'load');
 		}, active || plugin.enabled && managementRequired(plugin)));
 		if (managementRequired(plugin)) state.push(E('small', {}, '不可禁用：管理界面必需'));
-		moduleRows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, plugin.label || plugin.id), E('small', { 'class': 'netfleet-plugin-id' }, plugin.id),
+		moduleRows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, pluginLabel(plugin)), E('small', { 'class': 'netfleet-plugin-id' }, plugin.id),
 			plugin.instance && plugin.instance !== 'default' ? E('small', {}, '实例：' + plugin.instance) : '' ]),
 			E('td', {}, [E('span', { 'class': 'netfleet-plugin-kind' }, product ? product.packages.some(function(item) { return item.name === plugin.package; }) ? '默认产品能力' : '独立安装的插件' : plugin.runtime === 'service' ? '服务插件' : '进程插件'), E('small', {}, pluginPurpose(plugin))]),
 			E('td', {}, [E('strong', {}, displayVersion(rawVersion)), E('details', {}, [E('summary', {}, '版本详情'), E('small', {}, rawVersion || '未记录'), E('small', {}, plugin.package || '')])]),
@@ -518,7 +521,7 @@ function componentsPage(controller) {
 		].concat(dependencies.map(function(dependency) { return E('small', { 'class': dependency.available === false ? 'is-warning' : '' },
 				dependency.id + '：' + (dependency.available == null ? '未确认' : dependency.available ? dependency.installed_version ? displayVersion(dependency.installed_version) : '已安装' : '缺少')); })
 		)));
-		moduleRows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, extension.label), E('small', {}, extension.id) ]),
+		moduleRows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, pluginLabel(extension)), E('small', {}, extension.id) ]),
 			E('td', {}, [E('span', { 'class': 'netfleet-plugin-kind' }, '可选模块'), E('small', {}, pluginPurpose(extension))]),
 			E('td', {}, [E('strong', {}, extension.installed_version ? displayVersion(extension.installed_version) : absent ? '未安装' : '安装版本未确认'), E('details', {}, [E('summary', {}, '版本详情'), E('small', {}, extension.installed_version || '未记录'), E('small', {}, extension.package)])]),
 			E('td', {}, E('small', {}, '由对应功能插件配置')), E('td', {}, current.length ? current : E('small', {}, state)) ]));
