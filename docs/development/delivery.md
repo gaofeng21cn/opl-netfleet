@@ -78,7 +78,7 @@ scripts/publish-netfleet-release.sh --tag vX.Y.Z \
 不需要每次部署临时拼装 Docker 包装器，也不直接执行异平台二进制。
 
 完整发行版提供上述可选包参数；只发布默认产品时省略 `--compat-candidate` 和
-`--compat-qualification`，并明确没有完整安装组合。
+`--compat-qualification`、`--apk`，并明确没有完整安装组合。
 复用未变化的可选 APK 且实际依赖调用链变化时，用
 `scripts/https-compat/qualify.py --composition` 对新的默认候选执行组合验证；
 未变调用链可复用原独立资格，发布入口逐文件验证其适用性。组合验证传入 `--packages`、`--base-qualification`、
