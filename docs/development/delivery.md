@@ -30,6 +30,8 @@ PR 与 `main` 更新运行 `NetFleet 双平台检查`。检查结果只证明所
 先检查源码与设备载荷，而不是先启动编译。修改 `plugins/` 后执行
 `python3 scripts/sync-plugin-sources.py sync`，只递增真实变更插件的 manifest 版本，
 再执行 `python3 scripts/plugin-catalog.py write`。检查和提交必须包含这些投影。
+冻结前同时核对新版调用者所需的最低提供者版本；新字段保存等能力即使未改变服务 API，
+也须在真实 APK 依赖中约束最低版本，不能让页面升级后仍组合到不具备该能力的旧存储。
 构建入口会对归档 ref 再运行载荷一致性检查；本地工作区同步不能补救旧 ref 的缺失。
 
 Linux x86_64 SDK 不能由 macOS 的 Make、OpenSSL 直接执行。构建入口在非 Linux x86_64
