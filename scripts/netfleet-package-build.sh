@@ -96,6 +96,7 @@ if grep -Eq '^CONFIG_USE_APK=y$' "$sdk/.config" 2>/dev/null; then
   chmod 0600 "$sdk/private-key.pem"
   "$sdk/staging_dir/host/bin/openssl" ec -in "$sdk/private-key.pem" -pubout >"$sdk/public-key.pem"
 fi
+(cd "$sdk" && ./scripts/feeds install -p base ucode)
 make -C "$sdk" package/feeds/base/ucode/host/compile V=s
 make -C "$sdk" package/opl-netfleet/clean package/luci-app-netfleet/clean V=s
 # These payloads use the prepared SDK tools, not compiled dependency libraries.

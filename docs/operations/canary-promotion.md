@@ -53,7 +53,7 @@
 python3 scripts/update-openwrt-plugins.py <ssh-target> \
   --ref <qualified-commit> --packages <signed-package-directory> \
   --rollback-dir <private-old-package-directory> --qualification <receipt.json> \
-  --plugin opl-netfleet-plugin-components --observe-seconds 120 \
+  --plugin opl-netfleet-plugin-components --observe-seconds 10 \
   --output <private-receipt.json>
 ```
 
