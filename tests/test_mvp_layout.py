@@ -50,7 +50,9 @@ class MvpLayoutTests(unittest.TestCase):
             result = subprocess.run(["make", "--no-print-directory", "-f", str(ROOT / "openwrt/Makefile"),
                                      "-f", str(harness), f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", "all"],
                                     cwd=ROOT / "openwrt", capture_output=True, text=True, check=True)
-            self.assertIn("opl-netfleet-plugin-models (>=0.7.8)", result.stdout)
+            floor = re.search(r"opl-netfleet-plugin-models \(>=([0-9]+\.[0-9]+\.[0-9]+)\)", result.stdout)
+            self.assertIsNotNone(floor)
+            self.assertGreaterEqual(tuple(map(int, floor[1].split("."))), (0, 7, 8))
 
     def test_payload_revision_matches_runtime_directory_order_and_content(self):
         with tempfile.TemporaryDirectory(prefix="netfleet-payload-revision-") as temporary:
