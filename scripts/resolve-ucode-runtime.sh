@@ -28,7 +28,6 @@ fi
 export UCODE=$_ucode
 export UCODE_LIB=$_lib
 _args=''
-[ -n "$_lib" ] && _args="-L $_lib"
 for _module in "$@"; do
   case "$_module" in
     fs|socket|digest|uci|ubus|uloop) ;;
