@@ -52,7 +52,9 @@ for _module in "$@"; do
     fs|socket|digest|uci|ubus|uloop) ;;
     *) printf 'Unknown UCode preflight module: %s\n' "$_module" >&2; exit 2;;
   esac
-  if [ -n "$_lib" ] && [ ! -f "$_lib/$_module.so" ]; then
+  # A caller may pass the bootstrap form (a directory or a `*.so` glob); only a
+  # plain directory can be checked per module, the preflight below covers the rest.
+  if [ -d "$_lib" ] && [ ! -f "$_lib/$_module.so" ]; then
     printf 'UCode module missing: %s (runtime=%s, module_dir=%s)\n' "$_module" "$_ucode" "$_lib" >&2
     exit 2
   fi
