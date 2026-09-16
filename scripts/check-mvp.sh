@@ -3,7 +3,7 @@ set -eu
 
 root_dir=$(cd -- "$(dirname -- "$0")/.." && pwd)
 if command -v "${UCODE:-ucode}" >/dev/null 2>&1 || [ -x "${UCODE:-}" ]; then
-	. "$root_dir/scripts/resolve-ucode-runtime.sh" fs socket
+	UCODE_PREFLIGHT='fs socket' . "$root_dir/scripts/resolve-ucode-runtime.sh"
 fi
 runtime_dir=$root_dir/openwrt/files/usr/libexec/opl-netfleet
 ucode_bin=${UCODE:-ucode}

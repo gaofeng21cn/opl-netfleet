@@ -1,6 +1,9 @@
 #!/bin/sh
 # Resolve and validate the UCode runtime used by host-side contracts.
-# Usage: . scripts/resolve-ucode-runtime.sh [module ...]
+# Usage: UCODE_PREFLIGHT='fs socket' . scripts/resolve-ucode-runtime.sh
+# Modules come from the environment on purpose: a sourced script inherits the
+# caller's positional parameters on shells whose dot builtin ignores arguments,
+# which would preflight the caller's own arguments instead of the modules.
 set -eu
 _root=${NETFLEET_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
 # A runtime that cannot run a shell command still loads modules, so the popen
@@ -47,7 +50,9 @@ fi
 export UCODE=$_ucode
 export UCODE_LIB=$_lib
 _args=''
-for _module in "$@"; do
+_modules=${UCODE_PREFLIGHT:-}
+# shellcheck disable=SC2086
+for _module in $_modules; do
   case "$_module" in
     fs|socket|digest|uci|ubus|uloop) ;;
     *) printf 'Unknown UCode preflight module: %s\n' "$_module" >&2; exit 2;;
@@ -60,7 +65,7 @@ for _module in "$@"; do
   fi
   _args="$_args import * as $_module from \"$_module\";"
 done
-if [ "$#" -gt 0 ]; then
+if [ -n "$_modules" ]; then
   # Use eval only with the fixed module names above; paths are passed separately.
   # shellcheck disable=SC2086
   "$_ucode" ${_lib:+-L "$_lib"} -e "$_args print(\"ucode-runtime-ok\\n\");" >/dev/null || {
@@ -73,5 +78,5 @@ if [ "${NETFLEET_UCODE_REPORT:-0}" = 1 ]; then
     [ -z "$UCODE_LIB" ] || [ -f "$UCODE_LIB/$_module.so" ] && printf "module.%s=%s\n" "$_module" present || printf "module.%s=%s\n" "$_module" missing
   done
 fi
-unset _root _ucode _lib _args _candidate _module _libdir _smoke
+unset _root _ucode _lib _args _candidate _module _libdir _smoke _modules
 unset -f _works _module_dir

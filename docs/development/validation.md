@@ -62,6 +62,8 @@ macOS 也能先跑共享业务合同，不必等到 QEMU。未显式给出时，
 应用运行时、`~/.cache/opl-netfleet/macos/builds/*/runtime` 与 `PATH`，并只接受能实际
 执行一次 `fs.popen` 的候选，因此缓存里残缺或过期的运行时会退到下一个候选，而不是让后续
 合同在随机断点上失败。宿主原语只存在于对应平台：
+需要预检的模块通过 `UCODE_PREFLIGHT` 传递，不经位置参数：被 source 的脚本在部分
+POSIX shell 上会继承调用者的位置参数，按参数读取会把调用者自身的参数当成模块名。
 `adapter_contract.uc`、`backend_contract.uc` 与 `operation_contract.uc` 依赖 OpenWrt 的
 libuci 和 `/proc`，其他机器上由 `check-mvp.sh` 明确列为延期，不能视为通过；OpenWrt 侧
 继续由 QEMU lane 的全量 `tests/*_contract.uc` 执行，它是 `set -eu`，任何合同失败都会中断

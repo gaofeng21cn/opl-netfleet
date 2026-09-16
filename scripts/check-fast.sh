@@ -6,7 +6,7 @@ cd "$root"
 
 # Fail fast on an incomplete host UCode runtime before running business tests.
 if command -v "${UCODE:-ucode}" >/dev/null 2>&1 || [ -x "${UCODE:-}" ]; then
-	. "$root/scripts/resolve-ucode-runtime.sh" fs socket
+	UCODE_PREFLIGHT='fs socket' . "$root/scripts/resolve-ucode-runtime.sh"
 fi
 
 git diff --check

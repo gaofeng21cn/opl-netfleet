@@ -40,7 +40,7 @@ if ! mkdir "$lockdir" 2>/dev/null; then
 fi
 trap 'rmdir "$lockdir" 2>/dev/null || true' EXIT INT TERM
 if [[ "$action" == check ]]; then
-  . "$root/scripts/resolve-ucode-runtime.sh" fs socket
+  UCODE_PREFLIGHT='fs socket' . "$root/scripts/resolve-ucode-runtime.sh"
   interpreter=$UCODE
   args=()
   [[ -z "${UCODE_LIB:-}" ]] || args=(-L "$UCODE_LIB")
