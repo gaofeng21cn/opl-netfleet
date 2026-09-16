@@ -546,6 +546,54 @@ class MvpLayoutTests(unittest.TestCase):
             reference_style,
         )
 
+    def test_native_control_spec_has_one_shape_source(self):
+        """设备页控件形状只取 token：圆角、控件高度与边框色都不再内联声明。"""
+        native = (RUNTIME / "plugins/product-ui/resources/native.css").read_text()
+        roots = re.findall(r"([^{}]+)\{([^{}]*)\}", native)
+
+        # 形状 token 只在根块定义一次。
+        declarations = re.findall(r"--(nf-radius-[\w-]+|nf-control-height|nf-check-size):\s*([^;]+);", native)
+        self.assertEqual(
+            sorted(declarations),
+            [("nf-check-size", "17px"), ("nf-control-height", "40px"), ("nf-control-height", "44px"),
+             ("nf-radius-bar", "2px"), ("nf-radius-control", "6px"), ("nf-radius-surface", "6px")],
+        )
+        # 只有窄屏触控断点抬高控件高度，圆角不随宽度改变。
+        self.assertRegex(
+            native,
+            r"@media \(max-width: 700px\) \{\n\t/\*[^*]*\*/\n\t\.netfleet-native \{ --nf-control-height: 44px; \}",
+        )
+
+        # 圆角只有三种写法：0、圆形与 token；像素字面值不再出现。
+        radii = {value.strip() for value in re.findall(r"border-radius:\s*([^;]+);", native)}
+        self.assertEqual(sorted(value for value in radii if not value.startswith(("0", "var("))), ["50%"])
+
+        # 边框色只走 token；语义强调色左边线单独放行。
+        inline = []
+        for selector, body in roots:
+            for declaration in re.finditer(
+                r"(?<![-\w])border(?:-(?:top|right|bottom|left|width|style|color))?:\s*([^;]+);", body
+            ):
+                value = " ".join(declaration.group(1).split())
+                if any(token in value for token in ("var(--nf-border", "var(--nf-accent", "var(--nf-warning)",
+                                                    "var(--primary-color", "transparent")):
+                    continue
+                if re.match(r"^(0|none)\b", value):
+                    continue
+                inline.append((selector.strip()[:60], value[:40]))
+        self.assertEqual(inline, [])
+
+        # 页面规则不得给表单控件重画边框：控件外观归 LuCI，NetFleet 只定尺寸。
+        repainted = [selector.strip()[:60] for selector, body in roots
+                     if re.search(r"(^|[\s,>~+])(input|select|textarea)(?![\w-])", selector)
+                     and re.search(r"(?<![-\w])border(?:-(?:top|right|bottom|left|width|style|color|radius))?:\s*[^;]*[^0;]", body)]
+        self.assertEqual(repainted, [])
+        self.assertRegex(native, r"\.netfleet-check input \{[^}]*width: var\(--nf-check-size\)", re.S)
+
+        # 引用的形状 token 必须真的定义过，否则声明会被浏览器静默丢弃。
+        defined = set(re.findall(r"(--nf-[\w-]+):", native))
+        self.assertEqual(sorted(set(re.findall(r"var\((--nf-[\w-]+)", native)) - defined), [])
+
     def test_native_luci_uses_display_cache_then_revalidates_once(self):
         overview = RUNTIME / "plugins/product-ui/resources/product-pages.js"
         harness = r"""

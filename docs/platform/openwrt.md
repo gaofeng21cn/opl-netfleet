@@ -590,6 +590,16 @@ LuCI 入口是插件页面壳，通过共享 `plugin-host.js` 从安装清单组
 与备份作为独立管理分区，不混入 policy 草稿的应用按钮。首次设置向导复用适用字段组件。
 视觉语言、主题与组件规则由[UI 设计合同](../design/ui.md)负责。
 
+设备页的控件形状由 `product-ui` 的 `native.css` 根块定义一次，不散落在页面规则里：
+`--nf-radius-control` 与 `--nf-radius-surface` 均为 `6px`（LuCI 语言比桌面更紧），
+`--nf-radius-bar: 2px`，`--nf-control-height: 40px`，`--nf-check-size: 17px`；容器与分隔线
+分别取 `--nf-border` 和 `--nf-border-subtle`，页面规则不再内联 `rgba()` 边框色。控件本体的
+边框、焦点与原生外观归 LuCI 基础样式，产品样式只声明尺寸与布局，不给表单控件重画边框或
+圆角；需要时才由产品层绘制自有控件的外观。`max-width: 700px` 的触控断点只覆盖
+`--nf-control-height: 44px`，形状 token 不随宽度改写。该约束由
+`tests/test_mvp_layout.py` 的控件规范守卫机械检查：形状字面值、内联边框色或对表单控件的
+边框重画都会让检查失败。
+
 LuCI 壳与 React 插件宿主每五秒读取插件清单，以发现安装、启停和 revision 变化；离开
 宿主时撤销该读取。清单发现只读安装元数据，不执行业务状态读取、网络探测或插件代码。
 插件页面的业务请求仍由各页面管理，清单刷新不触发默认产品的 status 轮询。

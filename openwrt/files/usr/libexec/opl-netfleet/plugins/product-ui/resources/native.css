@@ -9,6 +9,12 @@
 	--nf-muted: var(--text-color-medium, #5f6368);
 	--nf-border: var(--border-color-medium, rgba(127, 127, 127, 0.22));
 	--nf-border-subtle: var(--border-color-low, rgba(127, 127, 127, 0.16));
+	/* 形状规范：圆角、控件高度与复选框尺寸只在这里定义一次，页面规则只引用 token。 */
+	--nf-radius-control: 6px;
+	--nf-radius-surface: 6px;
+	--nf-radius-bar: 2px;
+	--nf-control-height: 40px;
+	--nf-check-size: 17px;
 	--nf-success: #18794e;
 	--nf-warning: #a15c00;
 	--nf-danger: #b42318;
@@ -199,7 +205,7 @@
 	display: grid;
 	grid-template-columns: repeat(4, minmax(0, 1fr));
 	border: 1px solid var(--nf-border);
-	border-radius: 6px;
+	border-radius: var(--nf-radius-surface);
 	background: var(--nf-surface);
 	overflow: hidden;
 }
@@ -255,7 +261,7 @@
 .netfleet-native .netfleet-exit-section {
 	padding: 0 !important;
 	border: 1px solid var(--nf-border);
-	border-radius: 6px;
+	border-radius: var(--nf-radius-surface);
 	background: var(--nf-surface);
 	box-shadow: none;
 	overflow: hidden;
@@ -422,7 +428,7 @@
 .netfleet-native .netfleet-recovery {
 	display: grid;
 	border: 1px solid var(--nf-border);
-	border-radius: 6px;
+	border-radius: var(--nf-radius-surface);
 	background: var(--nf-surface);
 	overflow: hidden;
 }
@@ -535,7 +541,7 @@
 	grid-template-columns: repeat(3, minmax(0, 1fr));
 	margin: 0 0 18px;
 	border: 1px solid var(--nf-border);
-	border-radius: 6px;
+	border-radius: var(--nf-radius-surface);
 	background: var(--nf-surface);
 	overflow: hidden;
 }
@@ -645,7 +651,7 @@
 	margin: 0 0 26px;
 	padding: 13px 17px;
 	border-left: 3px solid var(--nf-warning);
-	border-radius: 0 4px 4px 0;
+	border-radius: 0 var(--nf-radius-control) var(--nf-radius-control) 0;
 	background: rgba(161, 92, 0, 0.07);
 	color: var(--nf-text);
 	font-size: 15px;
@@ -715,7 +721,7 @@
 	max-width: 100%;
 	overflow-x: auto;
 	border: 1px solid var(--nf-border);
-	border-radius: 6px;
+	border-radius: var(--nf-radius-surface);
 	background: var(--nf-surface);
 }
 
@@ -786,7 +792,7 @@
 	font-size: 13.5px;
 	line-height: 1.6;
 	border: 1px solid var(--nf-border);
-	border-radius: 6px;
+	border-radius: var(--nf-radius-surface);
 }
 
 .netfleet-native .cbi-page-actions {
@@ -814,7 +820,7 @@
 	padding: 14px 16px 16px;
 	border: 1px solid var(--nf-border);
 	border-left: 3px solid var(--nf-accent);
-	border-radius: 6px;
+	border-radius: var(--nf-radius-surface);
 	background: var(--nf-surface);
 }
 
@@ -838,7 +844,7 @@
 
 .netfleet-native .netfleet-connection-details {
 	border: 1px solid var(--nf-border);
-	border-radius: 6px;
+	border-radius: var(--nf-radius-surface);
 	background: var(--nf-surface);
 }
 
@@ -882,7 +888,7 @@
 	gap: 18px;
 	padding: 15px 17px;
 	border: 1px solid var(--nf-border);
-	border-radius: 6px;
+	border-radius: var(--nf-radius-surface);
 	background: var(--nf-surface);
 }
 
@@ -906,7 +912,7 @@
 	grid-template-columns: 180px minmax(0, 1fr);
 	margin-top: 16px;
 	border: 1px solid var(--nf-border);
-	border-radius: 6px;
+	border-radius: var(--nf-radius-surface);
 	background: var(--nf-surface);
 	overflow: hidden;
 }
@@ -970,8 +976,8 @@
 	display: grid;
 	grid-template-columns: repeat(4, minmax(0, 1fr));
 	margin-bottom: 20px;
-	border: 1px solid rgba(127, 127, 127, 0.18);
-	border-radius: 5px;
+	border: 1px solid var(--nf-border-subtle);
+	border-radius: var(--nf-radius-surface);
 	overflow: hidden;
 }
 
@@ -981,7 +987,7 @@
 	gap: 9px;
 	min-height: 58px;
 	padding: 0 14px;
-	border-right: 1px solid rgba(127, 127, 127, 0.18);
+	border-right: 1px solid var(--nf-border-subtle);
 }
 
 .netfleet-environment > div:last-child {
@@ -1000,7 +1006,7 @@
 }
 
 .netfleet-config-rows {
-	border-top: 1px solid rgba(127, 127, 127, 0.18);
+	border-top: 1px solid var(--nf-border-subtle);
 }
 
 .netfleet-source-form .netfleet-source-row {
@@ -1023,7 +1029,7 @@
 .netfleet-source-form .netfleet-source-row > .cbi-dropdown {
 	width: 100% !important;
 	min-width: 0 !important;
-	min-height: 38px;
+	min-height: var(--nf-control-height);
 	font-size: 15px;
 }
 
@@ -1041,7 +1047,7 @@
 	gap: 24px;
 	min-height: 78px;
 	padding: 12px 0;
-	border-bottom: 1px solid rgba(127, 127, 127, 0.18);
+	border-bottom: 1px solid var(--nf-border-subtle);
 }
 
 .netfleet-config-row strong {
@@ -1069,18 +1075,18 @@
 .netfleet-config-control input:not([type="checkbox"]),
 .netfleet-config-control textarea {
 	width: 100%;
-	min-height: 40px;
+	min-height: var(--nf-control-height);
 	font-size: 14px;
 }
 
 .netfleet-readonly {
 	display: flex;
 	align-items: center;
-	min-height: 40px;
+	min-height: var(--nf-control-height);
 	padding: 0 12px;
-	border: 1px solid rgba(127, 127, 127, 0.18);
-	border-radius: 4px;
-	background: rgba(127, 127, 127, 0.05);
+	border: 1px solid var(--nf-border);
+	border-radius: var(--nf-radius-control);
+	background: var(--nf-surface-muted);
 	font-weight: 600;
 }
 
@@ -1095,9 +1101,9 @@
 }
 
 .netfleet-check input {
-	width: 17px;
-	height: 17px;
-	flex: 0 0 17px;
+	width: var(--nf-check-size);
+	height: var(--nf-check-size);
+	flex: 0 0 var(--nf-check-size);
 	margin: 0;
 }
 
@@ -1117,7 +1123,7 @@
 .netfleet-config-table th,
 .netfleet-config-table td {
 	padding: 12px;
-	border-bottom: 1px solid rgba(127, 127, 127, 0.16);
+	border-bottom: 1px solid var(--nf-border-subtle);
 	text-align: left;
 	vertical-align: middle;
 	overflow-wrap: anywhere;
@@ -1153,7 +1159,7 @@
 
 .netfleet-config-table select,
 .netfleet-config-table input[type="text"] {
-	min-height: 38px;
+	min-height: var(--nf-control-height);
 	font-size: 14px;
 }
 
@@ -1177,7 +1183,7 @@
 
 .netfleet-capability-editor + .netfleet-capability-editor {
 	padding-top: 22px;
-	border-top: 1px solid rgba(127, 127, 127, 0.22);
+	border-top: 1px solid var(--nf-border-subtle);
 }
 
 .netfleet-capability-head {
@@ -1212,13 +1218,13 @@
 .netfleet-inline-add {
 	margin-top: 16px;
 	padding-top: 16px;
-	border-top: 1px solid rgba(127, 127, 127, 0.18);
+	border-top: 1px solid var(--nf-border-subtle);
 }
 
 .netfleet-inline-add select,
 .netfleet-inline-add input {
 	min-width: 190px;
-	min-height: 38px;
+	min-height: var(--nf-control-height);
 }
 
 .netfleet-capability-add input {
@@ -1269,7 +1275,7 @@
 
 .netfleet-advanced {
 	margin-top: 18px;
-	border-top: 1px solid rgba(127, 127, 127, 0.18);
+	border-top: 1px solid var(--nf-border-subtle);
 }
 
 .netfleet-advanced summary {
@@ -1296,7 +1302,7 @@
 
 .netfleet-config-actions .btn,
 .netfleet-config-intro .btn {
-	min-height: 40px;
+	min-height: var(--nf-control-height);
 	padding: 0 14px;
 }
 
@@ -1342,7 +1348,7 @@
 	align-items: center;
 	gap: 7px;
 	padding: 9px;
-	border-bottom: 2px solid rgba(127, 127, 127, 0.18);
+	border-bottom: 2px solid var(--nf-border-subtle);
 }
 
 .netfleet-wizard-steps li.is-active,
@@ -1421,7 +1427,7 @@
 	.netfleet-native .netfleet-overview-card:nth-child(3) {
 		grid-column: 1 / -1;
 		min-height: 220px;
-		border-top: 1px solid rgba(127, 127, 127, 0.18);
+		border-top: 1px solid var(--nf-border-subtle);
 		border-left: 0;
 	}
 }
@@ -1528,7 +1534,7 @@
 	.netfleet-native .netfleet-overview-card + .netfleet-overview-card,
 	.netfleet-native .netfleet-overview-card:nth-child(3) {
 		grid-column: auto;
-		border-top: 1px solid rgba(127, 127, 127, 0.18);
+		border-top: 1px solid var(--nf-border-subtle);
 		border-left: 0;
 	}
 
@@ -1557,7 +1563,7 @@
 		flex-direction: row;
 		overflow-x: auto;
 		border-right: 0;
-		border-bottom: 1px solid rgba(127, 127, 127, 0.2);
+		border-bottom: 1px solid var(--nf-border-subtle);
 	}
 
 	.netfleet-config-nav button {
@@ -1582,7 +1588,7 @@
 
 	.netfleet-environment > div {
 		border-right: 0;
-		border-bottom: 1px solid rgba(127, 127, 127, 0.18);
+		border-bottom: 1px solid var(--nf-border-subtle);
 	}
 }
 
@@ -1618,12 +1624,12 @@
 .netfleet-native .netfleet-plugin-table th:nth-child(5) { width: 16%; }
 .netfleet-native .netfleet-plugin-table td { padding-block: 18px; }
 .netfleet-native .netfleet-plugin-table .netfleet-plugin-id { font-family: monospace; font-size: 12px; overflow-wrap: anywhere; }
-.netfleet-native .netfleet-plugin-kind { display: inline-block; border-radius: 4px; padding: 2px 7px; background: var(--nf-accent-soft); font-size: 12px; }
+.netfleet-native .netfleet-plugin-kind { display: inline-block; border-radius: var(--nf-radius-control); padding: 2px 7px; background: var(--nf-accent-soft); font-size: 12px; }
 .netfleet-native .netfleet-plugin-state { display: block; margin-bottom: 8px; font-size: 13px; color: var(--nf-muted); }
 .netfleet-plugin-runtime { display: grid; gap: 14px; }
 .netfleet-plugin-runtime > p { margin: 0; }
 .netfleet-plugin-runtime > button { justify-self: start; }
-.netfleet-plugin-runtime details { padding-block: 10px; border-top: 1px solid #8883; }
+.netfleet-plugin-runtime details { padding-block: 10px; border-top: 1px solid var(--nf-border-subtle); }
 .netfleet-native .netfleet-component-actions > * { margin: 0 8px 8px 0; }
 .netfleet-native .netfleet-component-actions > div:empty { display: none; }
 .netfleet-native .netfleet-components .netfleet-section-heading h3 { background: transparent; flex: 1; }
@@ -1635,7 +1641,7 @@
 .netfleet-native .netfleet-result-body > strong { flex-shrink: 0; }
 .netfleet-native .netfleet-result-body .netfleet-operation-detail { gap: 6px 18px; font-size: 14px; overflow-wrap: anywhere; }
 .netfleet-native .netfleet-result-reason { flex-basis: 100%; }
-.netfleet-native .netfleet-result-close { flex: 0 0 32px; width: 32px; min-width: 32px; height: 32px; min-height: 32px; display: inline-flex; align-items: center; justify-content: center; margin: -3px -4px -3px 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--nf-muted); font-size: 22px; cursor: pointer; }
+.netfleet-native .netfleet-result-close { flex: 0 0 32px; width: 32px; min-width: 32px; height: 32px; min-height: 32px; display: inline-flex; align-items: center; justify-content: center; margin: -3px -4px -3px 0; padding: 0; border: 0; border-radius: var(--nf-radius-control); background: transparent; color: var(--nf-muted); font-size: 22px; cursor: pointer; }
 .netfleet-native .netfleet-result-close:hover { background: var(--nf-accent-soft); color: var(--nf-text); }
 .netfleet-native .netfleet-result-close:focus-visible { outline: 2px solid var(--nf-accent); outline-offset: 2px; }
 .netfleet-native .netfleet-operation.is-result[hidden] { display: none; }
@@ -1685,7 +1691,7 @@
 .netfleet-diagnosis-checks dd { margin: 5px 0 0; font-weight: 600; }
 @media (max-width: 640px) { .netfleet-diagnosis-checks { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
-.netfleet-native .netfleet-status-line { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin: 0 0 20px; border: 1px solid var(--nf-border); border-radius: 8px; background: var(--nf-surface); }
+.netfleet-native .netfleet-status-line { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin: 0 0 20px; border: 1px solid var(--nf-border); border-radius: var(--nf-radius-surface); background: var(--nf-surface); }
 .netfleet-native .netfleet-status-group { min-width: 0; padding: 14px 18px; border-right: 1px solid var(--nf-border); }
 .netfleet-native .netfleet-status-group:last-child { border-right: 0; }
 .netfleet-native .netfleet-status-group h3 { margin: 0 0 10px; padding: 0; border: 0; background: transparent; font-size: 14px; line-height: 1.5; font-weight: 600; }
@@ -1737,19 +1743,19 @@
 .netfleet-native .netfleet-inspector-facts dd { margin: 0; overflow-wrap: anywhere; }
 .netfleet-native .netfleet-inspector .netfleet-icon-button { flex: 0 0 36px; width: 36px; height: 36px; border: 0; background: transparent; font-size: 23px; cursor: pointer; }
 .netfleet-native .netfleet-quota-meter { display: block; width: 100%; max-width: 160px; height: 5px; margin-top: 7px; border: 0; background: var(--nf-border); }
-.netfleet-native .netfleet-quota-meter::-webkit-meter-bar { height: 5px; border: 0; border-radius: 2px; background: var(--nf-border); }
+.netfleet-native .netfleet-quota-meter::-webkit-meter-bar { height: 5px; border: 0; border-radius: var(--nf-radius-bar); background: var(--nf-border); }
 .netfleet-native .netfleet-quota-meter::-webkit-meter-optimum-value { background: var(--nf-accent); }
 .netfleet-native .netfleet-quota-meter::-moz-meter-bar { background: var(--nf-accent); }
 .netfleet-native table.table tr.is-inspected > td { background: var(--nf-accent-soft); }
 .netfleet-native table.table tr.is-inspected > td:first-child { box-shadow: inset 3px 0 var(--nf-accent); }
 .netfleet-native :is(td, dd, time) { font-variant-numeric: tabular-nums; }
-.netfleet-native .netfleet-operating-mode { min-width: 0; margin: 0 0 24px; padding: 24px; border: 1px solid var(--nf-border); border-radius: 6px; background: var(--nf-surface, #fff); }
+.netfleet-native .netfleet-operating-mode { min-width: 0; margin: 0 0 24px; padding: 24px; border: 1px solid var(--nf-border); border-radius: var(--nf-radius-surface); background: var(--nf-surface, #fff); }
 .netfleet-native .netfleet-mode-heading h3 { margin: 0; padding: 0; border: 0; font-size: 18px; }
 .netfleet-native .netfleet-mode-heading p { margin: 6px 0 20px; color: var(--nf-muted); }
 .netfleet-native .netfleet-operating-mode fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .netfleet-native .netfleet-mode-legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .netfleet-native .netfleet-mode-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.netfleet-native .netfleet-mode-option { display: flex; align-items: flex-start; gap: 12px; padding: 18px; border: 1px solid var(--nf-border); border-radius: 6px; cursor: pointer; }
+.netfleet-native .netfleet-mode-option { display: flex; align-items: flex-start; gap: 12px; padding: 18px; border: 1px solid var(--nf-border); border-radius: var(--nf-radius-surface); cursor: pointer; }
 .netfleet-native .netfleet-mode-option.is-selected { border-color: var(--nf-accent); background: var(--nf-accent-soft); box-shadow: inset 0 0 0 1px var(--nf-accent); }
 .netfleet-native .netfleet-mode-option:focus-within { outline: 2px solid var(--nf-accent); outline-offset: 3px; }
 .netfleet-native .netfleet-mode-options input { flex: 0 0 auto; margin: 4px 0 0; accent-color: var(--nf-accent); }
@@ -1757,7 +1763,7 @@
 .netfleet-native .netfleet-mode-description { color: var(--nf-muted); font-size: 13px; line-height: 1.6; }
 .netfleet-native .netfleet-mode-current { color: var(--nf-accent); font-size: 12px; font-weight: 600; }
 .netfleet-native .netfleet-mode-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 18px; color: var(--nf-muted); font-size: 13px; }
-.netfleet-native .netfleet-operating-mode button { min-width: 112px; min-height: 40px; }
+.netfleet-native .netfleet-operating-mode button { min-width: 112px; min-height: var(--nf-control-height); }
 .netfleet-native .netfleet-operating-mode fieldset:disabled .netfleet-mode-option { cursor: default; opacity: .7; }
 @media (max-width: 760px) {
  .netfleet-native .netfleet-operating-mode { padding: 18px; }
@@ -1806,7 +1812,7 @@
 .netfleet-native .netfleet-selection-exits .netfleet-selection-note { margin: 6px 0; }
 .netfleet-native .netfleet-decision-reason { font-size: 13px; margin: 6px 0; }
 .netfleet-native .netfleet-subtabs { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--nf-border); margin-bottom: 18px; padding-bottom: 8px; }
-.netfleet-native .netfleet-subtabs button { font: inherit; border: 0; border-radius: 4px; padding: 8px 14px; cursor: pointer; color: var(--nf-text); background: transparent; }
+.netfleet-native .netfleet-subtabs button { font: inherit; border: 0; border-radius: var(--nf-radius-control); padding: 8px 14px; cursor: pointer; color: var(--nf-text); background: transparent; }
 .netfleet-native .netfleet-subtabs button[aria-current=page] { color: var(--nf-accent); background: var(--nf-accent-soft); font-weight: 600; }
 .netfleet-native .netfleet-config-group { display: block; padding: 10px 16px 4px; color: var(--nf-muted); font-size: 12px; }
 .netfleet-native .btn:not(:disabled) { color: var(--nf-text); }
@@ -1839,12 +1845,14 @@
 
 /* Phone layouts keep primary actions and current evidence in the first screen. */
 @media (max-width: 700px) {
+	/* 触控目标不小于 44px：形状不变，只抬高控件高度这一项密度 token。 */
+	.netfleet-native { --nf-control-height: 44px; }
 	.netfleet-native { min-width: 0; font-size: 15px; }
 	.netfleet-native .netfleet-page-heading { gap: 8px; margin-bottom: 12px; }
 	.netfleet-native .netfleet-page-tools { width: 100%; justify-content: space-between; gap: 6px 12px; }
 	.netfleet-native .netfleet-build { font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
 	.netfleet-native .netfleet-page-actions { justify-content: flex-start; margin-bottom: 16px; }
-	.netfleet-native :is(.btn, .cbi-button, .netfleet-name-link, .netfleet-dashboard-link, .netfleet-result-close, .netfleet-icon-button) { min-height: 44px; }
+	.netfleet-native :is(.btn, .cbi-button, .netfleet-name-link, .netfleet-dashboard-link, .netfleet-result-close, .netfleet-icon-button) { min-height: var(--nf-control-height); }
 	.netfleet-native :is(.netfleet-result-close, .netfleet-icon-button) { min-width: 44px; }
 	.netfleet-native :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) { font-size: 16px; max-width: 100%; }
 	.netfleet-native .netfleet-exit-heading { gap: 12px; padding: 14px; }
@@ -1865,7 +1873,7 @@
 	.netfleet-native .netfleet-subtabs button { flex: 0 0 auto; min-height: 44px; }
 	.netfleet-native .netfleet-config-nav { display: none; }
 	.netfleet-native .netfleet-config-mobile-nav { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; padding: 12px; margin: 0; border-bottom: 1px solid var(--nf-border); }
-	.netfleet-native .netfleet-config-mobile-nav select { width: 100%; min-width: 0; min-height: 44px; }
+	.netfleet-native .netfleet-config-mobile-nav select { width: 100%; min-width: 0; min-height: var(--nf-control-height); }
 	.netfleet-native .netfleet-config-content { padding: 16px 12px; }
 	.netfleet-native .netfleet-config-actions { padding: 12px; gap: 12px; }
 	.netfleet-native .netfleet-config-actions > div { display: flex; flex-wrap: wrap; gap: 8px; }
