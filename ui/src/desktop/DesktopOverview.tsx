@@ -1,7 +1,7 @@
 import { ChevronRight } from 'lucide-react';
-import { CapabilityPanel } from '../components/CapabilityPanel';
-import { sampledAt } from './presentation';
-import { displayEventName, eventResult } from '../lib/format';
+import { CapabilityPanel, exitMeasurementState } from '../components/CapabilityPanel';
+import { OverviewDigest } from '../components/OverviewDigest';
+import type { EventsSnapshot } from '../types';
 import type { ViewId } from '../types';
 import type { DesktopSnapshot } from './types';
 
@@ -26,20 +26,25 @@ export function DesktopOverview({ snapshot, disabled, canSelect, onNavigate, onS
 }) {
   const status = snapshot.status;
   const attention = overviewAttention(snapshot);
-  const recent = snapshot.events?.events.slice().sort((a, b) => b.at - a.at).slice(0, 2) ?? [];
+  const events: EventsSnapshot = snapshot.events ?? { events: [] };
+  const capabilities = status?.capabilities.filter(item => item.enabled) ?? [];
+  const attached = Boolean(status && snapshot.runtime.running && snapshot.runtime.mode === 'netfleet' && status.active);
+  const exits = status ? exitMeasurementState(status, attached) : null;
   return <div className="nf-desktop-overview">
     {attention.length > 0 && <section className="nf-desktop-attention" aria-label="需要处理"><div><strong>需要处理</strong><ul>{attention.map(item => <li key={item}>{item}</li>)}</ul></div><button type="button" className="nf-button-secondary" onClick={() => onNavigate('events')}>查看诊断</button></section>}
-    {!snapshot.runtime.configured ? <section className="nf-desktop-onboarding"><div><h2>添加订阅，即可开始</h2><p>订阅提供节点，NetFleet 内置策略负责双出口分流。</p></div><button type="button" className="nf-button-primary" disabled={disabled} onClick={() => onNavigate('providers')}>添加订阅</button></section> : <section aria-label="业务出口">
-      <div className="nf-desktop-section-title"><h2>业务出口</h2><button type="button" onClick={() => onNavigate('exits')}>全部详情<ChevronRight aria-hidden="true" /></button></div>
-      <div className="nf-exit-list">{status?.capabilities.filter(item => item.enabled).map(item => <CapabilityPanel key={item.id} snapshot={status} capability={item} compact active={snapshot.runtime.running && snapshot.runtime.mode === 'netfleet' && status.active} disabled={disabled || !canSelect} onChooseRegion={() => onSelect(item.id)} onOpen={() => onNavigate('exits')} />)}</div>
-    </section>}
-    <nav className="nf-desktop-resource-links" aria-label="资源快捷入口">
-      <button type="button" onClick={() => onNavigate('providers')}><span>机场</span><strong>{status?.providers.length ?? 0}</strong><ChevronRight aria-hidden="true" /></button>
-      <button type="button" onClick={() => onNavigate('regions')}><span>已配置地区</span><strong>{status?.regions.length ?? 0}</strong><ChevronRight aria-hidden="true" /></button>
-      <button type="button" onClick={() => onNavigate('config')}><span>策略与配置</span><ChevronRight aria-hidden="true" /></button>
-    </nav>
-    <section className="nf-desktop-recent"><div className="nf-desktop-section-title"><h2>最近决策</h2><button type="button" onClick={() => onNavigate('events')}>全部记录<ChevronRight aria-hidden="true" /></button></div>
-      {recent.length ? <ul>{recent.map((item, i) => <li key={i}><time>{sampledAt(item.at)}</time><span>{item.capability && <strong>{displayEventName(snapshot.events!, 'capabilities', item.capability)} · </strong>}{eventResult(snapshot.events!, item)}</span></li>)}</ul> : <p>暂无决策记录。启用后会记录实际选路结果。</p>}
-    </section>
+    {!snapshot.runtime.configured ? <section className="nf-desktop-onboarding"><div><h2>添加订阅，即可开始</h2><p>订阅提供节点，NetFleet 内置策略负责双出口分流。</p></div><button type="button" className="nf-button-primary" disabled={disabled} onClick={() => onNavigate('providers')}>添加订阅</button></section> : <>
+      <section className="nf-desktop-exits" aria-labelledby="nf-desktop-exits-title">
+        <div className="nf-desktop-section-title">
+          <div><h2 id="nf-desktop-exits-title">出口态势</h2><p>当前路径、选择方式与本轮测量</p></div>
+          <button type="button" onClick={() => onNavigate('exits')}>全部详情<ChevronRight aria-hidden="true" /></button>
+        </div>
+        <div className="nf-exit-list">
+          <div className="nf-exit-list-head" aria-hidden="true"><span>出口</span><span>当前路径</span><span>选择方式</span>{exits?.measured ? <><span>延迟</span><span>健康状态</span></> : <span className="nf-exit-list-measure-head">本轮测量</span>}<span /></div>
+          {status && capabilities.map(item => <CapabilityPanel key={item.id} snapshot={status} capability={item} compact active={attached} disabled={disabled || !canSelect} onChooseRegion={() => onSelect(item.id)} onOpen={() => onNavigate('exits')} />)}
+        </div>
+        {status && !capabilities.length && <p className="nf-empty">暂无启用的业务出口。添加订阅并完成准备后显示。</p>}
+      </section>
+      {status && <OverviewDigest platform="desktop" status={status} events={events} showAttention={false} showMeasurementNote={false} measured={exits?.measured} onOpen={target => onNavigate(target)} />}
+    </>}
   </div>;
 }

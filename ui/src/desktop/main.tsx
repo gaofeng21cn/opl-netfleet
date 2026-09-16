@@ -1,8 +1,11 @@
 import { createRoot } from 'react-dom/client';
 import { DesktopNetFleetClient } from './client';
 import { DesktopApp } from './DesktopApp';
+import { applyHostAccent } from './hostTheme';
 import '../styles.css';
 import './desktop.css';
+
+applyHostAccent(window.__netfleetHostAccent);
 
 const url = new URL(window.location.href);
 const token = url.searchParams.get('token');

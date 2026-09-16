@@ -1,16 +1,22 @@
 import AppKit
 import WebKit
 
-final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, NSMenuItemValidation {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var statusItem: NSStatusItem!
+    private var startItem: NSMenuItem!
+    private var stopItem: NSMenuItem!
     private var service: Process?
     private var endpoint: URL?
     private var token = ""
     private var startupBuffer = Data()
     private var stopping = false
     private var shutdownTimer: Timer?
+    // The page owns business state; the host only mirrors what it reports.
+    private var pageState = PageState(running: false, configured: false, busy: false)
+
+    private struct PageState { var running: Bool; var configured: Bool; var busy: Bool }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -22,19 +28,52 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.add(self, name: "saveBackup")
+        configuration.userContentController.add(self, name: "netfleetState")
+        if let accent = hostAccentScript() {
+            configuration.userContentController.addUserScript(WKUserScript(source: accent,
+                injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
         webView.uiDelegate = self
+        // The page paints its own sidebar and toolbar over the window backdrop.
+        webView.underPageBackgroundColor = .clear
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1160, height: 780),
-                          styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+                          styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                          backing: .buffered, defer: false)
         window.title = "OPL NetFleet"
-        window.minSize = NSSize(width: 860, height: 620)
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        // The light window chrome keeps the page and the title bar the same tone in
+        // every system appearance; the page owns the visual design.
+        window.backgroundColor = NSColor(srgbRed: 0.961, green: 0.965, blue: 0.973, alpha: 1)
+        // The minimum window size is part of the layout contract: it keeps the
+        // content area at or above the 860x580 desktop layout budget so tables
+        // never need horizontal scrolling and the page never reflows.
+        window.minSize = NSSize(width: 1060, height: 640)
         window.isReleasedWhenClosed = false
         window.contentView = webView
-        window.center()
+        let autosaveName = "OPLNetFleetMainWindow"
+        let restored = UserDefaults.standard.string(forKey: "NSWindow Frame \(autosaveName)") != nil
+        window.setFrameAutosaveName(autosaveName)
+        if !restored { window.center() }
         showWindow()
         webView.loadHTMLString("<html><meta charset='utf-8'><body style='background:#f5f5f7;font:16px -apple-system;padding:60px;color:#202124'><h1>OPL NetFleet</h1><p>正在启动本机服务…</p></body></html>", baseURL: nil)
         startService()
+    }
+
+    // Hand the system accent to the page; the page derives its own tint ramp.
+    private func hostAccentScript() -> String? {
+        var resolved: NSColor?
+        NSApp.effectiveAppearance.performAsCurrentDrawingAppearance {
+            resolved = NSColor.controlAccentColor.usingColorSpace(.sRGB)
+        }
+        guard let color = resolved else { return nil }
+        let red = Int((color.redComponent * 255).rounded())
+        let green = Int((color.greenComponent * 255).rounded())
+        let blue = Int((color.blueComponent * 255).rounded())
+        return "window.__netfleetHostAccent = \"#\(String(format: "%02x%02x%02x", red, green, blue))\";"
     }
 
     private func buildMenu() {
@@ -43,8 +82,17 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "关于 OPL NetFleet", action: #selector(showAbout), keyEquivalent: "").target = self
         appMenu.addItem(.separator())
+        let servicesItem = NSMenuItem(title: "服务", action: nil, keyEquivalent: "")
+        let servicesMenu = NSMenu(title: "服务")
+        servicesItem.submenu = servicesMenu
+        appMenu.addItem(servicesItem)
+        NSApp.servicesMenu = servicesMenu
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "显示 OPL NetFleet", action: #selector(showWindow), keyEquivalent: "0").target = self
         appMenu.addItem(withTitle: "隐藏 OPL NetFleet", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        let hideOthers = appMenu.addItem(withTitle: "隐藏其他", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(withTitle: "全部显示", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "退出并恢复网络", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
@@ -56,6 +104,11 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
         editItem.submenu = editMenu
         menu.addItem(editItem)
+        let fileItem = NSMenuItem()
+        let fileMenu = NSMenu(title: "文件")
+        fileMenu.addItem(withTitle: "关闭窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        fileItem.submenu = fileMenu
+        menu.addItem(fileItem)
         let navigationItem = NSMenuItem()
         let navigationMenu = NSMenu(title: "导航")
         for (index, entry) in [("概览", "overview"), ("出口", "exits"), ("机场", "providers"),
@@ -70,14 +123,36 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         refresh.target = self
         navigationItem.submenu = navigationMenu
         menu.addItem(navigationItem)
+        let proxyItem = NSMenuItem()
+        let proxyMenu = NSMenu(title: "代理")
+        startItem = proxyMenu.addItem(withTitle: "启动 NetFleet", action: #selector(startProxy(_:)), keyEquivalent: "")
+        startItem.target = self
+        stopItem = proxyMenu.addItem(withTitle: "停止代理", action: #selector(stopProxy(_:)), keyEquivalent: "")
+        stopItem.target = self
+        proxyItem.submenu = proxyMenu
+        menu.addItem(proxyItem)
+        let windowItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "窗口")
+        windowMenu.addItem(withTitle: "最小化", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "缩放", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        windowMenu.addItem(.separator())
+        windowMenu.addItem(withTitle: "前置全部窗口", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
+        windowItem.submenu = windowMenu
+        menu.addItem(windowItem)
+        NSApp.windowsMenu = windowMenu
         NSApp.mainMenu = menu
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "network", accessibilityDescription: "OPL NetFleet")
         let statusMenu = NSMenu()
+        let statusStart = statusMenu.addItem(withTitle: "启动 NetFleet", action: #selector(startProxy(_:)), keyEquivalent: "")
+        statusStart.target = self
+        let statusStop = statusMenu.addItem(withTitle: "停止代理", action: #selector(stopProxy(_:)), keyEquivalent: "")
+        statusStop.target = self
+        statusMenu.addItem(.separator())
         statusMenu.addItem(withTitle: "显示 OPL NetFleet", action: #selector(showWindow), keyEquivalent: "").target = self
         statusMenu.addItem(.separator())
         statusMenu.addItem(withTitle: "退出并恢复网络", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
         statusItem.menu = statusMenu
+        updateStatusItem()
     }
 
     @objc private func showAbout() {
@@ -103,7 +178,46 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         guard let command = sender.representedObject as? String,
               ["overview", "exits", "providers", "regions", "config", "events", "refresh"].contains(command) else { return }
         showWindow()
+        send(command: command)
+    }
+
+    private func send(command: String) {
+        guard endpoint != nil, ["overview", "exits", "providers", "regions", "config", "events", "refresh", "start", "stop"].contains(command) else { return }
         webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('netfleet-command', {detail: '\(command)'}))", completionHandler: nil)
+    }
+
+    // Menu items mirror the page's reported state; the page remains the owner.
+    private func updateStatusItem() {
+        let running = pageState.running
+        statusItem.button?.toolTip = running ? "OPL NetFleet · 代理运行中" : "OPL NetFleet · 代理已停止"
+        let symbol = running ? "network" : "network.slash"
+        statusItem.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "OPL NetFleet")
+            ?? NSImage(systemSymbolName: "network", accessibilityDescription: "OPL NetFleet")
+        statusItem.menu?.items.forEach { item in
+            switch item.action {
+            case #selector(startProxy(_:)): item.isEnabled = !running && pageState.configured && !pageState.busy
+            case #selector(stopProxy(_:)): item.isEnabled = running && !pageState.busy
+            default: break
+            }
+        }
+    }
+
+    @objc private func startProxy(_ sender: Any?) {
+        showWindow()
+        send(command: "start")
+    }
+
+    @objc private func stopProxy(_ sender: Any?) {
+        showWindow()
+        send(command: "stop")
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(startProxy(_:)): return !pageState.running && pageState.configured && !pageState.busy
+        case #selector(stopProxy(_:)): return pageState.running && !pageState.busy
+        default: return true
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -233,9 +347,19 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "saveBackup", message.frameInfo.isMainFrame,
+        guard message.frameInfo.isMainFrame,
               message.frameInfo.securityOrigin.host == "127.0.0.1",
-              message.frameInfo.securityOrigin.port == endpoint?.port,
+              message.frameInfo.securityOrigin.port == endpoint?.port else { return }
+        if message.name == "netfleetState" {
+            guard let body = message.body as? [String: Any],
+                  let running = body["running"] as? Bool,
+                  let configured = body["configured"] as? Bool,
+                  let busy = body["busy"] as? Bool else { return }
+            pageState = PageState(running: running, configured: configured, busy: busy)
+            updateStatusItem()
+            return
+        }
+        guard message.name == "saveBackup", message.frameInfo.isMainFrame,
               let body = message.body as? [String: Any], let contents = body["contents"] as? String else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "netfleet-backup.json"

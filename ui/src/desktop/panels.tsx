@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { sourcePreparation } from './presentation';
+import { saveBackupThroughHost } from './hostBridge';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import type { ConnectionsSnapshot } from '../types';
 import type { DesktopSnapshot } from './types';
@@ -27,10 +28,51 @@ export function RuntimeControls({ snapshot, disabled, client, run }: { snapshot:
   const descriptions = { explicit: '仅供明确指定代理的应用使用，不修改系统网络。', system: '让浏览器等遵循 macOS 系统代理的应用使用 NetFleet。', tun: '通过虚拟网卡接入流量，适合不遵循系统代理的应用。' };
   const applyNetwork = () => run('应用网络接入', () => client.action('network', { mode: network, authorize: true }));
   const networkState = runtime.networkMode === 'explicit' ? '未接管系统流量' : snapshot.network.ready ? `${networkNames[runtime.networkMode]}已生效` : `${networkNames[runtime.networkMode]}尚未生效`;
+  const health = (value?: boolean) => value === true ? '正常' : value === false ? '异常' : '状态未确认';
+  const selection = snapshot.status?.selection;
+  const automatic = runtime.running && connected
+    ? selection?.automation_paused ? '手动暂停' : '运行中'
+    : '未运行';
+  // A stopped core has one runtime fact. Repeating "未运行" for every service
+  // hides that fact behind noise, so the groups keep the configuration each
+  // service will use and state the single runtime conclusion once.
+  const groups = runtime.running ? [
+    { title: '运行概况', items: [
+      ['运行模式', runtime.mode === 'unconfirmed' ? '状态待确认' : modeNames[runtime.mode]],
+      ['当前配置', connected ? 'NetFleet 运行配置' : '原生恢复配置'],
+      ['代理核心', runtime.version || '运行中'],
+    ] },
+    { title: '网络接管', items: [
+      ['流量接入', runtime.networkMode === 'explicit' ? '仅显式代理' : networkState],
+      ['本地监听', `127.0.0.1:${runtime.ports.mixed}`],
+      ...runtime.networkMode === 'tun' ? [['DNS 服务', `127.0.0.1:${runtime.ports.dns}`]] : [],
+    ] },
+    { title: '管理服务', items: [
+      ['控制接口', health(runtime.controllerReady)],
+      ['自动选优', automatic],
+      ...snapshot.status?.runtime.controller_available === false ? [['业务状态', '控制接口暂不可读']] : [],
+    ] },
+  ] : [
+    { title: '运行概况', items: [
+      ['运行模式', runtime.mode === 'unconfirmed' ? '状态待确认' : modeNames[runtime.mode]],
+      ['代理核心', '未运行'],
+    ] },
+    { title: '网络接管', items: [
+      ['流量接入', runtime.networkMode === 'explicit' ? '仅显式代理' : networkNames[runtime.networkMode]],
+      ['系统接管', '未接管'],
+    ] },
+    { title: '管理服务', items: [
+      ['控制接口与选优', '随代理启动'],
+      ...runtime.configured ? [] : [['配置', '未就绪']],
+    ] },
+  ];
   return <>
     <section className="nf-desktop-connection" aria-label="连接控制">
       <div className="nf-desktop-connection-main"><div><h2>{runtime.mode === 'unconfirmed' ? '状态待确认' : runtime.running ? connected ? '增强代理运行中' : '原生代理运行中' : '代理已停止'}</h2><p>{runtime.running ? `127.0.0.1:${runtime.ports.mixed} · HTTP / SOCKS5` : runtime.configured ? '配置已就绪，可启动代理。' : '添加机场订阅后可启动。'}</p></div><div className="nf-desktop-connection-actions">{runtime.running ? <><button className="nf-button-secondary" disabled={disabled} onClick={() => void run('停止代理', () => client.action('mode', { mode: 'direct' }))}>停止代理</button>{!connected && <button className="nf-button-primary" disabled={disabled} onClick={() => void run('启动 NetFleet', () => client.enable())}>启用 NetFleet</button>}</> : <button className="nf-button-primary" disabled={disabled || runtime.clean && !runtime.configured} onClick={() => void run(runtime.clean ? '启动 NetFleet' : '恢复直连', () => runtime.clean ? client.enable() : client.action('mode', { mode: 'direct' }))}>{runtime.clean ? '启动 NetFleet' : '恢复直连'}</button>}</div></div>
-      <fieldset className="nf-desktop-access" disabled={disabled}><legend className="nf-visually-hidden">本机流量接入</legend><div className="nf-desktop-access-row"><label htmlFor="desktop-network-mode">流量接入</label><select id="desktop-network-mode" value={network} onChange={event => setNetwork(event.target.value as typeof network)}>{(Object.keys(networkNames) as Array<keyof typeof networkNames>).map(value => <option value={value} key={value}>{value === 'explicit' ? '仅显式代理' : networkNames[value]}</option>)}</select><span className="nf-desktop-access-state">{network !== runtime.networkMode ? '尚未应用' : networkState}</span><button className="nf-button-secondary" disabled={network === runtime.networkMode} onClick={() => { if (network === 'explicit') void applyNetwork(); else setConfirmNetwork(true); }}>应用</button></div>{network !== runtime.networkMode && <p className="nf-desktop-access-help">{descriptions[network]}{network !== 'explicit' && snapshot.network.helper === 'needs-install' ? ' 首次使用需管理员授权。' : ''}</p>}</fieldset>
+      <div className="nf-status-strip nf-desktop-status" aria-label="运行状态">
+        {groups.map(group => <section className="nf-status-group" key={group.title} aria-label={group.title}><h3>{group.title}</h3><dl>{group.items.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>)}
+      </div>
+      <fieldset className="nf-desktop-access" disabled={disabled}><legend className="nf-visually-hidden">本机流量接入</legend><div className="nf-desktop-access-row"><label htmlFor="desktop-network-mode">流量接入</label><select id="desktop-network-mode" value={network} onChange={event => setNetwork(event.target.value as typeof network)}>{(Object.keys(networkNames) as Array<keyof typeof networkNames>).map(value => <option value={value} key={value}>{value === 'explicit' ? '仅显式代理' : networkNames[value]}</option>)}</select><span className="nf-desktop-access-state">{network !== runtime.networkMode ? '尚未应用' : networkState}</span>{network !== runtime.networkMode && <button className="nf-button-primary" onClick={() => { if (network === 'explicit') void applyNetwork(); else setConfirmNetwork(true); }}>应用{networkNames[network]}</button>}</div>{network !== runtime.networkMode && <p className="nf-desktop-access-help">{descriptions[network]}{network !== 'explicit' && snapshot.network.helper === 'needs-install' ? ' 首次使用需管理员授权。' : ''}</p>}</fieldset>
       <details className="nf-desktop-connection-foot"><summary>连接选项与说明</summary><p>{descriptions[network]}</p><button type="button" onClick={() => setShowNative(true)} disabled={disabled || !runtime.configured || runtime.mode === 'mihomo'}>使用原生配置…</button></details>
     </section>
     {showNative && <ConfirmDialog title="使用原生配置" description="使用恢复配置自身的代理规则，暂停 NetFleet 自动选优。流量接入方式保持当前设置。" confirmLabel="使用原生配置" busy={disabled} onCancel={() => setShowNative(false)} onConfirm={() => { setShowNative(false); void run('使用原生配置', () => client.action('mode', { mode: 'mihomo', authorize: true })); }} />}
@@ -77,7 +119,7 @@ export function Configuration({ snapshot, disabled, client, run, section, onDirt
   return <div className="nf-view-stack">
     {error && <p className="nf-inline-warning" role="alert">{error}</p>}
     <fieldset className="nf-desktop-fieldset" disabled={disabled}>
-      {section === 'profile' && <section className="nf-config-section"><div className="nf-config-section-heading"><h2>策略与节点</h2><p>策略决定流量如何分配，机场订阅提供可用节点。</p></div><div className="nf-desktop-policy-card"><div className="nf-section-heading"><h2>{builtin ? 'NetFleet 内置策略' : snapshot.policy ? '自定义 Profile 策略' : 'NetFleet 内置策略 · 待准备'}</h2><span className="nf-desktop-state">{builtin ? '当前使用' : '默认推荐'}</span></div><p>海外加速承接常规海外流量，AI 出口独立选优；国内与私网流量直连。</p><div className="nf-desktop-policy-exits"><div><strong>海外加速</strong><small>按机场和地区自动选优</small></div><div><strong>AI 出口</strong><small>默认避开香港，优先沿用可用地区</small></div></div>{!builtin && snapshot.policy && <div className="nf-desktop-actions"><button className="nf-button-primary" disabled={snapshot.runtime.running} onClick={() => setConfirmBuiltin(true)}>使用内置策略</button><span className="nf-management-note">保留订阅、地区资源与恢复配置。</span></div>}{!snapshot.policy && <p className="nf-management-note">到“机场”添加订阅后自动准备，无需另行导入配置。</p>}{snapshot.runtime.running && !builtin && <p className="nf-management-note">停止代理后可切换策略。</p>}</div><details className="nf-desktop-import"><summary>导入自定义 Profile</summary><p className="nf-management-note">适合明确需要沿用现有规则的高级配置。导入会替换恢复配置并重新生成业务策略，需先停止代理。</p><div className="nf-desktop-editor"><DesktopFilePicker label="选择配置文件…" accept=".json,.yaml,.yml,text/plain,application/json" disabled={disabled} onFile={file => { void readProfile(file); }} /><label htmlFor="desktop-profile">Mihomo 配置</label><textarea id="desktop-profile" value={profile} onChange={event => setProfile(event.target.value)} spellCheck={false} placeholder="粘贴 Mihomo JSON / YAML 配置" /><div className="nf-desktop-actions"><button className="nf-button-primary" disabled={!profile.trim() || snapshot.runtime.running} onClick={() => { let value: unknown = profile; try { value = JSON.parse(profile); } catch { /* YAML is parsed by the runtime. */ } void run('导入基础配置', () => client.action('configure', { profile: value })).then(ok => { if (ok) { setProfile(''); setDirty(false); } }); }}>导入配置</button>{snapshot.runtime.running && <span className="nf-management-note">停止代理后可导入。</span>}</div></div></details></section>}
+      {section === 'profile' && <section className="nf-config-section"><div className="nf-config-section-heading"><h2>基础接入</h2><p>选择策略基础与退出恢复配置；机场订阅提供可用节点。</p></div><div className="nf-desktop-policy-card"><div className="nf-section-heading"><h2>{builtin ? 'NetFleet 内置策略' : snapshot.policy ? '自定义 Profile 策略' : 'NetFleet 内置策略 · 待准备'}</h2><span className="nf-desktop-state">{builtin ? '当前使用' : '默认推荐'}</span></div><p>海外加速承接常规海外流量，AI 出口独立选优；国内与私网流量直连。</p><div className="nf-desktop-policy-exits"><div><strong>海外加速</strong><small>按机场和地区自动选优</small></div><div><strong>AI 出口</strong><small>默认避开香港，优先沿用可用地区</small></div></div>{!builtin && snapshot.policy && <div className="nf-desktop-actions"><button className="nf-button-primary" disabled={snapshot.runtime.running} onClick={() => setConfirmBuiltin(true)}>使用内置策略</button><span className="nf-management-note">保留订阅、地区资源与恢复配置。</span></div>}{!snapshot.policy && <p className="nf-management-note">到“机场”添加订阅后自动准备，无需另行导入配置。</p>}{snapshot.runtime.running && !builtin && <p className="nf-management-note">停止代理后可切换策略。</p>}</div><details className="nf-desktop-import"><summary>导入自定义 Profile</summary><p className="nf-management-note">适合明确需要沿用现有规则的高级配置。导入会替换恢复配置并重新生成业务策略，需先停止代理。</p><div className="nf-desktop-editor"><DesktopFilePicker label="选择配置文件…" accept=".json,.yaml,.yml,text/plain,application/json" disabled={disabled} onFile={file => { void readProfile(file); }} /><label htmlFor="desktop-profile">Mihomo 配置</label><textarea id="desktop-profile" value={profile} onChange={event => setProfile(event.target.value)} spellCheck={false} placeholder="粘贴 Mihomo JSON / YAML 配置" /><div className="nf-desktop-actions"><button className="nf-button-primary" disabled={!profile.trim() || snapshot.runtime.running} onClick={() => { let value: unknown = profile; try { value = JSON.parse(profile); } catch { /* YAML is parsed by the runtime. */ } void run('导入基础配置', () => client.action('configure', { profile: value })).then(ok => { if (ok) { setProfile(''); setDirty(false); } }); }}>导入配置</button>{snapshot.runtime.running && <span className="nf-management-note">停止代理后可导入。</span>}</div></div></details></section>}
       {section === 'advanced' && <section className="nf-config-section"><div className="nf-config-section-heading"><h2>高级策略 JSON</h2><p>添加订阅默认使用内置策略；显式导入 Profile 时沿用其规则。常规修改使用配置表单；JSON 供完整策略检查和高级调整。</p></div><div className="nf-desktop-editor"><label htmlFor="desktop-policy">策略 JSON{dirty ? ' · 有未保存修改' : ''}</label><textarea id="desktop-policy" value={policy} onChange={event => { setPolicy(event.target.value); setDirty(true); }} spellCheck={false} placeholder="导入基础配置并编译后生成初始策略" /><div className="nf-desktop-actions"><button className="nf-button-secondary" onClick={() => { try { setPolicy(JSON.stringify(parseObject(policy), null, 2)); setError(null); } catch (reason) { setError(failure(reason)); } }}>格式化</button><button className="nf-button-primary" disabled={!dirty} onClick={() => { try { const value = parseObject(policy); setError(null); void run('保存业务策略', () => client.action('save-policy', { policy: value })).then(ok => { if (ok) setDirty(false); }); } catch (reason) { setError(failure(reason)); } }}>保存策略</button><button className="nf-button-secondary" disabled={!snapshot.runtime.configured || dirty} onClick={() => void run('校验并编译', () => client.action('compile'))}>校验并编译</button></div>{dirty && <p className="nf-management-note">先保存策略再编译；切换页面会保留未保存修改。</p>}</div></section>}
     </fieldset>
     {confirmBuiltin && <ConfirmDialog title="使用 NetFleet 内置策略" description="将替换当前策略来源、业务组绑定和出口定义，建立海外加速与 AI 双出口。订阅、地区资源、自动化设置、恢复配置及其他字段会保留；验证失败会保留原策略。" confirmLabel="切换并编译" busy={disabled} onCancel={() => setConfirmBuiltin(false)} onConfirm={() => { void run('使用内置策略', () => client.action('use-builtin-policy')).then(ok => { if (ok) setConfirmBuiltin(false); }); }} />}
@@ -92,9 +134,7 @@ export function DesktopTools({ snapshot, disabled, client, run, section }: { sna
   const exportBackup = async () => {
     const backup = await client.exportBackup();
     const contents = JSON.stringify(backup, null, 2);
-    const native = (window as Window & { webkit?: { messageHandlers?: { saveBackup?: { postMessage(value: { contents: string }): void } } } }).webkit?.messageHandlers?.saveBackup;
-    if (native) native.postMessage({ contents });
-    else { const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = 'netfleet-backup.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    if (!saveBackupThroughHost(contents)) { const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = 'netfleet-backup.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
   };
   return <>
     {section === 'connections' && <section className="nf-table-section"><div className="nf-section-heading"><h2>当前连接</h2><button className="nf-button-secondary" disabled={disabled} onClick={() => void run('读取当前连接', async () => { setConnections(await client.connections()); })}>读取连接</button></div>{connections ? <><p className="nf-management-note">{connections.truncated ? '结果已截断，只显示本次返回的连接。' : `本次读取 ${connections.connections.length} 条活动连接。`}</p><div className="nf-table-wrap"><table><thead><tr><th>目标</th><th>网络</th><th>命中规则</th><th>实际链路</th></tr></thead><tbody>{connections.connections.map((item, index) => <tr key={index}><td>{item.destination}{item.destination_port ? `:${item.destination_port}` : ''}</td><td>{item.network || '未提供'}</td><td>{item.rule || '未提供'}</td><td>{item.chains.join(' → ') || '未提供'}</td></tr>)}{connections.connections.length === 0 && <tr><td colSpan={4}>当前没有活动连接。</td></tr>}</tbody></table></div></> : <p className="nf-empty">尚未读取当前连接。</p>}</section>}

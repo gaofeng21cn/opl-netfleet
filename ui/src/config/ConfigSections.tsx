@@ -237,7 +237,9 @@ export function SafetySection({ draft, onChange }: SectionProps) {
 
 export const sectionMeta = [
   { id: 'foundation' as const, label: '基础接入', icon: Network },
-  { id: 'providers' as const, label: '机场', icon: RefreshCw },
+  // Distinct from the top-level "机场" page: this category edits source and
+  // provider binding, not the airport list itself.
+  { id: 'providers' as const, label: '订阅与机场', icon: RefreshCw },
   { id: 'regions' as const, label: '地区映射', icon: CheckCircle2 },
   { id: 'exits' as const, label: '出口策略', icon: Gauge },
   { id: 'routing' as const, label: '业务规则', icon: Route },

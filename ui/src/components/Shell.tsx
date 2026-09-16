@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import {
   Activity,
   BellRing,
@@ -16,14 +17,14 @@ import {
 } from 'lucide-react';
 import type { PreviewControls, ViewId } from '../types';
 
-type NavigationItem = { id: ViewId; label: string; icon: typeof House };
+type NavigationItem = { id: ViewId; label: string; icon: typeof House; separatorBefore?: boolean };
 
 const nav: NavigationItem[] = [
   { id: 'overview', label: '概览', icon: House },
   { id: 'exits', label: '出口', icon: Route },
   { id: 'providers', label: '机场', icon: PlaneTakeoff },
   { id: 'regions', label: '地区', icon: Globe2 },
-  { id: 'config', label: '配置', icon: Settings },
+  { id: 'config', label: '配置', icon: Settings, separatorBefore: true },
   { id: 'components', label: '插件与更新', icon: Package },
   { id: 'events', label: '诊断', icon: BellRing },
 ];
@@ -79,16 +80,18 @@ export function Shell({
           {items.map((item) => {
             const Icon = item.icon;
             return (
-              <button
-                className={view === item.id ? 'is-active' : ''}
-                aria-current={view === item.id ? 'page' : undefined}
-                key={item.id}
-                onClick={() => onViewChange(item.id)}
-                type="button"
-              >
-                <Icon aria-hidden="true" />
-                <span>{item.label}</span>
-              </button>
+              <Fragment key={item.id}>
+                {item.separatorBefore && <div className="nf-nav-separator" role="presentation" />}
+                <button
+                  className={view === item.id ? 'is-active' : ''}
+                  aria-current={view === item.id ? 'page' : undefined}
+                  onClick={() => onViewChange(item.id)}
+                  type="button"
+                >
+                  <Icon aria-hidden="true" />
+                  <span>{item.label}</span>
+                </button>
+              </Fragment>
             );
           })}
         </nav>

@@ -16,6 +16,7 @@ import type { DesktopNetFleetClient } from './client';
 import type { DesktopSnapshot } from './types';
 import { DesktopConfiguration } from './DesktopConfiguration';
 import { DesktopTools, RuntimeControls, SubscriptionManager, type RunAction } from './panels';
+import { reportHostState } from './hostBridge';
 
 const pages = ['overview', 'exits', 'providers', 'regions', 'config', 'events'] as const;
 const currentPage = (): ViewId => pages.includes(location.hash.slice(1) as typeof pages[number]) ? location.hash.slice(1) as ViewId : 'overview';
@@ -62,10 +63,9 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
   }, [refresh]);
   useEffect(() => {
     const pop = () => setView(currentPage());
-    const command = (event: Event) => { const next = (event as CustomEvent<string>).detail; if (next === 'refresh') void refresh(); else if (pages.includes(next as typeof pages[number])) navigate(next as ViewId); };
-    addEventListener('popstate', pop); addEventListener('hashchange', pop); addEventListener('netfleet-command', command);
-    return () => { removeEventListener('popstate', pop); removeEventListener('hashchange', pop); removeEventListener('netfleet-command', command); };
-  }, [navigate, refresh]);
+    addEventListener('popstate', pop); addEventListener('hashchange', pop);
+    return () => { removeEventListener('popstate', pop); removeEventListener('hashchange', pop); };
+  }, [navigate]);
   useEffect(() => { if (!progress) return; const tick = () => setElapsed(Math.floor((Date.now() - progress.started) / 1000)); tick(); const timer = setInterval(tick, 1000); return () => clearInterval(timer); }, [progress]);
   const run: RunAction = async (title, work) => {
     if (inflight.current || !connected) return false;
@@ -90,6 +90,22 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
   const businessBlocked = blocked || !status || Boolean(snapshot?.error);
   const automaticId = status?.selection?.automatic_capability_id || status?.capabilities.find(capability => capability.enabled && capability.mode === 'automatic')?.id;
   const readyToSelect = !businessBlocked && snapshot?.runtime.mode === 'netfleet' && snapshot.runtime.running;
+  // Host menus and shortcuts reuse this page's serialized action path.
+  useEffect(() => {
+    const command = (event: Event) => {
+      const next = (event as CustomEvent<string>).detail;
+      if (next === 'refresh') { void refresh(); return; }
+      if (pages.includes(next as typeof pages[number])) { navigate(next as ViewId); return; }
+      const startable = Boolean(snapshot?.runtime.configured || snapshot?.runtime.running);
+      if (next === 'start' && connected && startable && !busy) void run('启动 NetFleet', () => client.enable());
+      if (next === 'stop' && connected && snapshot?.runtime.running && !busy) void run('停止代理', () => client.action('mode', { mode: 'direct' }));
+    };
+    addEventListener('netfleet-command', command);
+    return () => removeEventListener('netfleet-command', command);
+  }, [busy, client, connected, navigate, refresh, run, snapshot?.runtime.configured, snapshot?.runtime.running]);
+  useEffect(() => {
+    reportHostState({ running: Boolean(snapshot?.runtime.running), configured: Boolean(snapshot?.runtime.configured), busy });
+  }, [busy, snapshot?.runtime.configured, snapshot?.runtime.running]);
   const openSubscriptions = () => setShowSubscriptions(true);
   const selectionBlocked = !connected || snapshot?.error ? '状态读取失败，请刷新后重试' : busy ? '已有操作正在执行' : !readyToSelect ? '启用 NetFleet 后可切换地区' : undefined;
   const automatic = automaticSelectionCopy(Boolean(status?.selection?.automation_paused));
@@ -105,7 +121,7 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
         <RuntimeControls snapshot={snapshot} client={client} run={run} disabled={blocked} />
         <DesktopOverview snapshot={snapshot} disabled={blocked} canSelect={Boolean(readyToSelect)} onSelect={capability => setSelection({ capability })} onNavigate={next => { navigate(next); if (next === 'providers' && !snapshot.runtime.configured) setShowSubscriptions(true); }} />
       </>}
-      {view === 'exits' && (status ? <><div className="nf-capability-list is-detailed">{status.capabilities.map(capability => <CapabilityPanel key={capability.id} snapshot={status} capability={capability} active={snapshot.runtime.running && snapshot.runtime.mode === 'netfleet' && status.active} disabled={!readyToSelect} onChooseRegion={() => setSelection({ capability: capability.id })} onSelectAuto={automaticId ? () => setConfirmAutomatic(true) : undefined} />)}</div><PolicySummary snapshot={status} /></> : <p className="nf-empty">添加订阅并完成准备后，这里显示业务出口。</p>)}
+      {view === 'exits' && (status ? <><div className="nf-capability-list is-detailed">{status.capabilities.map(capability => <CapabilityPanel key={capability.id} snapshot={status} capability={capability} active={snapshot.runtime.running && snapshot.runtime.mode === 'netfleet' && status.active} disabled={!readyToSelect} onChooseRegion={() => setSelection({ capability: capability.id })} onSelectAuto={automaticId ? () => setConfirmAutomatic(true) : undefined} />)}</div><PolicySummary snapshot={status} collapsible /></> : <p className="nf-empty">添加订阅并完成准备后，这里显示业务出口。</p>)}
       <div hidden={view !== 'providers'}>
         <div className="nf-desktop-page-actions"><span>{status?.providers.length ?? 0} 个机场 · {Object.keys(snapshot.subscriptions).length} 个来源</span><button type="button" className="nf-button-secondary" disabled={blocked || !Object.values(snapshot.subscriptions).some(item => item.enabled && item.hasUrl)} onClick={() => void run('更新订阅', () => client.refresh())}>更新订阅</button><button type="button" className="nf-button-primary" onClick={openSubscriptions}>管理订阅来源</button></div>
         {status && <ProviderTable snapshot={status} full subscriptionsManaged />}

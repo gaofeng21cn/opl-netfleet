@@ -9,6 +9,7 @@ __pycache__/
 /ui/dist/
 /ui/dist-desktop/
 /ui/.playwright-cli/
+/.playwright-cli/
 /ui/*.tsbuildinfo
 
 # Private target topology and device-operation context

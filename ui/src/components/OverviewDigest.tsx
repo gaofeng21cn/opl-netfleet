@@ -3,6 +3,22 @@ import { averageDelay, delay, displayEventName, eventDelay, eventReason, eventRe
 import type { EventsSnapshot, StatusSnapshot } from '../types';
 
 type SummaryTarget = 'providers' | 'regions' | 'events';
+type DigestFact = { key?: string; value: string; strong?: boolean; muted?: boolean };
+
+// Desktop reads the same three summaries as one row per object. Each row states
+// the current facts inline and opens the owning page from anywhere on the row.
+function DigestRow({ icon: Icon, label, title, facts, onOpen }: {
+  icon: typeof PlaneTakeoff; label: string; title: string; facts: DigestFact[]; onOpen(): void;
+}) {
+  return <button type="button" className="nf-desktop-digest-row" title={title} onClick={onOpen}>
+    <span className="nf-desktop-digest-label"><Icon aria-hidden="true" />{label}</span>
+    <span className="nf-desktop-digest-facts">{facts.map((fact, index) => <span key={index}>
+      {fact.key && <span className="nf-desktop-digest-key">{fact.key}</span>}
+      <span className={fact.strong ? 'nf-desktop-digest-strong' : fact.muted ? 'nf-desktop-digest-muted' : undefined}>{fact.value}</span>
+    </span>)}</span>
+    <ChevronRight aria-hidden="true" />
+  </button>;
+}
 
 const finite = (value?: number | null) => value != null && Number.isFinite(Number(value));
 
@@ -19,13 +35,20 @@ export function OverviewDigest({
   events,
   onOpen,
   platform = 'openwrt',
+  showAttention = true,
+  showMeasurementNote = true,
+  measured,
 }: {
   platform?: 'openwrt' | 'desktop';
   status: StatusSnapshot;
   events: EventsSnapshot;
+  showAttention?: boolean;
+  showMeasurementNote?: boolean;
+  // Owner readback wins when the host runtime is fresher than the status projection.
+  measured?: boolean;
   onOpen(target: SummaryTarget): void;
 }) {
-  const availabilityMeasured = Boolean(
+  const availabilityMeasured = measured ?? Boolean(
     status.active && status.runtime.netfleet_present && status.runtime.controller_available,
   );
   const availableProviders = status.providers.filter((provider) => (
@@ -68,6 +91,37 @@ export function OverviewDigest({
     unavailableSelectedRegions.length > 0 ? `当前使用地区已无可用路径：${unavailableSelectedRegions.map((region) => regionName(status, region.id)).join('、')}` : null,
   ].filter((item): item is string => Boolean(item));
 
+  if (platform === 'desktop') return <>
+    <section className="nf-desktop-digest" aria-label="机场、地区与最近决策摘要">
+      <DigestRow icon={PlaneTakeoff} label="机场态势" title="查看全部机场" onOpen={() => onOpen('providers')} facts={availabilityMeasured ? [
+        { value: `${availableProviders.length} / ${status.providers.length} 可用`, strong: true },
+        { key: '当前使用', value: joined(selectedProviders.map((provider) => providerName(status, provider.id))) },
+        { key: '最近测量最快', value: fastestProvider ? `${providerName(status, fastestProvider.id)} ${delay(fastestProvider.last_best_delay_ms ?? fastestProvider.best_delay_ms)}` : '未测量' },
+        { key: '历史平均最低', value: fastestAverageProvider ? `${providerName(status, fastestAverageProvider.id)} ${averageDelay(fastestAverageProvider.average_best_delay_ms, fastestAverageProvider.delay_sample_count)}` : '样本不足' },
+      ] : [{ value: '未测量', strong: true }, { value: 'NetFleet 未接管', muted: true }]} />
+      <DigestRow icon={Globe2} label="地区态势" title="查看全部地区" onOpen={() => onOpen('regions')} facts={availabilityMeasured ? [
+        { value: `${availableRegions.length} 个当前可用`, strong: true },
+        { key: '当前使用', value: joined(selectedRegions.map((region) => regionName(status, region.id))) },
+        { key: '最近测量最快', value: fastestRegion ? `${regionName(status, fastestRegion.id)} ${delay(fastestRegion.last_best_delay_ms)}` : '未测量' },
+        { key: '历史平均最低', value: fastestAverageRegion ? `${regionName(status, fastestAverageRegion.id)} ${averageDelay(fastestAverageRegion.average_best_delay_ms, fastestAverageRegion.delay_sample_count)}` : '样本不足' },
+      ] : [{ value: '未测量', strong: true }, { value: 'NetFleet 未接管', muted: true }]} />
+      <DigestRow icon={BellRing} label="最近决策" title="查看全部事件" onOpen={() => onOpen('events')} facts={latest ? [
+        { value: new Date(latest.at * 1000).toLocaleString(), muted: true },
+        { value: displayEventName(events, 'capabilities', latest.capability), strong: true },
+        { value: eventResult(events, latest) },
+        { key: '延迟', value: eventDelay(latest) },
+        { key: '原因', value: eventReason(status, latest) },
+      ] : [{ value: '暂无决策记录', muted: true }]} />
+    </section>
+
+    {showMeasurementNote && !availabilityMeasured && <p className="nf-overview-empty">NetFleet 当前未接管，机场和地区的实时可用性未测量。</p>}
+
+    {showAttention && attention.length > 0 && <section className="nf-overview-attention" aria-label="需要关注">
+      <div><AlertTriangle aria-hidden="true" /><strong>需要关注</strong></div>
+      <ul>{attention.map((item) => <li key={item}>{item}</li>)}</ul>
+    </section>}
+  </>;
+
   return (
     <>
       <section className="nf-overview-insights" aria-label="运行摘要">
@@ -105,9 +159,9 @@ export function OverviewDigest({
         </article>
       </section>
 
-      {!availabilityMeasured && <p className="nf-overview-empty">NetFleet 当前未接管，机场和地区的实时可用性未测量。</p>}
+      {showMeasurementNote && !availabilityMeasured && <p className="nf-overview-empty">NetFleet 当前未接管，机场和地区的实时可用性未测量。</p>}
 
-      {attention.length > 0 && <section className="nf-overview-attention" aria-label="需要关注">
+      {showAttention && attention.length > 0 && <section className="nf-overview-attention" aria-label="需要关注">
         <div><AlertTriangle aria-hidden="true" /><strong>需要关注</strong></div>
         <ul>{attention.map((item) => <li key={item}>{item}</li>)}</ul>
       </section>}

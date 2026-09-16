@@ -163,7 +163,7 @@ export function ProviderTable({ snapshot, full = false, onManageSubscriptions, s
       <div className={`nf-master-detail ${focused ? 'has-detail' : ''}`}>
       <div className="nf-table-wrap">
         <table className="nf-provider-table">
-          <thead><tr><th>机场</th><th>定位</th><th>可用资源</th><th>最近一次测速</th><th>订阅状态</th><th>剩余流量</th><th>到期时间</th></tr></thead>
+          <thead><tr><th>机场</th><th className="nf-col-role">定位</th><th>可用资源</th><th>最近一次测速</th><th>订阅状态</th><th>剩余流量</th><th className="nf-col-expiry">到期时间</th></tr></thead>
           <tbody>{providers.map((provider) => {
             const subscription = subscriptionFor(snapshot, provider);
             const section = provider.subscription_section || '';
@@ -171,12 +171,12 @@ export function ProviderTable({ snapshot, full = false, onManageSubscriptions, s
             const expanded = expandedProviderId === provider.id;
             return <tr key={provider.id} className={expanded ? 'is-inspected' : provider.selected ? 'is-selected' : ''}>
                 <td><button className="nf-name-link" type="button" aria-expanded={expanded} aria-controls={focused ? 'nf-provider-inspector' : undefined} onClick={e => { opener.current = e.currentTarget; setExpandedProviderId(provider.id); }}>{providerName(snapshot, provider.id)}</button>{provider.selected && <small>当前使用</small>}</td>
-                <td>{role(provider.role)} · {billing(provider.billing)}</td>
+                <td className="nf-col-role">{role(provider.role)} · {billing(provider.billing)}</td>
                 <td><span>{availabilityMeasured ? `${countPair(provider.available_region_count, provider.region_count)} 地区` : snapshot.active ? '暂不可读' : '未接管'}</span>{availabilityMeasured && <small>{providerNodes(provider, subscription)}</small>}</td>
                 <MeasurementCell value={provider.measurement} snapshot={snapshot} />
                 <td className={subscriptionStateClass(subscription)}>{subscriptionState(subscription)}</td>
                 <td>{quota(provider.quota)}<QuotaMeter provider={provider} />{provider.billing === 'subscription' && quotaResetLabel(resetDay) && <small title="手动设置，仅供套餐参考；实际结算以机场为准">{quotaResetLabel(resetDay)}{section in resetDayDrafts && '（本地草稿）'}</small>}</td>
-                <td >{providerExpiry(provider)}</td>
+                <td className="nf-col-expiry">{providerExpiry(provider)}</td>
               </tr>;
           })}</tbody>
         </table>

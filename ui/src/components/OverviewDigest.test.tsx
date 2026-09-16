@@ -122,7 +122,8 @@ describe('概览信息层级', () => {
 
     expect(html).toContain('3 / 3 正常');
     expect(html).toContain('资源数：当前可用 / 已加载');
-    expect(html).toContain('<th>定位</th>');
+    // 列保留但带上语义标识，平台才能按语义而不是位置决定是否呈现。
+    expect(html).toContain('<th class="nf-col-role">定位</th>');
     expect(html).toContain('<th>可用资源</th>');
     expect(html).toContain('<th>订阅状态</th>');
     expect(html).toContain('42/46 节点 · 订阅 48 条');

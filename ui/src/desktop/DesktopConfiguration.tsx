@@ -46,7 +46,7 @@ export function DesktopConfiguration({ snapshot, disabled, client, run, onManage
   return <div className="nf-config-view">
     <div className="nf-config-layout">
       <nav className="nf-config-tabs" aria-label="配置分类">
-        <span className="nf-config-nav-label">运行策略</span><button type="button" className={section === 'profile' ? 'is-active' : ''} onClick={() => setSection('profile')}><FileInput aria-hidden="true" /><span>策略与节点</span></button>
+        <span className="nf-config-nav-label">运行策略</span><button type="button" className={section === 'profile' ? 'is-active' : ''} onClick={() => setSection('profile')}><FileInput aria-hidden="true" /><span>基础接入</span></button>
         {sectionMeta.filter(item => structuredSections.includes(item.id)).map(item => { const Icon = item.icon; return <button type="button" key={item.id} className={section === item.id ? 'is-active' : ''} onClick={() => setSection(item.id)}><Icon aria-hidden="true" /><span>{item.label}</span></button>; })}
         <span className="nf-config-nav-label">文件</span><button type="button" className={section === 'backup' ? 'is-active' : ''} onClick={() => setSection('backup')}><FileInput aria-hidden="true" /><span>文件与备份</span></button>
         <button type="button" className={section === 'advanced' ? 'is-active' : ''} onClick={() => setSection('advanced')}><Code2 aria-hidden="true" /><span>高级 JSON</span></button>

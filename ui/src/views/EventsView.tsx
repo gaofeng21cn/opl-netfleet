@@ -49,13 +49,13 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
       {section === 'events' && <section className="nf-table-section">
         <div className="nf-section-heading"><div><h2>选路事件</h2><p>只展示已确认完成的事件。</p></div></div>
         <div className="nf-table-wrap"><table>
-          <thead><tr><th>时间</th><th>操作</th><th>来源</th><th>出口</th><th>结果</th><th>延迟</th><th>原因</th></tr></thead>
+          <thead><tr><th>时间</th><th>操作</th><th>来源</th><th>出口</th><th className="nf-col-wide">结果</th><th>延迟</th><th className="nf-col-wide">原因</th></tr></thead>
           <tbody>{visibleRows.map((event, index) => (
             <tr key={`${event.at}-${index}`}>
               <td>{new Date(event.at * 1000).toLocaleString()}</td><td>{actionName(event.action, event.trigger)}</td>
               <td>{initiatorName(event.initiator)}</td><td>{displayEventName(snapshot, 'capabilities', event.capability)}</td>
-              <td>{eventResult(snapshot, event)}</td>
-              <td>{eventDelay(event)}</td><td>{eventReason(status, event)}</td>
+              <td className="nf-col-wide">{eventResult(snapshot, event)}</td>
+              <td>{eventDelay(event)}</td><td className="nf-col-wide">{eventReason(status, event)}</td>
             </tr>
           ))}{!rows.length && <tr><td colSpan={7}>暂无决策事件</td></tr>}</tbody>
         </table></div>
@@ -72,13 +72,13 @@ export function EventsView({ snapshot, status, connections, connectionsLoading, 
           <summary>{connectionsLoading ? '正在读取当前活动连接…' : '展开当前活动连接快照'}</summary>
           <p className="nf-management-note">{connectionsError || (connections.truncated ? '仅显示前 50 条活动连接。' : '由 Mihomo 返回当前活动连接的实际命中结果。')} 详细连接流量和实时代理组请使用 Zashboard。</p>
         <div className="nf-table-wrap"><table>
-          <thead><tr><th>目标</th><th>端口</th><th>网络</th><th>命中规则 / 规则集</th><th>实际链路</th></tr></thead>
+          <thead><tr><th>目标</th><th>端口</th><th>网络</th><th className="nf-col-wide">命中规则 / 规则集</th><th className="nf-col-wide">实际链路</th></tr></thead>
           <tbody>{connections.connections.map((connection, index) => (
             <tr key={`${connection.destination}-${connection.destination_port || ''}-${index}`}>
               <td>{connection.destination}</td><td>{connection.destination_port ?? '未提供'}</td>
               <td>{connection.network?.toUpperCase() || '未提供'}</td>
-              <td>{[connection.rule, connection.rule_payload].filter(Boolean).join(' / ') || '未提供'}</td>
-              <td>{connection.chains.map(item => item === 'DIRECT' ? '直连' : item).join(' → ') || '未记录链路'}</td>
+              <td className="nf-col-wide">{[connection.rule, connection.rule_payload].filter(Boolean).join(' / ') || '未提供'}</td>
+              <td className="nf-col-wide">{connection.chains.map(item => item === 'DIRECT' ? '直连' : item).join(' → ') || '未记录链路'}</td>
             </tr>
           ))}{!connections.connections.length && <tr><td colSpan={5}>{connectionsLoading ? '正在读取当前活动连接…' : '当前没有活动连接'}</td></tr>}</tbody>
         </table></div>
