@@ -1,12 +1,15 @@
 import AppKit
 import WebKit
 
+// The AppKit host owns window chrome, the menu bar and the privileged bridge.
 final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, NSMenuItemValidation {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var statusItem: NSStatusItem!
     private var startItem: NSMenuItem!
     private var stopItem: NSMenuItem!
+    private var proxyMenu: NSMenu!
+    private var statusMenu: NSMenu!
     private var service: Process?
     private var endpoint: URL?
     private var token = ""
@@ -14,9 +17,26 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private var stopping = false
     private var shutdownTimer: Timer?
     // The page owns business state; the host only mirrors what it reports.
-    private var pageState = PageState(running: false, configured: false, busy: false)
+    private var pageState = PageState()
 
-    private struct PageState { var running: Bool; var configured: Bool; var busy: Bool }
+    // Everything the menu renders comes from the page. The host keeps no
+    // business rules of its own: it shows this projection and sends the
+    // user's choice back through the page's serialized action path.
+    private struct HostRegion { var id: String; var name: String; var selected: Bool }
+    private struct HostExit {
+        var id: String; var name: String; var current: String; var detail: String
+        var automatic: Bool; var selectable: Bool; var regions: [HostRegion]
+    }
+    private struct PageState {
+        var running = false
+        var configured = false
+        var busy = false
+        var mode = "unconfirmed"
+        var networkMode = "explicit"
+        var address = ""
+        var summary = "代理已停止"
+        var exits: [HostExit] = []
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -124,11 +144,8 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         navigationItem.submenu = navigationMenu
         menu.addItem(navigationItem)
         let proxyItem = NSMenuItem()
-        let proxyMenu = NSMenu(title: "代理")
-        startItem = proxyMenu.addItem(withTitle: "启动 NetFleet", action: #selector(startProxy(_:)), keyEquivalent: "")
-        startItem.target = self
-        stopItem = proxyMenu.addItem(withTitle: "停止代理", action: #selector(stopProxy(_:)), keyEquivalent: "")
-        stopItem.target = self
+        proxyMenu = NSMenu(title: "代理")
+        buildProxyItems(into: proxyMenu)
         proxyItem.submenu = proxyMenu
         menu.addItem(proxyItem)
         let windowItem = NSMenuItem()
@@ -142,17 +159,115 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         NSApp.windowsMenu = windowMenu
         NSApp.mainMenu = menu
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        let statusMenu = NSMenu()
-        let statusStart = statusMenu.addItem(withTitle: "启动 NetFleet", action: #selector(startProxy(_:)), keyEquivalent: "")
-        statusStart.target = self
-        let statusStop = statusMenu.addItem(withTitle: "停止代理", action: #selector(stopProxy(_:)), keyEquivalent: "")
-        statusStop.target = self
+        statusMenu = NSMenu()
+        statusItem.menu = statusMenu
+        buildStatusItems()
+        updateStatusItem()
+    }
+
+    // The status item carries the whole quick workflow: state, start or stop,
+    // the exits with their regions, the network takeover and the run mode.
+    // Both the app menu and the status menu are rebuilt from the same page
+    // projection so a choice can never reach a different code path.
+    private func buildStatusItems() {
+        statusMenu.removeAllItems()
+        buildProxyItems(into: statusMenu)
         statusMenu.addItem(.separator())
         statusMenu.addItem(withTitle: "显示 OPL NetFleet", action: #selector(showWindow), keyEquivalent: "").target = self
         statusMenu.addItem(.separator())
         statusMenu.addItem(withTitle: "退出并恢复网络", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
-        statusItem.menu = statusMenu
-        updateStatusItem()
+    }
+
+    private func buildProxyItems(into menu: NSMenu) {
+        menu.removeAllItems()
+        let state = pageState
+        let header = menu.addItem(withTitle: state.running
+            ? (state.mode == "netfleet" ? "增强代理运行中 · \(state.summary)" : "原生代理运行中")
+            : "代理已停止", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        if state.running && !state.address.isEmpty {
+            let detail = menu.addItem(withTitle: "\(state.address) · \(networkName(state.networkMode))", action: nil, keyEquivalent: "")
+            detail.isEnabled = false
+        }
+        menu.addItem(.separator())
+        startItem = menu.addItem(withTitle: "启动 NetFleet", action: #selector(startProxy(_:)), keyEquivalent: "")
+        startItem.target = self
+        startItem.isEnabled = !state.running && state.configured && !state.busy
+        stopItem = menu.addItem(withTitle: "停止代理", action: #selector(stopProxy(_:)), keyEquivalent: "")
+        stopItem.target = self
+        stopItem.isEnabled = state.running && !state.busy
+        if !state.exits.isEmpty {
+            menu.addItem(.separator())
+            let root = menu.addItem(withTitle: "出口", action: nil, keyEquivalent: "")
+            let submenu = NSMenu(title: "出口")
+            for exit in state.exits {
+                let parent = submenu.addItem(withTitle: "\(exit.name) — \(exit.current) · \(exit.detail)", action: nil, keyEquivalent: "")
+                let regions = NSMenu(title: exit.name)
+                let automatic = regions.addItem(withTitle: "自动选优", action: #selector(pageMenuCommand(_:)), keyEquivalent: "")
+                automatic.target = self
+                automatic.state = exit.automatic ? .on : .off
+                // Switching an exit needs a running NetFleet core; the page
+                // refuses otherwise, so the menu says so instead of failing.
+                automatic.isEnabled = exit.selectable && state.running && !state.busy
+                automatic.representedObject = ["command": "select-auto", "capability": exit.id]
+                if !exit.regions.isEmpty {
+                    regions.addItem(.separator())
+                    for region in exit.regions {
+                        let item = regions.addItem(withTitle: region.name, action: #selector(pageMenuCommand(_:)), keyEquivalent: "")
+                        item.target = self
+                        item.state = region.selected ? .on : .off
+                        item.isEnabled = state.running && !state.busy
+                        item.representedObject = ["command": "select-region", "capability": exit.id, "region": region.id]
+                    }
+                }
+                parent.submenu = regions
+            }
+            root.submenu = submenu
+        }
+        if state.configured {
+            menu.addItem(.separator())
+            let access = menu.addItem(withTitle: "网络接管", action: nil, keyEquivalent: "")
+            let accessMenu = NSMenu(title: "网络接管")
+            for (mode, title) in [("explicit", "仅显式代理"), ("system", "系统代理"), ("tun", "TUN 接管")] {
+                let item = accessMenu.addItem(withTitle: title, action: #selector(pageMenuCommand(_:)), keyEquivalent: "")
+                item.target = self
+                item.state = state.networkMode == mode ? .on : .off
+                item.representedObject = ["command": "network", "mode": mode]
+                item.isEnabled = !state.busy
+            }
+            access.submenu = accessMenu
+            let runMode = menu.addItem(withTitle: "运行模式", action: nil, keyEquivalent: "")
+            let runMenu = NSMenu(title: "运行模式")
+            for (mode, title) in [("netfleet", "增强模式（NetFleet 选优）"), ("mihomo", "原生配置")] {
+                let item = runMenu.addItem(withTitle: title, action: #selector(pageMenuCommand(_:)), keyEquivalent: "")
+                item.target = self
+                item.state = state.mode == mode ? .on : .off
+                item.representedObject = ["command": "mode", "mode": mode]
+                item.isEnabled = !state.busy
+            }
+            runMode.submenu = runMenu
+            menu.addItem(.separator())
+            let reselect = menu.addItem(withTitle: "重新选优", action: #selector(pageMenuCommand(_:)), keyEquivalent: "")
+            reselect.target = self
+            reselect.representedObject = ["command": "reselect"]
+            reselect.isEnabled = state.running && !state.busy
+            let refresh = menu.addItem(withTitle: "刷新状态", action: #selector(pageMenuCommand(_:)), keyEquivalent: "")
+            refresh.target = self
+            refresh.representedObject = ["command": "refresh"]
+            refresh.isEnabled = !state.busy
+        }
+    }
+
+    private func networkName(_ mode: String) -> String {
+        ["explicit": "仅显式代理", "system": "系统代理", "tun": "TUN 接管"][mode] ?? mode
+    }
+
+    @objc private func pageMenuCommand(_ sender: NSMenuItem) {
+        guard let payload = sender.representedObject as? [String: String] else { return }
+        // Anything that still needs a decision happens in the page, so bring it
+        // forward instead of acting invisibly from the menu bar.
+        if payload["command"] != "refresh" { showWindow() }
+        send(payload)
     }
 
     @objc private func showAbout() {
@@ -181,25 +296,29 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         send(command: command)
     }
 
+    private func send(_ payload: Any) {
+        guard endpoint != nil,
+              let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('netfleet-command', {detail: \(json)}))", completionHandler: nil)
+    }
+
     private func send(command: String) {
-        guard endpoint != nil, ["overview", "exits", "providers", "regions", "config", "events", "refresh", "start", "stop"].contains(command) else { return }
-        webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('netfleet-command', {detail: '\(command)'}))", completionHandler: nil)
+        send(["command": command])
     }
 
     // Menu items mirror the page's reported state; the page remains the owner.
     private func updateStatusItem() {
         let running = pageState.running
-        statusItem.button?.toolTip = running ? "OPL NetFleet · 代理运行中" : "OPL NetFleet · 代理已停止"
+        let detail = running
+            ? (pageState.mode == "netfleet" ? " · \(pageState.summary)" : " · 原生配置") + " · \(networkName(pageState.networkMode))"
+            : ""
+        statusItem.button?.toolTip = "OPL NetFleet\(running ? " · 代理运行中" : " · 代理已停止")\(detail)"
         let symbol = running ? "network" : "network.slash"
         statusItem.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "OPL NetFleet")
             ?? NSImage(systemSymbolName: "network", accessibilityDescription: "OPL NetFleet")
-        statusItem.menu?.items.forEach { item in
-            switch item.action {
-            case #selector(startProxy(_:)): item.isEnabled = !running && pageState.configured && !pageState.busy
-            case #selector(stopProxy(_:)): item.isEnabled = running && !pageState.busy
-            default: break
-            }
-        }
+        buildProxyItems(into: proxyMenu)
+        buildStatusItems()
     }
 
     @objc private func startProxy(_ sender: Any?) {
@@ -216,6 +335,18 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         switch menuItem.action {
         case #selector(startProxy(_:)): return !pageState.running && pageState.configured && !pageState.busy
         case #selector(stopProxy(_:)): return pageState.running && !pageState.busy
+        case #selector(pageMenuCommand(_:)):
+            // Menu items are rebuilt from page state; validation keeps them
+            // honest if the state changes while the menu is open.
+            guard let payload = menuItem.representedObject as? [String: String],
+                  let command = payload["command"] else { return false }
+            switch command {
+            case "refresh": return !pageState.busy
+            case "reselect": return pageState.running && !pageState.busy
+            case "select-auto", "select-region": return pageState.running && !pageState.busy
+            case "network", "mode": return pageState.configured && !pageState.busy
+            default: return false
+            }
         default: return true
         }
     }
@@ -355,7 +486,30 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
                   let running = body["running"] as? Bool,
                   let configured = body["configured"] as? Bool,
                   let busy = body["busy"] as? Bool else { return }
-            pageState = PageState(running: running, configured: configured, busy: busy)
+            // Options are rebuilt from this projection; anything the page did
+            // not report stays unavailable instead of being guessed here.
+            pageState = PageState(
+                running: running,
+                configured: configured,
+                busy: busy,
+                mode: body["mode"] as? String ?? "unconfirmed",
+                networkMode: body["networkMode"] as? String ?? "explicit",
+                address: body["address"] as? String ?? "",
+                summary: body["summary"] as? String ?? "代理已停止",
+                exits: (body["exits"] as? [[String: Any]] ?? []).compactMap { value in
+                    guard let id = value["id"] as? String, let name = value["name"] as? String else { return nil }
+                    return HostExit(
+                        id: id,
+                        name: name,
+                        current: value["current"] as? String ?? "未接管",
+                        detail: value["detail"] as? String ?? "未测量",
+                        automatic: value["automatic"] as? Bool ?? false,
+                        selectable: value["selectable"] as? Bool ?? false,
+                        regions: (value["regions"] as? [[String: Any]] ?? []).compactMap { region in
+                            guard let regionId = region["id"] as? String, let regionName = region["name"] as? String else { return nil }
+                            return HostRegion(id: regionId, name: regionName, selected: region["selected"] as? Bool ?? false)
+                        })
+                })
             updateStatusItem()
             return
         }

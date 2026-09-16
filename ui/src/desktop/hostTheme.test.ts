@@ -22,7 +22,10 @@ describe('宿主强调色的界面投影', () => {
 describe('宿主桥接', () => {
   it('没有宿主处理器时不发送，也不阻塞浏览器回退路径', () => {
     expect(saveBackupThroughHost('{}')).toBe(false);
-    expect(() => reportHostState({ running: false, configured: false, busy: false })).not.toThrow();
+    expect(() => reportHostState({
+      running: false, configured: false, busy: false, mode: 'direct', networkMode: 'explicit',
+      address: '', summary: '代理已停止', exits: [], automationPaused: false,
+    })).not.toThrow();
   });
   it('存在宿主处理器时按名称发送页面状态与备份内容', () => {
     const calls: Array<[string, unknown]> = [];
@@ -34,10 +37,18 @@ describe('宿主桥接', () => {
     } } };
     try {
       expect(saveBackupThroughHost('{"ok":true}')).toBe(true);
-      reportHostState({ running: true, configured: true, busy: false });
+      reportHostState({
+        running: true, configured: true, busy: false, mode: 'netfleet', networkMode: 'system',
+        address: '127.0.0.1:7890', summary: '海外加速 日本', automationPaused: false,
+        exits: [{ id: 'standard', name: '海外加速', current: '日本', detail: '86 ms · 健康', automatic: true, paused: false, selectable: true, regions: [{ id: 'japan', name: '日本', selected: true }] }],
+      });
       expect(calls).toEqual([
         ['backup', { contents: '{"ok":true}' }],
-        ['state', { running: true, configured: true, busy: false }],
+        ['state', {
+          running: true, configured: true, busy: false, mode: 'netfleet', networkMode: 'system',
+          address: '127.0.0.1:7890', summary: '海外加速 日本', automationPaused: false,
+          exits: [{ id: 'standard', name: '海外加速', current: '日本', detail: '86 ms · 健康', automatic: true, paused: false, selectable: true, regions: [{ id: 'japan', name: '日本', selected: true }] }],
+        }],
       ]);
     } finally { runtime.window = previous; }
   });

@@ -18,11 +18,19 @@ function DesktopFilePicker({ label, accept, disabled, onFile }: { label: string;
   return <div className="nf-desktop-file-picker"><input ref={input} type="file" hidden accept={accept} disabled={disabled} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) { setName(file.name); onFile(file); } }} /><button type="button" className="nf-button-secondary" disabled={disabled} onClick={() => input.current?.click()}>{label}</button><span title={name}>{name}</span></div>;
 }
 
-export function RuntimeControls({ snapshot, disabled, client, run }: { snapshot: DesktopSnapshot; disabled: boolean; client: DesktopNetFleetClient; run: RunAction }) {
+export function RuntimeControls({ snapshot, disabled, client, run, networkRequest, nativeRequest }: {
+  snapshot: DesktopSnapshot; disabled: boolean; client: DesktopNetFleetClient; run: RunAction;
+  // Menu-bar choices arrive as requests so they land on the same confirmation
+  // and apply path as the buttons below; the host never mutates the network.
+  networkRequest?: { mode: 'explicit' | 'system' | 'tun'; nonce: number } | null;
+  nativeRequest?: number | null;
+}) {
   const [network, setNetwork] = useState(snapshot.runtime.networkMode);
   const [confirmNetwork, setConfirmNetwork] = useState(false);
   const [showNative, setShowNative] = useState(false);
   useEffect(() => setNetwork(snapshot.runtime.networkMode), [snapshot.runtime.networkMode]);
+  useEffect(() => { if (networkRequest) { setNetwork(networkRequest.mode); setConfirmNetwork(true); } }, [networkRequest]);
+  useEffect(() => { if (nativeRequest) setShowNative(true); }, [nativeRequest]);
   const runtime = snapshot.runtime;
   const connected = runtime.running && runtime.mode === 'netfleet';
   const descriptions = { explicit: '仅供明确指定代理的应用使用，不修改系统网络。', system: '让浏览器等遵循 macOS 系统代理的应用使用 NetFleet。', tun: '通过虚拟网卡接入流量，适合不遵循系统代理的应用。' };

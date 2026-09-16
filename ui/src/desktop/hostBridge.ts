@@ -1,9 +1,11 @@
 // The AppKit host mirrors page state and forwards menu or menu-bar commands.
 // Business state stays in the page; the host only reflects it.
 
+import type { HostState } from './hostState';
+
 interface NativeBridge {
   saveBackup?: { postMessage(value: { contents: string }): void };
-  netfleetState?: { postMessage(value: { running: boolean; configured: boolean; busy: boolean }): void };
+  netfleetState?: { postMessage(value: HostState): void };
 }
 
 const bridge = () => {
@@ -18,6 +20,6 @@ export function saveBackupThroughHost(contents: string): boolean {
   return true;
 }
 
-export function reportHostState(value: { running: boolean; configured: boolean; busy: boolean }): void {
+export function reportHostState(value: HostState): void {
   bridge()?.netfleetState?.postMessage(value);
 }

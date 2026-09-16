@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { automaticSelectionCopy } from '../lib/selection';
 import { AlertCircle } from 'lucide-react';
 import { Shell } from '../components/Shell';
@@ -17,12 +17,16 @@ import type { DesktopSnapshot } from './types';
 import { DesktopConfiguration } from './DesktopConfiguration';
 import { DesktopTools, RuntimeControls, SubscriptionManager, type RunAction } from './panels';
 import { reportHostState } from './hostBridge';
+import { hostState } from './hostState';
+import type { NetworkMode } from './types';
 
 const pages = ['overview', 'exits', 'providers', 'regions', 'config', 'events'] as const;
 const currentPage = (): ViewId => pages.includes(location.hash.slice(1) as typeof pages[number]) ? location.hash.slice(1) as ViewId : 'overview';
 const reasonText = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
 
 type Selection = { capability?: string; region?: string };
+// The host sends either a bare command name or a command with its arguments.
+type HostCommand = string | { command?: string; capability?: string; region?: string; mode?: string };
 export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
   const [view, setView] = useState<ViewId>(currentPage);
   const [snapshot, setSnapshot] = useState<DesktopSnapshot | null>(null);
@@ -38,6 +42,8 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
   const [diagnostic, setDiagnostic] = useState<'events' | 'connections' | 'logs'>('events');
   const [selection, setSelection] = useState<Selection | null>(null);
   const [confirmAutomatic, setConfirmAutomatic] = useState(false);
+  const [networkRequest, setNetworkRequest] = useState<{ mode: NetworkMode; nonce: number } | null>(null);
+  const [nativeRequest, setNativeRequest] = useState<number | null>(null);
   const inflight = useRef(false);
   const readPending = useRef<Promise<void> | null>(null);
   const navigate = useCallback((next: ViewId) => { if (!pages.includes(next as typeof pages[number])) return; setView(next); history.pushState(null, '', `#${next}`); }, []);
@@ -90,22 +96,49 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
   const businessBlocked = blocked || !status || Boolean(snapshot?.error);
   const automaticId = status?.selection?.automatic_capability_id || status?.capabilities.find(capability => capability.enabled && capability.mode === 'automatic')?.id;
   const readyToSelect = !businessBlocked && snapshot?.runtime.mode === 'netfleet' && snapshot.runtime.running;
-  // Host menus and shortcuts reuse this page's serialized action path.
+  // Host menus and shortcuts reuse this page's serialized action path, so the
+  // menu can never start, take over the network or switch an exit on its own.
+  const host = useMemo(() => hostState(snapshot, busy), [busy, snapshot]);
   useEffect(() => {
     const command = (event: Event) => {
-      const next = (event as CustomEvent<string>).detail;
+      const detail = (event as CustomEvent<HostCommand>).detail;
+      const next = typeof detail === 'string' ? detail : detail?.command;
+      const argument = typeof detail === 'string' ? {} as Record<string, string | undefined> : (detail ?? {});
+      if (!next) return;
       if (next === 'refresh') { void refresh(); return; }
       if (pages.includes(next as typeof pages[number])) { navigate(next as ViewId); return; }
+      // Names the page already owned stay available to both forms, so a menu
+      // entry and a keyboard shortcut always reach the same action.
       const startable = Boolean(snapshot?.runtime.configured || snapshot?.runtime.running);
       if (next === 'start' && connected && startable && !busy) void run('启动 NetFleet', () => client.enable());
       if (next === 'stop' && connected && snapshot?.runtime.running && !busy) void run('停止代理', () => client.action('mode', { mode: 'direct' }));
+      if (next === 'reselect' && readyToSelect && automaticId) { navigate('overview'); setConfirmAutomatic(true); return; }
+      if (next === 'select-auto' && argument.capability && connected && readyToSelect && !busy && argument.capability === automaticId) {
+        void run('恢复自动选优', () => client.selectAuto(argument.capability!));
+        return;
+      }
+      if (next === 'select-region' && argument.capability && argument.region && connected && readyToSelect && !busy) {
+        const { capability, region } = argument as { capability: string; region: string };
+        void run('切换并保持地区', () => client.selectRegion(capability, region));
+        return;
+      }
+      // Network takeover and the run mode keep the page's own confirmation step.
+      if (next === 'network' && ['explicit', 'system', 'tun'].includes(argument.mode ?? '') && connected && !busy && snapshot?.runtime.configured) {
+        navigate('overview');
+        setNetworkRequest({ mode: argument.mode as NetworkMode, nonce: Date.now() });
+        return;
+      }
+      if (next === 'mode' && argument.mode === 'mihomo' && connected && !busy && snapshot?.runtime.configured) {
+        navigate('overview');
+        setNativeRequest(Date.now());
+        return;
+      }
+      if (next === 'mode' && argument.mode === 'netfleet' && connected && startable && !busy) void run('启动 NetFleet', () => client.enable());
     };
     addEventListener('netfleet-command', command);
     return () => removeEventListener('netfleet-command', command);
-  }, [busy, client, connected, navigate, refresh, run, snapshot?.runtime.configured, snapshot?.runtime.running]);
-  useEffect(() => {
-    reportHostState({ running: Boolean(snapshot?.runtime.running), configured: Boolean(snapshot?.runtime.configured), busy });
-  }, [busy, snapshot?.runtime.configured, snapshot?.runtime.running]);
+  }, [automaticId, busy, client, connected, navigate, readyToSelect, refresh, run, snapshot?.runtime.configured, snapshot?.runtime.running]);
+  useEffect(() => { reportHostState(host); }, [host]);
   const openSubscriptions = () => setShowSubscriptions(true);
   const selectionBlocked = !connected || snapshot?.error ? '状态读取失败，请刷新后重试' : busy ? '已有操作正在执行' : !readyToSelect ? '启用 NetFleet 后可切换地区' : undefined;
   const automatic = automaticSelectionCopy(Boolean(status?.selection?.automation_paused));
@@ -118,7 +151,7 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
     {!snapshot && <p className="nf-empty">{busy ? '正在读取本机运行状态…' : '尚未取得本机状态。请使用“刷新”重新连接。'}</p>}
     {snapshot && <>
       {view === 'overview' && <>
-        <RuntimeControls snapshot={snapshot} client={client} run={run} disabled={blocked} />
+        <RuntimeControls snapshot={snapshot} client={client} run={run} disabled={blocked} networkRequest={networkRequest} nativeRequest={nativeRequest} />
         <DesktopOverview snapshot={snapshot} disabled={blocked} canSelect={Boolean(readyToSelect)} onSelect={capability => setSelection({ capability })} onNavigate={next => { navigate(next); if (next === 'providers' && !snapshot.runtime.configured) setShowSubscriptions(true); }} />
       </>}
       {view === 'exits' && (status ? <><div className="nf-capability-list is-detailed">{status.capabilities.map(capability => <CapabilityPanel key={capability.id} snapshot={status} capability={capability} active={snapshot.runtime.running && snapshot.runtime.mode === 'netfleet' && status.active} disabled={!readyToSelect} onChooseRegion={() => setSelection({ capability: capability.id })} onSelectAuto={automaticId ? () => setConfirmAutomatic(true) : undefined} />)}</div><PolicySummary snapshot={status} collapsible /></> : <p className="nf-empty">添加订阅并完成准备后，这里显示业务出口。</p>)}
