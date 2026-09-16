@@ -40,8 +40,8 @@ if ! mkdir "$lockdir" 2>/dev/null; then
 fi
 trap 'rmdir "$lockdir" 2>/dev/null || true' EXIT INT TERM
 if [[ "$action" == check ]]; then
-  interpreter=${UCODE:-ucode}
-  command -v "$interpreter" >/dev/null || { printf 'Set UCODE to a native UCode executable.\n' >&2; exit 2; }
+  . "$root/scripts/resolve-ucode-runtime.sh" fs socket
+  interpreter=$UCODE
   args=()
   [[ -z "${UCODE_LIB:-}" ]] || args=(-L "$UCODE_LIB")
   "$interpreter" "${args[@]}" -e 'assert(match("a\n", /^[a-z]+$/) == null);' >/dev/null 2>&1 || {
