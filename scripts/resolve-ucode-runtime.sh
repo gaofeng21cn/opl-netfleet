@@ -3,18 +3,37 @@
 # Usage: . scripts/resolve-ucode-runtime.sh [module ...]
 set -eu
 _root=${NETFLEET_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
+# A runtime that cannot run a shell command still loads modules, so the popen
+# smoke test from the macOS bootstrap is part of candidate validation: a stale
+# or half-built cache must be skipped instead of failing every later check.
+_smoke='import * as fs from "fs"; for (let command in ["printf shell-ok", ["printf", "shell-ok"]]) { let p = fs.popen(command); assert(p != null); assert(p.read("all") == "shell-ok"); assert(p.close() == 0); } print("ok\n");'
+_works() {
+  [ -x "$1" ] || return 1
+  _libdir=$2
+  if [ -n "$_libdir" ]; then
+    "$1" -L "$_libdir" -e "$_smoke" >/dev/null 2>&1 || return 1
+  else
+    "$1" -e "$_smoke" >/dev/null 2>&1 || return 1
+  fi
+}
+_module_dir() {
+  CDPATH= cd -- "$(dirname "$1")/../lib/ucode" 2>/dev/null && pwd
+}
 if [ -n "${UCODE:-}" ]; then
   _ucode=$UCODE
 else
   _ucode=''
   for _candidate in \
     "${NETFLEET_MACOS_RUNTIME:-}/bin/ucode" \
-    "$_root/.cache/macos/runtime/bin/ucode" \
+    "$_root/.build/macos/OPL NetFleet.app/Contents/Resources/runtime/bin/ucode" \
+    "$HOME"/.cache/opl-netfleet/macos/builds/*/runtime/bin/ucode \
     "$HOME/.cache/opl-netfleet/macos/runtime/bin/ucode" \
-    "$HOME/.cache/opl-netfleet/macos/build/ucode/ucode"; do
-    [ -x "$_candidate" ] && { _ucode=$_candidate; break; }
+    "$HOME/.cache/opl-netfleet/macos/build/ucode/ucode" \
+    "$(command -v ucode 2>/dev/null || true)"; do
+    [ -n "$_candidate" ] || continue
+    _works "$_candidate" "$(_module_dir "$_candidate")" && { _ucode=$_candidate; break; }
   done
-  [ -n "$_ucode" ] || _ucode=ucode
+  [ -n "$_ucode" ] || _ucode=$(command -v ucode 2>/dev/null || printf 'ucode')
 fi
 command -v "$_ucode" >/dev/null 2>&1 || [ -x "$_ucode" ] || {
   printf 'UCode runtime missing: %s\n' "$_ucode" >&2; exit 2;
@@ -52,4 +71,5 @@ if [ "${NETFLEET_UCODE_REPORT:-0}" = 1 ]; then
     [ -z "$UCODE_LIB" ] || [ -f "$UCODE_LIB/$_module.so" ] && printf "module.%s=%s\n" "$_module" present || printf "module.%s=%s\n" "$_module" missing
   done
 fi
-unset _root _ucode _lib _args _candidate _module
+unset _root _ucode _lib _args _candidate _module _libdir _smoke
+unset -f _works _module_dir
