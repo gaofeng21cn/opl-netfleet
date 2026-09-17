@@ -33,7 +33,9 @@ const dashboardMeta = dashboardRoot ? await readJSON(path.join(dashboardRoot, '.
 const UPDATE_RELEASE = 'https://api.github.com/repos/Zephyruso/zashboard/releases/latest';
 const UPDATE_ASSET = 'dist-cdn-fonts.zip';
 const UPDATE_ROOT = 'https://github.com/Zephyruso/zashboard/releases';
-const APP_RELEASES = 'https://api.github.com/repos/gaofeng21cn/opl-netfleet/releases?per_page=20';
+// 发布源默认是 GitHub 的 Release 列表；测试可以用 NETFLEET_UPDATE_FEED 指向本地
+// 夹具。清单不是信任锚——制品仍必须通过 GitHub 摘要、Developer ID 与公证校验。
+const APP_RELEASES = process.env.NETFLEET_UPDATE_FEED ?? 'https://api.github.com/repos/gaofeng21cn/opl-netfleet/releases?per_page=20';
 const MAX_UPDATE_BYTES = 33554432;
 const packagedIdentity = await readJSON(path.join(appRoot, 'build.json')).catch(() => null);
 const runtimeRoot = process.env.NETFLEET_RUNTIME_ROOT ?? path.join(os.homedir(), '.cache/opl-netfleet/macos/runtime');
@@ -440,7 +442,9 @@ async function applyPanelUpdate() {
 // 交给独立进程；替换发生在应用退出之后，这里不触碰正在运行的包。
 async function applyAppUpdate() {
   assert(selfUpdateState() === 'available', selfUpdateState());
-  const status = await refreshUpdateStatus();
+  // 复用已缓存的检查结论：安装的安全性来自制品校验，不来自再取一次列表，
+  // 因此不为此额外消耗发布源的调用额度。
+  const status = await updateStatus();
   const candidate = status.app?.candidate;
   assert(candidate, status.app?.manifest_error ?? 'update_candidate_unavailable');
   const image = await fetchBounded(candidate.url, { accept: 'application/octet-stream', maxBytes: MAX_APP_IMAGE_BYTES, timeout: 600000 });
