@@ -413,7 +413,11 @@ function selfUpdateState() {
 
 async function updateStatus({ force = false } = {}) {
   const cached = await readJSON(updateStatePath).catch(() => null);
-  if (!force && cached && Math.floor(Date.now() / 1000) - Number(cached.checked_at ?? 0) < 86400) return cached;
+  // 检查结论绑定当时的安装身份：应用被替换后旧结论立即失效，否则刚更新完的界面
+  // 会在缓存剩余时间里继续显示上一个版本的数字。
+  const fresh = cached && Math.floor(Date.now() / 1000) - Number(cached.checked_at ?? 0) < 86400
+    && (cached.app?.installed ?? null) === (packagedIdentity?.package_version ?? null);
+  if (!force && fresh) return cached;
   return refreshUpdateStatus();
 }
 

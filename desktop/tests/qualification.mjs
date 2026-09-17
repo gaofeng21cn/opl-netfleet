@@ -144,6 +144,15 @@ try {
   assert.equal(typeof updates.result.checked_at, 'number');
   assert.equal(updates.result.panel.installed, active.dashboard.version);
   assert.ok(Array.isArray(updates.result.errors));
+  // 检查结论绑定安装身份：写一份属于别的版本的缓存，再次读取必须重新检查而不是复用。
+  const updateRecord = path.join(stateDir, 'updates.json');
+  const stale = JSON.parse(await fs.readFile(updateRecord, 'utf8'));
+  stale.app = { ...(stale.app ?? {}), installed: '0.0.1' };
+  stale.checked_at = Math.floor(Date.now() / 1000);
+  await fs.writeFile(updateRecord, JSON.stringify(stale));
+  const rechecked = await api('update-check');
+  assert.equal(rechecked.result.app.installed, updates.result.app.installed);
+  evidence.checks.push('update_check_cache_is_bound_to_the_installed_version');
   // 上游不可达（例如受限的 CI 网络）与"已是最新"都不得安装任何东西：
   // 只有通过校验的候选才允许替换面板副本。
   if (updates.result.panel.update_available === false) {
