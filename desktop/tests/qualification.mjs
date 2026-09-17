@@ -144,10 +144,13 @@ try {
   assert.equal(typeof updates.result.checked_at, 'number');
   assert.equal(updates.result.panel.installed, active.dashboard.version);
   assert.ok(Array.isArray(updates.result.errors));
+  // 上游不可达（例如受限的 CI 网络）与"已是最新"都不得安装任何东西：
+  // 只有通过校验的候选才允许替换面板副本。
   if (updates.result.panel.update_available === false) {
     const refused = await api('dashboard-update');
     assert.equal(refused.ok, false);
-    assert.match(String(refused.error), /dashboard_candidate_unavailable/);
+    assert.match(String(refused.error), /dashboard_candidate_unavailable|update_check_failed|update_request_failed/);
+    assert.equal((await state()).dashboard.version, active.dashboard.version);
   }
   evidence.checks.push('dashboard_update_requires_a_verified_candidate');
   const selectable = active.status.capabilities.find(item => item.can_select_region && item.selectable_regions?.length);
