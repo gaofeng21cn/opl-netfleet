@@ -805,9 +805,9 @@ const measurementReasons = {
   "leaf_not_in_provider": "所选节点不在该机场的节点清单中",
   "leaf_identity_ambiguous": "机场内存在同名节点，无法确认归属",
   "leaf_type_unavailable": "所选节点缺少类型信息",
-  "group_latency_failed": "候选线路的测速健康记录为失败（未提供底层错误）",
+  "group_latency_failed": "候选线路测速失败",
   "group_latency_unrecorded": "候选线路缺少该测速目标的健康记录",
-  "leaf_latency_failed": "所选节点的测速健康记录为失败（未提供底层错误）",
+  "leaf_latency_failed": "所选节点测速失败",
   "leaf_latency_unrecorded": "所选节点缺少该测速目标的健康记录",
   "delay_unavailable": "未取得本轮新增的有效延迟记录",
   "latency_health_failed": "未取得候选线路的测速成功记录；旧记录未保留细节",
@@ -821,7 +821,7 @@ function measurementCell(value, status) {
 	const unmeasured = entries.filter(function(entry) { return !entry.ok && entry.quota_state !== 'exhausted'; }).length;
 	const explanation = function(reason) { return measurementReasons[reason || 'measurement_unavailable'] || '未取得有效测速，原因暂无法解释'; };
 	const details = [ E('summary', {}, '查看测速详情' + (entries.length ? '（' + entries.length + ' 项）' : '')),
-		E('p', {}, '每项对应一个机场在一个地区的候选线路，显示本轮测速结果。') ];
+		E('p', {}, '每项对应一个机场在一个地区的候选线路，显示本轮测速结果；测速失败仅表示未取得有效延迟，核心不提供更细的错误原因。') ];
 	if (entries.length) details.push(E('ul', {}, entries.map(function(entry) {
 		const provider = (status.providers || []).find(function(item) { return item.id === entry.provider_id; });
 		const currentQuota = provider && provider.quota;

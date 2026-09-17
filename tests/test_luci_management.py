@@ -587,11 +587,12 @@ const status = {providers:[provider], subscriptions:[{section:'source',last_succ
  measurement:{sampled_at:1788947164,measured_count:0,entries:[entry]}}]};
 let item = all(view.regions(status,{}), n=>n.tag==='li').find(n=>n.children[0]?.tag==='strong' && text(n.children[0]).startsWith('机场'));
 assert.equal(text(item.children[1]),'流量已耗尽，不参与选优');
-assert(text(item).includes('未提供底层错误'));
+assert(text(item).includes('候选线路测速失败'));
+assert(!text(item).includes('未提供底层错误'));
 // A later quota reset must not present the old exhausted sample as a current ban.
 provider.quota = {state:'available',remaining_bytes:1073741824}; entry.quota_state='exhausted';
 item = all(view.regions(status,{}), n=>n.tag==='li').find(n=>n.children[0]?.tag==='strong' && text(n.children[0]).startsWith('机场'));
-assert(text(item).includes('未提供底层错误'), 'quota recovery must not invent a successful measurement');
+assert(text(item).includes('候选线路测速失败'), 'quota recovery must not invent a successful measurement');
 assert(text(item).includes('该次测速时流量已耗尽'));
 assert(!item.children.some(n=>text(n)==='流量已耗尽，不参与选优'));
 """)

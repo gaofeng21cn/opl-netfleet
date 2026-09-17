@@ -21,9 +21,9 @@ const measurementReasons: Record<string, string> = {
   "leaf_not_in_provider": "所选节点不在该机场的节点清单中",
   "leaf_identity_ambiguous": "机场内存在同名节点，无法确认归属",
   "leaf_type_unavailable": "所选节点缺少类型信息",
-  "group_latency_failed": "候选线路的测速健康记录为失败（未提供底层错误）",
+  "group_latency_failed": "候选线路测速失败",
   "group_latency_unrecorded": "候选线路缺少该测速目标的健康记录",
-  "leaf_latency_failed": "所选节点的测速健康记录为失败（未提供底层错误）",
+  "leaf_latency_failed": "所选节点测速失败",
   "leaf_latency_unrecorded": "所选节点缺少该测速目标的健康记录",
   "delay_unavailable": "未取得本轮新增的有效延迟记录",
   "latency_health_failed": "未取得候选线路的测速成功记录；旧记录未保留细节",
@@ -40,7 +40,7 @@ function MeasurementCell({ value, snapshot }: { value?: Measurement | null; snap
     <small>{value.measured_count} 项测速成功{exhausted > 0 && ` · ${exhausted} 项流量耗尽`}{unmeasured > 0 && ` · ${unmeasured} 项无有效结果`}</small></div>
     <small className="nf-measurement-time">采样于 {sampledAt(value.sampled_at)}</small>
     <details><summary>查看测速详情{entries.length > 0 && `（${entries.length} 项）`}</summary>
-      <p>每项对应一个机场在一个地区的候选线路，显示本轮测速结果。</p>
+      <p>每项对应一个机场在一个地区的候选线路，显示本轮测速结果；测速失败仅表示未取得有效延迟，核心不提供更细的错误原因。</p>
       {entries.length ? <ul>{entries.map((entry, index) => <li key={index}>
         <strong>{providerName(snapshot, entry.provider_id)} · {regionName(snapshot, entry.region_id)}</strong>
         <div>{entry.ok ? delay(entry.delay_ms, '未取得有效测速') : explanation(entry.measurement_reason)}</div>

@@ -37,3 +37,16 @@ it('shows successful results alongside quota exclusions and names every candidat
   expect(html).toContain('<details><summary>查看测速详情');
   expect(html).not.toContain('未通过');
 });
+
+it('states a candidate latency failure without inventing a cause', () => {
+  const snapshot = structuredClone(fixtureScenarios.healthy.status);
+  const region = snapshot.regions.find(item => item.id === 'singapore')!;
+  const provider = snapshot.providers[0];
+  region.measurement = { sampled_at: 1788853251, best_delay_ms: null, measured_count: 0, exclusions: { group_latency_failed: 1 }, entries: [
+    { provider_id: provider.id, region_id: region.id, ok: false, delay_ms: null, quota_state: 'available', reason: 'group_latency_failed', measurement_reason: 'group_latency_failed' },
+  ] };
+  const html = renderToStaticMarkup(<RegionTable snapshot={snapshot} />);
+  expect(html).toContain('候选线路测速失败');
+  expect(html).toContain('测速失败仅表示未取得有效延迟，核心不提供更细的错误原因');
+  expect(html).not.toContain('未提供底层错误');
+});
