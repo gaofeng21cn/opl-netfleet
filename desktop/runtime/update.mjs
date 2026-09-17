@@ -3,10 +3,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { assert, run } from './io.mjs';
 
-// 应用自更新沿用成熟更新器的形状：单独签名的清单 + 有界下载 + 校验后替换 + 重启。
-// 这里只做可机械证明的判断；网络读取、暂存编排和退出交接由宿主运行时负责。
-export const UPDATE_SCHEMA = 'opl-netfleet-macos-update.v1';
-export const UPDATE_KEY_SCHEMA = 'opl-netfleet-macos-update-key.v1';
+// 应用更新的信任锚是 Apple 代码签名与公证，不是自建密钥：Developer ID 证书
+// 已经承担签名职责，再加一层清单密钥只会重复同一个信任问题。GitHub Release
+// 提供 DMG 的 sha256 摘要用于完整性校验，来源身份由签名与公证证明。
+export const RELEASE_TAG = /^macos-v(\d+\.\d+\.\d+)$/;
+export const DMG_ASSET = /^OPL-NetFleet-.*macos-arm64\.dmg$/;
+// 公开事实：应用的 Developer ID 团队标识，用于确认候选确实来自本产品。
+export const TEAM_ID = 'SVVC4TA784';
 
 export function parseVersion(value) {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(String(value ?? '').replace(/^v/, ''));
@@ -21,29 +24,25 @@ export function newerVersion(candidate, installed) {
   return false;
 }
 
-/** 清单必须由内置公钥签名的原始字节验证；签名覆盖清单文件本身。 */
-export function verifyManifest(payload, signature, publicKey) {
-  assert(Buffer.isBuffer(payload) && Buffer.isBuffer(signature), 'update_manifest_invalid');
-  // 公钥不可解析或不是 Ed25519 都属于"来源不可信"，与签名不匹配同等拒绝。
-  let key;
-  try { key = publicKey instanceof crypto.KeyObject ? publicKey : crypto.createPublicKey(publicKey); }
-  catch { throw new Error('update_key_invalid'); }
-  assert(key.asymmetricKeyType === 'ed25519', 'update_key_invalid');
-  assert(crypto.verify(null, payload, key, signature), 'update_signature_invalid');
-  let manifest;
-  try { manifest = JSON.parse(payload.toString('utf8')); } catch { throw new Error('update_manifest_invalid'); }
-  assert(manifest && typeof manifest === 'object', 'update_manifest_invalid');
-  assert(manifest.schema === UPDATE_SCHEMA, 'update_manifest_invalid');
-  const version = parseVersion(manifest.version);
-  assert(version && typeof manifest.tag === 'string' && manifest.tag === `macos-v${manifest.version}`, 'update_manifest_invalid');
-  assert(typeof manifest.release === 'string' && manifest.release.length > 0, 'update_manifest_invalid');
-  assert(typeof manifest.asset === 'string' && /^[A-Za-z0-9._-]+$/.test(manifest.asset), 'update_manifest_invalid');
-  assert(typeof manifest.url === 'string' && manifest.url.startsWith('https://'), 'update_manifest_invalid');
-  assert(Number.isInteger(manifest.size_bytes) && manifest.size_bytes > 0, 'update_manifest_invalid');
-  assert(/^[a-f0-9]{64}$/.test(String(manifest.sha256 ?? '')), 'update_manifest_invalid');
-  assert(/^[a-f0-9]{40}$/.test(String(manifest.source_commit ?? '')), 'update_manifest_invalid');
-  assert(/^[A-Z0-9]{10}$/.test(String(manifest.team_id ?? '')), 'update_manifest_invalid');
-  return manifest;
+/** 从 Release 列表选出版本最高的正式 macOS Release。 */
+export function latestRelease(releases) {
+  return (Array.isArray(releases) ? releases : [])
+    .filter(item => item?.draft === false && item?.prerelease === false && RELEASE_TAG.test(String(item?.tag_name ?? '')))
+    .sort((left, right) => String(right.tag_name).localeCompare(String(left.tag_name), 'en', { numeric: true }))[0] ?? null;
+}
+
+/** Release 必须同时给出 DMG 与 GitHub 计算的 sha256 摘要，否则不可安装。 */
+export function releaseCandidate(release) {
+  if (!release) return null;
+  // 草稿与预发布只作为手动下载入口，不能成为安装候选。
+  if (release.draft !== false || release.prerelease !== false) return null;
+  const version = RELEASE_TAG.exec(String(release.tag_name))?.[1] ?? null;
+  const asset = (Array.isArray(release.assets) ? release.assets : [])
+    .find(item => DMG_ASSET.test(String(item?.name ?? '')) && /^sha256:[a-f0-9]{64}$/.test(String(item?.digest ?? '')));
+  if (!version || !asset || !Number.isInteger(asset.size) || asset.size <= 0 || !/^https:\/\//.test(String(asset.browser_download_url))) return null;
+  return { version, tag: release.tag_name, url: asset.browser_download_url, name: asset.name,
+    size_bytes: asset.size, sha256: asset.digest.slice('sha256:'.length), page: release.html_url ?? null,
+    published_at: release.published_at ?? null };
 }
 
 export const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -69,8 +68,7 @@ export async function withMountedApp(image, work, action) {
   const attached = await run('/usr/bin/hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mount, image], { timeout: 120000 });
   assert(attached.code === 0, 'update_image_unreadable');
   try {
-    const entries = await fs.readdir(mount);
-    const apps = entries.filter(name => name.endsWith('.app'));
+    const apps = (await fs.readdir(mount)).filter(name => name.endsWith('.app'));
     assert(apps.length === 1, 'update_image_invalid');
     return await action(path.join(mount, apps[0]));
   } finally {
@@ -78,22 +76,29 @@ export async function withMountedApp(image, work, action) {
   }
 }
 
-/** 新包必须是同一 Team ID 的 Developer ID 签名、已公证且身份与清单一致。 */
-export async function verifyBundle(app, manifest, teamId) {
-  assert(teamId && teamId !== 'not set', 'update_team_identity_missing');
+/**
+ * 新包必须来自本产品的 Developer ID 签名、已公证，并且是干净的分发构建且版本
+ * 与 Release tag 一致。Apple 的签名与公证是这一层的完整信任来源。
+ */
+export async function verifyBundle(app, expected, teamId = TEAM_ID) {
+  const version = typeof expected === 'string' ? expected : expected?.version;
+  assert(parseVersion(version), 'update_version_invalid');
   const strict = await run('/usr/bin/codesign', ['--verify', '--deep', '--strict', app], { timeout: 120000 });
   assert(strict.code === 0, 'update_signature_invalid');
   const details = await run('/usr/bin/codesign', ['-dv', '--verbose=4', app], { timeout: 60000 });
   const described = `${details.stdout}\n${details.stderr}`;
   assert(described.includes('Authority=Developer ID Application:'), 'update_signature_untrusted');
   assert(described.includes(`TeamIdentifier=${teamId}`), 'update_team_identity_mismatch');
-  const gatekeeper = await run('/usr/bin/spctl', ['--assess', '--type', 'execute', '--verbose=2', app], { timeout: 180000 });
+  // 先核对包内身份：版本与提交不符时给出可诊断的原因，而不是只报公证失败。
+  const identity = JSON.parse(await fs.readFile(path.join(app, 'Contents/Resources/build.json'), 'utf8'));
+  assert(identity.channel === 'distribution' && identity.working_tree_dirty === false, 'update_not_a_distribution_build');
+  assert(identity.package_version === version, 'update_version_mismatch');
+  assert(/^[0-9a-f]{40}$/.test(String(identity.source_commit ?? '')) && /^[0-9a-f]{40}$/.test(String(identity.source_tree ?? '')),
+    'update_source_missing');
+  // 公证是这条链的另一半：spctl 要求 Gatekeeper 能验证票据，stapler 确认票据已装订。
+  const gatekeeper = await run('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=2', app], { timeout: 180000 });
   assert(gatekeeper.code === 0, 'update_notarization_unverified');
   const stapled = await run('/usr/bin/stapler', ['validate', app], { timeout: 120000 });
   assert(stapled.code === 0, 'update_notarization_unverified');
-  const identity = JSON.parse(await fs.readFile(path.join(app, 'Contents/Resources/build.json'), 'utf8'));
-  assert(identity.channel === 'distribution' && identity.working_tree_dirty === false, 'update_not_a_distribution_build');
-  assert(identity.package_version === manifest.version && identity.package_release === manifest.release, 'update_version_mismatch');
-  assert(identity.source_commit === manifest.source_commit, 'update_source_mismatch');
   return identity;
 }

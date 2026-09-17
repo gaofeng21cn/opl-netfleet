@@ -37,9 +37,9 @@ export interface UpdateCandidate {
   sha256?: string;
   published_at?: string | null;
   installation_unknown?: boolean;
-  // 自更新能力与已签名清单摘要：'available' 才允许界面提供安装入口。
-  self_update?: 'available' | 'local-build' | 'dirty-build' | 'missing-key' | 'not-an-app-bundle' | 'unsupported-platform';
-  manifest?: { version: string; release: string; size_bytes: number; sha256: string; asset: string } | null;
+  // 自更新能力与待安装候选：只有 'available' 且有候选才提供安装入口。
+  self_update?: 'available' | 'local-build' | 'dirty-build' | 'not-an-app-bundle' | 'unsupported-platform';
+  candidate?: { version: string; tag: string; name: string; size_bytes: number; sha256: string } | null;
   manifest_error?: string;
   error?: string;
 }

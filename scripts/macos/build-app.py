@@ -64,9 +64,6 @@ def source_identity(repo):
 def build_identity(repo, require_clean=False, signing_identity=None):
     if signing_identity and not require_clean:
         raise RuntimeError("Developer ID distribution requires --require-clean-source")
-    # 分发构建必须内置更新公钥：没有它，装好的应用永远无法验证更新来源。
-    if signing_identity and not (repo / "scripts/macos/update-key.pub").is_file():
-        raise RuntimeError("Distribution builds require scripts/macos/update-key.pub (run scripts/macos/update-sign.mjs keygen)")
     identity = source_identity(repo)
     if require_clean and identity["working_tree_dirty"]:
         raise RuntimeError("Local delivery requires committed, clean source; use a development build for uncommitted changes")
@@ -136,14 +133,6 @@ def build(output, cache, require_clean=False, signing_identity=None):
             shutil.copy2(runtime / name, resources / name)
         shutil.copy2(REPO / "desktop/app/Info.plist", contents / "Info.plist")
         (resources / "build.json").write_text(json.dumps(identity, indent=2) + "\n")
-        # 更新公钥与发布源随包分发：应用据此验证更新清单的来源与完整性。
-        update_key = REPO / "scripts/macos/update-key.pub"
-        if update_key.is_file():
-            (resources / "update.json").write_text(json.dumps({
-                "schema": "opl-netfleet-macos-update-key.v1",
-                "public_key": update_key.read_text(),
-                "releases": "https://api.github.com/repos/gaofeng21cn/opl-netfleet/releases?per_page=20",
-            }, indent=2) + "\n")
         run("swiftc", "-O", "-target", platform.machine() + "-apple-macosx13.0", "-framework", "AppKit", "-framework", "WebKit",
             REPO / "desktop/app/main.swift", "-o", contents / "MacOS/OPL NetFleet")
         run("swiftc", "-O", "-target", platform.machine() + "-apple-macosx13.0", "-framework", "SystemConfiguration",

@@ -50,11 +50,10 @@ function UpdateSection({ snapshot, client, run, disabled }: {
     return { message: `已校验 ${result.version} 并暂存；应用退出后会自动替换并重新打开。`, ready: true };
   }).then(ok => { if (ok) setConfirmApp(false); });
   const selfUpdate = app?.self_update;
-  const canInstallApp = Boolean(app?.update_available && selfUpdate === 'available' && app?.manifest);
+  const canInstallApp = Boolean(app?.update_available && selfUpdate === 'available' && app?.candidate);
   const selfUpdateNote: Record<string, string> = {
     'local-build': '当前是本地构建（非分发渠道），不自我替换；升级请使用本地构建流程。',
     'dirty-build': '当前构建包含未提交改动，不自我替换。',
-    'missing-key': '应用未内置更新公钥，无法验证更新来源，不提供自我替换。',
     'not-an-app-bundle': '当前运行位置不是应用包，不自我替换。',
     'unsupported-platform': '当前平台不支持应用自更新。',
   };
@@ -92,7 +91,8 @@ function UpdateSection({ snapshot, client, run, disabled }: {
       </tbody>
     </table></div>
     <p className="nf-management-note"><Info aria-hidden="true" />面板更新会校验上游资产的大小与 SHA-256 后才替换本机副本，正在运行的核心无需重启。
-      应用更新只对 Developer ID 签名并已公证的分发构建开放：先验证签名清单与镜像摘要，再由独立进程在应用退出后做单槽替换并重新打开；
+      应用更新只对 Developer ID 签名并已公证的分发构建开放：候选来自带 sha256 摘要的正式 Release，
+新包还要通过 Apple 签名与公证验证，再由独立进程在应用退出后做单槽替换并重新打开；
       失败会恢复旧版本。{selfUpdate && selfUpdate !== 'available' ? ` ${selfUpdateNote[selfUpdate] ?? ''}` : ''}{checkedAt ? ` 最近检查：${checkedAt}。` : ''}</p>
     {confirmApp && <section className="nf-desktop-inline-note" role="alertdialog" aria-label="确认安装应用更新">
       <span>将安装 {app?.available}（当前 {app?.installed ?? '未记录'}）。应用会先停止代理并撤销网络接管，退出后替换并重新打开；替换失败会恢复当前版本。</span>

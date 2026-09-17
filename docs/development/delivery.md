@@ -118,8 +118,8 @@ Release 并下载公开资产校验。主线前进后仍使用已冻结并验收
 ## macOS DMG 公开分发
 
 macOS 使用独立的 `macos-vX.Y.Z` tag，版本对应应用 `Info.plist`，不与 OpenWrt 包号绑定。
-每个 macOS Release 除 DMG 外还上传 `latest-macos.json` 与其 Ed25519 签名 `.sig`，
-应用的自更新检查与安装都以这两个资产为准；缺少签名清单的 Release 只作为手动下载入口。
+应用自更新只依赖该 Release 里的 DMG 资产与 GitHub 计算的 `sha256:` 摘要，加上 Apple
+签名与公证作为来源证明，因此不需要额外的签名清单；没有摘要的 Release 只作为手动下载入口。
 按[签名与 DMG](macos.md#签名与-dmg)构建、公证并冻结 arm64 DMG，完成最终包的隔离
 macOS VM 验收后才发布。应用签名、两次公证、最终 DMG 摘要、源码身份和 VM 结果分别
 回读；发布后下载公开资产并核对相同摘要。内部验收日志与订阅数据不进入 Release。

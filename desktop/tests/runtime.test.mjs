@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import { projectProfile } from '../runtime/core.mjs';
 import { coreSettingRows } from '../runtime/settings.mjs';
 import { expandPanelArchive, installPanel, materializePanel, readPanelArchive } from '../runtime/dashboard.mjs';
-import { componentState, newerVersion, parseVersion, verifyManifest } from '../runtime/update.mjs';
+import { componentState, latestRelease, newerVersion, parseVersion, releaseCandidate } from '../runtime/update.mjs';
 import { atomicJSON, privateDir, run } from '../runtime/io.mjs';
 
 const state = { ports: { mixed: 19080, controller: 19090, dns: 19053 }, controllerSecret: 'local-owner-secret', network: { mode: 'explicit' } };
@@ -167,24 +167,30 @@ test('the imported profile cannot choose the panel directory', () => {
   assert.equal(pinned['external-ui-url'], undefined);
 });
 
-test('an update manifest is accepted only with a valid signature and complete fields', () => {
-  const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
-  const payload = Buffer.from(JSON.stringify({
-    schema: 'opl-netfleet-macos-update.v1', version: '0.1.7', release: '9', tag: 'macos-v0.1.7',
-    source_commit: 'a'.repeat(40), source_tree: 'b'.repeat(40), asset: 'OPL-NetFleet-macos-arm64.dmg',
-    url: 'https://github.com/gaofeng21cn/opl-netfleet/releases/download/macos-v0.1.7/OPL-NetFleet-macos-arm64.dmg',
-    size_bytes: 1024, sha256: 'c'.repeat(64), team_id: 'SVVC4TA784',
-  }, null, 2) + '\n');
-  const signature = crypto.sign(null, payload, privateKey);
-  assert.equal(verifyManifest(payload, signature, publicKey).version, '0.1.7');
-  // 任何字节改动、错误密钥与缺失字段都必须拒绝。
-  const tampered = Buffer.from(payload.toString('utf8').replace('0.1.7', '0.1.8'));
-  assert.throws(() => verifyManifest(tampered, signature, publicKey), /update_signature_invalid/);
-  const other = crypto.generateKeyPairSync('ed25519');
-  assert.throws(() => verifyManifest(payload, signature, other.publicKey), /update_signature_invalid/);
-  const missing = Buffer.from(JSON.stringify({ schema: 'opl-netfleet-macos-update.v1', version: '0.1.7' }));
-  assert.throws(() => verifyManifest(missing, crypto.sign(null, missing, privateKey), publicKey), /update_manifest_invalid/);
-  assert.throws(() => verifyManifest(payload, signature, 'not-a-key'), /update_key_invalid/);
+test('a macOS release is installable only with a DMG and its published digest', () => {
+  const asset = (name, digest, size = 1024) => ({ name, digest, size, browser_download_url: `https://github.com/gaofeng21cn/opl-netfleet/releases/download/macos-v0.1.7/${name}` });
+  const release = (tag, assets) => ({ tag_name: tag, draft: false, prerelease: false, html_url: `https://github.com/gaofeng21cn/opl-netfleet/releases/tag/${tag}`, assets });
+  const dmg = 'OPL-NetFleet-0.1.7-macos-arm64.dmg';
+  const good = release('macos-v0.1.7', [asset(dmg, `sha256:${'a'.repeat(64)}`), asset('SHA256SUMS', 'sha256:' + 'b'.repeat(64))]);
+  // 只有带 DMG 与 GitHub 摘要的正式 Release 才能作为候选。
+  assert.deepEqual(releaseCandidate(good), { version: '0.1.7', tag: 'macos-v0.1.7', url: asset(dmg, '').browser_download_url, name: dmg,
+    size_bytes: 1024, sha256: 'a'.repeat(64), page: good.html_url, published_at: null });
+  for (const broken of [
+    release('macos-v0.1.7', [asset('OPL-NetFleet-0.1.7-macos-arm64.zip', `sha256:${'a'.repeat(64)}`)]),
+    release('macos-v0.1.7', [{ ...asset(dmg, ''), digest: undefined }]),
+    release('macos-v0.1.7', [{ ...asset(dmg, `sha256:${'a'.repeat(64)}`), size: 0 }]),
+    { ...good, prerelease: true },
+    { ...good, draft: true },
+  ]) assert.equal(releaseCandidate(broken), null);
+  // 选版本最高的正式 Release，忽略草稿、预发布与 OpenWrt tag。
+  assert.equal(latestRelease([
+    { tag_name: 'v0.9.0', draft: false, prerelease: false },
+    { tag_name: 'macos-v0.1.7', draft: false, prerelease: false },
+    { tag_name: 'macos-v0.2.0', draft: true, prerelease: false },
+    { tag_name: 'macos-v0.1.10', draft: false, prerelease: true },
+    { tag_name: 'macos-v0.1.8', draft: false, prerelease: false, assets: [] },
+  ]).tag_name, 'macos-v0.1.8');
+  assert.equal(latestRelease([]), null);
 });
 
 test('version comparison only accepts a strictly newer release', () => {

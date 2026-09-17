@@ -154,7 +154,7 @@ try {
   }
   evidence.checks.push('dashboard_update_requires_a_verified_candidate');
   // 应用自更新只对分发构建开放：本地/开发构建必须拒绝，且不留下暂存目录。
-  assert.ok(['available', 'local-build', 'dirty-build', 'missing-key', 'not-an-app-bundle', 'unsupported-platform']
+  assert.ok(['available', 'local-build', 'dirty-build', 'not-an-app-bundle', 'unsupported-platform']
     .includes(updates.result.app?.self_update), JSON.stringify(updates.result.app));
   if (updates.result.app?.self_update !== 'available') {
     const refusedApp = await api('app-update-apply');
