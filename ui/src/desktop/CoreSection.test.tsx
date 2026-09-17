@@ -23,6 +23,21 @@ const snapshot = (patch: Partial<DesktopSnapshot['core']> = {}): DesktopSnapshot
 const render = (value: DesktopSnapshot) => renderToStaticMarkup(<CoreSection snapshot={value} />);
 
 describe('本机核心与网络只读投影', () => {
+  it('更新面只报告候选，并提供确认后的面板更新入口', () => {
+    const client = {
+      updateCheck: async () => ({ schema: 'opl-netfleet-macos-updates.v1' as const, checked_at: 1789625299, errors: [],
+        panel: { installed: 'v3.27.0', available: 'v3.27.0', update_available: false },
+        app: { installed: '0.2.0', available: '0.1.6', update_available: false, installation_unknown: false } }),
+      updateDashboard: async () => ({ ok: true, version: 'v3.27.0', previous: 'v3.27.0' }),
+    } as unknown as Parameters<typeof CoreSection>[0]['client'];
+    const html = renderToStaticMarkup(<CoreSection snapshot={snapshot()} client={client} run={async () => true} disabled={false} />);
+    expect(html).toContain('Zashboard 面板');
+    expect(html).toContain('macOS 应用');
+    expect(html).toContain('不自动替换任何文件');
+    expect(html).toContain('检查更新');
+    expect(html).not.toContain('确认更新');
+  });
+
   it('显示平台接管值与 Profile 声明值的差异，不把核心回读当成平台值', () => {
     const html = render(snapshot());
     expect(html).toContain('平台接管');

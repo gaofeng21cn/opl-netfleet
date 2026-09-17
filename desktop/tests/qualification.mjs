@@ -137,6 +137,19 @@ try {
   assert.equal(panelUrl.pathname, '/ui/'); assert.equal(panelUrl.hash, '#/setup');
   assert.equal(JSON.stringify(active).includes(panelUrl.searchParams.get('secret')), false);
   evidence.checks.push('bundled_dashboard_served_without_snapshot_credential');
+  // 更新检查只报告候选；没有新候选时安装动作必须拒绝，不能盲目替换面板。
+  const updates = await api('update-check', { force: true });
+  assert.equal(updates.ok, true, JSON.stringify(updates));
+  assert.equal(updates.result.schema, 'opl-netfleet-macos-updates.v1');
+  assert.equal(typeof updates.result.checked_at, 'number');
+  assert.equal(updates.result.panel.installed, active.dashboard.version);
+  assert.ok(Array.isArray(updates.result.errors));
+  if (updates.result.panel.update_available === false) {
+    const refused = await api('dashboard-update');
+    assert.equal(refused.ok, false);
+    assert.match(String(refused.error), /dashboard_candidate_unavailable/);
+  }
+  evidence.checks.push('dashboard_update_requires_a_verified_candidate');
   const selectable = active.status.capabilities.find(item => item.can_select_region && item.selectable_regions?.length);
   assert.ok(selectable, 'real selectable capability');
   const region = selectable.selectable_regions[0];

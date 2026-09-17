@@ -27,6 +27,25 @@ export interface CoreComponent {
   version: string | null;
   source: 'running' | 'runtime' | 'package';
 }
+// 更新候选只报告版本与来源；安装由独立确认的面板更新动作完成。
+export interface UpdateCandidate {
+  installed: string | null;
+  available: string | null;
+  update_available: boolean;
+  url?: string | null;
+  size?: number;
+  sha256?: string;
+  published_at?: string | null;
+  installation_unknown?: boolean;
+  error?: string;
+}
+export interface UpdateStatus {
+  schema: 'opl-netfleet-macos-updates.v1';
+  checked_at: number;
+  panel: UpdateCandidate | null;
+  app: UpdateCandidate | null;
+  errors: string[];
+}
 export interface DesktopSnapshot {
   runtime: {
     platform: 'macos';

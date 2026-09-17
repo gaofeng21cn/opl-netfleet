@@ -1,5 +1,5 @@
 import type { ConnectionsSnapshot, NetFleetClient } from '../types';
-import type { DesktopSnapshot } from './types';
+import type { DesktopSnapshot, UpdateStatus } from './types';
 
 // Share the business actions without pretending macOS owns OpenWrt maintenance APIs.
 type BusinessClient = Pick<NetFleetClient, 'status' | 'events' | 'enable' | 'disable' | 'selectAuto' | 'refresh' | 'connections'>;
@@ -99,4 +99,7 @@ export class DesktopNetFleetClient implements BusinessClient {
   connections() { return this.action<ConnectionsSnapshot>('connections'); }
   // 面板连接信息按需读取：携带 controller 凭据的地址不进入普通快照。
   dashboardUrl() { return this.action<{ ok: boolean; url: string }>('dashboard-open'); }
+  // 更新检查只报告候选；面板安装是独立确认后的动作。
+  updateCheck(force = false) { return this.action<UpdateStatus>('update-check', { force }); }
+  updateDashboard() { return this.action<{ ok: boolean; version: string; previous: string | null }>('dashboard-update'); }
 }

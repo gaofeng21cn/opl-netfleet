@@ -1,5 +1,8 @@
 import { Info } from 'lucide-react';
-import type { DesktopSnapshot, CoreSettingRow } from './types';
+import { useEffect, useState } from 'react';
+import type { CoreSettingRow, DesktopSnapshot, UpdateStatus } from './types';
+import type { DesktopNetFleetClient } from './client';
+import type { RunAction } from './panels';
 
 // 只读投影：值来自 Mac 平台交给核心的配置、特权 TUN 会话实际应用的覆写、
 // Profile 声明和运行中核心回读；页面不重新解释映射，也提交不了写入。
@@ -10,11 +13,82 @@ const componentSources: Record<string, string> = { running: '运行回读', runt
 const short = (value: string | null) => value && /^[0-9a-f]{40}$/.test(value) ? value.slice(0, 8) : value;
 const value = (input: string | null, fallback: string) => input ?? fallback;
 
-export function CoreSection({ snapshot }: { snapshot: DesktopSnapshot }) {
+// 更新检查只读缓存结果，超过一天才重新联网；安装面板需要用户确认。
+function UpdateSection({ snapshot, client, run, disabled }: {
+  snapshot: DesktopSnapshot; client: DesktopNetFleetClient; run: RunAction; disabled: boolean;
+}) {
+  const [status, setStatus] = useState<UpdateStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmPanel, setConfirmPanel] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const timer = setTimeout(() => {
+      client.updateCheck().then(value => { if (active) setStatus(value); }, reason => { if (active) setError(reason instanceof Error ? reason.message : String(reason)); });
+    }, 300);
+    return () => { active = false; clearTimeout(timer); };
+  }, [client]);
+  const checkedAt = status ? new Date(status.checked_at * 1000).toLocaleString() : null;
+  const panel = status?.panel;
+  const app = status?.app;
+  const check = () => void run('检查更新', async () => {
+    setError(null);
+    const value = await client.updateCheck(true);
+    setStatus(value);
+    return { message: value.errors.length > 0 ? `部分来源检查失败：${value.errors.join('、')}` : '已完成更新检查。', ready: value.errors.length === 0 };
+  });
+  const install = () => void run('更新面板资源', async () => {
+    const result = await client.updateDashboard();
+    setStatus(await client.updateCheck());
+    return { message: `面板已更新到 ${result.version}。`, ready: true };
+  }).then(ok => { if (ok) setConfirmPanel(false); });
+  return <section className="nf-config-section">
+    <div className="nf-config-section-heading">
+      <h2>更新</h2>
+      <p>检查上游面板与已发布的 macOS 应用版本；安装始终需要确认，不自动替换任何文件。</p>
+    </div>
+    {error && <p className="nf-inline-warning" role="alert">{error}</p>}
+    <div className="nf-table-wrap nf-config-table"><table>
+      <thead><tr><th>对象</th><th>当前</th><th>上游最新</th><th>结论</th><th>操作</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Zashboard 面板</td>
+          <td>{panel?.installed ?? snapshot.dashboard.version ?? '未记录'}</td>
+          <td>{panel?.available ?? (panel?.error ? '检查失败' : '尚未检查')}</td>
+          <td>{panel?.update_available ? '有可用更新' : panel?.error ? '检查失败' : '已是最新'}</td>
+          <td><div className="nf-desktop-inline">
+            <button type="button" className="nf-button-secondary" disabled={disabled || !panel?.update_available} onClick={() => setConfirmPanel(true)}>更新面板</button>
+            <button type="button" className="nf-button-secondary" disabled={disabled} onClick={check}>检查更新</button>
+          </div></td>
+        </tr>
+        <tr>
+          <td>macOS 应用</td>
+          <td>{app?.installed ?? snapshot.core.identity?.version ?? '未记录'}</td>
+          <td>{app?.available ?? (app?.error ? '检查失败' : '尚未检查')}</td>
+          <td>{app?.installation_unknown ? '当前安装未记录，无法比较' : app?.update_available ? '有可用版本，请从 Release 下载安装' : app?.error ? '检查失败' : '已是最新'}</td>
+          <td>{app?.url && <a className="nf-inline-link" href={app.url} target="_blank" rel="noreferrer">打开 Release</a>}</td>
+        </tr>
+      </tbody>
+    </table></div>
+    <p className="nf-management-note"><Info aria-hidden="true" />面板更新会校验上游资产的大小与 SHA-256 后才替换本机副本，正在运行的核心无需重启；
+      应用本体不自我替换，升级仍走签名与验收过的安装包。{checkedAt ? ` 最近检查：${checkedAt}。` : ''}</p>
+    {confirmPanel && <section className="nf-desktop-inline-note" role="alertdialog" aria-label="确认更新面板">
+      <span>将从上游下载 {panel?.available} 并校验后替换本机面板副本（当前 {panel?.installed ?? '未记录'}）。</span>
+      <div className="nf-desktop-inline">
+        <button type="button" className="nf-button-secondary" onClick={() => setConfirmPanel(false)}>取消</button>
+        <button type="button" className="nf-button-primary" disabled={disabled} onClick={install}>确认更新</button>
+      </div>
+    </section>}
+  </section>;
+}
+
+export function CoreSection({ snapshot, client, run, disabled = false }: {
+  snapshot: DesktopSnapshot; client?: DesktopNetFleetClient; run?: RunAction; disabled?: boolean;
+}) {
   const core = snapshot.core;
   const identity = core.identity;
   const groups = [...new Set(core.rows.map((row) => row.group))];
   return <div className="nf-view-stack">
+    {client && run && <UpdateSection snapshot={snapshot} client={client} run={run} disabled={disabled} />}
     <section className="nf-config-section">
       <div className="nf-config-section-heading">
         <h2>应用构建身份</h2>

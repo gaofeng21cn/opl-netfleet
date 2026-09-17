@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { projectProfile } from '../runtime/core.mjs';
 import { coreSettingRows } from '../runtime/settings.mjs';
+import { expandPanelArchive, installPanel, materializePanel, readPanelArchive } from '../runtime/dashboard.mjs';
 import { atomicJSON, privateDir, run } from '../runtime/io.mjs';
 
 const state = { ports: { mixed: 19080, controller: 19090, dns: 19053 }, controllerSecret: 'local-owner-secret', network: { mode: 'explicit' } };
@@ -89,7 +90,68 @@ test('core settings project the applied platform values, not a second copy of th
   assert.equal(JSON.stringify(rows).includes('local-owner-secret'), false);
 });
 
+// A stored-entry ZIP keeps the fixture readable: the reader must validate the
+// directory, not trust the archive's own metadata.
+function storedZip(files, { mode = 0o100644, name } = {}) {
+  const chunks = [], central = [];
+  let offset = 0;
+  for (const file of files) {
+    const entry = Buffer.from(name ?? file.name);
+    const data = Buffer.from(file.data ?? '');
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0, 6);
+    local.writeUInt32LE(0, 14); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(entry.length, 26); local.writeUInt16LE(0, 28);
+    chunks.push(local, entry, data);
+    const row = Buffer.alloc(46);
+    row.writeUInt32LE(0x02014b50, 0); row.writeUInt16LE(20, 4); row.writeUInt16LE(0, 6); row.writeUInt16LE(0, 8);
+    row.writeUInt16LE(0, 10); row.writeUInt32LE(0, 16); row.writeUInt32LE(data.length, 20);
+    row.writeUInt32LE(data.length, 24); row.writeUInt16LE(entry.length, 28);
+    row.writeUInt32LE((mode << 16) >>> 0, 38); row.writeUInt32LE(offset, 42);
+    central.push(Buffer.concat([row, entry]));
+    offset += local.length + entry.length + data.length;
+  }
+  const directory = Buffer.concat(central);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(files.length, 8); eocd.writeUInt16LE(files.length, 10);
+  eocd.writeUInt32LE(directory.length, 12); eocd.writeUInt32LE(offset, 16);
+  return Buffer.concat([...chunks, directory, eocd]);
+}
+
+test('a panel archive is expanded only when every entry is a plain dist path', () => {
+  const good = storedZip([{ name: 'dist/index.html', data: '<div id="app"></div>' }, { name: 'dist/assets/app.js', data: 'x' }]);
+  const rows = expandPanelArchive(good);
+  assert.deepEqual(rows.map(row => row.relative).sort(), ['assets/app.js', 'index.html']);
+  assert.equal(readPanelArchive(good).length, 2);
+  // Traversal, absolute paths, links, unknown compression and a missing entry
+  // point all fail before anything is written.
+  for (const bad of [
+    storedZip([{ name: 'dist/index.html', data: 'x' }], { name: 'dist/../../escape.js' }),
+    storedZip([{ name: 'dist/index.html', data: 'x' }], { name: '/etc/passwd' }),
+    storedZip([{ name: 'dist/index.html', data: 'x' }], { mode: 0o120777 }),
+    storedZip([{ name: 'dist/assets/app.js', data: 'x' }]),
+  ]) assert.throws(() => expandPanelArchive(bad), /dashboard_archive_invalid/);
+});
+
+test('installing a panel replaces files in place and removes stale ones', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'netfleet-panel-test-'));
+  try {
+    const first = expandPanelArchive(storedZip([{ name: 'dist/index.html', data: 'one' }, { name: 'dist/legacy.js', data: 'old' }]));
+    await installPanel(first, path.join(root, 'panel'));
+    assert.equal(await fs.readFile(path.join(root, 'panel/index.html'), 'utf8'), 'one');
+    const second = expandPanelArchive(storedZip([{ name: 'dist/index.html', data: 'two' }]));
+    await installPanel(second, path.join(root, 'panel'));
+    assert.equal(await fs.readFile(path.join(root, 'panel/index.html'), 'utf8'), 'two');
+    assert.equal(await fs.readFile(path.join(root, 'panel/legacy.js'), 'utf8').catch(() => null), null);
+    // Seeding from a directory uses the same verified path and skips its manifest.
+    await materializePanel(path.join(root, 'panel'), path.join(root, 'served'));
+    assert.equal(await fs.readFile(path.join(root, 'served/index.html'), 'utf8'), 'two');
+    assert.ok(JSON.parse(await fs.readFile(path.join(root, 'served/.panel.json'), 'utf8')).files['index.html']);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
 test('the imported profile cannot choose the panel directory', () => {
+
   const imported = { proxies: [], rules: ['MATCH,DIRECT'], 'external-ui': '/Users/someone/panel',
     'external-ui-url': 'https://example.invalid/panel.zip', 'external-ui-name': 'foreign' };
   // Without pinned assets the core is left without a panel directory at all.

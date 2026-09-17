@@ -3,39 +3,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { atomicJSON, readJSON, assert, object, run, delay, inside, processIdentity } from './io.mjs';
-
-// Mihomo only serves `external-ui` from inside its own working directory (or an
-// explicit SAFE_PATHS entry), so the pinned panel is materialized into the
-// runtime directory instead of being served straight from the application
-// bundle. The copy is bounded and rejects links: a served path must never be
-// one the desktop user can swap after validation.
-export async function materializePanel(source, destination) {
-  const files = [];
-  let total = 0;
-  async function walk(directory) {
-    const rows = await fs.readdir(directory, { withFileTypes: true });
-    for (const row of rows) {
-      const origin = path.join(directory, row.name);
-      if (row.isSymbolicLink()) throw new Error('panel_resources_invalid');
-      if (row.isDirectory()) { await walk(origin); continue; }
-      if (!row.isFile()) throw new Error('panel_resources_invalid');
-      const info = await fs.lstat(origin);
-      total += info.size;
-      assert(files.length < 2048 && total <= 134217728, 'panel_resources_invalid');
-      files.push(origin);
-    }
-  }
-  await walk(source);
-  assert(files.some(file => path.basename(file) === 'index.html'), 'panel_resources_invalid');
-  await fs.rm(destination, { recursive: true, force: true });
-  for (const file of files) {
-    const target = path.join(destination, path.relative(source, file));
-    await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
-    await fs.copyFile(file, target);
-    await fs.chmod(target, 0o600);
-  }
-  return destination;
-}
+import { materializePanel } from './dashboard.mjs';
 
 // Platform projection owns listeners and paths; imported policy still owns its rules.
 export function projectProfile(profile, state, runtimeDir, networkMode = state.network.mode, dashboardDir = null) {

@@ -10,6 +10,7 @@ import { installBuiltin, verifyInstalledBuiltin } from './builtin.mjs';
 import { CoreOwner, projectProfile } from './core.mjs';
 import { NetworkOwner } from './network.mjs';
 import { coreSettingRows } from './settings.mjs';
+import { expandPanelArchive, installPanel, materializePanel } from './dashboard.mjs';
 import { privateDir, atomicJSON, readJSON, object, assert, run, requestBody, codeDigest } from './io.mjs';
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -26,9 +27,18 @@ const hasDashboard = directory => fs.access(path.join(directory, 'index.html')).
 const dashboardRoot = process.env.NETFLEET_DASHBOARD_ROOT
   ?? (await hasDashboard(bundledDashboard) ? bundledDashboard : (await hasDashboard(localDashboard) ? localDashboard : null));
 const dashboardMeta = dashboardRoot ? await readJSON(path.join(dashboardRoot, '../dashboard-meta.json')).catch(() => null) : null;
+const UPDATE_RELEASE = 'https://api.github.com/repos/Zephyruso/zashboard/releases/latest';
+const UPDATE_ASSET = 'dist-cdn-fonts.zip';
+const UPDATE_ROOT = 'https://github.com/Zephyruso/zashboard/releases';
+const APP_RELEASES = 'https://api.github.com/repos/gaofeng21cn/opl-netfleet/releases?per_page=20';
+const MAX_UPDATE_BYTES = 33554432;
 const runtimeRoot = process.env.NETFLEET_RUNTIME_ROOT ?? path.join(os.homedir(), '.cache/opl-netfleet/macos/runtime');
 const option = name => { const index = process.argv.indexOf(name); return index < 0 ? null : process.argv[index + 1]; };
 const stateDir = path.resolve(option('--state') ?? path.join(os.homedir(), 'Library/Application Support/OPL NetFleet'));
+// 面板的当前所有者副本：首次从随包资源播种，之后由受校验的更新替换。
+const panelRoot = path.join(stateDir, 'panel');
+const panelStatePath = path.join(stateDir, 'panel.json');
+const updateStatePath = path.join(stateDir, 'updates.json');
 const socketDirectory = path.join(os.tmpdir(), `opl-netfleet-${process.getuid()}-${crypto.createHash('sha256').update(stateDir).digest('hex').slice(0, 12)}`);
 const socketPath = path.join(socketDirectory, 'owner.sock');
 const token = crypto.randomBytes(32).toString('hex'), rpcToken = crypto.randomBytes(32).toString('hex');
@@ -298,8 +308,106 @@ async function coreProjection(runtime, networkState) {
     } : null };
 }
 
+// 面板的当前所有者副本：随包资源只负责首次播种，之后的更新由受校验的
+// 候选替换，核心始终从这份私有副本取文件。
+async function seedPanel() {
+  if (!dashboardRoot) return null;
+  const existing = await readJSON(panelStatePath).catch(() => null);
+  if (existing && await fs.access(path.join(panelRoot, 'index.html')).then(() => true, () => false)) return existing;
+  await materializePanel(dashboardRoot, panelRoot);
+  const seeded = { schema: 'opl-netfleet-macos-panel-state.v1', version: dashboardMeta?.version ?? null,
+    source: 'bundled', index_sha256: dashboardMeta?.index_sha256 ?? null, updated_at: null };
+  await atomicJSON(panelStatePath, seeded);
+  return seeded;
+}
+
+// 有界的外部读取：不跟随任意地址、限制响应体、限制等待时间。
+async function fetchBounded(url, { accept = 'application/json', maxBytes = 1048576, timeout = 15000 } = {}) {
+  const response = await fetch(url, { headers: { Accept: accept, 'User-Agent': 'OPL-NetFleet' },
+    redirect: 'follow', signal: AbortSignal.timeout(timeout) });
+  assert(response.ok, `update_request_failed:${response.status}`);
+  const body = Buffer.from(await response.arrayBuffer());
+  assert(body.length <= maxBytes, 'update_response_too_large');
+  return body;
+}
+
+const versionParts = value => /^v?(\d+)\.(\d+)\.(\d+)$/.exec(String(value ?? ''))?.slice(1).map(Number) ?? null;
+const newerVersion = (candidate, installed) => {
+  const left = versionParts(candidate), right = versionParts(installed);
+  if (!left) return false;
+  if (!right) return true;
+  for (let index = 0; index < 3; index++) {
+    if (left[index] !== right[index]) return left[index] > right[index];
+  }
+  return false;
+};
+
+// 检查上游面板与已发布的 macOS 应用版本。结果缓存 24 小时，只报告候选，
+// 不自动安装；安装始终由用户确认后的 dashboard-update 承担。
+async function refreshUpdateStatus() {
+  const status = { schema: 'opl-netfleet-macos-updates.v1', checked_at: Math.floor(Date.now() / 1000),
+    panel: null, app: null, errors: [] };
+  const panel = await readJSON(panelStatePath).catch(() => null);
+  try {
+    const body = JSON.parse((await fetchBounded(UPDATE_RELEASE, { maxBytes: 1048576 })).toString('utf8'));
+    const asset = (Array.isArray(body?.assets) ? body.assets : []).find(item => item?.name === UPDATE_ASSET);
+    const tag = body?.tag_name;
+    const valid = typeof tag === 'string' && /^v\d+\.\d+\.\d+$/.test(tag) && body?.draft === false && body?.prerelease === false
+      && asset?.browser_download_url === `${UPDATE_ROOT}/download/${tag}/${UPDATE_ASSET}`
+      && Number.isInteger(asset?.size) && asset.size > 0 && asset.size <= MAX_UPDATE_BYTES
+      && /^sha256:[a-f0-9]{64}$/.test(String(asset?.digest ?? ''));
+    status.panel = valid
+      ? { installed: panel?.version ?? null, available: tag, update_available: newerVersion(tag, panel?.version),
+          url: asset.browser_download_url, size: asset.size, sha256: asset.digest.slice(7) }
+      : { installed: panel?.version ?? null, available: null, update_available: false, error: 'update_release_invalid' };
+  } catch (error) { status.errors.push(`panel:${error.message}`); status.panel = { installed: panel?.version ?? null, available: null, update_available: false, error: 'update_check_failed' }; }
+  try {
+    const releases = JSON.parse((await fetchBounded(APP_RELEASES, { maxBytes: 2097152 })).toString('utf8'));
+    const packaged = await readJSON(path.join(appRoot, 'build.json')).catch(() => null);
+    const installed = packaged?.package_version ?? null;
+    const release = (Array.isArray(releases) ? releases : [])
+      .filter(item => item?.draft === false && item?.prerelease === false && /^macos-v\d+\.\d+\.\d+$/.test(String(item?.tag_name ?? '')))
+      .sort((left, right) => String(right.tag_name).localeCompare(String(left.tag_name), 'en', { numeric: true }))[0];
+    const available = release ? String(release.tag_name).replace(/^macos-v/, '') : null;
+    // 源码运行没有安装身份：只报告上游最新版本，不宣称"有可用更新"。
+    status.app = { installed, available, update_available: Boolean(installed) && Boolean(available) && newerVersion(available, installed),
+      url: release?.html_url ?? null, published_at: release?.published_at ?? null, installation_unknown: installed === null };
+  } catch (error) { status.errors.push(`app:${error.message}`); status.app = { installed: null, available: null, update_available: false, installation_unknown: true, error: 'update_check_failed' }; }
+  await atomicJSON(updateStatePath, status);
+  return status;
+}
+
+async function updateStatus({ force = false } = {}) {
+  const cached = await readJSON(updateStatePath).catch(() => null);
+  if (!force && cached && Math.floor(Date.now() / 1000) - Number(cached.checked_at ?? 0) < 86400) return cached;
+  return refreshUpdateStatus();
+}
+
+// 只有通过大小与 SHA-256 校验的候选才会进入私有面板副本；替换按文件原子
+// 落位，核心仍在服务旧文件时不会看到缺失路径。
+async function applyPanelUpdate() {
+  const status = await refreshUpdateStatus();
+  const candidate = status.panel;
+  assert(candidate?.update_available && candidate.url && candidate.sha256, candidate?.error ?? 'dashboard_candidate_unavailable');
+  const body = await fetchBounded(candidate.url, { accept: 'application/octet-stream', maxBytes: MAX_UPDATE_BYTES, timeout: 120000 });
+  assert(body.length === candidate.size, 'dashboard_asset_mismatch');
+  assert(crypto.createHash('sha256').update(body).digest('hex') === candidate.sha256, 'dashboard_asset_mismatch');
+  const rows = expandPanelArchive(body);
+  await installPanel(rows, panelRoot);
+  const index = rows.find(row => row.relative === 'index.html');
+  await atomicJSON(panelStatePath, { schema: 'opl-netfleet-macos-panel-state.v1', version: candidate.available,
+    source: 'update', index_sha256: crypto.createHash('sha256').update(index.bytes).digest('hex'),
+    updated_at: Math.floor(Date.now() / 1000) });
+  // 正在运行的核心按请求读取该目录，替换后无需重启；同时刷新它的服务副本。
+  if (await fs.access(core.runtimeDir).then(() => true, () => false)) {
+    await materializePanel(panelRoot, path.join(core.runtimeDir, 'ui'));
+  }
+  return { ok: true, version: candidate.available, previous: candidate.installed,
+    panel: await dashboardProjection(await core.status()) };
+}
+
 async function dashboardUrl() {
-  const projection = dashboardProjection(await core.status());
+  const projection = await dashboardProjection(await core.status());
   assert(projection.available, projection.reason ?? 'dashboard_unavailable');
   const host = '127.0.0.1';
   const url = new URL(`http://${host}:${state.ports.controller}/ui/`);
@@ -311,11 +419,12 @@ async function dashboardUrl() {
 
 // 面板可用性只说明本机核心当前能否提供这套随包资源；连接信息按需生成，
 // 不进入普通快照，也不写入展示缓存。
-function dashboardProjection(runtime) {
-  const reason = !dashboardRoot || !dashboardMeta ? 'dashboard_assets_missing'
+async function dashboardProjection(runtime) {
+  const panel = await readJSON(panelStatePath).catch(() => null);
+  const reason = !panel ? 'dashboard_assets_missing'
     : !runtime.running ? 'core_not_running'
       : !runtime.controllerReady ? 'controller_unavailable' : null;
-  return { available: reason === null, version: dashboardMeta?.version ?? null, reason };
+  return { available: reason === null, version: panel?.version ?? null, source: panel?.source ?? null, reason };
 }
 
 async function snapshot() {
@@ -335,7 +444,7 @@ async function snapshot() {
   return { runtime: { ...runtime, platform: 'macos', mode: actualMode, requestedMode: state.mode, networkMode: state.network.mode,
     ports: state.ports, configured: state.configured, lastError }, policy: await readJSON(path.join(stateDir, 'policy.json')),
     subscriptions, status, events, config, configError, network: networkState, error,
-    core: await coreProjection(runtime, networkState), dashboard: dashboardProjection(runtime) };
+    core: await coreProjection(runtime, networkState), dashboard: await dashboardProjection(runtime) };
 }
 async function action(input) {
   assert(object(input) && typeof input.action === 'string', 'invalid_action');
@@ -409,6 +518,9 @@ async function action(input) {
       return ucode('connections');
     }
     case 'dashboard-open': return dashboardUrl();
+    // 只读的候选检查（缓存的 24 小时结果或一次有界查询），不安装任何东西。
+    case 'update-check': return updateStatus({ force: input.force === true });
+    case 'dashboard-update': return applyPanelUpdate();
     case 'backup-export': {
       const profile = await readJSON(path.join(stateDir, 'backend/profiles/Original.json'));
       const caches = {};
@@ -497,7 +609,10 @@ async function main() {
   state.enabled = false; state.mode = 'direct'; state.scheduler = { enabled: false, running: false };
   network = new NetworkOwner({ stateDir, corePath: path.join(runtimeRoot, 'bin/mihomo'), ports: state.ports,
     ownerPid: process.pid, helperPath: path.join(runtimeRoot, 'bin/netfleet-network-helper') });
-  core = new CoreOwner({ stateDir, corePath: path.join(runtimeRoot, 'bin/mihomo'), getState: () => state, network, env, dashboardDir: dashboardRoot });
+  // 随包面板先播种为私有副本，核心与更新都只使用这一份所有者数据。
+  const panel = await seedPanel();
+  core = new CoreOwner({ stateDir, corePath: path.join(runtimeRoot, 'bin/mihomo'), getState: () => state, network, env,
+    dashboardDir: panel ? panelRoot : null });
   await core.reconcileStartup();
   await installBuiltin(builtinRoot, stateDir);
   await saveState({});

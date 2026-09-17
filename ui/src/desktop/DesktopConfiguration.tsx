@@ -68,7 +68,7 @@ export function DesktopConfiguration({ snapshot, disabled, client, run, onManage
         <div hidden={section !== 'profile'}><Configuration section="profile" snapshot={snapshot} disabled={disabled || dirty || advancedDirty} client={client} run={run} /></div>
         <div hidden={section !== 'advanced'}><Configuration section="advanced" snapshot={snapshot} disabled={disabled || dirty} client={client} run={run} onDirtyChange={setAdvancedDirty} /></div>
         <div hidden={section !== 'backup'}><DesktopTools section="backup" snapshot={snapshot} disabled={disabled || dirty || advancedDirty} client={client} run={run} /></div>
-        <div hidden={section !== 'core'}><CoreSection snapshot={snapshot} /></div>
+        <div hidden={section !== 'core'}><CoreSection snapshot={snapshot} client={client} run={run} disabled={disabled} /></div>
         {structuredSections.includes(section) && <>{props ? <fieldset className="nf-desktop-fieldset" disabled={disabled || advancedDirty}>{content}</fieldset> : <section className="nf-config-section"><h2>尚未生成业务配置</h2><p className="nf-management-note">先在“机场”添加订阅，自动生成内置策略、地区与双出口。</p><button type="button" className="nf-button-primary" disabled={disabled || !snapshot.runtime.configured} onClick={() => void run('生成初始业务配置', () => client.action('compile'))}>校验并编译</button></section>}</>}
         {(dirty || advancedDirty) && <p className="nf-management-note">{advancedDirty ? '高级 JSON 有未保存修改。保存后可继续编辑表单。' : '表单有未保存修改。保存或放弃后可导入配置或编辑高级 JSON。'}</p>}
       </div>
