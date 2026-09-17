@@ -25,6 +25,10 @@ class MacOSBuildIdentityTests(unittest.TestCase):
         info = self.repo / "desktop/app/Info.plist"
         info.parent.mkdir(parents=True)
         info.write_bytes(plistlib.dumps({"CFBundleShortVersionString": "1.2.3", "CFBundleVersion": "4"}))
+        # 分发构建要求内置更新公钥；夹具提供一份，缺失用例另行验证。
+        key = self.repo / "scripts/macos/update-key.pub"
+        key.parent.mkdir(parents=True, exist_ok=True)
+        key.write_text("-----BEGIN PUBLIC KEY-----\nfixture\n-----END PUBLIC KEY-----\n")
         (self.repo / ".gitignore").write_text(".build/\n")
         self.git("add", ".")
         self.git("commit", "-qm", "fixture")
@@ -61,6 +65,11 @@ class MacOSBuildIdentityTests(unittest.TestCase):
             builder.build_identity(self.repo, signing_identity="Developer ID Application: Fixture")
         identity = builder.build_identity(self.repo, True, "Developer ID Application: Fixture")
         self.assertEqual(identity["channel"], "distribution")
+        # 分发构建没有更新公钥时必须拒绝：装好的应用将无法验证更新来源。
+        (self.repo / "scripts/macos/update-key.pub").unlink()
+        with self.assertRaisesRegex(RuntimeError, "update-key.pub"):
+            builder.build_identity(self.repo, True, "Developer ID Application: Fixture")
+        (self.repo / "scripts/macos/update-key.pub").write_text("-----BEGIN PUBLIC KEY-----\nfixture\n-----END PUBLIC KEY-----\n")
         (self.repo / "untracked").write_text("change")
         with self.assertRaisesRegex(RuntimeError, "clean source"):
             builder.build_identity(self.repo, True, "Developer ID Application: Fixture")

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import type { CoreSettingRow, DesktopSnapshot, UpdateStatus } from './types';
 import type { DesktopNetFleetClient } from './client';
 import type { RunAction } from './panels';
+import { installUpdateThroughHost } from './hostBridge';
 
 // 只读投影：值来自 Mac 平台交给核心的配置、特权 TUN 会话实际应用的覆写、
 // Profile 声明和运行中核心回读；页面不重新解释映射，也提交不了写入。
@@ -20,6 +21,7 @@ function UpdateSection({ snapshot, client, run, disabled }: {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmPanel, setConfirmPanel] = useState(false);
+  const [confirmApp, setConfirmApp] = useState(false);
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => {
@@ -41,6 +43,21 @@ function UpdateSection({ snapshot, client, run, disabled }: {
     setStatus(await client.updateCheck());
     return { message: `面板已更新到 ${result.version}。`, ready: true };
   }).then(ok => { if (ok) setConfirmPanel(false); });
+  // 应用更新：先校验并暂存，再请宿主优雅退出，由替换进程完成重启。
+  const installApp = () => void run('准备应用更新', async () => {
+    const result = await client.updateApp();
+    if (!installUpdateThroughHost()) throw new Error('更新需要在应用内执行，请重新打开应用后重试。');
+    return { message: `已校验 ${result.version} 并暂存；应用退出后会自动替换并重新打开。`, ready: true };
+  }).then(ok => { if (ok) setConfirmApp(false); });
+  const selfUpdate = app?.self_update;
+  const canInstallApp = Boolean(app?.update_available && selfUpdate === 'available' && app?.manifest);
+  const selfUpdateNote: Record<string, string> = {
+    'local-build': '当前是本地构建（非分发渠道），不自我替换；升级请使用本地构建流程。',
+    'dirty-build': '当前构建包含未提交改动，不自我替换。',
+    'missing-key': '应用未内置更新公钥，无法验证更新来源，不提供自我替换。',
+    'not-an-app-bundle': '当前运行位置不是应用包，不自我替换。',
+    'unsupported-platform': '当前平台不支持应用自更新。',
+  };
   return <section className="nf-config-section">
     <div className="nf-config-section-heading">
       <h2>更新</h2>
@@ -64,13 +81,26 @@ function UpdateSection({ snapshot, client, run, disabled }: {
           <td>macOS 应用</td>
           <td>{app?.installed ?? snapshot.core.identity?.version ?? '未记录'}</td>
           <td>{app?.available ?? (app?.error ? '检查失败' : '尚未检查')}</td>
-          <td>{app?.installation_unknown ? '当前安装未记录，无法比较' : app?.update_available ? '有可用版本，请从 Release 下载安装' : app?.error ? '检查失败' : '已是最新'}</td>
-          <td>{app?.url && <a className="nf-inline-link" href={app.url} target="_blank" rel="noreferrer">打开 Release</a>}</td>
+          <td>{app?.installation_unknown ? '当前安装未记录，无法比较'
+            : app?.update_available ? canInstallApp ? '有可用版本，可在此安装' : '有可用版本，需手动安装'
+            : app?.error ? '检查失败' : '已是最新'}</td>
+          <td><div className="nf-desktop-inline">
+            {canInstallApp && <button type="button" className="nf-button-primary" disabled={disabled} onClick={() => setConfirmApp(true)}>安装更新</button>}
+            {app?.url && <a className="nf-inline-link" href={app.url} target="_blank" rel="noreferrer">{canInstallApp ? '查看 Release' : '打开 Release'}</a>}
+          </div></td>
         </tr>
       </tbody>
     </table></div>
-    <p className="nf-management-note"><Info aria-hidden="true" />面板更新会校验上游资产的大小与 SHA-256 后才替换本机副本，正在运行的核心无需重启；
-      应用本体不自我替换，升级仍走签名与验收过的安装包。{checkedAt ? ` 最近检查：${checkedAt}。` : ''}</p>
+    <p className="nf-management-note"><Info aria-hidden="true" />面板更新会校验上游资产的大小与 SHA-256 后才替换本机副本，正在运行的核心无需重启。
+      应用更新只对 Developer ID 签名并已公证的分发构建开放：先验证签名清单与镜像摘要，再由独立进程在应用退出后做单槽替换并重新打开；
+      失败会恢复旧版本。{selfUpdate && selfUpdate !== 'available' ? ` ${selfUpdateNote[selfUpdate] ?? ''}` : ''}{checkedAt ? ` 最近检查：${checkedAt}。` : ''}</p>
+    {confirmApp && <section className="nf-desktop-inline-note" role="alertdialog" aria-label="确认安装应用更新">
+      <span>将安装 {app?.available}（当前 {app?.installed ?? '未记录'}）。应用会先停止代理并撤销网络接管，退出后替换并重新打开；替换失败会恢复当前版本。</span>
+      <div className="nf-desktop-inline">
+        <button type="button" className="nf-button-secondary" onClick={() => setConfirmApp(false)}>取消</button>
+        <button type="button" className="nf-button-primary" disabled={disabled} onClick={installApp}>确认安装并重启</button>
+      </div>
+    </section>}
     {confirmPanel && <section className="nf-desktop-inline-note" role="alertdialog" aria-label="确认更新面板">
       <span>将从上游下载 {panel?.available} 并校验后替换本机面板副本（当前 {panel?.installed ?? '未记录'}）。</span>
       <div className="nf-desktop-inline">

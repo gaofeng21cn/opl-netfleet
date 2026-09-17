@@ -11,11 +11,14 @@ import { CoreOwner, projectProfile } from './core.mjs';
 import { NetworkOwner } from './network.mjs';
 import { coreSettingRows } from './settings.mjs';
 import { expandPanelArchive, installPanel, materializePanel } from './dashboard.mjs';
+import { UPDATE_KEY_SCHEMA, componentState, sha256, verifyBundle, verifyManifest, withMountedApp } from './update.mjs';
 import { privateDir, atomicJSON, readJSON, object, assert, run, requestBody, codeDigest } from './io.mjs';
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // 应用包根目录：打包后指向 Contents/Resources，源码运行时指向仓库根。
 const appRoot = path.resolve(desktopRoot, '..');
+// 应用包目录：更新替换的目标就是它自己。
+const appBundle = path.resolve(appRoot, '..');
 const bundledWebRoot = path.join(desktopRoot, 'web');
 const webRoot = await fs.access(bundledWebRoot).then(() => bundledWebRoot, () => path.resolve(desktopRoot, '../ui/dist-desktop'));
 const sourceRoot = process.env.NETFLEET_SOURCE_ROOT ?? path.resolve(desktopRoot, '../openwrt/files/usr/libexec/opl-netfleet');
@@ -32,6 +35,17 @@ const UPDATE_ASSET = 'dist-cdn-fonts.zip';
 const UPDATE_ROOT = 'https://github.com/Zephyruso/zashboard/releases';
 const APP_RELEASES = 'https://api.github.com/repos/gaofeng21cn/opl-netfleet/releases?per_page=20';
 const MAX_UPDATE_BYTES = 33554432;
+// 内置更新公钥与分发身份：只有分发渠道的 Developer ID 构建才允许自我替换。
+let appReleaseCache = null;
+const updateKeyConfig = await readJSON(path.join(appRoot, 'update.json')).catch(() => null);
+const updatePublicKey = process.env.NETFLEET_UPDATE_KEY
+  ? await fs.readFile(process.env.NETFLEET_UPDATE_KEY, 'utf8').catch(() => null)
+  : updateKeyConfig?.schema === UPDATE_KEY_SCHEMA ? updateKeyConfig.public_key ?? null : null;
+const updateFeed = process.env.NETFLEET_UPDATE_FEED ?? updateKeyConfig?.releases ?? APP_RELEASES;
+const packagedIdentity = await readJSON(path.join(appRoot, 'build.json')).catch(() => null);
+const APP_UPDATE_ASSET = 'latest-macos.json';
+const APP_UPDATE_SIGNATURE = 'latest-macos.json.sig';
+const APP_UPDATE_IMAGE = 'OPL-NetFleet-macos-arm64.dmg';
 const runtimeRoot = process.env.NETFLEET_RUNTIME_ROOT ?? path.join(os.homedir(), '.cache/opl-netfleet/macos/runtime');
 const option = name => { const index = process.argv.indexOf(name); return index < 0 ? null : process.argv[index + 1]; };
 const stateDir = path.resolve(option('--state') ?? path.join(os.homedir(), 'Library/Application Support/OPL NetFleet'));
@@ -281,6 +295,20 @@ async function runtimeComponents() {
   return componentCache;
 }
 
+// 特权网络组件是 root 所有的独立副本：应用更新后它们可能落后于包内版本，
+// 需要用户重新授权安装。这里只比较字节，不触发任何特权操作。
+const HELPER_PATH = '/Library/PrivilegedHelperTools/org.opl.netfleet.network';
+const PRIVILEGED_CORE_PATH = '/Library/Application Support/OPL NetFleet/Privileged/mihomo';
+async function networkComponentState() {
+  if (process.platform !== 'darwin') return { state: 'unsupported-platform' };
+  const helper = await componentState(path.join(runtimeRoot, 'bin/netfleet-network-helper'), HELPER_PATH);
+  const core = await componentState(path.join(runtimeRoot, 'bin/mihomo'), PRIVILEGED_CORE_PATH);
+  const states = [helper.state, core.state];
+  const state = states.includes('missing') ? 'missing' : states.includes('outdated') ? 'outdated'
+    : states.includes('unbundled') ? 'unbundled' : 'match';
+  return { state, helper: helper.state, core: core.state };
+}
+
 async function sourceProfile() {
   if (typeof state.profile !== 'string') return null;
   try { return await core.parseProfile(await fs.readFile(core.resolveProfile(state.profile), 'utf8')); }
@@ -297,8 +325,10 @@ async function coreProjection(runtime, networkState) {
   }
   const running = runtime.running ? await core.controller('/configs') : null;
   const overlay = state.network.mode === 'tun' && networkState.running ? networkState.overlay ?? null : null;
-  const packaged = await readJSON(path.join(appRoot, 'build.json')).catch(() => null);
+  const packaged = packagedIdentity;
+  const components = await networkComponentState();
   return { profile: state.profile ?? null, mode: state.network.mode, running: Boolean(runtime.running),
+    components_sync: components,
     overlay: Boolean(overlay), rows: coreSettingRows({ profile, projected, running, overlay }),
     components: await runtimeComponents(),
     identity: packaged && typeof packaged === 'object' ? {
@@ -362,19 +392,54 @@ async function refreshUpdateStatus() {
       : { installed: panel?.version ?? null, available: null, update_available: false, error: 'update_release_invalid' };
   } catch (error) { status.errors.push(`panel:${error.message}`); status.panel = { installed: panel?.version ?? null, available: null, update_available: false, error: 'update_check_failed' }; }
   try {
-    const releases = JSON.parse((await fetchBounded(APP_RELEASES, { maxBytes: 2097152 })).toString('utf8'));
-    const packaged = await readJSON(path.join(appRoot, 'build.json')).catch(() => null);
-    const installed = packaged?.package_version ?? null;
+    const releases = JSON.parse((await fetchBounded(updateFeed, { maxBytes: 2097152 })).toString('utf8'));
+    const installed = packagedIdentity?.package_version ?? null;
     const release = (Array.isArray(releases) ? releases : [])
       .filter(item => item?.draft === false && item?.prerelease === false && /^macos-v\d+\.\d+\.\d+$/.test(String(item?.tag_name ?? '')))
       .sort((left, right) => String(right.tag_name).localeCompare(String(left.tag_name), 'en', { numeric: true }))[0];
     const available = release ? String(release.tag_name).replace(/^macos-v/, '') : null;
+    // 订阅了签名清单时顺带取回候选身份；清单不可信就不报告可安装。
+    const candidate = release && updatePublicKey && selfUpdateState() === 'available' ? await fetchAppManifest(release) : null;
     // 源码运行没有安装身份：只报告上游最新版本，不宣称"有可用更新"。
     status.app = { installed, available, update_available: Boolean(installed) && Boolean(available) && newerVersion(available, installed),
-      url: release?.html_url ?? null, published_at: release?.published_at ?? null, installation_unknown: installed === null };
-  } catch (error) { status.errors.push(`app:${error.message}`); status.app = { installed: null, available: null, update_available: false, installation_unknown: true, error: 'update_check_failed' }; }
+      url: release?.html_url ?? null, published_at: release?.published_at ?? null, installation_unknown: installed === null,
+      self_update: selfUpdateState(), manifest: candidate ? { version: candidate.version, release: candidate.release,
+        size_bytes: candidate.size_bytes, sha256: candidate.sha256, asset: candidate.asset } : null,
+      ...(candidate ? {} : release ? { manifest_error: updatePublicKey ? 'update_manifest_unavailable' : 'update_key_missing' } : {}) };
+    appReleaseCache = release ? { release, manifest: candidate } : null;
+  } catch (error) { status.errors.push(`app:${error.message}`); status.app = { installed: packagedIdentity?.package_version ?? null, available: null, update_available: false, installation_unknown: packagedIdentity == null, self_update: selfUpdateState(), error: 'update_check_failed' }; }
   await atomicJSON(updateStatePath, status);
   return status;
+}
+
+// 自更新只对分发渠道的 Developer ID 构建开放：本地与开发构建没有稳定 Team ID，
+// 替换它们会破坏本地交付的证据链。
+function selfUpdateState() {
+  if (process.platform !== 'darwin') return 'unsupported-platform';
+  if (packagedIdentity?.channel !== 'distribution') return 'local-build';
+  if (packagedIdentity?.working_tree_dirty !== false) return 'dirty-build';
+  if (!updatePublicKey) return 'missing-key';
+  if (!appBundle.endsWith('.app')) return 'not-an-app-bundle';
+  return 'available';
+}
+
+async function currentTeamId() {
+  const described = await run('/usr/bin/codesign', ['-dv', '--verbose=4', appBundle], { timeout: 60000 }).catch(() => null);
+  const match = /TeamIdentifier=(\S+)/.exec(`${described?.stdout ?? ''}\n${described?.stderr ?? ''}`);
+  return match ? match[1] : null;
+}
+
+// 从同一 release 取回签名清单：公钥不匹配、签名无效或字段不成立都视为不可安装。
+async function fetchAppManifest(release) {
+  const assets = Array.isArray(release?.assets) ? release.assets : [];
+  const manifestAsset = assets.find(item => item?.name === APP_UPDATE_ASSET);
+  const signatureAsset = assets.find(item => item?.name === APP_UPDATE_SIGNATURE);
+  if (!manifestAsset?.browser_download_url || !signatureAsset?.browser_download_url) throw new Error('update_manifest_unavailable');
+  const payload = await fetchBounded(manifestAsset.browser_download_url, { accept: 'application/json', maxBytes: 65536 });
+  const signature = await fetchBounded(signatureAsset.browser_download_url, { accept: 'application/octet-stream', maxBytes: 4096 });
+  const manifest = verifyManifest(payload, Buffer.from(signature.toString('utf8').trim(), 'hex'), updatePublicKey);
+  assert(manifest.tag === release.tag_name, 'update_manifest_invalid');
+  return manifest;
 }
 
 async function updateStatus({ force = false } = {}) {
@@ -404,6 +469,51 @@ async function applyPanelUpdate() {
   }
   return { ok: true, version: candidate.available, previous: candidate.installed,
     panel: await dashboardProjection(await core.status()) };
+}
+
+// 应用自更新：校验并暂存新包，然后把替换交给独立进程；替换发生在应用退出之后，
+// 因此这里只做只读检查、暂存与交接，不触碰正在运行的包。
+async function applyAppUpdate() {
+  assert(selfUpdateState() === 'available', selfUpdateState());
+  const status = await refreshUpdateStatus();
+  const candidate = status.app;
+  assert(candidate?.update_available, candidate?.manifest_error ?? 'update_candidate_unavailable');
+  const release = appReleaseCache?.release;
+  assert(release?.tag_name === `macos-v${candidate.available}`, 'update_manifest_unavailable');
+  // 安装前重新下载并验证签名清单，不复用检查阶段的缓存结论。
+  const manifest = await fetchAppManifest(release);
+  const image = await fetchBounded(manifest.url, { accept: 'application/octet-stream', maxBytes: MAX_UPDATE_BYTES, timeout: 600000 });
+  assert(image.length === manifest.size_bytes, 'update_asset_mismatch');
+  assert(sha256(image) === manifest.sha256, 'update_asset_mismatch');
+  return stageAppUpdate(candidate, manifest, image);
+}
+
+async function stageAppUpdate(candidate, manifest, image) {
+  assert(Buffer.isBuffer(image) && image.length > 0, 'update_asset_unavailable');
+  const teamId = await currentTeamId();
+  assert(teamId, 'update_team_identity_missing');
+  const work = path.join(stateDir, 'update');
+  await fs.rm(work, { recursive: true, force: true });
+  await privateDir(work);
+  const imagePath = path.join(work, 'candidate.dmg');
+  await fs.writeFile(imagePath, image, { mode: 0o600 });
+  const staged = path.join(work, 'staged.app');
+  await withMountedApp(imagePath, work, async app => {
+    await verifyBundle(app, manifest, teamId);
+    const copied = await run('/usr/bin/ditto', [app, staged], { timeout: 300000 });
+    assert(copied.code === 0, 'update_stage_failed');
+  });
+  // 替换进程在应用退出后运行：它等待本应用的 PID 消失，再做单槽替换与重启。
+  const script = path.join(desktopRoot, 'runtime/update-install.sh');
+  const receipt = path.join(stateDir, 'update-receipt.json');
+  const previous = path.join(path.dirname(appBundle), '.OPL NetFleet.previous.app');
+  const child = spawn('/bin/sh', [script, String(process.ppid), staged, appBundle, previous, receipt, teamId],
+    { detached: true, stdio: 'ignore', env });
+  child.unref();
+  await atomicJSON(path.join(stateDir, 'update-pending.json'), { schema: 'opl-netfleet-macos-update-pending.v1',
+    version: manifest.version, release: manifest.release, staged, target: appBundle,
+    at: Math.floor(Date.now() / 1000) });
+  return { ok: true, version: manifest.version, previous: candidate.installed, relaunch_required: true };
 }
 
 async function dashboardUrl() {
@@ -521,6 +631,7 @@ async function action(input) {
     // 只读的候选检查（缓存的 24 小时结果或一次有界查询），不安装任何东西。
     case 'update-check': return updateStatus({ force: input.force === true });
     case 'dashboard-update': return applyPanelUpdate();
+    case 'app-update-apply': return applyAppUpdate();
     case 'backup-export': {
       const profile = await readJSON(path.join(stateDir, 'backend/profiles/Original.json'));
       const caches = {};

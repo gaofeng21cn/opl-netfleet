@@ -153,6 +153,16 @@ try {
     assert.equal((await state()).dashboard.version, active.dashboard.version);
   }
   evidence.checks.push('dashboard_update_requires_a_verified_candidate');
+  // 应用自更新只对分发构建开放：本地/开发构建必须拒绝，且不留下暂存目录。
+  assert.ok(['available', 'local-build', 'dirty-build', 'missing-key', 'not-an-app-bundle', 'unsupported-platform']
+    .includes(updates.result.app?.self_update), JSON.stringify(updates.result.app));
+  if (updates.result.app?.self_update !== 'available') {
+    const refusedApp = await api('app-update-apply');
+    assert.equal(refusedApp.ok, false);
+    assert.equal(String(refusedApp.error), updates.result.app.self_update);
+    assert.equal(await fs.readdir(path.join(stateDir, 'update')).then(() => true, () => false), false);
+  }
+  evidence.checks.push('app_update_is_gated_on_a_distribution_build');
   const selectable = active.status.capabilities.find(item => item.can_select_region && item.selectable_regions?.length);
   assert.ok(selectable, 'real selectable capability');
   const region = selectable.selectable_regions[0];

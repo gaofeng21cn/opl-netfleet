@@ -52,6 +52,7 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         configuration.userContentController.add(self, name: "saveBackup")
         configuration.userContentController.add(self, name: "netfleetState")
         configuration.userContentController.add(self, name: "openDashboard")
+        configuration.userContentController.add(self, name: "installUpdate")
         if let accent = hostAccentScript() {
             configuration.userContentController.addUserScript(WKUserScript(source: accent,
                 injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -518,6 +519,12 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
         if message.name == "openDashboard" {
             showDashboard(message.body)
+            return
+        }
+        // 更新已由页面校验并暂存。退出仍走既有优雅退出路径：先停止核心、
+        // 撤销系统代理或 TUN，并只在清理成功后终止；随后替换进程再接管。
+        if message.name == "installUpdate" {
+            NSApp.terminate(nil)
             return
         }
         guard message.name == "saveBackup", message.frameInfo.isMainFrame,

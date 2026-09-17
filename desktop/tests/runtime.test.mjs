@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { projectProfile } from '../runtime/core.mjs';
 import { coreSettingRows } from '../runtime/settings.mjs';
 import { expandPanelArchive, installPanel, materializePanel, readPanelArchive } from '../runtime/dashboard.mjs';
+import { componentState, newerVersion, parseVersion, verifyManifest } from '../runtime/update.mjs';
 import { atomicJSON, privateDir, run } from '../runtime/io.mjs';
 
 const state = { ports: { mixed: 19080, controller: 19090, dns: 19053 }, controllerSecret: 'local-owner-secret', network: { mode: 'explicit' } };
@@ -163,4 +165,75 @@ test('the imported profile cannot choose the panel directory', () => {
   assert.equal(pinned['external-ui'], '/Applications/OPL NetFleet.app/Contents/Resources/dashboard');
   assert.equal(pinned['external-ui-name'], undefined);
   assert.equal(pinned['external-ui-url'], undefined);
+});
+
+test('an update manifest is accepted only with a valid signature and complete fields', () => {
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+  const payload = Buffer.from(JSON.stringify({
+    schema: 'opl-netfleet-macos-update.v1', version: '0.1.7', release: '9', tag: 'macos-v0.1.7',
+    source_commit: 'a'.repeat(40), source_tree: 'b'.repeat(40), asset: 'OPL-NetFleet-macos-arm64.dmg',
+    url: 'https://github.com/gaofeng21cn/opl-netfleet/releases/download/macos-v0.1.7/OPL-NetFleet-macos-arm64.dmg',
+    size_bytes: 1024, sha256: 'c'.repeat(64), team_id: 'SVVC4TA784',
+  }, null, 2) + '\n');
+  const signature = crypto.sign(null, payload, privateKey);
+  assert.equal(verifyManifest(payload, signature, publicKey).version, '0.1.7');
+  // 任何字节改动、错误密钥与缺失字段都必须拒绝。
+  const tampered = Buffer.from(payload.toString('utf8').replace('0.1.7', '0.1.8'));
+  assert.throws(() => verifyManifest(tampered, signature, publicKey), /update_signature_invalid/);
+  const other = crypto.generateKeyPairSync('ed25519');
+  assert.throws(() => verifyManifest(payload, signature, other.publicKey), /update_signature_invalid/);
+  const missing = Buffer.from(JSON.stringify({ schema: 'opl-netfleet-macos-update.v1', version: '0.1.7' }));
+  assert.throws(() => verifyManifest(missing, crypto.sign(null, missing, privateKey), publicKey), /update_manifest_invalid/);
+  assert.throws(() => verifyManifest(payload, signature, 'not-a-key'), /update_key_invalid/);
+});
+
+test('version comparison only accepts a strictly newer release', () => {
+  assert.deepEqual(parseVersion('v0.1.7'), [0, 1, 7]);
+  assert.equal(newerVersion('0.1.7', '0.1.6'), true);
+  assert.equal(newerVersion('0.2.0', '0.10.0'), false);
+  assert.equal(newerVersion('0.1.6', '0.1.6'), false);
+  assert.equal(newerVersion('0.1.6', null), true);
+  assert.equal(newerVersion('latest', '0.1.6'), false);
+});
+
+test('network components report their sync state against the bundled bytes', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'netfleet-component-test-'));
+  try {
+    await fs.writeFile(path.join(root, 'bundled'), 'same');
+    assert.deepEqual((await componentState(path.join(root, 'bundled'), path.join(root, 'missing'))).state, 'missing');
+    await fs.writeFile(path.join(root, 'installed'), 'same');
+    assert.equal((await componentState(path.join(root, 'bundled'), path.join(root, 'installed'))).state, 'match');
+    await fs.writeFile(path.join(root, 'installed'), 'older');
+    assert.equal((await componentState(path.join(root, 'bundled'), path.join(root, 'installed'))).state, 'outdated');
+    assert.equal((await componentState(path.join(root, 'absent'), path.join(root, 'installed'))).state, 'unbundled');
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('the update installer refuses unsigned or still-running replacements and restores the old app', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'netfleet-install-test-'));
+  const script = new URL('../runtime/update-install.sh', import.meta.url).pathname;
+  const prepare = async () => {
+    const work = await fs.mkdtemp(path.join(root, 'case-'));
+    const target = path.join(work, 'OPL NetFleet.app'), previous = path.join(work, '.previous.app');
+    const staged = path.join(work, 'staged.app'), receipt = path.join(work, 'receipt.json');
+    await fs.mkdir(target, { recursive: true }); await fs.writeFile(path.join(target, 'old'), 'old');
+    await fs.mkdir(staged, { recursive: true }); await fs.writeFile(path.join(staged, 'new'), 'new');
+    return { work, target, previous, staged, receipt };
+  };
+  try {
+    // 未签名的新包：脚本必须拒绝、留下失败回执并恢复旧应用。
+    const unsigned = await prepare();
+    const refused = await run('/bin/sh', [script, '999999', unsigned.staged, unsigned.target, unsigned.previous, unsigned.receipt, 'SVVC4TA784'], { timeout: 60000 });
+    assert.notEqual(refused.code, 0);
+    assert.equal(JSON.parse(await fs.readFile(unsigned.receipt, 'utf8')).state, 'failed');
+    assert.equal(await fs.readFile(path.join(unsigned.target, 'old'), 'utf8'), 'old');
+    assert.equal(await fs.readdir(unsigned.work).then(rows => rows.includes('staged.app')), true);
+    // 应用仍在运行：即使暂存包合法也绝不替换，旧应用内容保持不变。
+    const running = await prepare();
+    const blocked = await run('/bin/sh', [script, String(process.pid), running.staged, running.target, running.previous, running.receipt, 'SVVC4TA784'],
+      { timeout: 60000, env: { ...process.env, NETFLEET_UPDATE_WAIT_SECONDS: '1' } });
+    assert.notEqual(blocked.code, 0);
+    assert.match(JSON.parse(await fs.readFile(running.receipt, 'utf8')).detail, /应用未在等待时间内退出/);
+    assert.equal(await fs.readFile(path.join(running.target, 'old'), 'utf8'), 'old');
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

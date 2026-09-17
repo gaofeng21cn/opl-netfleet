@@ -37,6 +37,10 @@ export interface UpdateCandidate {
   sha256?: string;
   published_at?: string | null;
   installation_unknown?: boolean;
+  // 自更新能力与已签名清单摘要：'available' 才允许界面提供安装入口。
+  self_update?: 'available' | 'local-build' | 'dirty-build' | 'missing-key' | 'not-an-app-bundle' | 'unsupported-platform';
+  manifest?: { version: string; release: string; size_bytes: number; sha256: string; asset: string } | null;
+  manifest_error?: string;
   error?: string;
 }
 export interface UpdateStatus {
@@ -82,6 +86,8 @@ export interface DesktopSnapshot {
     mode: NetworkMode;
     running: boolean;
     overlay: boolean;
+    // 特权网络组件与包内版本的同步状态；更新后需要重新授权的判断来自 owner。
+    components_sync?: { state: 'match' | 'outdated' | 'missing' | 'unbundled' | 'unsupported-platform'; helper: string; core: string };
     rows: CoreSettingRow[];
     components: CoreComponent[];
     identity: {

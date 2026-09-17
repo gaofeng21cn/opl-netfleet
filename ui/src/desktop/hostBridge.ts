@@ -7,6 +7,7 @@ interface NativeBridge {
   saveBackup?: { postMessage(value: { contents: string }): void };
   netfleetState?: { postMessage(value: HostState): void };
   openDashboard?: { postMessage(value: { url: string }): void };
+  installUpdate?: { postMessage(value: Record<string, never>): void };
 }
 
 const bridge = () => {
@@ -32,5 +33,14 @@ export function openDashboardThroughHost(url: string): boolean {
   const handler = bridge()?.openDashboard;
   if (!handler) return false;
   handler.postMessage({ url });
+  return true;
+}
+
+// 更新已经通过校验并暂存；退出交给宿主既有的优雅退出路径（它会先停止核心、
+// 撤销网络接管并确认清理成功），然后由替换进程在应用退出后接管。
+export function installUpdateThroughHost(): boolean {
+  const handler = bridge()?.installUpdate;
+  if (!handler) return false;
+  handler.postMessage({});
   return true;
 }

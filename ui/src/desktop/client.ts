@@ -102,4 +102,6 @@ export class DesktopNetFleetClient implements BusinessClient {
   // 更新检查只报告候选；面板安装是独立确认后的动作。
   updateCheck(force = false) { return this.action<UpdateStatus>('update-check', { force }); }
   updateDashboard() { return this.action<{ ok: boolean; version: string; previous: string | null }>('dashboard-update'); }
+  // 应用更新：只做校验与暂存；退出与替换由宿主和独立进程完成。
+  updateApp() { return this.action<{ ok: boolean; version: string; previous: string | null; relaunch_required: boolean }>('app-update-apply'); }
 }

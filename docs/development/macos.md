@@ -68,6 +68,14 @@ xcrun stapler validate '.build/macos/OPL-NetFleet-macos-arm64.dmg'
 spctl --assess --type open --context context:primary-signature --verbose=2 '.build/macos/OPL-NetFleet-macos-arm64.dmg'
 ```
 
+冻结 DMG 后生成更新清单：`node scripts/macos/update-sign.mjs manifest --dmg <最终 DMG>
+--app <DMG 内已 staple 的应用> --tag macos-vX.Y.Z --output dist/latest-macos.json`。它回读
+应用签名身份与 `build.json`，输出 `latest-macos.json` 与其 `.sig`；两个文件与该 DMG 一起
+作为同一 Release 的资产上传，应用据此检查更新。私钥默认在
+`~/.config/opl-netfleet/update-signing-key.pem`（0600），首次使用运行
+`node scripts/macos/update-sign.mjs keygen`；私钥不进入仓库、日志或 Release，丢失后必须
+随新构建重新分发公钥。
+
 两次公证都必须返回 Accepted；失败读取该提交的 `notarytool log` 后修复并重建候选。
 打包器拒绝覆盖已有 DMG；初始伴随 JSON 是打包阶段回执，其中 DMG 公证及 VM 验收均为
 未完成。staple 改变 DMG 字节，最终验收另记录最终 SHA-256，不能沿用打包阶段摘要。
