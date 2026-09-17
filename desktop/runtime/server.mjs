@@ -11,7 +11,7 @@ import { CoreOwner, projectProfile } from './core.mjs';
 import { NetworkOwner } from './network.mjs';
 import { coreSettingRows } from './settings.mjs';
 import { expandPanelArchive, installPanel, materializePanel } from './dashboard.mjs';
-import { TEAM_ID, applicationBundle, componentState, latestRelease, releaseCandidate, sha256, verifyBundle, withMountedApp } from './update.mjs';
+import { MAX_APP_IMAGE_BYTES, TEAM_ID, applicationBundle, componentState, latestRelease, releaseCandidate, sha256, verifyBundle, withMountedApp } from './update.mjs';
 import { privateDir, atomicJSON, readJSON, object, assert, run, requestBody, codeDigest } from './io.mjs';
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -443,7 +443,7 @@ async function applyAppUpdate() {
   const status = await refreshUpdateStatus();
   const candidate = status.app?.candidate;
   assert(candidate, status.app?.manifest_error ?? 'update_candidate_unavailable');
-  const image = await fetchBounded(candidate.url, { accept: 'application/octet-stream', maxBytes: MAX_UPDATE_BYTES, timeout: 600000 });
+  const image = await fetchBounded(candidate.url, { accept: 'application/octet-stream', maxBytes: MAX_APP_IMAGE_BYTES, timeout: 600000 });
   assert(image.length === candidate.size_bytes, 'update_asset_mismatch');
   assert(sha256(image) === candidate.sha256, 'update_asset_mismatch');
   return stageAppUpdate(candidate, image);

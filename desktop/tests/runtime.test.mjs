@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import { projectProfile } from '../runtime/core.mjs';
 import { coreSettingRows } from '../runtime/settings.mjs';
 import { expandPanelArchive, installPanel, materializePanel, readPanelArchive } from '../runtime/dashboard.mjs';
-import { applicationBundle, componentState, latestRelease, newerVersion, parseVersion, releaseCandidate } from '../runtime/update.mjs';
+import { MAX_APP_IMAGE_BYTES, applicationBundle, componentState, latestRelease, newerVersion, parseVersion, releaseCandidate } from '../runtime/update.mjs';
 import { atomicJSON, privateDir, run } from '../runtime/io.mjs';
 
 const state = { ports: { mixed: 19080, controller: 19090, dns: 19053 }, controllerSecret: 'local-owner-secret', network: { mode: 'explicit' } };
@@ -252,4 +252,11 @@ test('the application bundle is resolved above Contents, never guessed', () => {
   assert.equal(applicationBundle('/Users/gaofeng/workspace/app/opl-netfleet'), null);
   assert.equal(applicationBundle('/Applications/Somewhere/Resources'), null);
   assert.equal(applicationBundle('/Resources'), null);
+});
+
+test('the application image limit fits a real disk image, not the panel budget', () => {
+  // 当前发布的 DMG 约 75 MB；上限必须留出余量，同时仍然有界。
+  const publishedDmg = 75063520;
+  assert.ok(MAX_APP_IMAGE_BYTES > publishedDmg * 2, `limit ${MAX_APP_IMAGE_BYTES} must exceed the published image with headroom`);
+  assert.ok(MAX_APP_IMAGE_BYTES <= 1024 ** 3, 'the limit must stay bounded');
 });

@@ -10,6 +10,9 @@ export const RELEASE_TAG = /^macos-v(\d+\.\d+\.\d+)$/;
 export const DMG_ASSET = /^OPL-NetFleet-.*macos-arm64\.dmg$/;
 // 公开事实：应用的 Developer ID 团队标识，用于确认候选确实来自本产品。
 export const TEAM_ID = 'SVVC4TA784';
+// 应用镜像比面板资源大得多（当前 DMG 约 75 MB），下载上限必须按镜像而不是按
+// 面板资产来定；超限即拒绝，避免被伪造的清单拖垮磁盘或内存。
+export const MAX_APP_IMAGE_BYTES = 268435456;
 
 export function parseVersion(value) {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(String(value ?? '').replace(/^v/, ''));
