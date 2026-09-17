@@ -260,3 +260,15 @@ test('the application image limit fits a real disk image, not the panel budget',
   assert.ok(MAX_APP_IMAGE_BYTES > publishedDmg * 2, `limit ${MAX_APP_IMAGE_BYTES} must exceed the published image with headroom`);
   assert.ok(MAX_APP_IMAGE_BYTES <= 1024 ** 3, 'the limit must stay bounded');
 });
+
+test('a fixture feed may serve from loopback, a foreign one may not', () => {
+  const release = { tag_name: 'macos-v0.3.0', draft: false, prerelease: false,
+    assets: [{ name: 'OPL-NetFleet-0.3.0-macos-arm64.dmg', size: 1024, digest: `sha256:${'a'.repeat(64)}`,
+      browser_download_url: 'http://127.0.0.1:8788/OPL-NetFleet-0.3.0-macos-arm64.dmg' }] };
+  // 生产默认拒绝明文地址。
+  assert.equal(releaseCandidate(release), null);
+  // 显式测试开关允许本机回环，且只允许回环。
+  assert.equal(releaseCandidate(release, { allowLoopbackHttp: true }).version, '0.3.0');
+  const remote = { ...release, assets: [{ ...release.assets[0], browser_download_url: 'http://evil.example/OPL-NetFleet-0.3.0-macos-arm64.dmg' }] };
+  assert.equal(releaseCandidate(remote, { allowLoopbackHttp: true }), null);
+});

@@ -35,14 +35,18 @@ export function latestRelease(releases) {
 }
 
 /** Release 必须同时给出 DMG 与 GitHub 计算的 sha256 摘要，否则不可安装。 */
-export function releaseCandidate(release) {
+export function releaseCandidate(release, { allowLoopbackHttp = false } = {}) {
   if (!release) return null;
   // 草稿与预发布只作为手动下载入口，不能成为安装候选。
   if (release.draft !== false || release.prerelease !== false) return null;
   const version = RELEASE_TAG.exec(String(release.tag_name))?.[1] ?? null;
   const asset = (Array.isArray(release.assets) ? release.assets : [])
     .find(item => DMG_ASSET.test(String(item?.name ?? '')) && /^sha256:[a-f0-9]{64}$/.test(String(item?.digest ?? '')));
-  if (!version || !asset || !Number.isInteger(asset.size) || asset.size <= 0 || !/^https:\/\//.test(String(asset.browser_download_url))) return null;
+  if (!version || !asset) return null;
+  const url = String(asset.browser_download_url ?? '');
+  // 生产只接受 https；测试夹具经显式开关可指向本机回环地址。
+  const loopback = allowLoopbackHttp && /^http:\/\/(127\.0\.0\.1|\[::1\]|localhost):\d+\//.test(url);
+  if (!Number.isInteger(asset.size) || asset.size <= 0 || (!/^https:\/\//.test(url) && !loopback)) return null;
   return { version, tag: release.tag_name, url: asset.browser_download_url, name: asset.name,
     size_bytes: asset.size, sha256: asset.digest.slice('sha256:'.length), page: release.html_url ?? null,
     published_at: release.published_at ?? null };

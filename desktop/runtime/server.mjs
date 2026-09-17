@@ -36,6 +36,8 @@ const UPDATE_ROOT = 'https://github.com/Zephyruso/zashboard/releases';
 // 发布源默认是 GitHub 的 Release 列表；测试可以用 NETFLEET_UPDATE_FEED 指向本地
 // 夹具。清单不是信任锚——制品仍必须通过 GitHub 摘要、Developer ID 与公证校验。
 const APP_RELEASES = process.env.NETFLEET_UPDATE_FEED ?? 'https://api.github.com/repos/gaofeng21cn/opl-netfleet/releases?per_page=20';
+// 只有测试夹具才允许本机回环地址；生产必须走 https 资产地址。
+const loopbackFeed = /^http:\/\/(127\.0\.0\.1|localhost):\d+\//.test(APP_RELEASES);
 const MAX_UPDATE_BYTES = 33554432;
 const packagedIdentity = await readJSON(path.join(appRoot, 'build.json')).catch(() => null);
 const runtimeRoot = process.env.NETFLEET_RUNTIME_ROOT ?? path.join(os.homedir(), '.cache/opl-netfleet/macos/runtime');
@@ -387,7 +389,7 @@ async function refreshUpdateStatus() {
     const releases = JSON.parse((await fetchBounded(APP_RELEASES, { maxBytes: 2097152 })).toString('utf8'));
     const installed = packagedIdentity?.package_version ?? null;
     const release = latestRelease(releases);
-    const candidate = releaseCandidate(release);
+    const candidate = releaseCandidate(release, { allowLoopbackHttp: loopbackFeed });
     const available = candidate?.version ?? null;
     // 候选必须带 GitHub 计算的 sha256 摘要；没有摘要的 Release 只作为手动下载入口。
     status.app = { installed, available, update_available: Boolean(installed) && Boolean(available) && newerVersion(available, installed),
