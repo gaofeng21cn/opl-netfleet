@@ -88,6 +88,23 @@ NETFLEET_TEST_APP='/Applications/OPL NetFleet.app' \
 实际转发，以及停止、退出、核心和 owner 崩溃后的网络恢复；还需覆盖旧版升级保留配置
 和退出后卸载。源代码或旧安装通过不能替代最终 DMG 的验收。
 
+## 发布与更新验收
+
+发布把 DMG 与 `SHA256SUMS` 作为同一 Release 的资产上传，命令见
+[双平台交付](delivery.md#macos-dmg-公开分发)。`--latest=false` 必须保留：OpenWrt 安装
+入口依赖 `/releases/latest`。发布后回读 Release 资产与 GitHub 计算的 `sha256:` 摘要，
+与本地产物比对；本应用的自更新就以该摘要和 Apple 签名、公证为信任锚。
+
+更新路径要在真实制品上验收，不能只用 fixture：装一个较早的分发构建到本机，让它的
+“核心与网络 → 更新”检查已发布版本、执行安装，确认应用在退出后被替换、重新打开，回执
+为 `installed`，且旧应用槽已清理。用 `NETFLEET_UPDATE_FEED` 指向本地 release 列表可以
+在离线环境中重复这条链路；清单不是信任锚，制品仍必须通过 GitHub 摘要、Developer ID、
+Team ID 与公证校验，因此替身源无法让客户端安装任何别的东西。
+
+受保护的路径同样要验收：应用仍在运行时不得替换正在使用的包；未签名、未公证、版本不符
+或 Team ID 不符的候选必须被拒绝并保留旧版本；失败后 `update-receipt.json` 记录
+`failed` 与原因。
+
 ## 使用
 
 业务界面与 React 参考面共用组件，提供概览、出口、机场、地区、配置和诊断六页。
