@@ -67,6 +67,7 @@ export class DesktopNetFleetClient implements BusinessClient {
     const value = await this.request<DesktopSnapshot>('/api/state');
     if (value?.runtime?.platform !== 'macos' || typeof value.runtime.running !== 'boolean'
       || typeof value.runtime.configured !== 'boolean' || !value.subscriptions || !value.network
+      || !value.core || !Array.isArray(value.core.rows) || !Array.isArray(value.core.components)
       || (value.status !== null && (!Array.isArray(value.status?.capabilities) || !Array.isArray(value.status?.providers) || !Array.isArray(value.status?.regions)))
       || (value.config != null && (typeof value.config.revision !== 'string' || !Array.isArray(value.config.providers) || !Array.isArray(value.config.regions) || !Array.isArray(value.config.capabilities)))
       || (value.events !== null && !Array.isArray(value.events?.events))) {

@@ -162,7 +162,10 @@ func userData(_ file: String, within base: String, uid: uid_t) throws -> Data {
     let fh = FileHandle(fileDescriptor: handle, closeOnDealloc: false)
     return try fh.readToEnd() ?? Data()
 }
-func prepareTun(configPath: String, base: String, uid: uid_t, port: Int) throws -> String {
+// The TUN session rewrites a bounded set of keys. Report exactly what this
+// session applied so the desktop can project the real core settings instead of
+// describing them a second time in the UI layer.
+func prepareTun(configPath: String, base: String, uid: uid_t, port: Int) throws -> (path: String, overlay: [String: Any]) {
     let bytes = try userData(configPath, within: base, uid: uid)
     // A fresh session must never inherit another account's provider cache.
     for filename in try fm.contentsOfDirectory(atPath: rootDir) where filename == "config.json" || filename.hasPrefix("proxy-providers-") || filename.hasPrefix("rule-providers-") {
@@ -179,11 +182,16 @@ func prepareTun(configPath: String, base: String, uid: uid_t, port: Int) throws 
     var dns = config["dns"] as? [String: Any] ?? [:]
     dns.removeValue(forKey: "listen"); dns["enable"] = true
     config["dns"] = dns
+    var injected: [String] = []
     if config["sniffer"] == nil {
         config["sniffer"] = ["enable": true, "force-dns-mapping": true, "parse-pure-ip": true,
             "sniff": ["HTTP": ["ports": [80, 8080]], "TLS": ["ports": [443, 8443]], "QUIC": ["ports": [443, 8443]]]]
+        injected.append("sniffer")
     }
     config["tun"] = ["enable": true, "device": "utun198", "stack": "gvisor", "auto-route": true, "auto-detect-interface": true, "strict-route": false, "dns-hijack": ["any:53"]]
+    var overlay: [String: Any] = ["dns-enable": true, "dns-listen-removed": true, "tun": config["tun"] ?? [:],
+        "mixed-port": port, "bind-address": "127.0.0.1", "allow-lan": false, "injected": injected]
+    if injected.contains("sniffer") { overlay["sniffer"] = config["sniffer"] ?? [:] }
     for category in ["proxy-providers", "rule-providers"] {
         guard let providers = input[category] as? [String: [String: Any]] else { continue }
         var mapped: [String: Any] = [:]
@@ -209,7 +217,7 @@ func prepareTun(configPath: String, base: String, uid: uid_t, port: Int) throws 
     for _ in 0..<300 where check.isRunning { usleep(100000) }
     if check.isRunning { check.terminate(); usleep(200000); if check.isRunning { kill(check.processIdentifier, SIGKILL) } }
     check.waitUntilExit(); try require(check.terminationStatus == 0, "Privileged configuration validation failed")
-    return destination
+    return (destination, overlay)
 }
 
 var stopping = false
@@ -251,6 +259,7 @@ func run() throws {
     var core: Process? = nil
     var corePid: pid_t = 0
     var coreIdentity: String? = nil
+    var tunOverlay: [String: Any]? = nil
     var failure: String? = nil
     var active = false
     try require(args.count == 7, "Network session requires private desktop state")
@@ -264,7 +273,7 @@ func run() throws {
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
             process.waitUntilExit()
         }
-        core = nil; corePid = 0; coreIdentity = nil; active = false
+        core = nil; corePid = 0; coreIdentity = nil; tunOverlay = nil; active = false
         if mode == "tun" && interfaceExists("utun198") { problems.append("Owned TUN interface still exists after core exit") }
         try require(problems.isEmpty, problems.joined(separator: "; "))
     }
@@ -278,7 +287,9 @@ func run() throws {
             try attachSystem(port: port)
         } else {
             try require(!interfaceExists("utun198"), "TUN interface is already owned")
-            let config = try prepareTun(configPath: argument, base: stateBase, uid: uid, port: port)
+            let prepared = try prepareTun(configPath: argument, base: stateBase, uid: uid, port: port)
+            let config = prepared.path
+            tunOverlay = prepared.overlay
             let process = Process(); process.executableURL = URL(fileURLWithPath: corePath)
             process.arguments = ["-d", rootDir, "-f", config]
             process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
@@ -295,6 +306,7 @@ func run() throws {
     func state() -> [String: Any] {
         let confirmed = active && (mode != "system" || systemSettingsMatch()) && (mode != "tun" || interfaceExists("utun198"))
         var status: [String: Any] = ["mode": mode, "ownerPid": ownerPid, "helperPid": getpid(), "corePid": corePid, "running": active, "phase": active ? (confirmed ? "active" : "changed") : "idle", "recoveryRequired": !active && (fm.fileExists(atPath: journalPath) || (mode == "tun" && interfaceExists("utun198")))]
+        if active, mode == "tun", let applied = tunOverlay { status["overlay"] = applied }
         if let failure { status["error"] = failure }
         else if active && !confirmed { status["error"] = "Network settings changed outside this session" }
         return status

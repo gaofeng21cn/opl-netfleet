@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createPageHost, createScope, pageHash, pageFromHash, pluginPages, pluginNavigation, resourceUrl, type PluginContext, type PluginsSnapshot } from '../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/plugin-host.js';
 import { PluginApplication } from './PluginApplication';
+import { pageLabel } from '../lib/vocabulary';
 
 const snapshot = (revision = 'revision-1'): PluginsSnapshot => ({ plugins: [{ id: 'example', revision, enabled: true, runtime: 'ucode', ui: [{ id: 'settings', title: '独立配置', module: 'resources/page.js' }], configuration: { read: 'settings_get', write: 'settings_save' } }] });
 const page = () => pluginPages(snapshot())[0];
@@ -166,7 +167,8 @@ it('renders independent React plugin navigation without status or product method
   const html = renderToStaticMarkup(<PluginApplication client={api()} initialPlugins={snapshot()} readOnly />);
   expect(html).toContain('独立配置');
   expect(html).toContain('只读');
-  expect(html).not.toContain('网络概览');
+  // 产品页标题来自共享词汇表，插件宿主不得渲染它。
+  expect(html).not.toContain(pageLabel('overview'));
 });
 
 it('loads and replaces independent LuCI pages without product status or onboarding', async () => {

@@ -273,7 +273,7 @@ const productController = {
 				E('div', { 'class': 'cbi-page-actions' }, buttons));
 			return;
 		}
-		const title = ({ overview: '网络概览', exits: '出口', providers: '机场', regions: '地区', config: '配置', components: '插件与更新', events: '诊断' })[this.currentView];
+		const title = ({ overview: '概览', exits: '出口', providers: '机场', regions: '地区', config: '配置', components: '插件与更新', events: '诊断' })[this.currentView];
 		const actions = this.status.actions || {};
 		const buttonAttrs = function(attrs, requiresLiveData) {
 			if (self.refreshing || (requiresLiveData && (self.busy || !self.liveDataReady || self.context.readOnly)))

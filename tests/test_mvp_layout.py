@@ -783,7 +783,7 @@ function createPage(storage, api, notifications) {
     await new Promise(function(resolve) { setImmediate(resolve); });
     assert.strictEqual(initialResolved, true, 'cached load must not wait for RPC');
     const root = page.render(await initialPromise);
-    assert(nodeText(root).includes('网络概览'));
+    assert(nodeText(root).includes('概览'));
     assert(!nodeText(root).includes('NetFleet v0.3.0 · aaaaaaa'), 'build identity belongs in component details, not the page header');
     assert.strictEqual(page.styleLink.attrs.href, 'resources/native.css?v=revision-1');
     assert.strictEqual(page.liveDataReady, false);

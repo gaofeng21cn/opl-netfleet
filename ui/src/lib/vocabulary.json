@@ -1,0 +1,25 @@
+{
+  "schema": "opl-netfleet-vocabulary.v1",
+  "pages": [
+    { "id": "overview", "label": "概览" },
+    { "id": "exits", "label": "出口" },
+    { "id": "providers", "label": "机场" },
+    { "id": "regions", "label": "地区" },
+    { "id": "config", "label": "配置" },
+    { "id": "components", "label": "插件与更新", "desktop": false },
+    { "id": "events", "label": "诊断" }
+  ],
+  "configSections": [
+    { "key": "foundation", "label": "基础接入", "group": "strategy", "desktopId": "profile" },
+    { "key": "providers", "label": "订阅与机场", "group": "strategy" },
+    { "key": "regions", "label": "地区映射", "group": "strategy" },
+    { "key": "exits", "label": "出口策略", "group": "strategy", "openwrtId": "capabilities" },
+    { "key": "routing", "label": "业务规则", "group": "strategy" },
+    { "key": "automation", "label": "自动运行", "group": "strategy" },
+    { "key": "safety", "label": "安全与恢复", "group": "strategy" },
+    { "key": "network", "label": "网络接入", "group": "device", "desktop": false },
+    { "key": "core", "label": "核心与网络", "group": "device", "openwrt": false, "reference": false },
+    { "key": "files", "label": "配置文件与备份", "group": "device", "desktopId": "backup" },
+    { "key": "advanced", "label": "高级 JSON", "group": "device", "openwrt": false, "reference": false }
+  ]
+}

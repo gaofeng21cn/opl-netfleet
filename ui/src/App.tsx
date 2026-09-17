@@ -17,6 +17,7 @@ import { EventsView } from './views/EventsView';
 import { ComponentsView } from './views/ComponentsView';
 import { ProviderTable, RegionTable } from './views/Tables';
 import { PluginApplication, type PluginClient } from './plugins/PluginApplication';
+import { pageLabel } from './lib/vocabulary';
 import type { ComponentsSnapshot, ConnectionsSnapshot, DataSourceInfo, DeviceConfigSnapshot, EventsSnapshot, NetFleetClient, OperationsSnapshot, PreviewControls, StatusSnapshot, ViewId } from './types';
 import './styles.css';
 
@@ -225,7 +226,7 @@ function ProductPreview({ client, initialStatus, initialEvents, preview, fallbac
         onDisable={() => undefined}
         onOpenDashboard={() => undefined}
       >
-        <div className="nf-page-heading"><div><h1>网络概览</h1></div></div>
+        <div className="nf-page-heading"><div><h1>{pageLabel('overview')}</h1></div></div>
         <DataSourceBar source={source} statusError={statusError} eventsError={eventsError} />
         <div className="nf-alert" role="alert"><AlertCircle aria-hidden="true" /><span>{statusError}</span></div>
       </Shell>
@@ -236,7 +237,7 @@ function ProductPreview({ client, initialStatus, initialEvents, preview, fallbac
   const healthy = Boolean(status.runtime.mihomo_running && status.runtime.backend_enabled && status.runtime.controller_available &&
     (!status.active || (status.runtime.netfleet_present && status.runtime.lan_runtime?.transparent_proxy_ready)));
   const dashboardReady = Boolean(status.runtime.mihomo_running && status.runtime.controller_available && status.runtime.lan_runtime?.dashboard_lan_ready);
-  const title = { overview: '网络概览', exits: '出口', providers: '机场', regions: '地区', config: '配置', components: '插件与更新', events: '诊断' }[view];
+  const title = pageLabel(view);
 
   return (
     <Shell

@@ -16,18 +16,18 @@ import {
   Target,
 } from 'lucide-react';
 import type { PreviewControls, ViewId } from '../types';
+import { pagesFor, type VocabularySurface } from '../lib/vocabulary';
 
 type NavigationItem = { id: ViewId; label: string; icon: typeof House; separatorBefore?: boolean };
 
-const nav: NavigationItem[] = [
-  { id: 'overview', label: '概览', icon: House },
-  { id: 'exits', label: '出口', icon: Route },
-  { id: 'providers', label: '机场', icon: PlaneTakeoff },
-  { id: 'regions', label: '地区', icon: Globe2 },
-  { id: 'config', label: '配置', icon: Settings, separatorBefore: true },
-  { id: 'components', label: '插件与更新', icon: Package },
-  { id: 'events', label: '诊断', icon: BellRing },
-];
+// 图标与分组属于渲染，名称与顺序来自共享词汇表。
+const navIcons: Record<string, typeof House> = {
+  overview: House, exits: Route, providers: PlaneTakeoff, regions: Globe2,
+  config: Settings, components: Package, events: BellRing,
+};
+const nav = (surface: VocabularySurface): NavigationItem[] => pagesFor(surface).map((page) => ({
+  id: page.id as ViewId, label: page.label, icon: navIcons[page.id] || House, separatorBefore: page.id === 'config',
+}));
 
 interface ShellProps {
   platform?: 'openwrt' | 'desktop';
@@ -68,7 +68,7 @@ export function Shell({
   children,
   notice,
 }: ShellProps) {
-  const items = platform === 'desktop' ? nav.filter(item => item.id !== 'components') : nav;
+  const items = nav(platform === 'desktop' ? 'desktop' : 'openwrt');
   return (
     <div className={`nf-app${platform === 'desktop' ? ' nf-desktop' : ''}`}>
       <aside className="nf-sidebar">

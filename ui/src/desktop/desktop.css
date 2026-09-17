@@ -248,3 +248,9 @@ html, body, #root { height: 100%; background: #f5f6f8; }
 .nf-desktop-feedback > button:hover { background: var(--nf-soft); color: var(--nf-text); }
 .nf-desktop-feedback > button svg { width: 15px; height: 15px; }
 .nf-desktop-feedback.is-inline { position: static; width: auto; max-width: none; box-shadow: none; margin-bottom: 12px; }
+
+/* 核心与网络：分组行只做表格内的语义分隔，不引入第二套容器样式。 */
+.nf-desktop .nf-core-group td { padding: 6px 12px; color: var(--nf-muted); background: var(--nf-soft); font-size: 12px; font-weight: 600; }
+.nf-desktop .nf-config-section code { padding: 0 4px; border-radius: var(--nf-radius-bar, 2px); background: var(--nf-soft); font-size: 12px; }
+.nf-desktop .nf-config-section .nf-management-note { display: flex; align-items: flex-start; gap: 6px; }
+.nf-desktop .nf-config-section .nf-management-note svg { width: 14px; height: 14px; margin-top: 2px; flex-shrink: 0; }

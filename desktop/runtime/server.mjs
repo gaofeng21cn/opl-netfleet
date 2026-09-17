@@ -7,11 +7,14 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { installBuiltin, verifyInstalledBuiltin } from './builtin.mjs';
-import { CoreOwner } from './core.mjs';
+import { CoreOwner, projectProfile } from './core.mjs';
 import { NetworkOwner } from './network.mjs';
+import { coreSettingRows } from './settings.mjs';
 import { privateDir, atomicJSON, readJSON, object, assert, run, requestBody, codeDigest } from './io.mjs';
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// 应用包根目录：打包后指向 Contents/Resources，源码运行时指向仓库根。
+const appRoot = path.resolve(desktopRoot, '..');
 const bundledWebRoot = path.join(desktopRoot, 'web');
 const webRoot = await fs.access(bundledWebRoot).then(() => bundledWebRoot, () => path.resolve(desktopRoot, '../ui/dist-desktop'));
 const sourceRoot = process.env.NETFLEET_SOURCE_ROOT ?? path.resolve(desktopRoot, '../openwrt/files/usr/libexec/opl-netfleet');
@@ -25,7 +28,7 @@ const token = crypto.randomBytes(32).toString('hex'), rpcToken = crypto.randomBy
 const cleanEnv = { ...process.env };
 for (const key of Object.keys(cleanEnv)) if (/^(https?|all|no)_proxy$/i.test(key)) delete cleanEnv[key];
 const env = { ...cleanEnv, PATH: `${runtimeRoot}/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
-  NETFLEET_STATE_DIR: stateDir, NETFLEET_SOURCE_ROOT: sourceRoot, NETFLEET_DESKTOP_ROOT: desktopRoot,
+  NETFLEET_STATE_DIR: stateDir, NETFLEET_SOURCE_ROOT: sourceRoot, NETFLEET_DESKTOP_ROOT: desktopRoot, NETFLEET_APP_ROOT: appRoot,
   NETFLEET_SOCKET: socketPath, NETFLEET_RPC_TOKEN: rpcToken,
   UCODE_PATH: `${runtimeRoot}/lib/ucode/*.so:${runtimeRoot}/share/ucode/*.uc` };
 const statePath = path.join(stateDir, 'state.json');
@@ -236,6 +239,58 @@ async function ensurePolicy() {
   assert(discovered?.ready && discovered.policy, 'initial_policy_needs_configuration');
   await savePolicy(discovered.policy);
 }
+// 随包运行组件的实际身份：能执行的就现场回读版本，不能执行的退回随包清单。
+let componentCache = null;
+async function runtimeComponents() {
+  if (componentCache) return componentCache;
+  const packaged = await readJSON(path.join(appRoot, 'dependencies.json')).catch(() => null);
+  const probe = async (file, args, pattern) => {
+    try {
+      const result = await run(path.join(runtimeRoot, 'bin', file), args, { env, timeout: 5000 });
+      const match = result.code === 0 ? pattern.exec(`${result.stdout}\n${result.stderr}`) : null;
+      return match ? match[1] : null;
+    } catch { return null; }
+  };
+  const [mihomo, yq] = await Promise.all([
+    probe('mihomo', ['-v'], /v(\d+\.\d+\.\d+)/),
+    probe('yq', ['--version'], /version v?(\d+\.\d+\.\d+)/),
+  ]);
+  componentCache = [
+    { id: 'node', label: 'Node', version: process.version.replace(/^v/, ''), source: 'running' },
+    { id: 'ucode', label: 'UCode', version: packaged?.ucode?.version ?? null, source: 'package' },
+    { id: 'mihomo', label: 'Mihomo 核心', version: mihomo ?? packaged?.mihomo?.version ?? null, source: mihomo ? 'runtime' : 'package' },
+    { id: 'yq', label: 'yq', version: yq ?? packaged?.yq?.version ?? null, source: yq ? 'runtime' : 'package' },
+  ];
+  return componentCache;
+}
+
+async function sourceProfile() {
+  if (typeof state.profile !== 'string') return null;
+  try { return await core.parseProfile(await fs.readFile(core.resolveProfile(state.profile), 'utf8')); }
+  catch { return null; }
+}
+
+// 本机核心设置只投影三层真实事实：Profile 声明、平台交给核心的配置、特权会话覆写。
+async function coreProjection(runtime, networkState) {
+  const profile = await sourceProfile();
+  let projected = null;
+  if (profile) {
+    try { projected = projectProfile(profile, state, core.runtimeDir, state.network.mode); }
+    catch { projected = null; }
+  }
+  const running = runtime.running ? await core.controller('/configs') : null;
+  const overlay = state.network.mode === 'tun' && networkState.running ? networkState.overlay ?? null : null;
+  const packaged = await readJSON(path.join(appRoot, 'build.json')).catch(() => null);
+  return { profile: state.profile ?? null, mode: state.network.mode, running: Boolean(runtime.running),
+    overlay: Boolean(overlay), rows: coreSettingRows({ profile, projected, running, overlay }),
+    components: await runtimeComponents(),
+    identity: packaged && typeof packaged === 'object' ? {
+      version: packaged.package_version ?? null, release: packaged.package_release ?? null,
+      channel: packaged.channel ?? null, source_commit: packaged.source_commit ?? null,
+      source_tree: packaged.source_tree ?? null, working_tree_dirty: packaged.working_tree_dirty === true,
+    } : null };
+}
+
 async function snapshot() {
   const runtime = await core.status();
   const networkState = await network.status();
@@ -252,7 +307,8 @@ async function snapshot() {
   }
   return { runtime: { ...runtime, platform: 'macos', mode: actualMode, requestedMode: state.mode, networkMode: state.network.mode,
     ports: state.ports, configured: state.configured, lastError }, policy: await readJSON(path.join(stateDir, 'policy.json')),
-    subscriptions, status, events, config, configError, network: networkState, error };
+    subscriptions, status, events, config, configError, network: networkState, error,
+    core: await coreProjection(runtime, networkState) };
 }
 async function action(input) {
   assert(object(input) && typeof input.action === 'string', 'invalid_action');

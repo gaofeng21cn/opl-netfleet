@@ -106,6 +106,22 @@ try {
   const connectionRead = await api('connections');
   assert.equal(connectionRead.ok, true); assert.ok(Array.isArray(connectionRead.result.connections));
   evidence.checks.push('shared_react_status_and_connections_contract');
+  // 本机核心设置投影必须来自 owner：平台交给核心的值、Profile 声明值与运行回读，
+  // 并且不把 controller 密钥带进页面数据。
+  const projection = active.core;
+  assert.ok(Array.isArray(projection.rows) && projection.rows.length >= 12);
+  const dnsRow = projection.rows.find(item => item.id === 'dns.enable');
+  assert.equal(dnsRow.source, 'platform'); assert.equal(dnsRow.configured, '开启');
+  const levelRow = projection.rows.find(item => item.id === 'log-level');
+  assert.equal(levelRow.configured, 'warning'); assert.equal(levelRow.running, 'warning');
+  assert.equal(projection.rows.some(item => item.group === 'TUN 会话'), false);
+  assert.equal(projection.overlay, false);
+  assert.ok(projection.components.some(item => item.id === 'mihomo' && item.version));
+  assert.ok(projection.components.some(item => item.id === 'node' && item.version === process.version.replace(/^v/, '')));
+  assert.ok(projection.identity === null || typeof projection.identity.version === 'string');
+  const secret = JSON.parse(await fs.readFile(path.join(stateDir, 'state.json'))).controllerSecret;
+  assert.equal(JSON.stringify(projection).includes(secret), false);
+  evidence.checks.push('desktop_core_projection_from_owner');
   const probe = await run('/usr/bin/curl', ['--noproxy', '', '--proxy', `http://127.0.0.1:${active.runtime.ports.mixed}`, '--max-time', '15', '-sS', '-o', '/dev/null', '-w', '%{http_code}', 'https://www.gstatic.com/generate_204']);
   assert.equal(probe.stdout, '204'); assert.ok(connections > 0); evidence.checks.push('real_mihomo_proxy_https_204');
   const selectable = active.status.capabilities.find(item => item.can_select_region && item.selectable_regions?.length);

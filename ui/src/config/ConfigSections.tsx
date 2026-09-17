@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { CheckCircle2, CircleAlert, Files, Gauge, Network, Plus, RefreshCw, Route, ShieldCheck, Trash2, Waypoints } from 'lucide-react';
-import type { ConfigDraft, RoutingRuleDraft } from './model';
+import type { ConfigDraft, ConfigSectionId, RoutingRuleDraft } from './model';
 import type { StatusSnapshot } from '../types';
 import { regionalDisplayName } from '../lib/format';
+import { configSectionsFor } from '../lib/vocabulary';
 import { SubscriptionsPreview } from './SubscriptionsPreview';
 
 interface SectionProps {
@@ -235,16 +236,18 @@ export function SafetySection({ draft, onChange }: SectionProps) {
   </section>;
 }
 
-export const sectionMeta = [
-  { id: 'foundation' as const, label: '基础接入', icon: Network },
-  // Distinct from the top-level "机场" page: this category edits source and
-  // provider binding, not the airport list itself.
-  { id: 'providers' as const, label: '订阅与机场', icon: RefreshCw },
-  { id: 'regions' as const, label: '地区映射', icon: CheckCircle2 },
-  { id: 'exits' as const, label: '出口策略', icon: Gauge },
-  { id: 'routing' as const, label: '业务规则', icon: Route },
-  { id: 'automation' as const, label: '自动运行', icon: RefreshCw },
-  { id: 'safety' as const, label: '安全与恢复', icon: ShieldCheck },
-  { id: 'network' as const, label: '网络接入', icon: Waypoints },
-  { id: 'files' as const, label: '配置文件与备份', icon: Files },
-];
+// 名称与顺序来自共享词汇表；图标与分组属于本界面渲染。
+const sectionIcons: Record<string, typeof Network> = {
+  foundation: Network, providers: RefreshCw, regions: CheckCircle2, exits: Gauge,
+  routing: Route, automation: RefreshCw, safety: ShieldCheck, network: Waypoints, files: Files,
+};
+
+// 参考面与设备页共用同一组分类名；'订阅与机场'区别于顶层“机场”页面，
+// 因为该分类编辑来源与绑定，而不是机场列表本身。
+export const sectionMeta = configSectionsFor('reference').map((section) => ({
+  key: section.key,
+  id: section.id as ConfigSectionId,
+  label: section.label,
+  group: section.group,
+  icon: sectionIcons[section.key] || Network,
+}));

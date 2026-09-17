@@ -37,6 +37,9 @@ try {
   await client.action('compile');
   const before = await client.readSnapshot();
   assert.ok(before.config, before.configError || 'shared configuration unavailable');
+  // 桌面客户端直接消费本机核心投影：平台接管值与随包组件必须随快照到达。
+  assert.ok(before.core.rows.some(row => row.id === 'dns.enable' && row.source === 'platform'));
+  assert.ok(before.core.components.length >= 3);
   const draft = toDesktopDraft(before);
   draft.automation.selectionIntervalSeconds += 60;
   const request = desktopConfigRequest(before.config, draft);

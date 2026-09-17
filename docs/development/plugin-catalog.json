@@ -211,7 +211,7 @@
         "platform.runtime",
         "platform.service"
       ],
-      "version": "0.8.7"
+      "version": "0.8.8"
     },
     {
       "api_version": 1,
@@ -269,7 +269,7 @@
         "opl-netfleet-plugin-subscriptions"
       ],
       "services": [],
-      "version": "0.10.6"
+      "version": "0.10.7"
     },
     {
       "api_version": 1,
@@ -360,7 +360,7 @@
         "status.control",
         "status.events"
       ],
-      "version": "0.8.8"
+      "version": "0.8.9"
     },
     {
       "api_version": 1,

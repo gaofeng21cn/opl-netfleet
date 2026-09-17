@@ -7,7 +7,7 @@
 
 const SECTIONS = [
 	[ 'foundation', '基础接入' ],
-		[ 'providers', '机场' ],
+	[ 'providers', '订阅与机场' ],
 	[ 'regions', '地区映射' ],
 	[ 'capabilities', '出口策略' ],
 	[ 'routing', '业务规则' ],

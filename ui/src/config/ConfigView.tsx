@@ -16,6 +16,7 @@ import { SetupWizard } from './SetupWizard';
 import type { NetFleetClient, StatusSnapshot } from '../types';
 import { NetworkSection } from './NetworkSection';
 import { FilesSection } from './FilesSection';
+import { sectionGroupLabels } from '../lib/vocabulary';
 
 interface ConfigViewProps {
   draft: ConfigDraft;
@@ -91,9 +92,10 @@ export function ConfigView({ draft, savedDraft, status, client, onChange, onSave
 
     <div className="nf-config-layout">
       <nav className="nf-config-tabs" aria-label="配置分类">
-        {sectionMeta.map((item) => {
+        {/* 分组标题只在组的第一项出现，顺序完全由共享词汇表决定。 */}
+        {sectionMeta.map((item, index) => {
           const Icon = item.icon;
-          return <React.Fragment key={item.id}>{['foundation','network'].includes(item.id) && <span className="nf-config-group">{item.id === 'foundation' ? '运行策略' : '设备与文件'}</span>}<button className={section === item.id ? 'is-active' : ''} type="button" key={item.id} onClick={() => { setSection(item.id); if (item.id === 'network' || item.id === 'files') setVisited({ ...visited, [item.id]: true }); }}><Icon aria-hidden="true" /><span>{item.label}</span></button></React.Fragment>;
+          return <React.Fragment key={item.key}>{item.group !== sectionMeta[index - 1]?.group && <span className="nf-config-group">{sectionGroupLabels[item.group]}</span>}<button className={section === item.id ? 'is-active' : ''} type="button" onClick={() => { setSection(item.id); if (item.id === 'network' || item.id === 'files') setVisited({ ...visited, [item.id]: true }); }}><Icon aria-hidden="true" /><span>{item.label}</span></button></React.Fragment>;
         })}
       </nav>
       <div className="nf-config-content"><p className="nf-follow-note">{{

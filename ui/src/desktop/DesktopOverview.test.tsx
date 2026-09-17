@@ -9,6 +9,7 @@ import type { DesktopSnapshot } from './types';
 const snapshot = (): DesktopSnapshot => ({
   runtime: { platform: 'macos', running: false, configured: true, mode: 'direct', requestedMode: 'direct', networkMode: 'explicit', ports: { mixed: 7890, controller: 9090, dns: 1053 }, controllerReady: false, clean: true, pid: null, version: null, lastError: null },
   policy: null, subscriptions: {}, status: structuredClone(fixtureScenarios.healthy.status), events: null, config: null, configError: null, network: { clean: true }, error: null,
+  core: { profile: null, mode: 'explicit', running: false, overlay: false, rows: [], components: [], identity: null },
 });
 const render = (value: DesktopSnapshot) => renderToStaticMarkup(<DesktopOverview snapshot={value} disabled={false} canSelect={false} onNavigate={() => {}} onSelect={() => {}} />);
 

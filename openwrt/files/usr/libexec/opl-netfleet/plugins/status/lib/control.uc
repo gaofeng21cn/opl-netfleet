@@ -32,23 +32,33 @@ const provider_quotas = context.use("subscriptions.facts").provider_quotas;
 const provider_display_names = context.use("subscriptions.facts").provider_display_names;
 const subscription_refresh_projection = context.use("subscriptions.facts").subscription_refresh_projection;
 
-const INSTALLED_IDENTITY_PATH = "/etc/opl-netfleet/installed.json";
-const PACKAGE_BUILD_PATH = "/usr/share/opl-netfleet/build.json";
+// 构建身份位置由平台提供：设备读取包内构建记录与部署器写入的已安装身份，
+// macOS 读取应用包内的 build.json。字段名允许包格式差异，投影保持同一形状。
+const INSTALLED_IDENTITY_PATH = context.use("platform.paths").INSTALLED_IDENTITY_PATH ?? null;
+const PACKAGE_BUILD_PATH = context.use("platform.paths").PACKAGE_BUILD_PATH ?? null;
 normalized_build = function(identity, version_field) {
-	const version = type(identity) == "object" ? identity[version_field] : null;
+	const version = type(identity) == "object" ? identity[version_field] ?? identity.package_version : null;
 	const commit = identity?.source_commit;
 	const tree = identity?.source_tree;
 	if (type(version) != "string" || !match(version, /^[0-9][0-9A-Za-z.+~-]*$/) ||
 		type(commit) != "string" || !match(commit, /^[0-9a-f]{40}$/) ||
 		type(tree) != "string" || !match(tree, /^[0-9a-f]{40}$/)) return null;
-	return { version: version, source_commit: commit, source_tree: tree };
+	const release = identity.release ?? identity.package_release;
+	return { version: version, release: type(release) == "string" ? release : null,
+		channel: type(identity.channel) == "string" ? identity.channel : null,
+		source_commit: commit, source_tree: tree };
+};
+
+read_identity = function(path) {
+	if (type(path) != "string" || length(path) == 0) return null;
+	try { return read_json(path); } catch (error) { return null; }
 };
 
 installed_build = function() {
-	const packaged = normalized_build(read_json(PACKAGE_BUILD_PATH), "version");
+	const packaged = normalized_build(read_identity(PACKAGE_BUILD_PATH), "version");
 	if (packaged != null) return packaged;
-	const deployed = normalized_build(read_json(INSTALLED_IDENTITY_PATH), "product_version");
-	return deployed ?? { version: null, source_commit: null, source_tree: null };
+	const deployed = normalized_build(read_identity(INSTALLED_IDENTITY_PATH), "product_version");
+	return deployed ?? { version: null, release: null, channel: null, source_commit: null, source_tree: null };
 };
 
 status_action = function(policy, evidence) {

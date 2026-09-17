@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { projectProfile } from '../runtime/core.mjs';
+import { coreSettingRows } from '../runtime/settings.mjs';
 import { atomicJSON, privateDir, run } from '../runtime/io.mjs';
 
 const state = { ports: { mixed: 19080, controller: 19090, dns: 19053 }, controllerSecret: 'local-owner-secret', network: { mode: 'explicit' } };
@@ -59,4 +60,31 @@ test('command output preserves UTF-8 when a multibyte node name crosses pipe chu
   const result = await run(process.execPath, ['-e', 'const b=Buffer.from("香港节点");process.stdout.write(b.subarray(0,2));setTimeout(()=>process.stdout.write(b.subarray(2)),40);']);
   assert.equal(result.code, 0);
   assert.equal(result.stdout, '香港节点');
+});
+
+test('core settings project the applied platform values, not a second copy of the mapping', () => {
+  const profile = { 'log-level': 'info', dns: { nameserver: ['1.1.1.1'] } };
+  const projected = projectProfile(profile, state, '/tmp/netfleet-state/backend/run', 'tun');
+  const running = { 'log-level': 'warning', 'mixed-port': 19080, ipv6: false, tun: { device: 'utun198', stack: 'gvisor' } };
+  const overlay = { 'dns-enable': true, 'dns-listen-removed': true, tun: { device: 'utun198', stack: 'gvisor', 'auto-route': true, 'dns-hijack': ['any:53'] },
+    injected: ['sniffer'], sniffer: { enable: true, sniff: { TLS: { ports: [443] } } } };
+  const rows = coreSettingRows({ profile, projected, running, overlay });
+  const row = id => rows.find(item => item.id === id);
+  // 平台强制值来自真实投影结果：DNS 接管、监听地址、日志级别都是平台接管。
+  assert.equal(row('dns.enable').source, 'platform');
+  assert.equal(row('dns.enable').configured, '开启');
+  assert.equal(row('dns.listen').source, 'platform');
+  assert.equal(row('log-level').source, 'platform');
+  assert.equal(row('log-level').declared, 'info');
+  assert.equal(row('log-level').configured, 'warning');
+  assert.equal(row('log-level').running, 'warning');
+  // Profile 自己声明的值不因为存在平台值就被改写来源。
+  assert.equal(row('dns.nameserver').source, 'profile');
+  assert.equal(row('dns.nameserver').configured, '1.1.1.1');
+  // TUN 会话只在特权组件报告本次覆写时出现，并且使用会话实际写入的值。
+  assert.equal(row('tun.device').configured, 'utun198');
+  assert.equal(row('sniffer.sniff').source, 'platform');
+  assert.equal(coreSettingRows({ profile, projected }).some(item => item.group === 'TUN 会话'), false);
+  // 投影里没有密钥字段，页面拿不到 controller secret。
+  assert.equal(JSON.stringify(rows).includes('local-owner-secret'), false);
 });
