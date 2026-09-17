@@ -47,6 +47,15 @@ export function releaseCandidate(release) {
 
 export const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
+/**
+ * 从应用资源目录回到 `.app` 包本身：资源目录的父级是 `Contents`，再上一层才是包。
+ * 源码运行时没有这层结构，返回 null，自更新据此拒绝而不是猜一个目标目录。
+ */
+export function applicationBundle(appRoot) {
+  const contents = path.dirname(appRoot);
+  return path.basename(contents) === 'Contents' ? path.dirname(contents) : null;
+}
+
 export async function fileDigest(file) {
   try { return sha256(await fs.readFile(file)); } catch { return null; }
 }

@@ -11,14 +11,14 @@ import { CoreOwner, projectProfile } from './core.mjs';
 import { NetworkOwner } from './network.mjs';
 import { coreSettingRows } from './settings.mjs';
 import { expandPanelArchive, installPanel, materializePanel } from './dashboard.mjs';
-import { TEAM_ID, componentState, latestRelease, releaseCandidate, sha256, verifyBundle, withMountedApp } from './update.mjs';
+import { TEAM_ID, applicationBundle, componentState, latestRelease, releaseCandidate, sha256, verifyBundle, withMountedApp } from './update.mjs';
 import { privateDir, atomicJSON, readJSON, object, assert, run, requestBody, codeDigest } from './io.mjs';
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // 应用包根目录：打包后指向 Contents/Resources，源码运行时指向仓库根。
 const appRoot = path.resolve(desktopRoot, '..');
-// 应用包目录：更新替换的目标就是它自己。
-const appBundle = path.resolve(appRoot, '..');
+// 应用包目录：更新替换的目标就是它自己；源码运行没有包结构时为 null。
+const appBundle = applicationBundle(appRoot);
 const bundledWebRoot = path.join(desktopRoot, 'web');
 const webRoot = await fs.access(bundledWebRoot).then(() => bundledWebRoot, () => path.resolve(desktopRoot, '../ui/dist-desktop'));
 const sourceRoot = process.env.NETFLEET_SOURCE_ROOT ?? path.resolve(desktopRoot, '../openwrt/files/usr/libexec/opl-netfleet');
@@ -403,7 +403,7 @@ function selfUpdateState() {
   if (process.platform !== 'darwin') return 'unsupported-platform';
   if (packagedIdentity?.channel !== 'distribution') return 'local-build';
   if (packagedIdentity?.working_tree_dirty !== false) return 'dirty-build';
-  if (!appBundle.endsWith('.app')) return 'not-an-app-bundle';
+  if (!appBundle) return 'not-an-app-bundle';
   return 'available';
 }
 

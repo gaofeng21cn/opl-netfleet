@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import { projectProfile } from '../runtime/core.mjs';
 import { coreSettingRows } from '../runtime/settings.mjs';
 import { expandPanelArchive, installPanel, materializePanel, readPanelArchive } from '../runtime/dashboard.mjs';
-import { componentState, latestRelease, newerVersion, parseVersion, releaseCandidate } from '../runtime/update.mjs';
+import { applicationBundle, componentState, latestRelease, newerVersion, parseVersion, releaseCandidate } from '../runtime/update.mjs';
 import { atomicJSON, privateDir, run } from '../runtime/io.mjs';
 
 const state = { ports: { mixed: 19080, controller: 19090, dns: 19053 }, controllerSecret: 'local-owner-secret', network: { mode: 'explicit' } };
@@ -242,4 +242,14 @@ test('the update installer refuses unsigned or still-running replacements and re
     assert.match(JSON.parse(await fs.readFile(running.receipt, 'utf8')).detail, /应用未在等待时间内退出/);
     assert.equal(await fs.readFile(path.join(running.target, 'old'), 'utf8'), 'old');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('the application bundle is resolved above Contents, never guessed', () => {
+  // 应用包结构：Resources 的父级是 Contents，包本体再上一层。
+  assert.equal(applicationBundle('/Applications/OPL NetFleet.app/Contents/Resources'), '/Applications/OPL NetFleet.app');
+  assert.equal(applicationBundle('/tmp/dist/OPL NetFleet.app/Contents/Resources'), '/tmp/dist/OPL NetFleet.app');
+  // 源码运行或其它布局没有这层结构：不得返回一个可被替换的目录。
+  assert.equal(applicationBundle('/Users/gaofeng/workspace/app/opl-netfleet'), null);
+  assert.equal(applicationBundle('/Applications/Somewhere/Resources'), null);
+  assert.equal(applicationBundle('/Resources'), null);
 });
