@@ -1,0 +1,15 @@
+{
+  "schema": "opl-netfleet-macos-dashboard.v1",
+  "version": "v3.27.0",
+  "asset": "dist-cdn-fonts.zip",
+  "url": "https://github.com/Zephyruso/zashboard/releases/download/v3.27.0/dist-cdn-fonts.zip",
+  "filename": "zashboard-v3.27.0-dist-cdn-fonts.zip",
+  "size_bytes": 2745102,
+  "sha256": "71d5943f71aec34a36bd4d3a3e10283eccc12b358a46fe3199ba4154bbd59935",
+  "license": {
+    "spdx": "MIT",
+    "url": "https://raw.githubusercontent.com/Zephyruso/zashboard/v3.27.0/LICENSE",
+    "filename": "zashboard-v3.27.0-LICENSE",
+    "sha256": "ffc390eec51f16b58506b1a42c99fe0cd9ffea1e3081aab443100fd8c20182d9"
+  }
+}

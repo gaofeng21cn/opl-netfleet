@@ -23,6 +23,7 @@ fi
 ./scripts/check-fast.sh
 if [ "$lane" = macos ]; then
   python3 scripts/macos/builtin-assets.py
+  python3 scripts/macos/dashboard-assets.py
   node --test desktop/tests/bridge.test.mjs
   node desktop/tests/qualification.mjs
   node desktop/tests/owner-crash.mjs

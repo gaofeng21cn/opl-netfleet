@@ -18,6 +18,7 @@ const snapshot = (patch: Partial<DesktopSnapshot['core']> = {}): DesktopSnapshot
     identity: { version: '0.2.0', release: '8', channel: 'local', source_commit: '3b093178b38d92b0ec12c89b37c66c721e97f753', source_tree: null, working_tree_dirty: false },
     ...patch,
   },
+  dashboard: { available: true, version: 'v3.27.0', reason: null },
 });
 const render = (value: DesktopSnapshot) => renderToStaticMarkup(<CoreSection snapshot={value} />);
 

@@ -162,13 +162,40 @@ func userData(_ file: String, within base: String, uid: uid_t) throws -> Data {
     let fh = FileHandle(fileDescriptor: handle, closeOnDealloc: false)
     return try fh.readToEnd() ?? Data()
 }
+
+// Root serves the panel itself, so it must never serve files the desktop user
+// can rewrite mid-session. Copy the pinned panel into root-owned state first.
+func copyPanel(_ source: String, to destination: String) throws {
+    var count = 0
+    var total = 0
+    func walk(_ origin: URL, _ target: URL) throws {
+        let rows = try fm.contentsOfDirectory(at: origin, includingPropertiesForKeys:
+            [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey], options: [.skipsHiddenFiles])
+        if fm.fileExists(atPath: target.path) { try fm.removeItem(at: target) }
+        try fm.createDirectory(at: target, withIntermediateDirectories: true, attributes: [.posixPermissions: NSNumber(value: 0o700)])
+        for row in rows {
+            let values = try row.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+            let child = target.appendingPathComponent(row.lastPathComponent)
+            if values.isSymbolicLink == true { throw Failure("Panel resources must not contain links") }
+            if values.isDirectory == true { try walk(row, child); continue }
+            guard values.isRegularFile == true, let size = values.fileSize else { throw Failure("Panel resources must be regular files") }
+            count += 1; total += size
+            try require(count <= 2048 && total <= 134217728, "Panel resources exceed the bounded size")
+            try Data(contentsOf: row).write(to: child, options: .atomic)
+            chmod(child.path, 0o600)
+        }
+    }
+    try walk(URL(fileURLWithPath: source), URL(fileURLWithPath: destination))
+    try require(fm.fileExists(atPath: destination + "/index.html"), "Panel resources must contain index.html")
+}
+
 // The TUN session rewrites a bounded set of keys. Report exactly what this
 // session applied so the desktop can project the real core settings instead of
 // describing them a second time in the UI layer.
 func prepareTun(configPath: String, base: String, uid: uid_t, port: Int) throws -> (path: String, overlay: [String: Any]) {
     let bytes = try userData(configPath, within: base, uid: uid)
     // A fresh session must never inherit another account's provider cache.
-    for filename in try fm.contentsOfDirectory(atPath: rootDir) where filename == "config.json" || filename.hasPrefix("proxy-providers-") || filename.hasPrefix("rule-providers-") {
+    for filename in try fm.contentsOfDirectory(atPath: rootDir) where filename == "config.json" || filename == "ui" || filename.hasPrefix("proxy-providers-") || filename.hasPrefix("rule-providers-") {
         try fm.removeItem(atPath: rootDir + "/" + filename)
     }
     guard let input = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { throw Failure("TUN configuration must be JSON") }
@@ -189,6 +216,14 @@ func prepareTun(configPath: String, base: String, uid: uid_t, port: Int) throws 
         injected.append("sniffer")
     }
     config["tun"] = ["enable": true, "device": "utun198", "stack": "gvisor", "auto-route": true, "auto-detect-interface": true, "strict-route": false, "dns-hijack": ["any:53"]]
+    if let panel = input["external-ui"] as? String, !panel.isEmpty {
+        // The served copy must come from the invoking user's private state, the
+        // same boundary provider files already obey.
+        try require(panel.hasPrefix(base + "/"), "Panel directory must live in private desktop state")
+        try copyPanel(panel, to: rootDir + "/ui")
+        config["external-ui"] = rootDir + "/ui"
+        injected.append("dashboard")
+    }
     var overlay: [String: Any] = ["dns-enable": true, "dns-listen-removed": true, "tun": config["tun"] ?? [:],
         "mixed-port": port, "bind-address": "127.0.0.1", "allow-lan": false, "injected": injected]
     if injected.contains("sniffer") { overlay["sniffer"] = config["sniffer"] ?? [:] }

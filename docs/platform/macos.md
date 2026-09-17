@@ -64,6 +64,14 @@ macOS 提供平台路径、凭据、Profile、订阅、进程与 Mihomo 后端�
 状态锁并停止自身旧核心后，先验证完整规则集，再将策略投影到私有 `policy-sources`、MRS
 投影到 `backend/run/rulesets`。订阅写入不接触这些资源。
 
+Zashboard 面板用同一方式固定：`scripts/macos/dashboard.json` 记录上游 release、资产名、
+大小和 SHA-256，构建器校验 ZIP 结构后把 `dist/` 装入 `Resources/dashboard`，并随包提供
+上游许可证。桌面运行时会把它复制到核心工作目录内的私有 `ui` 目录，再把
+`external-ui` 指向该副本——Mihomo 只服务自身工作目录（或显式 `SAFE_PATHS`）内的路径，
+因此面板不直接从应用包读取。TUN 会话由特权组件把同一份副本再次复制到 root 私有状态后
+交给 root 核心，源路径必须位于当前用户的私有状态目录内。应用启动不联网检查更新，
+面板更新随新的应用构建进入，设备端仍由自身 dashboard 插件管理它自己的副本。
+
 `use-builtin-policy` 在核心停止时调用共享模型生成候选；受同一串行入口管理的文件事务
 在完成共享 Schema 与真实核心编译后提交，失败恢复旧 policy。升级不自动覆盖已有策略。
 

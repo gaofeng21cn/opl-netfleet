@@ -88,3 +88,17 @@ test('core settings project the applied platform values, not a second copy of th
   // 投影里没有密钥字段，页面拿不到 controller secret。
   assert.equal(JSON.stringify(rows).includes('local-owner-secret'), false);
 });
+
+test('the imported profile cannot choose the panel directory', () => {
+  const imported = { proxies: [], rules: ['MATCH,DIRECT'], 'external-ui': '/Users/someone/panel',
+    'external-ui-url': 'https://example.invalid/panel.zip', 'external-ui-name': 'foreign' };
+  // Without pinned assets the core is left without a panel directory at all.
+  const bare = projectProfile(imported, state, '/tmp/netfleet-state/backend/run');
+  assert.equal(bare['external-ui'], undefined);
+  assert.equal(bare['external-ui-url'], undefined);
+  // With pinned assets the platform owns the path, the name and the download.
+  const pinned = projectProfile(imported, state, '/tmp/netfleet-state/backend/run', 'explicit', '/Applications/OPL NetFleet.app/Contents/Resources/dashboard');
+  assert.equal(pinned['external-ui'], '/Applications/OPL NetFleet.app/Contents/Resources/dashboard');
+  assert.equal(pinned['external-ui-name'], undefined);
+  assert.equal(pinned['external-ui-url'], undefined);
+});

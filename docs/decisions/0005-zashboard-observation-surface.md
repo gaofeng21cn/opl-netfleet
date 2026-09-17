@@ -18,8 +18,10 @@ Zashboard 是独立、完整的 Mihomo 实时运行面，不嵌入 NetFleet 内�
 
 NetFleet 可以直接复用成熟运行体验，并通过一个稳定入口把自有策略管理面与 Mihomo 实时面组织
 为同一产品。当前连接方式会让 controller secret 出现在新标签页 URL，因此该 URL 是带凭据的
-临时地址；NetFleet 不记录、不缓存、不展示它。用户从 Zashboard 发出的即时操作不会自动写回
-NetFleet 配置，刷新或重新编译后仍以 NetFleet policy 为准。
+临时地址；NetFleet 按需生成它、不记录、不缓存、不展示它，macOS 客户端把它交给宿主在独立
+窗口中打开，使凭据不进入页面地址、浏览器历史或持久存储。用户从 Zashboard 发出的即时操作不会自动写回
+NetFleet 配置，刷新或重新编译后仍以 NetFleet policy 为准。桌面没有包管理面，面板资源随应用构建
+固定并校验，运行时不联网取更新；设备端继续由自身 dashboard 插件管理它自己的副本。
 
 ## 未采用
 

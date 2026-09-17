@@ -74,5 +74,11 @@ export interface DesktopSnapshot {
       working_tree_dirty: boolean;
     } | null;
   };
+  // 面板可用性来自本机核心能否提供随包资源；连接信息按需读取，不进入快照。
+  dashboard: {
+    available: boolean;
+    version: string | null;
+    reason: string | null;
+  };
   error: string | null;
 }

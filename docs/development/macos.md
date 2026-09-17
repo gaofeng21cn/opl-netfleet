@@ -18,8 +18,9 @@ open '.build/macos/OPL NetFleet.app'
 构建器先按锁文件安装 `ui/` 构建依赖，执行 TypeScript 检查，再通过独立的
 `vite.desktop.config.ts` 编译 React 桌面入口到 `ui/dist-desktop`。静态产物装入应用的
 `Resources/desktop/web`，运行时不启动 Vite、不加载设备预览桥或模拟场景。
-输出包含独立 Node、UCode、Mihomo、yq、内置策略及锁定 MRS 资源和原生窗口。
-直接运行源码服务前执行 `python3 scripts/macos/builtin-assets.py` 准备离线资源；严格平台检查自动完成这一步。构建在任务缓存内完成，不安装
+输出包含独立 Node、UCode、Mihomo、yq、内置策略、锁定 MRS 资源和随包 Zashboard 面板及原生窗口。
+直接运行源码服务前执行 `python3 scripts/macos/builtin-assets.py` 与
+`python3 scripts/macos/dashboard-assets.py` 准备离线资源；严格平台检查自动完成这一步。构建在任务缓存内完成，不安装
 Homebrew 软件或特权服务。UCode 使用固定源码，Darwin 补丁解决实际 `popen` 及旧
 macOS libc 兼容断点；源码、补丁与下载摘要均保留在构建入口和依赖回执中。
 构建器检查包内动态库路径，默认进行本地 ad-hoc 签名；分发签名参数见下文。

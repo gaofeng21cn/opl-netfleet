@@ -16,13 +16,19 @@ import type { DesktopNetFleetClient } from './client';
 import type { DesktopSnapshot } from './types';
 import { DesktopConfiguration } from './DesktopConfiguration';
 import { DesktopTools, RuntimeControls, SubscriptionManager, type RunAction } from './panels';
-import { reportHostState } from './hostBridge';
+import { openDashboardThroughHost, reportHostState } from './hostBridge';
 import { hostState } from './hostState';
 import type { NetworkMode } from './types';
 
 const pages = ['overview', 'exits', 'providers', 'regions', 'config', 'events'] as const;
 const currentPage = (): ViewId => pages.includes(location.hash.slice(1) as typeof pages[number]) ? location.hash.slice(1) as ViewId : 'overview';
 const reasonText = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
+// 面板不可用原因来自本机 owner，不能用前端推断代替。
+const dashboardReasons: Record<string, string> = {
+  dashboard_assets_missing: '随包面板资源缺失，请重新构建或打开完整的应用',
+  core_not_running: '代理核心当前未运行',
+  controller_unavailable: '代理控制接口当前不可读取',
+};
 
 type Selection = { capability?: string; region?: string };
 // The host sends either a bare command name or a command with its arguments.
@@ -140,12 +146,24 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
   }, [automaticId, busy, client, connected, navigate, readyToSelect, refresh, run, snapshot?.runtime.configured, snapshot?.runtime.running]);
   useEffect(() => { reportHostState(host); }, [host]);
   const openSubscriptions = () => setShowSubscriptions(true);
+  // Opening the panel is a read of the connection credential plus a host action;
+  // it never becomes a business mutation and never joins the serialized run path.
+  const openDashboard = useCallback(async () => {
+    if (!snapshot?.dashboard.available) return;
+    try {
+      const { url } = await client.dashboardUrl();
+      if (!url) throw new Error('面板地址不可用');
+      if (!openDashboardThroughHost(url)) window.open(url, '_blank', 'noopener');
+    } catch (reason) {
+      setResult({ id: crypto.randomUUID(), title: '打开 Zashboard', detail: reasonText(reason), warning: true });
+    }
+  }, [client, snapshot?.dashboard.available]);
   const selectionBlocked = !connected || snapshot?.error ? '状态读取失败，请刷新后重试' : busy ? '已有操作正在执行' : !readyToSelect ? '启用 NetFleet 后可切换地区' : undefined;
   const automatic = automaticSelectionCopy(Boolean(status?.selection?.automation_paused));
   const sourceDialogOpen = showSubscriptions && view === 'providers';
   const readFailure = (readError || snapshot?.error) && <div className="nf-alert" role="alert"><AlertCircle aria-hidden="true" /><span>{readError || snapshot?.error}</span></div>;
   const feedback = <ActionFeedback progress={progress} elapsed={elapsed} result={result} inline={sourceDialogOpen} onDismiss={dismissResult} />;
-  return <Shell notice={!sourceDialogOpen && feedback} platform="desktop" view={view} onViewChange={navigate} busy={busy} healthy={connected && !snapshot?.error} readOnly={!connected} canSelect={Boolean(readyToSelect && automaticId)} automationPaused={status?.selection?.automation_paused} canDisable={Boolean(readyToSelect)} dashboardReady={false} onRefresh={() => void refresh()} onSelect={() => setConfirmAutomatic(true)} onDisable={() => void run('退出增强并保留原生代理', () => client.disable())} onOpenDashboard={() => undefined}>
+  return <Shell notice={!sourceDialogOpen && feedback} platform="desktop" view={view} onViewChange={navigate} busy={busy} healthy={connected && !snapshot?.error} readOnly={!connected} canSelect={Boolean(readyToSelect && automaticId)} automationPaused={status?.selection?.automation_paused} canDisable={Boolean(readyToSelect)} dashboardReady={Boolean(snapshot?.dashboard?.available)} dashboardUnavailableReason={dashboardReasons[snapshot?.dashboard?.reason ?? ''] || 'Zashboard 当前不可用'} onRefresh={() => void refresh()} onSelect={() => setConfirmAutomatic(true)} onDisable={() => void run('退出增强并保留原生代理', () => client.disable())} onOpenDashboard={() => void openDashboard()}>
 
     {!sourceDialogOpen && readFailure}
     {!snapshot && <p className="nf-empty">{busy ? '正在读取本机运行状态…' : '尚未取得本机状态。请使用“刷新”重新连接。'}</p>}

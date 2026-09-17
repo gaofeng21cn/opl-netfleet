@@ -19,7 +19,7 @@ describe('desktop client trust and action boundaries', () => {
     await expect(client.action('network-install', { authorize: true })).rejects.toThrow('系统授权未完成');
   });
   it('preserves an unconfigured state without inventing a business snapshot', async () => {
-    const snapshot = { runtime: { platform: 'macos', configured: false, running: false }, subscriptions: {}, network: {}, core: { rows: [], components: [] }, status: null, events: null };
+    const snapshot = { runtime: { platform: 'macos', configured: false, running: false }, subscriptions: {}, network: {}, core: { rows: [], components: [] }, dashboard: { available: false, version: null, reason: 'core_not_running' }, status: null, events: null };
     const client = new DesktopNetFleetClient('test-session', async () => Response.json({ ok: true, result: snapshot }));
     expect(await client.readSnapshot()).toEqual(snapshot);
     await expect(client.status()).rejects.toThrow('尚未编译');
@@ -27,6 +27,7 @@ describe('desktop client trust and action boundaries', () => {
   it('rejects malformed business data before components display it', async () => {
     const client = new DesktopNetFleetClient('test-session', async () => Response.json({ ok: true, result: {
       runtime: { platform: 'macos', configured: true, running: true }, subscriptions: {}, network: {}, core: { rows: [], components: [] },
+      dashboard: { available: true, version: null, reason: null },
       status: { capabilities: {}, providers: [], regions: [] }, events: { events: [] },
     } }));
     await expect(client.readSnapshot()).rejects.toThrow('本机状态格式无效');

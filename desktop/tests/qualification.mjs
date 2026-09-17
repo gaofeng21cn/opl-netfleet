@@ -124,6 +124,19 @@ try {
   evidence.checks.push('desktop_core_projection_from_owner');
   const probe = await run('/usr/bin/curl', ['--noproxy', '', '--proxy', `http://127.0.0.1:${active.runtime.ports.mixed}`, '--max-time', '15', '-sS', '-o', '/dev/null', '-w', '%{http_code}', 'https://www.gstatic.com/generate_204']);
   assert.equal(probe.stdout, '204'); assert.ok(connections > 0); evidence.checks.push('real_mihomo_proxy_https_204');
+  // The bundled panel must be served by the running core, while the credential
+  // that opens it stays out of the ordinary snapshot.
+  assert.equal(active.dashboard.available, true, JSON.stringify(active.dashboard));
+  const panel = await fetch(`http://127.0.0.1:${active.runtime.ports.controller}/ui/`, { signal: AbortSignal.timeout(10000) });
+  const panelBody = await panel.text();
+  assert.equal(panel.status, 200); assert.match(panelBody, /<div id="app">|zashboard/i);
+  const opened = await api('dashboard-open');
+  assert.equal(opened.ok, true, JSON.stringify(opened));
+  const panelUrl = new URL(opened.result.url);
+  assert.equal(panelUrl.hostname, '127.0.0.1'); assert.equal(panelUrl.port, String(active.runtime.ports.controller));
+  assert.equal(panelUrl.pathname, '/ui/'); assert.equal(panelUrl.hash, '#/setup');
+  assert.equal(JSON.stringify(active).includes(panelUrl.searchParams.get('secret')), false);
+  evidence.checks.push('bundled_dashboard_served_without_snapshot_credential');
   const selectable = active.status.capabilities.find(item => item.can_select_region && item.selectable_regions?.length);
   assert.ok(selectable, 'real selectable capability');
   const region = selectable.selectable_regions[0];

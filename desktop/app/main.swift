@@ -2,9 +2,11 @@ import AppKit
 import WebKit
 
 // The AppKit host owns window chrome, the menu bar and the privileged bridge.
-final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, NSMenuItemValidation {
+final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, NSMenuItemValidation, NSWindowDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
+    private var dashboardWindow: NSWindow?
+    private var dashboardWebView: WKWebView?
     private var statusItem: NSStatusItem!
     private var startItem: NSMenuItem!
     private var stopItem: NSMenuItem!
@@ -49,6 +51,7 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.add(self, name: "saveBackup")
         configuration.userContentController.add(self, name: "netfleetState")
+        configuration.userContentController.add(self, name: "openDashboard")
         if let accent = hostAccentScript() {
             configuration.userContentController.addUserScript(WKUserScript(source: accent,
                 injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -513,6 +516,10 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             updateStatusItem()
             return
         }
+        if message.name == "openDashboard" {
+            showDashboard(message.body)
+            return
+        }
         guard message.name == "saveBackup", message.frameInfo.isMainFrame,
               let body = message.body as? [String: Any], let contents = body["contents"] as? String else { return }
         let panel = NSSavePanel()
@@ -545,6 +552,12 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         panel.beginSheetModal(for: window) { response in completionHandler(response == .OK ? panel.urls : nil) }
     }
 
+    func windowWillClose(_ notification: Notification) {
+        guard let closing = notification.object as? NSWindow, closing === dashboardWindow else { return }
+        dashboardWindow = nil
+        dashboardWebView = nil
+    }
+
     private func showError(_ message: String) {
         showWindow()
         let alert = NSAlert()
@@ -553,6 +566,39 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         alert.alertStyle = .warning
         alert.addButton(withTitle: "知道了")
         if let window, window.attachedSheet == nil { alert.beginSheetModal(for: window) }
+    }
+
+    // The complete Zashboard surface is a separate window, never a page inside
+    // the business content area. It gets its own non-persistent web data store,
+    // so the controller credential in the URL never reaches browser history or
+    // a stored session, and closing the window drops it.
+    private func showDashboard(_ body: Any) {
+        guard let value = body as? [String: Any], let text = value["url"] as? String,
+              let url = URL(string: text), url.scheme == "http", url.host == "127.0.0.1",
+              let port = url.port, port >= 1024, port <= 65535, url.path == "/ui/" else {
+            showError("面板地址无效，未打开。")
+            return
+        }
+        if let existing = dashboardWindow {
+            existing.makeKeyAndOrderFront(nil)
+            dashboardWebView?.load(URLRequest(url: url))
+            return
+        }
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let view = WKWebView(frame: .zero, configuration: configuration)
+        let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 800),
+                             styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                             backing: .buffered, defer: false)
+        panel.title = "Zashboard · OPL NetFleet"
+        panel.isReleasedWhenClosed = false
+        panel.contentView = view
+        panel.delegate = self
+        panel.center()
+        dashboardWindow = panel
+        dashboardWebView = view
+        view.load(URLRequest(url: url))
+        panel.makeKeyAndOrderFront(nil)
     }
 }
 

@@ -19,6 +19,13 @@ const bundledWebRoot = path.join(desktopRoot, 'web');
 const webRoot = await fs.access(bundledWebRoot).then(() => bundledWebRoot, () => path.resolve(desktopRoot, '../ui/dist-desktop'));
 const sourceRoot = process.env.NETFLEET_SOURCE_ROOT ?? path.resolve(desktopRoot, '../openwrt/files/usr/libexec/opl-netfleet');
 const builtinRoot = process.env.NETFLEET_BUILTIN_ROOT ?? (await fs.access(path.resolve(desktopRoot, '../builtin')).then(() => path.resolve(desktopRoot, '../builtin'), () => path.resolve(desktopRoot, '../.build/macos/builtin')));
+// 打包后的面板资源位于应用包内；源码运行退回本机构建目录。
+const bundledDashboard = path.resolve(desktopRoot, '../dashboard');
+const localDashboard = path.resolve(desktopRoot, '../.build/macos/dashboard');
+const hasDashboard = directory => fs.access(path.join(directory, 'index.html')).then(() => true, () => false);
+const dashboardRoot = process.env.NETFLEET_DASHBOARD_ROOT
+  ?? (await hasDashboard(bundledDashboard) ? bundledDashboard : (await hasDashboard(localDashboard) ? localDashboard : null));
+const dashboardMeta = dashboardRoot ? await readJSON(path.join(dashboardRoot, '../dashboard-meta.json')).catch(() => null) : null;
 const runtimeRoot = process.env.NETFLEET_RUNTIME_ROOT ?? path.join(os.homedir(), '.cache/opl-netfleet/macos/runtime');
 const option = name => { const index = process.argv.indexOf(name); return index < 0 ? null : process.argv[index + 1]; };
 const stateDir = path.resolve(option('--state') ?? path.join(os.homedir(), 'Library/Application Support/OPL NetFleet'));
@@ -291,6 +298,26 @@ async function coreProjection(runtime, networkState) {
     } : null };
 }
 
+async function dashboardUrl() {
+  const projection = dashboardProjection(await core.status());
+  assert(projection.available, projection.reason ?? 'dashboard_unavailable');
+  const host = '127.0.0.1';
+  const url = new URL(`http://${host}:${state.ports.controller}/ui/`);
+  url.search = new URLSearchParams({ hostname: host, host, port: String(state.ports.controller), secret: state.controllerSecret }).toString();
+  // Zashboard only accepts a new connection on setup when a backend is already saved.
+  url.hash = '/setup';
+  return { ok: true, url: url.toString() };
+}
+
+// 面板可用性只说明本机核心当前能否提供这套随包资源；连接信息按需生成，
+// 不进入普通快照，也不写入展示缓存。
+function dashboardProjection(runtime) {
+  const reason = !dashboardRoot || !dashboardMeta ? 'dashboard_assets_missing'
+    : !runtime.running ? 'core_not_running'
+      : !runtime.controllerReady ? 'controller_unavailable' : null;
+  return { available: reason === null, version: dashboardMeta?.version ?? null, reason };
+}
+
 async function snapshot() {
   const runtime = await core.status();
   const networkState = await network.status();
@@ -308,7 +335,7 @@ async function snapshot() {
   return { runtime: { ...runtime, platform: 'macos', mode: actualMode, requestedMode: state.mode, networkMode: state.network.mode,
     ports: state.ports, configured: state.configured, lastError }, policy: await readJSON(path.join(stateDir, 'policy.json')),
     subscriptions, status, events, config, configError, network: networkState, error,
-    core: await coreProjection(runtime, networkState) };
+    core: await coreProjection(runtime, networkState), dashboard: dashboardProjection(runtime) };
 }
 async function action(input) {
   assert(object(input) && typeof input.action === 'string', 'invalid_action');
@@ -381,6 +408,7 @@ async function action(input) {
       if (runtime.clean) return { connections: [], count: 0, truncated: false, read_at: Math.floor(Date.now() / 1000) };
       return ucode('connections');
     }
+    case 'dashboard-open': return dashboardUrl();
     case 'backup-export': {
       const profile = await readJSON(path.join(stateDir, 'backend/profiles/Original.json'));
       const caches = {};
@@ -469,7 +497,7 @@ async function main() {
   state.enabled = false; state.mode = 'direct'; state.scheduler = { enabled: false, running: false };
   network = new NetworkOwner({ stateDir, corePath: path.join(runtimeRoot, 'bin/mihomo'), ports: state.ports,
     ownerPid: process.pid, helperPath: path.join(runtimeRoot, 'bin/netfleet-network-helper') });
-  core = new CoreOwner({ stateDir, corePath: path.join(runtimeRoot, 'bin/mihomo'), getState: () => state, network, env });
+  core = new CoreOwner({ stateDir, corePath: path.join(runtimeRoot, 'bin/mihomo'), getState: () => state, network, env, dashboardDir: dashboardRoot });
   await core.reconcileStartup();
   await installBuiltin(builtinRoot, stateDir);
   await saveState({});

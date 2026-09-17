@@ -17,6 +17,9 @@ REPO = HERE.parents[1]
 spec = importlib.util.spec_from_file_location("builtin_assets", HERE / "builtin-assets.py")
 builtin_assets = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builtin_assets)
+dashboard_spec = importlib.util.spec_from_file_location("dashboard_assets", HERE / "dashboard-assets.py")
+dashboard_assets = importlib.util.module_from_spec(dashboard_spec)
+dashboard_spec.loader.exec_module(dashboard_assets)
 
 
 def build_icon(staging, resources):
@@ -115,6 +118,10 @@ def build(output, cache, require_clean=False, signing_identity=None):
             for path in (resources / "runtime/lib").glob(pattern):
                 shutil.rmtree(path) if path.is_dir() else path.unlink()
         shutil.copytree(runtime / "licenses", resources / "licenses")
+        # The panel is pinned and bundled: the desktop must not need the network
+        # or a package manager to open its own runtime surface. It adds its
+        # upstream license next to the runtime ones.
+        dashboard_assets.prepare_dashboard(resources / "dashboard", cache / "dashboard", resources / "licenses")
         shutil.copy2(REPO / "LICENSE", resources / "licenses/OPL-NetFleet-LICENSE")
         upstream = json.loads((resources / "builtin/rulesets.lock.json").read_text())["upstream"]
         (resources / "licenses/meta-rules-dat-NOTICE").write_text(
@@ -157,7 +164,7 @@ def build(output, cache, require_clean=False, signing_identity=None):
                    "brand_logo_sha256": sha256(REPO / "assets/branding/opl-netfleet-logo.png"),
                    "signing": "developer-id" if signing_identity else "ad-hoc", "notarized": False,
                    "network_settings_changed": False,
-                   "checks": ["react_typecheck", "desktop_production_build", "native_ucode_fs_socket", "ucode_popen_shell_argv", "mihomo_version", "node_version",
+                   "checks": ["react_typecheck", "desktop_production_build", "native_ucode_fs_socket", "ucode_popen_shell_argv", "mihomo_version", "node_version", "dashboard_assets_pinned",
                               "yq_readonly_conversion", "portable_dynamic_libraries", "codesign_strict"]}
         previous = output.with_name(output.name + ".previous")
         if previous.exists():

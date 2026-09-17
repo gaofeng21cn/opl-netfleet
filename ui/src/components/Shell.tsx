@@ -41,6 +41,7 @@ interface ShellProps {
   automationPaused?: boolean;
   canDisable: boolean;
   dashboardReady: boolean;
+  dashboardUnavailableReason?: string;
   onRefresh(): void;
   onSelect(): void;
   onDisable(): void;
@@ -61,6 +62,7 @@ export function Shell({
   automationPaused = false,
   canDisable,
   dashboardReady,
+  dashboardUnavailableReason = 'Zashboard 当前不可用',
   onRefresh,
   onSelect,
   onDisable,
@@ -117,9 +119,11 @@ export function Shell({
             </div>
           ) : platform === 'desktop' ? <h1 className="nf-desktop-title">{items.find(item => item.id === view)?.label}</h1> : <span />}
           <div className="nf-toolbar-actions">
-            {platform !== 'desktop' && <button type="button" onClick={onOpenDashboard} disabled={!dashboardReady} title={dashboardReady ? '在新标签页打开完整 Zashboard' : 'Zashboard 当前不可用'}>
+            <button type="button" onClick={onOpenDashboard} disabled={!dashboardReady} title={dashboardReady
+              ? platform === 'desktop' ? '在独立窗口打开完整 Zashboard' : '在新标签页打开完整 Zashboard'
+              : dashboardUnavailableReason}>
               <SquareArrowOutUpRight aria-hidden="true" /><span>Zashboard</span>
-            </button>}
+            </button>
             {readOnly && <span className="nf-readonly-badge"><LockKeyhole aria-hidden="true" />实时只读</span>}
             {view !== 'components' && <button type="button" onClick={onRefresh} disabled={busy} title="刷新状态">
               <RefreshCw aria-hidden="true" className={busy ? 'is-spinning' : ''} />

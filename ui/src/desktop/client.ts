@@ -68,6 +68,7 @@ export class DesktopNetFleetClient implements BusinessClient {
     if (value?.runtime?.platform !== 'macos' || typeof value.runtime.running !== 'boolean'
       || typeof value.runtime.configured !== 'boolean' || !value.subscriptions || !value.network
       || !value.core || !Array.isArray(value.core.rows) || !Array.isArray(value.core.components)
+      || !value.dashboard || typeof value.dashboard.available !== 'boolean'
       || (value.status !== null && (!Array.isArray(value.status?.capabilities) || !Array.isArray(value.status?.providers) || !Array.isArray(value.status?.regions)))
       || (value.config != null && (typeof value.config.revision !== 'string' || !Array.isArray(value.config.providers) || !Array.isArray(value.config.regions) || !Array.isArray(value.config.capabilities)))
       || (value.events !== null && !Array.isArray(value.events?.events))) {
@@ -96,4 +97,6 @@ export class DesktopNetFleetClient implements BusinessClient {
   logs() { return this.action<{ text: string }>('logs'); }
   exportBackup() { return this.action('backup-export'); }
   connections() { return this.action<ConnectionsSnapshot>('connections'); }
+  // 面板连接信息按需读取：携带 controller 凭据的地址不进入普通快照。
+  dashboardUrl() { return this.action<{ ok: boolean; url: string }>('dashboard-open'); }
 }
