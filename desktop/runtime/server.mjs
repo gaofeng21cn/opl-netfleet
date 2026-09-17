@@ -473,7 +473,8 @@ async function stageAppUpdate(candidate, image) {
   child.unref();
   await atomicJSON(path.join(stateDir, 'update-pending.json'), { schema: 'opl-netfleet-macos-update-pending.v1',
     version: candidate.version, tag: candidate.tag, staged, target: appBundle, at: Math.floor(Date.now() / 1000) });
-  return { ok: true, version: candidate.version, previous: status.app?.installed ?? packagedIdentity?.package_version ?? null,
+  // 被替换的是正在运行的这个构建，所以"上一个版本"就是包内身份，不是检查缓存。
+  return { ok: true, version: candidate.version, previous: packagedIdentity?.package_version ?? null,
     relaunch_required: true };
 }
 
