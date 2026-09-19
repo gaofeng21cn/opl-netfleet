@@ -7,6 +7,7 @@ const error_code = use("network.model").error_code;
 
 function check(value, reason) { if (!value) { print(`${reason}\n`); exit(1); } };
 function clone(value) { return json(sprintf("%J", value)); };
+function policy(entries, domain) { return filter(entries ?? [], (entry) => entry.domain == domain)[0]; };
 let caught = null;
 try { die("network_stage_failed"); } catch (error) { caught = error_code(error, "network_apply_failed"); }
 check(caught == "network_stage_failed", "die_error_code_preserved");
@@ -16,7 +17,7 @@ const profile = { "mixed-port": 7890, authentication: ["user:private-password"],
 	"tproxy-port": 7892, "external-controller": "0.0.0.0:9090", secret: "unchanged-secret", private_field: { keep: true },
 	dns: { nameserver: ["udp://127.0.0.1:1054"], "default-nameserver": ["198.51.100.53"],
 		"proxy-server-nameserver": ["system"], "direct-nameserver": ["198.51.100.53"],
-		"nameserver-policy": { "example.test": ["198.51.100.54"], "+.private.test": ["198.51.100.55"] },
+		"nameserver-policy": { "example.test": ["198.51.100.54"], "+.private.test": ["198.51.100.55"], "+.health.opl-netfleet.invalid": "rcode://name_error" },
 		"proxy-server-nameserver-policy": { "exit.example.test": ["198.51.100.54"], "geosite:private": ["198.51.100.55"] },
 		"fake-ip-filter": ["+.keep.test"], fallback: ["198.51.100.56"] } };
 const sections = [
@@ -28,7 +29,10 @@ const current = project(profile, sections);
 const visible = public_settings(current);
 check(visible.listeners.credentials[0].password == null && visible.listeners.credentials[0].password_configured, "password_not_disclosed");
 check(current.listeners.credentials[0].password == "private-password", "private_owner_can_retain_password");
-check(length(visible.dns.policies) == 1 && length(visible.dns.proxy_policies) == 1, "complex_policy_not_misrepresented_as_domain");
+check(length(visible.dns.policies) == 2 && policy(visible.dns.policies, "example.test").match == "exact" &&
+	policy(visible.dns.policies, "private.test").match == "suffix", "exact_and_suffix_domain_rules_projected");
+check(length(visible.dns.proxy_policies) == 1 && policy(visible.dns.proxy_policies, "exit.example.test").match == "exact", "proxy_policy_projected_without_opaque_keys");
+check(length(filter(visible.dns.policies, (entry) => index(entry.domain, "opl-netfleet.invalid") >= 0)) == 0, "internal_probe_policy_not_editable");
 check(length(visible.lan.rules) == 2 && visible.lan.rules[1].proxy, "ordered_device_rules_projected");
 const resources = { interfaces: [{ name: "lan" }, { name: "guest" }], reserved_ports: [7892, 9090, 1053] };
 const request = { revision: "current", settings: visible };
@@ -47,7 +51,12 @@ rejects((settings) => { settings.dns.nameservers = ["file:///etc/passwd"]; }, "l
 rejects((settings) => { settings.dns.proxy_nameservers = []; }, "proxy_policy_needs_default_resolver");
 rejects((settings) => { settings.dns.default_nameservers = []; }, "configured_bootstrap_resolver_retained");
 rejects((settings) => { settings.dns.nameservers = ["udp://example.test\nsecret"]; }, "resolver_control_character_rejected");
-rejects((settings) => { settings.dns.policies = [{ domain: "+.example.test", nameservers: ["198.51.100.53"] }]; }, "wildcard_domain_rejected");
+rejects((settings) => { settings.dns.nameservers = ["https://resolver.example/dns-query private"]; }, "resolver_whitespace_rejected");
+rejects((settings) => { settings.dns.policies = [{ domain: "+.example.test", match: "exact", nameservers: ["198.51.100.53"] }]; }, "prefixed_domain_rejected");
+rejects((settings) => { settings.dns.policies = [{ domain: "example.test", match: "wildcard", nameservers: ["198.51.100.53"] }]; }, "invalid_policy_match_rejected");
+rejects((settings) => { settings.dns.policies = [{ domain: "example.test", match: "suffix", nameservers: [] }]; }, "suffix_policy_needs_resolver");
+rejects((settings) => { settings.dns.policies = [{ domain: "health.opl-netfleet.invalid", match: "suffix", nameservers: ["198.51.100.53"] }]; }, "reserved_probe_domain_rejected");
+rejects((settings) => { settings.dns.policies = [{ domain: "example.test", match: "exact", nameservers: ["198.51.100.53"] }, { domain: "EXAMPLE.test", match: "exact", nameservers: ["198.51.100.53"] }]; }, "duplicate_domain_rejected");
 rejects((settings) => { settings.lan.interfaces = ["../../wan"]; }, "unowned_interface_rejected");
 rejects((settings) => { settings.lan.rules[0].ipv4 = ["192.0.2.999"]; }, "invalid_ipv4_rejected");
 rejects((settings) => { settings.lan.rules[0].ipv6 = ["2001:::1"]; }, "invalid_ipv6_rejected");
@@ -67,11 +76,25 @@ check(valid.ok, "supported_network_change_accepted");
 const rendered = runtime_profile(profile, valid.settings);
 check(rendered.dns["nameserver-policy"]["example.test"] == null && rendered.dns["proxy-server-nameserver-policy"]["exit.example.test"] == null,
 	"deleted_exact_domain_removed");
-check(rendered.dns["nameserver-policy"]["+.private.test"][0] == "198.51.100.55" && rendered.dns["proxy-server-nameserver-policy"]["geosite:private"][0] == "198.51.100.55",
-	"complex_private_policy_preserved");
+check(rendered.dns["nameserver-policy"]["+.private.test"] == null, "deleted_suffix_domain_removed");
+check(rendered.dns["nameserver-policy"]["+.health.opl-netfleet.invalid"] == "rcode://name_error" && rendered.dns["proxy-server-nameserver-policy"]["geosite:private"][0] == "198.51.100.55",
+	"opaque_private_policy_preserved");
 check(rendered.private_field.keep && rendered.secret == profile.secret && rendered["tproxy-port"] == 7892 && rendered.dns["fake-ip-filter"][0] == "+.keep.test" &&
 	rendered.dns.fallback[0] == "198.51.100.56", "unrepresented_configuration_preserved");
 check(rendered["mixed-port"] == 17890 && rendered.authentication[0] == "user:private-password", "candidate_listener_and_authentication");
+const transports = clone(request);
+transports.settings.dns.nameservers = ["https://resolver.example:8443/dns-query#overseas", "tls://resolver.example/token", "quic://resolver.example"];
+check(validate_request(transports, "current", current, resources).ok, "transport_resolver_urls_accepted");
+const https_rule = clone(request);
+https_rule.settings.dns.policies = [...https_rule.settings.dns.policies, { domain: "resolver-policy.test", match: "exact", nameservers: ["https://resolver.example:8443/dns-query#overseas"] }];
+const https_valid = validate_request(https_rule, "current", current, resources);
+check(https_valid.ok && runtime_profile(profile, https_valid.settings).dns["nameserver-policy"]["resolver-policy.test"][0] == "https://resolver.example:8443/dns-query#overseas",
+	"https_policy_resolver_accepted");
+const extended = clone(request);
+extended.settings.dns.policies = [...extended.settings.dns.policies, { domain: "suffix.test", match: "suffix", nameservers: ["198.51.100.57"] }];
+const with_suffix = validate_request(extended, "current", current, resources);
+check(with_suffix.ok && runtime_profile(profile, with_suffix.settings).dns["nameserver-policy"]["+.suffix.test"][0] == "198.51.100.57" &&
+	runtime_profile(profile, with_suffix.settings).dns["nameserver-policy"]["+.private.test"][0] == "198.51.100.55", "added_suffix_domain_rendered_next_to_managed_suffix");
 print("network_contract passed\n");
 const omitted = clone(profile);
 delete omitted.dns["default-nameserver"];

@@ -8,7 +8,7 @@ describe('unauthenticated management preview projection', () => {
       available: true, backend: 'native-mihomo', revision: 'real-revision', running: true,
       secret: 'controller-secret',
       settings: {
-        dns: { nameservers: ['1.1.1.1', 'https://user:password@resolver.example:8443/private-token?key=abc#secret'], default_nameservers: ['9.9.9.9'], proxy_nameservers: [], direct_nameservers: [], policies: [{ domain: 'example.com', nameservers: ['tls://dns.example/token'] }], proxy_policies: [] },
+        dns: { nameservers: ['1.1.1.1', 'https://user:password@resolver.example:8443/private-token?key=abc#secret'], default_nameservers: ['9.9.9.9'], proxy_nameservers: [], direct_nameservers: [], policies: [{ domain: 'example.com', match: 'exact', nameservers: ['tls://dns.example/token'] }, { domain: 'linkedin.com', match: 'suffix', nameservers: ['https://1.1.1.1/dns-query'] }], proxy_policies: [] },
         lan: { enabled: true, interfaces: ['br-lan'], rules: [] }, router: { enabled: true },
         listeners: { mixed_port: 7890, http_port: 0, socks_port: 0, authentication_enabled: true, credentials: [{ id: 'one', username: 'local-user', password_configured: true, password: 'actual-password' }] },
       },
@@ -18,6 +18,7 @@ describe('unauthenticated management preview projection', () => {
     expect(projected.revision).toBe('real-revision');
     expect(projected.settings?.dns.nameservers).toEqual(['1.1.1.1', 'https://resolver.example:8443/[已隐藏]']);
     expect(projected.settings?.dns.policies[0].nameservers).toEqual(['tls://dns.example/[已隐藏]']);
+    expect(projected.settings?.dns.policies[1]).toEqual({ domain: 'linkedin.com', match: 'suffix', nameservers: ['https://1.1.1.1/[已隐藏]'] });
     expect(projected.preview_redacted).toBe(true);
     expect(projected.settings?.listeners.credentials).toEqual([{ id: 'one', username: 'local-user', password_configured: true }]);
     const serialized = JSON.stringify(projected);

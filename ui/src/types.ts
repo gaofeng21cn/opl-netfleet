@@ -419,7 +419,7 @@ export interface DashboardComponent {
   release_url: string | null;
 }
 
-export interface DnsPolicy { domain: string; nameservers: string[] }
+export interface DnsPolicy { domain: string; match: 'exact' | 'suffix'; nameservers: string[] }
 
 export interface NetworkSettings {
   dns: { nameservers: string[]; default_nameservers: string[]; proxy_nameservers: string[]; direct_nameservers: string[]; policies: DnsPolicy[]; proxy_policies: DnsPolicy[] };

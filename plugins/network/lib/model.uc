@@ -2,7 +2,7 @@
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let copy, array, enabled, error_code, exact_domain, policies, project, public_settings, fields, boolean, bounded_array, ipv4, ipv6, address, resolver, resolvers, validate_policies, validate_request, managed_policy, runtime_profile;
+let copy, array, enabled, error_code, exact_domain, internal_domain, policy_domain, policies, project, public_settings, fields, boolean, bounded_array, ipv4, ipv6, address, resolver, resolvers, validate_policies, validate_request, managed_policy, runtime_profile;
 
 
 
@@ -22,10 +22,26 @@ exact_domain = function(value) {
 		if (!match(part, /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/)) return false;
 	return true;
 };
+// The gateway renderer injects its own resolver probe into every profile, so
+// this namespace stays outside the editable domain rules.
+internal_domain = function(value) {
+	const suffix = ".opl-netfleet.invalid";
+	const name = type(value) == "string" && substr(value, 0, 2) == "+." ? substr(value, 2) : value;
+	if (type(name) != "string") return false;
+	return name == substr(suffix, 1) || substr(name, -length(suffix)) == suffix;
+};
+// An editable entry is a bare exact domain or a `+.` suffix key from Mihomo.
+policy_domain = function(name) {
+	if (type(name) != "string" || internal_domain(name)) return null;
+	const pattern = substr(name, 0, 2) == "+." ? { match: "suffix", domain: substr(name, 2) } : { match: "exact", domain: name };
+	return exact_domain(pattern.domain) ? pattern : null;
+};
 policies = function(values) {
 	const result = [];
-	for (let domain in sort(keys(values ?? {})))
-		if (exact_domain(domain)) push(result, { domain: domain, nameservers: array(values[domain]) });
+	for (let name in sort(keys(values ?? {}))) {
+		const pattern = policy_domain(name);
+		if (pattern != null) push(result, { domain: pattern.domain, match: pattern.match, nameservers: array(values[name]) });
+	}
 	return result;
 };
 
@@ -108,7 +124,9 @@ resolver = function(value) {
 	if (value == "system") return true;
 	if (ipv4(value) || ipv6(value)) return true;
 	// Resolver syntax remains Mihomo's contract; only network transports enter this form.
-	return match(value, /^(https|tls|quic|tcp|udp):\/\/[^\s]+$/) != null;
+	// POSIX classes are required here: UCode reads `\s` inside a bracket
+	// expression as the literal letter, which rejected every HTTPS resolver.
+	return match(value, /^(https|tls|quic|tcp|udp):\/\/[^[:space:]]+$/) != null;
 };
 resolvers = function(value, errors, path, required) {
 	if (!bounded_array(value, errors, path, 32)) return;
@@ -124,10 +142,13 @@ validate_policies = function(value, errors, path) {
 	if (!bounded_array(value, errors, path, 128)) return;
 	const seen = [];
 	for (let entry in value) {
-		if (!fields(entry, ["domain", "nameservers"], errors, path)) continue;
-		if (!exact_domain(entry.domain)) push(errors, { path: path, reason: "exact_domain_required" });
-		else if (index(seen, lc(entry.domain)) >= 0) push(errors, { path: path, reason: "duplicate_domain" });
-		else push(seen, lc(entry.domain));
+		if (!fields(entry, ["domain", "match", "nameservers"], errors, path)) continue;
+		const key = `${entry.match}:${lc(`${entry.domain ?? ""}`)}`;
+		if (index(["exact", "suffix"], entry.match) < 0) push(errors, { path: path, reason: "invalid_policy_match" });
+		else if (!exact_domain(entry.domain)) push(errors, { path: path, reason: "invalid_policy_domain" });
+		else if (internal_domain(entry.match == "suffix" ? `+.${entry.domain}` : entry.domain)) push(errors, { path: path, reason: "reserved_policy_domain" });
+		else if (index(seen, key) >= 0) push(errors, { path: path, reason: "duplicate_domain" });
+		else push(seen, key);
 		resolvers(entry.nameservers, errors, path, true);
 	}
 };
@@ -221,8 +242,8 @@ validate_request = function(request, revision, current, resources) {
 
 managed_policy = function(original, entries) {
 	const result = {};
-	for (let name, value in original ?? {}) if (!exact_domain(name)) result[name] = copy(value);
-	for (let entry in entries) result[lc(entry.domain)] = copy(entry.nameservers);
+	for (let name, value in original ?? {}) if (policy_domain(name) == null) result[name] = copy(value);
+	for (let entry in entries) result[entry.match == "suffix" ? `+.${lc(entry.domain)}` : lc(entry.domain)] = copy(entry.nameservers);
 	return result;
 };
 

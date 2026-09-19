@@ -972,6 +972,12 @@
 	font-size: 14px;
 }
 
+.netfleet-management-section .netfleet-management-help {
+	margin: 0 0 12px;
+	color: var(--nf-muted);
+	font-size: 14px;
+}
+
 .netfleet-environment {
 	display: grid;
 	grid-template-columns: repeat(4, minmax(0, 1fr));

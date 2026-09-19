@@ -69,9 +69,10 @@ if (phase == "legacy_sniff") {
 	changed.listeners.socks_port = 0;
 	changed.listeners.authentication_enabled = true;
 	changed.listeners.credentials = [{ id: "new_network_vm", username: "network-vm", password: "network-vm-private" }];
-	changed.dns.policies = [...changed.dns.policies, { domain: "management-proof.test", nameservers: ["udp://127.0.0.1:1054"] }];
+	changed.dns.policies = [...changed.dns.policies, { domain: "management-proof.test", match: "exact", nameservers: ["udp://127.0.0.1:1054"] },
+		{ domain: "management-suffix.test", match: "suffix", nameservers: ["udp://127.0.0.1:1054"] }];
 	changed.dns.proxy_nameservers = ["udp://127.0.0.1:1054"];
-	changed.dns.proxy_policies = [...changed.dns.proxy_policies, { domain: "management-proxy.test", nameservers: ["udp://127.0.0.1:1054"] }];
+	changed.dns.proxy_policies = [...changed.dns.proxy_policies, { domain: "management-proxy.test", match: "suffix", nameservers: ["udp://127.0.0.1:1054"] }];
 	const path = request(changed, current.result.revision);
 	const validated = validate(path);
 	check(validated.ok && sha256("/etc/config/netfleet") == config_before, `candidate_validation_zero_mutation:${sprintf("%J", validated)}`);
@@ -83,6 +84,10 @@ if (phase == "legacy_sniff") {
 	const active = read_json("/etc/opl-netfleet/native/run/config.yaml");
 	check(active["tcp-concurrent"] == changed.advanced["tcp-concurrent"] && active["log-level"] == "warning" &&
 		length(keys(active.sniffer.sniff)) == 1, "advanced_running_readback");
+	check(filter(saved.result.settings.dns.policies, entry => entry.domain == "management-suffix.test")[0].match == "suffix", "suffix_policy_readback");
+	check(active.dns["nameserver-policy"]["+.management-suffix.test"][0] == "udp://127.0.0.1:1054" &&
+		active.dns["proxy-server-nameserver-policy"]["+.management-proxy.test"][0] == "udp://127.0.0.1:1054", "suffix_policy_running_readback");
+	check(active.dns["nameserver-policy"]["+.health.opl-netfleet.invalid"] == "rcode://name_error", "internal_probe_policy_retained");
 	check(active["netfleet-replace-sniff"] == null, "private_marker_not_in_core_config");
 	check(cursor().get("netfleet", "mixin", "tcp_concurrent") == null, "changed_uci_override_removed");
 	check(filter(saved.result.explanation, e => e.id == "tcp-concurrent")[0].source == "override", "advanced_origin_readback");

@@ -26,6 +26,10 @@ function lines(value, onchange, label) {
 function toggle(value, onchange, label) {
 	return E('label', { 'class': 'netfleet-check' }, [ E('input', { 'type': 'checkbox', 'checked': value || null, 'change': function(event) { onchange(event.target.checked); } }), E('span', {}, label || (value ? '已开启' : '已关闭')) ]);
 }
+function choice(value, onchange, options, label) {
+	return E('select', { 'class': 'cbi-input-select', 'aria-label': label, 'change': function(event) { onchange(event.target.value); } },
+		options.map(function(item) { return E('option', { 'value': item[0], 'selected': value === item[0] || null }, item[1]); }));
+}
 function time(value) { return value ? new Date(value * 1000).toLocaleString() : '未提供'; }
 function errorText(error) {
 	if (error && error.netfleetKind === 'request_aborted') return '请求已中断，设备执行结果尚未确认；请重新读取状态，不要重复执行。';
@@ -43,7 +47,7 @@ function errorText(error) {
 	let message = known[code] || '设备未完成操作（' + code + '）';
 	const problem = error && error.detail && error.detail.errors && error.detail.errors[0];
 	const reasons = { invalid_or_reserved_port: '端口无效、重复或被其他功能占用', http_probe_listener_required: '至少保留一个混合或 HTTP 代理端口',
-		invalid_resolver: 'DNS 服务器地址无效', resolver_required: '请填写常规 DNS 服务器', default_resolver_required: '已配置的启动解析 DNS 不能为空，请填写替代服务器', proxy_resolver_required: '设置代理节点域名规则时，也需要填写代理节点 DNS', exact_domain_required: '域名规则需要精确域名',
+		invalid_resolver: 'DNS 服务器地址无效', resolver_required: '请填写常规 DNS 服务器', default_resolver_required: '已配置的启动解析 DNS 不能为空，请填写替代服务器', proxy_resolver_required: '设置代理节点域名规则时，也需要填写代理节点 DNS', invalid_policy_match: '域名匹配方式无效', invalid_policy_domain: '请填写不含协议、端口和路径的域名', reserved_policy_domain: '该域名由设备内部保留，不能配置解析',
 		duplicate_domain: '域名规则重复', invalid_address: '设备地址格式无效', catch_all_must_be_last: '匹配其余设备的规则必须放在最后',
 		catch_all_required: '请保留一条匹配其余设备的规则', interface_required: '请选择局域网接入接口', unknown_interface: '接入接口不存在',
 		password_required: '请为新账户设置密码', credential_required: '启用认证时至少需要一个账户', invalid_username: '用户名无效或重复' };
@@ -107,12 +111,16 @@ function network(controller) {
 			return saved.id === rule.id && !saved.ipv4.length && !saved.ipv6.length && !saved.mac.length;
 		});
 	};
-	function policies(key, title) {
-		return E('section', { 'class': 'netfleet-management-section' }, [ E('h4', {}, title), table(['匹配域名', 'DNS 服务器', '操作'], draft.dns[key].map(function(item, index) {
-			return E('tr', {}, [ E('td', {}, input(item.domain, function(value) { item.domain = value; }, 'text', { 'aria-label': '匹配域名' })),
+	function policies(key, title, preserved) {
+		return E('section', { 'class': 'netfleet-management-section' }, [ E('h4', {}, title),
+			E('p', { 'class': 'netfleet-management-help' }, '精确域名只匹配该域名；域名后缀同时匹配该域名及其子域名。'),
+			table(['匹配方式', '域名', 'DNS 服务器', '操作'], draft.dns[key].map(function(item, index) {
+			return E('tr', {}, [ E('td', {}, choice(item.match, function(value) { item.match = value; controller.redraw(); }, [ [ 'exact', '精确域名' ], [ 'suffix', '域名后缀' ] ], title + ' 匹配方式')),
+				E('td', {}, input(item.domain, function(value) { item.domain = value; }, 'text', { 'aria-label': '匹配域名' })),
 				E('td', {}, lines(item.nameservers, function(value) { item.nameservers = value; }, 'DNS 服务器')),
 				E('td', {}, button('移除', function() { draft.dns[key].splice(index, 1); controller.redraw(); }, locked, true)) ]);
-		})), button('添加域名 DNS', function() { draft.dns[key].push({ domain: '', nameservers: [] }); controller.redraw(); }, locked) ]);
+		})), button('添加域名 DNS', function() { draft.dns[key].push({ domain: '', match: 'exact', nameservers: [] }); controller.redraw(); }, locked),
+			preserved ? E('p', { 'class': 'netfleet-management-help' }, '另有 ' + preserved + ' 条规则（如 geosite:、rule-set:）由当前配置保留，不在此处编辑。') : '' ]);
 	}
 	const credentials = draft.listeners.credentials || [];
 	const rows = [
@@ -123,7 +131,8 @@ function network(controller) {
 	];
 	return E('section', {}, [ E('div', { 'class': 'netfleet-config-heading' }, [ E('h3', {}, '网络接入'), E('p', {}, 'TProxy') ]),
 		E('fieldset', { 'disabled': locked || null, 'class': 'netfleet-management-fields' }, [ E('h4', {}, 'DNS'), E('div', { 'class': 'netfleet-config-rows' }, rows),
-			policies('policies', '按域名指定 DNS'), policies('proxy_policies', '按代理节点域名指定 DNS'),
+			policies('policies', '按域名指定 DNS', state.resources.preserved_dns_policy_count),
+			policies('proxy_policies', '按代理节点域名指定 DNS', state.resources.preserved_proxy_policy_count),
 			advanced.render(controller),
 			E('h4', {}, '代理范围'),
 			row('路由器本机', toggle(draft.router.enabled, function(value) { draft.router.enabled = value; controller.redraw(); })),

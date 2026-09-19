@@ -16,14 +16,16 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
 
 function PolicyList({ title, policies, preserved, onChange }: { title: string; policies: DnsPolicy[]; preserved: number; onChange(policies: DnsPolicy[]): void }) {
   return <section className="nf-management-subsection">
-    <div className="nf-section-heading"><h3>{title}</h3><button type="button" onClick={() => onChange([...policies, { domain: '', nameservers: [] }])}><Plus aria-hidden="true" />添加域名</button></div>
-    <div className="nf-table-wrap nf-management-table"><table><thead><tr><th>精确域名</th><th>解析地址</th><th>操作</th></tr></thead><tbody>
+    <div className="nf-section-heading"><h3>{title}</h3><button type="button" onClick={() => onChange([...policies, { domain: '', match: 'exact', nameservers: [] }])}><Plus aria-hidden="true" />添加域名</button></div>
+    <p className="nf-management-note">精确域名只匹配该域名；域名后缀同时匹配该域名及其子域名。</p>
+    <div className="nf-table-wrap nf-management-table"><table><thead><tr><th>匹配方式</th><th>域名</th><th>解析地址</th><th>操作</th></tr></thead><tbody>
       {policies.map((policy, index) => <tr key={index}>
+        <td><select aria-label={`${title} 匹配方式 ${index + 1}`} value={policy.match} onChange={event => onChange(policies.map((item, at) => at === index ? { ...item, match: event.target.value as DnsPolicy['match'] } : item))}><option value="exact">精确域名</option><option value="suffix">域名后缀</option></select></td>
         <td><input aria-label={`${title} 域名 ${index + 1}`} value={policy.domain} placeholder="example.com" onChange={event => onChange(policies.map((item, at) => at === index ? { ...item, domain: event.target.value } : item))} /></td>
         <td><TextList label={`${policy.domain || title} 解析地址`} values={policy.nameservers} onChange={nameservers => onChange(policies.map((item, at) => at === index ? { ...item, nameservers } : item))} /></td>
         <td><button className="nf-icon-button" type="button" title="移除解析规则" aria-label={`移除 ${policy.domain || '空白'} 解析规则`} onClick={() => onChange(policies.filter((_, at) => at !== index))}><Trash2 aria-hidden="true" /></button></td>
       </tr>)}
-      {!policies.length && <tr><td colSpan={3}>未配置精确域名规则</td></tr>}
+      {!policies.length && <tr><td colSpan={4}>未配置域名解析规则</td></tr>}
     </tbody></table></div>
     {preserved > 0 && <p className="nf-management-note">另有 {preserved} 条高级匹配规则，由当前配置保留。</p>}
   </section>;

@@ -18,8 +18,8 @@ export function projectNetwork(snapshot: NetworkSnapshot): NetworkSnapshot {
       default_nameservers: settings.dns.default_nameservers.map(resolver),
       proxy_nameservers: settings.dns.proxy_nameservers.map(resolver),
       direct_nameservers: settings.dns.direct_nameservers.map(resolver),
-      policies: settings.dns.policies.map(item => ({ domain: item.domain, nameservers: item.nameservers.map(resolver) })),
-      proxy_policies: settings.dns.proxy_policies.map(item => ({ domain: item.domain, nameservers: item.nameservers.map(resolver) })),
+      policies: settings.dns.policies.map(item => ({ domain: item.domain, match: item.match, nameservers: item.nameservers.map(resolver) })),
+      proxy_policies: settings.dns.proxy_policies.map(item => ({ domain: item.domain, match: item.match, nameservers: item.nameservers.map(resolver) })),
     },
     lan: {
       enabled: settings.lan.enabled,

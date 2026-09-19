@@ -406,7 +406,7 @@ Nikki 路径到原生目录；不会从品牌名猜配置，也不靠重新下�
   不能提前返回而跳过基础 DNS、TPROXY 和策略路由清理；基础清理成功也不能伪报
   尚未确认的 HTTPS 清理成功。
 
-LAN ingress 以 effective `allow_lan`、TCP/UDP `7892` wildcard listener 和所选后端 nft TProxy rule 为准；DNS 接管以 effective `dns_enabled`、TCP/UDP DNS listener 与所选后端要求的 DNS redirect chains 为准。原生后端还通过进程内 UDP socket 在一秒内查询自身 DNS 端口：gateway 在生成配置中为保留命名空间 `health.opl-netfleet.invalid` 添加 `+.health.opl-netfleet.invalid: rcode://name_error` nameserver policy；该高级规则不进入用户可编辑的精确域名列表，TXT 查询经过正常 DNS resolver 并在本地返回 NXDOMAIN，不访问上游。探针校验响应 ID、问题与完整报文，只把该预期应答当作本地处理链健康；它不代表外部域名解析或业务成功。Nikki 后端仍使用保护探针域名经路由器 resolver 的解析证据。一次 backend 回读共享 `/proc/net` 监听快照和 nft table 快照，并直接调用既有 gateway service，不启动第二个宿主进程，也不复用跨轮缓存。
+LAN ingress 以 effective `allow_lan`、TCP/UDP `7892` wildcard listener 和所选后端 nft TProxy rule 为准；DNS 接管以 effective `dns_enabled`、TCP/UDP DNS listener 与所选后端要求的 DNS redirect chains 为准。原生后端还通过进程内 UDP socket 在一秒内查询自身 DNS 端口：gateway 在生成配置中为保留命名空间 `health.opl-netfleet.invalid` 添加 `+.health.opl-netfleet.invalid: rcode://name_error` nameserver policy；该内部规则不进入用户可编辑的域名规则，TXT 查询经过正常 DNS resolver 并在本地返回 NXDOMAIN，不访问上游。探针校验响应 ID、问题与完整报文，只把该预期应答当作本地处理链健康；它不代表外部域名解析或业务成功。Nikki 后端仍使用保护探针域名经路由器 resolver 的解析证据。一次 backend 回读共享 `/proc/net` 监听快照和 nft table 快照，并直接调用既有 gateway service，不启动第二个宿主进程，也不复用跨轮缓存。
 
 原生健康读取从 procd 回读核心命令身份，并复用本次 nft 表快照核验 DNS/TProxy；快照保留表、链与规则表达式，但不展开健康判断不消费的集合元素。需要成员证明的接管与选路读取仍保留集合内容；状态页不为就绪判断重复计算完整配置摘要。显式 gateway 状态仍提供配置摘要，观察之间不缓存健康结果。
 
@@ -512,7 +512,7 @@ LuCI 在机场页和配置的机场区提供同一个订阅管理入口，新增
 `network_get` 按需返回当前
 原生网络配置、revision 和已有接口资源；`network_validate / network_apply` 接受
 `{revision,settings}`，其中 `settings` 分为 `dns / lan / router / listeners / advanced`。DNS 包括
-普通、引导、代理节点与直连解析上游，以及精确域名的解析覆盖；LAN 包括入口接口与
+普通、引导、代理节点与直连解析上游，以及精确域名和域名后缀的解析覆盖；LAN 包括入口接口与
 按 IPv4/IPv6、MAC 匹配的代理和 DNS 接入规则；监听包括 HTTP/SOCKS/mixed 端口与认证。
 读取不返回密码，只显示是否已配置；编辑未提交密码时保留原值。该接口不接受代理模式、
 WAN/LAN 地址、默认路由或任意 UCI 字段，也不修改 policy。校验与应用拒绝旧 revision，
@@ -727,7 +727,8 @@ LuCI 同步 mutation 与 rpcd/uhttpd execution timeout 使用 300 秒有界预�
 
 `network_get`、`network_validate`、`network_apply` 由独立设备网络配置 owner 提供，
 不是 policy 的附加任意字段。LuCI 的配置页增加“网络接入”，管理 DNS 上游及精确域名
-覆盖、LAN/本机代理范围、设备访问规则，以及必要的代理监听和认证。实际字段只投影
+或域名后缀覆盖、LAN/本机代理范围、设备访问规则，以及必要的代理监听和认证。其他上游
+规则键（`geosite:`、`rule-set:`）与保留命名空间仍不进入该表单。实际字段只投影
 当前 gateway 消费的 UCI/mixin，不接受 shell、nft、路由表或 WAN/LAN 地址写入。
 
 读取结果绑定当前私有配置 revision；校验和应用拒绝旧 revision。应用前保存原始配置及

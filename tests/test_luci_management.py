@@ -108,11 +108,11 @@ function modesModule(api, selectionRunner) {
 function networkState() {
     return { available: true, backend: 'native-mihomo', revision: 'network-r1', running: true,
         settings: {
-            dns: { nameservers: ['1.1.1.1'], default_nameservers: ['9.9.9.9'], proxy_nameservers: ['https://resolver.example/dns-query'], direct_nameservers: [], policies: [{ domain: 'service.example', nameservers: ['1.0.0.1'] }], proxy_policies: [] },
+            dns: { nameservers: ['1.1.1.1'], default_nameservers: ['9.9.9.9'], proxy_nameservers: ['https://resolver.example/dns-query'], direct_nameservers: [], policies: [{ domain: 'service.example', match: 'exact', nameservers: ['1.0.0.1'] }], proxy_policies: [] },
             lan: { enabled: true, interfaces: ['br-lan'], rules: [{ id: 'device-a', enabled: true, ipv4: ['192.0.2.10'], ipv6: ['2001:db8::10'], mac: [], proxy: false, dns: true }] },
             router: { enabled: true },
             listeners: { mixed_port: 7890, http_port: 0, socks_port: 0, authentication_enabled: true, credentials: [{ id: 'login-a', username: 'operator', password_configured: true }] },
-        }, resources: { interfaces: [{ name: 'br-lan', up: true, device: 'br-lan' }], preserved_dns_policy_count: 0, preserved_proxy_policy_count: 0 } };
+        }, resources: { interfaces: [{ name: 'br-lan', up: true, device: 'br-lan' }], preserved_dns_policy_count: 1, preserved_proxy_policy_count: 0 } };
 }
 function maintenanceState() {
     return { supported: true, revision: 'maintenance-r1', profiles: [{ id: 'custom.json', ref: 'file:custom.json', format: 'json', size_bytes: 64, modified_at: 100, referenced: false, editable: true }],
@@ -208,6 +208,27 @@ assert.equal(owner.networkDraft.lan.rules.at(-2).enabled, false);
 root = management.network(owner);
 assert.equal(all(root, node => node.attrs['aria-label'] === 'IPv4 地址或网段').length, 2);
 assert(text(root).includes('留空并启用会匹配其余所有设备'));
+""")
+
+    def test_network_domain_policy_edits_exact_and_suffix_matches(self):
+        self.run_js(r"""
+const state = networkState();
+state.settings.dns.policies.push({ domain: 'linkedin.com', match: 'suffix', nameservers: ['https://1.1.1.1/dns-query#overseas'] });
+const management = module('management.js', { networkGet: async () => state });
+const owner = controller();
+await management.load(owner, 'network');
+const root = management.network(owner);
+assert(text(root).includes('精确域名只匹配该域名；域名后缀同时匹配该域名及其子域名'));
+const selections = all(root, node => node.tag === 'select' && node.attrs['aria-label'] === '按域名指定 DNS 匹配方式');
+assert.equal(selections.length, 2);
+const chosen = node => all(node, item => item.tag === 'option' && item.attrs.selected != null).map(text);
+assert.deepEqual(chosen(selections[0]), ['精确域名']);
+assert.deepEqual(chosen(selections[1]), ['域名后缀']);
+assert(text(root).includes('另有 1 条规则（如 geosite:、rule-set:）由当前配置保留，不在此处编辑。'));
+fire(selections[1], 'change', { value: 'exact' });
+assert.equal(owner.networkDraft.dns.policies[1].match, 'exact');
+fire(button(root, '添加域名 DNS'));
+assert.deepEqual(owner.networkDraft.dns.policies.at(-1), { domain: '', match: 'exact', nameservers: [] });
 """)
 
     def test_network_form_sends_complete_revision_bound_request(self):
