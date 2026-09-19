@@ -85,6 +85,15 @@ check(rendered["mixed-port"] == 17890 && rendered.authentication[0] == "user:pri
 const transports = clone(request);
 transports.settings.dns.nameservers = ["https://resolver.example:8443/dns-query#overseas", "tls://resolver.example/token", "quic://resolver.example"];
 check(validate_request(transports, "current", current, resources).ok, "transport_resolver_urls_accepted");
+// A Profile that carries no `nameserver` leaves Mihomo on its own default, so an
+// empty field must stay saveable; clearing a configured upstream must not be.
+const no_upstream_profile = clone(profile);
+delete no_upstream_profile.dns["nameserver"];
+const no_upstream = project(no_upstream_profile, sections);
+const inherited_default = validate_request({ revision: "current", settings: public_settings(no_upstream) }, "current", no_upstream, resources);
+check(length(no_upstream.dns.nameservers) == 0 && inherited_default.ok &&
+	runtime_profile(no_upstream_profile, inherited_default.settings).dns["nameserver"] == null, "empty_upstream_inherits_core_default");
+rejects((settings) => { settings.dns.nameservers = []; }, "configured_upstream_retained");
 const https_rule = clone(request);
 https_rule.settings.dns.policies = [...https_rule.settings.dns.policies, { domain: "resolver-policy.test", match: "exact", nameservers: ["https://resolver.example:8443/dns-query#overseas"] }];
 const https_valid = validate_request(https_rule, "current", current, resources);

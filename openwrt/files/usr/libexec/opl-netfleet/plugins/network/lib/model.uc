@@ -164,9 +164,13 @@ validate_request = function(request, revision, current, resources) {
 	if (type(settings.advanced) == "object") settings.advanced = { ...current.advanced, ...settings.advanced };
 	if (fields(settings.dns, ["nameservers", "default_nameservers", "proxy_nameservers", "direct_nameservers", "policies", "proxy_policies"], errors, "dns")) {
 		for (let name in ["nameservers", "default_nameservers", "proxy_nameservers", "direct_nameservers"])
-			resolvers(settings.dns[name], errors, `dns.${name}`, name == "nameservers");
+			resolvers(settings.dns[name], errors, `dns.${name}`, false);
 		validate_policies(settings.dns.policies, errors, "dns.policies");
 		validate_policies(settings.dns.proxy_policies, errors, "dns.proxy_policies");
+		// An empty resolver list inherits the Profile or core default, but an
+		// upstream that is already in use cannot be dropped through the form.
+		if (length(current.dns.nameservers) && !length(settings.dns.nameservers ?? []))
+			push(errors, { path: "dns.nameservers", reason: "resolver_required" });
 		if (length(settings.dns.proxy_policies ?? []) && !length(settings.dns.proxy_nameservers ?? []))
 			push(errors, { path: "dns.proxy_nameservers", reason: "proxy_resolver_required" });
 		if (length(current.dns.default_nameservers) && !length(settings.dns.default_nameservers ?? []))
@@ -252,7 +256,9 @@ runtime_profile = function(original, settings, inherited) {
 	if (profile.dns == null) profile.dns = {};
 	const mapping = { nameservers: "nameserver", default_nameservers: "default-nameserver", proxy_nameservers: "proxy-server-nameserver", direct_nameservers: "direct-nameserver" };
 	for (let key, name in mapping) {
-		if (key == "default_nameservers" && !length(settings.dns[key])) delete profile.dns[name];
+		// Mihomo rejects an empty `nameserver` list, so an empty field means
+		// "inherit the Profile or core default" instead of an empty override.
+		if (!length(settings.dns[key])) delete profile.dns[name];
 		else profile.dns[name] = copy(settings.dns[key]);
 	}
 	profile.dns["nameserver-policy"] = managed_policy(profile.dns["nameserver-policy"], settings.dns.policies);

@@ -47,7 +47,7 @@ function errorText(error) {
 	let message = known[code] || '设备未完成操作（' + code + '）';
 	const problem = error && error.detail && error.detail.errors && error.detail.errors[0];
 	const reasons = { invalid_or_reserved_port: '端口无效、重复或被其他功能占用', http_probe_listener_required: '至少保留一个混合或 HTTP 代理端口',
-		invalid_resolver: 'DNS 服务器地址无效', resolver_required: '请填写常规 DNS 服务器', default_resolver_required: '已配置的启动解析 DNS 不能为空，请填写替代服务器', proxy_resolver_required: '设置代理节点域名规则时，也需要填写代理节点 DNS', invalid_policy_match: '域名匹配方式无效', invalid_policy_domain: '请填写不含协议、端口和路径的域名', reserved_policy_domain: '该域名由设备内部保留，不能配置解析',
+		invalid_resolver: 'DNS 服务器地址无效', resolver_required: '已配置的常规 DNS 不能清空；如需沿用默认解析，请保留现有服务器', default_resolver_required: '已配置的启动解析 DNS 不能为空，请填写替代服务器', proxy_resolver_required: '设置代理节点域名规则时，也需要填写代理节点 DNS', invalid_policy_match: '域名匹配方式无效', invalid_policy_domain: '请填写不含协议、端口和路径的域名', reserved_policy_domain: '该域名由设备内部保留，不能配置解析',
 		duplicate_domain: '域名规则重复', invalid_address: '设备地址格式无效', catch_all_must_be_last: '匹配其余设备的规则必须放在最后',
 		catch_all_required: '请保留一条匹配其余设备的规则', interface_required: '请选择局域网接入接口', unknown_interface: '接入接口不存在',
 		password_required: '请为新账户设置密码', credential_required: '启用认证时至少需要一个账户', invalid_username: '用户名无效或重复' };
@@ -124,7 +124,7 @@ function network(controller) {
 	}
 	const credentials = draft.listeners.credentials || [];
 	const rows = [
-		row('常规 DNS', lines(draft.dns.nameservers, function(value) { draft.dns.nameservers = value; }, '常规 DNS')),
+		row('常规 DNS', lines(draft.dns.nameservers, function(value) { draft.dns.nameservers = value; }, '常规 DNS'), '留空表示沿用 Profile 或核心默认解析。'),
 		row('启动解析 DNS', lines(draft.dns.default_nameservers, function(value) { draft.dns.default_nameservers = value; }, '启动解析 DNS')),
 		row('代理节点 DNS', lines(draft.dns.proxy_nameservers, function(value) { draft.dns.proxy_nameservers = value; }, '代理节点 DNS')),
 		row('直连 DNS', lines(draft.dns.direct_nameservers, function(value) { draft.dns.direct_nameservers = value; }, '直连 DNS'))

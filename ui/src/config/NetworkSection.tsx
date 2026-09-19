@@ -57,7 +57,7 @@ export function NetworkSection({ client }: { client?: NetFleetClient }) {
       {data.preview_redacted && <p className="nf-management-note">私有解析地址已隐藏路径和凭据；完整地址仅在设备 LuCI 中显示。</p>}
       <section className="nf-management-subsection"><h3>DNS 解析</h3><div className="nf-form-rows">
         {([
-          ['nameservers', '默认上游', '未命中特例时使用'],
+          ['nameservers', '默认上游', '未命中特例时使用；留空表示沿用 Profile 或核心默认解析'],
           ['default_nameservers', '引导解析', '用于解析上游服务的域名'],
           ['proxy_nameservers', '机场节点解析', '为空时沿用默认上游'],
           ['direct_nameservers', '直连解析', '为空时沿用默认上游'],
