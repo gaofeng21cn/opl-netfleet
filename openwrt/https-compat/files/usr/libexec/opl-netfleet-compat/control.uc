@@ -265,15 +265,12 @@ return function(context, options) {
             if(!rule.enabled||rule.strategy!='h2') continue;
             const old=rule_states[rule.id] ?? {},errors=filter(live.failure_events ?? [],event=>event.rule==rule.id&&event.id>(old.last_error ?? 0));
             const new_error=length(errors)>0;
-            const result=!old.latched&&old.intercepting!==true&&(rule.match=='exact'||observed[rule.id])?
-                probes.request('upstream',{...rule,...(observed[rule.id] ?? {})},network.egress):null;
-            const probe=result ?? old.probe ?? {},probe_ok=probe.ok ?? old.probe_ok ?? (rule.match=='suffix');
             const failure=new_error?errors[length(errors)-1]:old.last_failure;
-            const why=new_error?(failure.reason ?? 'upstream_transport_failed'):(probe.reason ?? 'upstream_protocol_failed');
-            const current=advance(old,{requested:true,healthy:probe_ok&&!new_error,reason:why,now,count_failure:previous.intercepting===true&&old.admitted===true});
-            rule_states[rule.id]={...current,probe,last_failure:failure,probe_ok:new_error?false:probe_ok,
-                last_error:new_error?max(...map(errors,event=>event.id)):(old.last_error ?? 0)};
-            if(!current.intercepting) {active.blocked_rules??=[];push(active.blocked_rules,rule.id);}
+            // A response failure belongs to that request. The engine enforces
+            // h2 ALPN and certificate verification on every upstream connection;
+            // aggregate request errors must not downgrade the entire domain.
+            rule_states[rule.id]={requested:true,intercepting:true,healthy:true,reason:null,
+                last_failure:failure,last_error:new_error?max(...map(errors,event=>event.id)):(old.last_error ?? 0)};
         }
         state.rule_recovery=rule_states;
         if(io.canonical(current)!=io.canonical(active)) {

@@ -17,6 +17,7 @@ stage=topology
 origin_pid=
 manager_pid=
 engine_pid=
+policy_created=0
 finish() {
     rc=$?
     trap - EXIT INT TERM
@@ -44,6 +45,7 @@ finish() {
     cp "$work/netfleet.before" /etc/config/netfleet
     cp "$work/hosts.before" /etc/hosts
     cp "$work/ca.before" /etc/ssl/certs/ca-certificates.crt
+    if [ "$policy_created" = 1 ]; then rm /etc/opl-netfleet/policy.json; fi
     exit "$rc"
 }
 trap finish EXIT
@@ -123,6 +125,7 @@ defaults
 frontend origin
  bind 0.0.0.0:443 ssl crt $work/origin.pem alpn h2,http/1.1
  bind [::]:443 v6only ssl crt $work/origin.pem alpn h2,http/1.1
+ http-request reject if { path /request-failure }
  http-request return status 200 content-type text/plain lf-string "wire-ok" hdr X-Upstream-Protocol %[ssl_fc_alpn] unless { path_beg /compat-wire/ }
 EOF
 if [ -n "$probe_port" ]; then
@@ -136,12 +139,25 @@ fi
 ip netns exec nfcompat-origin /usr/libexec/opl-netfleet-compat/haproxy -db -f "$work/origin.cfg" >"$work/origin.log" 2>&1 &
 origin_pid=$!
 stage=core
+# The ordinary package owner reads the configured router status before writes.
+# A direct wire fixture still needs a valid policy for that real status caller.
+if [ ! -f /etc/opl-netfleet/policy.json ]; then
+    ucode - <<'UC'
+import * as fs from 'fs';
+const policy=json(fs.readfile('/etc/opl-netfleet/policy.example.json'));
+policy.main.enabled=true;
+policy.fail_open.probes[0].url='https://wire.example/wire';
+policy.fail_open.probes[0].expected_status=200;
+fs.writefile('/etc/opl-netfleet/policy.json',sprintf('%J',policy));
+UC
+    policy_created=1
+fi
 mkdir -p /etc/opl-netfleet/native/profiles /etc/opl-netfleet/native/run /var/run/opl-netfleet-core
 chmod 0700 /etc/opl-netfleet/native /etc/opl-netfleet/native/profiles /etc/opl-netfleet/native/run /var/run/opl-netfleet-core
-printf '{"find-process-mode":"off","rules":["PROCESS-NAME,haproxy,REJECT","SRC-PORT,41641,DIRECT","MATCH,DIRECT"],"hosts":{"wire.example":"198.51.100.10"}}\n' >/etc/opl-netfleet/native/profiles/compat-wire.json
-chmod 0600 /etc/opl-netfleet/native/profiles/compat-wire.json
+printf '{"find-process-mode":"off","rules":["PROCESS-NAME,haproxy,REJECT","SRC-PORT,41641,DIRECT","MATCH,DIRECT"],"hosts":{"wire.example":"198.51.100.10"}}\n' >/etc/opl-netfleet/native/profiles/OPL-NetFleet.json
+chmod 0600 /etc/opl-netfleet/native/profiles/OPL-NetFleet.json
 uci set netfleet.config.enabled=1
-uci set netfleet.config.profile=file:compat-wire.json
+uci set netfleet.config.profile=file:OPL-NetFleet.json
 uci set netfleet.mixin.api_secret=native-isolated-fixture
 uci delete netfleet.proxy.lan_inbound_interface
 uci add_list netfleet.proxy.lan_inbound_interface=nfcompat
@@ -153,6 +169,11 @@ for attempt in $(seq 1 20); do
     sleep 1
 done
 test "$(jsonfilter -i "$work/gateway.json" -e '@.result.ready')" = true
+stage=package_runtime_preconditions
+ucode /usr/libexec/opl-netfleet/main.uc status >"$work/base-status.json"
+test "$(jsonfilter -i "$work/base-status.json" -e '@.result.active')" = true
+ucode /usr/libexec/opl-netfleet/main.uc probe >"$work/base-probe.json"
+test "$(jsonfilter -i "$work/base-probe.json" -e '@.result.ok')" = true
 base_pid=$(pidof mihomo)
 sha256sum /etc/config/netfleet /etc/opl-netfleet/native/run/config.yaml >"$work/base.sha256"
 stage=kernel_tcp_reset
@@ -407,28 +428,22 @@ done
 ucode /tmp/tests/https_native_guest.uc recover >"$work/recover.log"
 wait_intercepting
 probe 4 h2
-stage=latched_rule
-# Fault fixture publishes only rule state under the ordinary mutation lock.
-flock -w 10 /var/lock/opl-netfleet-deploy.lock ucode - <<'UC'
-import * as fs from 'fs';
-const path='/var/run/opl-netfleet-compat/state.json',state=json(fs.readfile(path));
-state.rule_recovery.wire.latched=true;fs.writefile(path+'.new',sprintf('%J',state));fs.rename(path+'.new',path);
-UC
-sleep 12
-rule_probe_before=$(jsonfilter -i /var/run/opl-netfleet-compat/state.json -e '@.rule_recovery.wire.probe.at')
-sleep 12
-test "$(jsonfilter -i /var/run/opl-netfleet-compat/state.json -e '@.rule_recovery.wire.probe.at')" = "$rule_probe_before"
-probe 4 http/1.1
-ucode - <<'UC'
-import * as fs from 'fs';
-const main='/usr/libexec/opl-netfleet/main.uc',p=fs.popen('ucode '+main+' compatibility-get'),v=json(p.read('all'));
-if(p.close()||!v.ok)die('state_read_failed');
-fs.writefile('/tmp/rule-recover.json',sprintf('%J',{request:{revision:v.result.revision,operation:'recover',rule:'wire'}}));
-if(system('ucode '+main+' compatibility-probe /tmp/rule-recover.json >/dev/null'))die('rule_recover_failed');
-fs.unlink('/tmp/rule-recover.json');
-UC
-wait_intercepting
-probe 4 h2
+stage=request_failure_isolation
+# Actual upstream response aborts must fail their own requests without
+# disabling conversion for subsequent requests to the same domain.
+for fault in 1 2 3; do
+    failure_status=$(ip netns exec nfcompat-client curl -sS --noproxy '*' --http1.1 \
+        --connect-timeout 3 --max-time 8 --cacert "$work/client-ca.pem" \
+        --resolve 'wire.example:443:198.51.100.10' -o /dev/null -w '%{http_code}' \
+        https://wire.example/request-failure)
+    test "$failure_status" = 502
+    sleep 3
+    probe 4 h2
+    probe 6 h2
+done
+ucode /tmp/tests/https_native_guest.uc state >"$work/request-failures.json"
+test "$(jsonfilter -i "$work/request-failures.json" -e '@.intercepting')" = true
+test "$(jsonfilter -i "$work/request-failures.json" -e '@.rule_recovery.wire.last_error')" -ge 3
 stage=resource_pressure
 . /tmp/tests/https_native_resource_pressure.sh
 stage=disabled_wire

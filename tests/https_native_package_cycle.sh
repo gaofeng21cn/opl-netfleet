@@ -42,10 +42,11 @@ cp /tmp/compat-runtime/compat-packages.adb "$transaction/feed/packages.adb"
 cp "$cycle_old" "$transaction/old/"
 cp /tmp/scripts/update-openwrt-plugins-remote.sh "$transaction/run.sh"
 cp /tmp/scripts/observe-openwrt.uc "$transaction/observe.uc"
-uhttpd -f -p 127.0.0.1:19984 -h "$transaction/feed" >"$transaction/http.log" 2>&1 &
-cycle_server=$!
-printf 'http://127.0.0.1:19984/packages.adb\n' >/etc/apk/repositories.d/netfleet-cycle.list
-apk --timeout 10 update >>"$work/cycle.log" 2>&1
+# A signed local Feed exercises the same solver and transaction without
+# refreshing unrelated Internet repositories during the package cycle.
+printf '%s/packages.adb\n' "$transaction/feed" >/etc/apk/repositories.d/netfleet-cycle.list
+apk --no-network query --from none -X "$transaction/feed/packages.adb" \
+ --format json --fields name,version opl-netfleet-https-compat >>"$work/cycle.log"
 apk adbdump --format json "$cycle_new" >"$transaction/metadata.json"
 ucode - "$transaction" <<'UC'
 import * as fs from 'fs';
@@ -74,7 +75,5 @@ sha256sum -c "$work/base.sha256" >>"$work/cycle.log"
 sha256sum -c "$work/cycle-private.sha256" >>"$work/cycle.log"
 wait_intercepting
 probe 4 h2; probe 6 h2
-kill "$cycle_server"
-wait "$cycle_server" || true
 rm /etc/apk/repositories.d/netfleet-cycle.list
 printf '%s\n' 'engine generic Feed update: APK plan, resource drain, stable base and private state passed'
