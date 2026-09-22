@@ -221,8 +221,9 @@ python3 netfleet-macos-trust.py verify --target router-admin --device mac
 python3 netfleet-macos-trust.py revoke --target router-admin --device mac
 ```
 
-系统信任证明只证明系统证书库，Codex App、CLI 和图片运行时分别显示实际验证状态。
-未实际验证的运行时保持“待实际验证”，不能由系统证书安装成功推导为应用已经可用。
+系统信任证明只证明系统证书库，不能由安装成功推导为所有应用已经可用。
+Codex App、CLI 和图片运行时的专项验证保留在接入记录与诊断导出，不作为日常页面任务；
+没有实际验证结果时保持未知。
 手工地址变更使旧信任接入记录失效。动态设备的信任绑定来源与网卡身份，地址更新不使
 信任失效；身份变化需要重新验证。手工设备转为动态绑定时，仅当旧信任有效、来源新鲜且
 旧地址与当前归属有交集，管理员的绑定动作才保留原有信任。来源过期或失效时不续期其
