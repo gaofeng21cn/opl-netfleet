@@ -64,18 +64,24 @@ function button(text, action, disabled) {
 function refresh(controller) {
 	if (controller.compatibilityRead) return controller.compatibilityRead;
 	if (controller.disposed?.()) return Promise.resolve();
-	controller.compatibilityRead = api.compatibilityGet().then(function(state) {
+	const diagnostics = !!controller.diagnosticsExpanded;
+	controller.compatibilityRead = api.compatibilityGet({ diagnostics }).then(function(state) {
 		if (controller.disposed?.()) return;
 		controller.compatibility = state;
 		controller.compatibilityLive = true;
+		controller.compatibilityDiagnostics = diagnostics;
 		controller.compatibilityAt = Date.now();
 		controller.compatibilityError = null;
 		controller.remember?.();
 	}).catch(function(error) { controller.compatibilityError = error; controller.compatibilityLive = false; }).finally(function() {
 		controller.compatibilityRead = null;
-		if (!controller.disposed?.()) { controller.redraw(); controller.follow?.(); }
+		if (!controller.disposed?.()) {
+			controller.redraw(); controller.follow?.();
+			// Opening diagnostics during a summary read needs one complete read next.
+			if (controller.compatibilityLive && controller.diagnosticsExpanded && !diagnostics) void refresh(controller);
+		}
 	});
-	controller.redraw();
+	controller.refreshing?.();
 	return controller.compatibilityRead;
 }
 
@@ -226,10 +232,16 @@ function render(controller) {
 		E('small', {}, '让指定网站的上游请求使用 HTTP/2，应用继续使用原网址。')]),
 		button('返回组件列表', () => controller.context.navigate('plugin:product-ui:components'))]);
 	const refreshButton = button('刷新状态', () => refresh(controller), !!controller.compatibilityRead);
+	const freshnessText = E('span');
+	controller.refreshing = () => {
+		refreshButton.disabled = !!controller.compatibilityRead;
+		freshnessText.textContent = (controller.compatibilityAt ? '上次读取：' + new Date(controller.compatibilityAt).toLocaleString() : '尚未读取设备状态') +
+			(controller.compatibilityRead ? ' · 正在刷新' : '') + (controller.compatibilityError ? ' · 刷新失败，保留上次内容' : '') +
+			(controller.compatibilityLive === false && state ? ' · 历史摘要，待确认当前状态' : '');
+	};
+	controller.refreshing();
 	const freshness = E('div', { 'class': 'netfleet-compat-freshness', 'role': 'status' }, [
-		E('span', {}, [controller.compatibilityAt ? '上次读取：' + new Date(controller.compatibilityAt).toLocaleString() : '尚未读取设备状态',
-			controller.compatibilityRead ? ' · 正在刷新' : '', controller.compatibilityError ? ' · 刷新失败，保留上次内容' : '',
-			controller.compatibilityLive === false && state ? ' · 历史摘要，待确认当前状态' : '']), refreshButton]);
+		freshnessText, refreshButton]);
 	if (!state) return E('section', {}, [heading, E('p', { 'role': 'status' }, controller.compatibilityError ? '暂时无法读取设备，请重试。' : '正在读取网站与转发状态…'), freshness]);
 	const busy = mutationBlocked(controller, 'compatibilityApply');
 	const toggleBusy = mutationBlocked(controller, state.requested ? 'compatibilityDisable' : 'compatibilityEnable');
@@ -265,7 +277,8 @@ function render(controller) {
 			E('td', {}, [button('编辑', () => edit(controller, 'rules', rule), busy), button('删除', () => remove(controller, 'rules', rule), busy)])
 		]);
 	});
-	const devices = config.devices.map(device => {
+	const accessExpanded = controller.accessExpanded ?? !config.devices.length;
+	const devices = accessExpanded ? config.devices.map(device => {
 		const trust = (state.trust || {})[device.id] || {};
 		const addresses = (state.device_addresses || {})[device.id] || device.addresses;
 		return E('tr', { 'data-row-key': 'device:' + device.id }, [
@@ -278,9 +291,10 @@ function render(controller) {
 				button('撤销接入', () => mutate(controller, 'compatibilityProbe', { operation: 'trust_revoke', device: device.id }), busy || !trust.verified),
 				button('删除范围', () => remove(controller, 'devices', device), busy)])
 		]);
-	});
+	}) : [];
 	function diagnostics() {
 		if (controller.compatibilityLive === false) return [E('p', {}, '诊断记录不缓存，请等待当前状态读取成功。')];
+		if (controller.compatibilityDiagnostics === false) return [E('p', {}, '正在读取诊断记录…')];
 		function probeTable(probes) {
 			return table(['路径', '结果', '耗时 / 时限'], Object.entries(probes || {}).map(([name, probe]) => E('tr', {}, [
 				E('td', {}, ({ processing: '协议转换', ipv4: 'IPv4 透明入口', ipv6: 'IPv6 透明入口' })[name] || name),
@@ -328,8 +342,10 @@ function render(controller) {
 		E('div', { 'class': 'netfleet-section-heading' }, [E('h4', {}, '网站'), button('添加网站', () => edit(controller, 'rules'), busy || !config.devices.length)]),
 		config.devices.length === 1 ? E('p', { 'class': 'netfleet-scope' }, '接入范围：' + config.devices[0].name) : '',
 		table(['网站', '启用', '生效结果', '操作'], rules, '尚未添加网站'),
-		E('details', { 'open': !config.devices.length ? '' : null, 'class': 'netfleet-compat-section' }, [
+		E('details', { 'open': accessExpanded ? '' : null, 'class': 'netfleet-compat-section',
+			'toggle': event => { if (accessExpanded !== event.target.open) { controller.accessExpanded = event.target.open; controller.redraw(); } } }, [
 			E('summary', {}, '接入与证书'),
+			...(accessExpanded ? [
 			E('p', {}, '首次使用：添加接入范围，在客户端安装并信任证书，然后完成接入验证。共享出口后的每个客户端都需要信任证书；已有验证记录不代表全部客户端已完成。'),
 			table(['接入范围', '接入记录', '操作'], devices, '尚未设置接入范围'),
 			E('div', { 'class': 'netfleet-inline-add' }, [
@@ -342,9 +358,13 @@ function render(controller) {
 				E('code', {}, 'python3 netfleet-macos-trust.py verify --target <路由器 SSH 别名> --device <接入标识>'),
 				E('p', {}, '其他客户端：下载证书并在系统或应用的证书库中信任；共享出口可沿用该范围的接入记录，但仍需在各客户端验证实际访问。')]),
 			state.ca_sha256 ? E('details', {}, [E('summary', {}, '证书指纹'), E('code', { 'class': 'netfleet-compat-fingerprint' }, state.ca_sha256)]) : ''
+			] : [])
 		]),
 		E('details', { 'class': 'netfleet-compat-section', 'open': controller.diagnosticsExpanded ? '' : null,
-			'toggle': event => { if (controller.diagnosticsExpanded !== event.target.open) { controller.diagnosticsExpanded = event.target.open; controller.redraw(); } } },
+			'toggle': event => { if (!!controller.diagnosticsExpanded !== event.target.open) {
+				controller.diagnosticsExpanded = event.target.open; controller.redraw();
+				if (event.target.open) void refresh(controller);
+			} } },
 			[E('summary', {}, '技术诊断'), ...(controller.diagnosticsExpanded ? diagnostics() : [])]),
 		freshness
 	]);

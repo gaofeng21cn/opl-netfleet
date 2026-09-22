@@ -40,6 +40,14 @@ for (let definition in compatibility_installed ? [compatibility.extension, dashb
 	}
 }
 if (compatibility_installed) {
+const full = compatibility.config_get();
+const summary = compatibility.config_get({ diagnostics: false });
+check(full.ok && summary.ok, 'both HTTPS status projections read the owner');
+check(sprintf('%J', full.result.config) == sprintf('%J', summary.result.config), 'summary retains complete configuration');
+check(full.result.revision == summary.result.revision, 'summary retains write revision');
+for (let key in ['events', 'local_probes', 'last_failure', 'engine_restart'])
+	check(!(key in summary.result), 'summary omits heavy diagnostic fields');
+check('events' in compatibility.config_get({ diagnostics: true }).result, 'full read after summary retains diagnostics');
 const manifest = host.found['https-compat'].manifest;
 const plugin_rpc = fs.popen(`sh '${rpc_path}.plugins' list`);
 const plugin_methods = json(plugin_rpc.read('all'));

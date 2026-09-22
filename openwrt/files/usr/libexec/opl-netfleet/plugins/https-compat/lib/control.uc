@@ -137,8 +137,14 @@ function internal(argv) {
     return { ok: true, result: native_owner().dispatch(action, {}) };
     } catch (error) { return { ok: false, error: match(error.message ?? '', /^[a-z_]+$/) ? error.message : 'compatibility_owner_no_response' }; }
 }
+function config_get(params) {
+	const response = dispatch('get');
+	if (response.ok && params?.diagnostics === false)
+		for (let key in ['events', 'local_probes', 'last_failure', 'engine_restart']) delete response.result[key];
+	return response;
+}
 return { internal, extension, inspection, dispatch, command_compatibility_get, command_compatibility_ca, command_compatibility_apply, command_compatibility_enable, command_compatibility_disable, command_compatibility_probe,
-	config_get: () => dispatch('get'), config_set: params => action('apply', params),
+	config_get, config_set: params => action('apply', params),
 	enable: params => action('enable', params), disable: params => action('disable', params),
 	probe: params => action('probe', params), public_ca: () => dispatch('ca'),
 	drain: (state, operation) => action('suspend', { lifecycle: true, interactive: index(['unload', 'reload'], operation?.action) >= 0 }), resume: state => action('resume', state)

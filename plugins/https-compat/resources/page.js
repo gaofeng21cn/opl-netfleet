@@ -5,7 +5,7 @@ export async function mount(context) {
   const ui = await L.require('ui');
   if (context.signal.aborted) return;
   const api = {
-    compatibilityGet: () => context.configuration.read(),
+    compatibilityGet: params => context.configuration.read(params),
     compatibilityApply: params => context.configuration.write(params),
     compatibilityEnable: params => context.api.call('enable', params),
     compatibilityDisable: params => context.api.call('disable', params),

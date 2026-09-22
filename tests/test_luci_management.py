@@ -1421,6 +1421,7 @@ assert(text(notifications.at(-1).text).includes('请选择接入范围'));
 ui.hideModal();
 owner.compatibility.config.devices[0].identity = {binding: 'a'.repeat(64), mac: '02:00:00:00:00:01'};
 owner.compatibility.config.devices[0].addresses = [];
+owner.accessExpanded = true;
 fire(button(manager.render(owner), '编辑范围'));
 await fire(button(modal.content, '保存'));
 assert.deepEqual(writes.at(-1).config.devices[0].identity, {binding: 'a'.repeat(64), mac: '02:00:00:00:00:01'});
@@ -1463,6 +1464,7 @@ assert(!text(root).includes('1510 ms'), 'failure diagnostics are never restored 
     def test_compatibility_cached_content_is_not_write_authority(self):
         self.run_js(r"""
 const owner = controller();
+owner.accessExpanded = true;
 owner.compatibilityLive = false;
 owner.compatibility = { installed: true, requested: true, intercepting: false, reason: 'engine_unavailable',
   config: { rules: [{ id: 'site', name: 'Site', domain: 'service.example', port: 443, strategy: 'h2', enabled: true, devices: ['mac'] }],
@@ -1503,9 +1505,71 @@ disposed = true;
 complete({ requested: true });
 await pending;
 assert.equal(owner.compatibility, undefined);
-assert.equal(redraws, 1, 'late results must not redraw a departed page');
+assert.equal(redraws, 0, 'late results must not redraw a departed page');
 await manager.refresh(owner);
-assert.equal(redraws, 1);
+assert.equal(redraws, 0);
+""")
+
+    def test_compatibility_refresh_preserves_body_until_result(self):
+        self.run_js(r"""
+const owner = controller();
+owner.compatibility = { installed: true, requested: true, intercepting: true,
+  config: { rules: [], devices: [{id: 'egress', name: 'Shared egress', addresses: []}] } };
+let complete, redraws = 0;
+const manager = module('compatibility.js', {compatibilityGet: () => new Promise(resolve => {complete = resolve;})});
+let root = manager.render(owner);
+owner.redraw = () => { redraws++; root = manager.render(owner); };
+assert(!button(root, '编辑范围'), 'collapsed access content is not constructed');
+const section = find(root, node => node.tag === 'details' && text(node) === '接入与证书');
+fire(section, 'toggle', {open: true});
+assert(button(root, '编辑范围'));
+const body = root;
+redraws = 0;
+const pending = fire(button(root, '刷新状态'));
+assert.equal(redraws, 0, 'starting a read must preserve the body and focus');
+assert.equal(root, body);
+assert(button(root, '刷新状态').disabled);
+assert(text(root).includes('正在刷新'));
+assert.equal(manager.refresh(owner), pending, 'overlapping reads remain single-flight');
+complete(clone(owner.compatibility));
+await pending;
+assert.equal(redraws, 1, 'one result causes one body render');
+assert(!button(root, '刷新状态').disabled);
+assert(!text(root).includes('正在刷新'));
+assert(button(root, '编辑范围'), 'expanded access remains available after refresh');
+""")
+
+    def test_compatibility_diagnostics_expand_during_summary_read(self):
+        self.run_js(r"""
+const owner = controller();
+const state = {installed: true, requested: true, intercepting: true, config: {rules: [], devices: []}};
+owner.compatibility = clone(state);
+owner.compatibilityDiagnostics = false;
+const reads = [], pending = [];
+const manager = module('compatibility.js', {compatibilityGet: params => {
+  reads.push(params); return new Promise(resolve => pending.push(resolve));
+}});
+let root = manager.render(owner);
+owner.redraw = () => {root = manager.render(owner);};
+const first = manager.refresh(owner);
+fire(find(root, node => node.tag === 'details' && text(node) === '技术诊断'), 'toggle', {open: true});
+assert.equal(reads.length, 1, 'expansion cannot overlap a pending read');
+assert(text(root).includes('正在读取诊断记录'));
+assert(!text(root).includes('尚无故障记录'));
+pending.shift()(clone(state));
+await first;
+assert.deepEqual(reads, [{diagnostics: false}, {diagnostics: true}]);
+const second = owner.compatibilityRead;
+pending.shift()({...state, events: [{at: 1, reason: 'client_cancelled'}]});
+await second;
+assert(text(root).includes('客户端已取消'));
+const details = find(root, node => node.tag === 'details' && text(node).startsWith('技术诊断'));
+fire(details, 'toggle', {open: false});
+assert.equal(reads.length, 2, 'closing diagnostics does not add a request');
+const third = manager.refresh(owner);
+assert.deepEqual(reads[2], {diagnostics: false});
+pending.shift()(clone(state)); await third;
+assert(!text(root).includes('客户端已取消'));
 """)
 
     def test_compatibility_display_cache_is_bounded_and_redacted(self):
