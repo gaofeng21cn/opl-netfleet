@@ -50,83 +50,11 @@ function sourceReason(value) {
 		address_identity_conflict: '地址归属冲突，冲突地址已旁路' })[value] || value || '同步正常';
 }
 
-function readSource(controller) {
-	if (controller.identityRead) return controller.identityRead;
-	controller.identityRead = api.pluginRead({ id: 'device-identity', action: 'get', params: {} }).then(source => {
-		if (controller.disposed?.()) return;
-		controller.identitySource = source; controller.identitySourceError = null;
-	}).catch(error => { controller.identitySourceError = error; }).finally(() => {
-		controller.identityRead = null;
-		if (!controller.disposed?.()) controller.redraw();
-	});
-	return controller.identityRead;
-}
-
-async function sourceAction(controller, action, params) {
-	const source = controller.identitySource;
-	if (!source || controller.identitySourceError || mutationBlocked(controller, 'compatibilityApply')) return;
-	controller.compatibilityBusy = true;
-	controller.redraw();
-	try {
-		let revision = source.revision;
-		if (!source.loaded && action === 'configure') {
-			const loaded = await api.pluginCall({ id: 'device-identity', action: 'load', revision: revision, confirm: true, params: {} });
-			revision = loaded.revision;
-			params = Object.assign({}, params, { config_revision: loaded.config_revision });
-		}
-		await (action === 'sync' ? api.pluginRead : api.pluginCall)({ id: 'device-identity', action: action,
-			revision: revision, confirm: action !== 'sync', params: params || {} });
-		if (action === 'configure') await api.pluginRead({ id: 'device-identity', action: 'sync', params: {} });
-	} catch (error) { managed.notify(null, E('p', {}, '地址来源操作失败：' + error.message), 'error'); }
-	finally { controller.compatibilityBusy = false; await Promise.all([refresh(controller), readSource(controller)]); }
-}
-
-function autoSetupSource(controller) {
-	const source = controller.identitySource;
-	if (!source || controller.identitySourceError || mutationBlocked(controller, 'compatibilityApply')) return;
-	api.pluginRead({ id: 'device-identity', action: 'discover', params: {} }).then(function(found) {
-		if (!found.interfaces || !found.interfaces.length) throw new Error('local_observation_interface_unavailable');
-		return sourceAction(controller, 'configure', { config_revision: source.config_revision,
-			config: { source: 'local', enabled: true, interfaces: found.interfaces } });
-	}).catch(function(error) {
-		managed.notify(null, E('p', {}, '自动配置地址来源失败：' + sourceReason(error.message)), 'error');
-	}).finally(function() { if (!controller.disposed?.()) controller.redraw(); });
-}
-
-function editSource(controller) {
-	const source = controller.identitySource;
-	if (!source || controller.identitySourceError || mutationBlocked(controller, 'compatibilityApply')) return;
-	const draft = { source: 'local', enabled: !!source.config.enabled, interfaces: source.config.interfaces || [] };
-	const fields = [];
-	const rows = E('div', {});
-	function field(key, label, type) {
-		const input = E('input', { 'class': 'cbi-input-text', 'type': type || 'text', 'autocomplete': 'off',
-			'value': Array.isArray(draft[key]) ? draft[key].join(', ') : draft[key] || '',
-			'input': function(event) { draft[key] = key === 'interfaces' ? event.target.value.split(/[,\s]+/).filter(Boolean) : event.target.value; } });
-		fields.push(input);
-		return E('label', { 'class': 'netfleet-config-row' }, [ E('span', {}, label), input ]);
-	}
-	function showFields() {
-		fields.length = 0;
-		rows.replaceChildren(field('interfaces', '局域网观察接口'));
-	}
-	showFields();
-	ui.showModal('设备地址来源', [
-		E('label', { 'class': 'netfleet-check' }, [ E('input', { 'type': 'checkbox', 'checked': draft.enabled ? '' : null,
-			'change': function(event) { draft.enabled = event.target.checked; } }), '自动同步设备地址' ]),
-		E('p', {}, '由 NetFleet 局域网观察接口确认设备地址，不连接其他设备的管理面。'),
-		rows, E('div', { 'class': 'right' }, [ button('取消', ui.hideModal), button('保存并验证', function() {
-			const config = Object.assign({}, draft);
-			ui.hideModal();
-			return sourceAction(controller, 'configure', { config_revision: source.config_revision, config: config });
-		}) ]) ]);
-}
-
 function label(state) {
 	if (!state) return '状态未读取';
 	if (!state.installed) return '未安装';
 	if (!state.requested) return state.active_connections > 0 ? '停止接管，仍有 ' + state.active_connections + ' 条连接' : '已关闭';
-	return state.intercepting ? '正在接管' : '已开启，当前旁路';
+	return state.intercepting ? '已就绪' : '暂未生效';
 }
 
 function button(text, action, disabled) {
@@ -154,13 +82,11 @@ function refresh(controller) {
 function mutate(controller, method, request, revision) {
 	if (mutationBlocked(controller, method)) return Promise.resolve();
 	const expected = revision === undefined ? controller.compatibility.revision : revision;
-	if (method === 'compatibilityDisable')
+	if (request.operation !== 'trust_revoke')
 		return executeMutation(controller, method, request, expected);
 	return new Promise(function(resolve) {
-		ui.showModal('确认 HTTPS 兼容变更', [
-			E('p', {}, method === 'compatibilityDisable' ? '停止接管新连接，已有连接继续排空。' :
-				request.operation === 'trust_revoke' ? '撤销该设备的新连接接管。本机 CA 信任由接入工具移除。' :
-				request.config ? '保存 ' + request.config.rules.length + ' 条目标规则和 ' + request.config.devices.length + ' 台接入设备。' : '将更新兼容模块的接管状态。'),
+		ui.showModal('撤销接入', [
+			E('p', {}, '停止该范围的新连接转发。客户端的证书信任需在客户端另行移除。'),
 			E('div', { 'class': 'right' }, [ button('取消', function() { ui.hideModal(); resolve(); }),
 				button('确认', function() { ui.hideModal(); resolve(executeMutation(controller, method, request, expected)); }) ])
 		]);
@@ -180,7 +106,7 @@ function executeMutation(controller, method, request, revision) {
 	controller.compatibilityLive = false;
 	let applied = false;
 	return api[method](Object.assign({ revision: revision }, request)).then(function() { applied = true; }).catch(function(error) {
-		if (!controller.disposed?.()) managed.notify(null, E('p', {}, 'HTTPS 兼容操作失败：' + error.message), 'error');
+		if (!controller.disposed?.()) managed.notify(null, E('p', {}, '操作失败：' + error.message), 'error');
 	}).then(async function() {
 		await controller.compatibilityRead;
 		await refresh(controller);
@@ -192,15 +118,17 @@ function edit(controller, collection, item) {
 	if (mutationBlocked(controller, 'compatibilityApply')) return;
 	const state = controller.compatibility;
 	const config = JSON.parse(JSON.stringify(state.config));
-	const draft = item ? JSON.parse(JSON.stringify(item)) : collection === 'rules'
-		? { id: '', name: '', domain: '', match: 'exact', port: 443, strategy: 'h2', enabled: true, devices: [] }
+	const website = collection === 'rules';
+	const draft = item ? JSON.parse(JSON.stringify(item)) : website
+		? { id: '', name: '', domain: '', match: 'exact', port: 443, strategy: 'h2', enabled: true,
+			devices: config.devices.length === 1 ? [config.devices[0].id] : [] }
 		: { id: '', name: '', addresses: [] };
 	if (!item) draft.id = collection.slice(0, -1) + '-' + Array.from(crypto.getRandomValues(new Uint32Array(3)), value => value.toString(16)).join('');
 	const controls = [];
-	function field(key, title, type) {
+	function field(key, title, type, required = true) {
 		const input = E('input', {
 			'class': 'cbi-input-text', 'value': Array.isArray(draft[key]) ? draft[key].join(', ') : draft[key],
-			'type': type || 'text', 'required': true, 'min': type === 'number' ? 1 : null, 'max': type === 'number' ? 65535 : null,
+			'type': type || 'text', 'required': required ? '' : null, 'min': type === 'number' ? 1 : null, 'max': type === 'number' ? 65535 : null,
 			'input': function(event) { draft[key] = key === 'addresses' ? event.target.value.split(/[,\s]+/).filter(Boolean) : type === 'number' ? Number(event.target.value) : event.target.value.trim(); }
 		});
 		controls.push(input);
@@ -211,52 +139,78 @@ function edit(controller, collection, item) {
 			'class': 'cbi-input-select', 'change': function(event) { draft[key] = event.target.value; }
 		}, choices.map(function(choice) { return E('option', { 'value': choice[0], 'selected': draft[key] === choice[0] ? '' : null }, choice[1]); })) ]);
 	}
-	const rows = [ field('name', '名称') ];
-	if (collection === 'rules') rows.push(field('domain', '域名'), select('match', '匹配', [ [ 'exact', '精确域名' ], [ 'suffix', '域名后缀' ] ]),
-		field('port', '端口', 'number'), select('strategy', '策略', [ [ 'h2', '上游 HTTP/2' ], [ 'bypass', '旁路' ] ]),
-		E('div', { 'class': 'netfleet-config-row' }, [ E('span', {}, '接入设备'), E('div', {}, config.devices.map(function(device) {
-			return E('label', { 'class': 'netfleet-check' }, [ E('input', { 'type': 'checkbox', 'checked': draft.devices.includes(device.id) ? '' : null, 'change': function(event) {
-				draft.devices = draft.devices.filter(function(id) { return id !== device.id; });
-				if (event.target.checked) draft.devices.push(device.id);
-			} }), device.name ]);
-		})) ]));
-	else {
-		const source = controller.identitySourceError ? state.address_source || {} : controller.identitySource || state.address_source || {};
-		const manual = field('addresses', 'IPv4 / IPv6 地址');
+	const rows = [];
+	if (website) {
+		rows.push(field('domain', '网站域名'));
+		const advanced = E('details', { 'open': config.devices.length !== 1 || draft.match !== 'exact' || draft.port !== 443 || draft.strategy !== 'h2' ? '' : null }, [
+			E('summary', {}, '高级选项'), field('name', '显示名称（可选）', 'text', false),
+			select('match', '匹配范围', [['exact', '仅此域名'], ['suffix', '包括子域名']]),
+			field('port', 'HTTPS 端口', 'number'), select('strategy', '转发方式', [['h2', 'HTTP/2'], ['bypass', '直接访问（例外）']]),
+			E('div', { 'class': 'netfleet-config-row' }, [E('span', {}, '接入范围'), E('div', {}, config.devices.map(device =>
+				E('label', { 'class': 'netfleet-check' }, [E('input', { 'type': 'checkbox', 'checked': draft.devices.includes(device.id) ? '' : null,
+					'change': event => { draft.devices = draft.devices.filter(id => id !== device.id); if (event.target.checked) draft.devices.push(device.id); } }), device.name])))])
+		]);
+		rows.push(E('p', {}, '默认使用 HTTP/2 转发。接入范围：' + (draft.devices.map(id => config.devices.find(device => device.id === id)?.name || id).join('、') || '请在高级选项中选择')), advanced);
+	} else {
+		rows.push(field('name', '范围名称'));
+		const source = state.address_source || {};
+		const manual = field('addresses', '来源 IPv4 / IPv6 地址');
 		const input = controls[controls.length - 1];
 		function manualState() { manual.hidden = !!draft.identity; input.required = !draft.identity; }
 		manualState();
-		const selected = draft.identity ? draft.identity.mac : '';
+		const selected = draft.identity?.mac || '';
 		const candidates = source.source_ready ? source.devices || [] : [];
-		rows.push(E('label', { 'class': 'netfleet-config-row' }, [ E('span', {}, '地址来源'), E('select', {
-			'class': 'cbi-input-select', 'change': function(event) {
-				if (event.target.value) { draft.identity = { binding: source.binding, mac: event.target.value }; draft.addresses = []; }
+		// Existing dynamic identities remain editable without calling or loading their owner.
+		if (selected || candidates.length) rows.push(E('label', { 'class': 'netfleet-config-row' }, [E('span', {}, '地址来源'), E('select', {
+			'class': 'cbi-input-select', 'change': event => {
+				if (event.target.value) { draft.identity = { binding: source.binding || draft.identity?.binding, mac: event.target.value }; draft.addresses = []; }
 				else { delete draft.identity; draft.addresses = input.value.split(/[,\s]+/).filter(Boolean); }
 				manualState();
 			}
-		}, [ E('option', { 'value': '', 'selected': !selected ? '' : null }, '手工地址'),
-			...(selected && !candidates.some(item => item.mac === selected) ? [ E('option', { 'value': selected, 'selected': '' }, selected + ' · 当前无新鲜地址') ] : []),
-			...candidates.map(item => E('option', { 'value': item.mac, 'selected': selected === item.mac ? '' : null,
-				'disabled': !item.addresses.length ? '' : null }, item.name + ' · ' + item.mac)) ]) ]), manual);
+		}, [E('option', { 'value': '', 'selected': !selected ? '' : null }, '手工地址'),
+			...(selected && !candidates.some(candidate => candidate.mac === selected) ? [E('option', { 'value': selected, 'selected': '' }, selected + ' · 当前绑定')] : []),
+			...candidates.map(candidate => E('option', { 'value': candidate.mac, 'selected': selected === candidate.mac ? '' : null, 'disabled': !candidate.addresses.length ? '' : null }, candidate.name + ' · ' + candidate.mac))])]));
+		rows.push(manual, E('p', {}, '填写路由器看到的客户端或共享出口地址。共享出口覆盖其后的客户端，每个客户端仍需信任证书。'));
 	}
-	rows.push(E('div', { 'class': 'right' }, [ button('取消', function() { ui.hideModal(); }), button('保存', function() {
-		if (controls.some(function(input) { return !input.reportValidity(); })) return;
-		if (collection === 'rules' && !draft.devices.length) {
-			managed.notify(null, E('p', {}, '请选择至少一台接入设备'), 'warning'); return;
+	rows.push(E('div', { 'class': 'right' }, [ button('取消', () => ui.hideModal()), button('保存', function() {
+		for (const input of controls) {
+			if (!input.checkValidity()) {
+				const details = input.closest?.('details'); if (details) details.open = true;
+				input.reportValidity(); return;
+			}
 		}
-		if (collection === 'rules') {
-            try {
-                if (/[\s/:@?#\\]/.test(draft.domain)) throw new Error('invalid_domain');
-                draft.domain = new URL('https://' + draft.domain).hostname.replace(/\.+$/, '');
-            } catch (_) { managed.notify(null, E('p', {}, '请输入有效域名，不包含 URL 路径或端口'), 'warning'); return; }
-        }
-		const index = config[collection].findIndex(function(value) { return value.id === draft.id; });
-		if (item) config[collection][index] = draft;
-		else config[collection].push(draft);
+		if (website && !draft.devices.length) { managed.notify(null, E('p', {}, '请选择接入范围'), 'warning'); return; }
+		if (website) {
+			try {
+				if (/[\s/:@?#\\]/.test(draft.domain)) throw new Error('invalid_domain');
+				draft.domain = new URL('https://' + draft.domain).hostname.replace(/\.+$/, '');
+			} catch (_) { managed.notify(null, E('p', {}, '请输入有效域名，不包含协议、路径或端口'), 'warning'); return; }
+			if (!draft.name) draft.name = draft.domain;
+		}
+		const index = config[collection].findIndex(value => value.id === draft.id);
+		if (item) config[collection][index] = draft; else config[collection].push(draft);
 		ui.hideModal();
-		return executeMutation(controller, 'compatibilityApply', { config: config }, state.revision);
+		return executeMutation(controller, 'compatibilityApply', { config }, state.revision);
 	}) ]));
-	ui.showModal((item ? '编辑' : '新增') + (collection === 'rules' ? '目标规则' : '接入设备'), rows);
+	ui.showModal((item ? '编辑' : '添加') + (website ? '网站' : '接入范围'), rows);
+}
+
+function remove(controller, collection, item) {
+	if (mutationBlocked(controller, 'compatibilityApply')) return;
+	const state = controller.compatibility;
+	const config = JSON.parse(JSON.stringify(state.config));
+	const affected = collection === 'devices' ? config.rules.filter(rule => rule.devices.includes(item.id)) : [];
+	ui.showModal('删除' + (collection === 'rules' ? '网站' : '接入范围'), [
+		E('p', {}, '删除“' + (item.domain || item.name) + '”？' + (affected.length
+			? '关联网站将移除此范围；没有其他范围的网站也会删除：' + affected.map(rule => rule.domain).join('、')
+			: '删除后将不再为其转发。')),
+		E('div', { 'class': 'right' }, [button('取消', () => ui.hideModal()), button('删除', () => {
+			config[collection] = config[collection].filter(value => value.id !== item.id);
+			if (collection === 'devices') config.rules = config.rules.map(rule => ({ ...rule, devices: rule.devices.filter(id => id !== item.id) })).filter(rule => rule.devices.length);
+			ui.hideModal();
+			return executeMutation(controller, 'compatibilityApply', { config }, state.revision);
+		})])
+	]);
 }
 
 function download(name, value, type) {
@@ -268,141 +222,132 @@ function download(name, value, type) {
 
 function render(controller) {
 	const state = controller.compatibility;
-	const back = button('返回组件列表', function() { controller.context.navigate('plugin:product-ui:components'); });
-	const heading = E('div', { 'class': 'netfleet-section-heading' }, [ E('div', {}, [ E('h3', {}, 'HTTPS 兼容'),
-		E('small', {}, '为选定设备和网站转换 HTTP/1.1 → HTTP/2；应用继续使用原网址。') ]), back ]);
-	const tab = ['rules', 'devices', 'diagnostics'].includes(controller.compatibilityTab) ? controller.compatibilityTab : 'rules';
-	function tabs() {
-		return E('div', { 'class': 'netfleet-compat-tabs', 'role': 'tablist', 'aria-label': 'HTTPS 兼容管理' }, [ [ 'rules', '规则' ], [ 'devices', '设备与信任' ], [ 'diagnostics', '诊断' ] ].map(function(item) {
-			return E('button', { 'type': 'button', 'role': 'tab', 'id': 'netfleet-compat-tab-' + item[0],
-				'aria-selected': tab === item[0] ? 'true' : 'false', 'aria-controls': 'netfleet-compat-panel',
-				'class': tab === item[0] ? 'is-active' : '', 'click': function() {
-					controller.compatibilityTab = item[0]; controller.remember?.(); controller.redraw();
-				} }, item[1]);
-		}));
-	}
-	const refreshButton = button('刷新状态', function() { return refresh(controller); }, !!controller.compatibilityRead);
-	refreshButton.setAttribute('aria-label', '刷新兼容状态');
+	const heading = E('div', { 'class': 'netfleet-section-heading' }, [E('div', {}, [E('h3', {}, 'HTTP/2 转发'),
+		E('small', {}, '让指定网站的上游请求使用 HTTP/2，应用继续使用原网址。')]),
+		button('返回组件列表', () => controller.context.navigate('plugin:product-ui:components'))]);
+	const refreshButton = button('刷新状态', () => refresh(controller), !!controller.compatibilityRead);
 	const freshness = E('div', { 'class': 'netfleet-compat-freshness', 'role': 'status' }, [
-		E('span', {}, [ controller.compatibilityAt ? '上次读取：' + new Date(controller.compatibilityAt).toLocaleString() : '尚未读取设备状态',
-			controller.compatibilityError ? ' · 刷新失败，保留上次内容' : '',
-			controller.compatibilityLive === false && state ? ' · 历史摘要，待确认当前状态' : '' ]), refreshButton ]);
-	if (!state) return E('section', { 'class': 'netfleet-compatibility' }, [ heading, tabs(),
-		E('p', { 'role': 'status' }, controller.compatibilityError ? '暂时无法读取设备，请重试。' : '正在读取已保存的规则和设备…'), freshness ]);
+		E('span', {}, [controller.compatibilityAt ? '上次读取：' + new Date(controller.compatibilityAt).toLocaleString() : '尚未读取设备状态',
+			controller.compatibilityRead ? ' · 正在刷新' : '', controller.compatibilityError ? ' · 刷新失败，保留上次内容' : '',
+			controller.compatibilityLive === false && state ? ' · 历史摘要，待确认当前状态' : '']), refreshButton]);
+	if (!state) return E('section', {}, [heading, E('p', { 'role': 'status' }, controller.compatibilityError ? '暂时无法读取设备，请重试。' : '正在读取网站与转发状态…'), freshness]);
 	const busy = mutationBlocked(controller, 'compatibilityApply');
 	const toggleBusy = mutationBlocked(controller, state.requested ? 'compatibilityDisable' : 'compatibilityEnable');
-	function applyConfig(callback) {
-		const config = JSON.parse(JSON.stringify(state.config)); callback(config);
-		return mutate(controller, 'compatibilityApply', { config: config }, state.revision);
-	}
 	const config = state.config || { rules: [], devices: [] };
-	const rules = tab === 'rules' ? config.rules.map(function(rule) {
-		const result = (state.rules || {})[rule.id] || {};
-		const recovery = (state.rule_recovery || {})[rule.id] || {};
-		return E('tr', { 'data-row-key': 'rule:' + rule.id }, [
-			E('td', {}, E('input', { 'type': 'checkbox', 'aria-label': rule.name, 'checked': rule.enabled ? '' : null, 'disabled': busy ? '' : null, 'change': function(event) {
-				return applyConfig(function(config) { config.rules.find(function(value) { return value.id === rule.id; }).enabled = event.target.checked; });
-			} })), E('td', {}, [ E('strong', {}, rule.name), E('small', {}, rule.domain + ':' + rule.port) ]),
-			E('td', {}, rule.devices.map(function(id) { return (state.config.devices.find(function(device) { return device.id === id; }) || {}).name || id; }).join('、')),
-			E('td', {}, rule.strategy === 'h2' ? 'HTTP/2' : '旁路'),
-			E('td', {}, [ E('strong', { 'class': recovery.latched ? 'is-warning' : '' }, !rule.enabled ? '规则已关闭' : !state.requested ? '模块已关闭' : rule.strategy === 'bypass' ? '旁路' :
-				state.eligible_devices && !rule.devices.some(id => state.eligible_devices.includes(id)) ? '无可接管设备' : state.intercepting && recovery.admitted ? '正在接管' : '当前旁路'),
-				state.requested && rule.enabled && (state.reason || recovery.reason) ? E('small', {}, reason(state.reason || recovery.reason)) : '',
-				result.upstream_protocol || result.at ? E('small', {}, '最近上游：' + (result.upstream_protocol || '协议未确认') + (result.at ? ' · ' + new Date(result.at * 1000).toLocaleString() : '')) : E('small', {}, '尚无转发记录') ]),
-			E('td', {}, [ button('编辑', function() { edit(controller, 'rules', rule); }, busy), button('删除', function() {
-				return applyConfig(function(config) { config.rules = config.rules.filter(function(value) { return value.id !== rule.id; }); });
-			}, busy), recovery.latched ? button('恢复', function() { return mutate(controller, 'compatibilityProbe', { operation: 'recover', rule: rule.id }); }, busy) : '' ]) ]);
-	}) : [];
-	const devices = tab === 'devices' ? config.devices.map(function(device) {
-		const trust = (state.trust || {})[device.id] || {};
-		const runtimes = trust.runtimes || {};
-		const addresses = (state.device_addresses || {})[device.id] || device.addresses;
-		const observation = ((state.address_source || {}).devices || []).find(item => device.identity && item.mac === device.identity.mac) || {};
-		return E('tr', { 'data-row-key': 'device:' + device.id }, [ E('td', {}, [ E('strong', {}, device.name),
-			E('details', {}, [ E('summary', {}, addresses.length + ' 个地址'), E('small', {}, addresses.join(', ') || '当前无可用地址'),
-				E('small', {}, controller.compatibilityLive === false ? '上次设备地址' : device.identity ? '自动跟随 · ' + device.identity.mac : '手工地址') ]),
-			device.identity && !addresses.length ? E('small', {}, sourceReason(observation.reason || (state.address_source || {}).reason || 'address_evidence_expired')) : '' ]),
-			E('td', {}, trust.verified ? '系统信任已验证' : '未验证'),
-			E('td', {}, E('details', {}, [ E('summary', {}, '接入验证'), E('small', {}, [ '设备标识：', E('code', {}, device.id) ]), ...[ [ 'codex_app', 'Codex App' ], [ 'codex_cli', 'CLI' ], [ 'images', '图片调用' ] ].map(function(item) {
-				return E('small', {}, item[1] + '：' + (runtimes[item[0]] === true ? '已验证' : runtimes[item[0]] === false ? '失败' : '待实际验证'));
-			}) ])), E('td', {}, [ button('编辑', function() { edit(controller, 'devices', device); }, busy),
-			button('撤销接入', function() { return mutate(controller, 'compatibilityProbe', { operation: 'trust_revoke', device: device.id }); }, busy),
-			button('删除', function() { return applyConfig(function(config) {
-				config.devices = config.devices.filter(function(value) { return value.id !== device.id; });
-				config.rules = config.rules.map(function(rule) { rule.devices = rule.devices.filter(function(id) { return id !== device.id; }); return rule; }).filter(function(rule) { return rule.devices.length; });
-			}); }, busy) ]) ]);
-	}) : [];
+	const scopeName = ids => ids.map(id => config.devices.find(device => device.id === id)?.name || id).join('、');
 	function table(headers, rows, empty) {
 		rows.forEach(row => Array.from(row.children).forEach((cell, index) => cell.setAttribute('data-label', headers[index])));
-		return E('div', { 'class': 'netfleet-config-table' }, E('table', {}, [ E('thead', {}, E('tr', {}, headers.map(function(title) { return E('th', {}, title); }))), E('tbody', {}, rows.length ? rows : E('tr', {}, E('td', { 'colspan': headers.length }, empty || '暂无记录'))) ]));
+		return E('div', { 'class': 'netfleet-config-table' }, E('table', {}, [
+			E('thead', {}, E('tr', {}, headers.map(title => E('th', {}, title)))),
+			E('tbody', {}, rows.length ? rows : E('tr', {}, E('td', { 'colspan': headers.length }, empty || '暂无记录')))]));
 	}
-	function probeTable(probes) {
-		return table([ '路径', '结果', '阶段', '耗时 / 时限' ], Object.entries(probes || {}).map(function([name, probe]) {
-			return E('tr', {}, [ E('td', {}, ({ processing: '协议转换', ipv4: 'IPv4 透明入口', ipv6: 'IPv6 透明入口' })[name] || name),
-				E('td', {}, probe.ok ? '通过' : probe.reason === 'timeout' ? '超时' : reason(probe.reason || '未通过')),
-				E('td', {}, ({ connect: '建立连接', tls: 'TLS 握手', http: 'HTTP 往返' })[probe.stage] || probe.stage || '未知'),
-				E('td', {}, Number.isFinite(probe.duration_ms) ? probe.duration_ms + ' ms' + (Number.isFinite(probe.timeout_ms) ? ' / ' + probe.timeout_ms + ' ms' : '') : '未知') ]);
-		}), '尚无本地验证记录');
+	const rules = config.rules.map(rule => {
+		const result = (state.rules || {})[rule.id] || {};
+		const admitted = (state.rule_recovery || {})[rule.id]?.admitted;
+		const ready = state.intercepting && admitted === true;
+		const status = !rule.enabled ? '已停用' : !state.requested ? '已关闭' : rule.strategy === 'bypass' ? '直接访问' : ready ? '已就绪' : '暂未生效';
+		return E('tr', { 'data-row-key': 'rule:' + rule.id }, [
+			E('td', {}, [E('strong', {}, rule.domain + (rule.port !== 443 ? ':' + rule.port : '')),
+				rule.match === 'suffix' ? E('small', {}, '包括子域名') : '',
+				rule.strategy === 'bypass' ? E('small', {}, '直接访问例外') : '',
+				config.devices.length > 1 ? E('small', {}, scopeName(rule.devices)) : '']),
+			E('td', {}, E('input', { 'type': 'checkbox', 'aria-label': '启用 ' + rule.domain, 'checked': rule.enabled ? '' : null, 'disabled': busy ? '' : null,
+				'change': event => {
+					const changed = JSON.parse(JSON.stringify(config));
+					changed.rules.find(value => value.id === rule.id).enabled = event.target.checked;
+					return mutate(controller, 'compatibilityApply', { config: changed }, state.revision);
+				} })),
+			E('td', {}, [E('strong', {}, status), rule.strategy === 'h2' ? E('small', {}, result.upstream_protocol
+				? '最近转发记录：' + (result.upstream_protocol === 'h2' ? 'HTTP/2' : result.upstream_protocol) + (result.at ? ' · ' + new Date(result.at * 1000).toLocaleString() : '')
+				: ready ? '等待请求验证 HTTP/2' : '尚无转发记录') : '',
+				rule.enabled && state.requested && rule.strategy === 'h2' && !ready && state.eligible_devices && !rule.devices.some(id => state.eligible_devices.includes(id))
+					? E('small', {}, '请完成下方接入与证书设置') : '']),
+			E('td', {}, [button('编辑', () => edit(controller, 'rules', rule), busy), button('删除', () => remove(controller, 'rules', rule), busy)])
+		]);
+	});
+	const devices = config.devices.map(device => {
+		const trust = (state.trust || {})[device.id] || {};
+		const addresses = (state.device_addresses || {})[device.id] || device.addresses;
+		return E('tr', { 'data-row-key': 'device:' + device.id }, [
+			E('td', {}, [E('strong', {}, device.name), E('details', {}, [E('summary', {}, '接入详情'),
+				E('small', {}, '接入标识：' + device.id), E('small', {}, addresses.join(', ') || '当前无可用地址'),
+				device.identity ? E('small', {}, '自动跟随 · ' + device.identity.mac) : '']),
+				device.identity && !addresses.length ? E('small', {}, sourceReason(state.address_source?.reason || 'address_evidence_expired')) : '']),
+			E('td', {}, trust.verified ? '已有接入验证记录' : '待安装证书并验证'),
+			E('td', {}, [button('编辑范围', () => edit(controller, 'devices', device), busy),
+				button('撤销接入', () => mutate(controller, 'compatibilityProbe', { operation: 'trust_revoke', device: device.id }), busy || !trust.verified),
+				button('删除范围', () => remove(controller, 'devices', device), busy)])
+		]);
+	});
+	function diagnostics() {
+		if (controller.compatibilityLive === false) return [E('p', {}, '诊断记录不缓存，请等待当前状态读取成功。')];
+		function probeTable(probes) {
+			return table(['路径', '结果', '耗时 / 时限'], Object.entries(probes || {}).map(([name, probe]) => E('tr', {}, [
+				E('td', {}, ({ processing: '协议转换', ipv4: 'IPv4 透明入口', ipv6: 'IPv6 透明入口' })[name] || name),
+				E('td', {}, probe.ok ? '通过' : reason(probe.reason || '未通过')),
+				E('td', {}, Number.isFinite(probe.duration_ms) ? probe.duration_ms + ' ms' + (Number.isFinite(probe.timeout_ms) ? ' / ' + probe.timeout_ms + ' ms' : '') : '未记录')])), '尚无本地验证记录');
+		}
+		const failure = state.last_failure || (state.events || []).slice().reverse().find(event => !event.rule && (event.failure || Object.values(event.local_probes || {}).some(probe => probe.ok === false)));
+		const lastFailure = failure && (failure.failure || failure);
+		return [
+			button('导出诊断', () => download('netfleet-http2-diagnostic.json', JSON.stringify({
+				requested: state.requested, intercepting: state.intercepting, reason: state.reason, active_connections: state.active_connections,
+				recovery: state.recovery, last_failure: state.last_failure, engine_restart: state.engine_restart, local_probes: state.local_probes,
+				events: state.events, results: state.rules, trust: state.trust }, null, 2))),
+			state.engine ? E('p', {}, '转发引擎：' + state.engine.name + (state.engine.version ? ' ' + state.engine.version : '（当前未运行）')) : '',
+			state.reason ? E('p', {}, '当前状态：' + reason(state.reason)) : '',
+			E('h4', {}, '最近模块故障'),
+			lastFailure ? E('p', {}, [reason(lastFailure.reason), lastFailure.health_error ? ' · ' + reason(lastFailure.health_error) : '',
+				E('small', {}, lastFailure.at ? new Date(lastFailure.at * 1000).toLocaleString() : '发生时间未记录')]) : E('p', {}, '尚无故障记录'),
+			lastFailure ? probeTable(lastFailure.local_probes) : '',
+			E('p', {}, '故障窗口内记录 ' + (state.recovery?.faults || []).length + ' 次独立故障；本次恢复已尝试重启 ' + (state.engine_restart?.attempts || 0) + ' 次。'),
+			E('h4', {}, '本地转发链 · 最近验证'), probeTable(state.local_probes),
+			E('h4', {}, '事件'), table(['时间', '网站', '状态', '原因'], (state.events || []).slice().reverse().map(event => E('tr', {}, [
+				E('td', {}, new Date(event.at * 1000).toLocaleString()), E('td', {}, config.rules.find(rule => rule.id === event.rule)?.domain || event.rule || '模块'),
+				E('td', {}, event.intercepting ? '转发' : '直接访问'), E('td', {}, reason(event.reason))])))
+		];
 	}
-	const failure = state.last_failure || (state.events || []).slice().reverse().find(event => !event.rule &&
-		(event.failure || Object.values(event.local_probes || {}).some(probe => probe.ok === false)));
-	const lastFailure = failure && (failure.failure || failure);
-	const diagnostics = () => controller.compatibilityLive === false ? [ E('p', {}, '诊断记录不缓存，请等待当前状态读取成功。') ] : [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h4', {}, '诊断'), E('div', { 'class': 'netfleet-inline-actions' }, [
-		(state.recovery && state.recovery.latched || state.reason === 'maintenance') ? button('恢复模块', function() { return mutate(controller, 'compatibilityProbe', { operation: 'recover' }); }, busy || !state.requested) : '',
-		button('导出诊断', function() { download('netfleet-compatibility-diagnostic.json', JSON.stringify({ requested: state.requested, intercepting: state.intercepting,
-			reason: state.reason, active_connections: state.active_connections, recovery: state.recovery, last_failure: state.last_failure, engine_restart: state.engine_restart,
-			local_probes: state.local_probes, rule_recovery: state.rule_recovery, events: state.events, results: Object.values(state.rules || {}) }, null, 2)); }) ]) ]),
-		state.engine ? E('p', {}, '转发引擎：' + state.engine.name + (state.engine.version ? ' ' + state.engine.version : '（当前未运行）')) : '',
-		E('h4', {}, '最近模块故障'),
-		lastFailure ? E('p', {}, [ reason(lastFailure.reason), lastFailure.health_error ? ' · ' + reason(lastFailure.health_error) : '',
-			E('small', {}, lastFailure.at ? new Date(lastFailure.at * 1000).toLocaleString() : '发生时间未记录') ]) : E('p', {}, '尚无具体故障记录'),
-		lastFailure ? probeTable(lastFailure.local_probes) : '',
-		E('p', {}, '故障窗口内记录 ' + ((state.recovery || {}).faults || []).length + ' 次独立故障；本次恢复已尝试重启 ' + ((state.engine_restart || {}).attempts || 0) + ' 次。重启尝试不计作新故障。'),
-		state.recovery && state.recovery.latched ? E('p', {}, '模块已停止自动恢复；下方验证结果仅为最近记录，不能表示当前正在接管。') : '',
-		E('h4', {}, '本地转发链 · 最近验证'), probeTable(state.local_probes),
-		E('h4', {}, '目标恢复'),
-		table([ '目标', '最近故障', '恢复探测', '操作' ], config.rules.map(function(rule) {
-			const recovery = (state.rule_recovery || {})[rule.id] || {};
-			const failure = recovery.last_failure;
-			return E('tr', {}, [ E('td', {}, rule.name), E('td', {}, failure ? [ reason(failure.reason || 'historical_failure'), E('small', {}, failure.time ? new Date(failure.time * 1000).toLocaleString() : '') ] : '无记录'),
-				E('td', {}, recovery.probe ? [ recovery.probe.ok ? '通过' : reason(recovery.probe.reason), E('small', {}, recovery.probe.duration_ms + ' ms') ] : '尚未探测'),
-				E('td', {}, recovery.latched ? button('恢复规则', function() { return mutate(controller, 'compatibilityProbe', { operation: 'recover', rule: rule.id }); }, busy || !state.requested) : '') ]);
-		})), E('h4', {}, '兼容事件'), table([ '时间', '目标', '状态', '原因' ], (state.events || []).slice().reverse().map(function(event) {
-			const rule = config.rules.find(item => item.id === event.rule);
-			return E('tr', {}, [ E('td', {}, new Date(event.at * 1000).toLocaleString()), E('td', {}, rule ? rule.name : event.rule || '模块'),
-				E('td', {}, event.intercepting ? '接管' : '旁路'), E('td', {}, reason(event.reason)) ]);
-		})), E('a', { 'href': L.url('admin/system/package-manager'), 'target': '_blank', 'rel': 'noopener' }, '软件包管理 ↗') ];
-	const panels = {
-		rules: () => [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h4', {}, '目标规则 · ' + config.rules.length), button('新增规则', function() { edit(controller, 'rules'); }, busy || !config.devices.length) ]),
-			table([ '启用', '目标', '设备', '策略', '状态', '操作' ], rules, config.devices.length ? '暂无目标规则' : '尚无接入设备'),
-			!config.devices.length ? button('添加接入设备', function() { controller.compatibilityTab = 'devices'; controller.redraw(); edit(controller, 'devices'); }, busy) : '' ],
-		devices: () => [ E('div', { 'class': 'netfleet-section-heading' }, [ E('h4', {}, '设备与信任 · ' + config.devices.length), button('新增设备', function() { edit(controller, 'devices'); }, busy) ]),
-			E('details', { 'class': 'netfleet-compat-source', 'open': controller.sourceExpanded ? '' : null, 'toggle': function(event) {
-				controller.sourceExpanded = event.target.open;
-				if (event.target.open && !controller.identitySource && !controller.identitySourceError) void readSource(controller);
-			} }, [ E('summary', {}, '高级：设备地址来源'), E('div', { 'class': 'netfleet-section-heading' }, [
-			E('div', { 'role': 'status' }, controller.identitySource ? [ E('strong', {}, 'NetFleet 本机网络'),
-					E('small', {}, sourceReason(controller.identitySource.reason)),
-					(controller.identitySource.devices || []).some(item => !item.addresses.length) ? E('small', {}, (controller.identitySource.devices || []).filter(item => !item.addresses.length).length + ' 台设备无可用地址') : '',
-					controller.identitySource.last_success ? E('small', {}, '最近同步 ' + new Date(controller.identitySource.last_success * 1000).toLocaleString()) : '' ] : controller.identitySourceError ? '设备地址插件未安装或不可读取；手工地址仍可使用' : '按需读取地址来源'),
-				E('div', { 'class': 'netfleet-inline-actions' }, [ button('读取来源', function() { return readSource(controller); }, !!controller.identityRead),
-					button('自动发现并启用', function() { return autoSetupSource(controller); }, busy || !controller.identitySource || !!controller.identitySourceError),
-					button('管理来源', function() { editSource(controller); }, busy || !controller.identitySource || !!controller.identitySourceError),
-					button('同步', function() { return sourceAction(controller, 'sync'); }, busy || !controller.identitySource || !controller.identitySource.loaded || !!controller.identitySourceError) ]) ]) ]),
-			table([ '设备', '系统信任', '应用', '操作' ], devices, '暂无接入设备'),
-			E('div', { 'class': 'netfleet-inline-add' }, [ button('下载公开 CA', function() { return api.compatibilityCa().then(function(ca) { download('netfleet-ca.pem', ca.pem, 'application/x-pem-file'); }).catch(function(error) { managed.notify(null, E('p', {}, error.message), 'error'); }); }, busy || !state.ca_sha256),
-				state.installed ? E('a', { 'href': '/netfleet/macos-trust.py', 'download': 'netfleet-macos-trust.py' }, 'macOS 接入工具') : '' ]),
-			state.ca_sha256 ? E('details', {}, [ E('summary', {}, 'CA 指纹'), E('code', { 'class': 'netfleet-compat-fingerprint' }, state.ca_sha256) ]) : '' ],
-		diagnostics: diagnostics
-	};
-	return E('section', { 'class': 'netfleet-compatibility' }, [ heading,
-		E('div', { 'class': 'netfleet-config-row' }, [ E('label', { 'class': 'netfleet-check' }, [ E('input', { 'type': 'checkbox', 'checked': state.requested ? '' : null, 'disabled': toggleBusy ? '' : null,
-			'change': function(event) { return mutate(controller, event.target.checked ? 'compatibilityEnable' : 'compatibilityDisable', {}); } }), '启用 HTTPS 兼容' ]),
-			E('div', { 'role': 'status' }, [ E('strong', {}, (controller.compatibilityLive === false ? '上次状态：' : '') + label(state)), state.reason ? E('small', {}, reason(state.reason)) : '',
-				controller.compatibilityBusy ? E('small', {}, '正在应用…') : '',
-				state.managed === false && state.management_reason && state.management_reason !== state.reason ? E('small', { 'class': 'is-warning' }, reason(state.management_reason)) : '' ]) ]),
+	const needsRecovery = state.recovery?.latched || state.reason === 'maintenance';
+	const help = !state.installed ? '请在组件列表安装 HTTP/2 转发引擎。'
+		: !config.devices.length ? '先设置接入范围并安装证书，再添加网站。'
+		: !config.rules.some(rule => rule.enabled && rule.strategy === 'h2') ? '添加并启用需要转发的网站。'
+		: needsRecovery ? '转发已暂停，请恢复后重试。'
+		: state.reason === 'no_verified_targets' ? '请完成接入与证书设置。'
+		: state.requested && !state.intercepting ? '暂时直接访问，转发恢复后会自动生效。详情见技术诊断。' : '';
+	return E('section', { 'class': 'netfleet-compatibility' }, [
+		heading,
+		E('div', { 'class': 'netfleet-config-row' }, [
+			E('label', { 'class': 'netfleet-check' }, [E('input', { 'type': 'checkbox', 'checked': state.requested ? '' : null, 'disabled': toggleBusy ? '' : null,
+				'change': event => mutate(controller, event.target.checked ? 'compatibilityEnable' : 'compatibilityDisable', {}) }), '开启 HTTP/2 转发']),
+			E('div', { 'role': 'status' }, [E('strong', {}, (controller.compatibilityLive === false ? '上次状态：' : '') + label(state)),
+				controller.compatibilityBusy ? E('small', {}, '正在应用…') : '', help ? E('small', {}, help) : '',
+				needsRecovery ? button('恢复转发', () => mutate(controller, 'compatibilityProbe', { operation: 'recover' }), busy || !state.requested) : '',
+				state.managed === false ? E('small', { 'class': 'is-warning' }, reason(state.management_reason || state.reason)) : ''])
+		]),
 		controller.compatibilityError ? E('p', { 'class': 'alert-message warning' }, '状态读取失败，操作已停用') : '',
-		tabs(), E('div', { 'id': 'netfleet-compat-panel', 'role': 'tabpanel', 'aria-labelledby': 'netfleet-compat-tab-' + tab }, panels[tab]()), freshness ]);
+		E('div', { 'class': 'netfleet-section-heading' }, [E('h4', {}, '网站'), button('添加网站', () => edit(controller, 'rules'), busy || !config.devices.length)]),
+		config.devices.length === 1 ? E('p', { 'class': 'netfleet-scope' }, '接入范围：' + config.devices[0].name) : '',
+		table(['网站', '启用', '生效结果', '操作'], rules, '尚未添加网站'),
+		E('details', { 'open': !config.devices.length ? '' : null, 'class': 'netfleet-compat-section' }, [
+			E('summary', {}, '接入与证书'),
+			E('p', {}, '首次使用：添加接入范围，在客户端安装并信任证书，然后完成接入验证。共享出口后的每个客户端都需要信任证书；已有验证记录不代表全部客户端已完成。'),
+			table(['接入范围', '接入记录', '操作'], devices, '尚未设置接入范围'),
+			E('div', { 'class': 'netfleet-inline-add' }, [
+				button('添加接入范围', () => edit(controller, 'devices'), busy),
+				button('下载证书', () => api.compatibilityCa().then(ca => download('netfleet-ca.pem', ca.pem, 'application/x-pem-file')).catch(error => managed.notify(null, E('p', {}, error.message), 'error')), busy || !state.ca_sha256),
+				state.installed ? E('a', { 'href': '/netfleet/macos-trust.py', 'download': 'netfleet-macos-trust.py' }, 'macOS 接入工具') : ''
+			]),
+			E('details', {}, [E('summary', {}, '安装与验证说明'), E('p', {}, 'macOS：下载接入工具，以路由器 SSH 别名和上方接入标识运行。install 安装证书，verify 验证并登记接入。'),
+				E('code', {}, 'python3 netfleet-macos-trust.py install --target <路由器 SSH 别名> --device <接入标识>'),
+				E('code', {}, 'python3 netfleet-macos-trust.py verify --target <路由器 SSH 别名> --device <接入标识>'),
+				E('p', {}, '其他客户端：下载证书并在系统或应用的证书库中信任；共享出口可沿用该范围的接入记录，但仍需在各客户端验证实际访问。')]),
+			state.ca_sha256 ? E('details', {}, [E('summary', {}, '证书指纹'), E('code', { 'class': 'netfleet-compat-fingerprint' }, state.ca_sha256)]) : ''
+		]),
+		E('details', { 'class': 'netfleet-compat-section', 'open': controller.diagnosticsExpanded ? '' : null,
+			'toggle': event => { if (controller.diagnosticsExpanded !== event.target.open) { controller.diagnosticsExpanded = event.target.open; controller.redraw(); } } },
+			[E('summary', {}, '技术诊断'), ...(controller.diagnosticsExpanded ? diagnostics() : [])]),
+		freshness
+	]);
 }
 
 return { render, refresh, label };

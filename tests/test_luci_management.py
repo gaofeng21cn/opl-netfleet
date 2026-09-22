@@ -43,6 +43,7 @@ function E(tag, attrs, children) {
     node.click = () => node.attrs.click && node.attrs.click({ target: node });
     node.replaceChildren = (...items) => { node.children = items; parent(items); };
     node.reportValidity = () => !node.required || !!node.value;
+    node.checkValidity = node.reportValidity;
     return node;
 }
 function all(root, predicate) {
@@ -1384,62 +1385,57 @@ owner.diagnosticSection = 'core'; await owner.refreshEvents();
 assert.deepEqual(calls, [false, true]);
 """)
 
-    def test_identity_source_setup_and_dynamic_device_binding(self):
+    def test_http2_website_defaults_preserve_scope_and_dynamic_binding(self):
         self.run_js(r"""
 const owner = controller();
-owner.compatibilityTab = 'devices';
-owner.compatibility = { installed: true, requested: false, active_connections: 0, revision: 'compat-r1',
-  config: { rules: [], devices: [{ id: 'mac', name: 'Mac', addresses: ['192.0.2.2'] }] }, trust: {}, rules: {}, events: [] };
-let source = { loaded: false, ready: false, source_ready: false, revision: 'code-r1', config_revision: null,
-  config: { source: 'local', enabled: false, interfaces: [] }, devices: [], binding: '1'.repeat(64) };
-const calls = [];
-const api = { compatibilityGet: async () => clone(owner.compatibility),
-  pluginRead: async request => {
-    calls.push(request);
-    if (request.action === 'sync') source = { ...source, source_ready: true,
-      devices: [{ mac: '02:00:00:00:00:01', name: 'Mac', addresses: ['192.0.2.2', '2001:db8::2'] }] };
-    return clone(source);
-  }, pluginCall: async request => {
-    calls.push(request);
-    assert.equal(request.revision, 'code-r1');
-    if (request.action === 'load') source = { ...source, loaded: true, ready: true, config_revision: 'private-r1' };
-    else {
-      assert.equal(request.params.config_revision, 'private-r1', 'first configure uses revision returned by load');
-      assert.deepEqual(request.params.config, { source: 'local', enabled: true, interfaces: ['br-lan'] });
-      source = { ...source, config: request.params.config, config_revision: 'private-r2' };
-    }
-    return clone(source);
-  }, compatibilityApply: async request => {
-    assert.equal(request.revision, 'compat-r1');
-    assert.deepEqual(request.config.devices[0].identity, { binding: '1'.repeat(64), mac: '02:00:00:00:00:01' });
-    assert.deepEqual(request.config.devices[0].addresses, []);
-    calls.push({ action: 'bound' });
-  } };
-owner.identitySource = clone(source);
-const compatibility = module('compatibility.js', api);
-let root = compatibility.render(owner);
-fire(button(root, '管理来源'));
-fire(find(modal.content, node => node.tag === 'input' && node.type === 'checkbox'), 'change', { checked: true });
+owner.compatibility = { installed: true, requested: true, intercepting: true, revision: 'compat-r1',
+  config: { rules: [], devices: [{ id: 'egress', name: 'Shared egress', addresses: ['192.0.2.2'] }] },
+  rules: {}, trust: {}, events: [] };
+const writes = [];
+const manager = module('compatibility.js', {
+  compatibilityGet: async () => clone(owner.compatibility),
+  compatibilityApply: async request => { writes.push(request); owner.compatibility.config = clone(request.config); },
+  pluginRead: () => { throw Error('must not read another plugin'); },
+  pluginCall: () => { throw Error('must not manage another plugin'); }
+});
+let root = manager.render(owner);
+assert(!text(root).includes('目标恢复'));
+assert(!text(root).includes('自动发现'));
+assert(!text(root).includes('转发引擎'), 'diagnostics are not generated until expanded');
+fire(button(root, '添加网站'));
 const field = label => find(find(modal.content, node => node.tag === 'label' && text(node).startsWith(label)), node => node.tag === 'input');
-assert(!find(modal.content, node => node.tag === 'input' && node.type === 'password'));
-assert(!text(modal.content).includes('UniFi 控制器'));
-fire(field('局域网观察接口'), 'input', { value: 'br-lan' });
-await fire(button(modal.content, '保存并验证'));
-assert.deepEqual(calls.filter(call => ['load', 'configure', 'sync'].includes(call.action)).map(call => call.action), ['load', 'configure', 'sync']);
-assert.equal(owner.identitySource.source_ready, true);
-root = compatibility.render(owner);
-assert(!text(root).includes('fixture-secret'));
-fire(button(root, '编辑'));
-fire(find(modal.content, node => node.tag === 'select'), 'change', { value: '02:00:00:00:00:01' });
+fire(field('网站域名'), 'input', { value: 'Service.Example' });
 await fire(button(modal.content, '保存'));
-assert.equal(calls.at(-1).action, 'bound', 'compatibility refresh must not reread another plugin');
-assert(calls.some(call => call.action === 'bound'));
+assert.equal(writes.length, 1, 'save needs no second confirmation');
+assert.deepEqual({...writes[0].config.rules[0], id: 'generated'}, {id: 'generated', name: 'service.example', domain: 'service.example',
+  match: 'exact', port: 443, strategy: 'h2', enabled: true, devices: ['egress']});
+owner.compatibility.rule_recovery = {[owner.compatibility.config.rules[0].id]: {admitted: true}};
+root = manager.render(owner);
+assert(text(root).includes('等待请求验证 HTTP/2'));
+owner.compatibility.config.devices.push({id: 'other', name: 'Other', addresses: ['192.0.2.3']});
+fire(button(manager.render(owner), '添加网站'));
+fire(field('网站域名'), 'input', { value: 'another.example' });
+await fire(button(modal.content, '保存'));
+assert.equal(writes.length, 1, 'multiple scopes require an explicit selection');
+assert(text(notifications.at(-1).text).includes('请选择接入范围'));
+ui.hideModal();
+owner.compatibility.config.devices[0].identity = {binding: 'a'.repeat(64), mac: '02:00:00:00:00:01'};
+owner.compatibility.config.devices[0].addresses = [];
+fire(button(manager.render(owner), '编辑范围'));
+await fire(button(modal.content, '保存'));
+assert.deepEqual(writes.at(-1).config.devices[0].identity, {binding: 'a'.repeat(64), mac: '02:00:00:00:00:01'});
+root = manager.render(owner);
+fire(button(root, '删除'));
+assert(modal, 'deletion still explains its effect');
+owner.compatibilityLive = false;
+await fire(button(modal.content, '删除'));
+assert.equal(writes.length, 2, 'a stale confirmation cannot authorize a write');
 """)
 
     def test_compatibility_retains_failure_when_current_probes_pass(self):
         self.run_js(r"""
 const owner = controller();
-owner.compatibilityTab = 'diagnostics';
+owner.diagnosticsExpanded = true;
 owner.compatibility = { installed: true, requested: true, intercepting: false, reason: 'manual_recovery_required',
   config: { rules: [], devices: [] }, recovery: { latched: true, faults: [1] }, engine_restart: { attempts: 4 },
   local_probes: { processing: { ok: true, duration_ms: 200, stage: 'http' } },
@@ -1451,10 +1447,10 @@ assert(text(root).includes('本地健康接口超时'));
 assert(text(root).includes('1510 ms / 1400 ms'));
 assert(text(root).includes('1 次独立故障'));
 assert(text(root).includes('4 次'));
-assert(button(root, '恢复模块'));
+assert(button(root, '恢复转发'));
 owner.compatibility.reason = 'maintenance';
 owner.compatibility.recovery.latched = false;
-assert(button(manager.render(owner), '恢复模块'), 'maintenance requires an explicit recovery action');
+assert(button(manager.render(owner), '恢复转发'), 'maintenance requires an explicit recovery action');
 owner.compatibility.events = [{ ...owner.compatibility.last_failure }];
 delete owner.compatibility.last_failure;
 root = manager.render(owner);
@@ -1477,13 +1473,12 @@ const api = { compatibilityGet: () => { reads++; return new Promise((_, reject) 
   pluginRead: () => { throw new Error('tab must not load another plugin'); } };
 const manager = module('compatibility.js', api);
 let root = manager.render(owner);
-assert(button(root, '新增规则').disabled);
-assert(text(root).includes('Site'));
+assert(button(root, '添加网站').disabled);
+assert(text(root).includes('service.example'));
 assert(!text(root).includes('正在接管'), 'module bypass overrides stale rule interception');
-await fire(button(root, '设备与信任'));
 root = manager.render(owner);
 assert(text(root).includes('Mac'));
-assert(button(root, '新增设备').disabled);
+assert(button(root, '添加接入范围').disabled);
 assert.equal(reads, 0);
 const pending = manager.refresh(owner);
 assert.equal(manager.refresh(owner), pending, 'refresh is single-flight');
@@ -1492,7 +1487,7 @@ await pending;
 root = manager.render(owner);
 assert(text(root).includes('Mac'));
 assert(text(root).includes('刷新失败'));
-assert(button(root, '新增设备').disabled);
+assert(button(root, '添加接入范围').disabled);
 assert.equal(reads, 1);
 """)
 
@@ -1529,7 +1524,7 @@ const state = { installed: true, requested: true, revision: 'PRIVATE_REVISION', 
 cache.write(state, Date.now(), 'devices');
 assert(!values.get('device-a:revision-a').includes('PRIVATE_'));
 const cached = cache.read();
-assert.equal(cached.tab, 'devices');
+assert.equal(cached.tab, undefined);
 assert.deepEqual(cached.state.config.devices[0].addresses, ['2001:db8::2']);
 assert.equal(cached.state.revision, undefined);
 assert.equal(displayCache('device-b:revision-a', storage).read(), null);
@@ -1558,9 +1553,10 @@ const mount = new Function('createManager', 'displayCache', 'setTimeout', 'clear
  options => { pageApi = options.api; return manager; }, () => ({ read: () => null, write() {} }),
  (fn, ms) => { timers.set(++serial, {fn, ms}); return serial; }, id => timers.delete(id));
 await mount({signal, container: dom(), scope: {effect: cb => { dispose = cb; }}});
-assert.deepEqual(requirements, ['ui', 'rpc'], 'plugin does not require an unversioned shell resource');
-assert.deepEqual(await pageApi.pluginRead({ id: 'device-identity', action: 'get' }), { loaded: true });
-assert.equal(rpcCalls[0].spec.object, 'opl-netfleet.plugins');
+assert.deepEqual(requirements, ['ui'], 'plugin uses only its scoped host API');
+assert.equal(pageApi.pluginRead, undefined);
+assert.equal(pageApi.pluginCall, undefined);
+assert.equal(rpcCalls.length, 0);
 assert.equal(L.env.rpctimeout, 20, 'transport restores the LuCI timeout');
 assert.equal([...timers.values()][0].ms, 10000, 'failed or initial reads keep following');
 for (const reason of ['lan_access_not_equivalent', 'rules_bypassed', 'future_reason']) {
@@ -1574,7 +1570,7 @@ document.hidden = false; view.compatibility = {requested: false, active_connecti
 assert.equal(timers.size, 0, 'disabled and drained stays idle');
 view.compatibility.active_connections = 2; view.follow(); assert.equal(timers.size, 1);
 signal.aborted = true; dispose(); assert.equal(timers.size, 0);
-await assert.rejects(pageApi.pluginCall({ id: 'device-identity', action: 'load' }), /plugin_scope_disposed/);
+assert.equal(refreshes, 1);
 """)
 
     def test_unmanaged_compatibility_preserves_revision_bound_disable(self):
@@ -1595,13 +1591,12 @@ const api = {
 const compatibility = module('compatibility.js', api);
 let root = compatibility.render(owner);
 assert(text(root).includes('模块接口与当前 NetFleet 不兼容'));
-assert(text(root).includes('兼容引擎未就绪'));
-assert(button(root, '新增规则').disabled);
-await fire(button(root, '诊断'));
+assert(button(root, '添加网站').disabled);
+owner.diagnosticsExpanded = true;
 root = compatibility.render(owner);
 assert(!button(root, '连接验证'), 'status-only RPC must not be presented as a connection test');
 assert(!button(root, '导出诊断').disabled);
-assert(!button(root, '恢复模块'));
+assert(!button(root, '恢复转发'));
 const toggle = find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox');
 assert(toggle.checked);
 assert(!toggle.disabled, 'an incompatible installed module must remain stoppable');
@@ -1613,11 +1608,11 @@ root = compatibility.render(owner);
 assert(find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox').disabled);
 assert(text(root).includes('仍有 2 条连接'));
 assert(!button(root, '导出诊断').disabled);
-await fire(find(root, node => node.attrs['aria-label'] === '刷新兼容状态'));
+await fire(button(root, '刷新状态'));
 assert.equal(reads, 2);
 """)
 
-    def test_compatibility_keeps_legacy_capabilities_and_rechecks_confirmation(self):
+    def test_compatibility_direct_toggle_and_edit_recheck_capabilities(self):
         self.run_js(r"""
 const owner = controller();
 owner.compatibility = { installed: true, requested: false, intercepting: false, active_connections: 0, revision: 'compat-r1',
@@ -1627,18 +1622,16 @@ const api = { compatibilityEnable: async () => { enables++; }, compatibilityAppl
   compatibilityGet: async () => clone(owner.compatibility) };
 const compatibility = module('compatibility.js', api);
 let root = compatibility.render(owner);
-assert(button(root, '新增规则').disabled, 'a rule requires a device');
-assert(!button(root, '添加接入设备').disabled, 'absence of managed must preserve the existing contract');
+assert(button(root, '添加网站').disabled, 'a rule requires a device');
+assert(!button(root, '添加接入范围').disabled, 'absence of managed must preserve the existing contract');
 let toggle = find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox');
 assert(!toggle.disabled);
-const enabling = fire(toggle, 'change', { checked: true });
-owner.compatibility.managed = false;
-await fire(button(modal.content, '确认'));
-await enabling;
-assert.equal(enables, 0, 'a newly blocked module must not enable from an old confirmation');
+await fire(toggle, 'change', { checked: true });
+assert.equal(enables, 1, 'explicit toggle applies directly');
+assert.equal(modal, null);
 owner.compatibility.managed = true;
 root = compatibility.render(owner);
-fire(button(root, '添加接入设备'));
+fire(button(root, '添加接入范围'));
 const fields = all(modal.content, node => node.tag === 'input');
 fire(fields[0], 'input', { value: 'Test Mac' });
 fire(fields[1], 'input', { value: '192.0.2.10' });
@@ -1651,8 +1644,8 @@ owner.compatibility.reason = 'extension_component_not_installed';
 root = compatibility.render(owner);
 toggle = find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox');
 assert(toggle.disabled, 'an absent owner cannot receive disable');
-assert(!find(root, node => node.attrs['aria-label'] === '刷新兼容状态').disabled);
-assert(text(root).includes('未安装可选模块'));
+assert(!button(root, '刷新状态').disabled);
+assert(text(root).includes('请在组件列表安装 HTTP/2 转发引擎'));
 assert(!text(root).includes('extension_component_not_installed'));
 """)
 

@@ -21,11 +21,10 @@ export function displayState(state) {
       devices: state.config.devices.slice(0, 256).map(device => ({ ...pick(device, ['id', 'name']),
         addresses: state.device_addresses?.[device.id] || device.addresses })),
     },
-    trust: Object.fromEntries(Object.entries(state.trust || {}).slice(0, 256)
-      .map(([id, trust]) => [id, { ...pick(trust, ['verified']), runtimes: pick(trust?.runtimes, ['system', 'codex_app', 'codex_cli', 'images']) }])),
+    trust: record(state.trust, ['verified']),
     rules: record(state.rules, ['at', 'upstream_protocol', 'http_status', 'reason']),
     recovery: pick(state.recovery, ['latched', 'reason']),
-    rule_recovery: record(state.rule_recovery, ['intercepting', 'latched', 'reason']),
+    rule_recovery: record(state.rule_recovery, ['admitted']),
   };
 }
 
@@ -39,14 +38,14 @@ export function displayCache(key, storage = () => window.localStorage) {
         if (entry.schema !== 1 || !Number.isFinite(entry.at) || entry.at <= 0 || entry.at > Date.now()) return null;
         const state = displayState(entry.state);
         if (!state) return null;
-        return { at: entry.at, state, tab: ['rules', 'devices', 'diagnostics'].includes(entry.tab) ? entry.tab : 'rules' };
+        return { at: entry.at, state };
       } catch (_) { return null; }
     },
-    write(state, at, tab) {
+    write(state, at) {
       try {
         const value = displayState(state);
         if (!value) return;
-        const raw = JSON.stringify({ schema: 1, at, tab, state: value });
+        const raw = JSON.stringify({ schema: 1, at, state: value });
         if (raw.length <= LIMIT) storage().setItem(key, raw);
       } catch (_) { /* Storage policy must not prevent live management. */ }
     },
