@@ -1,6 +1,6 @@
 .netfleet-https-plugin { --nf-border: var(--border-color-medium, #d6dadd); --nf-muted: var(--text-color-medium, #626970); --nf-accent: var(--primary, var(--primary-color-high, #5e72e4)); color: var(--text-color-high, #202124); min-width: 0; max-width: 1440px; line-height: 1.5; }
 .netfleet-https-plugin .netfleet-section-heading, .netfleet-https-plugin .netfleet-inline-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-.netfleet-https-plugin h3 { margin: 0; padding: 0; font-size: 18px; }
+.netfleet-https-plugin h3 { margin: 0; padding: 0; font-size: 18px; background: transparent; }
 .netfleet-https-plugin .netfleet-config-row { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(160px, 2fr); gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--nf-border); }
 .netfleet-https-plugin h4 { margin: 12px 0; padding: 0; font-size: 16px; }
 .netfleet-https-plugin .netfleet-config-table { overflow-x: auto; }
@@ -13,7 +13,7 @@
 .netfleet-https-plugin .netfleet-check { display: flex; align-items: center; gap: 10px; }
 .netfleet-https-plugin table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .netfleet-https-plugin th, .netfleet-https-plugin td { padding: 10px 8px; border-bottom: 1px solid var(--nf-border); text-align: left; overflow-wrap: anywhere; vertical-align: top; }
-.netfleet-https-plugin th:nth-child(2):has(+ th + th) { width: 60px; }
+.netfleet-https-plugin th:nth-child(2):has(+ th + th) { width: 84px; white-space: nowrap; }
 .netfleet-https-plugin td .cbi-button { margin: 0 6px 6px 0; }
 .netfleet-https-plugin details { margin: 10px 0; }
 .netfleet-https-plugin summary { cursor: pointer; }
