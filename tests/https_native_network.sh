@@ -48,6 +48,15 @@ finish() {
     cp "$work/hosts.before" /etc/hosts
     cp "$work/ca.before" /etc/ssl/certs/ca-certificates.crt
     if [ "$policy_created" = 1 ]; then rm /etc/opl-netfleet/policy.json; fi
+    if [ "$rc" -ne 0 ] && [ -f "$work/transient-after.json" ]; then
+        printf 'Transient recovery state: intercepting=%s reason=%s healthy=%s hold=%s latched=%s restart=%s\n' \
+            "$(jsonfilter -i "$work/transient-after.json" -e '@.intercepting')" \
+            "$(jsonfilter -i "$work/transient-after.json" -e '@.reason')" \
+            "$(jsonfilter -i "$work/transient-after.json" -e '@.recovery.healthy')" \
+            "$(jsonfilter -i "$work/transient-after.json" -e '@.recovery.hold_seconds')" \
+            "$(jsonfilter -i "$work/transient-after.json" -e '@.recovery.latched')" \
+            "$(jsonfilter -i "$work/transient-after.json" -e '@.engine_restart.attempts')" >&2
+    fi
     if [ "$rc" -ne 0 ]; then echo "Native network failure after cleanup: $stage" >&2; fi
     exit "$rc"
 }
@@ -397,7 +406,7 @@ test "$(jsonfilter -i "$work/transient-probe.json" -e '@.intercepting')" = false
 test "$(jsonfilter -i "$work/transient-probe.json" -e '@.recovery.hold_seconds')" = 8
 kill -CONT "$probe_session_pid"
 probe_session_pid=
-wait_intercepting
+if ! wait_intercepting; then cp "$work/state.json" "$work/transient-after.json"; exit 1; fi
 processes
 test "$engine_pid" = "$original_engine_pid"
 probe 4 h2
