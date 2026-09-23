@@ -404,7 +404,7 @@ for attempt in $(seq 1 10); do
 done
 test "$(jsonfilter -i "$work/transient-probe.json" -e '@.intercepting')" = false
 test "$(jsonfilter -i "$work/transient-probe.json" -e '@.recovery.hold_seconds')" = 8
-kill -CONT "$probe_session_pid"
+kill -CONT "$probe_session_pid" 2>/dev/null || true
 probe_session_pid=
 if ! wait_intercepting; then cp "$work/state.json" "$work/transient-after.json"; exit 1; fi
 ucode /tmp/tests/https_native_guest.uc state >"$work/transient-after.json"
