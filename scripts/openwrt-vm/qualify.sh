@@ -270,13 +270,15 @@ for name in names:
     path = candidate / name
     if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
         raise SystemExit('Optional feed requires regular nonempty public assets')
-    if (feed / name).exists():
-        raise SystemExit('Optional feed would overwrite an existing default asset')
+    existing = feed / name
+    if existing.is_symlink() or (existing.exists() and (not existing.is_file() or digest(existing) != digest(path))):
+        raise SystemExit('Optional feed would overwrite an existing asset with different bytes')
 key = (candidate / 'compat-public-key.pem').read_bytes()
 if b'PRIVATE KEY' in key or not key.startswith(b'-----BEGIN PUBLIC KEY-----'):
     raise SystemExit('Optional feed key is not a public key')
 for name in names:
-    shutil.copyfile(candidate / name, feed / name)
+    if not (feed / name).exists():
+        shutil.copyfile(candidate / name, feed / name)
 PY
 	fi
 	if [ "$lane_mode" = all ] || [ "$lane_mode" = setup ] || [ "$lane_mode" = package ]; then
