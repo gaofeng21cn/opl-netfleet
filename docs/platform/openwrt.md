@@ -530,7 +530,7 @@ LuCI 通过 `fs.exec_direct` 调用白名单 `opl-netfleet-transfer`，经 `cgi-
 同一实现，不能绕过 revision、路径、大小和引用校验。
 
 `core_action` 接受 `{revision,action:"restart"|"reload",confirm:true}`，只执行所选原生
-运行 owner 的维护事务；`diagnostics_get` 返回最多 120 条有界、脱敏的核心启动与运行
+运行 owner 的维护事务；`diagnostics_get` 返回最多 120 条有界、脱敏的 Mihomo 与核心服务启动、运行
 日志，以及核心和 controller 可用性。诊断不依赖 controller 成功响应，按用户进入或刷新
 诊断区读取，不成为另一个日志持久化 owner。
 
@@ -570,7 +570,7 @@ gateway 的准备、附加或清理动作，不建立第二条核心生命周期
 LuCI 的默认产品界面插件是这些业务接口的公开 caller，除上述接入与管理接口外提供：
 
 - `status`：一次读取 policy、manifest、最近一次 evidence、服务状态、package 自有 build identity（source 部署时回退部署器原子持久化身份），以及 Mihomo `/proxies` 和 `/providers/proxies` 各一次；安装身份只投影经过格式校验的 NetFleet 版本、source commit 和 source tree，供用户确认当前设备字节并用于静态资源缓存失效，不参与运行决策；`apk upgrade` 后 package identity 必须优先于可能仍属于上一次声明式部署的 `installed.json`，避免状态页继续报告旧代码；当前已承载流量的 capability 以健康的生成 URLTest 组、组内当前成员和 manifest 绑定 source 中唯一的真实代理身份投影当前叶子，下一轮候选使用指定测速 URL 的独立健康记录，`/providers/proxies` 的节点全局 `alive` 只用于机场/地区库存健康显示，不能用可能滞后的单节点健康位推翻当前组和独立 protected probes 已证明的实际路径；机场节点库存按 manifest 绑定的 source 从 `/providers/proxies` 读取、按节点名去重并独立投影 `available_node_count/node_count/node_count_known`，不能把跨 capability 的地区候选组 `available_count/candidate_count` 标成节点；同一读取还经 SubscriptionOwner 投影顶层 `subscriptions`：每个已启用订阅只返回 `section`/`ref`、`display_name`、`cache_present`、`cache_sha256`、原始 `node_count`、`quota`、`last_attempt`、`last_success` 和 `last_result`，用于解释订阅条目与 Mihomo 已加载节点的差异；`last_success` 优先取最近一次 NetFleet 成功刷新事件，尚无事件时回退到设备上当前后端订阅缓存的实际修改时间，不使用测量时间或摘要推断；机场投影通过 `subscription_section` 明确引用对应条目，UI 不按显示名猜测绑定；不得返回 URL、token、节点名称或订阅正文；本轮候选的测量和排除结果以 [measurement](../architecture/evidence.md) 投影，历史延迟不能冒充本轮结果；该读取不测速、不探测、不修改 selector；
-- `events`：读取有界 NetFleet 决策事件和当前后端 core log 中最近的 `NETFLEET-` 行，字段为 `core_lines/core_lines_persistent`；不轮询、不修改 owner；
+- `events`：读取有界 NetFleet 决策事件和当前后端 core log 中最近与 NetFleet 业务组或 `NETFLEET-` 相关的行，字段为 `core_lines/core_lines_persistent`；不轮询、不修改 owner；
 - `probe`：执行与设备 owner CLI 相同的一轮有界保护探测并返回真实结果；只读网络状态，不刷新订阅、不测速选优、不修改 selector、Profile 或服务；
 - `enable`：在同一个 target-local mutation lock 内依次调用现有 `compile -> enable` owner；原生核心完全停止时由 activation 复用恢复 owner 建立已验证基线，再启用候选。实时状态仍提供启动入口；不接受浏览器上传的 policy、Profile 或候选；
 - `select_auto`：只接受 status 已公开且当前可执行的 automatic 根 capability ID，调用现有 `select <capability> auto` owner 执行一次有界轮次，并把可见 selector 恢复到“自动选优”；

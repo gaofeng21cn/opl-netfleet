@@ -447,9 +447,12 @@ diagnostics = function() {
 			else if (type(value) == "string") push(secrets, value);
 		}
 	});
-	const output = capture("logread -e 'opl-netfleet-core' | tail -n 120") ?? "";
+	const output = capture("logread -l 1024") ?? "";
 	const file = fs.lstat(LOG_PATH)?.type == "file" ? capture(`tail -c 65536 ${q(LOG_PATH)} | tail -n 120`) ?? "" : "";
-	const source = filter(split(output + "\n" + file, "\n"), line => length(trim(line)) > 0);
+	const source = [
+		...filter(split(output, "\n"), line => index(line, " mihomo[") >= 0 || index(line, " mihomo:") >= 0 || index(line, "opl-netfleet-core") >= 0),
+		...filter(split(file, "\n"), line => length(trim(line)) > 0)
+	];
 	const state = gateway();
 	return { ok: true, result: { supported: true, core_running: state?.core_running == true,
 		controller_available: state?.core_running == true && controller_version(api_secret(), 2) != null,

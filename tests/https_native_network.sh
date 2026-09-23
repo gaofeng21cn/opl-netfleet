@@ -17,6 +17,7 @@ stage=topology
 origin_pid=
 manager_pid=
 engine_pid=
+probe_session_pid=
 policy_created=0
 finish() {
     rc=$?
@@ -24,6 +25,7 @@ finish() {
     set +e
     [ -z "$manager_pid" ] || kill -CONT "$manager_pid" 2>/dev/null
     [ -z "$engine_pid" ] || kill -CONT "$engine_pid" 2>/dev/null
+    [ -z "$probe_session_pid" ] || kill -CONT "$probe_session_pid" 2>/dev/null
     if [ "$rc" -ne 0 ]; then
         echo "Native network failure: $stage" >&2
         ucode /tmp/tests/https_native_guest.uc state >&2
@@ -379,6 +381,26 @@ probe 6 http/1.1
 cp "$work/profile-epoch-before.json" /etc/opl-netfleet/native/run/config.yaml
 wait_intercepting
 probe 4 h2
+stage=transient_probe_recovery
+processes
+original_engine_pid=$engine_pid
+probe_session_pid=$(pidof tls-probe | awk '{print $1}')
+test -n "$probe_session_pid"
+kill -STOP "$probe_session_pid"
+for attempt in $(seq 1 10); do
+    ucode /tmp/tests/https_native_guest.uc state >"$work/transient-probe.json"
+    [ "$(jsonfilter -i "$work/transient-probe.json" -e '@.reason')" != transparent_chain_failed ] || break
+    sleep 1
+done
+test "$(jsonfilter -i "$work/transient-probe.json" -e '@.intercepting')" = false
+test "$(jsonfilter -i "$work/transient-probe.json" -e '@.recovery.hold_seconds')" = 8
+kill -CONT "$probe_session_pid"
+probe_session_pid=
+wait_intercepting
+processes
+test "$engine_pid" = "$original_engine_pid"
+probe 4 h2
+probe 6 h2
 stage=manager_stall
 processes
 kill -STOP "$manager_pid"

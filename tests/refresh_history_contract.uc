@@ -32,9 +32,9 @@ try {
  check(history.read().subscriptions.alpha.last_success == now - 172800 && history.read().last_success_at == null,
   'legacy evidence preserves known success without inventing full-refresh scope');
  check(history.record(event(now - 86000, true), true), 'actual atomic history write succeeds');
- for (let i = 0; i < 256; i++) log = events.append(log, [{at: now, action: 'select', reason: 'fixture'}]);
+ for (let i = 0; i < events.EVENT_LIMIT + 128; i++) log = events.append(log, [{at: now, action: 'select', reason: 'fixture'}]);
  history = reopen();
- check(length(log.events) == 128 && history.read().last_success_at == now - 86000,
+ check(length(log.events) == events.EVENT_LIMIT && history.read().last_success_at == now - 86000,
   'reopened owner retains success after all refresh events have rolled out');
  check(model.refresh_due_at(history.read(), 86400) == now + 400, 'restart retains the original daily deadline');
  check(model.refresh_due_at(history.read(), 3600) == now - 82400, 'changed interval uses the same success baseline');

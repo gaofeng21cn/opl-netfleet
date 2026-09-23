@@ -31,13 +31,14 @@ core_netfleet_lines = function(group_names) {
 	// logread retries for 11 seconds when this OpenWrt installation has no logd.
 	// Optional diagnostic logs must not block the durable event snapshot.
 	if (KIND == "native-mihomo" && system("ubus -t 1 list log >/dev/null 2>&1") != 0) return [];
-	const command = KIND == "native-mihomo" ? `logread -l 512 -e ${shell_quote(SERVICE)}` : `tail -n 512 ${shell_quote(LOG_PATH)}`;
+	const command = KIND == "native-mihomo" ? "logread -l 512" : `tail -n 512 ${shell_quote(LOG_PATH)}`;
 	const process = popen(`${command} 2>/dev/null`);
 	if (!process) return [];
 	let result = [];
 	for (;;) {
 		const line = process.read("line");
 		if (line == null) break;
+		if (KIND == "native-mihomo" && index(line, " mihomo[") < 0 && index(line, " mihomo:") < 0 && index(line, SERVICE) < 0) continue;
 		let relevant = index(line, "NETFLEET-") >= 0;
 		for (let i = 0; !relevant && i < length(group_names ?? []); i++) {
 			if (type(group_names[i]) == "string" && index(line, group_names[i]) >= 0) relevant = true;

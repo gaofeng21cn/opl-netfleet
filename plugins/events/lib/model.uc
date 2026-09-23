@@ -6,7 +6,7 @@ let clone, valid_event, validate, append;
 
 
 
-const EVENT_LIMIT = 128;
+const EVENT_LIMIT = 1024;
 
 clone = function(value) {
 	return json(sprintf("%J", value));

@@ -122,8 +122,12 @@ report(invoke(core_action, { action: "restart", confirm: true }), "core restart"
 check(current_profile() == baseline_profile, "core maintenance preserves profile selection");
 check(!invoke(core_action, { action: "stop", confirm: true }).ok, "unsupported service action rejected");
 check(system(`logger -t opl-netfleet-core ${q("maintenance-fixture token=private-fixture https://example.test/?secret=private-fixture")}`) == 0, "diagnostic fixture logged");
+check(system(`logger -t mihomo ${q("maintenance-mihomo-fixture token=private-fixture")}`) == 0, "Mihomo diagnostic fixture logged");
 const logs = diagnostics();
-check(logs.ok && logs.result.supported && index(sprintf("%J", logs.result.lines), "private-fixture") < 0, "logs are bounded and redacted");
+check(logs.ok && logs.result.supported && index(sprintf("%J", logs.result.lines), "private-fixture") < 0 &&
+	index(sprintf("%J", logs.result.lines), "maintenance-mihomo-fixture") >= 0, "Mihomo logs are included and redacted");
+check(length(host.use("events.store").core_netfleet_lines(["maintenance-mihomo-fixture"])) > 0,
+	"event diagnostics include Mihomo business-group lines");
 report(invoke(profile_delete, { id: "maintenance-fixture.json" }), "delete unused JSON profile");
 report(invoke(profile_delete, { id: "maintenance-fixture.yaml" }), "delete unused YAML profile");
 const cleanup = cursor();

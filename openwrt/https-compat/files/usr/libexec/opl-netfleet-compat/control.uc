@@ -233,7 +233,11 @@ return function(context, options) {
         reason??=!live.ready?'engine_unavailable':!live.processing_chain?'processing_chain_failed':!live.transparent_chain?'transparent_chain_failed':'engine_revision_mismatch';
         const own_failure=index(['engine_unavailable','engine_restarted','processing_chain_failed','transparent_chain_failed','engine_revision_mismatch'],reason)>=0;
         if(!healthy) epoch=null;
-        const recovery=advance(previous.recovery,{requested:true,healthy,reason,now,count_failure:own_failure&&previous.intercepting===true});
+        const transient_transparent_chain=reason=='transparent_chain_failed'&&previous.intercepting===true&&
+            network.ready===true&&live.ready===true&&live.processing_chain===true&&expected!=null&&
+            live.revision==expected&&live.pid!=null&&live.pid==previous.ready_engine_pid;
+        const recovery=advance(previous.recovery,{requested:true,healthy,reason,now,
+            count_failure:own_failure&&previous.intercepting===true,transient_transparent_chain});
         const state={...previous,recovery,intercepting:false,reason:recovery.reason,local_probes:live.local_probes ?? {},engine_pid:live.pid ?? previous.engine_pid};
         if(!healthy&&previous.intercepting===true&&own_failure) state.last_failure={at:time(),reason,health_error:live.health_error,
             local_probes:live.local_probes ?? {},health_counters:live.health_counters,engine_pid:live.pid,previous_engine_pid:previous.ready_engine_pid};
