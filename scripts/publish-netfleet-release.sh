@@ -135,7 +135,7 @@ fi
 
 gh release create "$tag" --repo "$repo" --verify-tag \
   --title "NetFleet $tag" \
-  --notes "版本化 NetFleet OpenWrt 软件包，已通过 ARM64 OpenWrt 25.12.5 软件包与运行验收。" \
+  --notes "Versioned NetFleet OpenWrt packages qualified for installation and runtime behavior on ARM64 OpenWrt 25.12.5." \
   "$publication"/*
 
 readback=$(mktemp -d "${TMPDIR:-/tmp}/netfleet-release-readback.XXXXXX")
