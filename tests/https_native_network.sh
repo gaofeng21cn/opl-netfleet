@@ -407,8 +407,12 @@ test "$(jsonfilter -i "$work/transient-probe.json" -e '@.recovery.hold_seconds')
 kill -CONT "$probe_session_pid"
 probe_session_pid=
 if ! wait_intercepting; then cp "$work/state.json" "$work/transient-after.json"; exit 1; fi
+ucode /tmp/tests/https_native_guest.uc state >"$work/transient-after.json"
+stage=transient_probe_same_engine
 processes
+printf 'Transient engine PID: before=%s after=%s\n' "$original_engine_pid" "$engine_pid"
 test "$engine_pid" = "$original_engine_pid"
+stage=transient_probe_wire
 probe 4 h2
 probe 6 h2
 stage=manager_stall

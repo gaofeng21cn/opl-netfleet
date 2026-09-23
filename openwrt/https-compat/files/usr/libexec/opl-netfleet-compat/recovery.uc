@@ -6,7 +6,9 @@ return function(previous, input) {
     if (input.manual_reset) { faults = []; since = null; }
     if (!input.requested) return {requested: false, intercepting: false, reason: 'disabled', faults, latched, healthy_since: null};
     if (!input.healthy) {
-        hold_seconds = input.transient_transparent_chain === true ? 8 : 30;
+        const same_transient_fault=state.healthy===false&&state.reason=='transparent_chain_failed'&&
+            input.reason=='transparent_chain_failed'&&state.hold_seconds==8;
+        hold_seconds = input.transient_transparent_chain === true || same_transient_fault ? 8 : 30;
         if (input.count_failure !== false && state.healthy === true) push(faults, now);
         latched = latched || length(faults) >= 3;
         return {requested: true, intercepting: false, healthy: false, reason: latched ? 'manual_recovery_required' : input.reason,

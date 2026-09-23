@@ -20,6 +20,11 @@ step(31,false,{reason:'transparent_chain_failed',transient_transparent_chain:tru
 check(!step(32,true).intercepting,'transient_probe_admitted_immediately');
 check(!step(39,true).intercepting,'transient_probe_early_admission');
 check(step(40,true).intercepting,'transient_probe_recovery_missing');
+state=null;step(0,true);step(30,true);
+step(31,false,{reason:'transparent_chain_failed',transient_transparent_chain:true});
+check(step(32,false,{reason:'transparent_chain_failed'}).hold_seconds==8,'continuous_transient_fault_lost_short_hold');
+check(!step(33,true).intercepting,'continuous_transient_fault_admitted_immediately');
+check(step(41,true).intercepting,'continuous_transient_fault_recovery_missing');
 step(41,false,{reason:'transparent_chain_failed',transient_transparent_chain:true});
 step(42,true);step(45,false,{reason:'transparent_chain_failed',count_failure:false});
 check(!step(54,true).intercepting,'repeated_probe_failure_kept_short_hold');

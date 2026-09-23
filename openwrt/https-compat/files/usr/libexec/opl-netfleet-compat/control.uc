@@ -247,7 +247,8 @@ return function(context, options) {
             if(!live.ready||!live.processing_chain||!live.transparent_chain) {
                 state.unhealthy_since=previous.unhealthy_since ?? now;
                 const restart=previous.engine_restart ?? {};
-                if(now-state.unhealthy_since>=8&&!starting&&!recovery.latched&&network.ready&&now>=(restart.next_at ?? 0)) {
+                const probe_only=!live.transparent_chain&&live.ready&&live.processing_chain&&live.revision==expected&&network.ready;
+                if(now-state.unhealthy_since>=(probe_only?30:8)&&!starting&&!recovery.latched&&network.ready&&now>=(restart.next_at ?? 0)) {
                     const attempts=min((restart.attempts ?? 0)+1,1000000);
                     state.engine_restart={attempts,next_at:now+min(60,8*(2**min(attempts-1,3)))};
                     state.unhealthy_since=now;save(state,previous);
