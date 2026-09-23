@@ -391,30 +391,6 @@ probe 6 http/1.1
 cp "$work/profile-epoch-before.json" /etc/opl-netfleet/native/run/config.yaml
 wait_intercepting
 probe 4 h2
-stage=transient_probe_recovery
-processes
-original_engine_pid=$engine_pid
-probe_session_pid=$(pidof tls-probe | awk '{print $1}')
-test -n "$probe_session_pid"
-kill -STOP "$probe_session_pid"
-for attempt in $(seq 1 10); do
-    ucode /tmp/tests/https_native_guest.uc state >"$work/transient-probe.json"
-    [ "$(jsonfilter -i "$work/transient-probe.json" -e '@.reason')" != transparent_chain_failed ] || break
-    sleep 1
-done
-test "$(jsonfilter -i "$work/transient-probe.json" -e '@.intercepting')" = false
-test "$(jsonfilter -i "$work/transient-probe.json" -e '@.recovery.hold_seconds')" = 8
-kill -CONT "$probe_session_pid" 2>/dev/null || true
-probe_session_pid=
-if ! wait_intercepting; then cp "$work/state.json" "$work/transient-after.json"; exit 1; fi
-ucode /tmp/tests/https_native_guest.uc state >"$work/transient-after.json"
-stage=transient_probe_same_engine
-processes
-printf 'Transient engine PID: before=%s after=%s\n' "$original_engine_pid" "$engine_pid"
-test "$engine_pid" = "$original_engine_pid"
-stage=transient_probe_wire
-probe 4 h2
-probe 6 h2
 stage=manager_stall
 processes
 kill -STOP "$manager_pid"
@@ -464,6 +440,30 @@ done
 ucode /tmp/tests/https_native_guest.uc recover >"$work/recover.log"
 wait_intercepting
 probe 4 h2
+stage=transient_probe_recovery
+processes
+original_engine_pid=$engine_pid
+probe_session_pid=$(pidof tls-probe | awk '{print $1}')
+test -n "$probe_session_pid"
+kill -STOP "$probe_session_pid"
+for attempt in $(seq 1 10); do
+    ucode /tmp/tests/https_native_guest.uc state >"$work/transient-probe.json"
+    [ "$(jsonfilter -i "$work/transient-probe.json" -e '@.reason')" != transparent_chain_failed ] || break
+    sleep 1
+done
+test "$(jsonfilter -i "$work/transient-probe.json" -e '@.intercepting')" = false
+test "$(jsonfilter -i "$work/transient-probe.json" -e '@.recovery.hold_seconds')" = 8
+kill -CONT "$probe_session_pid" 2>/dev/null || true
+probe_session_pid=
+if ! wait_intercepting; then cp "$work/state.json" "$work/transient-after.json"; exit 1; fi
+ucode /tmp/tests/https_native_guest.uc state >"$work/transient-after.json"
+stage=transient_probe_same_engine
+processes
+printf 'Transient engine PID: before=%s after=%s\n' "$original_engine_pid" "$engine_pid"
+test "$engine_pid" = "$original_engine_pid"
+stage=transient_probe_wire
+probe 4 h2
+probe 6 h2
 stage=request_failure_isolation
 # Actual upstream response aborts must fail their own requests without
 # disabling conversion for subsequent requests to the same domain.
