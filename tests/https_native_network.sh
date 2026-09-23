@@ -48,6 +48,7 @@ finish() {
     cp "$work/hosts.before" /etc/hosts
     cp "$work/ca.before" /etc/ssl/certs/ca-certificates.crt
     if [ "$policy_created" = 1 ]; then rm /etc/opl-netfleet/policy.json; fi
+    if [ "$rc" -ne 0 ]; then echo "Native network failure after cleanup: $stage" >&2; fi
     exit "$rc"
 }
 trap finish EXIT
