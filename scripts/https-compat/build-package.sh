@@ -84,7 +84,9 @@ if [ -z "$identity_from" ]; then
   make -C "$sdk" "package/$identity_package/clean" V=s
   make -C "$sdk" -j"$jobs" "package/$identity_package/compile" NO_DEPS=1 V=s
 fi
-mapfile -t packages < <(find "$sdk/bin/packages" -type f -name "$package-*.apk")
+package_version=$(sed -n 's/^PKG_VERSION:=//p' "$sdk/package/$package/Makefile")
+test -n "$package_version"
+mapfile -t packages < <(find "$sdk/bin/packages" -type f -name "$package-$package_version.apk")
 test "${#packages[@]}" = 1
 cp "${packages[0]}" "$output/"
 cp "$sdk/public-key.pem" "$output/compat-public-key.pem"
@@ -95,7 +97,9 @@ if [ -n "$identity_from" ]; then
   mapfile -t identity_packages < <(find "$identity_from" -maxdepth 1 -type f -name "$identity_package-*.apk")
   cp "$identity_from/device-identity-manifest.json" "$output/"
 else
-  mapfile -t identity_packages < <(find "$sdk/bin/packages" -type f -name "$identity_package-*.apk")
+  identity_version=$(sed -n 's/^PKG_VERSION:=//p' "$sdk/package/$identity_package/Makefile")
+  test -n "$identity_version"
+  mapfile -t identity_packages < <(find "$sdk/bin/packages" -type f -name "$identity_package-$identity_version.apk")
 fi
 test "${#identity_packages[@]}" = 1
 cp "${identity_packages[0]}" "$output/"

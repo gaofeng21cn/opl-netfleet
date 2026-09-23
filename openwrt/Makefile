@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet
-PKG_VERSION:=0.9.6
+PKG_VERSION:=0.9.7
 PKG_RELEASE:=
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=OPL NetFleet
