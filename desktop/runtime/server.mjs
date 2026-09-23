@@ -658,8 +658,12 @@ async function rpc({ method, params = {} }) {
 function respond(response, status, value) { const body = JSON.stringify(value); response.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); response.end(body); }
 async function shutdown() {
   await core.stop(); const cleanup = await network.detach({ close: true }); assert(cleanup.ok, cleanup.status ?? 'network_cleanup_failed');
-  await saveState({ enabled: false, mode: 'direct', scheduler: { enabled: false, running: false } });
   closing = true;
+  // 退出的安全条件是核心已停止、自身平台接管已释放，两者到此已成立。写回停止状态只是
+  // 运行记录：状态目录被外部清理或不再可写时，退出仍必须完成，否则宿主会留下一个永远
+  // 无法退出的进程；下次启动会重建目录并从停止、直连状态开始。
+  await saveState({ enabled: false, mode: 'direct', scheduler: { enabled: false, running: false } })
+    .catch(error => { lastError = `state_record_failed:${error?.code ?? 'error'}`; console.error(JSON.stringify({ ok: false, error: lastError })); });
   setTimeout(async () => { webServer.close(); rpcServer.close(); await fs.unlink(socketPath).catch(() => {}); process.exit(0); }, 150);
 }
 async function tick() {
