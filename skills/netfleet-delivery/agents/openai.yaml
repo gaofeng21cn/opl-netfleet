@@ -1,0 +1,4 @@
+interface:
+  display_name: "NetFleet 插件交付"
+  short_description: "区分已发布插件更新与新版本交付，按唯一 SOP 执行并定位耗时"
+  default_prompt: "使用 $netfleet-delivery 完成本次 NetFleet 交付；更新最新版默认消费已发布 Feed，只有指定未发布功能才进入构建发布。报告实际耗时与目标回读。"

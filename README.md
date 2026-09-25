@@ -193,6 +193,11 @@ deployment bundle 由私有 OPL Instance 生成，包含策略、订阅引用、
 
 多设备推广建议先在可本地恢复的 canary 完成一次“编译、启用、回读、关闭”全流程，再把同一发布包和配置推广到其他设备。完整步骤见[Canary 推广与复原](docs/operations/canary-promotion.md)。
 
+
+### Codex 交付入口
+
+[netfleet-delivery](skills/netfleet-delivery/SKILL.md) 由本仓维护，引用当前交付与验证文档。安装到 Codex 时使用原生 Skill 安装器，从本仓的 `skills/netfleet-delivery` 路径安装；更新先保留本地修改，再从所选源码版本重新安装。Skill 安装不执行设备更新。
+
 ## 开发
 
 创建带服务、配置动作和页面的完整插件：

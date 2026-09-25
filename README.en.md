@@ -309,6 +309,11 @@ For rollout, complete the full compile, enable, readback, and disable cycle on
 a locally recoverable canary before promoting the same package and configuration
 to separately authorized replicas. See [Canary promotion and recovery](docs/operations/canary-promotion.md).
 
+
+### Codex delivery entry point
+
+The repository owns [netfleet-delivery](skills/netfleet-delivery/SKILL.md), which routes to its current delivery and validation documentation. Install `skills/netfleet-delivery` from this repository with the native Codex Skill installer. Preserve local changes before reinstalling from the selected source revision. Installing the Skill does not update any device.
+
 ## Development
 
 Create a complete plugin with a service, configuration actions, and a page:
