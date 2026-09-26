@@ -139,6 +139,24 @@ function foundation(controller) {
 
 function providers(controller) {
 	const draft = controller.configDraft;
+	const subscriptions = controller.subscriptionState?.sources || [];
+	const subscriptionRows = subscriptions.map(function(source) {
+		const status = source.pending_update ? (source.using_previous_cache ? '待更新，继续使用上次缓存' : '待更新') :
+			source.cache_current ? '已生效' : '尚未更新';
+		return E('tr', {}, [
+			E('td', {}, [ E('strong', {}, source.display_name || source.name || source.id), E('small', {}, source.node_count == null ? '节点未提供' : String(source.node_count) + ' 个节点') ]),
+			E('td', {}, source.has_url ? '已保存' : '未配置'),
+			E('td', {}, status),
+			E('td', {}, compactButton('编辑', function() { controller.editSubscription?.(source); }))
+		]);
+	});
+	const subscriptionSection = E('section', {}, [
+		E('div', { 'class': 'netfleet-section-heading' }, [ sectionHeading('订阅源', '新增或编辑订阅后，会自动出现在下方的参与机场草稿中。额度耗尽只影响当前选路资格，不会关闭参与状态。'),
+			compactButton('新增订阅', function() { controller.editSubscription?.(null); }) ]),
+		controller.subscriptionState ? E('div', { 'class': 'netfleet-config-table netfleet-subscription-table' }, [
+			E('table', {}, [ E('thead', {}, E('tr', {}, [ '订阅源', '订阅地址', '缓存状态', '操作' ].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, subscriptionRows) ])
+		]) : E('p', { 'class': 'netfleet-empty-note' }, '正在读取订阅源…')
+	]);
 	const rows = controller.configDraft.providers.map(function(provider) {
 		const status = statusById(controller.status.providers, provider.id);
 		const enabledAttrs = { 'type': 'checkbox', 'aria-label': provider.display_name + ' 参与 NetFleet', 'change': function(event) {
@@ -154,8 +172,11 @@ function providers(controller) {
 			E('td', {}, select(provider.billing, [ [ 'subscription', '订阅制' ], [ 'buyout', '买断制' ] ], function(event) {
 				update(controller, function(next) { next.providers.find(function(item) { return item.id === provider.id; }).billing = event.target.value; });
 			}, !provider.enabled)),
-			E('td', {}, compactButton('移除', function() {
-				update(controller, function(next) { next.providers = removeById(next.providers, provider.id); });
+			E('td', {}, compactButton('关闭参与', function() {
+				update(controller, function(next) {
+					const target = next.providers.find(function(item) { return item.id === provider.id; });
+					if (target) target.enabled = false;
+				});
 			}, true))
 		]);
 	});
@@ -179,8 +200,8 @@ function providers(controller) {
 		})
 	]) : E('p', { 'class': 'netfleet-empty-note' }, '没有尚未接管的订阅。');
 	return E('section', {}, [
-		E('div', { 'class': 'netfleet-section-heading' }, [ sectionHeading('机场', '选择参与 NetFleet 的订阅及其运行角色。'),
-			compactButton('管理订阅', function() { controller.manageSubscriptions(); }) ]),
+		subscriptionSection,
+		E('div', { 'class': 'netfleet-section-heading' }, [ sectionHeading('参与机场', '选择参与 NetFleet 的订阅及其运行角色。新订阅默认加入主用机场。') ]),
 		E('div', { 'class': 'netfleet-config-table netfleet-provider-table' }, [
 			E('table', {}, [ E('thead', {}, E('tr', {}, [ E('th', {}, '参与机场与资源'), E('th', {}, '故障层级'), E('th', {}, '计费方式'), E('th', {}, '操作') ])), E('tbody', {}, rows) ])
 		]),
@@ -487,6 +508,44 @@ function request(config) {
 	};
 }
 
+function syncSubscriptions(controller) {
+	if (!controller?.config || !controller?.configDraft) return;
+	const next = clone(controller.configDraft);
+	const knownProviders = {};
+	(next.providers || []).forEach(function(provider) { knownProviders[provider.id] = true; });
+	const freshOptions = controller.config.provider_options || [];
+	freshOptions.forEach(function(option) {
+		if (knownProviders[option.id] === true) return;
+		next.providers.push({ id: option.id, section: option.section, display_name: option.display_name,
+			enabled: true, role: 'primary', billing: 'subscription', region_ids: (option.region_ids || []).slice() });
+		knownProviders[option.id] = true;
+	});
+	const knownRegions = {};
+	let nextOrder = 0;
+	(next.regions || []).forEach(function(region) {
+		knownRegions[region.id] = true;
+		if (Number.isInteger(region.display_order) && region.display_order > nextOrder) nextOrder = region.display_order;
+	});
+	const freshRegions = {};
+	(controller.config.regions || []).forEach(function(region) { freshRegions[region.id] = region; });
+	freshOptions.forEach(function(option) {
+		(option.region_ids || []).forEach(function(regionId) {
+			const region = (controller.config.region_options || []).find(function(item) { return item.id === regionId; });
+			if (region) freshRegions[region.id] = { id: region.id, flag: region.code, display_name: region.display_name, mode: 'automatic' };
+		});
+	});
+	Object.keys(freshRegions).forEach(function(id) {
+		const region = freshRegions[id];
+		if (knownRegions[region.id] === true) return;
+		nextOrder += 10;
+		const added = clone(region);
+		added.display_order = nextOrder;
+		next.regions.push(added);
+		knownRegions[region.id] = true;
+	});
+	controller.configDraft = next;
+}
+
 function dirty(controller) {
 	return JSON.stringify(request(controller.configDraft)) !== JSON.stringify(request(controller.config));
 }
@@ -503,7 +562,7 @@ function render(controller) {
 	const independent = ['network', 'files'].includes(controller.configSection);
 	const effect = ({
 		foundation: '选择生成规则的基础及退出时恢复的配置。应用后会重新生成并切换运行配置。',
-		providers: '设置哪些机场参与运行及其故障层级；订阅地址和下载由“管理订阅”独立维护。',
+		providers: '在同一页维护订阅源和参与机场；新订阅默认加入主用机场，额度耗尽只暂时失去选路资格。',
 		regions: '设置节点名称如何归入地区以及哪些地区参与选优。应用后重新生成地区候选。',
 		capabilities: '设置各出口的地区和业务绑定。应用后重新选优；健康地区按跨地区门槛保持粘性。',
 		routing: '设置域名应走的出口。应用后生成运行规则，已有连接可能保留原路径。',
@@ -602,6 +661,7 @@ function wizard(controller, step) {
 return baseclass.extend({
 	clone: clone,
 	request: request,
+	syncSubscriptions: syncSubscriptions,
 	dirty: dirty,
 	render: render,
 	changeText: changeText,

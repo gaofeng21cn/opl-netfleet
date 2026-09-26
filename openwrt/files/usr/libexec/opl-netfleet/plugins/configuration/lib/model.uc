@@ -408,15 +408,25 @@ apply = function(policy, request, resources) {
 	next.policy_source = clone(request.policy_source);
 	next.recovery_profile.ref = request.recovery_profile_ref;
 	next.regions = {};
+	const used_region_orders = {};
+	let next_region_order = 0;
 	let names = keys(request.regions);
 	for (let i = 0; i < length(names); i++) {
 		const id = names[i];
 		const option = option_by_id(resources?.region_options, id);
-		const region = clone(policy?.regions?.[id] ?? {
-			flag: option?.code,
-			display_order: option?.display_order,
-			mode: "automatic"
-		});
+		const existing = policy?.regions?.[id];
+		const region = clone(existing ?? { flag: option?.code, mode: "automatic" });
+		let display_order = existing?.display_order;
+		if (type(display_order) != "int" || used_region_orders[display_order] == true) {
+			display_order = option?.display_order;
+			if (type(display_order) != "int" || used_region_orders[display_order] == true) {
+				display_order = next_region_order + 10;
+				while (used_region_orders[display_order] == true) display_order += 10;
+			}
+		}
+		used_region_orders[display_order] = true;
+		if (display_order > next_region_order) next_region_order = display_order;
+		region.display_order = display_order;
 		region.display_name = trim(request.regions[id].display_name);
 		region.mode = request.regions[id].mode;
 		next.regions[id] = region;

@@ -133,6 +133,16 @@ const request = {
 };
 
 const merged = apply(policy, request, resources);
+
+const collision_policy = json(sprintf("%J", policy));
+collision_policy.regions.japan.display_order = 30;
+const duplicate_order_request = json(sprintf("%J", request));
+duplicate_order_request.regions.hong_kong.mode = "automatic";
+duplicate_order_request.regions.japan.mode = "automatic";
+const duplicate_order_result = apply(collision_policy, duplicate_order_request, resources);
+if (!duplicate_order_result.ok || duplicate_order_result.policy.regions.singapore.display_order == 30) {
+	print("duplicate_region_order_not_reallocated\n"); exit(1);
+}
 if (!merged.ok || merged.policy.policy_source.kind != "profile" ||
 	merged.policy.recovery_profile.ref != "subscription:beta" ||
 	merged.policy.providers.alpha.section != "alpha" ||

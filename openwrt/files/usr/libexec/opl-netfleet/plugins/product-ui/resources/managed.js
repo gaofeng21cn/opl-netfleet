@@ -489,6 +489,7 @@ function subscriptionAction(name, args) { return loadModule('subscriptions').the
 return baseclass.extend({ displayVersion, quotaResetLabel, errorLabel, notify,
     preloadSubscriptions: function(...args) { return subscriptionAction('preloadSubscriptions', args); },
     subscriptions: function(...args) { return subscriptionAction('subscriptions', args); },
+    editSubscription: function(...args) { return subscriptionAction('editSubscription', args); },
     migration: function(...args) { return subscriptionAction('migration', args); },
     nativeSetup: function(...args) { return subscriptionAction('nativeSetup', args); },
     operationNode, operationBusy, readOperations, runConfiguration, runSubscription, runSelection, loadComponents,

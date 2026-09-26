@@ -167,7 +167,7 @@ const productController = {
 
 	loadManagement: function() {
 		if (this.context?.signal?.aborted) return;
-		if (this.currentView === 'providers') managed.preloadSubscriptions(this).catch(function() {});
+		if (this.currentView === 'providers' || this.currentView === 'config') managed.preloadSubscriptions(this).catch(function() {});
 		managed.readOperations(this);
 		if (this.currentView === 'config') this.loadConfig();
 		return Promise.resolve();
@@ -179,6 +179,7 @@ const productController = {
 		return netfleet.configGet().then(function(config) {
 			self.config = config;
 			if (!self.configDraft) self.configDraft = clone(config);
+			netfleetConfig.syncSubscriptions(self);
 			if (self.currentView === 'config') self.scheduleRedraw();
 		}).catch(function(error) {
 			self.configError = error;
@@ -384,6 +385,8 @@ const productController = {
 	},
 
 	manageSubscriptions: function() { return managed.subscriptions(this); },
+	editSubscription: function(source) { return managed.editSubscription(this, source); },
+	syncSubscriptionDraft: function() { netfleetConfig.syncSubscriptions(this); this.redraw(); },
 	migrateBackend: function() { return managed.migration(this); },
 
 	refreshOnboarding: function() {

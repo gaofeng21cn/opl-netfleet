@@ -9,7 +9,7 @@ function userAgentControl(value) {
 
 
 
-function editSource(controller, state, existing) {
+function editSource(controller, state, existing, inline) {
 	const values = {};
 	const fields = [
 		[ 'id', '订阅标识', 'text', existing && existing.id, !existing ],
@@ -47,6 +47,13 @@ function editSource(controller, state, existing) {
 			controller.subscriptionState = saved && Array.isArray(saved.sources) ? saved : null;
 			controller.subscriptionsChanged = true;
 			values.url.value = ''; values.info_url.value = '';
+			if (inline) {
+				ui.hideModal();
+				return Promise.resolve(controller.loadConfig?.()).then(function() {
+					controller.syncSubscriptionDraft?.();
+					controller.redraw();
+				});
+			}
 			return showSubscriptions(controller);
 		}).catch(function(error) { errorBox.textContent = failure(error); save.disabled = false; });
 	});
@@ -54,11 +61,18 @@ function editSource(controller, state, existing) {
 		E('div', { 'class': 'right' }, [ button('返回', function() { showSubscriptions(controller); }), ' ', save ]) ])) ]);
 }
 
+function editSubscription(controller, existing) {
+	return loadSubscriptions(controller).then(function(state) { editSource(controller, state, existing || null, true); });
+}
+
 function loadSubscriptions(controller) {
 	if (controller.subscriptionRead) return controller.subscriptionRead;
 	controller.subscriptionRead = api.subscriptionsGet().then(function(state) {
 		controller.subscriptionState = state;
-		return state;
+		return Promise.resolve(controller.loadConfig?.()).then(function() {
+			controller.scheduleRedraw?.();
+			return state;
+		});
 	}).finally(function() { controller.subscriptionRead = null; });
 	return controller.subscriptionRead;
 }
@@ -167,4 +181,4 @@ function nativeSetup(controller) {
 }
 
 
-return baseclass.extend({ preloadSubscriptions: loadSubscriptions, subscriptions: showSubscriptions, migration, nativeSetup });
+return baseclass.extend({ preloadSubscriptions: loadSubscriptions, subscriptions: showSubscriptions, editSubscription, migration, nativeSetup });
