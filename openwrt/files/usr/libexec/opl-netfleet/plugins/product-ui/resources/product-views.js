@@ -532,10 +532,17 @@ function overviewDigest(status, events, navigate) {
 
 	const unavailableProviders = providers.filter(function(provider) {
 		return provider.quota && provider.quota.state === 'exhausted' ? false :
-			provider.available_count != null && Number(provider.available_count) === 0 ||
-			provider.available_region_count != null && Number(provider.available_region_count) === 0;
+			!(Number(provider.delay_sample_count) === 0 && Number(provider.measurement?.measured_count || 0) === 0 && (provider.measurement?.entries || []).length > 0) &&
+			((provider.available_count != null && Number(provider.available_count) === 0) ||
+			(provider.available_region_count != null && Number(provider.available_region_count) === 0));
 	});
-	const exhaustedProviders = providers.filter(function(provider) { return provider.quota && provider.quota.state === 'exhausted'; });
+	const measurementFailedProviders = providers.filter(function(provider) {
+		return provider.quota && provider.quota.state !== 'exhausted' &&
+			Number(provider.delay_sample_count) === 0 && Number(provider.measurement?.measured_count || 0) === 0 &&
+			(provider.measurement?.entries || []).length > 0 &&
+			((provider.available_count != null && Number(provider.available_count) === 0) ||
+			(provider.available_region_count != null && Number(provider.available_region_count) === 0));
+	});
 	const unavailableSelectedRegions = regions.filter(function(region) {
 		return region.selected && region.available_count != null && region.available_provider_count != null &&
 			(Number(region.available_count) === 0 || Number(region.available_provider_count) === 0);
@@ -547,7 +554,7 @@ function overviewDigest(status, events, navigate) {
 		status.active && !lanRuntime.transparent_proxy_ready ? 'LAN 透明代理不可用' : null,
 		status.active && !lanRuntime.dns_ready ? 'DNS 接管不可用' : null,
 		availabilityMeasured && unavailableProviders.length ? '不可用机场：' + unavailableProviders.map(function(provider) { return providerName(status, provider.id); }).join('、') : null,
-		exhaustedProviders.length ? '流量已耗尽：' + exhaustedProviders.map(function(provider) { return providerName(status, provider.id); }).join('、') : null,
+		availabilityMeasured && measurementFailedProviders.length ? '机场测速失败：' + measurementFailedProviders.map(function(provider) { return providerName(status, provider.id); }).join('、') : null,
 		unavailableSelectedRegions.length ? '当前使用地区已无可用路径：' + unavailableSelectedRegions.map(function(region) { return regionName(status, region.id); }).join('、') : null
 	].filter(Boolean);
 

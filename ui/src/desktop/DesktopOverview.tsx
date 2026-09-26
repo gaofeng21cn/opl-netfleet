@@ -15,8 +15,6 @@ export function overviewAttention(snapshot: DesktopSnapshot): string[] {
     result.push('代理意外停止，请重新启动或查看诊断。');
   if (snapshot.runtime.running && !snapshot.runtime.controllerReady) result.push('核心控制接口暂不可用。');
   if (snapshot.configError) result.push('业务配置读取失败，请检查配置。');
-  const exhausted = snapshot.status?.providers.filter(item => item.quota?.state === 'exhausted') ?? [];
-  if (exhausted.length) result.push(`${exhausted.length} 个机场流量已耗尽。`);
   return result;
 }
 

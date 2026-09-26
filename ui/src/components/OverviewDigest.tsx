@@ -72,11 +72,19 @@ export function OverviewDigest({
 
   const unavailableProviders = status.providers.filter((provider) => (
     provider.quota?.state !== 'exhausted' &&
+    !(Number(provider.delay_sample_count) === 0 && (provider.measurement?.measured_count ?? 0) === 0 && (provider.measurement?.entries?.length ?? 0) > 0) &&
     ((provider.available_count != null && Number(provider.available_count) === 0) ||
     (provider.available_region_count != null && Number(provider.available_region_count) === 0)
     )
   ));
-  const exhaustedProviders = status.providers.filter((provider) => provider.quota?.state === 'exhausted');
+  const measurementFailedProviders = status.providers.filter((provider) => (
+    provider.quota?.state !== 'exhausted' &&
+    Number(provider.delay_sample_count) === 0 &&
+    (provider.measurement?.measured_count ?? 0) === 0 &&
+    (provider.measurement?.entries?.length ?? 0) > 0 &&
+    ((provider.available_count != null && Number(provider.available_count) === 0) ||
+    (provider.available_region_count != null && Number(provider.available_region_count) === 0))
+  ));
   const unavailableSelectedRegions = status.regions.filter((region) => (
     region.selected &&
     region.available_count != null && region.available_provider_count != null &&
@@ -87,7 +95,7 @@ export function OverviewDigest({
     !status.runtime.controller_available ? '设备控制接口不可用' : null,
     platform === 'openwrt' && status.active && !status.runtime.lan_runtime?.transparent_proxy_ready ? 'LAN 透明代理不可用' : null,
     availabilityMeasured && unavailableProviders.length > 0 ? `不可用机场：${unavailableProviders.map((provider) => providerName(status, provider.id)).join('、')}` : null,
-    exhaustedProviders.length > 0 ? `流量已耗尽：${exhaustedProviders.map((provider) => providerName(status, provider.id)).join('、')}` : null,
+    availabilityMeasured && measurementFailedProviders.length > 0 ? `机场测速失败：${measurementFailedProviders.map((provider) => providerName(status, provider.id)).join('、')}` : null,
     unavailableSelectedRegions.length > 0 ? `当前使用地区已无可用路径：${unavailableSelectedRegions.map((region) => regionName(status, region.id)).join('、')}` : null,
   ].filter((item): item is string => Boolean(item));
 
