@@ -531,13 +531,13 @@ function overviewDigest(status, events, navigate) {
 	const decisionCard = overviewDecision(status, events, navigate);
 
 	const unavailableProviders = providers.filter(function(provider) {
-		return provider.quota && provider.quota.state === 'exhausted' ? false :
+		return provider.selected !== true ? false : provider.quota && provider.quota.state === 'exhausted' ? false :
 			!(Number(provider.delay_sample_count) === 0 && Number(provider.measurement?.measured_count || 0) === 0 && (provider.measurement?.entries || []).length > 0) &&
 			((provider.available_count != null && Number(provider.available_count) === 0) ||
 			(provider.available_region_count != null && Number(provider.available_region_count) === 0));
 	});
 	const measurementFailedProviders = providers.filter(function(provider) {
-		return provider.quota && provider.quota.state !== 'exhausted' &&
+		return provider.selected === true && provider.quota && provider.quota.state !== 'exhausted' &&
 			Number(provider.delay_sample_count) === 0 && Number(provider.measurement?.measured_count || 0) === 0 &&
 			(provider.measurement?.entries || []).length > 0 &&
 			((provider.available_count != null && Number(provider.available_count) === 0) ||

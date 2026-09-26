@@ -71,6 +71,7 @@ export function OverviewDigest({
   const latest = latestDecision(events.events);
 
   const unavailableProviders = status.providers.filter((provider) => (
+    provider.selected === true &&
     provider.quota?.state !== 'exhausted' &&
     !(Number(provider.delay_sample_count) === 0 && (provider.measurement?.measured_count ?? 0) === 0 && (provider.measurement?.entries?.length ?? 0) > 0) &&
     ((provider.available_count != null && Number(provider.available_count) === 0) ||
@@ -78,6 +79,7 @@ export function OverviewDigest({
     )
   ));
   const measurementFailedProviders = status.providers.filter((provider) => (
+    provider.selected === true &&
     provider.quota?.state !== 'exhausted' &&
     Number(provider.delay_sample_count) === 0 &&
     (provider.measurement?.measured_count ?? 0) === 0 &&

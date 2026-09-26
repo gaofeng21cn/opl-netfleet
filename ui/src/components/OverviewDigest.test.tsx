@@ -64,9 +64,12 @@ describe('概览信息层级', () => {
   });
 
   it('只有异常时才显示需要关注区域', () => {
+    const status = structuredClone(fixtureScenarios.degraded.status);
+    status.providers[0].selected = true;
+    status.providers[2].selected = false;
     const html = renderToStaticMarkup(
       <OverviewDigest
-        status={fixtureScenarios.degraded.status}
+        status={status}
         events={fixtureScenarios.degraded.events}
         onOpen={() => undefined}
       />,
@@ -102,6 +105,25 @@ describe('概览信息层级', () => {
     const html = renderToStaticMarkup(<OverviewDigest status={status} events={fixtureScenarios.healthy.events} onOpen={() => undefined} />);
     expect(html).toContain('机场测速失败：Alpha 正式机场');
     expect(html).not.toContain('不可用机场：Alpha 正式机场');
+  });
+
+  it('未选中的机场测速失败不升级为整机需要关注', () => {
+    const status = structuredClone(fixtureScenarios.healthy.status);
+    status.providers[0].selected = false;
+    status.providers[0].available_count = 0;
+    status.providers[0].available_region_count = 0;
+    status.providers[0].delay_sample_count = 0;
+    status.providers[0].measurement = {
+      sampled_at: 1789000000,
+      best_delay_ms: null,
+      measured_count: 0,
+      exclusions: { group_latency_failed: 5 },
+      entries: [{ provider_id: 'alpha', region_id: 'japan', ok: false, delay_ms: null, quota_state: 'available', reason: 'group_latency_failed', measurement_reason: 'group_latency_failed' }],
+    };
+    const html = renderToStaticMarkup(<OverviewDigest status={status} events={fixtureScenarios.healthy.events} onOpen={() => undefined} />);
+    expect(html).not.toContain('机场测速失败：Alpha 正式机场');
+    expect(html).not.toContain('不可用机场：Alpha 正式机场');
+    expect(html).not.toContain('需要关注');
   });
 
   it('节点库存未知但候选路径可用时仍显示真实地区数量', () => {
