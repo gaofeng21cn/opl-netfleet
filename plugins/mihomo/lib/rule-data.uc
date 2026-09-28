@@ -142,6 +142,9 @@ function recover() {
   fs.unlink(PENDING);
   return { ok: true, committed: true };
  }
+ const digest = storage.sha256(CONFIG);
+ if (digest != pending.candidate_sha256 && digest != pending.previous_sha256)
+  return { ok: false, error: "rule_data_recovery_conflict" };
  if (!files.atomic_json(CONFIG, pending.config) || !reload() || !restore_selectors(pending.selectors) || !apply_sets(pending.sets, false) ||
   gateway.readiness()?.result?.ready != true) {
   shell("/etc/init.d/opl-netfleet-core stop");
@@ -169,11 +172,13 @@ function cidrs(text) {
  return result;
 }
 function refresh(policy, initiator) {
- if (!supported(policy)) return { ok: false, error: "rule_data_not_supported" };
- if (initiator == "scheduled" && policy?.automation?.rule_refresh_enabled != true) return { ok: true, result: { state: "disabled" } };
  if (!directory(ROOT)) return { ok: false, error: "rule_data_directory_invalid" };
  const recovered = recover();
  if (!recovered.ok) return record(false, recovered.error, null);
+ if (initiator == "reconcile") return recovered;
+ if (!supported(policy)) return { ok: false, error: "rule_data_not_supported" };
+ if (initiator == "scheduled" && policy?.automation?.rule_refresh_enabled != true) return { ok: true, result: { state: "disabled" } };
+ if (!record(false, "update_in_progress", null).result) return { ok: false, error: "rule_data_history_write_failed" };
  if (gateway.readiness()?.result?.ready != true) return record(false, "runtime_not_ready", null);
  const probes = context.use("mihomo.controller").protected_probes;
  if (probes(policy)?.ok != true) return record(false, "protected_baseline_failed", null);
@@ -226,7 +231,7 @@ function refresh(policy, initiator) {
   if (before != storage.sha256(CONFIG) || core_pid != gateway.process_state().pid ||
    sprintf("%J", initial_selectors) != sprintf("%J", selectors()) ||
    gateway.readiness()?.result?.ready != true) die("rule_data_precondition_changed");
-  if (!files.atomic_json(PENDING, { config, sets: initial_sets, selectors: initial_selectors, candidate: work })) die("rule_data_journal_failed");
+  if (!files.atomic_json(PENDING, { config, sets: initial_sets, selectors: initial_selectors, candidate: work, previous_sha256: before, candidate_sha256: storage.sha256(candidate_path) })) die("rule_data_journal_failed");
   if (!files.atomic_json(CONFIG, candidate) || !reload() || !restore_selectors(initial_selectors) || !apply_sets(requested_sets, false)) die("rule_data_apply_failed");
   const observed = controller_rules()?.providers;
   for (let id in keys(generation.rules)) if (!(observed?.[id]?.ruleCount > 0)) die("rule_data_readback_failed");

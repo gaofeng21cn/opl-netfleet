@@ -25,6 +25,8 @@ file_path = function(path) {
 	if (path == "native/mixin.json") return true;
 	if (parts[0] == "policy-sources") return length(parts) == 2 && match(parts[1], /^[A-Za-z0-9][A-Za-z0-9_-]*\.json$/) != null;
 	if (parts[0] != "native") return false;
+	if (parts[1] == "rule-data") return (length(parts) == 3 && index(["active.json", "history.json"], parts[2]) >= 0) ||
+		(length(parts) == 4 && match(parts[2], /^generation\.[A-Za-z0-9]+$/) != null && match(parts[3], /^[a-z][a-z0-9-]+\.mrs$/) != null);
 	if (parts[1] == "profiles") return length(parts) == 3 && profile_id(parts[2]);
 	if (parts[1] == "subscriptions") return length(parts) == 3 && match(parts[2], /^[A-Za-z0-9_]+\.yaml$/) != null;
 	if (index(["providers", "rulesets", "geodata", "certs"], parts[1]) >= 0) return length(parts) > 2;

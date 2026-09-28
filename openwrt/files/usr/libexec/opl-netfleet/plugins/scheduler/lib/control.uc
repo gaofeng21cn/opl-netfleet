@@ -59,7 +59,8 @@ tick = function(previous) {
 	}
 	try {
 		const rules = type(rule_data_status) == "function" ? rule_data_status(settings_value.policy) : null;
-		if (rules?.enabled && rules.next_run_at <= now) run_owner("rules-refresh", "scheduled");
+		if (rules?.pending) run_owner("rules-refresh", "reconcile");
+		else if (rules?.enabled && rules.next_run_at <= now) run_owner("rules-refresh", "scheduled");
 	} catch (error) { warn("NetFleet rule refresh scheduling failed\n"); }
 	const owned = is_active(current_profile());
 	const recovery = pending_recovery(settings_value.policy);
