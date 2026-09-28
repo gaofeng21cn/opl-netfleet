@@ -289,6 +289,17 @@ unchanged
 rpc_ready
 # Shared models legitimately drain the dependent core; verify that lifecycle
 # restoration completes before observing normal supervisor cycles.
+# The finite UI update cannot upgrade the protected Mihomo backend. The full
+# product upgrade above covers that transition; establish its current provider
+# here before asking the finite solver for the remaining UI dependency set.
+stage=shared_plugin_runtime_baseline
+runtime_plugin=opl-netfleet-plugin-mihomo
+runtime_version=$(package_version "$runtime_plugin" current)
+uclient-fetch -q -O "$work/$runtime_plugin-$runtime_version.apk" \
+ "$feed_url/$runtime_plugin-$runtime_version.apk"
+install_fixture "$work/$runtime_plugin-$runtime_version.apk" >>"$work/independent.log" 2>&1
+unchanged
+rpc_ready
 local_stage="$work/shared-install"
 mkdir -m 700 -p "$local_stage/old" "$local_stage/new"
 printf '%s\n' '{"schema":"opl-netfleet-plugin-install.v1","packages":[]}' >"$local_stage/request.json"
