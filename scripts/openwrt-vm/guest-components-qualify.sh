@@ -298,6 +298,7 @@ runtime_version=$(package_version "$runtime_plugin" current)
 uclient-fetch -q -O "$work/$runtime_plugin-$runtime_version.apk" \
  "$feed_url/$runtime_plugin-$runtime_version.apk"
 install_fixture "$work/$runtime_plugin-$runtime_version.apk" >>"$work/independent.log" 2>&1
+restore_fixture_world
 unchanged
 rpc_ready
 local_stage="$work/shared-install"
