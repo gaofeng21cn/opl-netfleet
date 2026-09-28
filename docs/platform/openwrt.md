@@ -884,7 +884,7 @@ mtime，成功时间与额度可以更新。缓存正文摘要与已接受来源
 
 ## 内置分流数据周期刷新
 
-原生网关在私有 /etc/opl-netfleet/native/rule-data 保存候选、已接受 generation 和
+原生网关在私有 /etc/opl-netfleet/native/run/rule-data 保存候选、已接受 generation 和
 中断恢复记录。内置 MRS 与同 commit 的 CN CIDR 均通过固定上游 HTTPS 来源取得；
 完整 Profile 先通过 mihomo -t，IPv4/IPv6 集合使用 nft JSON 批次检查并原子替换。
 更新只替换 netfleet 表内已有的 china_ip 与 china_ip6，不改其他表、链或接管设置。

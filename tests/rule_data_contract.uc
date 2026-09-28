@@ -25,7 +25,7 @@ rejected=false; try { data.cidrs('203.0.113.0/24'); } catch(e) { rejected=true; 
 check(rejected,'partial address-family download is rejected');
 const batch = data.batch(parsed);
 check(length(batch.nftables)==4 && batch.nftables[0].flush.set.table=='netfleet', 'one batch touches only owned country sets');
-active={directory:'/etc/opl-netfleet/native/rule-data/generation.fixture',commit:'a',rules:{'cn-domain':{path:'/etc/opl-netfleet/native/rule-data/generation.fixture/cn-domain.mrs'}}};
+active={directory:'/etc/opl-netfleet/native/run/rule-data/generation.fixture',commit:'a',rules:{'cn-domain':{path:'/etc/opl-netfleet/native/run/rule-data/generation.fixture/cn-domain.mrs'}}};
 const profile={'rule-providers':{'cn-domain':{type:'file',path:'./rulesets/cn-domain.mrs'}}};
 check(data.project(profile)['rule-providers']['cn-domain'].path==active.rules['cn-domain'].path,'accepted generation used at next start');
 const custom={'rule-providers':{'cn-domain':{type:'http',url:'https://fixture.invalid/rules'}}};

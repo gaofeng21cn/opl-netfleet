@@ -389,14 +389,14 @@ function automation(controller) {
 				[ [ 21600, '6 小时' ], [ 43200, '12 小时' ], [ 86400, '24 小时' ] ], function(event) {
 					update(controller, function(next) { next.automation.subscription_refresh_interval_seconds = Number(event.target.value); });
 				}, !value.subscription_refresh_enabled)),
-            fieldRow('定期更新分流数据', '同时更新内置域名/IP 规则和防火墙国内地址表；失败保留旧数据。', checkbox(value.rule_refresh_enabled,
+            rules?.supported ? fieldRow('定期更新分流数据', '同时更新内置域名/IP 规则和防火墙国内地址表；失败保留旧数据。', checkbox(value.rule_refresh_enabled,
                 value.rule_refresh_enabled ? '已开启' : '已关闭', function(event) {
                     update(controller, function(next) { next.automation.rule_refresh_enabled = event.target.checked; });
-                })),
-            fieldRow('分流数据更新周期', ruleNote, select(value.rule_refresh_interval_seconds || 604800,
+                })) : null,
+            rules?.supported ? fieldRow('分流数据更新周期', ruleNote, select(value.rule_refresh_interval_seconds || 604800,
                 [ [ 86400, '每天' ], [ 604800, '每周' ], [ 2592000, '每 30 天' ] ], function(event) {
                     update(controller, function(next) { next.automation.rule_refresh_interval_seconds = Number(event.target.value); });
-                }, !value.rule_refresh_enabled))
+                }, !value.rule_refresh_enabled)) : null
 		])
 	]);
 }

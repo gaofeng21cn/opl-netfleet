@@ -6,7 +6,7 @@ const files = context.use("platform.files");
 const storage = context.use("platform.storage");
 const process = context.use("platform.process");
 const q = process.shell_quote;
-const ROOT = "/etc/opl-netfleet/native/rule-data";
+const ROOT = "/etc/opl-netfleet/native/run/rule-data";
 const RUN = "/etc/opl-netfleet/native/run";
 const CONFIG = RUN + "/config.yaml";
 const ACTIVE = ROOT + "/active.json";
@@ -24,7 +24,7 @@ function capture(command) {
 function directory(path) {
  return fs.lstat(path) == null ? fs.mkdir(path, 0700) : files.private_directory(path);
 }
-function owned(path) { return type(path) == "string" && match(path, /^\/etc\/opl-netfleet\/native\/rule-data\/generation\.[A-Za-z0-9]+$/) != null; }
+function owned(path) { return type(path) == "string" && match(path, /^\/etc\/opl-netfleet\/native\/run\/rule-data\/generation\.[A-Za-z0-9]+$/) != null; }
 function discard(path) { if (owned(path)) shell("rm -rf " + q(path)); }
 function supported(policy) {
  return storage.read_json("/etc/opl-netfleet/backend.json")?.kind == "native-mihomo" &&

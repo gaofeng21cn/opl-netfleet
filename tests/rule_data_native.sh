@@ -6,7 +6,7 @@ test -f /tmp/netfleet-native-vm-authorized
 work=$1
 test -n "$work"
 main=/usr/libexec/opl-netfleet/main.uc
-root=/etc/opl-netfleet/native/rule-data
+root=/etc/opl-netfleet/native/run/rule-data
 run=/etc/opl-netfleet/native/run
 config=$run/config.yaml
 policy=/etc/opl-netfleet/policy.json
