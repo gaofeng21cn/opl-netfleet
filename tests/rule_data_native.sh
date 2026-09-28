@@ -1,6 +1,5 @@
 #!/bin/sh
 set -eu
-set -x
 umask 077
 test -f /tmp/netfleet-native-vm-authorized
 work=$1
@@ -29,7 +28,7 @@ ucode -e 'import * as fs from "fs";
 cleanup() {
  rc=$?; trap - EXIT INT TERM; set +e
  if [ "$rc" != 0 ]; then for evidence in "$work"/accepted.json "$work"/invalid.json "$work"/rollback.json; do [ ! -f "$evidence" ] || cat "$evidence" >&2; done; fi
- cp "$work/source.json" "$source"
+ cat "$work/source.json" >"$source"
  cp "$work/config.json" "$config"
  cp "$work/policy.json" "$policy"
  if [ -f "$work/lock.json" ]; then cp "$work/lock.json" "$lock"; else rm -f "$lock"; fi
