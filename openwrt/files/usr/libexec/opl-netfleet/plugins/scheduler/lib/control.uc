@@ -8,6 +8,7 @@ const backend_enabled = context.use("platform.profile").backend_enabled;
 const api_secret = context.use("platform.credentials").api_secret;
 const run_owner = context.use("platform.process").run_owner;
 const running = context.use("mihomo.backend").running;
+const rule_data_status = context.use("mihomo.backend").rule_data_status;
 const lan_runtime_state = context.use("mihomo.backend").lan_runtime_state;
 const controller_ready = context.use("mihomo.controller").controller_ready;
 const automation = context.use("models.policy").automation;
@@ -56,6 +57,10 @@ tick = function(previous) {
 		// A subscription state failure must not suppress network recovery.
 		warn(`NetFleet subscription scheduling: ${error.message}\n`);
 	}
+	try {
+		const rules = type(rule_data_status) == "function" ? rule_data_status(settings_value.policy) : null;
+		if (rules?.enabled && rules.next_run_at <= now) run_owner("rules-refresh", "scheduled");
+	} catch (error) { warn("NetFleet rule refresh scheduling failed\n"); }
 	const owned = is_active(current_profile());
 	const recovery = pending_recovery(settings_value.policy);
 	if (!owned && recovery != null && now >= recovery.retry_at) {

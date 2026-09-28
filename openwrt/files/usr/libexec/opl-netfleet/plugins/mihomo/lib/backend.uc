@@ -270,5 +270,6 @@ stop = function() {
 	return { ok: false, requested: requested, readback: readback };
 };
 
-return { ...profile_storage, restart, update_subscription, running, lan_runtime_state, cleanup_state, stop };
+return { ...profile_storage, restart, update_subscription, running, lan_runtime_state, cleanup_state, stop,
+ rule_data_status: (policy) => KIND == "native-mihomo" ? context.use("mihomo.gateway").rule_data_status(policy) : null };
 };

@@ -106,3 +106,12 @@ HTTPS 插件另有仅供自身页面的显示摘要，允许保留用户已看�
 运行模式切换同时呈现请求的模式、正在执行的阶段和最终确认的实际模式；失败时区分操作失败与网络恢复结果，不能把恢复到原生代理或直连报告成切换成功。收起进度只改变展示，不取消设备操作。
 
 生成拓扑见[编译合同](runtime-and-recovery.md#compiler)，显示聚合见[显示证据](evidence.md)。
+
+## 分流数据更新状态
+
+OpenWrt 原生内置 bundle 的配置 automation 包含 rule_refresh_enabled 和
+rule_refresh_interval_seconds（默认 604800，允许 86400–2592000）。status.rule_refresh
+投影 supported、enabled、interval_seconds、last_attempt_at、last_success_at、last_ok、
+last_error、next_run_at、upstream_commit 与 pending；浏览器不计算调度期限。
+rules-refresh 是由现有 scheduler 调用、宿主串行的内部写命令。运行和恢复合同见
+[规则数据更新](runtime-and-recovery.md#规则数据更新)。

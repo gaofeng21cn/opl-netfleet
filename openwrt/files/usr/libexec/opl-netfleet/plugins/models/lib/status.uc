@@ -820,6 +820,7 @@ build = function(policy, manifest, state, evidence, owner) {
 			automation_paused: automation_paused
 		},
 		subscription_refresh: owner.subscription_refresh ?? null,
+		rule_refresh: owner.rule_refresh ?? null,
 		subscriptions: owner.subscription_refresh?.subscriptions ?? [],
 		capabilities: capabilities,
 		providers: map(keys(providers), name => providers[name]),

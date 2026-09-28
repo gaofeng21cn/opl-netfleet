@@ -207,12 +207,16 @@ export function RoutingSection({ draft, onChange }: SectionProps) {
 
 export function AutomationSection({ draft, onChange }: SectionProps) {
   return <section className="nf-config-section">
-    <SectionHeading title="自动运行" description="设置重新比较出口和更新已有订阅的周期。" />
+    <SectionHeading title="自动运行" description="设置出口选优、机场订阅和分流规则数据的更新周期。" />
     <div className="nf-form-rows">
       <div className="nf-form-row"><div><label>周期选优</label><p>关闭后仍可手动执行单次选优。</p></div><label className="nf-switch"><input type="checkbox" checked={draft.automation.enabled} onChange={(event) => onChange({ ...draft, automation: { ...draft.automation, enabled: event.target.checked } })} /><span aria-hidden="true" /><b>{draft.automation.enabled ? '已开启' : '已关闭'}</b></label></div>
       <div className="nf-form-row"><div><label htmlFor="nf-selection-interval">选优周期</label><p>只在自动模式下执行同一套有界选择。</p></div><select id="nf-selection-interval" value={draft.automation.selectionIntervalSeconds} disabled={!draft.automation.enabled} onChange={(event) => onChange({ ...draft, automation: { ...draft.automation, selectionIntervalSeconds: Number(event.target.value) } })}><option value={900}>15 分钟</option><option value={1800}>30 分钟</option><option value={3600}>1 小时</option><option value={7200}>2 小时</option></select></div>
       <div className="nf-form-row"><div><label>定期更新订阅</label></div><label className="nf-switch"><input type="checkbox" checked={draft.automation.subscriptionRefreshEnabled} onChange={(event) => onChange({ ...draft, automation: { ...draft.automation, subscriptionRefreshEnabled: event.target.checked } })} /><span aria-hidden="true" /><b>{draft.automation.subscriptionRefreshEnabled ? '已开启' : '已关闭'}</b></label></div>
       <div className="nf-form-row"><div><label htmlFor="nf-refresh-interval">订阅更新周期</label><p>只有内容摘要变化时才重新生成和选优。</p></div><select id="nf-refresh-interval" value={draft.automation.subscriptionRefreshIntervalSeconds} disabled={!draft.automation.subscriptionRefreshEnabled} onChange={(event) => onChange({ ...draft, automation: { ...draft.automation, subscriptionRefreshIntervalSeconds: Number(event.target.value) } })}><option value={21600}>6 小时</option><option value={43200}>12 小时</option><option value={86400}>24 小时</option></select></div>
+      {draft.backend === 'native-mihomo' && draft.policySource.kind === 'bundle' && <>
+        <div className="nf-form-row"><div><label>定期更新分流数据</label><p>同时更新内置域名/IP 规则和防火墙国内地址表；失败保留旧数据。</p></div><label className="nf-switch"><input type="checkbox" checked={draft.automation.ruleRefreshEnabled ?? false} onChange={(event) => onChange({ ...draft, automation: { ...draft.automation, ruleRefreshEnabled: event.target.checked } })} /><span aria-hidden="true" /><b>{draft.automation.ruleRefreshEnabled ? '已开启' : '已关闭'}</b></label></div>
+        <div className="nf-form-row"><div><label htmlFor="nf-rule-refresh-interval">分流数据更新周期</label></div><select id="nf-rule-refresh-interval" value={draft.automation.ruleRefreshIntervalSeconds ?? 604800} disabled={!draft.automation.ruleRefreshEnabled} onChange={(event) => onChange({ ...draft, automation: { ...draft.automation, ruleRefreshIntervalSeconds: Number(event.target.value) } })}><option value={86400}>每天</option><option value={604800}>每周</option><option value={2592000}>每 30 天</option></select></div>
+      </>}
     </div>
   </section>;
 }

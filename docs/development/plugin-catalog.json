@@ -54,7 +54,7 @@
         "configuration.onboarding",
         "configuration.onboarding-model"
       ],
-      "version": "0.7.5"
+      "version": "0.7.6"
     },
     {
       "api_version": 1,
@@ -157,7 +157,7 @@
         "mihomo.profile-storage",
         "mihomo.readback"
       ],
-      "version": "0.9.7"
+      "version": "0.9.8"
     },
     {
       "api_version": 1,
@@ -179,7 +179,7 @@
         "models.subscription",
         "models.subscriptions"
       ],
-      "version": "0.7.12"
+      "version": "0.7.13"
     },
     {
       "api_version": 1,
@@ -269,7 +269,7 @@
         "opl-netfleet-plugin-subscriptions"
       ],
       "services": [],
-      "version": "0.10.13"
+      "version": "0.10.14"
     },
     {
       "api_version": 1,
@@ -306,7 +306,7 @@
       "services": [
         "scheduler.control"
       ],
-      "version": "0.7.5"
+      "version": "0.7.6"
     },
     {
       "api_version": 1,
@@ -360,7 +360,7 @@
         "status.control",
         "status.events"
       ],
-      "version": "0.8.9"
+      "version": "0.8.10"
     },
     {
       "api_version": 1,

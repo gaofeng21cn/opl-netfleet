@@ -8,6 +8,7 @@ const ok = context.use("events.output").ok;
 const fail = context.use("events.output").fail;
 const MANIFEST_PATH = context.use("mihomo.backend").MANIFEST_PATH;
 const running = context.use("mihomo.backend").running;
+const rule_data_status = context.use("mihomo.backend").rule_data_status;
 const cleanup_state = context.use("mihomo.backend").cleanup_state;
 const lan_runtime_state = context.use("mihomo.backend").lan_runtime_state;
 const proxies = context.use("mihomo.controller").proxies;
@@ -101,6 +102,7 @@ status_action = function(policy, evidence) {
 		quotas: provider_quotas(policy),
 		provider_names: provider_display_names(policy),
 		automation: automation_config(policy),
+		rule_refresh: type(rule_data_status) == "function" ? rule_data_status(policy) : null,
 		subscription_refresh: subscription_refresh_projection(policy),
 		supervisor: supervisor
 	}));

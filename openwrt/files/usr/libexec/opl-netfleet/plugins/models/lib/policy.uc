@@ -220,6 +220,8 @@ automation = function(policy) {
 		selection_interval_seconds: configured.selection_interval_seconds ?? 1800,
 		subscription_refresh_enabled: configured.subscription_refresh_enabled ?? true,
 		subscription_refresh_interval_seconds: configured.subscription_refresh_interval_seconds ?? 43200,
+		rule_refresh_enabled: configured.rule_refresh_enabled ?? false,
+		rule_refresh_interval_seconds: configured.rule_refresh_interval_seconds ?? 604800,
 		poll_interval_seconds: configured.poll_interval_seconds ?? 15,
 		startup_grace_seconds: configured.startup_grace_seconds ?? 120,
 		runtime_grace_seconds: configured.runtime_grace_seconds ?? 45
@@ -603,6 +605,10 @@ validate = function(policy) {
 				(type(configured.subscription_refresh_interval_seconds) != "int" ||
 				configured.subscription_refresh_interval_seconds < 3600 ||
 				configured.subscription_refresh_interval_seconds > 604800)) ||
+			(configured.rule_refresh_enabled != null && type(configured.rule_refresh_enabled) != "bool") ||
+			(configured.rule_refresh_interval_seconds != null &&
+				(type(configured.rule_refresh_interval_seconds) != "int" ||
+				configured.rule_refresh_interval_seconds < 86400 || configured.rule_refresh_interval_seconds > 2592000)) ||
 			type(configured.poll_interval_seconds) != "int" ||
 			configured.poll_interval_seconds < 5 || configured.poll_interval_seconds > 60 ||
 			(configured.startup_grace_seconds != null &&

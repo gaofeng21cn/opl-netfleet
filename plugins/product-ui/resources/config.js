@@ -369,8 +369,10 @@ function capabilityAddControls(controller, groups, groupOwner) {
 
 function automation(controller) {
 	const value = controller.configDraft.automation;
+	const rules = controller.status.rule_refresh;
+	const ruleNote = !rules ? null : rules.last_ok === false ? "最近更新失败，保留旧数据：" + (rules.last_error || "未确认") : rules.last_success_at ? "最近成功：" + new Date(rules.last_success_at * 1000).toLocaleString() + (rules.next_run_at ? "；下次：" + new Date(rules.next_run_at * 1000).toLocaleString() : "") : "尚未完成首次更新。";
 	return E('section', {}, [
-		sectionHeading('自动运行', '设置重新比较出口和更新已有订阅的周期。'),
+		sectionHeading('自动运行', '设置出口选优、机场订阅和分流规则数据的更新周期。'),
 		E('div', { 'class': 'netfleet-config-rows' }, [
 			fieldRow('周期选优', '关闭后仍可手动执行单次选优。', checkbox(value.enabled, value.enabled ? '已开启' : '已关闭', function(event) {
 				update(controller, function(next) { next.automation.enabled = event.target.checked; });
@@ -386,7 +388,15 @@ function automation(controller) {
 			fieldRow('订阅更新周期', '只有内容摘要变化时才重新生成和选优。', select(value.subscription_refresh_interval_seconds,
 				[ [ 21600, '6 小时' ], [ 43200, '12 小时' ], [ 86400, '24 小时' ] ], function(event) {
 					update(controller, function(next) { next.automation.subscription_refresh_interval_seconds = Number(event.target.value); });
-				}, !value.subscription_refresh_enabled))
+				}, !value.subscription_refresh_enabled)),
+            fieldRow('定期更新分流数据', '同时更新内置域名/IP 规则和防火墙国内地址表；失败保留旧数据。', checkbox(value.rule_refresh_enabled,
+                value.rule_refresh_enabled ? '已开启' : '已关闭', function(event) {
+                    update(controller, function(next) { next.automation.rule_refresh_enabled = event.target.checked; });
+                })),
+            fieldRow('分流数据更新周期', ruleNote, select(value.rule_refresh_interval_seconds || 604800,
+                [ [ 86400, '每天' ], [ 604800, '每周' ], [ 2592000, '每 30 天' ] ], function(event) {
+                    update(controller, function(next) { next.automation.rule_refresh_interval_seconds = Number(event.target.value); });
+                }, !value.rule_refresh_enabled))
 		])
 	]);
 }
@@ -615,7 +625,7 @@ function changeText(change, controller) {
 		region_ids: '可用地区', policy_source: '策略基础', recovery_profile: '退出与故障恢复', item: '配置项',
 		entry_group: '默认出口组', policy_groups: '业务分类', prefer_region_from: '地区协同', routing_rules: '域名规则',
 		selection_interval_seconds: '选优周期', subscription_refresh_enabled: '定期更新订阅',
-		subscription_refresh_interval_seconds: '订阅更新周期', region_switch_margin_ms: '地区切换门槛',
+		subscription_refresh_interval_seconds: '订阅更新周期', rule_refresh_enabled: '定期更新分流数据', rule_refresh_interval_seconds: '分流数据更新周期', region_switch_margin_ms: '地区切换门槛',
 		leaf_switch_margin_ms: '节点切换门槛', runtime_grace_seconds: '运行失联保护', latency_url: '测速地址',
 		path_probe_url: '代理路径检查地址', guard_probe_url: '最终保护地址'
 	};
