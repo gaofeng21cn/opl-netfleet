@@ -341,6 +341,11 @@ sh /tmp/update-openwrt-plugins-remote.sh "$local_stage" 10 >"$work/shared-run.js
 assert_json "$local_stage/acceptance.json" '@.ok' true
 assert_json "$local_stage/acceptance.json" '@.owner_pids_stable' true
 unchanged
+# The independent dashboard exercise is complete. Remove its explicit world
+# root before the product upgrade lane so that the following world comparison
+# covers only the product-owned installation set.
+apk --no-network --repositories-file /dev/null del opl-netfleet-plugin-dashboard \
+	>"$work/independent-root-remove.log" 2>&1
 rpc_ready
 cp /etc/apk/world "$work/update-world"
 stage=required_plugin_feed_update
