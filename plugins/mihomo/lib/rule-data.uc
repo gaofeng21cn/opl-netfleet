@@ -195,8 +195,8 @@ function refresh(policy, initiator) {
  if (!owned(work)) return record(false, "rule_data_stage_failed", null);
  let generation = null;
  try {
-  if (!download("https://api.github.com/repos/MetaCubeX/meta-rules-dat/commits/meta", work + "/upstream.json")) die("rule_data_revision_download_failed");
-  const commit = read(work + "/upstream.json")?.sha;
+  if (!download("https://github.com/MetaCubeX/meta-rules-dat/commits/meta.atom", work + "/upstream.atom")) die("rule_data_revision_download_failed");
+  const commit = match(fs.readfile(work + "/upstream.atom") ?? "", /<id>tag:github.com,2008:Grit::Commit\/([0-9a-f]{40})<\/id>/)?.[1];
   if (!match(commit ?? "", /^[0-9a-f]{40}$/)) die("rule_data_revision_invalid");
   generation = { directory: work, commit, rules: {}, sets: null };
   const original = UPSTREAM + lock.upstream.commit + "/";

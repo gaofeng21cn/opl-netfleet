@@ -74,7 +74,7 @@ OpenWrt 原生后端的内置 bundle 可启用独立于机场订阅的规则数�
 复用宿主全局 mutation lock；失败至少等待一小时，锁忙不计为执行，不创建另一后台循环。
 默认不改变已有设备的启用意图。配置、状态分别投影开关/周期与最近尝试、成功、错误及下次时间。
 
-网关 owner 从内置 lock 的固定上游仓库取得一个明确 commit，再取得该 commit 的 MRS
+网关 owner 从内置 lock 的固定上游仓库公开提交 feed 取得一个明确 commit，不依赖匿名 API 配额，再取得该 commit 的 MRS
 与 CN CIDR 数据。候选保存到私有 generation，验证完整 Profile 与 IPv4/IPv6 nft 集合后，
 在同一事务中重载核心规则和替换自身国内集合。仅覆盖内置规则引用，不改机场节点、业务
 规则顺序、selector 或其他 nft 资源。接受的 generation 投影到后续核心启动；包内快照

@@ -57,7 +57,7 @@ for arg do
  case "$arg" in http*) url=$arg;; esac
 done
 case "$url" in
- https://api.github.com/repos/MetaCubeX/meta-rules-dat/commits/meta) printf '{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}' >"$output";;
+ https://github.com/MetaCubeX/meta-rules-dat/commits/meta.atom) printf '<feed><entry><id>tag:github.com,2008:Grit::Commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</id></entry></feed>' >"$output";;
  https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/*/geo/geosite/cn.mrs) cp "$RULE_DATA_FIXTURE/fixture.mrs" "$output";;
  https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/*/geo/geoip/cn.list) cp "$RULE_DATA_FIXTURE/cn.list" "$output";;
  'http://localhost/configs?force=true')
