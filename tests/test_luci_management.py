@@ -189,6 +189,29 @@ assert.equal(owner.networkDraft.advanced['sniffer.sniff'], null);
 assert.equal(owner.networkDraft.advanced['tcp-concurrent'], true);
 """)
 
+    def test_geodata_update_settings_are_visible_outside_collapsed_advanced_section(self):
+        self.run_js(r"""
+const state = networkState();
+state.resources.advanced_fields = [
+    { id: 'geo-auto-update', label: '自动更新 GeoData', kind: 'bool', group: '规则数据' },
+    { id: 'geo-update-interval', label: 'GeoData 更新间隔（小时）', kind: 'int', min: 1, max: 720, group: '规则数据' },
+    { id: 'log-level', label: '核心日志级别', kind: 'enum', options: ['silent', 'info'], group: '连接' },
+];
+state.settings.advanced = { 'geo-auto-update': true, 'geo-update-interval': 168, 'log-level': 'info' };
+const owner = controller();
+owner.networkState = state;
+owner.networkDraft = clone(state.settings);
+const root = module('management.js', {}).network(owner);
+const geodata = find(root, node => node.tag === 'section' && node.attrs.class === 'netfleet-geodata-settings');
+assert(geodata, 'GeoData controls have their own visible settings section: ' + text(root));
+assert(find(geodata, node => node.tag === 'strong' && text(node) === '自动更新 GeoData'));
+assert(find(geodata, node => node.tag === 'strong' && text(node) === 'GeoData 更新间隔（小时）'));
+assert.equal(all(geodata, node => node.tag === 'select').length, 1);
+assert.equal(all(geodata, node => node.tag === 'input' && node.attrs.type === 'number').length, 1);
+const advanced = find(root, node => node.tag === 'details' && text(node).includes('Mihomo 高级设置'));
+assert(advanced && !text(advanced).includes('自动更新 GeoData'));
+""")
+
     def test_network_default_rule_is_explicit_and_new_device_precedes_it(self):
         self.run_js(r"""
 const state = networkState();

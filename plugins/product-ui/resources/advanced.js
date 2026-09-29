@@ -36,11 +36,10 @@ function render(controller) {
       E('small', {}, '配置值：' + format(explanation.configured) + '；运行值：' + (explanation.active ? format(explanation.running) : '未运行')) ]),
       E('div', { class: 'netfleet-config-control' }, [control, E('button', { type: 'button', class: 'btn cbi-button', click: () => { change(null); controller.redraw(); } }, '恢复继承')]) ]);
   }
-  const groups = [...new Set(fields.map(field => field.group))];
-  return E('details', { class: 'netfleet-management-section' }, [ E('summary', {}, 'Mihomo 高级设置'),
-    E('p', {}, '修改后先校验，再应用。空值表示继承 Profile 或核心默认值；来源和运行值来自最近一次设备读取。'),
-    ...groups.map(group => E('section', {}, [ E('h4', {}, group), ...fields.filter(field => field.group === group).map(editor) ])),
-    E('button', { type: 'button', class: 'btn cbi-button', click: () => {
+  const geodata = fields.filter(field => field.group === '规则数据');
+  const advancedFields = fields.filter(field => field.group !== '规则数据');
+  const advancedGroups = [...new Set(advancedFields.map(field => field.group))];
+  function expertEditor() {
       const text = E('textarea', { class: 'cbi-input-textarea', rows: 18, 'aria-label': '高级参数 JSON' }, JSON.stringify(draft, null, 2));
       const problem = E('p', { role: 'alert' });
       ui.showModal('专家编辑', [ E('p', {}, '与高级表单编辑同一份草稿。使用已列出的参数名；省略的参数保持不变，null 恢复继承。尚未保存或应用。'), text, problem,
@@ -50,7 +49,18 @@ function render(controller) {
               controller.networkDraft.advanced = { ...draft, ...next }; controller.networkDraftErrors = {}; ui.hideModal(); controller.redraw(); }
             catch (error) { problem.textContent = 'JSON 无效：' + error.message; }
           } }, '更新草稿') ]) ]);
-    } }, '专家 JSON 编辑') ]);
+  }
+  return E('div', {}, [
+    geodata.length ? E('section', { class: 'netfleet-geodata-settings' }, [
+      E('h4', {}, 'GeoData 更新'),
+      E('p', {}, '控制 Mihomo GeoIP / GeoSite 数据的自动更新；与分流规则和国内 IP 地址表周更相互独立。'),
+      ...geodata.map(editor)
+    ]) : null,
+    advancedGroups.length ? E('details', { class: 'netfleet-management-section' }, [ E('summary', {}, 'Mihomo 高级设置'),
+      E('p', {}, '修改后先校验，再应用。空值表示继承 Profile 或核心默认值；来源和运行值来自最近一次设备读取。'),
+      ...advancedGroups.map(group => E('section', {}, [ E('h4', {}, group), ...advancedFields.filter(field => field.group === group).map(editor) ])),
+      E('button', { type: 'button', class: 'btn cbi-button', click: expertEditor }, '专家 JSON 编辑') ]) : null
+  ]);
 }
 function preview(result) {
   const changes = result && result.changes || [];

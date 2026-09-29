@@ -347,11 +347,11 @@ unchanged
 apk --no-network --repositories-file /dev/null del opl-netfleet-plugin-dashboard \
 	>"$work/independent-root-remove.log" 2>&1
 rpc_ready
-cp /etc/apk/world "$work/update-world"
 stage=required_plugin_feed_update
 plugin=opl-netfleet-plugin-dashboard
 prior=$(package_version "$plugin" old)
 install_fixture "$work/$plugin-$prior.apk" >>"$work/independent.log" 2>&1
+cp /etc/apk/world "$work/update-world"
 core_pid_before=$(pidof mihomo)
 request_json=$(printf '{"name":"%s","action":"update","before_version":"%s","version":"%s","confirm":true}' "$plugin" "$prior" "$independent")
 ubus -t 20 call opl-netfleet components_plugin_plan "{\"request\":$request_json}" >"$work/required-plan.json"
