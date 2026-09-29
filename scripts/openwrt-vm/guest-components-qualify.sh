@@ -351,7 +351,6 @@ stage=required_plugin_feed_update
 plugin=opl-netfleet-plugin-dashboard
 prior=$(package_version "$plugin" old)
 install_fixture "$work/$plugin-$prior.apk" >>"$work/independent.log" 2>&1
-cp /etc/apk/world "$work/update-world"
 core_pid_before=$(pidof mihomo)
 request_json=$(printf '{"name":"%s","action":"update","before_version":"%s","version":"%s","confirm":true}' "$plugin" "$prior" "$independent")
 ubus -t 20 call opl-netfleet components_plugin_plan "{\"request\":$request_json}" >"$work/required-plan.json"
@@ -363,6 +362,10 @@ wait_operation "$(jsonfilter -i "$work/required-start.json" -e '@.result.operati
 assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
 [ "$(pidof mihomo)" = "$core_pid_before" ]
 unchanged
+# The feed update above intentionally removes the local archive checksum pin.
+# The following product transaction must preserve that accepted world state.
+grep -Fxq "$plugin" /etc/apk/world
+cp /etc/apk/world "$work/update-world"
 stage=component_update
 rpcd_before=$(pidof rpcd)
 request components_update "$current"
