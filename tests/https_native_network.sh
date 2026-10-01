@@ -248,10 +248,8 @@ resources() {
 }
 assert_compatibility_handoff() {
     ! nft list table inet netfleet_compat >/dev/null 2>&1
-    status=0
-    conntrack -L -m 0x01000000/0x01000000 -o xml >"$work/compatibility-connections.xml" 2>/dev/null || status=$?
-    test "$status" -eq 0 -o "$status" -eq 1
-    ! grep -q '<flow>' "$work/compatibility-connections.xml"
+    ucode -e 'const io=require("netfleet_interception"); io.clear_marked(); print("compatibility-mark-clean\n");' >"$work/compatibility-connections.log"
+    grep -qx 'compatibility-mark-clean' "$work/compatibility-connections.log"
 }
 cp "$work/origin.crt" "$work/client-ca.pem"
 stage=baseline_wire

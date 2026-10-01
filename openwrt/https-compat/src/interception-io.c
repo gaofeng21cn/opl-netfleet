@@ -17,6 +17,7 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter/nf_tables.h>
 #include <linux/netfilter/nfnetlink.h>
+#include <linux/netfilter/nfnetlink_conntrack.h>
 #include <linux/rtnetlink.h>
 #include <linux/fib_rules.h>
 #include <libmnl/libmnl.h>
@@ -31,6 +32,7 @@
 #define LIMIT 4096
 #define BUFFER 65536
 #define DEADLINE_MS 400
+#define COMPAT_MARK 0x01000000u
 struct connection { int fd; uint32_t port, seq; int64_t deadline; };
 static int64_t now_ms(void) {
     struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
@@ -111,7 +113,7 @@ static int query(struct connection *c, struct nlmsghdr *request, read_cb cb, voi
                 if (h->nlmsg_len < NLMSG_LENGTH(sizeof(struct nlmsgerr))) { errno = EPROTO; return -1; }
                 int error = ((struct nlmsgerr *)NLMSG_DATA(h))->error;
                 if (error) { errno = -error; return -1; }
-                if (!dump) {if(!objects){errno=EPROTO;return -1;}return 0;}
+                if (!dump) return 0;
             } else if (h->nlmsg_type == NLMSG_DONE) {
                 if (!dump || h->nlmsg_len < NLMSG_LENGTH(sizeof(int))) { errno = EPROTO; return -1; }
                 int error; memcpy(&error, NLMSG_DATA(h), sizeof(error));
@@ -123,6 +125,86 @@ static int query(struct connection *c, struct nlmsghdr *request, read_cb cb, voi
         }
         if (remaining) { errno = EPROTO; return -1; }
     }
+}
+
+struct ct_marked {
+    unsigned char *messages;
+    size_t count, capacity, stride;
+    bool marked;
+};
+
+static int ct_marked_cb(const struct nlattr *attr, void *arg) {
+    struct ct_marked *matches = arg;
+    const unsigned type = mnl_attr_get_type(attr) & NLA_TYPE_MASK;
+    if (type != CTA_MARK || mnl_attr_get_payload_len(attr) != sizeof(uint32_t)) return MNL_CB_OK;
+    if (mnl_attr_get_u32(attr) & COMPAT_MARK) matches->marked = true;
+    return MNL_CB_OK;
+}
+
+static int ct_collect_cb(const struct nlmsghdr *h, void *arg) {
+    struct ct_marked *matches = arg;
+    if (NFNL_MSG_TYPE(h->nlmsg_type) != IPCTNL_MSG_CT_NEW ||
+        h->nlmsg_len < NLMSG_LENGTH(sizeof(struct nfgenmsg))) return -1;
+    matches->marked = false;
+    const struct nfgenmsg *gen = NLMSG_DATA(h);
+    if (mnl_attr_parse(h, NLMSG_LENGTH(sizeof(*gen)), ct_marked_cb, matches) < 0) return -1;
+    if (!matches->marked) return MNL_CB_OK;
+    if (h->nlmsg_len > BUFFER) { errno = E2BIG; return -1; }
+    if (matches->count == matches->stride) {
+        size_t next = matches->stride ? matches->stride * 2 : 32;
+        unsigned char *data = realloc(matches->messages, next * BUFFER);
+        if (!data) return -1;
+        matches->messages = data; matches->stride = next;
+    }
+    memcpy(matches->messages + matches->count * BUFFER, h, h->nlmsg_len);
+    matches->count++;
+    return MNL_CB_OK;
+}
+
+static int ct_delete_message(struct connection *c, const struct nlmsghdr *source) {
+    _Alignas(struct nlmsghdr) char buffer[BUFFER];
+    if (source->nlmsg_len > sizeof(buffer)) { errno = E2BIG; return -1; }
+    struct nlmsghdr *request = mnl_nlmsg_put_header(buffer);
+    request->nlmsg_type = (NFNL_SUBSYS_CTNETLINK << 8) | IPCTNL_MSG_CT_DELETE;
+    request->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+    request->nlmsg_seq = c->seq++;
+    struct nfgenmsg *source_gen = NLMSG_DATA(source), *gen = mnl_nlmsg_put_extra_header(request, sizeof(*gen));
+    *gen = *source_gen;
+    int length = source->nlmsg_len - NLMSG_LENGTH(sizeof(*source_gen));
+    bool tuple = false;
+    struct nlattr *attr = (void *)((char *)source_gen + NLMSG_ALIGN(sizeof(*source_gen)));
+    for (; mnl_attr_ok(attr, length); attr = mnl_attr_next(attr)) {
+        unsigned raw_type = mnl_attr_get_type(attr), type = raw_type & NLA_TYPE_MASK;
+        if (type == CTA_TUPLE_ORIG || type == CTA_ZONE) {
+            mnl_attr_put(request, raw_type, mnl_attr_get_payload_len(attr), mnl_attr_get_payload(attr));
+            tuple |= type == CTA_TUPLE_ORIG;
+        }
+        length -= MNL_ALIGN(mnl_attr_get_len(attr));
+    }
+    if (length || !tuple) { errno = EPROTO; return -1; }
+    return query(c, request, NULL, NULL);
+}
+
+static uc_value_t *uc_clear_marked(uc_vm_t *vm, size_t nargs) {
+    (void)nargs;
+    struct connection c;
+    if (open_netlink(&c, NETLINK_NETFILTER)) return failure(vm, "gateway_command_failed");
+    _Alignas(struct nlmsghdr) char buffer[BUFFER];
+    struct nlmsghdr *request = mnl_nlmsg_put_header(buffer);
+    request->nlmsg_type = (NFNL_SUBSYS_CTNETLINK << 8) | IPCTNL_MSG_CT_GET;
+    request->nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+    request->nlmsg_seq = c.seq++;
+    struct nfgenmsg *gen = mnl_nlmsg_put_extra_header(request, sizeof(*gen));
+    gen->nfgen_family = NFPROTO_UNSPEC; gen->version = NFNETLINK_V0; gen->res_id = 0;
+    struct ct_marked matches = {0};
+    int rc = query(&c, request, ct_collect_cb, &matches);
+    for (size_t i = 0; !rc && i < matches.count; i++)
+        rc = ct_delete_message(&c, (struct nlmsghdr *)(matches.messages + i * BUFFER));
+    free(matches.messages); close(c.fd);
+    if (rc) return failure(vm, "compatibility_conntrack_cleanup_failed");
+    uc_value_t *out = ucv_object_new(vm);
+    ucv_object_add(out, "cleared", ucv_uint64_new(matches.count));
+    return out;
 }
 static bool nft_reply(const struct nlmsghdr *h, unsigned operation) {
     return h->nlmsg_type == ((NFNL_SUBSYS_NFTABLES << 8) | operation) &&
@@ -562,6 +644,6 @@ done:
     close(c.fd);return ucv_boolean_new(ready);
 }
 static const uc_function_list_t functions[]={
-    {"observe",uc_observe},{"table",uc_table},{"status",uc_status},{"routes",uc_routes},{"port_range",uc_port_range},{"renew",uc_renew},{"controller",uc_controller}
+    {"observe",uc_observe},{"table",uc_table},{"status",uc_status},{"routes",uc_routes},{"port_range",uc_port_range},{"renew",uc_renew},{"clear_marked",uc_clear_marked},{"controller",uc_controller}
 };
 void uc_module_init(uc_vm_t *vm,uc_value_t *scope) { uc_function_list_register(scope,functions);(void)vm; }

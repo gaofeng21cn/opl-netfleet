@@ -51,20 +51,6 @@ return function(context) {
         if (table()) return leases(transaction(`flush set inet ${TABLE} targets4\nflush set inet ${TABLE} targets6\n`));
         return {intercepting:false,leases:0};
     }
-    function clear_marked_connections() {
-        // The private bit makes base LAN TProxy skip compatibility flows. Once
-        // the listener is gone, retaining it strands tuples on an ownerless
-        // path. Delete only this bit and verify the filtered table is empty.
-        const deleted=capture('conntrack -D -m 0x01000000/0x01000000',1);
-        if (deleted.status && deleted.status!=1) die('compatibility_conntrack_cleanup_failed');
-        const remaining=capture('conntrack -L -m 0x01000000/0x01000000 -o xml',1);
-        // conntrack prints a human-readable summary even when no flow matched;
-        // only an XML flow is evidence that the private owner bit remains.
-        if ((remaining.status && remaining.status!=1) || remaining.output==null || length(remaining.output)>2097152 ||
-            index(remaining.output,'<flow>')>=0)
-            die('compatibility_conntrack_cleanup_failed');
-        return {cleared:true};
-    }
     function status() { const io=native();return io?io.status():leases(table()); }
     function prepare(network,uid,owner,excluded) {
         const interfaces=network.interfaces,dscp=network.dscp_bypass ?? [];
@@ -209,7 +195,9 @@ return function(context) {
             else {
                 // Admission is already stopped and the owned listener has
                 // drained before remove is called.
-                clear_marked_connections();
+                const io=native();
+                if (!io || !io.clear_marked) die('compatibility_conntrack_cleanup_failed');
+                io.clear_marked();
                 if (table()) run(['nft','delete','table','inet',TABLE]); fs.unlink(CLAIM);
             }
             return status();

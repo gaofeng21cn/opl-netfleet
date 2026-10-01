@@ -18,7 +18,7 @@ define Package/opl-netfleet-https-compat
   SECTION:=net
   CATEGORY:=Network
   TITLE:=NetFleet optional HTTPS compatibility engine
-  DEPENDS:=+opl-netfleet-plugin-https-compat +opl-netfleet-plugin-mihomo +conntrack +ucode +ucode-mod-fs +ucode-mod-digest +ucode-mod-socket +ucode-mod-uloop +libopenssl +libpthread +libatomic +openssl-util +ca-bundle +coreutils-timeout +libucode +libjson-c +libmnl +libnftnl
+  DEPENDS:=+opl-netfleet-plugin-https-compat +opl-netfleet-plugin-mihomo +ucode +ucode-mod-fs +ucode-mod-digest +ucode-mod-socket +ucode-mod-uloop +libopenssl +libpthread +libatomic +openssl-util +ca-bundle +coreutils-timeout +libucode +libjson-c +libmnl +libnftnl
   EXTRA_DEPENDS:=opl-netfleet-plugin-https-compat (>=0.9.4), opl-netfleet-plugin-mihomo (>=0.9.0)
 endef
 
