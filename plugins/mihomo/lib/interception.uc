@@ -195,10 +195,14 @@ return function(context) {
             else {
                 // Admission is already stopped and the owned listener has
                 // drained before remove is called.
-                const io=native();
-                if (!io || !io.clear_marked) die('compatibility_conntrack_cleanup_failed');
-                io.clear_marked();
-                if (table()) run(['nft','delete','table','inet',TABLE]); fs.unlink(CLAIM);
+                const current=table();
+                if (current) {
+                    const io=native();
+                    if (!io || !io.clear_marked) die('compatibility_conntrack_cleanup_failed');
+                    io.clear_marked();
+                    run(['nft','delete','table','inet',TABLE]);
+                }
+                fs.unlink(CLAIM);
             }
             return status();
         }
