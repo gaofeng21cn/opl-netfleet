@@ -97,6 +97,10 @@ static int query(struct connection *c, struct nlmsghdr *request, read_cb cb, voi
     _Alignas(struct nlmsghdr) char buffer[BUFFER]; unsigned total = 0, objects = 0;
     const uint32_t seq = request->nlmsg_seq;
     const bool dump = (request->nlmsg_flags & NLM_F_DUMP) == NLM_F_DUMP;
+    /* Each netlink request gets its own bounded I/O budget.  A dump followed
+     * by deletes must not spend the first request's deadline on all later
+     * operations. */
+    c->deadline = now_ms() + DEADLINE_MS;
     if (transmit(c, request, request->nlmsg_len)) return -1;
     for (;;) {
         ssize_t received = receive(c, buffer, sizeof(buffer));
@@ -148,7 +152,7 @@ static int ct_collect_cb(const struct nlmsghdr *h, void *arg) {
     matches->marked = false;
     const struct nfgenmsg *gen = NLMSG_DATA(h);
     if (mnl_attr_parse(h, NLMSG_LENGTH(sizeof(*gen)), ct_marked_cb, matches) < 0) return -1;
-    if (!matches->marked) return MNL_CB_OK;
+    if (!matches->marked) return 0;
     if (h->nlmsg_len > BUFFER) { errno = E2BIG; return -1; }
     if (matches->count == matches->stride) {
         size_t next = matches->stride ? matches->stride * 2 : 32;
@@ -158,7 +162,7 @@ static int ct_collect_cb(const struct nlmsghdr *h, void *arg) {
     }
     memcpy(matches->messages + matches->count * BUFFER, h, h->nlmsg_len);
     matches->count++;
-    return MNL_CB_OK;
+    return 0;
 }
 
 static int ct_delete_message(struct connection *c, const struct nlmsghdr *source) {
@@ -185,21 +189,31 @@ static int ct_delete_message(struct connection *c, const struct nlmsghdr *source
     return query(c, request, NULL, NULL);
 }
 
-static uc_value_t *uc_clear_marked(uc_vm_t *vm, size_t nargs) {
-    (void)nargs;
-    struct connection c;
-    if (open_netlink(&c, NETLINK_NETFILTER)) return failure(vm, "gateway_command_failed");
+static int ct_dump_marked(struct connection *c, struct ct_marked *matches) {
     _Alignas(struct nlmsghdr) char buffer[BUFFER];
     struct nlmsghdr *request = mnl_nlmsg_put_header(buffer);
     request->nlmsg_type = (NFNL_SUBSYS_CTNETLINK << 8) | IPCTNL_MSG_CT_GET;
     request->nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-    request->nlmsg_seq = c.seq++;
+    request->nlmsg_seq = c->seq++;
     struct nfgenmsg *gen = mnl_nlmsg_put_extra_header(request, sizeof(*gen));
     gen->nfgen_family = NFPROTO_UNSPEC; gen->version = NFNETLINK_V0; gen->res_id = 0;
+    return query(c, request, ct_collect_cb, matches);
+}
+
+static uc_value_t *uc_clear_marked(uc_vm_t *vm, size_t nargs) {
+    (void)nargs;
+    struct connection c;
+    if (open_netlink(&c, NETLINK_NETFILTER)) return failure(vm, "gateway_command_failed");
     struct ct_marked matches = {0};
-    int rc = query(&c, request, ct_collect_cb, &matches);
+    int rc = ct_dump_marked(&c, &matches);
     for (size_t i = 0; !rc && i < matches.count; i++)
         rc = ct_delete_message(&c, (struct nlmsghdr *)(matches.messages + i * BUFFER));
+    if (!rc) {
+        struct ct_marked remaining = {0};
+        rc = ct_dump_marked(&c, &remaining);
+        if (!rc && remaining.count) { errno = EBUSY; rc = -1; }
+        free(remaining.messages);
+    }
     free(matches.messages); close(c.fd);
     if (rc) return failure(vm, "compatibility_conntrack_cleanup_failed");
     uc_value_t *out = ucv_object_new(vm);
