@@ -246,6 +246,13 @@ processes() {
 resources() {
     ucode /tmp/tests/https_native_metrics.uc capture >"$work/$1.json"
 }
+assert_compatibility_handoff() {
+    ! nft list table inet netfleet_compat >/dev/null 2>&1
+    status=0
+    conntrack -L -m 0x01000000/0x01000000 -o xml >"$work/compatibility-connections.xml" 2>/dev/null || status=$?
+    test "$status" -eq 0 -o "$status" -eq 1
+    ! grep -q '<flow>' "$work/compatibility-connections.xml"
+}
 cp "$work/origin.crt" "$work/client-ca.pem"
 stage=baseline_wire
 probe 4 http/1.1
@@ -348,6 +355,7 @@ if [ -n "$probe_port" ]; then
     interrupted=0
     wait "$stream_pid" || interrupted=$?
     test "$interrupted" != 0
+    assert_compatibility_handoff
     probe 4 http/1.1
     probe 6 http/1.1
     ucode /tmp/tests/https_native_guest.uc plugin-load >"$work/plugin-load.log"
@@ -484,6 +492,7 @@ stage=resource_pressure
 . /tmp/tests/https_native_resource_pressure.sh
 stage=disabled_wire
 ucode /tmp/tests/https_native_guest.uc disable >"$work/disable.log"
+assert_compatibility_handoff
 probe 4 http/1.1
 probe 6 http/1.1
 test "$(pidof mihomo)" = "$base_pid"

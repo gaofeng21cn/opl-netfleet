@@ -205,8 +205,12 @@ return function(context, options) {
                 count_failure:previous.intercepting===true});
         }
         if(!config.enabled) {
-            bypass();const live=health();save({...previous,intercepting:false,reason:'disabled'},previous);
-            if(live.active_connections===0) service('delete');return;
+            // Disabled is an explicit data-plane handoff. Do not wait for the
+            // optional engine's health socket: revoke leases and remove only
+            // this owner's table/conntrack mark, then stop its service.
+            bypass();call('remove');save({...previous,intercepting:false,reason:'disabled'},previous);
+            service('delete');
+            return;
         }
         if(previous.maintenance||previous.recovery?.latched) {
             bypass();save({...previous,intercepting:false,reason:previous.maintenance?'maintenance':'manual_recovery_required'},previous);return;
@@ -323,7 +327,12 @@ return function(context, options) {
                 }
             }
         }
-        bypass();if(action!='disable'&&(config.enabled||length(config.devices))) engine.prepare_ca();
+        // Disabling the feature must be independent of gateway readiness. The
+        // lease/table cleanup is the handoff proof; the config write follows it
+        // so a failed cleanup never reports a disabled, half-owned dataplane.
+        bypass();
+        if(action=='disable') call('remove');
+        if(action!='disable'&&(config.enabled||length(config.devices))) engine.prepare_ca();
         for(let id in keys(trust)) if(!length(filter(config.devices,device=>device.id==id))) delete trust[id];
         io.atomic(CONFIG,config);io.atomic(TRUST,trust);io.atomic(EFFECTIVE,effective(config,trust,source));
         const previous=read_state(),kept=original.enabled&&config.enabled&&action=='apply'?previous:{};
@@ -365,11 +374,12 @@ return function(context, options) {
         return {drained:true};
     }
     function stop_interactive(instances) {
-        // An explicit administrator stop may terminate this plugin's clients.
-        // Package replacement must continue to use the non-destructive drain.
-        try { drain(1); } catch(error) {
-            if(error.message!='healthy_connections_still_draining') die(error.message);
-        }
+        // Explicit unload is an immediate ownership handoff. Existing
+        // compatibility streams may be interrupted, but no new flow may enter
+        // the private listener once bypass/remove has completed. Package
+        // replacement uses the separate graceful drain() path below.
+        bypass();
+        call('remove');
         const processes=[];
         for(let instance in values(instances)) if(instance.running&&type(instance.pid)=='int'&&instance.pid>1) {
             const stat=fs.readfile(`/proc/${instance.pid}/stat`);
@@ -420,8 +430,12 @@ return function(context, options) {
                     keep_maintenance:!!previous.maintenance||request.lifecycle!==true};
             save({...previous,recovery:{...(previous.recovery ?? {}),intercepting:false,healthy_since:null},suspended:saved,maintenance:true,intercepting:false,reason:'maintenance'},previous);
             if(request.interactive===true) stop_interactive(instances);
-            else {drain();if(length(instances)) service('delete');}
-            call('remove');return saved;
+            else {
+                drain();
+                call('remove');
+                if(length(instances)) service('delete');
+            }
+            return saved;
         }
         if(action=='resume') {
             // A failed drain has not returned its handoff to the host yet.

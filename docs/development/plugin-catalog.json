@@ -97,6 +97,7 @@
       "optional": true,
       "package": "opl-netfleet-plugin-https-compat",
       "package_dependencies": [
+        "conntrack",
         "coreutils-timeout",
         "ucode-mod-digest",
         "ucode-mod-socket",
@@ -157,7 +158,7 @@
         "mihomo.profile-storage",
         "mihomo.readback"
       ],
-      "version": "0.9.7"
+      "version": "0.9.8"
     },
     {
       "api_version": 1,
