@@ -30,6 +30,10 @@ for name in private-key.pem public-key.pem .config; do
   test ! -f "$sdk/$name" || cp -p "$sdk/$name" "$work/$name"
 done
 git -C "$repo" archive "$commit" openwrt plugins/device-identity scripts/netfleet-plugin.py scripts/verify-native-runtime.py | tar -xf - -C "$work"
+# Git archive preserves executable bits, but some tar implementations apply the
+# caller's group-write umask while extracting. Normalize the staged plugin
+# before the payload validator enforces its runtime permission contract.
+chmod -R go-w "$work/plugins/device-identity"
 cp -R "$work/openwrt/https-compat" "$sdk/package/$package"
 cp "$work/openwrt/native/atomic-replace.c" "$sdk/package/$package/src/"
 if [ -z "$identity_from" ]; then
