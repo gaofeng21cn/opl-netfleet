@@ -93,5 +93,43 @@ sha256sum -c "$work/cycle-private.sha256" >>"$work/cycle.log"
 probe 4 h2; probe 6 h2
 cycle_install "$cycle_new"
 rm /etc/apk/repositories.d/netfleet-cycle.list
-printf '%s\n' 'engine generic Feed update: APK plan, resource drain, stable base and private state passed'
+guard=$(mktemp -d /tmp/netfleet-https-guard-test.XXXXXX)
+mkdir "$guard/old" "$guard/new"
+cp "$cycle_old" "$guard/old/"
+cp "$cycle_new" "$guard/new/"
+cp /tmp/scripts/https-compat/canary-rollback.sh "$guard/guard.sh"
+sha256sum /etc/config/netfleet /etc/opl-netfleet/native/run/config.yaml \
+ /etc/opl-netfleet/compatibility/config.json /etc/opl-netfleet/compatibility/trust.json \
+ /etc/opl-netfleet/compatibility/ca/mitmproxy-ca.pem >"$guard/private.sha256"
+sha256sum /usr/libexec/opl-netfleet-compat/control.uc /usr/libexec/opl-netfleet-compat/haproxy \
+ /usr/lib/ucode/netfleet_interception.so >"$guard/new-runtime.sha256"
+ucode - "$guard" "$cycle_old" "$cycle_new" "$base_pid" <<'UC'
+import * as fs from 'fs';import {sha256} from 'digest';
+function artifact(path) {
+ const p=fs.popen('apk adbdump --format json '+path),info=json(p.read('all')).info;
+ if(p.close()!=0)die('guard_package_metadata_failed');
+ return {version:info.version,artifact:fs.basename(path),sha256:sha256(fs.readfile(path))};
+}
+const dir=ARGV[0],name='netfleet-https-guard-test';
+fs.writefile(dir+'/rollback.json',sprintf('%J',{package:'opl-netfleet-https-compat',timeout_seconds:30,
+ core_pid:ARGV[3],intercepting:true,old:artifact(ARGV[1]),new:artifact(ARGV[2])}));
+const request=sprintf('%J',{name,instances:{guard:{command:['/bin/sh',dir+'/guard.sh',dir,'guard'],
+ stdout:false,stderr:false,term_timeout:5}}});
+if(system("ubus call service set '"+replace(request,"'","'\\''")+"'")!=0)die('guard_start_failed');
+UC
+for attempt in $(seq 1 80); do
+ [ -f "$guard/guard-state.json" ] && [ "$(jsonfilter -i "$guard/guard-state.json" -e '@.state')" = restored ] && break
+ sleep 2
+done
+if [ "$(jsonfilter -i "$guard/guard-state.json" -e '@.state')" != restored ]; then
+ cat "$guard/guard-state.json" "$guard/guard.log"; exit 1
+fi
+test "$(apk --no-network query --from installed --format json --fields version opl-netfleet-https-compat | jsonfilter -e '@[0].version')" = "$old_version"
+sha256sum -c "$guard/private.sha256"
+test "$(pidof mihomo)" = "$base_pid"
+probe 4 h2; probe 6 h2
+ubus call service delete '{"name":"netfleet-https-guard-test"}' >/dev/null 2>&1 || true
+cp "$guard/guard-state.json" "$work/canary-rollback.json"
+cycle_install "$cycle_new"
+printf '%s\n' 'engine generic Feed update and autonomous exact archive rollback: stable base and private state passed'
 set +x

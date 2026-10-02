@@ -99,6 +99,8 @@ def composition_evidence(request, proof):
         raise ValueError('missing exact composition install, runtime or failure evidence')
     if request.get('previous_engine') and checks.get('engine_package_cycle') is not True:
         raise ValueError('missing generic engine update cycle')
+    if request.get('previous_engine') and checks.get('autonomous_canary_rollback') is not True:
+        raise ValueError('missing autonomous post-install rollback evidence')
     if base.get('retained') and checks.get('retained_base_packages') is not True:
         raise ValueError('missing retained base package evidence')
     return checks
