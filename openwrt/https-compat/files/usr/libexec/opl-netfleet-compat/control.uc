@@ -361,14 +361,23 @@ return function(context, options) {
         }
         io.atomic(TRUST,trust);io.atomic(EFFECTIVE,effective(config,trust,identity.resolve(config)));return status();
     }
-    function drain(wait_seconds) {
+	function package_seamless(config, previous) {
+		const live=health();
+		if(!live.ready||type(live.pid)!='int'||live.pid<=1) die('seamless_engine_unavailable');
+		// Keep the engine, listener, leases, and established TCP sessions alive.
+		// The package transaction blocks new control calls through its maintenance
+		// marker; APK replacement is atomic and the manager is restarted on resume.
+		return {seamless:true,running:true,requested:config.enabled===true,
+			revision:revision(),pid:live.pid,intercepting:previous.intercepting===true};
+	}
+	function drain(wait_seconds) {
         bypass();const deadline=io.now()+(wait_seconds ?? 30),live=health(),pid=live.pid;
         if(!pid&&live.active_connections===0) return {drained:true};
         if(type(pid)!='int'||pid<=1) die('draining_engine_unconfirmed');
         function birth() {
             const stat=fs.readfile(`/proc/${pid}/stat`);
             return stat?split(trim(substr(stat,rindex(stat,') ')+2)),/\s+/)[19]:null;
-        }
+	}
         const started=birth();if(started==null) return {drained:true};
         // SIGUSR1 closes idle HTTP connections, while active responses finish.
         // Stats listeners may close first; only the original process exiting is proof.
@@ -428,8 +437,18 @@ return function(context, options) {
         if(index(['apply','enable','disable'],action)>=0) return apply(action,request);
         if(action=='bypass') {bypass();return {intercepting:false};}
         const previous=read_state();
-        if(action=='suspend') {
-            const instances=service('list')?.['opl-netfleet-compat']?.instances ?? {};
+		if(action=='suspend') {
+			// Package replacement uses a non-interactive lifecycle handoff. Keep
+			// the data-plane process and established TCP sessions; explicit unload
+			// and reload retain their existing bounded hard-stop behavior.
+			let package_ready=request.seamless == true;
+			if(!package_ready && request.lifecycle == true && !request.interactive)
+				try { package_ready=health().ready === true; } catch (_) {}
+			if(package_ready) {
+				const config=policy.validate(io.read(CONFIG,DEFAULT));
+				return package_seamless(config, previous);
+			}
+			const instances=service('list')?.['opl-netfleet-compat']?.instances ?? {};
             const prior=previous.suspended;
             const saved=prior?{...prior,keep_maintenance:(prior.keep_maintenance ?? true)||request.lifecycle!==true}:
                 {revision:revision(),requested:io.read(CONFIG,DEFAULT).enabled,running:length(filter(values(instances),item=>item.running))>0,
@@ -443,7 +462,17 @@ return function(context, options) {
             }
             return saved;
         }
-        if(action=='resume') {
+		if(action=='resume') {
+			if(request.seamless == true) {
+				const live=health();
+				if(!live.ready||type(live.pid)!='int'||live.pid<=1) die('seamless_engine_unavailable');
+				// The manager has no user data-plane sockets. Restarting only this
+				// instance loads the newly installed native module without touching
+				// the long-lived HAProxy process or its connections.
+				service('signal',{instance:'manager',signal:15});
+				return {seamless:true,manager_restarted:true,pid:live.pid,
+					intercepting:previous.intercepting===true};
+			}
             // A failed drain has not returned its handoff to the host yet.
             // Recover the intent saved before entering maintenance in that case.
             if(request.revision==null&&previous.suspended) request=previous.suspended;
