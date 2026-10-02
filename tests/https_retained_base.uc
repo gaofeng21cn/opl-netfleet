@@ -37,7 +37,8 @@ for(let row in manifest.artifacts) {
     if(info.type!='file')die('retained_payload_owner_escape');
     if(file=='/lib/apk/packages/'+row.package+'.list')continue;
     const shared=(row.package=='opl-netfleet-plugin-scheduler' && file=='/etc/init.d/opl-netfleet' ||
-       row.package=='opl-netfleet-plugin-mihomo' && file=='/etc/init.d/opl-netfleet-core') &&
+       row.package=='opl-netfleet-plugin-mihomo' &&
+       (file=='/etc/init.d/opl-netfleet-core' || index(file,'/usr/share/opl-netfleet/nikki/')==0)) &&
        row.files[file]==base.runtime_sha256[file];
     if(!(index(file,prefix+'/')==0 || shared))die('retained_payload_owner_escape');
     if(row.files[file]!=sha256(fs.readfile(dir+file)))die('retained_payload_changed');
