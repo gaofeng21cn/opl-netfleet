@@ -90,6 +90,11 @@ if [ -z "$identity_from" ]; then
 fi
 package_version=$(sed -n 's/^PKG_VERSION:=//p' "$sdk/package/$package/Makefile")
 test -n "$package_version"
+package_architecture=$(sed -n 's/^CONFIG_TARGET_ARCH_PACKAGES="\([^"]*\)"$/\1/p' "$sdk/.config" | head -1)
+if [ -z "$package_architecture" ]; then
+  package_architecture=$(make -s -C "$sdk" val.ARCH_PACKAGES 2>/dev/null | tail -1)
+fi
+[[ -n "$package_architecture" && "$package_architecture" != *' undefined' ]]
 mapfile -t packages < <(find "$sdk/bin/packages" -type f -name "$package-$package_version.apk")
 test "${#packages[@]}" = 1
 cp "${packages[0]}" "$output/"
@@ -116,13 +121,13 @@ if [ -z "$identity_from" ]; then
 fi
 "$sdk/staging_dir/host/bin/apk" verify --keys-dir "$work/trusted" "$identity_artifact"
 python3 "$work/scripts/verify-native-runtime.py" --apk "$sdk/staging_dir/host/bin/apk" "$artifact" "$identity_artifact" >"$output/native-runtime.json"
-python3 - "$output" "$commit" "$tree" "${packages[0]##*/}" "${identity_packages[0]##*/}" "$identity_from" <<'PY'
+python3 - "$output" "$commit" "$tree" "${packages[0]##*/}" "${identity_packages[0]##*/}" "$identity_from" "$package_architecture" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
-output, commit, tree, name, identity, identity_from = sys.argv[1:]
+output, commit, tree, name, identity, identity_from, package_architecture = sys.argv[1:]
 path = Path(output)
 (path / 'compat-manifest.json').write_text(json.dumps({'source_commit': commit, 'source_tree': tree,
-    'architecture': 'aarch64_generic', 'engine': 'haproxy', 'engine_version': '3.2.21',
+    'architecture': package_architecture, 'engine': 'haproxy', 'engine_version': '3.2.21',
     'artifact': name, 'sha256': hashlib.sha256((path / name).read_bytes()).hexdigest(),
     'native_runtime': {'name': 'native-runtime.json', 'sha256': hashlib.sha256((path / 'native-runtime.json').read_bytes()).hexdigest()}}, sort_keys=True) + '\n')
 if identity_from:

@@ -195,7 +195,7 @@ if [[ -n "$test_ref" ]]; then
         ':(exclude)scripts/openwrt-apk.py' ':(exclude)scripts/netfleet-package-build.sh' \
         ':(exclude)tests' ':(exclude)docs' || die "test ref changes product inputs"
     rm -rf "$source_dir/scripts/openwrt-vm" "$source_dir/tests"
-    git -C "$repo_dir" archive "$test_commit" scripts/openwrt-vm tests | tar -C "$source_dir" -xf -
+    git -C "$repo_dir" archive "$test_commit" scripts/openwrt-vm scripts/https-compat tests | tar -C "$source_dir" -xf -
     test_identity=$(python3 -c 'import json,sys;print(json.dumps(dict(source_commit=sys.argv[1],source_tree=sys.argv[2])))' "$test_commit" "$test_tree")
 fi
 

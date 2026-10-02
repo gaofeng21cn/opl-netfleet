@@ -248,7 +248,9 @@ resources() {
 }
 assert_compatibility_handoff() {
     ! nft list table inet netfleet_compat >/dev/null 2>&1
-    ucode -e 'const io=require("netfleet_interception"); io.clear_marked(); print("compatibility-mark-clean\n");' >"$work/compatibility-connections.log"
+    ucode -e 'const io=require("netfleet_interception"); if(io.marked_count()!=0) die("compatibility_conntrack_residue"); print("compatibility-mark-clean\n");' >"$work/compatibility-connections.log"
+    conntrack -L --mark 16777216/16777216 >"$work/compatibility-marked.txt" 2>"$work/compatibility-conntrack.log"
+    test ! -s "$work/compatibility-marked.txt"
     grep -qx 'compatibility-mark-clean' "$work/compatibility-connections.log"
 }
 cp "$work/origin.crt" "$work/client-ca.pem"
@@ -343,12 +345,24 @@ if [ -n "$probe_port" ]; then
         test "$(wire -sS -o /dev/null -D "$work/error.headers" -w '%{http_code}' "https://wire.example/compat-wire/$code")" = "$code"
         grep -iq '^retry-after: 7' "$work/error.headers"
     done
+    stage=rule_bypass
+    ucode /tmp/tests/https_native_guest.uc rule-bypass >"$work/rule-bypass.json"
+    for family in 4 6; do
+        for trial in $(seq 1 10); do probe "$family" http/1.1; done
+    done
+    test "$(pidof mihomo)" = "$base_pid"
+    sha256sum -c "$work/base.sha256"
+    ucode /tmp/tests/https_native_guest.uc rule-h2 >"$work/rule-h2.json"
+    wait_intercepting
     stage=plugin_toggle_active_stream
     wire -fsSN 'https://wire.example/compat-wire/drain-events' >"$work/toggle-events.txt" 2>"$work/toggle-events.log" &
     stream_pid=$!
     sleep 1
     kill -0 "$stream_pid"
     grep -q '^data: 0$' "$work/toggle-events.txt"
+    conntrack -L --mark 16777216/16777216 >"$work/compatibility-before-unload.txt" 2>"$work/compatibility-before-unload.log"
+    test -s "$work/compatibility-before-unload.txt"
+    ucode -e 'if(require("netfleet_interception").marked_count()==0)die("compatibility_mark_read_mismatch");'
     ucode /tmp/tests/https_native_guest.uc plugin-unload >"$work/plugin-unload.log"
     interrupted=0
     wait "$stream_pid" || interrupted=$?

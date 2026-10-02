@@ -1,5 +1,6 @@
 #!/bin/sh
 # Sourced by the live network fixture, with the base already forwarding.
+set -x
 test -f /tmp/netfleet-compat-vm-authorized
 cycle=/tmp/compat-runtime/upgrade.json
 test -f "$cycle"
@@ -15,6 +16,8 @@ for(let key in ['old','new']) {
 UC
 cycle_old=/tmp/compat-runtime/$(jsonfilter -i "$cycle" -e '@.old.file')
 cycle_new=/tmp/compat-runtime/$(jsonfilter -i "$cycle" -e '@.new.file')
+old_version=$(apk adbdump --format json "$cycle_old" | jsonfilter -e '@.info.version')
+new_version=$(apk adbdump --format json "$cycle_new" | jsonfilter -e '@.info.version')
 sha256sum /etc/opl-netfleet/compatibility/config.json /etc/opl-netfleet/compatibility/trust.json \
  /etc/opl-netfleet/compatibility/ca/mitmproxy-ca.pem >"$work/cycle-private.sha256"
 cycle_install() {
@@ -64,7 +67,15 @@ value.request.confirm=true;value.request.plan=plan.result;
 fs.writefile(dir+'/feed-request.json',sprintf('%J',value));
 UC
 (cd "$transaction"; sha256sum run.sh observe.uc feed-request.json old/*.apk >SHA256SUMS)
-sh "$transaction/run.sh" "$transaction" 10 >"$transaction/result.json"
+if ! sh "$transaction/run.sh" "$transaction" 10 >"$transaction/result.json"; then
+    cat "$transaction/result.json"
+    failed_id=$(jsonfilter -i "$transaction/start.json" -e '@.result.operation.id')
+    if [ -n "$failed_id" ]; then
+        cat "/etc/opl-netfleet/package-transactions/$failed_id/journal.json"
+        tail -60 "/etc/opl-netfleet/package-transactions/$failed_id/log"
+    fi
+    exit 1
+fi
 cycle_id=$(jsonfilter -i "$transaction/start.json" -e '@.result.operation.id')
 test -n "$cycle_id"
 cycle_journal=/etc/opl-netfleet/package-transactions/$cycle_id/journal.json
@@ -75,5 +86,12 @@ sha256sum -c "$work/base.sha256" >>"$work/cycle.log"
 sha256sum -c "$work/cycle-private.sha256" >>"$work/cycle.log"
 wait_intercepting
 probe 4 h2; probe 6 h2
+cycle_install "$cycle_old"
+test "$(pidof mihomo)" = "$base_pid"
+sha256sum -c "$work/base.sha256" >>"$work/cycle.log"
+sha256sum -c "$work/cycle-private.sha256" >>"$work/cycle.log"
+probe 4 h2; probe 6 h2
+cycle_install "$cycle_new"
 rm /etc/apk/repositories.d/netfleet-cycle.list
 printf '%s\n' 'engine generic Feed update: APK plan, resource drain, stable base and private state passed'
+set +x

@@ -141,7 +141,7 @@ static int ct_marked_cb(const struct nlattr *attr, void *arg) {
     struct ct_marked *matches = arg;
     const unsigned type = mnl_attr_get_type(attr) & NLA_TYPE_MASK;
     if (type != CTA_MARK || mnl_attr_get_payload_len(attr) != sizeof(uint32_t)) return MNL_CB_OK;
-    if (mnl_attr_get_u32(attr) & COMPAT_MARK) matches->marked = true;
+    if (ntohl(mnl_attr_get_u32(attr)) & COMPAT_MARK) matches->marked = true;
     return MNL_CB_OK;
 }
 
@@ -151,7 +151,7 @@ static int ct_collect_cb(const struct nlmsghdr *h, void *arg) {
         h->nlmsg_len < NLMSG_LENGTH(sizeof(struct nfgenmsg))) return -1;
     matches->marked = false;
     const struct nfgenmsg *gen = NLMSG_DATA(h);
-    if (mnl_attr_parse(h, NLMSG_LENGTH(sizeof(*gen)), ct_marked_cb, matches) < 0) return -1;
+    if (mnl_attr_parse(h, sizeof(*gen), ct_marked_cb, matches) < 0) return -1;
     if (!matches->marked) return 0;
     if (h->nlmsg_len > BUFFER) { errno = E2BIG; return -1; }
     if (matches->count == matches->stride) {
@@ -198,6 +198,18 @@ static int ct_dump_marked(struct connection *c, struct ct_marked *matches) {
     struct nfgenmsg *gen = mnl_nlmsg_put_extra_header(request, sizeof(*gen));
     gen->nfgen_family = NFPROTO_UNSPEC; gen->version = NFNETLINK_V0; gen->res_id = 0;
     return query(c, request, ct_collect_cb, matches);
+}
+
+static uc_value_t *uc_marked_count(uc_vm_t *vm, size_t nargs) {
+    (void)nargs;
+    struct connection c;
+    if (open_netlink(&c, NETLINK_NETFILTER)) return failure(vm, "gateway_command_failed");
+    struct ct_marked matches = {0};
+    int rc = ct_dump_marked(&c, &matches);
+    size_t count = matches.count;
+    free(matches.messages); close(c.fd);
+    if (rc) return failure(vm, "compatibility_conntrack_read_failed");
+    return ucv_uint64_new(count);
 }
 
 static uc_value_t *uc_clear_marked(uc_vm_t *vm, size_t nargs) {
@@ -658,6 +670,6 @@ done:
     close(c.fd);return ucv_boolean_new(ready);
 }
 static const uc_function_list_t functions[]={
-    {"observe",uc_observe},{"table",uc_table},{"status",uc_status},{"routes",uc_routes},{"port_range",uc_port_range},{"renew",uc_renew},{"clear_marked",uc_clear_marked},{"controller",uc_controller}
+    {"observe",uc_observe},{"table",uc_table},{"status",uc_status},{"routes",uc_routes},{"port_range",uc_port_range},{"renew",uc_renew},{"marked_count",uc_marked_count},{"clear_marked",uc_clear_marked},{"controller",uc_controller}
 };
 void uc_module_init(uc_vm_t *vm,uc_value_t *scope) { uc_function_list_register(scope,functions);(void)vm; }

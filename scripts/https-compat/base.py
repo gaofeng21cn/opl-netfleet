@@ -65,8 +65,8 @@ def retained_runtime(directory, runtime):
         if not isinstance(name, str) or not re.fullmatch(r'opl-netfleet-plugin-[a-z][a-z0-9-]*', name) or name in names:
             raise ValueError('invalid retained plugin')
         plugin = name.removeprefix('opl-netfleet-plugin-')
-        if plugin in ['mihomo', 'https-compat', 'device-identity']:
-            raise ValueError('retained set cannot replace the gateway or HTTPS dependency under qualification')
+        if plugin in ['https-compat', 'device-identity']:
+            raise ValueError('retained set cannot replace the HTTPS dependency under qualification')
         if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(-r[0-9]+)?', version) or row['artifact'] != f'{name}-{version}.apk':
             raise ValueError('invalid retained version')
         file_identity(row['artifact'], row['sha256'])
@@ -75,7 +75,8 @@ def retained_runtime(directory, runtime):
         if not isinstance(inventory, dict) or not 1 <= len(inventory) <= 512 or prefix+'manifest.json' not in inventory:
             raise ValueError('retained runtime inventory missing')
         for path, digest in inventory.items():
-            shared = plugin == 'scheduler' and path == '/etc/init.d/opl-netfleet' and runtime.get(path) == digest
+            launcher = {'scheduler': '/etc/init.d/opl-netfleet', 'mihomo': '/etc/init.d/opl-netfleet-core'}.get(plugin)
+            shared = (path == launcher or plugin == 'mihomo' and path.startswith('/usr/share/opl-netfleet/nikki/')) and runtime.get(path) == digest
             local = path.startswith(prefix) and not any(part in ['.', '..', ''] for part in path[len(prefix):].split('/'))
             if not (local or shared) or not re.fullmatch(r'[0-9a-f]{64}', digest):
                 raise ValueError('retained runtime escapes plugin owner')

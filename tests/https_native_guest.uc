@@ -81,6 +81,10 @@ if(action=='load') {
     request('plugin-call',{id,action:'configure',revision:row.revision,confirm:true,params:{config_revision:source.config_revision,
         config:{enabled:action=='network-source-enable',source:'local',interfaces:['nfcompat0']}}});
     request('plugin-read',{id,action:'sync',params:{}});
+} else if(action=='rule-bypass'||action=='rule-h2') {
+    const state=run(['compatibility-get']);
+    const config={...state.config,rules:map(state.config.rules,rule=>({...rule,strategy:action=='rule-bypass'?'bypass':'h2'}))};
+    printf('%J\n',request('compatibility-apply',{revision:state.revision,config}));
 } else if(action=='recover') {
     const state=run(['compatibility-get']);
     printf('%J\n',request('compatibility-probe',{revision:state.revision,operation:'recover'}));

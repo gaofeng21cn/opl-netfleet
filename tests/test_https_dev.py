@@ -16,6 +16,12 @@ import qualify
 import compare
 
 class EngineArtifacts(unittest.TestCase):
+    def test_build_package_manifest_uses_sdk_architecture(self):
+        source = (DIR / 'build-package.sh').read_text()
+        self.assertIn('CONFIG_TARGET_ARCH_PACKAGES', source)
+        self.assertIn("'architecture': package_architecture", source)
+        self.assertNotIn("'architecture': 'aarch64_generic'", source)
+
     def test_composition_keeps_old_optional_bytes_and_runs_the_new_base_source(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

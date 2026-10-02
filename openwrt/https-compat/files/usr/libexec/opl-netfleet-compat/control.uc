@@ -45,6 +45,12 @@ return function(context, options) {
     }
     function call(action,params) {
         if(action=='prepare'||action=='renew') cleared=false;
+        if(action=='remove') {
+            // Revoke admission before deleting only this engine's marked flows.
+            // This remains correct when the installed gateway predates cleanup.
+            call('bypass');
+            require('netfleet_interception').clear_marked();
+        }
         const response=io.measure('gateway_'+action,()=>gateway.request(owner,{action,...(params ?? {})}));
         if(response?.ok!==true) {preview=null;renewal=null;epoch=null;die(response?.error ?? 'lease_operation_failed');}
         return response.result;
