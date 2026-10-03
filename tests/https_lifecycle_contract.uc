@@ -5,7 +5,7 @@ const source = replace(replace(real_fs.readfile(path), "import * as fs from 'fs'
 const factory = loadstring('return function(fs, uloop, loadfile, sleep, require) { ' + source + '\n};')();
 function check(ok, message) { if (!ok) die(message); }
 function scenario(interactive, exits, stop_failure, active_connections, gateway_status, seamless) {
-    let clock = 0, stopped = false;
+    let clock = 0, stopped = false, manager_pid = 100;
     const calls = [], files = {
         '/config/config.json': '{"enabled":true}',
         '/run/state.json': '{"intercepting":true,"reason":null,"last_failure":{"reason":"retained"}}'
@@ -19,9 +19,10 @@ function scenario(interactive, exits, stop_failure, active_connections, gateway_
         command: args => {
             push(calls, args);
             if(args[0] == 'ubus' && args[3] == 'delete' && !stop_failure) stopped = true;
+            if(args[0] == 'ubus' && args[3] == 'signal') manager_pid = 101;
             if(args[1] == 'start') stopped = false;
             return args[0] == 'ubus' && args[3] == 'list'
-                ? (stopped ? '{}' : '{"opl-netfleet-compat":{"instances":{"engine":{"running":true,"pid":99}}}}') : '{}';
+                ? (stopped ? '{}' : sprintf('{"opl-netfleet-compat":{"instances":{"engine":{"running":true,"pid":99},"manager":{"running":true,"pid":%d}}}}',manager_pid)) : '{}';
         }
     };
     const modules = {
@@ -56,7 +57,7 @@ const restored = json(failed.files['/run/state.json']);
 check(!restored.maintenance && !restored.suspended && restored.reason == 'recovering', 'failed drain recovers its locally saved intent');
 check(restored.last_failure.reason == 'retained' && failed.files['/config/config.json'] == before, 'recovery preserves failure evidence and user configuration');
 check(length(filter(failed.calls, call => type(call) == 'array' && call[1] == 'start')) == 1, 'previously running engine is resumed');
-const seamless = scenario(false, 100, false, 1, null, true);
+const seamless = scenario(false, 100, false, 1, {intercepting:true,leases:1}, true);
 check(seamless.error == null && seamless.saved.seamless === true && seamless.elapsed < 1,
     'package-seamless preserves an active data-plane connection');
 check(!length(filter(seamless.calls, call => type(call) == 'array' && call[3] == 'delete')),

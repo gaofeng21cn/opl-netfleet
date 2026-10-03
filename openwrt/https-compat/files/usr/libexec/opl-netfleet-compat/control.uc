@@ -364,11 +364,35 @@ return function(context, options) {
 	function package_seamless(config, previous) {
 		const live=health();
 		if(!live.ready||type(live.pid)!='int'||live.pid<=1) die('seamless_engine_unavailable');
+		const manager=service('list')?.['opl-netfleet-compat']?.instances?.manager;
+		if(!manager?.running||type(manager.pid)!='int'||manager.pid<=1) die('seamless_manager_unavailable');
 		// Keep the engine, listener, leases, and established TCP sessions alive.
 		// The package transaction blocks new control calls through its maintenance
 		// marker; APK replacement is atomic and the manager is restarted on resume.
 		return {seamless:true,running:true,requested:config.enabled===true,
-			revision:revision(),pid:live.pid,intercepting:previous.intercepting===true};
+			revision:revision(),pid:live.pid,manager_pid:manager.pid,
+			manager_last_tick:previous.last_tick ?? null,intercepting:previous.intercepting===true};
+	}
+	function wait_seamless_manager(saved) {
+		const deadline=io.now()+15,requires_lease=saved.intercepting===true;
+		let stable=0;
+		while(io.now()<deadline) {
+			const manager=service('list')?.['opl-netfleet-compat']?.instances?.manager;
+			const current=read_state(),live=health();
+			let admitted=!requires_lease;
+			if(requires_lease) try {
+				const gateway=call('status');
+				admitted=current.intercepting===true&&gateway.intercepting===true&&gateway.leases>0;
+			} catch (_) {admitted=false;}
+			const replaced=manager?.running===true&&type(manager.pid)=='int'&&manager.pid!=saved.manager_pid;
+			const ticked=saved.manager_last_tick==null||current.last_tick!=saved.manager_last_tick;
+			if(replaced&&ticked&&live.ready&&admitted) {
+				stable++;if(stable>=3) return {seamless:true,manager_restarted:true,pid:live.pid,
+					manager_pid:manager.pid,intercepting:current.intercepting===true};
+			} else stable=0;
+			sleep(250);
+		}
+		die('seamless_manager_readiness_timeout');
 	}
 	function drain(wait_seconds) {
         bypass();const deadline=io.now()+(wait_seconds ?? 30),live=health(),pid=live.pid;
@@ -470,8 +494,7 @@ return function(context, options) {
 				// instance loads the newly installed native module without touching
 				// the long-lived HAProxy process or its connections.
 				service('signal',{instance:'manager',signal:15});
-				return {seamless:true,manager_restarted:true,pid:live.pid,
-					intercepting:previous.intercepting===true};
+				return wait_seamless_manager(request);
 			}
             // A failed drain has not returned its handoff to the host yet.
             // Recover the intent saved before entering maintenance in that case.
