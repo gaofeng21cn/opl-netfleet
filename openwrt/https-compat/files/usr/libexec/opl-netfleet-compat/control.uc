@@ -370,7 +370,10 @@ return function(context, options) {
 		// Keep the engine, listener, leases, and established TCP sessions alive.
 		// The package transaction blocks new control calls through its maintenance
 		// marker; APK replacement is atomic and the manager is restarted on resume.
-		let source;try {source=identity.resolve(config,true);}catch (_) {}
+		// The package transaction already owns the maintenance window. Read the
+		// published evidence without scheduling a nested identity worker that can
+		// contend for the host/code lock during the handoff.
+		let source;try {source=identity.resolve(config);}catch (_) {}
 		if(source?.source_ready===true) {
 			const now=io.now();save({...previous,identity_source:{source_ready:true,binding:source.binding,devices:source.devices,at:now}},previous);
 			previous=read_state();
