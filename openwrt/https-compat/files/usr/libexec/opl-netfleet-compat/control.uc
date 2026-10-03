@@ -221,7 +221,7 @@ return function(context, options) {
         if(previous.maintenance||previous.recovery?.latched) {
             bypass();save({...previous,intercepting:false,reason:previous.maintenance?'maintenance':'manual_recovery_required'},previous);return;
         }
-		let source=io.measure('identity_read',()=>identity.resolve(config,true));source=retain_identity_source(previous,source,now);let network={},reason,current=io.read(EFFECTIVE,{});
+		const source=io.measure('identity_read',()=>identity.resolve(config,true));let network={},reason,current=io.read(EFFECTIVE,{});
         try {
             network=snapshot();reason=network.reason ?? (network.ready?null:'native_gateway_unavailable');
             if(!reason) {
@@ -248,8 +248,7 @@ return function(context, options) {
             live.revision==expected&&live.pid!=null&&live.pid==previous.ready_engine_pid;
         const recovery=advance(previous.recovery,{requested:true,healthy,reason,now,
             count_failure:own_failure&&previous.intercepting===true,transient_transparent_chain});
-		const identity_source=source?.source_ready===true&&!source.retained?{source_ready:true,binding:source.binding,devices:source.devices,at:now}:source?.retained?previous.identity_source:null;
-		const state={...previous,recovery,intercepting:false,reason:recovery.reason,local_probes:live.local_probes ?? {},engine_pid:live.pid ?? previous.engine_pid,...(identity_source?{identity_source}:{} )};
+		const state={...previous,recovery,intercepting:false,reason:recovery.reason,local_probes:live.local_probes ?? {},engine_pid:live.pid ?? previous.engine_pid};
         if(!healthy&&previous.intercepting===true&&own_failure) state.last_failure={at:time(),reason,health_error:live.health_error,
             local_probes:live.local_probes ?? {},health_counters:live.health_counters,engine_pid:live.pid,previous_engine_pid:previous.ready_engine_pid};
         if(live.ready&&live.pid) state.ready_engine_pid=live.pid;
@@ -370,14 +369,6 @@ return function(context, options) {
 		// Keep the engine, listener, leases, and established TCP sessions alive.
 		// The package transaction blocks new control calls through its maintenance
 		// marker; APK replacement is atomic and the manager is restarted on resume.
-		// The package transaction already owns the maintenance window. Read the
-		// published evidence without scheduling a nested identity worker that can
-		// contend for the host/code lock during the handoff.
-		let source;try {source=identity.resolve(config);}catch (_) {}
-		if(source?.source_ready===true) {
-			const now=io.now();save({...previous,identity_source:{source_ready:true,binding:source.binding,devices:source.devices,at:now}},previous);
-			previous=read_state();
-		}
 		return {seamless:true,running:true,requested:config.enabled===true,
 			revision:revision(),pid:live.pid,manager_pid:manager.pid,
 			manager_last_tick:previous.last_tick ?? null,intercepting:previous.intercepting===true};
@@ -402,15 +393,6 @@ return function(context, options) {
 			sleep(250);
 		}
 		die('seamless_manager_readiness_timeout');
-	}
-	function retain_identity_source(previous, source, now) {
-		if(source?.source_ready===true) return source;
-		const saved=previous.identity_source;
-		const age=type(saved?.at)=='int'||type(saved?.at)=='double'?now-saved.at:-1;
-		if(saved?.source_ready!==true||age<0||age>=120||type(saved.devices)!='array') return source;
-		const devices=map(saved.devices,device=>({...device,expires_in:max(0,(device.expires_in ?? 0)-age)}));
-		if(!length(filter(devices,device=>device.expires_in>0))) return source;
-		return {...saved,devices,source_ready:true,retained:true};
 	}
 	function drain(wait_seconds) {
         bypass();const deadline=io.now()+(wait_seconds ?? 30),live=health(),pid=live.pid;
