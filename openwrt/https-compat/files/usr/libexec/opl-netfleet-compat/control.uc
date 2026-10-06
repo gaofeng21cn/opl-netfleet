@@ -47,9 +47,11 @@ return function(context, options) {
         if(action=='prepare'||action=='renew') cleared=false;
         if(action=='remove') {
             // Revoke admission before deleting only this engine's marked flows.
-            // This remains correct when the installed gateway predates cleanup.
+            // The Gateway interception owner performs native conntrack cleanup
+            // inside its remove action; keep that operation behind the public
+            // carrier boundary so fixture and legacy carriers do not load a
+            // second native module directly from the controller.
             call('bypass');
-            require('netfleet_interception').clear_marked();
         }
         const response=io.measure('gateway_'+action,()=>gateway.request(owner,{action,...(params ?? {})}));
         if(response?.ok!==true) {preview=null;renewal=null;epoch=null;die(response?.error ?? 'lease_operation_failed');}
