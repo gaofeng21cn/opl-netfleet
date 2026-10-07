@@ -174,7 +174,7 @@ export interface DeviceConfigSnapshot {
   region_options: Array<{ id: string; code: string; display_name: string; display_order: number }>;
   capabilities: Array<{ id: string; display_name: string; enabled: boolean; mode: 'automatic' | 'manual'; region_ids: string[]; prefer_region_from?: string | null; entry_group?: string | null; policy_groups: string[]; base_groups?: string[] }>;
   routing_rules: Array<{ kind: 'domain_suffix' | 'ip_cidr'; value: string; capability?: string; target?: 'direct' }>;
-  automation: { enabled: boolean; selection_interval_seconds: number; subscription_refresh_enabled: boolean; subscription_refresh_interval_seconds: number };
+  automation: { enabled: boolean; selection_interval_seconds: number; subscription_refresh_enabled: boolean; subscription_refresh_interval_seconds: number; rule_refresh_enabled?: boolean; rule_refresh_interval_seconds?: number };
   safety: { region_switch_margin_ms: number; leaf_switch_margin_ms: number; runtime_grace_seconds: number; latency_url: string; path_probe_url: string; guard_probe_url: string };
 }
 
@@ -238,6 +238,8 @@ export interface StatusSnapshot {
       runtime_grace_seconds?: number;
       subscription_refresh_enabled?: boolean;
       subscription_refresh_interval_seconds?: number;
+      rule_refresh_enabled?: boolean;
+      rule_refresh_interval_seconds?: number;
     } | null;
   };
   subscription_refresh?: {

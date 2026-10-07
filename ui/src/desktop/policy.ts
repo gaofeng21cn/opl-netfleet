@@ -30,6 +30,8 @@ export function desktopConfigRequest(config: DeviceConfigSnapshot, draft: Config
       enabled: draft.automation.enabled, selection_interval_seconds: draft.automation.selectionIntervalSeconds,
       subscription_refresh_enabled: draft.automation.subscriptionRefreshEnabled,
       subscription_refresh_interval_seconds: draft.automation.subscriptionRefreshIntervalSeconds,
+      rule_refresh_enabled: draft.automation.ruleRefreshEnabled ?? false,
+      rule_refresh_interval_seconds: draft.automation.ruleRefreshIntervalSeconds ?? 604800,
     },
     safety: {
       region_switch_margin_ms: draft.safety.regionSwitchMarginMs,

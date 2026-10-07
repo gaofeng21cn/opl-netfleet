@@ -238,7 +238,9 @@ project = function(policy, resources) {
 			enabled: policy?.automation?.enabled == true,
 			selection_interval_seconds: policy?.automation?.selection_interval_seconds,
 			subscription_refresh_enabled: policy?.automation?.subscription_refresh_enabled == true,
-			subscription_refresh_interval_seconds: policy?.automation?.subscription_refresh_interval_seconds
+			subscription_refresh_interval_seconds: policy?.automation?.subscription_refresh_interval_seconds,
+			rule_refresh_enabled: policy?.automation?.rule_refresh_enabled ?? false,
+			rule_refresh_interval_seconds: policy?.automation?.rule_refresh_interval_seconds ?? 604800
 		},
 		safety: {
 			region_switch_margin_ms: policy?.selection?.region_switch_margin_ms,
@@ -371,7 +373,7 @@ validate_request = function(policy, request, resources) {
 	if (type(request.routing_rules) != "array") push(errors, "routing_rules must be an array");
 	else validate_routing_rules(request.routing_rules, request.capabilities, errors);
 	if (known_keys(request.automation, ["enabled", "selection_interval_seconds", "subscription_refresh_enabled",
-		"subscription_refresh_interval_seconds"], errors, "automation")) {
+		"subscription_refresh_interval_seconds", "rule_refresh_enabled", "rule_refresh_interval_seconds"], errors, "automation")) {
 		if (type(requested_automation.enabled) != "bool" ||
 			type(requested_automation.subscription_refresh_enabled) != "bool")
 			push(errors, "automation switches must be boolean");
@@ -383,6 +385,12 @@ validate_request = function(policy, request, resources) {
 			requested_automation.subscription_refresh_interval_seconds > 604800)
 			push(errors, "subscription_refresh_interval_seconds must be between 3600 and 604800");
 	}
+	if (requested_automation.rule_refresh_enabled != null && type(requested_automation.rule_refresh_enabled) != "bool")
+		push(errors, "rule_refresh_enabled must be boolean");
+	if (requested_automation.rule_refresh_interval_seconds != null &&
+		(type(requested_automation.rule_refresh_interval_seconds) != "int" ||
+		requested_automation.rule_refresh_interval_seconds < 86400 || requested_automation.rule_refresh_interval_seconds > 2592000))
+		push(errors, "rule_refresh_interval_seconds must be between 86400 and 2592000");
 	if (known_keys(request.safety, ["region_switch_margin_ms", "leaf_switch_margin_ms", "runtime_grace_seconds",
 		"latency_url", "path_probe_url", "guard_probe_url"], errors, "safety")) {
 		if (type(requested_safety.region_switch_margin_ms) != "int" || requested_safety.region_switch_margin_ms < 0 ||
@@ -490,6 +498,8 @@ apply = function(policy, request, resources) {
 	next.automation.selection_interval_seconds = request.automation.selection_interval_seconds;
 	next.automation.subscription_refresh_enabled = request.automation.subscription_refresh_enabled;
 	next.automation.subscription_refresh_interval_seconds = request.automation.subscription_refresh_interval_seconds;
+	next.automation.rule_refresh_enabled = request.automation.rule_refresh_enabled ?? next.automation.rule_refresh_enabled ?? false;
+	next.automation.rule_refresh_interval_seconds = request.automation.rule_refresh_interval_seconds ?? next.automation.rule_refresh_interval_seconds ?? 604800;
 	next.selection.region_switch_margin_ms = request.safety.region_switch_margin_ms;
 	next.selection.leaf_switch_margin_ms = request.safety.leaf_switch_margin_ms;
 	next.automation.runtime_grace_seconds = request.safety.runtime_grace_seconds;

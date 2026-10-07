@@ -24,6 +24,7 @@ const CONFIG = `${RUN}/config.yaml`;
 const VENDOR = "/usr/share/opl-netfleet/nikki";
 const SERVICE = "opl-netfleet-core";
 const COMMAND = ["/usr/bin/mihomo", "-d", RUN, "-f", CONFIG];
+const rule_data = loadfile(context.root + "/plugins/" + context.id + "/lib/rule-data.uc")()(context, { readiness: () => readiness(), process_state: () => process_state() });
 
 shell = function(command) { return system(command + " >/dev/null 2>&1") == 0; };
 capture = function(command) {
@@ -125,7 +126,7 @@ render_profile = function() {
 	// Only an explicitly saved advanced protocol map replaces the source map.
 	// Existing private partial overlays retain their original deep-merge behavior.
 	if (extra["netfleet-replace-sniff"] == true && type(extra.sniffer?.sniff) == "object" && type(source.sniffer) == "object") delete source.sniffer.sniff;
-	const profile = merge(merge(source, extra), overlay);
+	const profile = rule_data.project(merge(merge(source, extra), overlay));
 	delete profile["netfleet-replace-sniff"];
 	for (let field in ["proxies", "proxy-groups", "rules"]) {
 		const additions = profile[`netfleet-${field}`] ?? [];
@@ -251,6 +252,7 @@ attach = function() {
 		applied = shell(`ip -${family} rule add pref ${pref} fwmark ${mark}/${mask} table ${table}`) && applied;
 	}
 	if (applied) applied = shell(`nft -f ${shell_quote(`${STATE}/rules.nft`)}`);
+	if (applied) applied = rule_data.active_sets();
 	if (!applied || !status().result.ready) {
 		const cleaned = cleanup();
 		return { ok: false, error: cleaned.ok ? "interception_start_failed" : "interception_cleanup_failed" };
@@ -384,6 +386,7 @@ command = function(argv) {
 let result;
 try {
 	if (system("test \"$(id -u)\" = 0") != 0) result = { ok: false, error: "root_required" };
+	else if (argv[0] == "rules-refresh") result = rule_data.refresh(read_json("/etc/opl-netfleet/policy.json"), argv[1]);
 	else if (ARGV[0] == "prepare") result = prepare();
 	else if (ARGV[0] == "preview") result = render_profile();
 	else if (ARGV[0] == "attach") result = attach();
@@ -397,5 +400,5 @@ printf("%J\n", result);
 exit(result.ok ? 0 : 1);
 };
 
-return { command, cleanup, status, readiness, process_state, interception_snapshot };
+return { command, cleanup, status, readiness, process_state, interception_snapshot, rule_data_status: rule_data.status };
 };

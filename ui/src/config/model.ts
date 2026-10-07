@@ -62,6 +62,8 @@ export interface ConfigDraft {
     selectionIntervalSeconds: number;
     subscriptionRefreshEnabled: boolean;
     subscriptionRefreshIntervalSeconds: number;
+    ruleRefreshEnabled?: boolean;
+    ruleRefreshIntervalSeconds?: number;
   };
   safety: {
     regionSwitchMarginMs: number;
@@ -133,6 +135,8 @@ export function createConfigDraft(status: StatusSnapshot, config?: DeviceConfigS
       selectionIntervalSeconds: config.automation.selection_interval_seconds,
       subscriptionRefreshEnabled: config.automation.subscription_refresh_enabled,
       subscriptionRefreshIntervalSeconds: config.automation.subscription_refresh_interval_seconds,
+      ruleRefreshEnabled: config.automation.rule_refresh_enabled ?? false,
+      ruleRefreshIntervalSeconds: config.automation.rule_refresh_interval_seconds ?? 604800,
     },
     safety: {
       regionSwitchMarginMs: config.safety.region_switch_margin_ms,
@@ -193,6 +197,8 @@ export function createConfigDraft(status: StatusSnapshot, config?: DeviceConfigS
       selectionIntervalSeconds: automation?.selection_interval_seconds || 1800,
       subscriptionRefreshEnabled: automation?.subscription_refresh_enabled !== false,
       subscriptionRefreshIntervalSeconds: automation?.subscription_refresh_interval_seconds || 43200,
+      ruleRefreshEnabled: automation?.rule_refresh_enabled ?? false,
+      ruleRefreshIntervalSeconds: automation?.rule_refresh_interval_seconds ?? 604800,
     },
     safety: {
       regionSwitchMarginMs: status.selection?.region_switch_margin_ms || 150,

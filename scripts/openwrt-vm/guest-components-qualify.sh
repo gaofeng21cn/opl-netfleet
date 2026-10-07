@@ -23,7 +23,7 @@ finish() {
 	if [ "$rc" -ne 0 ]; then
 		echo "Component qualification failed at: $stage" >&2
 		ubus call service list '{"name":"opl-netfleet-update-recovery"}' >&2
-		for file in "$work"/*-result.json "$work"/*.log /tmp/opl-netfleet-operation-packages.json /etc/opl-netfleet/package-transactions/*/log; do
+		for file in "$work"/*-result.json "$work"/*-plan.json "$work"/*.log /tmp/opl-netfleet-operation-packages.json /etc/opl-netfleet/package-transactions/*/log; do
 			[ ! -f "$file" ] || { echo "--- $file" >&2; head -60 "$file" >&2; tail -50 "$file" >&2; }
 		done
 	fi
@@ -289,6 +289,18 @@ unchanged
 rpc_ready
 # Shared models legitimately drain the dependent core; verify that lifecycle
 # restoration completes before observing normal supervisor cycles.
+# The finite UI update cannot upgrade the protected Mihomo backend. The full
+# product upgrade above covers that transition; establish its current provider
+# here before asking the finite solver for the remaining UI dependency set.
+stage=shared_plugin_runtime_baseline
+runtime_plugin=opl-netfleet-plugin-mihomo
+runtime_version=$(package_version "$runtime_plugin" current)
+uclient-fetch -q -O "$work/$runtime_plugin-$runtime_version.apk" \
+ "$feed_url/$runtime_plugin-$runtime_version.apk"
+install_fixture "$work/$runtime_plugin-$runtime_version.apk" >>"$work/independent.log" 2>&1
+restore_fixture_world
+unchanged
+rpc_ready
 local_stage="$work/shared-install"
 mkdir -m 700 -p "$local_stage/old" "$local_stage/new"
 printf '%s\n' '{"schema":"opl-netfleet-plugin-install.v1","packages":[]}' >"$local_stage/request.json"
@@ -329,8 +341,12 @@ sh /tmp/update-openwrt-plugins-remote.sh "$local_stage" 10 >"$work/shared-run.js
 assert_json "$local_stage/acceptance.json" '@.ok' true
 assert_json "$local_stage/acceptance.json" '@.owner_pids_stable' true
 unchanged
+# The independent dashboard exercise is complete. Remove its explicit world
+# root before the product upgrade lane so that the following world comparison
+# covers only the product-owned installation set.
+apk --no-network --repositories-file /dev/null del opl-netfleet-plugin-dashboard \
+	>"$work/independent-root-remove.log" 2>&1
 rpc_ready
-cp /etc/apk/world "$work/update-world"
 stage=required_plugin_feed_update
 plugin=opl-netfleet-plugin-dashboard
 prior=$(package_version "$plugin" old)
@@ -346,6 +362,10 @@ wait_operation "$(jsonfilter -i "$work/required-start.json" -e '@.result.operati
 assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
 [ "$(pidof mihomo)" = "$core_pid_before" ]
 unchanged
+# The feed update above intentionally removes the local archive checksum pin.
+# The following product transaction must preserve that accepted world state.
+grep -Fxq "$plugin" /etc/apk/world
+cp /etc/apk/world "$work/update-world"
 stage=component_update
 rpcd_before=$(pidof rpcd)
 request components_update "$current"
