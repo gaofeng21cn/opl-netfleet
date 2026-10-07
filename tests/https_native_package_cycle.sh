@@ -103,6 +103,8 @@ sha256sum /etc/config/netfleet /etc/opl-netfleet/native/run/config.yaml \
  /etc/opl-netfleet/compatibility/ca/mitmproxy-ca.pem >"$guard/private.sha256"
 sha256sum /usr/libexec/opl-netfleet-compat/control.uc /usr/libexec/opl-netfleet-compat/haproxy \
  /usr/lib/ucode/netfleet_interception.so >"$guard/new-runtime.sha256"
+# A failed/partial acceptance writer must not prevent autonomous archive restore.
+printf '%s' '{"accepted":true}\n' >"$guard/canary-accepted.json"
 ucode - "$guard" "$cycle_old" "$cycle_new" "$base_pid" <<'UC'
 import * as fs from 'fs';import {sha256} from 'digest';
 function artifact(path) {

@@ -84,6 +84,7 @@ chmod 0755 "$main" /usr/libexec/opl-netfleet/supervisor.uc "$gateway" /etc/init.
 chmod 0700 /etc/opl-netfleet/native /etc/opl-netfleet/native/profiles /etc/opl-netfleet/native/subscriptions
 chmod 0600 /etc/config/netfleet
 stage=source_contracts
+sh /tmp/tests/https_canary_guard.sh /tmp/scripts/https-compat/canary-rollback.sh >>"$work/contracts.log" 2>&1
 for contract in /tmp/tests/*_contract.uc; do ucode "$contract" >>"$work/contracts.log" 2>&1; done
 ucode /tmp/tests/plugin_sdk_service.uc /tmp/examples/plugins/host-info >>"$work/contracts.log" 2>&1
 ucode /tmp/tests/kernel_device.uc >>"$work/contracts.log" 2>&1
