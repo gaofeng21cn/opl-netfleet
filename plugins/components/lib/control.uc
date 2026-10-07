@@ -296,7 +296,8 @@ function resume_resources(work) {
 	const state = read_json(`${work}/journal.json`);
 	let success = true;
 	for (let id in reverse([...(state?.drained ?? [])])) {
-		const result = lifecycle("resume", id);
+		const entry = state.before?.runtime_retained && id == "mihomo" ? `${work}/code/plugins/components/lifecycle-retained.uc` : null;
+		const result = lifecycle("resume", id, entry);
 		if (result?.ok != true) success = false;
 	}
 	return success;
@@ -319,7 +320,8 @@ function prepare_resources(work, names, versions, candidates) {
 		operation.update("draining", { subject: id, total: 0, completed: 0 });
 		let result;
 		for (let attempt = 0; attempt < 3; attempt++) {
-			result = lifecycle("drain", id);
+			const entry = state.before?.runtime_retained && id == "mihomo" ? `${work}/code/plugins/components/lifecycle-retained.uc` : null;
+			result = lifecycle("drain", id, entry);
 			if (result?.ok || result?.error != "plugin_calls_draining") break;
 			cancellation(work); system("sleep 1");
 		}
@@ -600,8 +602,51 @@ restore_services = function(before, work) {
 };
 function drain_scoped(work) {
 	let ok = true;
-	for (let id in read_json(`${work}/journal.json`)?.drained ?? []) if (lifecycle("drain", id, `${work}/code/main.uc`)?.ok != true) ok = false;
+	const state = read_json(`${work}/journal.json`);
+	for (let id in state?.drained ?? []) {
+		const entry = state.before?.runtime_retained && id == "mihomo" ? `${work}/code/plugins/components/lifecycle-retained.uc` : `${work}/code/main.uc`;
+		if (lifecycle("drain", id, entry)?.ok != true) ok = false;
+	}
 	return ok;
+}
+function native_identity() {
+	const service = parsed(`ubus call service list '${sprintf('%J', { name: SERVICE })}'`);
+	const pid = service?.[SERVICE]?.instances?.core?.pid;
+	if (type(pid) != 'int' || pid <= 1) fail('native_runtime_identity_unavailable');
+	const stat = fs.readfile(`/proc/${pid}/stat`);
+	if (stat == null) fail('native_runtime_identity_unavailable');
+	return { pid, birth: split(trim(substr(stat, rindex(stat, ') ') + 2)), /\s+/)[19],
+		files: input_identity(['/usr/libexec/mihomo', `${RUN_DIR}/config.yaml`]) };
+}
+function retained_payload(work, archive, versions) {
+	const prefix = '/usr/libexec/opl-netfleet/plugins/mihomo/';
+	const extracted = `${work}/retained-payload`;
+	if (!directory(extracted) || !run_command(`apk extract --destination ${q(extracted)} ${q(archive)}`, work))
+		fail('runtime_retention_unavailable');
+	const before = read_json(prefix + 'manifest.json'), after = read_json(extracted + prefix + 'manifest.json');
+	if (type(before) != 'object' || type(after) != 'object') fail('runtime_contract_changed');
+	delete before.version; delete after.version;
+	if (sprintf('%J', before) != sprintf('%J', after)) fail('runtime_contract_changed');
+	const existing = package_paths(['opl-netfleet-plugin-mihomo'], versions);
+	for (let path in existing) {
+		if (index(path, '/lib/apk/packages/') == 0) continue;
+		const candidate = fs.lstat(extracted + path);
+		if (candidate?.type == 'directory' && fs.lstat(path)?.type == 'directory') continue;
+		if (candidate?.type != 'file') fail('runtime_payload_changed');
+		if (index(path, prefix) != 0 && sha256(path) != sha256(extracted + path))
+			fail('runtime_payload_changed');
+	}
+	function inspect(path) {
+		for (let name in fs.lsdir(extracted + path) ?? []) {
+			const child = path + '/' + name, item = fs.lstat(extracted + child);
+			if (item?.type == 'directory') inspect(child);
+			else if (item?.type != 'file') fail('runtime_payload_changed');
+			else if (index(child, '/lib/apk/packages/') != 0 && index(child, prefix) != 0 &&
+				(index(existing, child) < 0 || sha256(child) != sha256(extracted + child)))
+				fail('runtime_payload_changed');
+		}
+	}
+	inspect('');
 }
 rollback = function(before, work, names, versions, old, install_started, already_stopped) {
 	const errors = [];
@@ -623,7 +668,7 @@ rollback = function(before, work, names, versions, old, install_started, already
 			const hooks_restored = attempt("rollback_runtime_files_failed", () =>
 				run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work) &&
 				sprintf("%J", input_identity(before.runtime_paths)) == sprintf("%J", before.runtime_inputs));
-			if (hooks_restored && length(old)) attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null ${already_stopped ? "--force-reinstall " : ""}add ${archive_arguments(old)}`, work));
+			if (hooks_restored && length(old)) attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null ${before.runtime_retained ? '--scripts=no ' : ''}${already_stopped ? "--force-reinstall " : ""}add ${archive_arguments(old)}`, work));
 			attempt("rollback_world_failed", () => restore_world(names, before.world, work, true));
 			attempt("rollback_runtime_files_failed", () => run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work));
 			attempt("rollback_runtime_failed", () => resume_resources(work));
@@ -722,6 +767,11 @@ upgrade = function(request, work, candidates) {
 		...(request.component == "mihomo" ? ["/usr/libexec/mihomo"] : [])], path => fs.lstat(path) != null);
 	if (before.scoped && request.plugin) before.runtime_paths = package_paths(names, versions);
 	before.runtime_inputs = input_identity(before.runtime_paths);
+	if (KIND == 'native-mihomo' && before.core && before.scoped && length(names) == 1 && names[0] == 'opl-netfleet-plugin-mihomo') {
+		retained_payload(work, next[0], versions);
+		before.runtime_retained = true;
+		before.retained_core = native_identity();
+	}
 	if (before.core) {
 		const all = proxies(api_secret(), 2)?.proxies;
 		if (all == null || !probe_ok()) fail("runtime_precondition_failed");
@@ -765,7 +815,8 @@ upgrade = function(request, work, candidates) {
 		// continues to block unrelated starts until this transaction is verified.
 		// APK otherwise strips the restore flag from the hook environment.
 		const replacing = request.plugin?.action == "remove" ? `del ${q(request.plugin.name)}` : `add ${archive_arguments(next)}`;
-		if (!run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null ${replacing}`, work)) fail("package_install_failed");
+		if (!run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null ${before.runtime_retained ? '--scripts=no ' : ''}${replacing}`, work)) fail("package_install_failed");
+		if (before.runtime_retained && sprintf('%J', native_identity()) != sprintf('%J', before.retained_core)) fail('native_runtime_changed');
 		const desired_world = { ...before.world };
 		if (request.plugin?.action == "install") desired_world[request.plugin.name] = request.plugin.name;
 		if (request.plugin?.action == "remove") delete desired_world[request.plugin.name];
