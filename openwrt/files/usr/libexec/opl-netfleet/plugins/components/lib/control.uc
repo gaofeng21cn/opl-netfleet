@@ -3,6 +3,7 @@ import * as package_model from "./packages.uc";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
+let observer, process_birth, pause_observer, resume_observer, drain_resource, native_identity;
 let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, recovery_world, restore_world, feed, newer, available, update_process, progress, get, local_stage, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, recovery_stop, restore_services, rollback, recover, journal, upgrade, command;
 
 const gateway = context.use("mihomo.gateway");
@@ -306,19 +307,19 @@ function resume_resources(work) {
 	}
 	return success;
 }
-function observer(service, instance, command) {
+observer = function(service, instance, command) {
 	const entry = parsed(`ubus call service list ${q(sprintf('%J', { name: service }))}`)?.[service]?.instances?.[instance];
 	if (entry?.running != true || sprintf('%J', entry.command) != sprintf('%J', command)) fail('native_observer_identity_unavailable');
 	const spec = { command, term_timeout: entry.term_timeout ?? 5, stdout: instance == 'lifecycle', stderr: instance == 'lifecycle' };
 	if (entry.respawn != null) spec.respawn = [entry.respawn.threshold, entry.respawn.timeout, entry.respawn.retry];
 	for (let key in ['env','limits','nice','user','group']) if (entry[key] != null) spec[key] = entry[key];
 	return { service, instance, pid: entry.pid, birth: process_birth(entry.pid), spec };
-}
-function process_birth(pid) {
+};
+process_birth = function(pid) {
 	const stat = fs.readfile(`/proc/${pid}/stat`);
 	return stat == null ? null : split(trim(substr(stat, rindex(stat, ') ') + 2)), /\s+/)[19];
-}
-function pause_observer(work, id) {
+};
+pause_observer = function(work, id) {
 	const before = read_json(`${work}/journal.json`)?.before, saved = before?.retained_observers?.[id];
 	if (saved == null) return true;
 	if (sprintf('%J', native_identity()) != sprintf('%J', before.retained_core)) return false;
@@ -332,8 +333,8 @@ function pause_observer(work, id) {
 		system('sleep 1');
 	}
 	return false;
-}
-function resume_observer(work, id) {
+};
+resume_observer = function(work, id) {
 	const before = read_json(`${work}/journal.json`)?.before, saved = before?.retained_observers?.[id];
 	if (saved == null) return true;
 	if (sprintf('%J', native_identity()) != sprintf('%J', before.retained_core)) return false;
@@ -346,14 +347,14 @@ function resume_observer(work, id) {
 		system('sleep 1');
 	}
 	return false;
-}
-function drain_resource(work, id) {
+};
+drain_resource = function(work, id) {
 	const before = read_json(`${work}/journal.json`)?.before;
 	if (before?.runtime_retained && index(['mihomo','https-compat'], id) >= 0 &&
 		(!pause_observer(work, 'https-compat') || !pause_observer(work, 'mihomo'))) return { ok: false, error: 'native_observer_pause_failed' };
 	const entry = before?.runtime_retained && index(['mihomo','https-compat'], id) >= 0 ? `${work}/code/plugins/components/lifecycle-retained.uc` : `${work}/code/main.uc`;
 	return lifecycle('drain', id, entry);
-}
+};
 function prepare_resources(work, names, versions, candidates) {
 	const ids = [], owned = package_owners(versions);
 	for (let name in names) {
@@ -635,6 +636,7 @@ restore_services = function(before, work) {
 			const restored = ready ? proxies(secret, 2)?.proxies : null;
 			for (let name, choice in before.selections) if (restored?.[name]?.now != choice) ready = false;
 			if (ready) break;
+			if (before.runtime_retained) return false;
 			system("sleep 1");
 		}
 		if (!ready) return false;
@@ -649,13 +651,14 @@ restore_services = function(before, work) {
 			const compat = parsed(`ucode ${q(MAIN)} compatibility-get`);
 			if (compat?.ok != true || compat.result.requested != before.retained_compat.requested ||
 				(before.retained_compat.intercepting && (compat.result.intercepting != true || compat.result.leases < 1))) {
-				system('sleep 1'); continue;
+				return false;
 			}
 		}
 		const status = parsed(`ucode ${q(MAIN)} status`)?.result;
 		if (status != null && status.active == before.active && (!before.core ||
 			(status.runtime?.controller_available == true && (KIND != "native-mihomo" ||
 			(status.runtime?.lan_runtime?.dns_ready == true && status.runtime?.lan_runtime?.transparent_proxy_ready == true)) && probe_ok()))) return true;
+		if (before.runtime_retained) return false;
 		system("sleep 1");
 	}
 	return false;
@@ -668,7 +671,7 @@ function drain_scoped(work) {
 	}
 	return ok;
 }
-function native_identity() {
+native_identity = function() {
 	const service = parsed(`ubus call service list '${sprintf('%J', { name: SERVICE })}'`);
 	const pid = service?.[SERVICE]?.instances?.core?.pid;
 	if (type(pid) != 'int' || pid <= 1) fail('native_runtime_identity_unavailable');
@@ -676,7 +679,7 @@ function native_identity() {
 	if (stat == null) fail('native_runtime_identity_unavailable');
 	return { pid, birth: split(trim(substr(stat, rindex(stat, ') ') + 2)), /\s+/)[19],
 		files: input_identity(['/usr/libexec/mihomo', `${RUN_DIR}/config.yaml`]) };
-}
+};
 function retained_payload(work, archive, versions, name) {
 	const engine = name == COMPATIBILITY_PACKAGE;
 	const prefix = engine ? '/usr/libexec/opl-netfleet-compat/' : '/usr/libexec/opl-netfleet/plugins/mihomo/';

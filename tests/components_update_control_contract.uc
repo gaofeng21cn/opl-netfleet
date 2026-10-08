@@ -156,6 +156,6 @@ loadstring(`
 const fs={}, calls=[];
 function read_json(){return {drained:['configuration']};}
 function lifecycle(action,id,entry){push(calls,{action,id,entry});return {ok:entry=='/private/code/main.uc'};}
-`+extract('function drain_resource(', 'function prepare_resources(')+scoped_stop+`
+`+extract('drain_resource = function(', 'function prepare_resources(')+scoped_stop+`
 if(!drain_scoped('/private') || calls[0].entry!='/private/code/main.uc')die('scoped crash recovery must use retained entry even if installed main is damaged');
 `)();
