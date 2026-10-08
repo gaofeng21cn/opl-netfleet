@@ -26,6 +26,10 @@ finish() {
     [ -z "$manager_pid" ] || kill -CONT "$manager_pid" 2>/dev/null
     [ -z "$engine_pid" ] || kill -CONT "$engine_pid" 2>/dev/null
     [ -z "$probe_session_pid" ] || kill -CONT "$probe_session_pid" 2>/dev/null
+    if [ -f "$work/cold-apk-path" ]; then
+        cold_apk_path=$(cat "$work/cold-apk-path")
+        [ ! -f "$cold_apk_path.netfleet-cold-original" ] || mv "$cold_apk_path.netfleet-cold-original" "$cold_apk_path"
+    fi
     if [ "$rc" -ne 0 ]; then
         echo "Native network failure: $stage" >&2
         ucode /tmp/tests/https_native_guest.uc state >&2
@@ -211,7 +215,11 @@ probe() {
     ip netns exec nfcompat-client curl -fsS --noproxy '*' --http1.1 --connect-timeout 3 --max-time 8 \
         ${source:+--interface "$source"} --cacert "$work/client-ca.pem" --resolve "$domain:443:$destination" \
         -D "$work/headers" -o "$work/body" -w "$family $expected %{time_starttransfer} %{time_total}\n" "https://$domain/wire" >>"$work/timing.log"
-    grep -iq "^x-upstream-protocol: $expected" "$work/headers" || return 1
+    if [ "$expected" = either ]; then
+        grep -Eiq '^x-upstream-protocol: (h2|http/1\.1)' "$work/headers" || return 1
+    else
+        grep -iq "^x-upstream-protocol: $expected" "$work/headers" || return 1
+    fi
     test "$(cat "$work/body")" = wire-ok
 }
 wait_intercepting() {

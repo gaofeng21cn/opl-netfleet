@@ -703,7 +703,10 @@ function verify_runtime(before, work) {
 		// Only the restored long-lived manager owns asynchronous DNS results.
 		// A one-shot controller starts with an empty resolver and can revoke a
 		// healthy lease. Wait for the manager, without holding its network lock.
-		const deadline = time() + 8;
+		// A real package write can outlive the ten-second kernel admission.
+		// Give the restored manager its thirty-second recovery hold, without
+		// renewing stale admission or resetting a healthy data-plane process.
+		const deadline = time() + 45;
 		while (true) {
 			result = restore_services(before, work);
 			if (result || before.retained_engine == null) break;

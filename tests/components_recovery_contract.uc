@@ -120,7 +120,8 @@ function check(v,m){if(!v)die(m);}
 ` + substr(source, verify_start, verify_end-verify_start) + `
 const before={runtime_retained:true,retained_engine:{pid:2}};
 check(verify_runtime(before,'work')&&held&&now==2,'wait for the actual manager without blocking its renewal');
-ready_at=100;now=0;check(!verify_runtime(before,'work')&&held&&now==8,'failed manager readiness must be bounded');
+ready_at=30;now=0;check(verify_runtime(before,'work')&&held&&now==30,'expired admission must allow the actual manager recovery hold');
+ready_at=100;now=0;check(!verify_runtime(before,'work')&&held&&now==45,'failed manager readiness must be bounded');
 raises=true;try{verify_runtime(before,'work');}catch(e){}
 check(held,'verification exceptions must reacquire the mutation lock');
 raises=false;ready_at=0;const previous=now;

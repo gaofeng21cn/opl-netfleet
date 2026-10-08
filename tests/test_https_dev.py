@@ -101,6 +101,19 @@ class EngineArtifacts(unittest.TestCase):
         altered=copy.deepcopy(proof);altered['base']=tested
         with self.assertRaises(ValueError):qualify.composition_evidence(request,altered)
 
+    def test_upgrade_requires_real_expired_admission_recovery(self):
+        request={'schema':qualify.COMPOSITION_SCHEMA,
+                 'base':{'source_commit':'b'*40,'source_tree':'c'*40},
+                 'previous_engine':{'sha256':'a'*64}}
+        checks={**dict.fromkeys(qualify.COMPOSITION_CHECKS,True),'engine_package_cycle':True,
+                'autonomous_canary_rollback':True}
+        proof={'diagnostic_passed':True,**request['base'],'base':request['base'],
+               'lanes':{'compatibility':{'ok':True,**request['base'],
+                        'checks':checks,'composition':request}}}
+        with self.assertRaises(ValueError):qualify.composition_evidence(request,proof)
+        checks['retained_manager_cold_recovery']=True
+        self.assertEqual(qualify.composition_evidence(request,proof),checks)
+
     def test_base_binding_includes_actual_gateway_templates(self):
         import hashlib
         source=ROOT/'openwrt/files'

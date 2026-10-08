@@ -97,7 +97,7 @@ def composition_evidence(request, proof):
             or not isinstance(checks, dict) or not checks or not all(value is True for value in checks.values())
             or not all(checks.get(name) is True for name in COMPOSITION_CHECKS)):
         raise ValueError('missing exact composition install, runtime or failure evidence')
-    if request.get('previous_engine') and checks.get('engine_package_cycle') is not True:
+    if request.get('previous_engine') and any(checks.get(name) is not True for name in ('engine_package_cycle', 'retained_manager_cold_recovery')):
         raise ValueError('missing generic engine update cycle')
     if request.get('previous_engine') and checks.get('autonomous_canary_rollback') is not True:
         raise ValueError('missing autonomous post-install rollback evidence')
@@ -190,7 +190,8 @@ def main():
             checks = composition_evidence(request, proof)
         elif (proof.get('diagnostic_passed') is not True or proof.get('source_commit')!=execution_commit
               or proof.get('source_tree')!=tree or proof.get('base')!=base
-              or checks.get('engine_package_cycle') is not True or checks.get('dual_stack_probe_faults') is not True):
+              or checks.get('engine_package_cycle') is not True or checks.get('retained_manager_cold_recovery') is not True
+              or checks.get('dual_stack_probe_faults') is not True):
             raise ValueError('missing plugin update or failure evidence')
         if a.retained_base is not None and checks.get('retained_base_packages') is not True:
             raise ValueError('missing retained base package evidence')

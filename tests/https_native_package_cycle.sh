@@ -54,7 +54,29 @@ cycle_rollback() {
 # HTTPS updater is staged or run here.
 test "$(apk --no-network query --from installed --format json --fields version opl-netfleet-https-compat | jsonfilter -e '@[0].version')" = "$old_version"
 grep -E '^opl-netfleet-https-compat([=<>~!]|$)' /etc/apk/world >"$work/cycle-old-world.txt"
+# Real devices can spend more than the ten-second admission lease in APK.
+# Delay only the first actual signed replacement in this disposable guest.
+cold_apk_path=$(readlink -f "$(command -v apk)")
+test ! -e "$cold_apk_path.netfleet-cold-original"
+printf '%s\n' "$cold_apk_path" >"$work/cold-apk-path"
+mv "$cold_apk_path" "$cold_apk_path.netfleet-cold-original"
+cat >"$cold_apk_path" <<'APK'
+#!/bin/sh
+case " $* " in
+ *" --scripts=no add "*"/new/opl-netfleet-https-compat-"*)
+  if [ -f /tmp/https-native-network/cold-install-delay ]; then
+   rm /tmp/https-native-network/cold-install-delay
+   sleep 12
+  fi ;;
+esac
+exec "$(readlink -f "$0").netfleet-cold-original" "$@"
+APK
+chmod 0755 "$cold_apk_path"
+touch "$work/cold-install-delay"
 cycle_update() {
+cycle_cold_attempt=0
+[ ! -f "$work/cold-install-delay" ] || cycle_cold_attempt=1
+cycle_cold_bypass=0
 transaction=$(mktemp -d /tmp/netfleet-plugin-update-test.XXXXXX)
 mkdir "$transaction/feed" "$transaction/old"
 cp "$cycle_new" "$transaction/feed/"
@@ -94,7 +116,12 @@ UC
 sh "$transaction/run.sh" "$transaction" 10 >"$transaction/result.json" &
 cycle_writer=$!
 while kill -0 "$cycle_writer" 2>/dev/null; do
-    probe 4 h2; probe 6 h2
+    cycle_protocol=h2
+    [ "$cycle_cold_attempt" = 0 ] || cycle_protocol=either
+    for cycle_family in 4 6; do
+        probe "$cycle_family" "$cycle_protocol"
+        if grep -iq '^x-upstream-protocol: http/1.1' "$work/headers"; then cycle_cold_bypass=1; fi
+    done
     sleep 1
 done
 if ! wait "$cycle_writer"; then
@@ -117,6 +144,12 @@ const owners={'opl-netfleet-https-compat':'https-compat','opl-netfleet-plugin-mi
 const expected=map(plan.names,name=>owners[name]);
 if(index(expected,null)>=0||sprintf('%J',sort(journal.drained??[]))!=sprintf('%J',sort(expected)))die('dependency_closure_drain_mismatch');
 UC
+if [ "$cycle_cold_attempt" = 1 ]; then
+    test ! -e "$work/cold-install-delay"
+    test "$cycle_cold_bypass" = 1
+    mv "$cold_apk_path.netfleet-cold-original" "$cold_apk_path"
+    printf '%s\n' true >"$work/cold-install-recovered"
+fi
 }
 cycle_update
 test "$(pidof mihomo)" = "$base_pid"
