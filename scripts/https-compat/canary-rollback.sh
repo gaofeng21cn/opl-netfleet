@@ -34,7 +34,7 @@ if(value.engine_identity!=null) {
 }
 const companions=value.companions ?? [];
 if(type(companions)!='array'||length(companions)>1||length(filter(companions,row=>row.package!='opl-netfleet-plugin-mihomo')))die('canary_companion_not_allowed');
-const packages=fs.popen('apk --no-network query --from installed --all --format json --fields name,version');
+const packages=fs.popen("apk --no-network query --from installed --format json --fields name,version 'opl-netfleet-https-compat' 'opl-netfleet-plugin-mihomo'");
 const installed=json(packages.read('all'));if(packages.close()!=0)die('canary_installed_read_failed');
 const version=name=>filter(installed,row=>row.name==name)[0]?.version;
 for(let row in companions) if(version(row.package)!=(version(value.package)==value.new.version?row.new.version:row.old.version))die('canary_companion_identity_changed');
