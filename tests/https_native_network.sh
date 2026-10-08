@@ -346,11 +346,22 @@ if [ -n "$probe_port" ]; then
         grep -iq '^retry-after: 7' "$work/error.headers"
     done
     stage=rule_bypass
+    processes
+    bypass_engine=$engine_pid
+    wire -fsSN 'https://wire.example/compat-wire/drain-events' >"$work/rule-bypass-events.txt" 2>"$work/rule-bypass-events.log" &
+    bypass_stream=$!
+    sleep 1
+    kill -0 "$bypass_stream"
+    grep -q '^data: 0$' "$work/rule-bypass-events.txt"
     ucode /tmp/tests/https_native_guest.uc rule-bypass >"$work/rule-bypass.json"
     for family in 4 6; do
         for trial in $(seq 1 10); do probe "$family" http/1.1; done
     done
     test "$(pidof mihomo)" = "$base_pid"
+    processes
+    test "$engine_pid" = "$bypass_engine"
+    wait "$bypass_stream"
+    test "$(grep -c '^data:' "$work/rule-bypass-events.txt")" = 30
     sha256sum -c "$work/base.sha256"
     ucode /tmp/tests/https_native_guest.uc rule-h2 >"$work/rule-h2.json"
     wait_intercepting
