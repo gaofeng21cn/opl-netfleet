@@ -59,7 +59,7 @@ if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
 fi
 make_bin=${MAKE:-make}
 command -v "$make_bin" >/dev/null 2>&1 || die "GNU Make is unavailable: $make_bin"
-make_version=$("$make_bin" --version | head -1)
+make_version=$("$make_bin" --version | sed -n '1p')
 [[ "$make_version" == 'GNU Make '* ]] || die "GNU Make is required: $make_bin"
 make_major=${make_version#GNU Make }; make_major=${make_major%%.*}
 [[ "$make_major" =~ ^[0-9]+$ && "$make_major" -ge 4 ]] || die "GNU Make 4 or newer is required: $make_version"
