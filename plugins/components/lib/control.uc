@@ -567,6 +567,7 @@ stop_services = function(work) {
 	return false;
 };
 restore_services = function(before, work) {
+	if (before.runtime_retained && sprintf('%J', native_identity()) != sprintf('%J', before.retained_core)) return false;
 	const deadline = time() + 45;
 	if (before.core && !service_running(SERVICE) && !run_command(`NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/${SERVICE} start`, work)) return false;
 	if (before.core) {
@@ -626,7 +627,14 @@ function retained_payload(work, archive, versions) {
 	const before = read_json(prefix + 'manifest.json'), after = read_json(extracted + prefix + 'manifest.json');
 	if (type(before) != 'object' || type(after) != 'object') fail('runtime_contract_changed');
 	delete before.version; delete after.version;
-	if (sprintf('%J', before) != sprintf('%J', after)) fail('runtime_contract_changed');
+	function canonical(value) {
+		if (type(value) == 'array') return map(value, canonical);
+		if (type(value) != 'object') return value;
+		const ordered = {};
+		for (let key in sort(keys(value))) ordered[key] = canonical(value[key]);
+		return ordered;
+	}
+	if (sprintf('%J', canonical(before)) != sprintf('%J', canonical(after))) fail('runtime_contract_changed');
 	const existing = package_paths(['opl-netfleet-plugin-mihomo'], versions);
 	for (let path in existing) {
 		if (index(path, '/lib/apk/packages/') == 0) continue;

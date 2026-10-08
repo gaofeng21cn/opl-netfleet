@@ -301,20 +301,21 @@ with open('/var/lock/opl-netfleet-deploy.lock', 'a') as lock:
             core_command = ["ubus", "call", "service", "list", '{"name":"opl-netfleet-core"}']
             core_before_upgrade = json.loads(subprocess.check_output(core_command))["opl-netfleet-core"]["instances"]["core"]["pid"]
             held = await self.request(hold=True)
+            engine_before_upgrade = self.owner.health()["pid"]
             upgrade = await asyncio.create_subprocess_exec("flock", "/var/lock/opl-netfleet-deploy.lock",
                 "apk", "add", "--force-reinstall", str(packages[0]),
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             try:
-                await asyncio.sleep(32)
-                self.assertIsNone(upgrade.returncode, "package replacement must wait for the live TLS connection")
-                from https_compat_kernel import gateway as kernel_gateway
-                self.assertFalse(kernel_gateway.status()["intercepting"])
-                self.assertFalse((await self.request(ca=self.directory / "upstream.pem"))["h2"])
-                output, error = await asyncio.wait_for(held.communicate(b"\n"), 6)
-                self.assertEqual(held.returncode, 0, error.decode())
-                self.assertTrue(json.loads(output)["h2"], "the existing connection must finish before engine replacement")
                 output, error = await asyncio.wait_for(upgrade.communicate(), 30)
                 self.assertEqual(upgrade.returncode, 0, error.decode())
+                from https_compat_kernel import gateway as kernel_gateway
+                self.assertTrue(kernel_gateway.status()["intercepting"])
+                self.assertEqual(engine_before_upgrade, self.owner.health()["pid"])
+                self.assertIsNone(held.returncode, "package replacement must preserve the live TLS connection")
+                self.assertTrue((await self.request())["h2"])
+                output, error = await asyncio.wait_for(held.communicate(b"\n"), 6)
+                self.assertEqual(held.returncode, 0, error.decode())
+                self.assertTrue(json.loads(output)["h2"], "the original connection must finish after package replacement")
                 core_after_upgrade = json.loads(subprocess.check_output(core_command))["opl-netfleet-core"]["instances"]["core"]["pid"]
                 self.assertEqual(core_before_upgrade, core_after_upgrade, "plugin replacement cannot restart the base core")
             finally:

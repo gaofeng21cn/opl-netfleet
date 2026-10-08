@@ -388,7 +388,7 @@ return function(context, options) {
 			} catch (_) {admitted=false;}
 			const replaced=manager?.running===true&&type(manager.pid)=='int'&&manager.pid!=saved.manager_pid;
 			const ticked=saved.manager_last_tick==null||current.last_tick!=saved.manager_last_tick;
-			if(replaced&&ticked&&live.ready&&admitted) {
+			if(replaced&&ticked&&live.ready&&live.pid==saved.pid&&admitted) {
 				stable++;if(stable>=3) return {seamless:true,manager_restarted:true,pid:live.pid,
 					manager_pid:manager.pid,intercepting:current.intercepting===true};
 			} else stable=0;
