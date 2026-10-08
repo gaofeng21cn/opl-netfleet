@@ -37,7 +37,7 @@ cat >"$fixture/bin/ucode" <<'SH'
 if [ "$1" = "$GUARD_FIXTURE_TRANSACTION/code/plugins/components/recover.uc" ]; then
  printf '%s\n' "$*" >>"$FIXTURE/calls"
  [ "${FAIL_INSTALL:-0}" = 0 ] || exit 1
- printf '[{"name":"opl-netfleet-https-compat","version":"0.6.6"}]\n' >"$FIXTURE/installed.json"
+ if [ -f "$FIXTURE/installed-old.json" ]; then cp "$FIXTURE/installed-old.json" "$FIXTURE/installed.json"; else printf '[{"name":"opl-netfleet-https-compat","version":"0.6.6"}]\n' >"$FIXTURE/installed.json"; fi
  printf '{"phase":"rolled_back"}\n' >"$GUARD_FIXTURE_TRANSACTION/journal.json"
  printf '{"ok":true}\n'
 elif [ "$1" = /usr/libexec/opl-netfleet/main.uc ]; then
@@ -121,6 +121,34 @@ new_case valid_acceptance
 cp "$FIXTURE/accepted.json" "$FIXTURE/canary-accepted.json"
 sh "$guard" "$FIXTURE" guard
 assert_state accepted
+assert_no_install
+
+new_case dependency_closure
+/usr/bin/ucode - "$FIXTURE" "$GUARD_FIXTURE_TRANSACTION" <<'UC'
+import * as fs from 'fs';import {sha256} from 'digest';
+const dir=ARGV[0],transaction=ARGV[1],package='opl-netfleet-plugin-mihomo';
+const row={package};
+for(let key,version in {old:'0.9.9',new:'0.9.10'}) {
+ const artifact=package+'-'+version+'.apk',raw='backend-'+key;
+ fs.writefile(dir+'/'+key+'/'+artifact,raw);fs.writefile(transaction+'/'+key+'/'+artifact,raw);
+ row[key]={artifact,version,sha256:sha256(raw)};
+}
+let config=json(fs.readfile(dir+'/rollback.json'));config.companions=[row];fs.writefile(dir+'/rollback.json',sprintf('%J',config));
+let journal=json(fs.readfile(transaction+'/journal.json'));push(journal.names,package);
+journal.versions[package]=row.old.version;journal.candidates[package]=row.new.version;
+fs.writefile(transaction+'/journal.json',sprintf('%J',journal));
+fs.writefile(dir+'/installed.json',sprintf('%J',[{name:config.package,version:config.new.version},{name:package,version:row.new.version}]));
+fs.writefile(dir+'/installed-old.json',sprintf('%J',[{name:config.package,version:config.old.version},{name:package,version:row.old.version}]));
+UC
+sh "$guard" "$FIXTURE" guard
+assert_state restored
+
+new_case unexpected_companion
+/usr/bin/ucode - "$FIXTURE" <<'UC'
+import * as fs from 'fs';const path=ARGV[0]+'/rollback.json',value=json(fs.readfile(path));
+value.companions=[{package:'opl-netfleet-kernel'}];fs.writefile(path,sprintf('%J',value));
+UC
+if sh "$guard" "$FIXTURE" validate; then exit 1; fi
 assert_no_install
 
 new_case failed_install

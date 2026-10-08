@@ -262,13 +262,15 @@ stage=compat_enable
 ucode /tmp/tests/https_native_guest.uc network-enable >"$work/enable.log"
 cat /etc/opl-netfleet/compatibility/ca/mitmproxy-ca-cert.pem >>"$work/client-ca.pem"
 wait_intercepting
-if [ -f /tmp/compat-runtime/runtime-cycle/cycle.json ]; then
-    stage=native_runtime_update
-    . /tmp/tests/https_native_runtime_cycle.sh
-fi
+# Upgrade the exact engine/backend dependency closure together. The legacy
+# manager cannot preserve resolver state across a backend-only replacement.
 if [ -f /tmp/compat-runtime/upgrade.json ]; then
     stage=plugin_update
     . /tmp/tests/https_native_package_cycle.sh
+fi
+if [ -f /tmp/compat-runtime/runtime-cycle/cycle.json ]; then
+    stage=native_runtime_update
+    . /tmp/tests/https_native_runtime_cycle.sh
 fi
 
 stage=converted_wire

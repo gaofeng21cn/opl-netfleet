@@ -63,7 +63,14 @@ rt_stream=$!
 sleep 1
 kill -0 "$rt_stream"
 grep -q '^data: 0$' "$work/native-retained-events.txt"
-runtime_request old new complete
+installed_runtime=$(apk --no-network query --from installed --format json --fields version opl-netfleet-plugin-mihomo | jsonfilter -e '@[0].version')
+if [ "$installed_runtime" = "$(jsonfilter -i "$runtime_cycle/cycle.json" -e '@.old.version')" ]; then
+    runtime_request old new complete
+else
+    test "$installed_runtime" = "$(jsonfilter -i "$runtime_cycle/cycle.json" -e '@.new.version')"
+    # The preceding generic engine transaction already upgraded this backend.
+    test -f "$work/package-cycle-complete"
+fi
 runtime_request new bad rolled_back
 test "$(jsonfilter -i /etc/opl-netfleet/package-transactions/$rt_id/rollback.json -e '@.runtime_restored')" = true
 wait "$rt_stream"

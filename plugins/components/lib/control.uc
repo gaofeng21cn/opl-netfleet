@@ -319,10 +319,12 @@ function resume_resources(work) {
 		const entry = state.before?.runtime_retained && index(['mihomo','https-compat'], id) >= 0 ? `${work}/code/plugins/components/lifecycle-retained.uc` : null;
 		const result = lifecycle("resume", id, entry);
 		if (result?.ok != true) success = false;
-		if (state.before?.runtime_retained && index(['mihomo','https-compat'], id) >= 0) {
-			const watcher_ok = resume_observer(work, 'mihomo'), manager_ok = resume_observer(work, 'https-compat');
-			if (!watcher_ok || !manager_ok) success = false;
-		}
+	}
+	// All dependency maintenance markers must be removed before a manager
+	// imports the new graph. Otherwise a joint update starts it half-restored.
+	if (success && state.before?.runtime_retained) {
+		const watcher_ok = resume_observer(work, 'mihomo'), manager_ok = resume_observer(work, 'https-compat');
+		if (!watcher_ok || !manager_ok) success = false;
 	}
 	return success;
 }
@@ -694,7 +696,16 @@ function verify_runtime(before, work) {
 	network_leave();
 	let result, failure;
 	try {
-		result = (before.retained_engine == null || parsed(`ucode ${q(MAIN)} compatibility-tick`)?.ok == true) && restore_services(before, work);
+		// Only the restored long-lived manager owns asynchronous DNS results.
+		// A one-shot controller starts with an empty resolver and can revoke a
+		// healthy lease. Wait for the manager, without holding its network lock.
+		const deadline = time() + 8;
+		while (true) {
+			result = restore_services(before, work);
+			if (result || before.retained_engine == null) break;
+			if (time() >= deadline) break;
+			system('sleep 1');
+		}
 	} catch (error) { failure = error; }
 	network_enter();
 	if (failure != null) die(failure.message);
@@ -721,7 +732,7 @@ function retained_payload(work, archive, versions, name) {
 	const engine = name == COMPATIBILITY_PACKAGE;
 	const prefix = engine ? '/usr/libexec/opl-netfleet-compat/' : '/usr/libexec/opl-netfleet/plugins/mihomo/';
 	const descriptor = engine ? 'extension.json' : 'manifest.json';
-	const extracted = `${work}/retained-payload`;
+	const extracted = `${work}/retained-payload-${name}`;
 	if (!directory(extracted) || !run_command(`apk extract --destination ${q(extracted)} ${q(archive)}`, work))
 		fail('runtime_retention_unavailable');
 	const before = read_json(prefix + descriptor), after = read_json(extracted + prefix + descriptor);
@@ -879,13 +890,17 @@ upgrade = function(request, work, candidates) {
 		...(request.component == "mihomo" ? ["/usr/libexec/mihomo"] : [])], path => fs.lstat(path) != null);
 	if (before.scoped && request.plugin) before.runtime_paths = package_paths(names, versions);
 	before.runtime_inputs = input_identity(before.runtime_paths);
-	if (KIND == 'native-mihomo' && before.core && before.scoped && length(names) == 1 &&
-		index(['opl-netfleet-plugin-mihomo',COMPATIBILITY_PACKAGE], names[0]) >= 0 &&
-		(names[0] != COMPATIBILITY_PACKAGE || service_running('opl-netfleet-compat'))) {
-		retained_payload(work, next[0], versions, names[0]);
+	if (KIND == 'native-mihomo' && before.core && before.scoped && length(names) > 0 && length(names) <= 2 &&
+		!length(filter(names, name => index(['opl-netfleet-plugin-mihomo',COMPATIBILITY_PACKAGE], name) < 0)) &&
+		(index(names, COMPATIBILITY_PACKAGE) < 0 || service_running('opl-netfleet-compat'))) {
+		for (let name in names) {
+			const archive = filter(next, path => fs.basename(path) == `${name}-${candidates[name]}.apk`)[0];
+			if (archive == null) fail('runtime_retention_unavailable');
+			retained_payload(work, archive, versions, name);
+		}
 		before.runtime_retained = true;
 		before.retained_core = native_identity();
-		before.retained_observers = names[0] == 'opl-netfleet-plugin-mihomo' ?
+		before.retained_observers = index(names, 'opl-netfleet-plugin-mihomo') >= 0 ?
 			{ mihomo: observer(SERVICE, 'lifecycle', ['/usr/bin/ucode', MAIN, 'native-gateway-watch']) } : {};
 		if (service_running('opl-netfleet-compat')) {
 			before.retained_observers['https-compat'] = observer('opl-netfleet-compat', 'manager', ['/usr/libexec/opl-netfleet-compat/launcher', 'manager']);
@@ -1028,8 +1043,10 @@ function request_rollback(id) {
 		fail('update_operation_changed');
 	if (fs.lstat(PENDING) != null || update_process()?.running == true) fail('previous_update_incomplete');
 	const work = `${ROOT}/${id}`, state = read_json(`${work}/journal.json`);
-	if (state?.phase != 'complete' || state.before?.runtime_retained != true || length(state.names ?? []) != 1 ||
-		index(['opl-netfleet-plugin-mihomo',COMPATIBILITY_PACKAGE], state.names[0]) < 0) fail('rollback_transaction_not_admitted');
+	if (state?.phase != 'complete' || state.before?.runtime_retained != true ||
+		length(state.names ?? []) < 1 || length(state.names) > 2 ||
+		length(filter(state.names, name => index(['opl-netfleet-plugin-mihomo',COMPATIBILITY_PACKAGE], name) < 0)))
+		fail('rollback_transaction_not_admitted');
 	for (let path, digest in state.inputs) if (index(path, `${work}/`) != 0 || sha256(path) != digest) fail('update_recovery_artifact_changed');
 	const current = installed();
 	for (let name in state.names) if (current?.[name] != state.candidates[name]) fail('installed_version_changed');

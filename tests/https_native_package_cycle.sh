@@ -35,7 +35,7 @@ cycle_rollback() {
  for attempt in $(seq 1 90); do
   phase=$(jsonfilter -i "/etc/opl-netfleet/package-transactions/$cycle_id/journal.json" -e '@.phase')
   [ "$phase" != rolled_back ] || break
-  probe 4 h2; sleep 1
+  sleep 1
  done
  test "$phase" = rolled_back
  test ! -e /etc/opl-netfleet/package-transactions/pending.json
@@ -55,6 +55,9 @@ mkdir "$transaction/feed" "$transaction/old"
 cp "$cycle_new" "$transaction/feed/"
 cp /tmp/compat-runtime/compat-packages.adb "$transaction/feed/packages.adb"
 cp "$cycle_old" "$transaction/old/"
+if [ -f /tmp/compat-runtime/runtime-cycle/cycle.json ]; then
+    cp /tmp/compat-runtime/runtime-cycle/old/*.apk "$transaction/old/"
+fi
 cp /tmp/scripts/update-openwrt-plugins-remote.sh "$transaction/run.sh"
 cp /tmp/scripts/observe-openwrt.uc "$transaction/observe.uc"
 # A signed local Feed exercises the same solver and transaction without
@@ -154,5 +157,6 @@ cp "$guard/guard-state.json" "$work/canary-rollback.json"
 cycle_update
 wait "$cycle_stream"
 test "$(grep -c '^data:' "$work/package-cycle-events.txt")" = 360
+: >"$work/package-cycle-complete"
 printf '%s\n' 'engine generic Feed update and autonomous exact archive rollback: stable base and private state passed'
 set +x

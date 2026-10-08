@@ -100,20 +100,20 @@ print("components_recovery_contract_ok\n");
 const verify_start = index(source, 'function verify_runtime(');
 const verify_end = index(source, 'function drain_scoped(', verify_start);
 loadstring(`
-let held=true, renewal_ok=true, raises=false, renewals=0;
-const MAIN='main';function q(v){return v;}
+let held=true, ready_at=2, raises=false, now=0, checks=0;
+function time(){return now;}function system(){now++;return 0;}
 function network_leave(){held=false;}function network_enter(){held=true;}
-function parsed(){if(held)die('renewal must own an independent network lock');renewals++;return {ok:renewal_ok};}
-function restore_services(before){if(before.runtime_retained&&held)die('retained verification cannot block renewal');if(raises)die('verification_failure');return true;}
+function parsed(){die('a one-shot HTTPS controller must not run');}
+function restore_services(before){if(before.runtime_retained&&held)die('retained verification cannot block renewal');checks++;if(raises)die('verification_failure');return now>=ready_at;}
 function check(v,m){if(!v)die(m);}
 ` + substr(source, verify_start, verify_end-verify_start) + `
 const before={runtime_retained:true,retained_engine:{pid:2}};
-check(verify_runtime(before,'work')&&held&&renewals==1,'renew before retained verification and reacquire before continuing');
-renewal_ok=false;check(!verify_runtime(before,'work')&&held,'failed renewal must retain recovery authority');
-renewal_ok=true;raises=true;try{verify_runtime(before,'work');}catch(e){}
+check(verify_runtime(before,'work')&&held&&now==2,'wait for the actual manager without blocking its renewal');
+ready_at=100;now=0;check(!verify_runtime(before,'work')&&held&&now==8,'failed manager readiness must be bounded');
+raises=true;try{verify_runtime(before,'work');}catch(e){}
 check(held,'verification exceptions must reacquire the mutation lock');
-raises=false;const previous=renewals;
-check(verify_runtime({},'work')&&held&&renewals==previous,'ordinary stopped-runtime recovery keeps its existing lock');
+raises=false;ready_at=0;const previous=now;
+check(verify_runtime({},'work')&&held&&now==previous,'ordinary stopped-runtime recovery keeps its existing lock');
 `)();
 
 // APK local paths replace world roots with checksums. Exercise administrator

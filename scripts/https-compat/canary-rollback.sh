@@ -32,9 +32,15 @@ if(value.engine_identity!=null) {
  if(!stat||split(trim(substr(stat,rindex(stat,') ')+2)),/\s+/)[19]!=e.birth||
     sha256(fs.readfile('/proc/'+e.pid+'/exe')??'')!=e.sha256)die('canary_engine_identity_changed');
 }
-for(let key in ['old','new']) {
- const item=value[key];
- if(!match(item.version,/^[0-9]+\.[0-9]+\.[0-9]+(-r[0-9]+)?$/)||item.artifact!=value.package+'-'+item.version+'.apk'||
+const companions=value.companions ?? [];
+if(type(companions)!='array'||length(companions)>1||length(filter(companions,row=>row.package!='opl-netfleet-plugin-mihomo')))die('canary_companion_not_allowed');
+const packages=fs.popen('apk --no-network query --from installed --all --format json --fields name,version');
+const installed=json(packages.read('all'));if(packages.close()!=0)die('canary_installed_read_failed');
+const version=name=>filter(installed,row=>row.name==name)[0]?.version;
+for(let row in companions) if(version(row.package)!=(version(value.package)==value.new.version?row.new.version:row.old.version))die('canary_companion_identity_changed');
+for(let row in [value,...companions]) for(let key in ['old','new']) {
+ const item=row[key];
+ if(!match(item.version,/^[0-9]+\.[0-9]+\.[0-9]+(-r[0-9]+)?$/)||item.artifact!=row.package+'-'+item.version+'.apk'||
     sha256(fs.readfile(dir+'/'+key+'/'+item.artifact)??'')!=item.sha256)die('canary_archive_identity_changed');
 }
 UC
@@ -109,10 +115,12 @@ transaction=/etc/opl-netfleet/package-transactions/$transaction_id
 ucode - "$stage" "$transaction" <<'UC'
 import * as fs from 'fs';import {sha256} from 'digest';
 const wanted=json(fs.readfile(ARGV[0]+'/rollback.json')), dir=ARGV[1], state=json(fs.readfile(dir+'/journal.json'));
-if(state?.phase!='complete'||state.before?.runtime_retained!==true||length(state.names??[])!=1||state.names[0]!=wanted.package||
- state.versions[wanted.package]!=wanted.old.version||state.candidates[wanted.package]!=wanted.new.version||
- sha256(fs.readfile(dir+'/old/'+wanted.old.artifact))!=wanted.old.sha256||
- sha256(fs.readfile(dir+'/new/'+wanted.new.artifact))!=wanted.new.sha256)die('canary_transaction_identity_changed');
+const rows=[wanted,...(wanted.companions ?? [])];
+if(state?.phase!='complete'||state.before?.runtime_retained!==true||
+ sprintf('%J',sort(state.names??[]))!=sprintf('%J',sort(map(rows,row=>row.package))))die('canary_transaction_identity_changed');
+for(let row in rows) if(state.versions[row.package]!=row.old.version||state.candidates[row.package]!=row.new.version||
+ sha256(fs.readfile(dir+'/old/'+row.old.artifact))!=row.old.sha256||
+ sha256(fs.readfile(dir+'/new/'+row.new.artifact))!=row.new.sha256)die('canary_transaction_identity_changed');
 UC
 ucode "$transaction/code/plugins/components/recover.uc" rollback "$transaction_id" >recovery-request.json
 flock -u 9

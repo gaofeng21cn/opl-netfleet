@@ -290,7 +290,8 @@ return function(context, options) {
                 last_failure:failure,last_error:new_error?max(...map(errors,event=>event.id)):(old.last_error ?? 0)};
         }
         state.rule_recovery=rule_states;
-        if(io.canonical(current)!=io.canonical(active)) {
+        const same_targets=io.canonical(current)==io.canonical(active);
+        if(!same_targets) {
             const same_engine=engine.revision(active)==live.revision;
             if(!same_engine) bypass();
             io.atomic(EFFECTIVE,active);
@@ -298,16 +299,25 @@ return function(context, options) {
             engine.sync_rule_switches(active,live);
         }
         const target_rules=filter(active.rules,rule=>rule.enabled&&rule.strategy=='h2'&&index(active.blocked_rules ?? [],rule.id)<0),candidates=[];
+        let resolving=false;
         for(let current in values(rule_states)) current.admitted=false;
         for(let rule in target_rules) {
             const before=length(candidates);
-            const targets=rule.match=='suffix'?['0.0.0.0/0','::/0']:(probes.request('resolve',rule,network.egress)?.addresses ?? []);
+            const resolved=rule.match=='suffix'?null:probes.request('resolve',rule,network.egress);
+            resolving ||= resolved?.pending===true;
+            const targets=rule.match=='suffix'?['0.0.0.0/0','::/0']:(resolved?.addresses ?? []);
             for(let device in active.devices) if(index(rule.devices,device.id)>=0) for(let address in device.addresses) {
                 const family=index(address,':')>=0?6:4;
                 if(!network[`ipv${family}_proxy`]) continue;
                 for(let destination in targets) if((index(destination,':')>=0)==(family==6)) push(candidates,[address,destination,rule.port]);
             }
             rule_states[rule.id].admitted=length(candidates)>before;
+        }
+        // A replacement manager has no in-memory DNS results. Pending is not
+        // a failed resolution: leave an unchanged, already-authorized lease
+        // to its original kernel deadline. Never renew from this state.
+        if(resolving&&same_targets&&previous.intercepting===true) {
+            state.intercepting=true;state.reason='targets_resolving';save(state,previous);return;
         }
         if(length(candidates)) {
             const key=io.canonical([epoch,candidates]);

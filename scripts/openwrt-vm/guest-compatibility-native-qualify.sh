@@ -167,6 +167,7 @@ ucode /tmp/tests/https_native_guest.uc load >"$work/load.log" 2>&1
 ucode /tmp/tests/device_identity_native_entry.uc /usr/libexec/opl-netfleet/plugins/device-identity/control >"$work/identity.log" 2>&1
 ucode /tmp/tests/device_identity_native.uc /usr/libexec/opl-netfleet /usr/libexec/opl-netfleet/plugins/device-identity/resources/neighbor >>"$work/identity.log" 2>&1
 NETFLEET_ISOLATED_NATIVE_TEST=1 sh /tmp/tests/native-neighbor-wire.sh /usr/libexec/opl-netfleet/plugins/device-identity/resources/neighbor >>"$work/identity.log" 2>&1
+ucode /tmp/tests/https_native_dns.uc /usr/libexec/opl-netfleet-compat >"$work/dns.log" 2>&1
 ucode /tmp/tests/https_native_recovery.uc /usr/libexec/opl-netfleet-compat >"$work/recovery.log" 2>&1
 ucode /tmp/tests/https_native_guest.uc enable >"$work/enable.log" 2>&1
 stage=plugin_toggle

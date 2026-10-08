@@ -22,7 +22,7 @@ return function(io,run) {
         }
         // Obsolete results cannot authorize a different target or egress policy.
         for(let name in results) if(now-results[name].at>60) delete results[name];
-        return saved&&now>=saved.at&&now-saved.at<20?saved.value:null;
+        return saved&&now>=saved.at&&now-saved.at<20?saved.value:pending[key]?{pending:true}:null;
     }
     return {request};
 };
