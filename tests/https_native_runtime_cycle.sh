@@ -20,7 +20,7 @@ runtime_identity >"$work/native-identity.before"
 processes
 retained_engine=$engine_pid
 runtime_request() {
-    prior=$1; next=$2; expected=$3
+    prior=$1; next=$2; rt_expected=$3
     watcher_before=$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.lifecycle.pid')
     manager_before=$(ubus call service list '{"name":"opl-netfleet-compat"}' | jsonfilter -e '@["opl-netfleet-compat"].instances.manager.pid')
     rt_stage=$(mktemp -d /tmp/native-retained-stage.XXXXXX)
@@ -43,7 +43,7 @@ UC
         probe 4 h2
         sleep 1
     done
-    test "$rt_phase" = "$expected"
+    test "$rt_phase" = "$rt_expected"
     test "$(jsonfilter -i "$rt_journal" -e '@.before.runtime_retained')" = true
     watcher_after=$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.lifecycle.pid')
     manager_after=$(ubus call service list '{"name":"opl-netfleet-compat"}' | jsonfilter -e '@["opl-netfleet-compat"].instances.manager.pid')
