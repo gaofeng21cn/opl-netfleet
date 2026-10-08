@@ -64,6 +64,7 @@ export PATH="$fixture/bin:$PATH"
 new_case() {
  export FIXTURE="$fixture/$1" FIX_ACCEPTANCE=0 FAIL_INSTALL=0
  mkdir -m 0700 "$FIXTURE" "$FIXTURE/old" "$FIXTURE/new"
+ : >"$FIXTURE/calls"
  printf old >"$FIXTURE/old/opl-netfleet-https-compat-0.6.6.apk"
  printf new >"$FIXTURE/new/opl-netfleet-https-compat-0.6.9.apk"
  printf private >"$FIXTURE/private"

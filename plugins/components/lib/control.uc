@@ -674,6 +674,10 @@ restore_services = function(before, work) {
 		if (!same_inputs(before)) return false;
 		if (before.retained_engine != null) {
 			if (process_birth(before.retained_engine.pid) != before.retained_engine.birth) return false;
+			const state = read_json('/var/run/opl-netfleet-compat/state.json');
+			if (state?.last_tick == null || state.last_tick == before.retained_compat.last_tick ||
+				(before.retained_compat.intercepting &&
+				 !length(filter(values(state.rule_recovery ?? {}), rule => rule.admitted === true)))) return false;
 			const compat = parsed(`ucode ${q(MAIN)} compatibility-get`);
 			if (compat?.ok != true || compat.result.requested != before.retained_compat.requested ||
 				(before.retained_compat.intercepting && (compat.result.intercepting != true || compat.result.leases < 1))) {
@@ -909,7 +913,9 @@ upgrade = function(request, work, candidates) {
 			before.retained_engine = { pid: engine.pid, birth: process_birth(engine.pid) };
 			const compat = parsed(`ucode ${q(MAIN)} compatibility-get`);
 			if (compat?.ok != true) fail('seamless_engine_unavailable');
-			before.retained_compat = { requested: compat.result.requested, intercepting: compat.result.intercepting };
+			const state = read_json('/var/run/opl-netfleet-compat/state.json');
+			if (state?.last_tick == null) fail('seamless_manager_unavailable');
+			before.retained_compat = { requested: compat.result.requested, intercepting: compat.result.intercepting, last_tick: state.last_tick };
 		}
 	}
 	if (before.core) {

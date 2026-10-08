@@ -20,7 +20,10 @@ function controller_version(secret, timeout) { return now >= 1 ? "test" : null; 
 function proxies(secret, timeout) { return {proxies: now >= 3 ? {group: {all: ["old", "desired"], now: chosen}} : {}}; }
 function select(secret, name, choice) { sets++; chosen = choice; return true; }
 function q(value) { return value; }
-function parsed(command) { return {result: {active: true, runtime: {controller_available: true, lan_runtime: {dns_ready: now >= 5, transparent_proxy_ready: now >= 5}}}}; }
+let manager_tick=2, admitted=true, engine_birth='same';
+function read_json(path){return {last_tick:manager_tick,rule_recovery:{rule:{admitted}}};}
+function process_birth(pid){return engine_birth;}
+function parsed(command) { if(index(command,'compatibility-get')>=0)return {ok:true,result:{requested:true,intercepting:true,leases:1}};return {result: {active: true, runtime: {controller_available: true, lan_runtime: {dns_ready: now >= 5, transparent_proxy_ready: now >= 5}}}}; }
 function probe_ok() { return !broken && now >= 7; }
 function check(value, message) { if (!value) die(message); }
 `;
@@ -38,6 +41,14 @@ now = 7; broken = true;
 check(!restore_services(before, "/unused") && now == 52, "persistent probe failure must time out");
 now = 7; broken = false; changed = true;
 check(!restore_services(before, "/unused") && now == 7, "changed private configuration must fail immediately");
+changed=false;running={"test-core":true,"opl-netfleet":true};
+native_identity=()=>({pid:1});
+const retained={...before,runtime_retained:true,retained_core:{pid:1},retained_engine:{pid:2,birth:'same'},retained_compat:{requested:true,intercepting:true,last_tick:1}};
+check(restore_services(retained,'/unused'),'fresh actual manager admission is accepted');
+manager_tick=1;check(!restore_services(retained,'/unused'),'old lease alone cannot prove a replacement manager renewed it');
+manager_tick=2;admitted=false;check(!restore_services(retained,'/unused'),'pending DNS cannot pass retained-runtime acceptance');
+admitted=true;engine_birth='changed';check(!restore_services(retained,'/unused'),'replacement engine identity must fail');
+
 `;
 loadstring(harness + implementation + cases)();
 const recovery_start = index(source, "rollback = function(");
