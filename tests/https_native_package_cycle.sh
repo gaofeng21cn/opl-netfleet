@@ -20,6 +20,15 @@ old_version=$(apk adbdump --format json "$cycle_old" | jsonfilter -e '@.info.ver
 new_version=$(apk adbdump --format json "$cycle_new" | jsonfilter -e '@.info.version')
 sha256sum /etc/opl-netfleet/compatibility/config.json /etc/opl-netfleet/compatibility/trust.json \
  /etc/opl-netfleet/compatibility/ca/mitmproxy-ca.pem >"$work/cycle-private.sha256"
+processes
+cycle_engine=$engine_pid
+ip netns exec nfcompat-client curl --noproxy '*' --http1.1 --connect-timeout 3 --max-time 195 \
+ --cacert "$work/client-ca.pem" --resolve 'wire.example:443:198.51.100.10' -fsSN \
+ 'https://wire.example/compat-wire/long-events' >"$work/package-cycle-events.txt" 2>"$work/package-cycle-events.log" &
+cycle_stream=$!
+sleep 1
+kill -0 "$cycle_stream"
+grep -q '^data: 0$' "$work/package-cycle-events.txt"
 cycle_install() {
  (
   exec 9>/var/lock/opl-netfleet-deploy.lock
@@ -29,6 +38,8 @@ cycle_install() {
   apk --no-network --repositories-file /dev/null --force-reinstall add "$1" 9>&-
  ) >>"$work/cycle.log" 2>&1
  test "$(pidof mihomo)" = "$base_pid"
+ processes
+ test "$engine_pid" = "$cycle_engine"
  sha256sum -c "$work/base.sha256" >>"$work/cycle.log"
  sha256sum -c "$work/cycle-private.sha256" >>"$work/cycle.log"
  wait_intercepting
@@ -133,5 +144,7 @@ probe 4 h2; probe 6 h2
 ubus call service delete '{"name":"netfleet-https-guard-test"}' >/dev/null 2>&1 || true
 cp "$guard/guard-state.json" "$work/canary-rollback.json"
 cycle_install "$cycle_new"
+wait "$cycle_stream"
+test "$(grep -c '^data:' "$work/package-cycle-events.txt")" = 360
 printf '%s\n' 'engine generic Feed update and autonomous exact archive rollback: stable base and private state passed'
 set +x

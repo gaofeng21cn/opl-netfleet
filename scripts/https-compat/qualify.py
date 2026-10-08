@@ -155,6 +155,8 @@ def main():
     if a.validate_only:
         print(json.dumps(result)); return
     output = a.output.resolve()
+    if a.runtime_cycle is not None:
+        result['runtime_cycle'] = json.loads((a.runtime_cycle/'cycle.json').read_text())
     canonical = Path(subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', '--path-format=absolute', '--git-common-dir'], text=True).strip()).parent
     if output.is_relative_to(ROOT) or output.is_relative_to(canonical):
         raise ValueError('receipts must remain outside repositories')
