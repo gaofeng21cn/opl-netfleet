@@ -102,21 +102,27 @@ fi
 test "$installed" = "$new_version"
 sha256sum -c new-runtime.sha256
 state restoring
-NETFLEET_PACKAGE_RESTORE=1 ucode "$main" plugin-package-drain https-compat >drain.json
-test "$(jsonfilter -i drain.json -e '@.ok')" = true
-NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null --force-reinstall add old/*.apk 9>&-
-ucode - <<'UC'
-import * as fs from 'fs';
-const value=json(fs.readfile('rollback.json'));
-if(value.world_entry!=null) {
- const path='/etc/apk/world', info=fs.lstat(path), prior=fs.readfile(path);
- if(info?.type!='file'||info.uid!=0||prior==null)die('canary_world_restore_failed');
- const rows=filter(split(prior,'\n'),row=>length(row)&&!match(row,/^opl-netfleet-https-compat([=<>~!]|$)/));
- push(rows,value.world_entry);
- const next=path+'.netfleet-canary.pending', file=fs.open(next,'we',info.mode&0777);
- if(!file||file.write(join('\n',rows)+'\n')==null||!file.flush()||!file.close()||!fs.rename(next,path))die('canary_world_restore_failed');
-}
+transaction_id=$(jsonfilter -i /etc/opl-netfleet/package-transactions/request.json -e '@.id')
+case "$transaction_id" in ''|*[!a-f0-9]*) exit 1 ;; esac
+[ "${#transaction_id}" = 32 ]
+transaction=/etc/opl-netfleet/package-transactions/$transaction_id
+ucode - "$stage" "$transaction" <<'UC'
+import * as fs from 'fs';import {sha256} from 'digest';
+const wanted=json(fs.readfile(ARGV[0]+'/rollback.json')), dir=ARGV[1], state=json(fs.readfile(dir+'/journal.json'));
+if(state?.phase!='complete'||state.before?.runtime_retained!==true||length(state.names??[])!=1||state.names[0]!=wanted.package||
+ state.versions[wanted.package]!=wanted.old.version||state.candidates[wanted.package]!=wanted.new.version||
+ sha256(fs.readfile(dir+'/old/'+wanted.old.artifact))!=wanted.old.sha256||
+ sha256(fs.readfile(dir+'/new/'+wanted.new.artifact))!=wanted.new.sha256)die('canary_transaction_identity_changed');
 UC
+ucode "$transaction/code/plugins/components/recover.uc" rollback "$transaction_id" >recovery-request.json
+flock -u 9
+for attempt in $(seq 1 90); do
+ phase=$(jsonfilter -i "$transaction/journal.json" -e '@.phase')
+ [ "$phase" != rolled_back ] || break
+ sleep 1
+done
+test "$phase" = rolled_back
+test ! -e /etc/opl-netfleet/package-transactions/pending.json
 validate
 sha256sum -c private.sha256
 test "$(pidof mihomo)" = "$(jsonfilter -i rollback.json -e '@.core_pid')"

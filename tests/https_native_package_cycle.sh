@@ -30,27 +30,26 @@ cycle_stream=$!
 sleep 1
 kill -0 "$cycle_stream"
 grep -q '^data: 0$' "$work/package-cycle-events.txt"
-cycle_install() {
- (
-  exec 9>/var/lock/opl-netfleet-deploy.lock
-  flock -w 10 9
-  # Explicit owner admission precedes APK: a rejected drain cannot write files.
-  ucode /usr/libexec/opl-netfleet/main.uc plugin-package-drain https-compat >"$work/cycle-drain.json"
-  apk --no-network --repositories-file /dev/null --force-reinstall add "$1" 9>&-
- ) >>"$work/cycle.log" 2>&1
+cycle_rollback() {
+ flock /var/lock/opl-netfleet-deploy.lock ucode "/etc/opl-netfleet/package-transactions/$cycle_id/code/plugins/components/recover.uc" rollback "$cycle_id" >"$work/cycle-rollback-request.json"
+ for attempt in $(seq 1 90); do
+  phase=$(jsonfilter -i "/etc/opl-netfleet/package-transactions/$cycle_id/journal.json" -e '@.phase')
+  [ "$phase" != rolled_back ] || break
+  probe 4 h2; sleep 1
+ done
+ test "$phase" = rolled_back
+ test ! -e /etc/opl-netfleet/package-transactions/pending.json
+ processes; test "$engine_pid" = "$cycle_engine"
  test "$(pidof mihomo)" = "$base_pid"
- processes
- test "$engine_pid" = "$cycle_engine"
- sha256sum -c "$work/base.sha256" >>"$work/cycle.log"
- sha256sum -c "$work/cycle-private.sha256" >>"$work/cycle.log"
+ sha256sum -c "$work/cycle-private.sha256"
  wait_intercepting
- probe 4 h2; probe 6 h2
 }
 # Feed update exercises the same components owner used by every plugin. Generic
 # worker failure/rollback is qualified in guest-components-qualify.sh; no second
 # HTTPS updater is staged or run here.
-cycle_install "$cycle_old"
+test "$(apk --no-network query --from installed --format json --fields version opl-netfleet-https-compat | jsonfilter -e '@[0].version')" = "$old_version"
 grep -E '^opl-netfleet-https-compat([=<>~!]|$)' /etc/apk/world >"$work/cycle-old-world.txt"
+cycle_update() {
 transaction=$(mktemp -d /tmp/netfleet-plugin-update-test.XXXXXX)
 mkdir "$transaction/feed" "$transaction/old"
 cp "$cycle_new" "$transaction/feed/"
@@ -94,18 +93,19 @@ test -n "$cycle_id"
 cycle_journal=/etc/opl-netfleet/package-transactions/$cycle_id/journal.json
 test "$(jsonfilter -i "$cycle_journal" -e '@.phase')" = complete
 test "$(jsonfilter -i "$cycle_journal" -e '@.drained[0]')" = https-compat
+}
+cycle_update
 test "$(pidof mihomo)" = "$base_pid"
 sha256sum -c "$work/base.sha256" >>"$work/cycle.log"
 sha256sum -c "$work/cycle-private.sha256" >>"$work/cycle.log"
 wait_intercepting
 probe 4 h2; probe 6 h2
-cycle_install "$cycle_old"
+cycle_rollback
 test "$(pidof mihomo)" = "$base_pid"
 sha256sum -c "$work/base.sha256" >>"$work/cycle.log"
 sha256sum -c "$work/cycle-private.sha256" >>"$work/cycle.log"
 probe 4 h2; probe 6 h2
-cycle_install "$cycle_new"
-rm /etc/apk/repositories.d/netfleet-cycle.list
+cycle_update
 guard=$(mktemp -d /tmp/netfleet-https-guard-test.XXXXXX)
 mkdir "$guard/old" "$guard/new"
 cp "$cycle_old" "$guard/old/"
@@ -151,7 +151,7 @@ cmp "$work/cycle-old-world.txt" "$work/cycle-restored-world.txt"
 probe 4 h2; probe 6 h2
 ubus call service delete '{"name":"netfleet-https-guard-test"}' >/dev/null 2>&1 || true
 cp "$guard/guard-state.json" "$work/canary-rollback.json"
-cycle_install "$cycle_new"
+cycle_update
 wait "$cycle_stream"
 test "$(grep -c '^data:' "$work/package-cycle-events.txt")" = 360
 printf '%s\n' 'engine generic Feed update and autonomous exact archive rollback: stable base and private state passed'

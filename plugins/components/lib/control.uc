@@ -296,10 +296,10 @@ function resume_resources(work) {
 	const state = read_json(`${work}/journal.json`);
 	let success = true;
 	for (let id in reverse([...(state?.drained ?? [])])) {
-		const entry = state.before?.runtime_retained && id == "mihomo" ? `${work}/code/plugins/components/lifecycle-retained.uc` : null;
+		const entry = state.before?.runtime_retained && index(['mihomo','https-compat'], id) >= 0 ? `${work}/code/plugins/components/lifecycle-retained.uc` : null;
 		const result = lifecycle("resume", id, entry);
 		if (result?.ok != true) success = false;
-		if (state.before?.runtime_retained && id == 'mihomo') {
+		if (state.before?.runtime_retained && index(['mihomo','https-compat'], id) >= 0) {
 			const watcher_ok = resume_observer(work, 'mihomo'), manager_ok = resume_observer(work, 'https-compat');
 			if (!watcher_ok || !manager_ok) success = false;
 		}
@@ -349,9 +349,9 @@ function resume_observer(work, id) {
 }
 function drain_resource(work, id) {
 	const before = read_json(`${work}/journal.json`)?.before;
-	if (before?.runtime_retained && id == 'mihomo' &&
+	if (before?.runtime_retained && index(['mihomo','https-compat'], id) >= 0 &&
 		(!pause_observer(work, 'https-compat') || !pause_observer(work, 'mihomo'))) return { ok: false, error: 'native_observer_pause_failed' };
-	const entry = before?.runtime_retained && id == 'mihomo' ? `${work}/code/plugins/components/lifecycle-retained.uc` : `${work}/code/main.uc`;
+	const entry = before?.runtime_retained && index(['mihomo','https-compat'], id) >= 0 ? `${work}/code/plugins/components/lifecycle-retained.uc` : `${work}/code/main.uc`;
 	return lifecycle('drain', id, entry);
 }
 function prepare_resources(work, names, versions, candidates) {
@@ -574,7 +574,7 @@ archive = function(name, version, path, work, fallback_version, source) {
 };
 private_paths = function() {
 	return filter(["/etc/config/netfleet", "/etc/opl-netfleet/policy.json", "/etc/opl-netfleet/backend.json", "/etc/opl-netfleet/system.json",
-		"/etc/opl-netfleet/plugins",
+		"/etc/opl-netfleet/plugins", "/etc/opl-netfleet/compatibility",
 		`${ROOT_DIR}/profiles`, `${ROOT_DIR}/subscriptions`, `${ROOT_DIR}/mixin.json`, `${ROOT_DIR}/mixin.yaml`,
 		...(KIND == "nikki-mihomo" ? ["/etc/config/nikki"] : [])], path => fs.lstat(path) != null);
 };
@@ -677,12 +677,14 @@ function native_identity() {
 	return { pid, birth: split(trim(substr(stat, rindex(stat, ') ') + 2)), /\s+/)[19],
 		files: input_identity(['/usr/libexec/mihomo', `${RUN_DIR}/config.yaml`]) };
 }
-function retained_payload(work, archive, versions) {
-	const prefix = '/usr/libexec/opl-netfleet/plugins/mihomo/';
+function retained_payload(work, archive, versions, name) {
+	const engine = name == COMPATIBILITY_PACKAGE;
+	const prefix = engine ? '/usr/libexec/opl-netfleet-compat/' : '/usr/libexec/opl-netfleet/plugins/mihomo/';
+	const descriptor = engine ? 'extension.json' : 'manifest.json';
 	const extracted = `${work}/retained-payload`;
 	if (!directory(extracted) || !run_command(`apk extract --destination ${q(extracted)} ${q(archive)}`, work))
 		fail('runtime_retention_unavailable');
-	const before = read_json(prefix + 'manifest.json'), after = read_json(extracted + prefix + 'manifest.json');
+	const before = read_json(prefix + descriptor), after = read_json(extracted + prefix + descriptor);
 	if (type(before) != 'object' || type(after) != 'object') fail('runtime_contract_changed');
 	delete before.version; delete after.version;
 	function canonical(value) {
@@ -693,13 +695,17 @@ function retained_payload(work, archive, versions) {
 		return ordered;
 	}
 	if (sprintf('%J', canonical(before)) != sprintf('%J', canonical(after))) fail('runtime_contract_changed');
-	const existing = package_paths(['opl-netfleet-plugin-mihomo'], versions);
+	function mutable(path) {
+		return index(path, prefix) == 0 && (!engine || path != prefix + 'launcher') ||
+			engine && index(['/usr/lib/ucode/netfleet_probe.so', '/usr/lib/ucode/netfleet_interception.so'], path) >= 0;
+	}
+	const existing = package_paths([name], versions);
 	for (let path in existing) {
 		if (index(path, '/lib/apk/packages/') == 0) continue;
 		const candidate = fs.lstat(extracted + path);
 		if (candidate?.type == 'directory' && fs.lstat(path)?.type == 'directory') continue;
 		if (candidate?.type != 'file') fail('runtime_payload_changed');
-		if (index(path, prefix) != 0 && sha256(path) != sha256(extracted + path))
+		if (!mutable(path) && sha256(path) != sha256(extracted + path))
 			fail('runtime_payload_changed');
 	}
 	function inspect(path) {
@@ -707,7 +713,7 @@ function retained_payload(work, archive, versions) {
 			const child = path + '/' + name, item = fs.lstat(extracted + child);
 			if (item?.type == 'directory') inspect(child);
 			else if (item?.type != 'file') fail('runtime_payload_changed');
-			else if (index(child, '/lib/apk/packages/') != 0 && index(child, prefix) != 0 &&
+			else if (index(child, '/lib/apk/packages/') != 0 && !mutable(child) &&
 				(index(existing, child) < 0 || sha256(child) != sha256(extracted + child)))
 				fail('runtime_payload_changed');
 		}
@@ -833,11 +839,14 @@ upgrade = function(request, work, candidates) {
 		...(request.component == "mihomo" ? ["/usr/libexec/mihomo"] : [])], path => fs.lstat(path) != null);
 	if (before.scoped && request.plugin) before.runtime_paths = package_paths(names, versions);
 	before.runtime_inputs = input_identity(before.runtime_paths);
-	if (KIND == 'native-mihomo' && before.core && before.scoped && length(names) == 1 && names[0] == 'opl-netfleet-plugin-mihomo') {
-		retained_payload(work, next[0], versions);
+	if (KIND == 'native-mihomo' && before.core && before.scoped && length(names) == 1 &&
+		index(['opl-netfleet-plugin-mihomo',COMPATIBILITY_PACKAGE], names[0]) >= 0 &&
+		(names[0] != COMPATIBILITY_PACKAGE || service_running('opl-netfleet-compat'))) {
+		retained_payload(work, next[0], versions, names[0]);
 		before.runtime_retained = true;
 		before.retained_core = native_identity();
-		before.retained_observers = { mihomo: observer(SERVICE, 'lifecycle', ['/usr/bin/ucode', MAIN, 'native-gateway-watch']) };
+		before.retained_observers = names[0] == 'opl-netfleet-plugin-mihomo' ?
+			{ mihomo: observer(SERVICE, 'lifecycle', ['/usr/bin/ucode', MAIN, 'native-gateway-watch']) } : {};
 		if (service_running('opl-netfleet-compat')) {
 			before.retained_observers['https-compat'] = observer('opl-netfleet-compat', 'manager', ['/usr/libexec/opl-netfleet-compat/launcher', 'manager']);
 			const engine = parsed(`ubus call service list '{"name":"opl-netfleet-compat"}'`)?.['opl-netfleet-compat']?.instances?.engine;
@@ -948,17 +957,41 @@ recovery_stop = function(work) {
 	}
 	return false;
 };
+function request_rollback(id) {
+	if (!match(id ?? '', /^[a-f0-9]{32}$/) || fs.realpath(context.root) != `${ROOT}/${id}/code` || read_json(REQUEST)?.id != id)
+		fail('update_operation_changed');
+	if (fs.lstat(PENDING) != null || update_process()?.running == true) fail('previous_update_incomplete');
+	const work = `${ROOT}/${id}`, state = read_json(`${work}/journal.json`);
+	if (state?.phase != 'complete' || state.before?.runtime_retained != true || length(state.names ?? []) != 1 ||
+		index(['opl-netfleet-plugin-mihomo',COMPATIBILITY_PACKAGE], state.names[0]) < 0) fail('rollback_transaction_not_admitted');
+	for (let path, digest in state.inputs) if (index(path, `${work}/`) != 0 || sha256(path) != digest) fail('update_recovery_artifact_changed');
+	const current = installed();
+	for (let name in state.names) if (current?.[name] != state.candidates[name]) fail('installed_version_changed');
+	if (!same_inputs(state.before) || sprintf('%J', native_identity()) != sprintf('%J', state.before.retained_core)) fail('runtime_precondition_failed');
+	if (state.before.retained_engine != null && process_birth(state.before.retained_engine.pid) != state.before.retained_engine.birth) fail('seamless_engine_unavailable');
+	// This completed transaction owns its old bytes and original package intent.
+	// Recovery remains durable and independent of the caller, with no second installer.
+	if (!atomic_json(`${work}/rollback-request.json`, {id}) || !atomic_json(PENDING, {id}) || system('sync') != 0) fail('update_state_write_failed');
+	if (!run_command('/etc/init.d/opl-netfleet-update-recovery start', work)) fail('update_recovery_unavailable');
+	return { id, recovery_requested:true };
+}
 recover = function() {
 	if (fs.lstat(PENDING) == null) return { recovered: false };
 	const pending = private_file(PENDING) ? read_json(PENDING) : null;
 	if (!match(pending?.id ?? "", /^[a-f0-9]{32}$/)) fail("update_recovery_state_invalid");
 	operation.begin("packages", "rolling_back", { id: pending.id, subject: "netfleet" });
 	const work = `${ROOT}/${pending.id}`;
-	const state = private_file(`${work}/journal.json`) ? read_json(`${work}/journal.json`) : null;
+	let state = private_file(`${work}/journal.json`) ? read_json(`${work}/journal.json`) : null;
 	if (!state || state.before?.backend != KIND || !private_directory(work) || type(state.inputs) != "object" ||
 		index(["prepared", "draining", "installing", "recovering", "complete", "rolled_back"], state.phase) < 0) fail("update_recovery_state_invalid");
 	for (let path, digest in state.inputs) if (index(path, `${work}/`) != 0 || sha256(path) != digest) fail("update_recovery_artifact_changed");
 	const recovered_error = state.error ?? (state.failure_reason ? `${state.failure_reason}_rolled_back` : "update_interrupted_rolled_back");
+	if (state.phase == 'complete' && private_file(`${work}/rollback-request.json`) && read_json(`${work}/rollback-request.json`)?.id == pending.id) {
+		if (state.before.runtime_retained != true || !same_inputs(state.before) ||
+			sprintf('%J', native_identity()) != sprintf('%J', state.before.retained_core)) fail('runtime_precondition_failed');
+		state = { ...state, phase:'recovering', failure_reason:'business_acceptance_failed' };
+		journal(work, state);
+	}
 	if (index(["complete", "rolled_back"], state.phase) >= 0) {
 		const expected = state.phase == "complete" ? state.candidates : state.versions;
 		const current = installed();
@@ -1002,6 +1035,7 @@ command = function(argv) {
 let response;
 try {
 	if (ARGV[0] == "recover") response = { ok: true, result: recover() };
+	else if (ARGV[0] == 'rollback') response = { ok: true, result: request_rollback(ARGV[1]) };
 	else if (ARGV[0] == "cancel") response = { ok: true, result: cancel_update(ARGV[1]) };
 	else if (ARGV[0] == "get") response = { ok: true, result: get() };
 	else if (ARGV[0] == "plugin-plan") response = { ok: true, result: plugin_plan(private_file(ARGV[1]) ? read_json(ARGV[1])?.request : null, null, true) };

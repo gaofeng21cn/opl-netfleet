@@ -265,13 +265,12 @@ wait_intercepting
 if [ -f /tmp/compat-runtime/runtime-cycle/cycle.json ]; then
     stage=native_runtime_update
     . /tmp/tests/https_native_runtime_cycle.sh
-    # Return to the exact candidate engine files after qualifying the actual
-    # old-provider/old-engine baseline; both network engines remain running.
-    flock /var/lock/opl-netfleet-deploy.lock ucode /usr/libexec/opl-netfleet/main.uc plugin-package-drain https-compat >"$work/runtime-engine-drain.json"
-    flock /var/lock/opl-netfleet-deploy.lock apk --no-network --repositories-file /dev/null add /tmp/compat-runtime/opl-netfleet-https-compat-*.apk >"$work/runtime-engine-update.log" 2>&1
-    test "$(pidof mihomo)" = "$base_pid"
-    wait_intercepting
 fi
+if [ -f /tmp/compat-runtime/upgrade.json ]; then
+    stage=plugin_update
+    . /tmp/tests/https_native_package_cycle.sh
+fi
+
 stage=converted_wire
 processes
 sh /tmp/tests/https_native_probe_pair.sh "$manager_pid" "$base_pid" >"$work/probe-pair.log" 2>&1
@@ -398,10 +397,6 @@ if [ -n "$probe_port" ]; then
     probe 6 h2
 fi
 stage=resources
-if [ -f /tmp/compat-runtime/upgrade.json ]; then
-    stage=plugin_update
-    . /tmp/tests/https_native_package_cycle.sh
-fi
 if [ -f /tmp/netfleet-compat-benchmark ]; then
     stage=benchmark
     . /tmp/tests/https_benchmark.sh

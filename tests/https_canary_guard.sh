@@ -5,8 +5,18 @@ set -eu
 guard=${1:?guard script required}
 test "$(id -u)" = 0
 fixture=$(mktemp -d /tmp/netfleet-guard-regression.XXXXXX)
-trap 'rm -rf "$fixture"' EXIT
+GUARD_FIXTURE_ID=$(tr -d '-' </proc/sys/kernel/random/uuid)
+export GUARD_FIXTURE_ID
+GUARD_FIXTURE_TRANSACTION=/etc/opl-netfleet/package-transactions/$GUARD_FIXTURE_ID
+export GUARD_FIXTURE_TRANSACTION
+trap 'rm -rf "$fixture" "$GUARD_FIXTURE_TRANSACTION"' EXIT
 mkdir "$fixture/bin"
+cat >"$fixture/bin/jsonfilter" <<'SH'
+#!/bin/sh
+if [ "$2" = /etc/opl-netfleet/package-transactions/request.json ]; then
+ printf '%s\n' "$GUARD_FIXTURE_ID"
+else exec /usr/bin/jsonfilter "$@"; fi
+SH
 cat >"$fixture/bin/apk" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >>"$FIXTURE/calls"
@@ -24,7 +34,13 @@ printf '%s\n' 123
 SH
 cat >"$fixture/bin/ucode" <<'SH'
 #!/bin/sh
-if [ "$1" = /usr/libexec/opl-netfleet/main.uc ]; then
+if [ "$1" = "$GUARD_FIXTURE_TRANSACTION/code/plugins/components/recover.uc" ]; then
+ printf '%s\n' "$*" >>"$FIXTURE/calls"
+ [ "${FAIL_INSTALL:-0}" = 0 ] || exit 1
+ printf '[{"name":"opl-netfleet-https-compat","version":"0.6.6"}]\n' >"$FIXTURE/installed.json"
+ printf '{"phase":"rolled_back"}\n' >"$GUARD_FIXTURE_TRANSACTION/journal.json"
+ printf '{"ok":true}\n'
+elif [ "$1" = /usr/libexec/opl-netfleet/main.uc ]; then
  printf '%s\n' "$*" >>"$FIXTURE/calls"
  case "$2" in
   plugin-package-drain) printf '{"ok":true}\n' ;;
@@ -68,9 +84,13 @@ fs.writefile(dir+'/rollback.json',sprintf('%J',{package:'opl-netfleet-https-comp
  core_pid:'123',intercepting:true,old,new:candidate}));
 fs.writefile(dir+'/accepted.json',sprintf('%J',{accepted:true,business:true,sha256:candidate.sha256}));
 UC
+ mkdir -p "$GUARD_FIXTURE_TRANSACTION/old" "$GUARD_FIXTURE_TRANSACTION/new"
+ cp "$FIXTURE/old/"*.apk "$GUARD_FIXTURE_TRANSACTION/old/"
+ cp "$FIXTURE/new/"*.apk "$GUARD_FIXTURE_TRANSACTION/new/"
+ printf '{"phase":"complete","names":["opl-netfleet-https-compat"],"before":{"runtime_retained":true},"versions":{"opl-netfleet-https-compat":"0.6.6"},"candidates":{"opl-netfleet-https-compat":"0.6.9"}}\n' >"$GUARD_FIXTURE_TRANSACTION/journal.json"
 }
 assert_state() { test "$(jsonfilter -i "$FIXTURE/guard-state.json" -e '@.state')" = "$1"; }
-assert_no_install() { ! sed -n '/ add /p' "$FIXTURE/calls" | sed -n '1p' | read -r ignored; }
+assert_no_install() { ! sed -n '/ rollback /p' "$FIXTURE/calls" | sed -n '1p' | read -r ignored; }
 
 new_case preflight
 sh "$guard" "$FIXTURE" validate

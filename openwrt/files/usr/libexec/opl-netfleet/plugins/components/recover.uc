@@ -6,5 +6,5 @@ import { create as adapter } from '../../adapters/openwrt.uc';
 const root = sourcepath(0, true) + '/../..';
 const host = create(root, { adapter: adapter(root), allow_maintenance: true, code_locks: false });
 const action = ARGV[0] ?? 'recover';
-if (index(['recover', 'operation', 'cancel'], action) < 0) die('invalid_transaction_action');
+if (index(['recover', 'operation', 'cancel', 'rollback'], action) < 0) die('invalid_transaction_action');
 host.call('components.control', 'command', [`components-${action}`, ...slice(ARGV, 1)]);
