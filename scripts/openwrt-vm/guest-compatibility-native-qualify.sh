@@ -240,7 +240,8 @@ test "$(jsonfilter -i "$work/final.json" -e '@.requested')" = false
 test "$(jsonfilter -i "$work/final.json" -e '@.intercepting')" = false
 stage=network
 if [ -f /tmp/compat-runtime/runtime-cycle/cycle.json ]; then
-    apk --no-network --repositories-file /dev/null add /tmp/compat-runtime/runtime-cycle/old/*.apk >>"$work/packages.log" 2>&1
+    previous_engine=/tmp/compat-runtime/$(jsonfilter -i /tmp/compat-runtime/upgrade.json -e '@.old.file')
+    apk --no-network --repositories-file /dev/null add "$previous_engine" /tmp/compat-runtime/runtime-cycle/old/*.apk >>"$work/packages.log" 2>&1
 fi
 touch /tmp/netfleet-compat-vm-authorized
 sh /tmp/tests/https_native_network.sh "$probe_port" >"$work/network.log" 2>&1
