@@ -250,6 +250,13 @@ if [ -f /tmp/compat-runtime/upgrade.json ]; then
     previous_engine=/tmp/compat-runtime/$(jsonfilter -i /tmp/compat-runtime/upgrade.json -e '@.old.file')
     if [ -f /tmp/compat-runtime/runtime-cycle/cycle.json ]; then
         apk --no-network --repositories-file /dev/null add "$previous_engine" /tmp/compat-runtime/runtime-cycle/old/*.apk >>"$work/packages.log" 2>&1
+        # Installing an archive creates an explicit checksum root. Model the
+        # supported target's ordinary backend root, while keeping the exact old
+        # signed APK installed. An administrator checksum pin must still reject
+        # an unsolicited dependency upgrade; do not change that solver policy.
+        apk --no-network --repositories-file /dev/null add opl-netfleet-plugin-mihomo >>"$work/packages.log" 2>&1
+        test "$(apk --no-network query --from installed --format json --fields version opl-netfleet-plugin-mihomo | jsonfilter -e '@[0].version')" = "$(jsonfilter -i /tmp/compat-runtime/runtime-cycle/cycle.json -e '@.old.version')"
+        grep -qx 'opl-netfleet-plugin-mihomo' /etc/apk/world
     else
         apk --no-network --repositories-file /dev/null add "$previous_engine" >>"$work/packages.log" 2>&1
     fi
