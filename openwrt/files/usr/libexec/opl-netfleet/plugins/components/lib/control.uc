@@ -313,6 +313,10 @@ function prepare_resources(work, names, versions, candidates) {
 		if (name == "opl-netfleet-kernel") for (let item in context.inventory(versions))
 			if (item.kind == "plugin" && match(item.id ?? "", /^[a-z][a-z0-9-]*$/) && index(ids, item.id) < 0) push(ids, item.id);
 	}
+	// The HTTPS manager keeps a lifetime read lease on its gateway provider.
+	// Its existing seamless lifecycle releases that lease while retaining HAProxy.
+	if (read_json(`${work}/journal.json`)?.before?.runtime_retained && service_running('opl-netfleet-compat') &&
+		index(ids, 'https-compat') < 0) unshift(ids, 'https-compat');
 	for (let id in ids) {
 		cancellation(work);
 		const state = read_json(`${work}/journal.json`);
