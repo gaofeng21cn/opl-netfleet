@@ -299,8 +299,59 @@ function resume_resources(work) {
 		const entry = state.before?.runtime_retained && id == "mihomo" ? `${work}/code/plugins/components/lifecycle-retained.uc` : null;
 		const result = lifecycle("resume", id, entry);
 		if (result?.ok != true) success = false;
+		if (state.before?.runtime_retained && id == 'mihomo') {
+			if (!resume_observer(work, 'mihomo') || !resume_observer(work, 'https-compat')) success = false;
+		}
 	}
 	return success;
+}
+function observer(service, instance, command) {
+	const entry = parsed(`ubus call service list ${q(sprintf('%J', { name: service }))}`)?.[service]?.instances?.[instance];
+	if (entry?.running != true || sprintf('%J', entry.command) != sprintf('%J', command)) fail('native_observer_identity_unavailable');
+	const spec = { command, term_timeout: entry.term_timeout ?? 5, stdout: true, stderr: true };
+	if (entry.respawn != null) spec.respawn = [entry.respawn.threshold, entry.respawn.timeout, entry.respawn.retry];
+	for (let key in ['env','limits','nice','user','group']) if (entry[key] != null) spec[key] = entry[key];
+	return { service, instance, pid: entry.pid, birth: process_birth(entry.pid), spec };
+}
+function process_birth(pid) {
+	const stat = fs.readfile(`/proc/${pid}/stat`);
+	return stat == null ? null : split(trim(substr(stat, rindex(stat, ') ') + 2)), /\s+/)[19];
+}
+function pause_observer(work, id) {
+	const before = read_json(`${work}/journal.json`)?.before, saved = before?.retained_observers?.[id];
+	if (saved == null) return true;
+	if (sprintf('%J', native_identity()) != sprintf('%J', before.retained_core)) return false;
+	if (before.retained_engine != null && process_birth(before.retained_engine.pid) != before.retained_engine.birth) return false;
+	const entry = parsed(`ubus call service list ${q(sprintf('%J', { name: saved.service }))}`)?.[saved.service]?.instances?.[saved.instance];
+	if (entry != null && (sprintf('%J', entry.command) != sprintf('%J', saved.spec.command) ||
+		!run_command(`ubus call service delete ${q(sprintf('%J', { name: saved.service, instance: saved.instance }))}`, work))) return false;
+	const pid = entry?.pid ?? saved.pid, birth = entry?.pid == null ? saved.birth : process_birth(entry.pid);
+	for (let i = 0; i < 8; i++) {
+		if (birth == null || process_birth(pid) != birth) return sprintf('%J', native_identity()) == sprintf('%J', before.retained_core);
+		system('sleep 1');
+	}
+	return false;
+}
+function resume_observer(work, id) {
+	const before = read_json(`${work}/journal.json`)?.before, saved = before?.retained_observers?.[id];
+	if (saved == null) return true;
+	if (sprintf('%J', native_identity()) != sprintf('%J', before.retained_core)) return false;
+	if (before.retained_engine != null && process_birth(before.retained_engine.pid) != before.retained_engine.birth) return false;
+	let entry = parsed(`ubus call service list ${q(sprintf('%J', { name: saved.service }))}`)?.[saved.service]?.instances?.[saved.instance];
+	if (entry?.running != true && !run_command(`ubus call service add ${q(sprintf('%J', { name: saved.service, instances: { [saved.instance]: saved.spec } }))}`, work)) return false;
+	for (let i = 0; i < 8; i++) {
+		entry = parsed(`ubus call service list ${q(sprintf('%J', { name: saved.service }))}`)?.[saved.service]?.instances?.[saved.instance];
+		if (entry?.running == true && sprintf('%J', entry.command) == sprintf('%J', saved.spec.command)) return true;
+		system('sleep 1');
+	}
+	return false;
+}
+function drain_resource(work, id) {
+	const before = read_json(`${work}/journal.json`)?.before;
+	if (before?.runtime_retained && id == 'mihomo' &&
+		(!pause_observer(work, 'https-compat') || !pause_observer(work, 'mihomo'))) return { ok: false, error: 'native_observer_pause_failed' };
+	const entry = before?.runtime_retained && id == 'mihomo' ? `${work}/code/plugins/components/lifecycle-retained.uc` : `${work}/code/main.uc`;
+	return lifecycle('drain', id, entry);
 }
 function prepare_resources(work, names, versions, candidates) {
 	const ids = [], owned = package_owners(versions);
@@ -313,10 +364,6 @@ function prepare_resources(work, names, versions, candidates) {
 		if (name == "opl-netfleet-kernel") for (let item in context.inventory(versions))
 			if (item.kind == "plugin" && match(item.id ?? "", /^[a-z][a-z0-9-]*$/) && index(ids, item.id) < 0) push(ids, item.id);
 	}
-	// The HTTPS manager keeps a lifetime read lease on its gateway provider.
-	// Its existing seamless lifecycle releases that lease while retaining HAProxy.
-	if (read_json(`${work}/journal.json`)?.before?.runtime_retained && service_running('opl-netfleet-compat') &&
-		index(ids, 'https-compat') < 0) unshift(ids, 'https-compat');
 	for (let id in ids) {
 		cancellation(work);
 		const state = read_json(`${work}/journal.json`);
@@ -324,8 +371,7 @@ function prepare_resources(work, names, versions, candidates) {
 		operation.update("draining", { subject: id, total: 0, completed: 0 });
 		let result;
 		for (let attempt = 0; attempt < 3; attempt++) {
-			const entry = state.before?.runtime_retained && id == "mihomo" ? `${work}/code/plugins/components/lifecycle-retained.uc` : null;
-			result = lifecycle("drain", id, entry);
+			result = drain_resource(work, id);
 			if (result?.ok || result?.error != "plugin_calls_draining") break;
 			cancellation(work); system("sleep 1");
 		}
@@ -597,6 +643,14 @@ restore_services = function(before, work) {
 	// Controller readiness precedes provider loading, gateway attachment and working DNS.
 	while (time() < deadline) {
 		if (!same_inputs(before)) return false;
+		if (before.retained_engine != null) {
+			if (process_birth(before.retained_engine.pid) != before.retained_engine.birth) return false;
+			const compat = parsed(`ucode ${q(MAIN)} compatibility-get`);
+			if (compat?.ok != true || compat.result.requested != before.retained_compat.requested ||
+				(before.retained_compat.intercepting && (compat.result.intercepting != true || compat.result.leases < 1))) {
+				system('sleep 1'); continue;
+			}
+		}
 		const status = parsed(`ucode ${q(MAIN)} status`)?.result;
 		if (status != null && status.active == before.active && (!before.core ||
 			(status.runtime?.controller_available == true && (KIND != "native-mihomo" ||
@@ -609,8 +663,7 @@ function drain_scoped(work) {
 	let ok = true;
 	const state = read_json(`${work}/journal.json`);
 	for (let id in state?.drained ?? []) {
-		const entry = state.before?.runtime_retained && id == "mihomo" ? `${work}/code/plugins/components/lifecycle-retained.uc` : `${work}/code/main.uc`;
-		if (lifecycle("drain", id, entry)?.ok != true) ok = false;
+		if (drain_resource(work, id)?.ok != true) ok = false;
 	}
 	return ok;
 }
@@ -783,6 +836,16 @@ upgrade = function(request, work, candidates) {
 		retained_payload(work, next[0], versions);
 		before.runtime_retained = true;
 		before.retained_core = native_identity();
+		before.retained_observers = { mihomo: observer(SERVICE, 'lifecycle', ['/usr/bin/ucode', MAIN, 'native-gateway-watch']) };
+		if (service_running('opl-netfleet-compat')) {
+			before.retained_observers['https-compat'] = observer('opl-netfleet-compat', 'manager', ['/usr/libexec/opl-netfleet-compat/launcher', 'manager']);
+			const engine = parsed(`ubus call service list '{"name":"opl-netfleet-compat"}'`)?.['opl-netfleet-compat']?.instances?.engine;
+			if (engine?.running != true) fail('seamless_engine_unavailable');
+			before.retained_engine = { pid: engine.pid, birth: process_birth(engine.pid) };
+			const compat = parsed(`ucode ${q(MAIN)} compatibility-get`);
+			if (compat?.ok != true) fail('seamless_engine_unavailable');
+			before.retained_compat = { requested: compat.result.requested, intercepting: compat.result.intercepting };
+		}
 	}
 	if (before.core) {
 		const all = proxies(api_secret(), 2)?.proxies;

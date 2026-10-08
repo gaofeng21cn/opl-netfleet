@@ -58,7 +58,7 @@ done
 # the same operator window; write actions are separate explicit acceptance work.
 installed_ms=$(now_ms)
 observed=0
-ucode "$stage/observe.uc" "$seconds" "$stage/acceptance.json" || observed=$?
+ucode "$stage/observe.uc" "$seconds" "$stage/acceptance.json" "$transaction/journal.json" || observed=$?
 [ ! -f acceptance.json ] || cat acceptance.json
 finished_ms=$(now_ms)
 printf '{"device_timings":{"prepare_ms":%s,"transaction_ms":%s,"observe_ms":%s,"total_ms":%s}}\n' \

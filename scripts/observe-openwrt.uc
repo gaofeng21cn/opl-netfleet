@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { sha256 } from 'digest';
 
 // Bounded target-local observation: no selection, refresh, or restart commands.
 const seconds = int(ARGV[0]), output = ARGV[1];
@@ -43,6 +44,30 @@ while (true) {
 const probe = read('ucode /usr/libexec/opl-netfleet/main.uc probe');
 healthy = healthy && probe?.ok == true && probe.result?.ok == true;
 const after = processes(), delays = sort(map(samples, sample => sample.elapsed_ms), (a,b) => a-b);
+let retained = null;
+if (ARGV[2] != null) {
+ const journal = json(fs.readfile(ARGV[2])), saved = journal.before;
+ if (saved?.runtime_retained) {
+  const pid = after['opl-netfleet-core/core']?.pid;
+  const stat = fs.readfile(`/proc/${pid}/stat`);
+  const birth = stat == null ? null : split(replace(stat, /^.*\) /, ''), /\s+/)[19];
+  let identity = pid == saved.retained_core.pid && birth == saved.retained_core.birth;
+  for (let path, hash in saved.retained_core.files) identity = identity && sha256(fs.readfile(path)) == hash;
+  const observers = {};
+  for (let id, item in saved.retained_observers) {
+   const live = read(`ubus call service list '${sprintf('%J', {name:item.service})}'`)?.[item.service]?.instances?.[item.instance];
+   observers[id] = { before_pid:item.pid, after_pid:live?.pid, running:live?.running == true,
+    restored:live?.running == true && sprintf('%J',live.command) == sprintf('%J',item.spec.command) };
+   identity = identity && observers[id].restored;
+  }
+  if (saved.retained_engine != null) {
+   const engine_stat = fs.readfile(`/proc/${saved.retained_engine.pid}/stat`);
+   identity = identity && engine_stat != null && split(replace(engine_stat, /^.*\) /, ''), /\s+/)[19] == saved.retained_engine.birth;
+  }
+  retained = {ok:identity, core_unchanged:pid == saved.retained_core.pid && birth == saved.retained_core.birth, observers};
+  healthy = healthy && identity;
+ }
+}
 let stable = true;
 for (let name, value in before) {
  if (after[name]?.pid != value.pid) stable = false;
@@ -58,7 +83,7 @@ for (let name, value in before) {
 }
 const result = { ok: healthy && stable, resources, duration_seconds: time() - started, samples: length(samples),
  status_p50_ms: delays[int((length(delays)-1)*0.5)], status_p95_ms: delays[int((length(delays)-1)*0.95)],
- runtime_healthy: healthy, owner_pids_stable: stable, before, after, protected_probe: probe?.result?.ok == true };
+ runtime_healthy: healthy, owner_pids_stable: stable, retained_runtime:retained, before, after, protected_probe: probe?.result?.ok == true };
 const file = fs.open(output, 'w', 0600);
 if (file == null) exit(1);
 file.write(sprintf('%J\n', result)); file.close();

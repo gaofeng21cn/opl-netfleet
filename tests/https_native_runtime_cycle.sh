@@ -21,6 +21,8 @@ processes
 retained_engine=$engine_pid
 runtime_request() {
     prior=$1; next=$2; expected=$3
+    watcher_before=$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.lifecycle.pid')
+    manager_before=$(ubus call service list '{"name":"opl-netfleet-compat"}' | jsonfilter -e '@["opl-netfleet-compat"].instances.manager.pid')
     rt_stage=$(mktemp -d /tmp/native-retained-stage.XXXXXX)
     mkdir "$rt_stage/old" "$rt_stage/new"
     cp "$runtime_cycle/$prior/"*.apk "$rt_stage/old/"
@@ -43,6 +45,10 @@ UC
     done
     test "$rt_phase" = "$expected"
     test "$(jsonfilter -i "$rt_journal" -e '@.before.runtime_retained')" = true
+    watcher_after=$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.lifecycle.pid')
+    manager_after=$(ubus call service list '{"name":"opl-netfleet-compat"}' | jsonfilter -e '@["opl-netfleet-compat"].instances.manager.pid')
+    test -n "$watcher_after"; test "$watcher_after" != "$watcher_before"
+    test -n "$manager_after"; test "$manager_after" != "$manager_before"
     runtime_identity >"$work/native-identity.after"
     cmp "$work/native-identity.before" "$work/native-identity.after"
     processes
@@ -63,4 +69,4 @@ test "$(jsonfilter -i /etc/opl-netfleet/package-transactions/$rt_id/rollback.jso
 wait "$rt_stream"
 test "$(grep -c '^data:' "$work/native-retained-events.txt")" = 360
 test ! -e /etc/opl-netfleet/package-transactions/pending.json
-printf '%s\n' '{"ok":true,"native_identity_unchanged":true,"engine_unchanged":true,"stream_completed":true,"signed_candidate_rollback":true}' >"$work/native-runtime-cycle.json"
+printf '%s\n' '{"ok":true,"native_identity_unchanged":true,"engine_unchanged":true,"observers_restored":true,"stream_completed":true,"signed_candidate_rollback":true}' >"$work/native-runtime-cycle.json"
