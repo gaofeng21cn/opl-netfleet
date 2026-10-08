@@ -308,7 +308,7 @@ function resume_resources(work) {
 function observer(service, instance, command) {
 	const entry = parsed(`ubus call service list ${q(sprintf('%J', { name: service }))}`)?.[service]?.instances?.[instance];
 	if (entry?.running != true || sprintf('%J', entry.command) != sprintf('%J', command)) fail('native_observer_identity_unavailable');
-	const spec = { command, term_timeout: entry.term_timeout ?? 5, stdout: true, stderr: true };
+	const spec = { command, term_timeout: entry.term_timeout ?? 5, stdout: instance == 'lifecycle', stderr: instance == 'lifecycle' };
 	if (entry.respawn != null) spec.respawn = [entry.respawn.threshold, entry.respawn.timeout, entry.respawn.retry];
 	for (let key in ['env','limits','nice','user','group']) if (entry[key] != null) spec[key] = entry[key];
 	return { service, instance, pid: entry.pid, birth: process_birth(entry.pid), spec };
