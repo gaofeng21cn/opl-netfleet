@@ -13,6 +13,12 @@ failure() {
  rc=$?
  [ "$rc" -eq 0 ] && return
  printf 'Native compatibility failed at %s\n' "$stage" >&2
+ # Keep the first failed assertion and transaction evidence across tmpfs loss
+ # when a retained diagnostic image is started again with QEMU -snapshot.
+ if [ -f "$work/network.log" ]; then
+  tar -cf /root/netfleet-compat-failure.tar "$work/network.log" /tmp/https-native-network /etc/opl-netfleet/package-transactions 2>/dev/null || true
+  sed -n '1,160p' "$work/network.log" >&2
+ fi
  ubus call service list '{"name":"opl-netfleet-compat"}' >&2 || true
  for file in /var/run/opl-netfleet-compat/state.json "$work"/*.log; do
   [ ! -f "$file" ] || tail -35 "$file" >&2

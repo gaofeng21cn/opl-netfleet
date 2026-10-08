@@ -60,8 +60,11 @@ ip netns exec nfcompat-client curl --noproxy '*' --http1.1 --connect-timeout 3 -
     --cacert "$work/client-ca.pem" --resolve 'wire.example:443:198.51.100.10' -fsSN \
     'https://wire.example/compat-wire/long-events' >"$work/native-retained-events.txt" 2>"$work/native-retained-events.log" &
 rt_stream=$!
-sleep 1
-kill -0 "$rt_stream"
+for attempt in $(seq 1 50); do
+    kill -0 "$rt_stream"
+    grep -q '^data: 0$' "$work/native-retained-events.txt" && break
+    ucode -e 'sleep(100);'
+done
 grep -q '^data: 0$' "$work/native-retained-events.txt"
 installed_runtime=$(apk --no-network query --from installed --format json --fields version opl-netfleet-plugin-mihomo | jsonfilter -e '@[0].version')
 if [ "$installed_runtime" = "$(jsonfilter -i "$runtime_cycle/cycle.json" -e '@.old.version')" ]; then

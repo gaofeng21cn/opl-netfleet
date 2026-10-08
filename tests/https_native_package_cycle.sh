@@ -1,6 +1,7 @@
 #!/bin/sh
 # Sourced by the live network fixture, with the base already forwarding.
 set -x
+printf '%s\n' 'Engine cycle: validate exact archives'
 test -f /tmp/netfleet-compat-vm-authorized
 cycle=/tmp/compat-runtime/upgrade.json
 test -f "$cycle"
@@ -27,9 +28,13 @@ ip netns exec nfcompat-client curl --noproxy '*' --http1.1 --connect-timeout 3 -
  --cacert "$work/client-ca.pem" --resolve 'wire.example:443:198.51.100.10' -fsSN \
  'https://wire.example/compat-wire/long-events' >"$work/package-cycle-events.txt" 2>"$work/package-cycle-events.log" &
 cycle_stream=$!
-sleep 1
-kill -0 "$cycle_stream"
+for attempt in $(seq 1 50); do
+    kill -0 "$cycle_stream"
+    grep -q '^data: 0$' "$work/package-cycle-events.txt" && break
+    ucode -e 'sleep(100);'
+done
 grep -q '^data: 0$' "$work/package-cycle-events.txt"
+printf '%s\n' 'Engine cycle: protected stream ready'
 cycle_rollback() {
  flock /var/lock/opl-netfleet-deploy.lock ucode "/etc/opl-netfleet/package-transactions/$cycle_id/code/plugins/components/recover.uc" rollback "$cycle_id" >"$work/cycle-rollback-request.json"
  for attempt in $(seq 1 90); do
