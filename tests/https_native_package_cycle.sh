@@ -82,7 +82,13 @@ value.request.confirm=true;value.request.plan=plan.result;
 fs.writefile(dir+'/feed-request.json',sprintf('%J',value));
 UC
 (cd "$transaction"; sha256sum run.sh observe.uc feed-request.json old/*.apk >SHA256SUMS)
-if ! sh "$transaction/run.sh" "$transaction" 10 >"$transaction/result.json"; then
+sh "$transaction/run.sh" "$transaction" 10 >"$transaction/result.json" &
+cycle_writer=$!
+while kill -0 "$cycle_writer" 2>/dev/null; do
+    probe 4 h2; probe 6 h2
+    sleep 1
+done
+if ! wait "$cycle_writer"; then
     cat "$transaction/result.json"
     failed_id=$(jsonfilter -i "$transaction/start.json" -e '@.result.operation.id')
     if [ -n "$failed_id" ]; then
