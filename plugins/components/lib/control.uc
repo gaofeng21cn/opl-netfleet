@@ -300,7 +300,8 @@ function resume_resources(work) {
 		const result = lifecycle("resume", id, entry);
 		if (result?.ok != true) success = false;
 		if (state.before?.runtime_retained && id == 'mihomo') {
-			if (!resume_observer(work, 'mihomo') || !resume_observer(work, 'https-compat')) success = false;
+			const watcher_ok = resume_observer(work, 'mihomo'), manager_ok = resume_observer(work, 'https-compat');
+			if (!watcher_ok || !manager_ok) success = false;
 		}
 	}
 	return success;
