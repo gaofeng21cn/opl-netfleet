@@ -33,4 +33,13 @@ check(length(pairPlan.names)==2 && pairPlan.candidates[name]=='1.1.0','APK-requi
 rejects(()=>validate(changes(pair),engineRequest,{[engine]:'1.0.0',[name]:'1.0.0'},[],{}),'plugin_package_protected');
 check(validate(changes('(1/1) Upgrading '+engine+' (1.0.0 -> 2.0.0)'),engineRequest,{[engine]:'1.0.0',[name]:'1.1.0'},[],owner).names[0]==engine,'compatible installed control is not reinstalled');
 rejects(()=>validate(changes('(1/2) Upgrading opl-netfleet-kernel (1 -> 2)\n'+pair),engineRequest,{[engine]:'1.0.0',[name]:'1.0.0','opl-netfleet-kernel':'1'},[],owner),'plugin_dependency_change_required');
+const compat='opl-netfleet-https-compat',backend='opl-netfleet-plugin-mihomo';
+const compatRequest={action:'update',name:compat,version:'0.6.10',before_version:'0.6.9',confirm:true};
+const compatOwner={[compat]:'https-compat'},compatInstalled={[compat]:'0.6.9',[backend]:'0.9.9'};
+const closure=changes('(1/2) Upgrading '+backend+' (0.9.9 -> 0.9.10)\n(2/2) Upgrading '+compat+' (0.6.9 -> 0.6.10)');
+check(validate(closure,compatRequest,compatInstalled,[backend],compatOwner,true).candidates[backend]=='0.9.10','native HTTPS admits its installed backend dependency in one transaction');
+rejects(()=>validate(closure,compatRequest,compatInstalled,[backend],compatOwner,false),'plugin_dependency_change_required');
+rejects(()=>validate(closure,{...compatRequest,name:engine,version:'2.0.0',before_version:'1.0.0'},{...compatInstalled,[engine]:'1.0.0'},[backend],owner,true),'plugin_dependency_change_required');
+rejects(()=>validate(changes('(1/2) Installing '+backend+' (0.9.10)\n(2/2) Upgrading '+compat+' (0.6.9 -> 0.6.10)'),compatRequest,{[compat]:'0.6.9'},[],compatOwner,true),'plugin_dependency_change_required');
+rejects(()=>validate([...changes('(1/3) Upgrading mihomo-meta (1.0.0 -> 2.0.0)\n'),...closure],compatRequest,compatInstalled,[],compatOwner,true),'plugin_dependency_change_required');
 print('component_packages_contract_ok\n');

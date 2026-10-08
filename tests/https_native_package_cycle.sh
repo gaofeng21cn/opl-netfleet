@@ -110,7 +110,13 @@ cycle_id=$(jsonfilter -i "$transaction/start.json" -e '@.result.operation.id')
 test -n "$cycle_id"
 cycle_journal=/etc/opl-netfleet/package-transactions/$cycle_id/journal.json
 test "$(jsonfilter -i "$cycle_journal" -e '@.phase')" = complete
-test "$(jsonfilter -i "$cycle_journal" -e '@.drained[0]')" = https-compat
+ucode - "$transaction/plan.json" "$cycle_journal" <<'UC'
+import * as fs from 'fs';
+const plan=json(fs.readfile(ARGV[0])).result,journal=json(fs.readfile(ARGV[1]));
+const owners={'opl-netfleet-https-compat':'https-compat','opl-netfleet-plugin-mihomo':'mihomo'};
+const expected=map(plan.names,name=>owners[name]);
+if(index(expected,null)>=0||sprintf('%J',sort(journal.drained??[]))!=sprintf('%J',sort(expected)))die('dependency_closure_drain_mismatch');
+UC
 }
 cycle_update
 test "$(pidof mihomo)" = "$base_pid"
@@ -128,6 +134,10 @@ guard=$(mktemp -d /tmp/netfleet-https-guard-test.XXXXXX)
 mkdir "$guard/old" "$guard/new"
 cp "$cycle_old" "$guard/old/"
 cp "$cycle_new" "$guard/new/"
+if [ -f /tmp/compat-runtime/runtime-cycle/cycle.json ]; then
+    cp /tmp/compat-runtime/runtime-cycle/old/*.apk "$guard/old/"
+    cp /tmp/compat-runtime/runtime-cycle/new/*.apk "$guard/new/"
+fi
 cp /tmp/scripts/https-compat/canary-rollback.sh "$guard/guard.sh"
 sha256sum /etc/config/netfleet /etc/opl-netfleet/native/run/config.yaml \
  /etc/opl-netfleet/compatibility/config.json /etc/opl-netfleet/compatibility/trust.json \
@@ -146,7 +156,10 @@ function artifact(path) {
 const dir=ARGV[0],name='netfleet-https-guard-test';
 const pid=+fs.readfile('/tmp/https-native-network/cycle-engine-pid');
 const stat=fs.readfile('/proc/'+pid+'/stat');
-fs.writefile(dir+'/rollback.json',sprintf('%J',{package:'opl-netfleet-https-compat',timeout_seconds:30,
+const cycleText=fs.readfile('/tmp/compat-runtime/runtime-cycle/cycle.json');
+const cycle=cycleText?json(cycleText):null;
+const companions=cycle?[{package:'opl-netfleet-plugin-mihomo',old:artifact(dir+'/old/'+cycle.old.artifact),new:artifact(dir+'/new/'+cycle.new.artifact)}]:[];
+fs.writefile(dir+'/rollback.json',sprintf('%J',{package:'opl-netfleet-https-compat',companions,timeout_seconds:30,
  core_pid:ARGV[3],intercepting:true,old:artifact(ARGV[1]),new:artifact(ARGV[2]),
  world_entry:trim(fs.readfile('/tmp/https-native-network/cycle-old-world.txt')),
  engine_identity:{pid,birth:split(trim(substr(stat,rindex(stat,') ')+2)),/\s+/)[19],sha256:sha256(fs.readfile('/proc/'+pid+'/exe'))}}));

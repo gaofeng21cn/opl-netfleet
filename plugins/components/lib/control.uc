@@ -244,7 +244,7 @@ function plugin_plan(request, work, preview) {
 	// payloads; prefer the checked cache and bound any index refresh.
 	const output = capture(`LC_ALL=C apk --timeout 10 --cache-max-age 1440 --simulate ${argument}`);
 	if (output == null) fail("plugin_dependencies_unavailable");
-	const plan = package_model.validate(package_model.changes(output), preview ? { ...request, confirm: true } : request, versions, product_packages(), owned);
+	const plan = package_model.validate(package_model.changes(output), preview ? { ...request, confirm: true } : request, versions, product_packages(), owned, KIND == "native-mihomo");
 	if (!preview && sprintf("%J", request.plan) != sprintf("%J", plan)) fail("candidate_changed");
 	return plan;
 }

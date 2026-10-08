@@ -11,7 +11,7 @@ export function changes(output) {
 	return result;
 };
 
-export function validate(changed, request, installed, product, owned) {
+export function validate(changed, request, installed, product, owned, native_backend) {
 	owned ??= {};
 	if ((!match(request.name ?? '', /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) &&
 		!(owned[request.name] && request.action == 'update')) ||
@@ -31,9 +31,13 @@ export function validate(changed, request, installed, product, owned) {
 				if (row.version != request.version || index(['Installing', 'Upgrading'], row.action) < 0)
 					die('candidate_changed');
 			} else {
-				// APK chooses dependencies. Admission only bounds their lifecycle impact.
+				// The native HTTPS dependency closure can retain its data plane;
+				// the transaction separately verifies both payload contracts before writes.
+				const retained_dependency = native_backend === true && request.action == 'update' &&
+					request.name == 'opl-netfleet-https-compat' && owned[request.name] == 'https-compat' &&
+					row.name == 'opl-netfleet-plugin-mihomo' && installed[row.name] != null && row.action == 'Upgrading';
 				if (index(['Installing', 'Upgrading'], row.action) < 0 ||
-					index(['opl-netfleet', 'opl-netfleet-kernel', 'mihomo-meta', 'opl-netfleet-plugin-mihomo'], row.name) >= 0 ||
+					index(['opl-netfleet', 'opl-netfleet-kernel', 'mihomo-meta', 'opl-netfleet-plugin-mihomo'], row.name) >= 0 && !retained_dependency ||
 					(installed[row.name] != null && !owned[row.name] && !match(row.name, /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/)))
 					die('plugin_dependency_change_required');
 			}
