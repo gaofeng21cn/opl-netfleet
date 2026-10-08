@@ -195,6 +195,7 @@ if [[ -n "$test_ref" ]]; then
         ':(exclude)scripts/openwrt-vm' ':(exclude)scripts/openwrt-vm.sh' \
         ':(exclude)scripts/openwrt-apk.py' ':(exclude)scripts/netfleet-package-build.sh' \
         ':(exclude)scripts/https-compat/qualify.py' \
+        ':(exclude)scripts/https-compat/canary-rollback.sh' \
         ':(exclude)scripts/update-openwrt-plugins.py' \
         ':(exclude)tests' ':(exclude)docs' || die "test ref changes product inputs"
     rm -rf "$source_dir/scripts/openwrt-vm" "$source_dir/tests"

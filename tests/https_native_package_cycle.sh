@@ -22,6 +22,7 @@ sha256sum /etc/opl-netfleet/compatibility/config.json /etc/opl-netfleet/compatib
  /etc/opl-netfleet/compatibility/ca/mitmproxy-ca.pem >"$work/cycle-private.sha256"
 processes
 cycle_engine=$engine_pid
+printf '%s\n' "$cycle_engine" >"$work/cycle-engine-pid"
 ip netns exec nfcompat-client curl --noproxy '*' --http1.1 --connect-timeout 3 --max-time 195 \
  --cacert "$work/client-ca.pem" --resolve 'wire.example:443:198.51.100.10' -fsSN \
  'https://wire.example/compat-wire/long-events' >"$work/package-cycle-events.txt" 2>"$work/package-cycle-events.log" &
@@ -49,6 +50,7 @@ cycle_install() {
 # worker failure/rollback is qualified in guest-components-qualify.sh; no second
 # HTTPS updater is staged or run here.
 cycle_install "$cycle_old"
+grep -E '^opl-netfleet-https-compat([=<>~!]|$)' /etc/apk/world >"$work/cycle-old-world.txt"
 transaction=$(mktemp -d /tmp/netfleet-plugin-update-test.XXXXXX)
 mkdir "$transaction/feed" "$transaction/old"
 cp "$cycle_new" "$transaction/feed/"
@@ -124,8 +126,12 @@ function artifact(path) {
  return {version:info.version,artifact:fs.basename(path),sha256:sha256(fs.readfile(path))};
 }
 const dir=ARGV[0],name='netfleet-https-guard-test';
+const pid=+fs.readfile('/tmp/https-native-network/cycle-engine-pid');
+const stat=fs.readfile('/proc/'+pid+'/stat');
 fs.writefile(dir+'/rollback.json',sprintf('%J',{package:'opl-netfleet-https-compat',timeout_seconds:30,
- core_pid:ARGV[3],intercepting:true,old:artifact(ARGV[1]),new:artifact(ARGV[2])}));
+ core_pid:ARGV[3],intercepting:true,old:artifact(ARGV[1]),new:artifact(ARGV[2]),
+ world_entry:trim(fs.readfile('/tmp/https-native-network/cycle-old-world.txt')),
+ engine_identity:{pid,birth:split(trim(substr(stat,rindex(stat,') ')+2)),/\s+/)[19],sha256:sha256(fs.readfile('/proc/'+pid+'/exe'))}}));
 const request=sprintf('%J',{name,instances:{guard:{command:['/bin/sh',dir+'/guard.sh',dir,'guard'],
  stdout:false,stderr:false,term_timeout:5}}});
 if(system("ubus call service set '"+replace(request,"'","'\\''")+"'")!=0)die('guard_start_failed');
@@ -140,6 +146,8 @@ fi
 test "$(apk --no-network query --from installed --format json --fields version opl-netfleet-https-compat | jsonfilter -e '@[0].version')" = "$old_version"
 sha256sum -c "$guard/private.sha256"
 test "$(pidof mihomo)" = "$base_pid"
+grep -E '^opl-netfleet-https-compat([=<>~!]|$)' /etc/apk/world >"$work/cycle-restored-world.txt"
+cmp "$work/cycle-old-world.txt" "$work/cycle-restored-world.txt"
 probe 4 h2; probe 6 h2
 ubus call service delete '{"name":"netfleet-https-guard-test"}' >/dev/null 2>&1 || true
 cp "$guard/guard-state.json" "$work/canary-rollback.json"

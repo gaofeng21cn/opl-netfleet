@@ -23,6 +23,15 @@ validate() {
 import * as fs from 'fs';import {sha256} from 'digest';
 const dir=ARGV[0],value=json(fs.readfile(dir+'/rollback.json'));
 if(value.package!='opl-netfleet-https-compat')die('canary_package_not_allowed');
+if(value.world_entry!=null && (type(value.world_entry)!='string'||length(value.world_entry)>1024||
+   match(value.world_entry,/[\r\n]/)||!match(value.world_entry,/^opl-netfleet-https-compat([=<>~!]|$)/)))die('canary_world_entry_invalid');
+if(value.engine_identity!=null) {
+ const e=value.engine_identity;
+ if(type(e.pid)!='int'||e.pid<=1)die('canary_engine_identity_invalid');
+ const stat=fs.readfile('/proc/'+e.pid+'/stat');
+ if(!stat||split(trim(substr(stat,rindex(stat,') ')+2)),/\s+/)[19]!=e.birth||
+    sha256(fs.readfile('/proc/'+e.pid+'/exe')??'')!=e.sha256)die('canary_engine_identity_changed');
+}
 for(let key in ['old','new']) {
  const item=value[key];
  if(!match(item.version,/^[0-9]+\.[0-9]+\.[0-9]+(-r[0-9]+)?$/)||item.artifact!=value.package+'-'+item.version+'.apk'||
@@ -96,6 +105,19 @@ state restoring
 NETFLEET_PACKAGE_RESTORE=1 ucode "$main" plugin-package-drain https-compat >drain.json
 test "$(jsonfilter -i drain.json -e '@.ok')" = true
 NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null --force-reinstall add old/*.apk 9>&-
+ucode - <<'UC'
+import * as fs from 'fs';
+const value=json(fs.readfile('rollback.json'));
+if(value.world_entry!=null) {
+ const path='/etc/apk/world', info=fs.lstat(path), prior=fs.readfile(path);
+ if(info?.type!='file'||info.uid!=0||prior==null)die('canary_world_restore_failed');
+ const rows=filter(split(prior,'\n'),row=>length(row)&&!match(row,/^opl-netfleet-https-compat([=<>~!]|$)/));
+ push(rows,value.world_entry);
+ const next=path+'.netfleet-canary.pending', file=fs.open(next,'we',info.mode&0777);
+ if(!file||file.write(join('\n',rows)+'\n')==null||!file.flush()||!file.close()||!fs.rename(next,path))die('canary_world_restore_failed');
+}
+UC
+validate
 sha256sum -c private.sha256
 test "$(pidof mihomo)" = "$(jsonfilter -i rollback.json -e '@.core_pid')"
 installed=$(apk --no-network query --from installed --format json --fields name,version opl-netfleet-https-compat | jsonfilter -e '@[0].version')
