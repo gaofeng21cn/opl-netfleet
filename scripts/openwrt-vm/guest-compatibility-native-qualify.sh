@@ -239,6 +239,9 @@ ucode /tmp/tests/https_native_guest.uc state >"$work/final.json"
 test "$(jsonfilter -i "$work/final.json" -e '@.requested')" = false
 test "$(jsonfilter -i "$work/final.json" -e '@.intercepting')" = false
 stage=network
+if [ -f /tmp/compat-runtime/runtime-cycle/cycle.json ]; then
+    apk --no-network --repositories-file /dev/null add /tmp/compat-runtime/runtime-cycle/old/*.apk >>"$work/packages.log" 2>&1
+fi
 touch /tmp/netfleet-compat-vm-authorized
 sh /tmp/tests/https_native_network.sh "$probe_port" >"$work/network.log" 2>&1
 stage=complete
@@ -249,5 +252,7 @@ const composition=fs.readfile('/tmp/compat-runtime/composition.json');
 const rollback=fs.readfile('/tmp/https-native-network/canary-rollback.json');
 const result={ok:true,composition:composition?json(composition):null,source_commit:ARGV[0],source_tree:ARGV[1],checks:{generic_engine_catalog:true,full_feed_bootstrap:true,full_feed_install_inactive:true,full_feed_repeat_preserves_configuration:true,...(fs.stat('/tmp/compat-runtime/upgrade.json')?{engine_package_cycle:true}:{}),...(fs.stat('/tmp/compat-runtime/retained-base/retained-base.json')?{retained_base_packages:json(fs.readfile('/tmp/compat-native-fixture/retained-base.json'))?.ok===true}:{}),dual_stack_probe_faults:true,native_kernel_io:true,native_dependency_closure:true,real_control_entry:true,procd_launcher:true,local_h1_to_h2:true,resource_limits:true,resource_pressure:true,user_disable:true,plugin_unload_load:true,uninstall_reinstall:true,stable_ca:true,base_configuration_unchanged:true,local_address_rotation:true,address_conflict_expiry:true,dual_stack_kernel_lease:true,real_gateway_h2:true,kernel_tcp_reset_delivery:true,original_routing:true,sni_and_unknown_device_bypass:true,address_update_without_restart:true,streaming_upload_and_sse:true,cancellation_and_business_errors:true,simultaneous_stall_fail_open:true,third_fault_latch:true,manual_recovery:true,base_pid_unchanged:true},profile:json(fs.readfile('/tmp/https-native-network/profile.json')),metrics:json(fs.readfile('/tmp/https-native-network/performance.json')),benchmark:benchmark?json(benchmark):null,production_ready:false};
 if(rollback)result.checks.autonomous_canary_rollback=json(rollback)?.state=='restored';
+const retained=fs.readfile('/tmp/https-native-network/native-runtime-cycle.json');
+if(retained)result.checks.native_runtime_retained_cycle=json(retained)?.ok===true;
 printf('%J\n',result);
 UC

@@ -377,6 +377,10 @@ if [ -n "$probe_port" ]; then
     probe 6 h2
 fi
 stage=resources
+if [ -f /tmp/compat-runtime/runtime-cycle/cycle.json ]; then
+    stage=native_runtime_update
+    . /tmp/tests/https_native_runtime_cycle.sh
+fi
 if [ -f /tmp/compat-runtime/upgrade.json ]; then
     stage=plugin_update
     . /tmp/tests/https_native_package_cycle.sh

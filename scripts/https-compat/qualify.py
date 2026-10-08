@@ -118,6 +118,7 @@ def main():
     p.add_argument('--output', required=True, type=Path)
     p.add_argument('--benchmark', action='store_true')
     p.add_argument('--retained-base', type=Path, help='exact signed plugins retained by the target')
+    p.add_argument('--runtime-cycle', type=Path, help='signed native plugin upgrade and failed-candidate fixtures')
     p.add_argument('--validate-only', action='store_true')
     a = p.parse_args()
     current = artifact(a.candidate, 'compat-manifest.json')
@@ -173,6 +174,8 @@ def main():
                 'new':{'file':current['artifact'],'sha256':current['sha256']}}))
         if a.retained_base is not None:
             shutil.copytree(a.retained_base, stage/'retained-base')
+        if a.runtime_cycle is not None:
+            shutil.copytree(a.runtime_cycle, stage/'runtime-cycle')
         diagnostic = output.with_suffix('.diagnostic.json')
         command = ['bash',str(ROOT/'scripts/openwrt-vm.sh'),'--ref',execution_commit,
                    '--packages',str(a.packages.resolve()),'--base-qualification',str(a.base_qualification.resolve()),
@@ -189,6 +192,8 @@ def main():
             raise ValueError('missing plugin update or failure evidence')
         if a.retained_base is not None and checks.get('retained_base_packages') is not True:
             raise ValueError('missing retained base package evidence')
+        if a.runtime_cycle is not None and checks.get('native_runtime_retained_cycle') is not True:
+            raise ValueError('missing native plugin upgrade and rollback evidence')
         qualification_flag = 'composition_qualified' if a.composition else 'plugin_qualified'
         result.update({qualification_flag: True, 'checks': checks, 'diagnostic_sha256': sha(diagnostic),
                        'benchmark': proof['lanes']['compatibility'].get('benchmark')})

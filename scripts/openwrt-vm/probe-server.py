@@ -74,8 +74,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.wfile.flush()
                 time.sleep(1)
             return
-        if url.path in ('/compat-wire/events', '/compat-wire/drain-events'):
-            events = [f'data: {number}\n\n'.encode() for number in range(30)]
+        if url.path in ('/compat-wire/events', '/compat-wire/drain-events', '/compat-wire/long-events'):
+            events = [f'data: {number}\n\n'.encode() for number in range(360 if url.path.endswith('/long-events') else 30)]
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')
             self.send_header('Cache-Control', 'no-cache')
@@ -85,7 +85,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 for event in events:
                     self.wfile.write(event)
                     self.wfile.flush()
-                    time.sleep(0.5 if url.path.endswith('/drain-events') else 0.1)
+                    time.sleep(0.5 if url.path.endswith(('/drain-events', '/long-events')) else 0.1)
             except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
                 pass
             return
