@@ -78,7 +78,11 @@ const p=fs.popen('apk --no-network query --from installed --format json --fields
 const before=json(p.read('all'))[0].version;if(p.close()!=0)die('installed_read_failed');
 fs.writefile(dir+'/request.json',sprintf('%J',{request:{name:m.name,action:'update',version:m.version,before_version:before}}));
 UC
-ucode /usr/libexec/opl-netfleet/main.uc components-plugin-plan "$transaction/request.json" >"$transaction/plan.json"
+if ! ucode /usr/libexec/opl-netfleet/main.uc components-plugin-plan "$transaction/request.json" >"$transaction/plan.json"; then
+    cat "$transaction/plan.json"
+    LC_ALL=C apk --timeout 10 --cache-max-age 1440 --simulate add "opl-netfleet-https-compat=$new_version" 2>&1 || true
+    exit 1
+fi
 ucode - "$transaction" <<'UC'
 import * as fs from 'fs';
 const dir=ARGV[0],value=json(fs.readfile(dir+'/request.json')),plan=json(fs.readfile(dir+'/plan.json'));

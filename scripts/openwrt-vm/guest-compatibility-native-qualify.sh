@@ -16,7 +16,7 @@ failure() {
  # Keep the first failed assertion and transaction evidence across tmpfs loss
  # when a retained diagnostic image is started again with QEMU -snapshot.
  if [ -f "$work/network.log" ]; then
-  tar -cf /root/netfleet-compat-failure.tar "$work/network.log" /tmp/https-native-network /etc/opl-netfleet/package-transactions 2>/dev/null || true
+  tar -cf /root/netfleet-compat-failure.tar "$work/network.log" /tmp/https-native-network /tmp/netfleet-plugin-update-test.* /etc/opl-netfleet/package-transactions 2>/dev/null || true
   sed -n '1,160p' "$work/network.log" >&2
  fi
  ubus call service list '{"name":"opl-netfleet-compat"}' >&2 || true
