@@ -194,6 +194,7 @@ if [[ -n "$test_ref" ]]; then
     git -C "$repo_dir" diff --quiet "$source_commit" "$test_commit" -- . \
         ':(exclude)scripts/openwrt-vm' ':(exclude)scripts/openwrt-vm.sh' \
         ':(exclude)scripts/openwrt-apk.py' ':(exclude)scripts/netfleet-package-build.sh' \
+        ':(exclude)scripts/https-compat/qualify.py' \
         ':(exclude)tests' ':(exclude)docs' || die "test ref changes product inputs"
     rm -rf "$source_dir/scripts/openwrt-vm" "$source_dir/tests"
     git -C "$repo_dir" archive "$test_commit" scripts/openwrt-vm scripts/https-compat tests | tar -C "$source_dir" -xf -
