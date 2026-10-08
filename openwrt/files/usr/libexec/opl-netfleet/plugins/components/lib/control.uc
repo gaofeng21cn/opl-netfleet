@@ -1,12 +1,11 @@
 import * as fs from "fs";
 import * as package_model from "./packages.uc";
-import { create as create_adapter } from "../../../adapters/openwrt.uc";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
 let observer, process_birth, pause_observer, resume_observer, drain_resource, native_identity;
 let network_guard = null;
-const adapter = create_adapter(context.root);
+const adapter = loadstring(sprintf('import { create } from %J; return create;', context.root + '/adapters/openwrt.uc'))()(context.root);
 let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, recovery_world, restore_world, feed, newer, available, update_process, progress, get, local_stage, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, recovery_stop, restore_services, rollback, recover, journal, upgrade, command;
 
 const gateway = context.use("mihomo.gateway");
