@@ -57,6 +57,7 @@ function installed() { return {package: identity_ok ? "old" : "new"}; }
 function input_identity(paths) { return {code: bytes_ok ? "old" : "partial"}; }
 function same_inputs(before) { return input_ok; }
 function restore_services(before, work) { starts++; return runtime_ok; }
+function verify_runtime(before, work) { return restore_services(before, work); }
 function resume_resources(work) { return true; }
 function atomic_json(path, value) { saved = value; return true; }
 function check(value, message) { if (!value) die(message); }
@@ -95,6 +96,25 @@ rollback({...before,scoped:true}, "/unused", ["package"], {package:"old"}, ["old
 check(stops==stops_before && scoped_drains>=2, "plugin recovery failure must never stop the whole network");
 `)();
 print("components_recovery_contract_ok\n");
+
+const verify_start = index(source, 'function verify_runtime(');
+const verify_end = index(source, 'function drain_scoped(', verify_start);
+loadstring(`
+let held=true, renewal_ok=true, raises=false, renewals=0;
+const MAIN='main';function q(v){return v;}
+function network_leave(){held=false;}function network_enter(){held=true;}
+function parsed(){if(held)die('renewal must own an independent network lock');renewals++;return {ok:renewal_ok};}
+function restore_services(before){if(before.runtime_retained&&held)die('retained verification cannot block renewal');if(raises)die('verification_failure');return true;}
+function check(v,m){if(!v)die(m);}
+` + substr(source, verify_start, verify_end-verify_start) + `
+const before={runtime_retained:true,retained_engine:{pid:2}};
+check(verify_runtime(before,'work')&&held&&renewals==1,'renew before retained verification and reacquire before continuing');
+renewal_ok=false;check(!verify_runtime(before,'work')&&held,'failed renewal must retain recovery authority');
+renewal_ok=true;raises=true;try{verify_runtime(before,'work');}catch(e){}
+check(held,'verification exceptions must reacquire the mutation lock');
+raises=false;const previous=renewals;
+check(verify_runtime({},'work')&&held&&renewals==previous,'ordinary stopped-runtime recovery keeps its existing lock');
+`)();
 
 // APK local paths replace world roots with checksums. Exercise administrator
 // constraints and rollback, including unrelated roots, against the real helper.

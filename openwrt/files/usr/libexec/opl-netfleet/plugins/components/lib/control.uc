@@ -1,9 +1,12 @@
 import * as fs from "fs";
 import * as package_model from "./packages.uc";
+import { create as create_adapter } from "../../../adapters/openwrt.uc";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
 let observer, process_birth, pause_observer, resume_observer, drain_resource, native_identity;
+let network_guard = null;
+const adapter = create_adapter(context.root);
 let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, recovery_world, restore_world, feed, newer, available, update_process, progress, get, local_stage, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, recovery_stop, restore_services, rollback, recover, journal, upgrade, command;
 
 const gateway = context.use("mihomo.gateway");
@@ -37,6 +40,23 @@ const PACKAGES = ["opl-netfleet", "luci-app-netfleet", "mihomo-meta"];
 const COMPATIBILITY_PACKAGE = "opl-netfleet-https-compat";
 const DEPENDENCIES = ["ucode", "ucode-mod-fs", "ucode-mod-uci", "ucode-mod-ubus", "ucode-mod-uloop", "yq", "curl", "ca-bundle", "flock", "unzip", "ip-full", "nftables-json", "kmod-nft-socket", "kmod-nft-tproxy"];
 
+function network_enter() {
+	if (network_guard != null) return;
+	for (let attempt = 0; attempt < 10; attempt++) {
+		network_guard = adapter.network_lock(adapter.paths.network_lock, true);
+		if (network_guard != null) return;
+		system('sleep 1');
+	}
+	fail('mutation_busy');
+}
+function network_leave() { network_guard?.close(); network_guard = null; }
+function worker_enter() {
+	const path = `${ROOT}/worker.lock`;
+	if (!directory(ROOT) || fs.lstat(path) != null && !private_file(path)) fail('unsafe_update_directory');
+	const lock = fs.open(path, 'ae', 0600);
+	if (lock == null || !lock.lock('xn')) { lock?.close(); fail('mutation_busy'); }
+	return lock;
+}
 capture = function(command) {
 	const pipe = fs.popen(command + " 2>/dev/null");
 	if (pipe == null) return null;
@@ -325,9 +345,13 @@ pause_observer = function(work, id) {
 	if (sprintf('%J', native_identity()) != sprintf('%J', before.retained_core)) return false;
 	if (before.retained_engine != null && process_birth(before.retained_engine.pid) != before.retained_engine.birth) return false;
 	const entry = parsed(`ubus call service list ${q(sprintf('%J', { name: saved.service }))}`)?.[saved.service]?.instances?.[saved.instance];
+	const pid = entry?.pid ?? saved.pid, birth = entry?.pid == null ? saved.birth : process_birth(entry.pid);
 	if (entry != null && (sprintf('%J', entry.command) != sprintf('%J', saved.spec.command) ||
 		!run_command(`ubus call service delete ${q(sprintf('%J', { name: saved.service, instance: saved.instance }))}`, work))) return false;
-	const pid = entry?.pid ?? saved.pid, birth = entry?.pid == null ? saved.birth : process_birth(entry.pid);
+	// Only management instances are admitted above. Unregister first so procd
+	// cannot respawn them, then release their code leases without spending the
+	// forwarding lease on procd's generic graceful-exit timeout.
+	if (birth != null && process_birth(pid) == birth && !run_command(`kill -KILL ${pid}`, work) && process_birth(pid) == birth) return false;
 	for (let i = 0; i < 8; i++) {
 		if (birth == null || process_birth(pid) != birth) return sprintf('%J', native_identity()) == sprintf('%J', before.retained_core);
 		system('sleep 1');
@@ -481,7 +505,7 @@ start = function(action, component, version) {
 		local_stage(work);
 	}
 	const service = { name: UPDATE_SERVICE, instances: { update: {
-		command: ["/usr/bin/flock", "-w", "10", "/var/lock/opl-netfleet-deploy.lock", "/usr/bin/ucode", `${work}/code/main.uc`, "components-run", `${work}/request.json`],
+		command: ["/usr/bin/ucode", `${work}/code/main.uc`, "components-run", `${work}/request.json`],
 		term_timeout: 30, stdout: false, stderr: false
 	} } };
 	if (capture(`ubus call service add ${q(sprintf("%J", service))}`) == null) fail("update_start_failed");
@@ -641,7 +665,8 @@ restore_services = function(before, work) {
 		}
 		if (!ready) return false;
 	}
-	if (before.supervisor && !service_running("opl-netfleet") && !run_command("NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet start", work)) return false;
+	if (before.supervisor && !service_running("opl-netfleet") &&
+		(before.runtime_retained || !run_command("NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet start", work))) return false;
 	if (before.unconfigured) return !before.core && same_inputs(before);
 	// Controller readiness precedes provider loading, gateway attachment and working DNS.
 	while (time() < deadline) {
@@ -663,6 +688,19 @@ restore_services = function(before, work) {
 	}
 	return false;
 };
+function verify_runtime(before, work) {
+	if (!before.runtime_retained) return restore_services(before, work);
+	// The original HTTPS owner needs an independent lock for its health probes
+	// and lease renewal. Keep package serialization while allowing that work.
+	network_leave();
+	let result, failure;
+	try {
+		result = (before.retained_engine == null || parsed(`ucode ${q(MAIN)} compatibility-tick`)?.ok == true) && restore_services(before, work);
+	} catch (error) { failure = error; }
+	network_enter();
+	if (failure != null) die(failure.message);
+	return result;
+}
 function drain_scoped(work) {
 	let ok = true;
 	const state = read_json(`${work}/journal.json`);
@@ -756,7 +794,7 @@ rollback = function(before, work, names, versions, old, install_started, already
 		attempt("rollback_identity_mismatch", () => sprintf("%J", input_identity(before.runtime_paths)) == sprintf("%J", before.runtime_inputs));
 	const inputs = attempt("rollback_configuration_failed", () => same_inputs(before));
 	if (!identity) push(errors, "rollback_identity_mismatch");
-	const runtime = identity && inputs && attempt("rollback_runtime_failed", () => restore_services(before, work));
+	const runtime = identity && inputs && attempt("rollback_runtime_failed", () => verify_runtime(before, work));
 	if (!runtime) {
 		attempt("rollback_stop_failed", () => before.scoped ? drain_scoped(work) : stop_services(work));
 	}
@@ -870,6 +908,18 @@ upgrade = function(request, work, candidates) {
 		if (!directory(extracted) || !run_command(`apk extract --destination ${q(extracted)} ${q(next[0])}`, work) ||
 			!run_command(`${q(`${extracted}/usr/libexec/mihomo`)} -t -d ${q(RUN_DIR)} -f ${q(`${RUN_DIR}/config.yaml`)}`, work)) fail("core_config_incompatible");
 	}
+	// Slow archive/network preparation does not own the network mutex. Recheck
+	// the complete snapshot under it before creating recovery intent or draining.
+	network_enter();
+	const fresh_versions = installed();
+	if (fresh_versions == null || length(keys(fresh_versions)) != length(keys(versions)) ||
+		length(filter(keys(versions), name => fresh_versions[name] != versions[name]))) fail('installed_version_changed');
+	if (!same_inputs(before) || service_running(SERVICE) != before.core ||
+		(before.runtime_retained && sprintf('%J', native_identity()) != sprintf('%J', before.retained_core))) fail('runtime_precondition_changed');
+	if (before.core) {
+		const fresh = proxies(api_secret(), 2)?.proxies;
+		for (let name, choice in before.selections) if (fresh?.[name]?.now != choice) fail('runtime_precondition_changed');
+	}
 	if (system("/etc/init.d/opl-netfleet-update-recovery enable >/dev/null 2>&1") != 0) fail("update_recovery_unavailable");
 	if (!atomic_json(`${work}/before.json`, before) || !run_command(`tar -cf ${q(`${work}/private.tar`)} -C / ${join(" ", map(paths, path => q(substr(path, 1))))}`, work)) fail("update_state_write_failed");
 	// BusyBox tar refuses to create an empty archive. A first installation has no
@@ -917,8 +967,9 @@ upgrade = function(request, work, candidates) {
 		for (let name in names) if (after?.[name] != candidates[name]) fail("package_identity_mismatch");
 		if (request.plugin) for (let name in keys(versions)) if (index(names, name) < 0 && after?.[name] != versions[name]) fail("package_identity_mismatch");
 		if (!same_inputs(before)) fail("private_configuration_changed");
-		if (!restore_services(before, work)) fail("runtime_verification_failed");
+		if (!verify_runtime(before, work)) fail("runtime_verification_failed");
 	} catch (failure) { error = error_code(failure); }
+	if (error != null) network_enter();
 	if (error == null) {
 		// Keep installed signed plugin archives available when a feed advances.
 		if (directory(`${ROOT}/archives`)) for (let path in next) {
@@ -930,8 +981,9 @@ upgrade = function(request, work, candidates) {
 	}
 	journal(work, { ...read_json(`${work}/journal.json`), failure_reason: error });
 	operation.update("rolling_back");
+	if (before.runtime_retained && (!same_inputs(before) || sprintf('%J', native_identity()) != sprintf('%J', before.retained_core))) fail('runtime_precondition_changed');
 	if (!install_started) {
-		if (!resume_resources(work) || !same_inputs(before) || !restore_services(before, work)) fail("rollback_runtime_failed");
+		if (!resume_resources(work) || !same_inputs(before) || !verify_runtime(before, work)) fail("rollback_runtime_failed");
 		journal(work, { ...read_json(`${work}/journal.json`), phase: "rolled_back", write_started: false, error: `${error}_rolled_back` });
 		fs.unlink(PENDING); system("sync"); fail(`${error}_rolled_back`);
 	}
@@ -960,6 +1012,18 @@ recovery_stop = function(work) {
 	}
 	return false;
 };
+function start_recovery() {
+	if (fs.lstat(PENDING) == null) return { recovered: false };
+	const id = private_file(PENDING) ? read_json(PENDING)?.id : null;
+	if (!match(id ?? '', /^[a-f0-9]{32}$/) || !private_directory(`${ROOT}/${id}/code`)) fail('update_recovery_state_invalid');
+	if (update_process()?.running == true) fail('mutation_busy');
+	const service = { name: UPDATE_SERVICE, instances: { update: {
+		command: ['/usr/bin/ucode', `${ROOT}/${id}/code/plugins/components/recover.uc`, 'reconcile'],
+		term_timeout: 30, stdout: false, stderr: false
+	} } };
+	if (capture(`ubus call service add ${q(sprintf('%J', service))}`) == null) fail('update_recovery_unavailable');
+	return { id, recovery_requested: true };
+}
 function request_rollback(id) {
 	if (!match(id ?? '', /^[a-f0-9]{32}$/) || fs.realpath(context.root) != `${ROOT}/${id}/code` || read_json(REQUEST)?.id != id)
 		fail('update_operation_changed');
@@ -988,6 +1052,9 @@ recover = function() {
 	if (!state || state.before?.backend != KIND || !private_directory(work) || type(state.inputs) != "object" ||
 		index(["prepared", "draining", "installing", "recovering", "complete", "rolled_back"], state.phase) < 0) fail("update_recovery_state_invalid");
 	for (let path, digest in state.inputs) if (index(path, `${work}/`) != 0 || sha256(path) != digest) fail("update_recovery_artifact_changed");
+	network_enter();
+	if (state.before.runtime_retained && (!same_inputs(state.before) ||
+		sprintf('%J', native_identity()) != sprintf('%J', state.before.retained_core))) fail('runtime_precondition_changed');
 	const recovered_error = state.error ?? (state.failure_reason ? `${state.failure_reason}_rolled_back` : "update_interrupted_rolled_back");
 	if (state.phase == 'complete' && private_file(`${work}/rollback-request.json`) && read_json(`${work}/rollback-request.json`)?.id == pending.id) {
 		if (state.before.runtime_retained != true || !same_inputs(state.before) ||
@@ -1000,7 +1067,7 @@ recover = function() {
 		const current = installed();
 		if (type(expected) != "object" || type(state.names) != "array") fail("update_recovery_state_invalid");
 		for (let name in state.names) if (current?.[name] != expected[name]) fail("rollback_identity_mismatch");
-		if (!same_inputs(state.before) || !restore_services(state.before, work)) fail("rollback_runtime_failed");
+		if (!same_inputs(state.before) || !verify_runtime(state.before, work)) fail("rollback_runtime_failed");
 		fs.unlink(PENDING); system("sync");
 		operation.finish(state.phase == "complete", state.phase == "complete" ? null : recovered_error,
 			state.phase == "rolled_back" ? { rollback: { ok: true } } : null);
@@ -1011,7 +1078,7 @@ recover = function() {
 	if (state.write_started == false) {
 		const current = installed();
 		if (length(filter(names, name => current?.[name] != versions[name])) || !same_inputs(before) ||
-			!resume_resources(work) || !restore_services(before, work)) fail("rollback_runtime_failed");
+			!resume_resources(work) || !verify_runtime(before, work)) fail("rollback_runtime_failed");
 		journal(work, { ...state, phase: "rolled_back" }); fs.unlink(PENDING); system("sync");
 		operation.finish(false, recovered_error, { rollback: { ok: true } });
 		return { recovered: true };
@@ -1035,9 +1102,11 @@ recover = function() {
 command = function(argv) {
 	const ARGV = [substr(argv[0], 11), ...slice(argv, 1)];
 
-let response;
+let response, worker_lock;
 try {
-	if (ARGV[0] == "recover") response = { ok: true, result: recover() };
+	if (index(['run', 'reconcile'], ARGV[0]) >= 0) worker_lock = worker_enter();
+	if (ARGV[0] == "recover") response = { ok: true, result: start_recovery() };
+	else if (ARGV[0] == 'reconcile') response = { ok: true, result: recover() };
 	else if (ARGV[0] == 'rollback') response = { ok: true, result: request_rollback(ARGV[1]) };
 	else if (ARGV[0] == "cancel") response = { ok: true, result: cancel_update(ARGV[1]) };
 	else if (ARGV[0] == "get") response = { ok: true, result: get() };
@@ -1073,11 +1142,13 @@ try {
 			fs.lstat(`${work}/journal.json`) == null)
 			journal(work, { phase: "failed", write_started: false, error: reason });
 	}
-	if (ARGV[0] == "run" || ARGV[0] == "recover") operation.finish(false, reason,
+	if (ARGV[0] == "run" || ARGV[0] == "reconcile") operation.finish(false, reason,
 		match(reason, /_rolled_back$/) ? { rollback: { ok: true } } :
 		match(reason, /^rollback_(stop|configuration|install|identity|runtime|world)_/) ? { rollback: { ok: false } } : null);
 	response = { ok: false, error: reason };
 }
+network_leave();
+worker_lock?.close();
 printf("%J\n", response);
 exit(response.ok ? 0 : 1);
 };
