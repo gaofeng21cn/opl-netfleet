@@ -141,11 +141,12 @@ installed=$(apk --no-network query --from installed --format json --fields name,
 test "$installed" = "$old_version"
 flock -u 9
 if [ "$(jsonfilter -i rollback.json -e '@.plugin_disabled')" = true ]; then
- ucode "$main" plugins-list >restored-plugins.json
+ ucode "$main" plugins-system-get >restored-plugins.json
  ucode - restored-plugins.json <<'UC'
 import * as fs from 'fs';
-const rows=json(fs.readfile(ARGV[0])).result.plugins;
-if(filter(rows,row=>row.id=='https-compat' && row.enabled===false && row.reason=='plugin_disabled')[0]==null)die('canary_disabled_state_changed');
+const value=json(fs.readfile(ARGV[0])).result;
+const enabled={...value.defaults.enabled,...value.config.enabled};
+if(enabled['https-compat']!==false)die('canary_disabled_state_changed');
 UC
  state restored
  exit 0
