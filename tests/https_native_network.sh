@@ -170,11 +170,15 @@ UC
 fi
 mkdir -p /etc/opl-netfleet/native/profiles /etc/opl-netfleet/native/run /var/run/opl-netfleet-core
 chmod 0700 /etc/opl-netfleet/native /etc/opl-netfleet/native/profiles /etc/opl-netfleet/native/run /var/run/opl-netfleet-core
-printf '{"find-process-mode":"off","rules":["PROCESS-NAME,haproxy,REJECT","SRC-PORT,41641,DIRECT","MATCH,DIRECT"],"hosts":{"wire.example":"198.51.100.10"}}\n' >/etc/opl-netfleet/native/profiles/OPL-NetFleet.json
+printf '{"find-process-mode":"off","rules":["PROCESS-NAME,haproxy,REJECT","SRC-PORT,41641,DIRECT","MATCH,DIRECT"],"hosts":{"wire.example":"198.51.100.10"},"sniffer":{"enable":true,"force-dns-mapping":true,"parse-pure-ip":true,"sniff":{"TLS":{"ports":[443],"override-destination":false}}}}\n' >/etc/opl-netfleet/native/profiles/OPL-NetFleet.json
 chmod 0600 /etc/opl-netfleet/native/profiles/OPL-NetFleet.json
 uci set netfleet.config.enabled=1
 uci set netfleet.config.profile=file:OPL-NetFleet.json
 uci set netfleet.mixin.api_secret=native-isolated-fixture
+uci set netfleet.mixin.sniffer=1
+uci set netfleet.mixin.sniffer_sniff_dns_mapping=1
+uci set netfleet.mixin.sniffer_sniff_pure_ip=1
+uci set netfleet.mixin.sniffer_sniff=0
 uci delete netfleet.proxy.lan_inbound_interface
 uci add_list netfleet.proxy.lan_inbound_interface=nfcompat
 uci commit netfleet
@@ -400,6 +404,21 @@ if [ -n "$probe_port" ]; then
     assert_compatibility_handoff
     probe 4 http/1.1
     probe 6 http/1.1
+    stage=disabled_plugin_native_tls_identity
+    wire -fsSN 'https://wire.example/compat-wire/drain-events' >"$work/native-sniff-events.txt" 2>"$work/native-sniff-events.log" &
+    sniff_stream=$!
+    sleep 1
+    grep -q '^data: 0$' "$work/native-sniff-events.txt"
+    ucode - <<'UC'
+import * as fs from 'fs';
+const p=fs.popen("curl -q -fsS --max-time 2 --unix-socket /etc/opl-netfleet/native/run/controller.sock http://localhost/connections");
+const value=json(p.read('all'));if(p.close())die('sniffer_wire_read_failed');
+if(!length(filter(value.connections ?? [],row=>row.metadata?.sniffHost=='wire.example'&&row.metadata?.host=='wire.example')))
+    die('tls_sni_not_used_for_native_dialing');
+print('native TLS SNI controls routing and dialing after plugin unload\n');
+UC
+    wait "$sniff_stream"
+    test "$(grep -c '^data:' "$work/native-sniff-events.txt")" = 30
     ucode /tmp/tests/https_native_guest.uc plugin-load >"$work/plugin-load.log"
     wait_intercepting
     processes
