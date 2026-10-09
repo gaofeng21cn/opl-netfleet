@@ -925,7 +925,7 @@ upgrade = function(request, work, candidates) {
 		retained_graph(work, names);
 		before.runtime_retained = true;
 		before.retained_core = native_identity();
-		before.retained_observers = index(names, 'opl-netfleet-plugin-mihomo') >= 0 || index(names, COMPATIBILITY_PACKAGE) >= 0 ?
+		before.retained_observers = index(names, 'opl-netfleet-plugin-mihomo') >= 0 ?
 			{ mihomo: observer(SERVICE, 'lifecycle', ['/usr/bin/ucode', MAIN, 'native-gateway-watch']) } : {};
 		if (service_running('opl-netfleet-compat')) {
 			before.retained_observers['https-compat'] = observer('opl-netfleet-compat', 'manager', ['/usr/libexec/opl-netfleet-compat/launcher', 'manager']);
