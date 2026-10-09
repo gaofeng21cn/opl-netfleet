@@ -55,7 +55,7 @@ UC
  ucode - "$cohort" <<'UC'
 import * as fs from 'fs';
 const dir=ARGV[0],r=json(fs.readfile(dir+'/request.json')),plan=json(fs.readfile(dir+'/plan.json')).result;
-assert(sprintf('%J',sort(plan.names))==sprintf('%J',sort(['opl-netfleet','opl-netfleet-plugin-mihomo','opl-netfleet-plugin-network'])));
+assert(sprintf('%J',sort([...plan.names]))==sprintf('%J',sort(['opl-netfleet','opl-netfleet-plugin-mihomo','opl-netfleet-plugin-network'])));
 r.request.confirm=true;r.request.plan=plan;fs.writefile(dir+'/request.json',sprintf('%J',r));
 UC
  ucode "$main" components-plugin "$cohort/request.json" >"$cohort/start.json"

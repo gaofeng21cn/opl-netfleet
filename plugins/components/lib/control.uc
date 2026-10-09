@@ -759,6 +759,7 @@ function retained_payload(work, archive, versions, name) {
 		product ? !retained_contract.composition(before, after) : !retained_contract.manifest(before, after)) fail('runtime_contract_changed');
 	function mutable(path) {
 		return index(path, prefix) == 0 && (!engine || path != prefix + 'launcher') ||
+			name == 'opl-netfleet-plugin-mihomo' && path == '/usr/share/opl-netfleet/nikki/mixin.uc' ||
 			engine && index(['/usr/lib/ucode/netfleet_probe.so', '/usr/lib/ucode/netfleet_interception.so'], path) >= 0;
 	}
 	const existing = package_paths([name], versions);
