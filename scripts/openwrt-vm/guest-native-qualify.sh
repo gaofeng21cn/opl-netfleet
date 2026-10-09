@@ -54,8 +54,20 @@ stage=dependencies
 ip route replace default via 192.168.1.2 dev br-lan
 printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
 apk --timeout 120 update >"$work/packages.log" 2>&1 || true
-apk --timeout 120 add curl unzip coreutils-timeout flock ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket socat bind-dig \
-	ucode-mod-fs ucode-mod-digest ucode-mod-uci ucode-mod-socket ucode-mod-ubus ucode-mod-uloop >>"$work/packages.log" 2>&1
+dependencies='curl libcurl4 unzip coreutils coreutils-timeout flock ip-full kmod-veth kmod-nft-tproxy kmod-nft-socket socat bind-dig ucode-mod-fs ucode-mod-digest ucode-mod-uci ucode-mod-socket ucode-mod-ubus ucode-mod-uloop'
+dependencies_ready=0
+for attempt in 1 2 3; do
+	# APK's external downloader can leave a partial install despite a zero
+	# status. Verify the installed set and dynamic tools before using them.
+	apk --timeout 120 add $dependencies >>"$work/packages.log" 2>&1 || true
+	if apk info -e $dependencies >/dev/null 2>&1 && \
+		curl --version >>"$work/packages.log" 2>&1 && \
+		timeout --version >>"$work/packages.log" 2>&1; then
+		dependencies_ready=1
+		break
+	fi
+done
+[ "$dependencies_ready" = 1 ]
 gzip -dc /tmp/mihomo-linux-arm64-v1.19.30.gz >"$work/bin/mihomo"
 chmod 0755 "$work/bin/mihomo"
 ln -s "$work/bin/mihomo" /usr/bin/mihomo
