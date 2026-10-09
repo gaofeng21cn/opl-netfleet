@@ -588,4 +588,8 @@ probe 4 http/1.1
 probe 6 http/1.1
 test "$(pidof mihomo)" = "$base_pid"
 sha256sum -c "$work/base.sha256"
+if [ -f /tmp/compat-runtime/upgrade.json ]; then
+    stage=disabled_package_cycle
+    . /tmp/tests/https_native_disabled_cycle.sh
+fi
 echo 'native installed network: dual-stack H1 -> h2, original routing, address following, manager/engine stalls, third-fault latch, recovery and disabled bypass passed'

@@ -916,8 +916,7 @@ upgrade = function(request, work, candidates) {
 	if (before.scoped && request.plugin) before.runtime_paths = package_paths(names, versions);
 	before.runtime_inputs = input_identity(before.runtime_paths);
 	if (KIND == 'native-mihomo' && before.core && before.scoped && length(names) > 0 && length(names) <= length(RETAINED_PACKAGES) &&
-		!length(filter(names, name => index(RETAINED_PACKAGES, name) < 0)) &&
-		(index(names, COMPATIBILITY_PACKAGE) < 0 || service_running('opl-netfleet-compat'))) {
+		!length(filter(names, name => index(RETAINED_PACKAGES, name) < 0))) {
 		for (let name in names) {
 			const archive = filter(next, path => fs.basename(path) == `${name}-${candidates[name]}.apk`)[0];
 			if (archive == null) fail('runtime_retention_unavailable');
@@ -926,7 +925,7 @@ upgrade = function(request, work, candidates) {
 		retained_graph(work, names);
 		before.runtime_retained = true;
 		before.retained_core = native_identity();
-		before.retained_observers = index(names, 'opl-netfleet-plugin-mihomo') >= 0 ?
+		before.retained_observers = index(names, 'opl-netfleet-plugin-mihomo') >= 0 || index(names, COMPATIBILITY_PACKAGE) >= 0 ?
 			{ mihomo: observer(SERVICE, 'lifecycle', ['/usr/bin/ucode', MAIN, 'native-gateway-watch']) } : {};
 		if (service_running('opl-netfleet-compat')) {
 			before.retained_observers['https-compat'] = observer('opl-netfleet-compat', 'manager', ['/usr/libexec/opl-netfleet-compat/launcher', 'manager']);

@@ -116,7 +116,7 @@ UC
 sh "$transaction/run.sh" "$transaction" 10 >"$transaction/result.json" &
 cycle_writer=$!
 while kill -0 "$cycle_writer" 2>/dev/null; do
-    cycle_protocol=h2
+    cycle_protocol=${cycle_expected_protocol:-h2}
     [ "$cycle_cold_attempt" = 0 ] || cycle_protocol=either
     for cycle_family in 4 6; do
         probe "$cycle_family" "$cycle_protocol"

@@ -112,6 +112,8 @@ class EngineArtifacts(unittest.TestCase):
                         'checks':checks,'composition':request}}}
         with self.assertRaises(ValueError):qualify.composition_evidence(request,proof)
         checks['retained_manager_cold_recovery']=True
+        with self.assertRaises(ValueError):qualify.composition_evidence(request,proof)
+        checks['disabled_engine_autonomous_rollback']=True
         self.assertEqual(qualify.composition_evidence(request,proof),checks)
 
     def test_base_binding_includes_actual_gateway_templates(self):
