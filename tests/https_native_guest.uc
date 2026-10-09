@@ -52,6 +52,9 @@ if(action=='load') {
     state=request('compatibility-apply',{revision:state.revision,config});
     state=request('compatibility-enable',{revision:state.revision});
     check(state.requested&&!state.intercepting,'empty_rules_must_not_intercept');
+} else if(action=='enable-existing') {
+    const state=run(['compatibility-get']);
+    check(request('compatibility-enable',{revision:state.revision}).requested===true,'existing_configuration_not_enabled');
 } else if(action=='network-enable') {
     let state=run(['compatibility-get']);
     const config={schema:1,enabled:false,devices:[{id:'mac',name:'Isolated Mac',addresses:['10.77.0.2','2001:db8:77::2']}],rules:[

@@ -2,7 +2,9 @@
 # Sourced after the ordinary network fixture has disabled interception.
 test -f /tmp/netfleet-compat-vm-authorized
 test -f "$work/package-cycle-complete"
+ucode /tmp/tests/https_native_guest.uc enable-existing >"$work/disabled-cycle-config-enabled.json"
 ucode /tmp/tests/https_native_guest.uc plugin-unload >"$work/disabled-cycle-unload.json"
+test "$(jsonfilter -i /etc/opl-netfleet/compatibility/config.json -e '@.enabled')" = true
 assert_compatibility_handoff
 apk --no-network --repositories-file /dev/null add "$cycle_old" >"$work/disabled-cycle-old.log" 2>&1
 test "$(pidof mihomo)" = "$base_pid"
