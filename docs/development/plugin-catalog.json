@@ -270,7 +270,7 @@
         "opl-netfleet-plugin-subscriptions"
       ],
       "services": [],
-      "version": "0.10.15"
+      "version": "0.10.16"
     },
     {
       "api_version": 1,
@@ -307,7 +307,7 @@
       "services": [
         "scheduler.control"
       ],
-      "version": "0.7.6"
+      "version": "0.7.7"
     },
     {
       "api_version": 1,
