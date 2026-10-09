@@ -782,10 +782,10 @@ function retained_payload(work, archive, versions, name) {
 	}
 	inspect('');
 }
-function retained_graph(work, next) {
+function retained_graph(work, names) {
 	const preview = `${work}/retained-graph`, root = `${preview}/usr/libexec/opl-netfleet`;
 	if (!directory(preview) || !run_command(`mkdir -p ${q(preview + '/usr/libexec')} && cp -a /usr/libexec/opl-netfleet ${q(root)}`, work)) fail('runtime_retention_unavailable');
-	for (let archive in next) if (!run_command(`apk extract --destination ${q(preview)} ${q(archive)}`, work)) fail('runtime_retention_unavailable');
+	for (let name in names) if (!run_command(`cp -a ${q(work + '/retained-payload-' + name + '/.')} ${q(preview + '/')}`, work)) fail('runtime_retention_unavailable');
 	const defaults = read_json(`${preview}/usr/share/opl-netfleet/system.json`) ?? read_json('/usr/share/opl-netfleet/system.json');
 	if (!atomic_json(`${root}/system.json`, { ...context.system, bindings: { ...defaults.bindings, ...context.system.bindings } })) fail('runtime_retention_unavailable');
 	const script = `import { create } from ${sprintf('%J', root + '/kernel/host.uc')};
@@ -922,7 +922,7 @@ upgrade = function(request, work, candidates) {
 			if (archive == null) fail('runtime_retention_unavailable');
 			retained_payload(work, archive, versions, name);
 		}
-		retained_graph(work, next);
+		retained_graph(work, names);
 		before.runtime_retained = true;
 		before.retained_core = native_identity();
 		before.retained_observers = index(names, 'opl-netfleet-plugin-mihomo') >= 0 ?

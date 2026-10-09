@@ -37,7 +37,7 @@ import * as fs from 'fs';
 const rows=json(fs.readfile(ARGV[0])).native_cohort;
 const primary=filter(rows,row=>row.name=='opl-netfleet-plugin-mihomo')[0];
 fs.writefile(ARGV[1]+'/rollback.json',sprintf('%J',{package:primary.name,old:primary.old,new:primary.new,
- companions:map(filter(rows,row=>row!=primary),row=>({package:row.name,old:row.old,new:row.new})),
+ companions:map(filter(rows,row=>row.name!=primary.name),row=>({package:row.name,old:row.old,new:row.new})),
  core_pid:ARGV[2],plugin_disabled:true,timeout_seconds:60}));
 UC
 sh "$guard/guard.sh" "$guard" validate
