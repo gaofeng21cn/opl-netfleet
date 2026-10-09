@@ -1,3 +1,4 @@
+import { create as create_rules } from './profile.uc';
 import * as fs from "fs";
 import { cursor } from "uci";
 import { connect } from "ubus";
@@ -15,7 +16,7 @@ const read_yaml = context.use("platform.storage").read_yaml;
 const shell_quote = context.use("platform.process").shell_quote;
 const capture_process = context.use("platform.process").capture;
 const sha256 = context.use("platform.storage").sha256;
-const profile_rules = context.use("mihomo.profile-storage").rules;
+const profile_rules = create_rules();
 
 const BASE = "/etc/opl-netfleet/native";
 const RUN = `${BASE}/run`;
