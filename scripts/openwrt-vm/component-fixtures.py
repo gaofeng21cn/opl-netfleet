@@ -48,9 +48,10 @@ def prior_dependencies(dependencies, versions):
     """Keep synthetic old packages consistent with their synthetic providers."""
     result = []
     for dependency in dependencies:
-        match = re.fullmatch(r"([^<>=~!]+)(>=|=)(.+)", dependency)
-        if match and versions.get(match[1]) == match[3]:
-            dependency = match[1] + match[2] + fixture_versions(match[3])[0]
+        match = re.fullmatch(r"(!?)([^<>=~!]+)(>=|=|<)(.+)", dependency)
+        if (match and versions.get(match[2]) == match[4]
+                and (match[3] in (">=", "=") or match[1] == "!")):
+            dependency = match[1] + match[2] + match[3] + fixture_versions(match[4])[0]
         result.append(dependency)
     return result
 

@@ -137,6 +137,12 @@ class ReleaseToolsTests(unittest.TestCase):
             ['models>=0.7.12', 'models>=0.7.6', 'models', 'libc', 'external>=1.0'],
             {'models': '0.7.12'}),
             ['models>=0.7.11-r1', 'models>=0.7.6', 'models', 'libc', 'external>=1.0'])
+        self.assertEqual(fixtures.prior_dependencies(
+            ['!opl-netfleet<0.9.10', '!network<0.8.5', 'mihomo>=0.9.11',
+             '!external<0.8.5', '!network<0.8.1', 'network<0.8.5'],
+            {'opl-netfleet': '0.9.10', 'network': '0.8.5', 'mihomo': '0.9.11'}),
+            ['!opl-netfleet<0.9.9-r1', '!network<0.8.4-r1', 'mihomo>=0.9.10-r1',
+             '!external<0.8.5', '!network<0.8.1', 'network<0.8.5'])
 
 
     def test_luci_release_versions_all_shell_modules_without_cross_version_urls(self):
