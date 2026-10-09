@@ -170,7 +170,7 @@ UC
 fi
 mkdir -p /etc/opl-netfleet/native/profiles /etc/opl-netfleet/native/run /var/run/opl-netfleet-core
 chmod 0700 /etc/opl-netfleet/native /etc/opl-netfleet/native/profiles /etc/opl-netfleet/native/run /var/run/opl-netfleet-core
-printf '{"find-process-mode":"off","rules":["PROCESS-NAME,haproxy,REJECT","SRC-PORT,41641,DIRECT","MATCH,DIRECT"],"hosts":{"wire.example":"198.51.100.10"},"sniffer":{"enable":true,"force-dns-mapping":true,"parse-pure-ip":true,"sniff":{"TLS":{"ports":[443],"override-destination":false}}}}\n' >/etc/opl-netfleet/native/profiles/OPL-NetFleet.json
+printf '{"find-process-mode":"off","rules":["PROCESS-NAME,haproxy,REJECT","SRC-PORT,41641,DIRECT","MATCH,DIRECT"],"hosts":{"wire.example":"198.51.100.10","other.example":"198.51.100.10"},"sniffer":{"enable":true,"force-dns-mapping":true,"parse-pure-ip":true,"sniff":{"TLS":{"ports":[443],"override-destination":false}}}}\n' >/etc/opl-netfleet/native/profiles/OPL-NetFleet.json
 chmod 0600 /etc/opl-netfleet/native/profiles/OPL-NetFleet.json
 uci set netfleet.config.enabled=1
 uci set netfleet.config.profile=file:OPL-NetFleet.json
