@@ -6,6 +6,7 @@ from unittest.mock import patch
 from types import SimpleNamespace
 import json
 import tempfile
+import tarfile
 
 spec = importlib.util.spec_from_file_location('plugin_update', Path(__file__).resolve().parents[1] / 'scripts/update-openwrt-plugins.py')
 mod = importlib.util.module_from_spec(spec)
@@ -69,5 +70,30 @@ class FeedUpdateTests(unittest.TestCase):
         self.assertFalse(result['device_mutation'])
         self.assertEqual(read.call_count,1)
         mutation.assert_not_called()
+
+    def test_solver_product_dependency_keeps_its_original_rollback_archive(self):
+        with tempfile.TemporaryDirectory() as work:
+            directory = Path(work)
+            for name in ('opl-netfleet-0.9.7.apk', 'opl-netfleet-plugin-mihomo-0.9.10.apk'):
+                (directory / name).write_bytes(name.encode())
+            args = SimpleNamespace(target='fixture', plugin=['opl-netfleet-plugin-mihomo'], dry_run=False,
+                                   rollback_dir=directory, output=directory / 'result.json', observe_seconds=10)
+            snapshot = {'ok': True, 'result': {
+                'plugin_packages': [{'name': args.plugin[0], 'installed_version': '0.9.10', 'available_version': '0.9.11'}],
+                'product': {'packages': [{'name': 'opl-netfleet', 'installed_version': '0.9.7'}]}}}
+            plan = {'ok': True, 'result': {'names': ['opl-netfleet-plugin-mihomo', 'opl-netfleet'],
+                                         'candidates': {'opl-netfleet-plugin-mihomo': '0.9.11', 'opl-netfleet': '0.9.10'}}}
+            sent = []
+            def execute(command, **kwargs):
+                if 'stdin' in kwargs:
+                    with tarfile.open(fileobj=kwargs['stdin']) as archive:
+                        sent.extend(archive.getnames())
+                        self.assertEqual(archive.extractfile('old/opl-netfleet-0.9.7.apk').read(), b'opl-netfleet-0.9.7.apk')
+                return SimpleNamespace(returncode=0, stdout=b'{"ok":true}\n', stderr=b'')
+            with patch.object(mod, 'run', side_effect=[json.dumps(snapshot).encode(), json.dumps(plan).encode()]), \
+                 patch.object(mod.subprocess, 'run', side_effect=execute):
+                mod.feed_update(args, ['ssh', 'fixture'])
+            self.assertIn('old/opl-netfleet-0.9.7.apk', sent)
+            self.assertIn('old/opl-netfleet-plugin-mihomo-0.9.10.apk', sent)
 
 if __name__ == '__main__': unittest.main()
