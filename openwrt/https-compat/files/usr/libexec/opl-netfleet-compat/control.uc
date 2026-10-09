@@ -477,7 +477,7 @@ return function(context, options) {
 			// Package replacement uses a non-interactive lifecycle handoff. Keep
 			// the data-plane process and established TCP sessions; explicit unload
 			// and reload retain their existing bounded hard-stop behavior.
-			let package_ready=request.seamless == true;
+			let package_ready=request.interactive !== true && request.seamless == true;
 			if(!package_ready && request.lifecycle == true && !request.interactive)
 				try { package_ready=health().ready === true; } catch (_) {}
 			if(package_ready) {

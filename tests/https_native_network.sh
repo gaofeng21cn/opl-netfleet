@@ -405,6 +405,40 @@ if [ -n "$probe_port" ]; then
     processes
     probe 4 h2
     probe 6 h2
+    stage=plugin_toggle_orphaned_marks
+    wire -fsSN 'https://wire.example/compat-wire/drain-events' >"$work/orphan-events.txt" 2>"$work/orphan-events.log" &
+    orphan_stream=$!
+    sleep 1
+    kill -0 "$orphan_stream"
+    grep -q '^data: 0$' "$work/orphan-events.txt"
+    ucode -e 'if(require("netfleet_interception").marked_count()==0)die("orphan_fixture_has_no_mark");'
+    # Simulate an interrupted owner cleanup while excluding manager renewal.
+    # The official unload must still remove the orphaned connection ownership.
+    flock -w 10 /var/lock/opl-netfleet-deploy.lock sh -eu <<'SH'
+nft delete table inet netfleet_compat
+ucode /tmp/tests/https_native_guest.uc plugin-unload
+SH
+    interrupted=0
+    wait "$orphan_stream" || interrupted=$?
+    test "$interrupted" != 0
+    assert_compatibility_handoff
+    probe 4 http/1.1
+    probe 6 http/1.1
+    test "$(pidof mihomo)" = "$base_pid"
+    sha256sum -c "$work/base.sha256"
+    ucode /tmp/tests/https_native_guest.uc plugin-load >"$work/orphan-reload.log"
+    wait_intercepting
+    for toggle in 1 2; do
+        ucode /tmp/tests/https_native_guest.uc plugin-unload >"$work/repeated-unload-$toggle.log"
+        assert_compatibility_handoff
+        probe 4 http/1.1
+        probe 6 http/1.1
+        test "$(pidof mihomo)" = "$base_pid"
+        ucode /tmp/tests/https_native_guest.uc plugin-load >"$work/repeated-load-$toggle.log"
+        wait_intercepting
+        probe 4 h2
+        probe 6 h2
+    done
 fi
 stage=resources
 if [ -f /tmp/netfleet-compat-benchmark ]; then

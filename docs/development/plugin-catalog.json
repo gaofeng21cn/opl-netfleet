@@ -154,10 +154,11 @@
         "mihomo.paths",
         "mihomo.policy-source",
         "mihomo.probes",
+        "mihomo.profile",
         "mihomo.profile-storage",
         "mihomo.readback"
       ],
-      "version": "0.9.10"
+      "version": "0.9.11"
     },
     {
       "api_version": 1,
@@ -194,7 +195,7 @@
         "network.editor",
         "network.model"
       ],
-      "version": "0.8.4"
+      "version": "0.8.5"
     },
     {
       "api_version": 1,

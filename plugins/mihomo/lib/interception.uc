@@ -193,15 +193,13 @@ return function(context) {
         if (action=='bypass'||action=='remove') {
             if (action=='bypass') return bypass();
             else {
-                // Admission is already stopped and the owned listener has
-                // drained before remove is called.
-                const current=table();
-                if (current) {
-                    const io=native();
-                    if (!io || !io.clear_marked) die('compatibility_conntrack_cleanup_failed');
-                    io.clear_marked();
-                    run(['nft','delete','table','inet',TABLE]);
-                }
+                // Admission is already stopped. Explicit unload may interrupt
+                // owned streams; package replacement drains them first. A table
+                // removed by an earlier stop does not prove its marks are gone.
+                const current=table(),io=native();
+                if (io?.clear_marked) io.clear_marked();
+                else if (current || claimed) die('compatibility_conntrack_cleanup_failed');
+                if (current) run(['nft','delete','table','inet',TABLE]);
                 fs.unlink(CLAIM);
             }
             return status();

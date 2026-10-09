@@ -144,7 +144,7 @@ if (uci_bool(uci.get('netfleet', 'mixin', 'sniffer_sniff'))) {
 		if (!uci_bool(section.enabled)) {
 			return;
 		}
-		config['sniffer']['sniff'][section.protocol]['port'] = uci_array(section.port);
+		config['sniffer']['sniff'][section.protocol]['ports'] = uci_array(section.port);
 		config['sniffer']['sniff'][section.protocol]['override-destination'] = uci_bool(section.overwrite_destination);
 	});
 }

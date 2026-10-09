@@ -109,12 +109,22 @@ const omitted = clone(profile);
 delete omitted.dns["default-nameserver"];
 check(runtime_profile(omitted, project(omitted, sections)).dns["default-nameserver"] == null, "omitted_bootstrap_not_replaced_by_invalid_empty_list");
 
-const advanced = loadfile(replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet/plugins/network/lib/advanced.uc"))()({});
+const advanced = loadfile(replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet/plugins/network/lib/advanced.uc"))()({use});
+const legacy_sniff = { sniffer: { sniff: { TLS: { port: [443] } } } };
+check(advanced.project(legacy_sniff)["sniffer.sniff"].TLS.ports[0] == 443 && legacy_sniff.sniffer.sniff.TLS.ports == null,
+	"legacy_sniff_read_conversion_preserves_private_input");
+rejects(s => { s.advanced["sniffer.sniff"] = { TLS: { port: [443] } }; }, "obsolete_sniff_field_rejected_on_write");
+const mapped = clone(profile);
+mapped.sniffer = { enable: true, "force-dns-mapping": true, sniff: { TLS: { ports: [443], "override-destination": false } } };
+const mapped_settings = project(mapped, sections);
+const mapped_runtime = runtime_profile(mapped, mapped_settings);
+check(mapped_runtime.sniffer.sniff.TLS["override-destination"] == true && mapped.sniffer.sniff.TLS["override-destination"] == false,
+	"network_candidate_obeys_same_tls_constraint_without_private_mutation");
 rejects(s => { s.advanced["tun.enable"] = true; }, "unowned_expert_field_rejected");
 rejects(s => { s.advanced["dns.fake-ip-range"] = "999.1.1.1/33"; }, "invalid_fake_ip_network_rejected");
 rejects(s => { s.advanced["dns.fake-ip-range6"] = "2001:::1/64"; }, "invalid_fake_ipv6_rejected");
-rejects(s => { s.advanced["sniffer.sniff"] = { TLS: { port: ["65536"] } }; }, "sniff_port_overflow_rejected");
-rejects(s => { s.advanced["sniffer.sniff"] = { TLS: { port: ["443-80"] } }; }, "reversed_port_range_rejected");
+rejects(s => { s.advanced["sniffer.sniff"] = { TLS: { ports: ["65536"] } }; }, "sniff_port_overflow_rejected");
+rejects(s => { s.advanced["sniffer.sniff"] = { TLS: { ports: ["443-80"] } }; }, "reversed_port_range_rejected");
 const partial = clone(request);
 partial.settings.advanced = { "tcp-concurrent": true };
 const merged = validate_request(partial, "current", current, resources);
@@ -129,8 +139,8 @@ const extra = { secret: "keep", "tcp-concurrent": true, dns: { "fake-ip-filter":
 const removed = [];
 advanced.persist(extra, { delete: (package, section, option) => push(removed, option) }, merged.settings.advanced, inherit.advanced);
 check(extra["tcp-concurrent"] == null && extra.secret == "keep" && length(removed) == 1 && removed[0] == "tcp_concurrent", "persist_only_changed_fields");
-const sniff_before = { "sniffer.sniff": { TLS: { port: [443] } } };
-const sniff_after = { "sniffer.sniff": { HTTP: { port: [80] } } };
+const sniff_before = { "sniffer.sniff": { TLS: { ports: [443] } } };
+const sniff_after = { "sniffer.sniff": { HTTP: { ports: [80] } } };
 advanced.persist(extra, { delete: () => true }, sniff_before, sniff_after);
 check(extra["netfleet-replace-sniff"] == true, "explicit_protocol_map_replacement");
 advanced.persist(extra, { delete: () => true }, sniff_after, { "sniffer.sniff": null });

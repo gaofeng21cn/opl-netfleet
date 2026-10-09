@@ -68,4 +68,9 @@ check(length(filter(seamless.calls, call => type(call) == 'array' && call[3] == 
 const complete = scenario(true, 0.4, false, 0);
 check(complete.error == null && complete.saved.running && complete.elapsed < 1, 'process exit completes interactive drain early');
 check(length(filter(complete.calls, call => call.action == 'remove')) == 1, 'confirmed process exit permits resource removal');
+const explicit = scenario(true, 100, false, 1, {intercepting:true,leases:1}, true);
+check(explicit.error == null && explicit.saved.seamless !== true && explicit.elapsed < 3,
+    'explicit unload cannot inherit package connection-retention mode');
+check(length(filter(explicit.calls, call => call.action == 'remove')) == 1,
+    'explicit unload with retention hint still clears the private dataplane');
 print('HTTPS lifecycle: bounded interactive drain, retained package wait, failed-drain recovery and early completion passed\n');

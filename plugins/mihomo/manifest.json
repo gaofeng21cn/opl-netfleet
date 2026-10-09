@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "mihomo",
   "label": "Mihomo backend",
-  "version": "0.9.10",
+  "version": "0.9.11",
   "api_version": 1,
   "package": "opl-netfleet-plugin-mihomo",
   "services": {
@@ -50,7 +50,8 @@
         "platform.files": 1,
         "platform.storage": 1,
         "platform.process": 1,
-        "mihomo.controller": 1
+        "mihomo.controller": 1,
+        "mihomo.profile": 1
       }
     },
     "mihomo.interception": {
@@ -134,6 +135,11 @@
         "platform.process": 1,
         "platform.storage": 1
       }
+    },
+    "mihomo.profile": {
+      "version": 1,
+      "module": "lib/profile.uc",
+      "requires": {}
     }
   },
   "commands": {

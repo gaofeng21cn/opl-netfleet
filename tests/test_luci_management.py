@@ -164,7 +164,7 @@ class LuciManagementTests(unittest.TestCase):
         self.run_js(r"""
 const owner = controller();
 owner.networkState = networkState();
-owner.networkState.settings.advanced = { 'sniffer.sniff': { TLS: { port: [443] } }, 'tcp-concurrent': true };
+owner.networkState.settings.advanced = { 'sniffer.sniff': { TLS: { ports: [443] } }, 'tcp-concurrent': true };
 owner.networkState.resources.advanced_fields = [{ id: 'sniffer.sniff', label: '协议与端口', kind: 'sniff', group: '嗅探' }];
 owner.networkDraft = clone(owner.networkState.settings);
 let calls = 0;

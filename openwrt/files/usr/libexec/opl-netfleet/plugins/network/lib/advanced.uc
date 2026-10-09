@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 return function(context) {
+	const profile_rules = context.use('mihomo.profile');
 	function copy(value) { return value == null ? null : json(sprintf('%J', value)); }
 	// This registry is consumed by validation, persistence, provenance and both editors.
 	const definitions = [
@@ -40,7 +41,7 @@ return function(context) {
 	function value(profile, path) {
 		let result = profile;
 		for (let name in path) { if (type(result) != 'object') return null; result = result[name]; }
-		return copy(result);
+		return length(path) == 2 && path[0] == 'sniffer' && path[1] == 'sniff' ? profile_rules.sniff(result) : copy(result);
 	}
 	function assign(profile, path, next) {
 		let node = profile;
@@ -83,10 +84,10 @@ return function(context) {
 				ok = type(next) == 'object';
 				for (let protocol, settings in type(next) == 'object' ? next : {}) {
 					if (index(['HTTP','TLS','QUIC'], protocol) < 0 || type(settings) != 'object') { ok = false; continue; }
-					for (let key in keys(settings)) if (index(['port','override-destination'], key) < 0) ok = false;
+					for (let key in keys(settings)) if (index(['ports','override-destination'], key) < 0) ok = false;
 					if (settings['override-destination'] != null && type(settings['override-destination']) != 'bool') ok = false;
-					if (type(settings.port) != 'array' || length(settings.port) > 64) ok = false;
-					else for (let port in settings.port) {
+					if (type(settings.ports) != 'array' || length(settings.ports) > 64) ok = false;
+					else for (let port in settings.ports) {
 						const ends = split(`${port}`, '-');
 						if ((type(port) != 'int' && type(port) != 'string') || !match(`${port}`, /^[0-9]+(-[0-9]+)?$/) ||
 							int(ends[0]) < 1 || int(ends[length(ends)-1]) > 65535 || int(ends[0]) > int(ends[length(ends)-1])) ok = false;
@@ -99,7 +100,7 @@ return function(context) {
 	function render(original, before, after, inherited) {
 		const result = copy(original);
 		for (let field in changes(before, after)) assign(result, field.path, after[field.id] ?? value(inherited, field.path));
-		return result;
+		return profile_rules.normalize(result);
 	}
 	function persist(extra, uci, before, after) {
 		for (let field in changes(before, after)) {

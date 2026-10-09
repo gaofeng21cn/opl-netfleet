@@ -33,8 +33,8 @@ if (phase == "legacy_sniff") {
 	const mixin = "/etc/opl-netfleet/native/mixin.json";
 	const original_source = fs.readfile(source), original_mixin = fs.readfile(mixin), original_uci = fs.readfile("/etc/config/netfleet");
 	const profile = json(original_source), extra = original_mixin == null ? {} : json(original_mixin);
-	profile.sniffer = { enable: false, sniff: { TLS: { port: [443] } } };
-	extra.sniffer = { sniff: { HTTP: { port: [80] } } };
+	profile.sniffer = { enable: false, sniff: { TLS: { ports: [443] } } };
+	extra.sniffer = { sniff: { HTTP: { ports: [80] } } };
 	delete extra["netfleet-replace-sniff"];
 	const uci = cursor();
 	uci.delete("netfleet", "mixin", "sniffer_sniff");
@@ -63,7 +63,7 @@ if (phase == "legacy_sniff") {
 	const changed = clone(current.result.settings);
 	changed.advanced["tcp-concurrent"] = !(changed.advanced["tcp-concurrent"] ?? false);
 	changed.advanced["log-level"] = "warning";
-	changed.advanced["sniffer.sniff"] = { HTTP: { port: [80, "8080-8081"], "override-destination": false } };
+	changed.advanced["sniffer.sniff"] = { HTTP: { ports: [80, "8080-8081"], "override-destination": false } };
 	changed.listeners.mixed_port = 17890;
 	changed.listeners.http_port = 0;
 	changed.listeners.socks_port = 0;

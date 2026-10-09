@@ -15,6 +15,7 @@ const read_yaml = context.use("platform.storage").read_yaml;
 const shell_quote = context.use("platform.process").shell_quote;
 const capture_process = context.use("platform.process").capture;
 const sha256 = context.use("platform.storage").sha256;
+const profile_rules = context.use("mihomo.profile");
 
 const BASE = "/etc/opl-netfleet/native";
 const RUN = `${BASE}/run`;
@@ -101,10 +102,10 @@ render_profile = function() {
 		return { ok: false, error: "native_backend_not_selected" };
 	const path = source_path(uci_value("config", "profile", null));
 	if (path == null) return { ok: false, error: "invalid_profile_reference" };
-	const source = read_yaml(path, true);
-	const overlay = parse(capture(`ucode -S ${shell_quote(`${VENDOR}/mixin.uc`)}`));
+	const source = profile_rules.ports(read_yaml(path, true));
+	const overlay = profile_rules.ports(parse(capture(`ucode -S ${shell_quote(`${VENDOR}/mixin.uc`)}`)));
 	if (type(source) != "object" || type(overlay) != "object") return { ok: false, error: "profile_unreadable" };
-	const extra = fs.lstat(`${BASE}/mixin.json`) == null ? {} : read_json(`${BASE}/mixin.json`);
+	const extra = profile_rules.ports(fs.lstat(`${BASE}/mixin.json`) == null ? {} : read_json(`${BASE}/mixin.json`));
 	if (type(extra) != "object") return { ok: false, error: "mixin_unreadable" };
 	const replacements = {
 		authentication: [["authentication"]], tun_dns_hijack: [["tun", "dns-hijack"]],
@@ -126,7 +127,7 @@ render_profile = function() {
 	// Only an explicitly saved advanced protocol map replaces the source map.
 	// Existing private partial overlays retain their original deep-merge behavior.
 	if (extra["netfleet-replace-sniff"] == true && type(extra.sniffer?.sniff) == "object" && type(source.sniffer) == "object") delete source.sniffer.sniff;
-	const profile = rule_data.project(merge(merge(source, extra), overlay));
+	const profile = profile_rules.normalize(rule_data.project(merge(merge(source, extra), overlay)));
 	delete profile["netfleet-replace-sniff"];
 	for (let field in ["proxies", "proxy-groups", "rules"]) {
 		const additions = profile[`netfleet-${field}`] ?? [];
@@ -169,8 +170,15 @@ cleanup = function() {
 	// The optional TLS layer cannot remain attached while the original gateway is changing.
 	const compatibility_clean = !shell("nft list table inet netfleet_compat") ||
 		shell("nft delete table inet netfleet_compat");
-	if (compatibility_clean) fs.unlink(`${STATE}/interception.json`);
-	const cleaned = compatibility_clean ? { ok: true, result: { clean: true } } :
+	let marked_clean = compatibility_clean;
+	if (marked_clean) try {
+		// The private table can already be absent after an interrupted stop.
+		// Its conntrack bit still makes the base TProxy skip those flows.
+		if (fs.stat("/usr/lib/ucode/netfleet_interception.so")) require("netfleet_interception").clear_marked();
+		else if (fs.stat(`${STATE}/interception.json`)) marked_clean = false;
+	} catch (_) { marked_clean = false; }
+	if (marked_clean) fs.unlink(`${STATE}/interception.json`);
+	const cleaned = marked_clean ? { ok: true, result: { clean: true } } :
 		{ ok: false, error: "compatibility_cleanup_failed", result: { clean: false, base_clean: true } };
 	const state = ownership();
 	if (state == null) return shell("nft list table inet netfleet") ?
