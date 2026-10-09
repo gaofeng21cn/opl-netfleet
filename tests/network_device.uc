@@ -64,12 +64,14 @@ if (phase == "legacy_sniff") {
 	check(apply(path).result.state == "unchanged", "matching_runtime_unchanged");
 	check(core_pid() == before, "matching_runtime_pid_retained");
 	const active_path = "/etc/opl-netfleet/native/run/config.yaml";
+	const drift_path = "/etc/opl-netfleet/native/run/network-drift.json";
 	const active = read_json(active_path);
 	active["log-level"] = current.settings.advanced["log-level"] == "warning" ? "info" : "warning";
-	check(atomic_json(`${work}/drift.json`, active), "runtime_drift_fixture_write");
+	check(atomic_json(drift_path, active), "runtime_drift_fixture_write");
 	const quote = host.use("platform.process").shell_quote;
 	const api = host.use("platform.runtime").API;
-	check(system(`curl -fsS --connect-timeout 3 --max-time 10 -X PUT -H ${quote(`Authorization: Bearer ${api_secret()}`)} -H 'Content-Type: application/json' --data ${quote(sprintf("%J", {path: `${work}/drift.json`}))} ${quote(`${api}/configs?force=false`)} >/dev/null`) == 0, "runtime_drift_controller_load");
+	check(system(`curl -fsS --connect-timeout 3 --max-time 10 -X PUT -H ${quote(`Authorization: Bearer ${api_secret()}`)} -H 'Content-Type: application/json' --data ${quote(sprintf("%J", {path: drift_path}))} ${quote(`${api}/configs?force=false`)} >/dev/null`) == 0, "runtime_drift_controller_load");
+	check(fs.unlink(drift_path), "runtime_drift_fixture_removed");
 	// The controller reload changes the live core and its file while leaving
 	// the saved Profile and settings untouched, as after a retained update.
 	check(atomic_json(active_path, active), "runtime_drift_running_projection");
