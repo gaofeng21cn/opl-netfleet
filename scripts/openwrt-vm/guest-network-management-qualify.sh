@@ -19,6 +19,7 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 ucode /tmp/tests/network_device.uc "$work" legacy_sniff >"$work/legacy-sniff.log" 2>&1
+ucode /tmp/tests/network_device.uc "$work" runtime_drift >"$work/runtime-drift.log" 2>&1
 ucode /tmp/tests/network_device.uc "$work" apply >"$work/apply.log" 2>&1
 ucode /usr/libexec/opl-netfleet/main.uc status >"$work/status.json"
 [ "$(jsonfilter -i "$work/status.json" -e '@.result.runtime.lan_runtime.transparent_proxy_ready')" = true ]
@@ -42,4 +43,4 @@ ucode /usr/libexec/opl-netfleet/main.uc probe >"$work/probe.json"
 [ "$(jsonfilter -i "$work/probe.json" -e '@.result.ok')" = true ]
 nft list chain inet netfleet lan_tproxy >"$work/lan.nft"
 nft list chain inet netfleet router_tproxy >"$work/router.nft"
-printf '{"ok":true,"checks":{"network_projection":true,"candidate_zero_mutation":true,"network_apply":true,"listener_authentication":true,"selectors_preserved":true,"revision_guard":true,"invalid_input_zero_mutation":true,"disabled_scope_readiness":true,"private_snapshot_rollback":true,"restored_business_probe":true}}\n'
+printf '{"ok":true,"checks":{"network_projection":true,"runtime_projection_reconciled":true,"unchanged_runtime_retained":true,"candidate_zero_mutation":true,"network_apply":true,"listener_authentication":true,"selectors_preserved":true,"revision_guard":true,"invalid_input_zero_mutation":true,"disabled_scope_readiness":true,"private_snapshot_rollback":true,"restored_business_probe":true}}\n'

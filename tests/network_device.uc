@@ -27,6 +27,13 @@ function choices() {
 		if (value.type == "Selector") result[name] = value.now;
 	return result;
 };
+function core_pid() {
+	const child = fs.popen("pidof mihomo");
+	check(child != null, "core_pid_unavailable");
+	const value = trim(child.read("all"));
+	check(child.close() == 0 && match(value, /^[0-9]+$/), "core_pid_unavailable");
+	return value;
+};
 
 if (phase == "legacy_sniff") {
 	const source = fs.realpath(host.use("mihomo.backend").resolve_profile(host.use("platform.profile").current_profile()));
@@ -48,6 +55,33 @@ if (phase == "legacy_sniff") {
 	fs.writefile(source, original_source);
 	if (original_mixin == null) fs.unlink(mixin); else fs.writefile(mixin, original_mixin);
 	fs.writefile("/etc/config/netfleet", original_uci);
+} else if (phase == "runtime_drift") {
+	const current = get().result;
+	check(current.available && current.running, "runtime_drift_requires_active_fixture");
+	const before = core_pid();
+	const path = request(current.settings, current.revision);
+	check(validate(path).result.restart_required == false, "matching_runtime_no_restart_preview");
+	check(apply(path).result.state == "unchanged", "matching_runtime_unchanged");
+	check(core_pid() == before, "matching_runtime_pid_retained");
+	const active_path = "/etc/opl-netfleet/native/run/config.yaml";
+	const active = read_json(active_path);
+	active["log-level"] = current.settings.advanced["log-level"] == "warning" ? "info" : "warning";
+	check(atomic_json(`${work}/drift.json`, active), "runtime_drift_fixture_write");
+	const quote = host.use("platform.process").shell_quote;
+	const api = host.use("platform.runtime").API;
+	check(system(`curl -fsS --connect-timeout 3 --max-time 10 -X PUT -H ${quote(`Authorization: Bearer ${api_secret()}`)} -H 'Content-Type: application/json' --data ${quote(sprintf("%J", {path: `${work}/drift.json`}))} ${quote(`${api}/configs?force=false`)} >/dev/null`) == 0, "runtime_drift_controller_load");
+	// The controller reload changes the live core and its file while leaving
+	// the saved Profile and settings untouched, as after a retained update.
+	check(atomic_json(active_path, active), "runtime_drift_running_projection");
+	check(get().result.revision == current.revision, "runtime_drift_saved_revision_retained");
+	check(validate(path).result.restart_required == true, "runtime_drift_restart_preview");
+	const result = apply(path);
+	check(result.ok && result.result.state == "applied" && result.result.restarted, `runtime_drift_apply:${sprintf("%J",result)}`);
+	check(read_json(active_path)["log-level"] == current.settings.advanced["log-level"], "runtime_drift_projection_restored");
+	const restored = get().result;
+	const restored_pid = core_pid();
+	check(apply(request(restored.settings, restored.revision)).result.state == "unchanged", "restored_runtime_unchanged");
+	check(core_pid() == restored_pid, "restored_runtime_pid_retained");
 } else if (phase == "apply") {
 	const uci = cursor();
 	check(uci.set("netfleet", "proxy", "network_vm_private", "preserve") && uci.commit("netfleet"), "private_uci_fixture");

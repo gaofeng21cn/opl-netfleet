@@ -129,6 +129,10 @@ candidate = function(found, settings, work) {
 	if (status == 0) return { ok: true };
 	return failure(index([124, 137, 143], status) >= 0 ? "network_validation_timeout" : "network_runtime_profile_invalid");
 };
+function runtime_matches(found, settings) {
+	return !found.running || found.active_profile != null &&
+		sprintf("%J", project(found.active_profile, found.sections)) == sprintf("%J", settings);
+}
 validate = function(path) {
 	let work = null;
 	let result = null;
@@ -139,7 +143,7 @@ validate = function(path) {
 		work = fs.mkdtemp("/etc/opl-netfleet/.network.XXXXXX");
 		if (work == null || !private_directory(work)) return failure("network_workspace_failed");
 		const valid = candidate(found, change.settings, work);
-		result = valid.ok ? { ok: true, result: { valid: true, revision: found.revision, restart_required: found.running && length(change_summary(found, change.settings)) > 0, changes: change_summary(found, change.settings) } } : valid;
+		result = valid.ok ? { ok: true, result: { valid: true, revision: found.revision, restart_required: found.running && !runtime_matches(found, change.settings), changes: change_summary(found, change.settings) } } : valid;
 	} catch (error) { result = failure(error_code(error, "network_validation_failed")); }
 	if (work != null) remove_work(work);
 	return result;
@@ -273,7 +277,7 @@ apply = function(path) {
 		const found = discover();
 		const change = request(path, found);
 		if (!change.ok) return change;
-		if (sprintf("%J", found.settings) == sprintf("%J", change.settings))
+		if (sprintf("%J", found.settings) == sprintf("%J", change.settings) && runtime_matches(found, change.settings))
 			return { ok: true, result: { state: "unchanged", network: public_state(found) } };
 		work = fs.mkdtemp("/etc/opl-netfleet/.network.XXXXXX");
 		if (work == null || !private_directory(work)) return failure("network_workspace_failed");

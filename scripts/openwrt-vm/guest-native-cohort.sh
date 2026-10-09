@@ -97,4 +97,20 @@ unchanged
 ubus call service delete '{"name":"netfleet-native-cohort-guard"}' >/dev/null
 stage=native_cohort_reinstall
 native_cohort_update
-printf '%s\n' '{"ok":true,"checks":{"native_cohort_retained_update":true,"native_cohort_autonomous_rollback":true,"native_cohort_pid_and_configuration_unchanged":true,"native_cohort_disabled_plugin_preserved":true}}' >"$cohort/qualification.json"
+# The preceding proof deliberately leaves the old aggregate installed. Return
+# the isolated fixture to the full candidate before the parent's identity and
+# removal gates. This is fixture setup, not a supported finite-plugin request:
+# components-install intentionally accepts only plugins and the LuCI carrier.
+stage=native_cohort_restore_candidate
+while IFS="$(printf '\t')" read -r name old new; do
+ [ "$name" = opl-netfleet ] || continue
+ install_fixture --scripts=no "$cohort/new/$new" >"$cohort/restore-candidate.log" 2>&1
+ test "$(apk query --from installed --format json --fields version "$name" | jsonfilter -e '@[0].version')" = "$(jsonfilter -i "$work/fixture.json" -e '@.native_cohort[0].new.version')"
+done <"$cohort/packages.tsv"
+restore_fixture_world
+rpc_ready
+test "$(pidof mihomo)" = "$core_pid_before"
+test "$(awk '{print $22}' "/proc/$core_pid_before/stat")" = "$core_birth_before"
+sha256sum -c "$cohort/runtime.before" >>"$cohort/runtime.log" 2>&1
+unchanged
+printf '%s\n' '{"ok":true,"checks":{"native_cohort_retained_update":true,"native_cohort_autonomous_rollback":true,"native_cohort_pid_and_configuration_unchanged":true,"native_cohort_disabled_plugin_preserved":true,"native_cohort_candidate_fixture_restored":true}}' >"$cohort/qualification.json"
