@@ -19,7 +19,9 @@
     "platform.paths": {
       "version": 1,
       "module": "lib/paths.uc",
-      "requires": {}
+      "requires": {
+        "platform.runtime": 1
+      }
     },
     "platform.profile": {
       "version": 1,
@@ -107,5 +109,15 @@
       "access": "read"
     }
   },
-  "package_dependencies": []
+  "package_dependencies": [],
+  "presentation": {
+    "label": "macOS platform owner",
+    "description": "为 NetFleet 提供 macOS platform owner 能力"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": false,
+    "owner": "platform-macos"
+  }
 }

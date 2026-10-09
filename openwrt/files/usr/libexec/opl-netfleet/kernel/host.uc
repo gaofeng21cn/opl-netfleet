@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { API_VERSION, valid_id, service_name, descriptor_error, action_access } from './schema.uc';
+import { API_VERSION, valid_id, service_name, descriptor_error, action_access, matches_schema } from './schema.uc';
 import { read_json, trusted, mkdir_private, atomic_json, atomic_text } from './io.uc';
 import { dispatch as process_dispatch, lifecycle as process_lifecycle } from './process.uc';
 import { create_scope } from './scope.uc';
@@ -650,8 +650,10 @@ function service_request(input, found, host) {
 	const declared = found.manifest.actions?.[action];
 	if (declared != null) {
 		if (host.system.bindings[declared.service] != id) return failure('plugin_action_provider_mismatch');
+		if (declared.params != null && !matches_schema(input.params ?? {}, declared.params)) return failure('plugin_action_params_invalid');
 		const result = host.call(declared.service, declared.method, input.params ?? {});
 		if (type(result) != 'object' || type(result.ok) != 'bool') return failure('plugin_response_invalid');
+		if (declared.result != null && result.ok == true && !matches_schema(result.result, declared.result)) return failure('plugin_action_result_invalid');
 		return result;
 	}
 	if (index(['load','unload','reload'], action) < 0) return failure('plugin_action_not_allowed');

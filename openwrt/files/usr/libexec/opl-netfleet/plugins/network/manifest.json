@@ -51,5 +51,15 @@
   },
   "package_dependencies": [
     "coreutils-timeout"
-  ]
+  ],
+  "presentation": {
+    "label": "网络接入",
+    "description": "管理设备代理、DNS 与监听设置"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": true,
+    "owner": "network"
+  }
 }

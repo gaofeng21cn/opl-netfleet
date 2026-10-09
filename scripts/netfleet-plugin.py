@@ -19,8 +19,9 @@ EXAMPLE = ROOT / "examples/plugins/device-info"
 SERVICE_EXAMPLE = ROOT / "examples/plugins/host-info"
 COMPLETE_EXAMPLE = ROOT / "examples/plugins/workspace-note"
 COMMON_FIELDS = {"schema", "id", "label", "version", "api_version", "package"}
+METADATA_FIELDS = {"presentation", "product"}
 PROCESS_FIELDS = COMMON_FIELDS | {"dependencies", "backends", "permissions", "actions"}
-CONTRIBUTION_FIELDS = {"configuration", "ui"}
+CONTRIBUTION_FIELDS = {"configuration", "ui"} | METADATA_FIELDS
 SERVICE_FIELDS = COMMON_FIELDS | {"services", "commands"}
 SERVICE_OPTIONAL_FIELDS = {"package_dependencies", "lifecycle", "actions"} | CONTRIBUTION_FIELDS
 LIFECYCLE = {"get", "load", "unload", "reload"}
@@ -87,10 +88,50 @@ def valid_service(value):
             and re.fullmatch(r"[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+", value) is not None)
 
 
-def validate_method(value, fields):
-    return (isinstance(value, dict) and set(value) == fields
+def validate_contract_schema(value, depth=0):
+    if depth > 6 or not isinstance(value, dict):
+        return False
+    if set(value) - {"type", "required", "properties", "items", "enum", "additionalProperties"}:
+        return False
+    if value.get("type") is not None and value["type"] not in {"object", "array", "string", "number", "integer", "boolean", "null"}:
+        return False
+    if value.get("required") is not None and (not isinstance(value["required"], list)
+            or any(not isinstance(name, str) for name in value["required"])):
+        return False
+    if value.get("properties") is not None and (not isinstance(value["properties"], dict)
+            or any(not isinstance(name, str) or not validate_contract_schema(child, depth + 1)
+                   for name, child in value["properties"].items())):
+        return False
+    if value.get("items") is not None and not validate_contract_schema(value["items"], depth + 1):
+        return False
+    if value.get("enum") is not None and not isinstance(value["enum"], list):
+        return False
+    return value.get("additionalProperties") is None or isinstance(value["additionalProperties"], bool)
+
+
+def validate_metadata(value):
+    if value is None:
+        return
+    if not isinstance(value, dict) or set(value) - {"label", "description", "required", "unloadable", "retained", "owner", "packages", "dependencies", "engine"}:
+        raise ValueError("invalid plugin metadata")
+    for key in ("label", "description", "owner", "engine"):
+        if key in value and not isinstance(value[key], str):
+            raise ValueError("invalid plugin metadata")
+    for key in ("required", "unloadable", "retained"):
+        if key in value and not isinstance(value[key], bool):
+            raise ValueError("invalid plugin metadata")
+    for field in ("packages", "dependencies"):
+        if field in value:
+            validate_package_names(value[field], f"metadata {field}")
+
+
+def validate_method(value, fields, optional_contract=False):
+    allowed = set(fields) | ({"params", "result"} if optional_contract else set())
+    return (isinstance(value, dict) and set(value) <= allowed and set(fields) <= set(value)
             and valid_service(value.get("service")) and isinstance(value.get("method"), str)
-            and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", value["method"]) is not None)
+            and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", value["method"]) is not None
+            and ("params" not in value or validate_contract_schema(value["params"]))
+            and ("result" not in value or validate_contract_schema(value["result"])))
 
 
 def validate_service(manifest, source):
@@ -114,7 +155,7 @@ def validate_service(manifest, source):
                 for dependency, major in requires.items()):
             raise ValueError(f"invalid required service interface: {name}")
     if not isinstance(commands, dict) or any(
-            not valid_id(name) or not validate_method(command, {"service", "method", "access"})
+            not valid_id(name) or not validate_method(command, {"service", "method", "access"}, True)
             or command["service"] not in services
             or command["access"] not in ("read", "write")
             for name, command in commands.items()):
@@ -122,7 +163,7 @@ def validate_service(manifest, source):
     actions = manifest.get("actions", {})
     if not isinstance(actions, dict) or any(
             not valid_id(name) or name in LIFECYCLE
-            or not validate_method(action, {"service", "method", "access"} | ({"lock"} if isinstance(action, dict) and "lock" in action else set()))
+            or not validate_method(action, {"service", "method", "access"} | ({"lock"} if isinstance(action, dict) and "lock" in action else set()), True)
             or action.get("lock", "network") not in ("network", "plugin")
             or action["service"] not in services or action["access"] not in ("read", "write")
             for name, action in actions.items()):
@@ -185,6 +226,8 @@ def validate(source):
           or set(manifest) - PROCESS_FIELDS - CONTRIBUTION_FIELDS):
         raise ValueError("manifest must contain the process API v1 fields")
     validate_identity(manifest)
+    validate_metadata(manifest.get("presentation"))
+    validate_metadata(manifest.get("product"))
     files = []
     for path in sorted(source.rglob("*")):
         relative = path.relative_to(source)

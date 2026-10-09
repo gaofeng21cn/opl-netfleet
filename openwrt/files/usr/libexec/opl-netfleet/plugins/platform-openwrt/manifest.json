@@ -39,5 +39,15 @@
   "package_dependencies": [
     "ucode-mod-uci",
     "ip-full"
-  ]
+  ],
+  "presentation": {
+    "label": "OpenWrt 设备设置",
+    "description": "接入系统配置与设备信息"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": false,
+    "owner": "platform-openwrt"
+  }
 }

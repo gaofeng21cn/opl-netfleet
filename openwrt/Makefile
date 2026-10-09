@@ -202,6 +202,7 @@ endef
 
 define Build/Compile
 	$(RM) -r $(PKG_BUILD_DIR)/compiled-plugins
+	python3 ../scripts/sync-plugin-sources.py sync
 	$(CP) ./files/usr/libexec/opl-netfleet/plugins $(PKG_BUILD_DIR)/compiled-plugins
 	python3 ./compile-plugins.py --root $(PKG_BUILD_DIR)/compiled-plugins --compiler $(STAGING_DIR_HOSTPKG)/bin/ucode --libraries $(STAGING_DIR_HOSTPKG)/lib/ucode >$(PKG_BUILD_DIR)/bytecode.json
 endef

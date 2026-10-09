@@ -15,5 +15,15 @@
     }
   },
   "commands": {},
-  "package_dependencies": []
+  "package_dependencies": [],
+  "presentation": {
+    "label": "选优算法",
+    "description": "按策略比较地区与候选路径"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": false,
+    "owner": "selection-algorithm"
+  }
 }

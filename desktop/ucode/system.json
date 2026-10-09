@@ -70,6 +70,7 @@
     "subscriptions.providers": "subscriptions",
     "subscriptions.store": "platform-macos",
     "mihomo.profile-storage": "mihomo",
+    "mihomo.runtime": "mihomo",
     "desktop.control": "platform-macos"
   },
   "enabled": {

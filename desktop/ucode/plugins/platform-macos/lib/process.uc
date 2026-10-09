@@ -7,5 +7,6 @@ return function(context) {
 		const result = invoke(argv);
 		return { ok: result?.ok == true, state: result?.result?.state ?? null, error: result?.error ?? null };
 	}
-	return { shell_quote, process_identity, run_owner, run_owner_result };
+	function capture_json() { return null; }
+	return { shell_quote, capture_json, process_identity, run_owner, run_owner_result };
 };

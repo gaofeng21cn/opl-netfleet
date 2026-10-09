@@ -42,8 +42,10 @@ UCode 插件的 `manifest.json` 使用 `opl-netfleet-service-plugin.v1`，声明
 ### 动作、配置与界面贡献
 
 服务插件的 `actions` 将动作名映射到本插件的 `{ service, method, access }`，其中
-`access` 为 `read` 或 `write`。统一 `plugin_read` / `plugin_call` 按声明分派，方法接收
-`params` 对象并返回 `{ ok, result }`。写动作要求显式确认与当前代码 revision 校验，
+`access` 为 `read` 或 `write`。命令和动作可以附带受内核校验的 `params`、`result` JSON
+schema（只允许 object/array/string/number/integer/boolean/null 及有限 properties/items），
+宿主据此在调用前拒绝形状不明的请求；业务方法仍负责值域和跨字段规则。统一
+`plugin_read` / `plugin_call` 按声明分派，方法接收 `params` 对象并返回 `{ ok, result }`。写动作要求显式确认与当前代码 revision 校验，
 默认使用网络 mutation 锁；只访问插件私有数据的服务动作可选择下文的插件锁。
 读入口不能调用写动作。进程插件继续使用自己的 actions 声明。
 `configuration: { read, write }` 引用同一插件已声明的配置读取和保存动作；配置校验、
@@ -60,6 +62,9 @@ UCode 插件的 `manifest.json` 使用 `opl-netfleet-service-plugin.v1`，声明
 版本目录覆盖整个模块图，相对静态 import 和样式资源自然跟随同一代码代际；根模块更新
 不会复用上一版本的子模块。`product-ui` 通过同一机制提供默认网络产品的七个宿主级页面；
 提供该能力的平台宿主只拥有通信、导航和页面生命周期，业务页面由插件提供。
+清单可用 `presentation` 声明用户可见的 `label`/`description`，用 `product` 声明
+`required`、`unloadable`、`retained`、`owner`、`packages` 和 `engine`。组件页只读取这些
+元数据和运行时回读，不再按插件 ID 维护第二份用途、必需性或关联引擎表。
 
 ### 作用域与实例
 
@@ -116,7 +121,7 @@ effect 登记其实际取消函数，平台提供者负责执行机制。跨调�
 | `platform.credentials` | `api_secret`、`proxy_authentication`，凭据只在设备内用于授权调用 |
 | `platform.subscriptions` | `subscription_exists`、`subscription_display_name`、`subscription_options`、`subscription_quota`，输出规范化订阅元数据 |
 | `platform.device` | `device_name`、`upstream_ready`，报告设备身份和上游可用性 |
-| `platform.process` | `shell_quote`、`capture`、`run_owner`、`run_owner_result`、`process_identity`，有界命令输出、已注册业务动作调用和真实进程身份 |
+| `platform.process` | `shell_quote`、`capture`、`capture_json`、`run_owner`、`run_owner_result`、`process_identity`，有界命令输出、已注册业务动作调用和真实进程身份 |
 | `platform.documents` | `validate_policy` 校验候选策略与当前平台约束，`load_policy`、`load_evidence` 加载有效文档，`write_evidence` 写入 evidence；不读取 UCI |
 
 共享选择算法仅依赖纯模型；选择控制器依赖 profile、credentials、documents 和 paths，
@@ -134,6 +139,11 @@ effect 登记其实际取消函数，平台提供者负责执行机制。跨调�
 宿主通过 `options.adapter` 注入路径、信任身份、进程执行、包查询、文件摘要、mutation
 锁和协调者身份。共享内核不自行选择操作系统机制。适配器必须保持实际进程身份、锁与
 失败回读合同；支持哪些插件交付方式由平台明确声明，未支持不能用空成功响应代替。
+
+macOS owner 将写动作和调度保持在单一 writer 队列；状态、事件、组件清单和诊断读取走
+独立读队列，并由外层 flock 在命令入口再次确认共享/排他模式。长编译或包事务期间，读取
+返回最近一次经过 owner 回读的业务投影，同时刷新当前平台与核心状态，不把过期业务缓存
+当作写入成功或健康许可。
 
 ## 热替换与资源
 

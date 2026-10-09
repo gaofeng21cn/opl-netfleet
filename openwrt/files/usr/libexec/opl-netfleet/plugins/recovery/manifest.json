@@ -57,5 +57,15 @@
       "access": "write"
     }
   },
-  "package_dependencies": []
+  "package_dependencies": [],
+  "presentation": {
+    "label": "网络恢复",
+    "description": "在退出或异常时恢复网络直连"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": false,
+    "owner": "recovery"
+  }
 }

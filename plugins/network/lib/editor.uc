@@ -28,24 +28,22 @@ const read_json = context.use("platform.storage").read_json;
 const sha256 = context.use("platform.storage").sha256;
 const sha256_text = context.use("platform.storage").sha256_text;
 const shell_quote = context.use("platform.process").shell_quote;
+const capture_json = context.use("platform.process").capture_json;
 const api_secret = context.use("platform.credentials").api_secret;
 const current_profile = context.use("platform.profile").current_profile;
 const POLICY_PATH = context.use("platform.paths").POLICY_PATH;
 
-const BASE = "/etc/opl-netfleet/native";
-const CONFIG = "/etc/config/netfleet";
-const MIXIN = `${BASE}/mixin.json`;
-const GATEWAY = "/usr/libexec/opl-netfleet/main.uc";
-const SERVICE = "/etc/init.d/opl-netfleet-core";
-const MAIN = "/usr/libexec/opl-netfleet/main.uc";
+const paths = context.use("platform.paths");
+const BASE = paths.NATIVE_ROOT;
+const CONFIG = paths.CONFIG_PATH;
+const MIXIN = paths.NATIVE_MIXIN_PATH;
+const GATEWAY = paths.MAIN_PATH;
+const SERVICE = paths.CORE_INIT_PATH;
+const MAIN = paths.MAIN_PATH;
 
 shell = function(command) { return system(`(${command}) >/dev/null 2>&1`) == 0; };
 command_json = function(command) {
-	const process = fs.popen(`${command} 2>/dev/null`);
-	if (process == null) return null;
-	let result = null;
-	try { result = json(process.read("all")); } catch (error) {}
-	return process.close() == 0 ? result : null;
+	return capture_json(command, 15);
 };
 failure = function(error, detail) { return { ok: false, error: error, result: detail ?? null }; };
 gateway = function() { return command_json(`ucode ${shell_quote(GATEWAY)} native-gateway-status`)?.result; };

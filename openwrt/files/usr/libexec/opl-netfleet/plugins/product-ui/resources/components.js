@@ -44,9 +44,12 @@ function loadComponents(controller) {
 			try {
 				const result = await readPluginState({ id: plugin.id, instance: plugin.instance || 'default', action: 'get', params: {} });
 				plugin.enabled = typeof result.loaded === 'boolean' ? result.loaded : null;
+				plugin.requested_enabled = plugin.enabled;
+				plugin.effective_enabled = result.ready === true;
+				plugin.failure_reason = result.ready === false && plugin.enabled === true ? 'runtime_not_ready' : null;
 				plugin.revision = result.revision || plugin.revision;
 				delete plugin.stateReadError;
-			} catch (error) { plugin.enabled = null; plugin.stateReadError = error.message || String(error); }
+			} catch (error) { plugin.enabled = null; plugin.requested_enabled = null; plugin.effective_enabled = null; plugin.failure_reason = null; plugin.stateReadError = error.message || String(error); }
 		}));
 	}).catch(function(error) {
 		controller.componentsError = error;
@@ -148,7 +151,7 @@ function compositionDialog(controller) {
 }
 
 function managementRequired(plugin) {
-	return ['product-ui', 'components', 'status', 'events', 'setup'].includes(plugin.id);
+	return plugin?.product?.unloadable === false || plugin?.product?.required === true && plugin?.product?.unloadable !== true;
 }
 
 function pluginDialog(controller, plugin, initialAction) {
@@ -174,9 +177,13 @@ function pluginDialog(controller, plugin, initialAction) {
 	function show(result) {
 		revision = result.revision || revision;
 		loaded = typeof result.loaded === 'boolean' ? result.loaded : null;
+		plugin.requested_enabled = loaded;
+		plugin.effective_enabled = result.ready === true;
+		plugin.failure_reason = result.ready === false && loaded === true ? 'runtime_not_ready' : null;
 		status.textContent = result.loaded === true ? (result.ready === true ? '已启用 · 运行就绪' : '已启用 · 尚未就绪') : result.loaded === false ? '已禁用' : '运行状态暂不可确认';
 		function update(item) {
-			item.enabled = loaded; item.revision = revision;
+			item.enabled = loaded; item.requested_enabled = loaded; item.effective_enabled = result.ready === true; item.revision = revision;
+			item.failure_reason = result.ready === false && loaded === true ? 'runtime_not_ready' : null;
 			delete item.stateReadError;
 			if (service && loaded === true && result.ready === true) { item.state = 'available'; item.reason = null; }
 		}
@@ -204,7 +211,7 @@ function pluginDialog(controller, plugin, initialAction) {
 			}).catch(async function(error) {
 				if (closed) return;
 				loaded = null;
-				if (!writing) { plugin.enabled = null; plugin.stateReadError = error.message || String(error); status.textContent = '状态读取失败：' + errorLabel(plugin.stateReadError); controller.redraw(); return; }
+				if (!writing) { plugin.enabled = null; plugin.requested_enabled = null; plugin.effective_enabled = null; plugin.failure_reason = null; plugin.stateReadError = error.message || String(error); status.textContent = '状态读取失败：' + errorLabel(plugin.stateReadError); controller.redraw(); return; }
 				try {
 					const result = await readPluginState({ ...request, action: 'get', revision, confirm: false });
 					if (closed) return;
@@ -213,7 +220,7 @@ function pluginDialog(controller, plugin, initialAction) {
 					status.textContent = reached ? status.textContent + '。请求返回异常，已自动回读确认当前状态。'
 						: (loaded === null || action === 'reload' ? labels[action] + '结果未确认' : '未' + labels[action]) + '；' + status.textContent + '。' + errorLabel(error.message || String(error));
 				} catch (readError) {
-					plugin.enabled = null;
+					plugin.enabled = null; plugin.requested_enabled = null; plugin.effective_enabled = null; plugin.failure_reason = null;
 					plugin.stateReadError = readError.message || String(readError);
 					status.textContent = labels[action] + '结果未确认：请求失败，自动回读也未成功。' + errorLabel(error.message || String(error));
 					controller.redraw();
@@ -360,38 +367,20 @@ function componentMismatch(component) {
 		coreVersion(component.installed_version) !== coreVersion(component.running_version);
 }
 
-const PLUGIN_PRESENTATION = {
-	'device-identity': ['设备识别', '识别网络设备，为按设备配置规则提供稳定身份'],
-	activation: ['网络启停', '切换运行模式，应用或退出代理接管'],
-	compilation: ['运行配置生成', '根据策略与节点来源生成代理运行配置'],
-	components: ['组件更新', '检查并更新基础软件与面板资源'],
-	configuration: ['运行策略', '读取、校验和保存出口与选路策略'],
-	dashboard: ['Zashboard', '提供实时面板入口与资源更新'],
-	events: ['操作与选路记录', '记录设备操作进度和选路事件'],
-	'https-compat': ['HTTPS 兼容', '为指定设备和网站提供 HTTPS 协议兼容'],
-	maintenance: ['配置文件与维护', '管理配置文件、备份与核心维护'],
-	mihomo: ['Mihomo 接入', '连接代理核心并管理其运行配置'],
-	models: ['策略数据', '提供机场、地区与出口的结构化配置'],
-	network: ['网络接入', '管理设备代理、DNS 与监听设置'],
-	platform: ['运行环境', '提供设备进程与运行环境能力'],
-	'platform-openwrt': ['OpenWrt 设备设置', '接入系统配置与设备信息'],
-	'platform-storage': ['文件存储', '读写配置文档与设备文件'],
-	'product-ui': ['NetFleet 业务界面', '提供概览、出口与配置等页面的内容和交互；由 LuCI 接入组件加载'],
-	recovery: ['网络恢复', '在退出或异常时恢复网络直连'],
-	refresh: ['订阅更新', '更新订阅并准备最新节点'],
-	scheduler: ['自动运行', '按计划执行订阅更新与自动选优'],
-	selection: ['出口选优', '为各出口测速并选择可用路径'],
-	'selection-algorithm': ['选优算法', '按策略比较地区与候选路径'],
-	setup: ['首次接入', '准备运行基础并接入已有设置'],
-	status: ['运行状态', '汇总当前出口、机场与设备运行状态'],
-	subscriptions: ['节点来源', '管理机场订阅与节点缓存']
-};
 function pluginLabel(plugin) {
-	return PLUGIN_PRESENTATION[plugin.id]?.[0] || plugin.label || plugin.id;
+	return plugin?.presentation?.label || plugin?.label || plugin?.id;
 }
 function pluginPurpose(plugin) {
-	return plugin.description || PLUGIN_PRESENTATION[plugin.id]?.[1] ||
+	return plugin?.presentation?.description || plugin?.description ||
 		(plugin.runtime === 'service' ? '为 NetFleet 提供 ' + (pluginLabel(plugin)) + ' 服务' : '通过独立进程提供 ' + (pluginLabel(plugin)) + ' 功能');
+}
+function pluginRuntimeStatus(plugin) {
+	if (!plugin?.installed_version && !plugin?.revision) return '未安装';
+	if (plugin?.enabled == null && plugin?.requested_enabled == null) return '状态未确认';
+	if (typeof plugin?.requested_enabled !== 'boolean' && typeof plugin?.enabled !== 'boolean') return '状态未确认';
+	const requested = plugin.requested_enabled ?? plugin.enabled;
+	if (!requested) return '已安装 · 功能未请求';
+	return plugin.effective_enabled === true ? '已加载 · 实际生效' : '已加载 · 未就绪';
 }
 
 function componentsPage(controller) {
@@ -490,7 +479,7 @@ function componentsPage(controller) {
 			controller.context.navigate('plugin:' + plugin.id + ':' + (plugin.instance && plugin.instance !== 'default' ? plugin.instance + ':' : '') + page.id);
 		}, active || plugin.enabled === false); });
 		const rawVersion = plugin.installed_version || plugin.version;
-		const availability = typeof plugin.enabled !== 'boolean' ? '状态未确认' : plugin.enabled === false ? '已禁用' : plugin.reason || plugin.state === 'unavailable' || plugin.state === 'invalid' ? '已启用 · 异常' : '已启用';
+		const availability = plugin.failure_reason || plugin.reason || plugin.state === 'unavailable' || plugin.state === 'invalid' ? '失败：' + errorLabel(plugin.failure_reason || plugin.reason || plugin.state) : pluginRuntimeStatus(plugin);
 		const state = [E('span', { 'class': 'netfleet-plugin-state' }, availability)];
 		if (typeof plugin.enabled !== 'boolean') state.push(E('small', {}, plugin.stateReadError ? '暂时无法读取，请打开“查看状态”重试' : '请打开“查看状态”确认后操作'));
 		if (plugin.reason && plugin.reason !== 'plugin_disabled') state.push(E('small', { 'class': 'is-warning' }, errorLabel(plugin.reason)));

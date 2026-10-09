@@ -70,5 +70,15 @@
       "access": "write"
     }
   },
-  "package_dependencies": []
+  "package_dependencies": [],
+  "presentation": {
+    "label": "首次接入",
+    "description": "准备运行基础并接入已有设置"
+  },
+  "product": {
+    "required": true,
+    "unloadable": false,
+    "retained": false,
+    "owner": "setup"
+  }
 }

@@ -72,5 +72,15 @@
     "opl-netfleet-plugin-selection",
     "opl-netfleet-plugin-refresh",
     "opl-netfleet-plugin-activation"
-  ]
+  ],
+  "presentation": {
+    "label": "NetFleet 业务界面",
+    "description": "提供概览、出口与配置等页面的内容和交互"
+  },
+  "product": {
+    "required": true,
+    "unloadable": false,
+    "retained": false,
+    "owner": "product-ui"
+  }
 }

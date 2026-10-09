@@ -9,14 +9,15 @@ const admission = context.use("models.extensions").admission;
 const KIND = context.use("platform.runtime").KIND;
 const shell_quote = context.use("platform.process").shell_quote;
 const files = context.use("platform.files");
+const paths = context.use("platform.paths");
 
-const OWNER = "/usr/libexec/opl-netfleet-compat/control.uc";
+const OWNER = paths.COMPAT_CONTROL_PATH;
 let implementation;
 function native_owner() {
 	implementation ??= loadfile(OWNER)()(context);
 	return implementation;
 }
-const DECLARATION = "/usr/libexec/opl-netfleet-compat/extension.json";
+const DECLARATION = paths.COMPAT_EXTENSION_PATH;
 
 const extension = {
 	id: "https-compat", label: "HTTPS 兼容", api_version: API_VERSION, kind: "optional",

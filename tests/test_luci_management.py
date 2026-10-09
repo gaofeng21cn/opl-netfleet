@@ -779,7 +779,7 @@ const owner = controller();
 owner.components = { supported: true, feed: { configured: true }, components: [
   { id: 'netfleet', label: 'NetFleet', installed_version: '1.0.0' }
 ], dependencies: [], extensions: [
-  { id: 'https-compat', label: 'HTTPS compatibility', kind: 'plugin', runtime: 'service', version: '0.9.2', revision: 'r1', enabled: true },
+  { id: 'https-compat', label: 'HTTPS compatibility', presentation: { label: 'HTTPS 兼容', description: '为指定设备和网站提供 HTTPS 协议兼容' }, product: { required: false, unloadable: true, engine: 'opl-netfleet-https-compat' }, kind: 'plugin', runtime: 'service', version: '0.9.2', revision: 'r1', enabled: true },
   { id: 'custom-plugin', label: 'Custom name', kind: 'plugin', runtime: 'process', version: '1.0.0', revision: 'r2' }
 ] };
 const managed = module('managed.js', {});
@@ -1144,7 +1144,7 @@ assert(!button(modal.content, '重新启动').disabled);
 assert.equal(calls.at(-1)[1].action, 'load', 'host-confirmed lifecycle result avoids a redundant read');
 assert(text(modal.content).includes('完整版本：1.0.0-r2'));
 
-const service = { ...plugin, id: 'activation', label: 'Activation', runtime: 'service', instance: 'review', revision: 'service-r1',
+const service = { ...plugin, id: 'activation', label: 'Activation', presentation: { label: '网络启停', description: '切换运行模式，应用或退出代理接管' }, product: { required: true, unloadable: true }, runtime: 'service', instance: 'review', revision: 'service-r1',
   actions: { 'get-mode': 'read', 'set-mode': 'write' } };
 owner.components.extensions = [service];
 const opened = []; owner.context = { navigate: id => opened.push(id) };
@@ -1195,6 +1195,7 @@ assert.notEqual(modal.title, '确认禁用');
 assert(button(modal.content, '禁用').disabled);
 assert.equal(calls.filter(c => c[0] === 'write').length, 1, 'failed reads never mutate or retry');
 plugin.id = 'product-ui';
+plugin.product = { required: true, unloadable: false };
 plugin.enabled = true;
 assert(button(managed.components(owner), '禁用').disabled, 'the management page retains a visible protected control');
 assert(text(managed.components(owner)).includes('不可禁用：管理界面必需'));
@@ -1279,7 +1280,7 @@ assert(!button(modal.content, '启用').hidden && button(modal.content, '禁用'
 const owner = controller(); owner.componentsSection = 'plugins';
 const opened = [];
 owner.context = { navigate: id => opened.push(id) };
-const plugin = { id: 'https-compat', label: 'HTTPS compatibility', kind: 'plugin', runtime: 'service',
+const plugin = { id: 'https-compat', label: 'HTTPS compatibility', presentation: { label: 'HTTPS 兼容', description: '为指定设备和网站提供 HTTPS 协议兼容' }, product: { required: false, unloadable: true, engine: 'opl-netfleet-https-compat' }, kind: 'plugin', runtime: 'service',
   version: '0.8.0', revision: 'https-r1', enabled: true, configuration: { read: 'config-get', write: 'config-set' },
   ui: [{ id: 'settings', title: 'HTTPS 兼容', module: 'resources/page.js' }] };
 owner.components = { supported: true, feed: {}, components: [], dependencies: [], extensions: [plugin] };
@@ -1289,7 +1290,7 @@ fire(button(page, '配置'));
 assert.deepEqual(opened, ['plugin:https-compat:settings']);
 assert(button(page, '查看状态'));
 assert(text(page).includes('运行管理'));
-assert(text(page).includes('已启用'), 'service plugin enabled does not imply its optional engine is running');
+assert(text(page).includes('已加载 · 未就绪'), 'service plugin request and engine readiness are shown separately');
 assert(!text(page).includes('运行中'));
 plugin.enabled = false;
 page = managed.components(owner);

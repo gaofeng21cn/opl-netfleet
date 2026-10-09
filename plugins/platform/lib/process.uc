@@ -25,6 +25,11 @@ return function(context) {
 		if (failure) die(failure.message);
 		return result;
 	}
+	function capture_json(command, seconds, input) {
+		const result = capture(command, seconds ?? 15, input);
+		if (result.status != 0 || result.output == null) return null;
+		try { return json(result.output); } catch (error) { return null; }
+	}
 	function run_owner(action, detail) {
 		const suffix = detail == null ? "" : ` ${shell_quote(detail)}`;
 		// The calling host owns the mutation lock for this complete operation.
@@ -44,5 +49,5 @@ return function(context) {
 		const tail = split(trim(fields[2]), " ");
 		return length(tail) > 19 ? { pid: int(fields[1]), started: tail[19], alive: tail[0] != "Z" && tail[0] != "X" } : null;
 	}
-	return { shell_quote, capture, run_owner, run_owner_result, process_identity };
+	return { shell_quote, capture, capture_json, run_owner, run_owner_result, process_identity };
 };

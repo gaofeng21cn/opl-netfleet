@@ -10,7 +10,8 @@
       "version": 1,
       "module": "lib/files.uc",
       "requires": {
-        "platform.storage": 1
+        "platform.storage": 1,
+        "platform.paths": 1
       }
     },
     "platform.documents": {
@@ -32,5 +33,17 @@
     }
   },
   "commands": {},
-  "package_dependencies": ["yq"]
+  "package_dependencies": [
+    "yq"
+  ],
+  "presentation": {
+    "label": "文件存储",
+    "description": "读写配置文档与设备文件"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": false,
+    "owner": "platform-storage"
+  }
 }

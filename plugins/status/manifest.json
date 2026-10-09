@@ -70,5 +70,15 @@
       "access": "read"
     }
   },
-  "package_dependencies": []
+  "package_dependencies": [],
+  "presentation": {
+    "label": "运行状态",
+    "description": "汇总当前出口、机场与设备运行状态"
+  },
+  "product": {
+    "required": true,
+    "unloadable": false,
+    "retained": false,
+    "owner": "status"
+  }
 }

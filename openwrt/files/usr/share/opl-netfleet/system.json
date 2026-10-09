@@ -72,7 +72,8 @@
     "subscriptions.facts": "subscriptions",
     "subscriptions.providers": "subscriptions",
     "subscriptions.store": "subscriptions",
-    "mihomo.profile-storage": "mihomo"
+    "mihomo.profile-storage": "mihomo",
+    "mihomo.runtime": "mihomo"
   },
   "enabled": {
     "activation": true,

@@ -56,5 +56,15 @@
       "access": "write"
     }
   },
-  "package_dependencies": []
+  "package_dependencies": [],
+  "presentation": {
+    "label": "出口选优",
+    "description": "为各出口测速并选择可用路径"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": false,
+    "owner": "selection"
+  }
 }

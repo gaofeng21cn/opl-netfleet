@@ -379,12 +379,17 @@ export interface PluginComponent {
   instance?: string;
   label: string;
   description?: string;
+  presentation?: { label?: string; description?: string };
+  product?: { required?: boolean; unloadable?: boolean; retained?: boolean; owner?: string; packages?: string[]; engine?: string };
   kind: 'plugin';
   runtime: 'service' | 'process';
   package: string;
   installed_version: string | null;
   version: string;
-  enabled: boolean;
+  enabled: boolean | null;
+  requested_enabled?: boolean | null;
+  effective_enabled?: boolean | null;
+  failure_reason?: string | null;
   state: string;
   reason: string | null;
   revision?: string;
@@ -395,6 +400,9 @@ export interface PluginComponent {
 export interface ExtensionComponent {
   id: string;
   label: string;
+  description?: string;
+  presentation?: { label?: string; description?: string };
+  product?: { required?: boolean; unloadable?: boolean; retained?: boolean; owner?: string; packages?: string[]; engine?: string };
   kind: 'optional' | 'resource';
   package: string;
   installed_version: string | null;
@@ -405,6 +413,7 @@ export interface ExtensionComponent {
   reason: string | null;
   dependencies: Array<{ id: string; available: boolean | null; installed_version: string | null }>;
   ui: string[];
+  configuration?: unknown;
 }
 
 export interface DashboardComponent {

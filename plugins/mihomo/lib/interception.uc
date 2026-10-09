@@ -3,20 +3,21 @@ import {sha256} from 'digest';
 
 return function(context) {
     const gateway=context.use('mihomo.gateway'), files=context.use('platform.files');
+    const paths=context.use('platform.paths');
     const quote=context.use('platform.process').shell_quote;
     const capture=context.use('platform.process').capture;
     const policy=loadfile(`${context.root}/plugins/${context.id}/lib/interception-policy.uc`)()();
-    const TABLE='netfleet_compat', PORT=18443, CLAIM='/var/run/opl-netfleet-core/interception.json';
+    const TABLE='netfleet_compat', PORT=18443, CLAIM=`${paths.NATIVE_STATE_DIR}/interception.json`;
     let native_io=null;
     function native() {
         // The installed predecessor is a real rollback caller without this module.
         // A native declaration must never fall back when its module is missing/broken.
-        const declaration=json(fs.readfile('/usr/libexec/opl-netfleet-compat/extension.json') ?? '{}');
+        const declaration=json(fs.readfile(paths.COMPAT_EXTENSION_PATH) ?? '{}');
         if(declaration.gateway_io!='native'&&!fs.stat('/usr/lib/ucode/netfleet_interception.so')) return null;
         native_io??=require('netfleet_interception');return native_io;
     }
-    const paths=['/etc/opl-netfleet/native/run/config.yaml','/etc/config/netfleet','/var/run/opl-netfleet-core/ownership.json',
-        '/etc/opl-netfleet/backend.json','/proc/sys/net/ipv4/ip_local_port_range'];
+    const input_paths=[`${paths.BACKEND_RUN_DIR}/config.yaml`,paths.CONFIG_PATH,`${paths.NATIVE_STATE_DIR}/ownership.json`,
+        paths.BACKEND_PATH,'/proc/sys/net/ipv4/ip_local_port_range'];
     function run(args,input) {
         const result=capture(join(' ',map(args,quote)),1,input),output=result.output,status=result.status;
         if (status || output==null || length(output)>2097152) die('gateway_command_failed');
@@ -159,7 +160,7 @@ return function(context) {
         return found;
     }
     function epoch(network) {
-        let data=''; for (let path in paths) data+=(fs.readfile(path) ?? '')+'\u0000';
+        let data=''; for (let path in input_paths) data+=(fs.readfile(path) ?? '')+'\u0000';
         for (let key in ['core_pid','engine_pid']) {
             const pid=network[key], stat=fs.readfile(`/proc/${pid}/stat`), fields=stat?split(trim(substr(stat,rindex(stat,') ')+2)),/\s+/):[];
             data+=(fields[19] ?? '')+(pid==null?'None':`${pid}`)+'\u0000';
@@ -167,14 +168,14 @@ return function(context) {
         return sha256(data);
     }
     function egress(profile) {
-        const ports=map(split(trim(fs.readfile(paths[4]) ?? ''),/\s+/),x=>+x), result=policy.egress_policy(profile,ports);
+        const ports=map(split(trim(fs.readfile(input_paths[4]) ?? ''),/\s+/),x=>+x), result=policy.egress_policy(profile,ports);
         if (result.port_range) {
-            try { const io=native();if(io) io.port_range(...result.port_range);else run(['/usr/libexec/opl-netfleet-compat/port-range',...result.port_range]); }
+            try { const io=native();if(io) io.port_range(...result.port_range);else run([paths.COMPAT_PORT_RANGE_PATH,...result.port_range]); }
             catch (_) { die('egress_port_range_unsupported'); }
         }
         return result;
     }
-    function read_profile() { try { return json(fs.readfile(paths[0]) ?? '{}'); } catch (_) { die('routing_rule_unreadable'); } }
+    function read_profile() { try { return json(fs.readfile(input_paths[0]) ?? '{}'); } catch (_) { die('routing_rule_unreadable'); } }
     function dispatch(owner,input) {
         descriptor(owner);
         if (type(input)!='object'||length(filter(keys(input),key=>index(['action','epoch','candidates'],key)<0))) die('lease_request_invalid');

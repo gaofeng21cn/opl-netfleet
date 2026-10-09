@@ -39,6 +39,8 @@ python3 scripts/sync-plugin-sources.py check
 manifest 生成，供代码审查、构建器和工具发现，不替代设备上的签名 APK 索引。设备更新仍只
 接受受信任 feed、精确版本、架构和签名验证；catalog 出现条目不会自动安装或启用插件。
 `manifest.json` 的动作和页面声明就是宿主接入入口，无需修改宿主的 RPC 或导航表。
+插件源码以仓库根目录 `plugins/<id>/` 为唯一编辑入口；OpenWrt 下的同路径是构建期投影，
+发布前由 `scripts/sync-plugin-sources.py` 重新生成并做字节校验，禁止在投影目录直接修补。
 SDK 排除顶层 `.git`、`.gitignore`、`.gitattributes` 和 `.github` 开发元数据，其余目录
 按可安装 payload 校验。前端依赖和构建中间文件放在 payload 外，仅把最终资源输出到
 `resources/`；也可以把生成目录作为独立仓库内的 `plugin/` 子目录。

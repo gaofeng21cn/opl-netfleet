@@ -96,5 +96,15 @@
       "access": "write"
     }
   },
-  "package_dependencies": []
+  "package_dependencies": [],
+  "presentation": {
+    "label": "运行策略",
+    "description": "读取、校验和保存出口与选路策略"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": false,
+    "owner": "configuration"
+  }
 }

@@ -10,75 +10,31 @@ import { displayVersion } from '../lib/version';
 const previewReason = '本机预览只读，请在设备 LuCI 中操作';
 const coreVersion = (value: string) => value.replace(/^v/, '').replace(/-r\d+$/, '');
 const checkedTime = (value: number | null, failed?: string | null) => value ? `检查于 ${new Date(value * 1000).toLocaleString()}` : failed ? '检查时间未记录' : '尚未检查更新';
-const pluginLabels: Record<string, string> = {
-  "device-identity": "设备识别",
-  "activation": "网络启停",
-  "compilation": "运行配置生成",
-  "components": "组件更新",
-  "configuration": "运行策略",
-  "dashboard": "Zashboard",
-  "events": "操作与选路记录",
-  "https-compat": "HTTPS 兼容",
-  "maintenance": "配置文件与维护",
-  "mihomo": "Mihomo 接入",
-  "models": "策略数据",
-  "network": "网络接入",
-  "platform": "运行环境",
-  "platform-openwrt": "OpenWrt 设备设置",
-  "platform-storage": "文件存储",
-  "product-ui": "NetFleet 业务界面",
-  "recovery": "网络恢复",
-  "refresh": "订阅更新",
-  "scheduler": "自动运行",
-  "selection": "出口选优",
-  "selection-algorithm": "选优算法",
-  "setup": "首次接入",
-  "status": "运行状态",
-  "subscriptions": "节点来源"
+const pluginLabel = (plugin: { id: string; label?: string; presentation?: { label?: string; description?: string } }) => plugin.presentation?.label || plugin.label || plugin.id;
+const pluginPurpose = (plugin: { id: string; label?: string; description?: string; presentation?: { description?: string }; runtime?: string }) =>
+  plugin.presentation?.description || plugin.description || `为 NetFleet 提供 ${pluginLabel(plugin)} ${plugin.runtime === 'service' ? '服务' : '功能'}`;
+const pluginRuntimeStatus = (plugin: PluginComponent) => {
+  if (plugin.enabled == null && plugin.requested_enabled == null) return '状态未确认';
+  if (!(plugin.requested_enabled ?? plugin.enabled)) return '已安装 · 功能未请求';
+  return plugin.effective_enabled === true ? '已加载 · 实际生效' : '已加载 · 未就绪';
 };
-const pluginLabel = (plugin: { id: string; label?: string }) => pluginLabels[plugin.id] || plugin.label || plugin.id;
-const pluginPurposes: Record<string, string> = {
-  'device-identity': '识别网络设备，为按设备配置规则提供稳定身份',
-  activation: '切换运行模式，应用或退出代理接管',
-  compilation: '根据策略与节点来源生成代理运行配置',
-  components: '检查并更新基础软件与面板资源',
-  configuration: '读取、校验和保存出口与选路策略',
-  dashboard: '提供实时面板入口与资源更新',
-  events: '记录设备操作进度和选路事件',
-  'https-compat': '为指定设备和网站提供 HTTPS 协议兼容',
-  maintenance: '管理配置文件、备份与核心维护',
-  mihomo: '连接代理核心并管理其运行配置',
-  models: '提供机场、地区与出口的结构化配置',
-  network: '管理设备代理、DNS 与监听设置',
-  platform: '提供设备进程与运行环境能力',
-  'platform-openwrt': '接入系统配置与设备信息',
-  'platform-storage': '读写配置文档与设备文件',
-  'product-ui': '提供概览、出口与配置等页面的内容和交互；由 LuCI 接入组件加载',
-  recovery: '在退出或异常时恢复网络直连',
-  refresh: '更新订阅并准备最新节点',
-  scheduler: '按计划执行订阅更新与自动选优',
-  selection: '为各出口测速并选择可用路径',
-  'selection-algorithm': '按策略比较地区与候选路径',
-  setup: '准备运行基础并接入已有设置',
-  status: '汇总当前出口、机场与设备运行状态',
-  subscriptions: '管理机场订阅与节点缓存',
-};
+const managementRequired = (plugin: PluginComponent) => plugin.product?.unloadable === false;
 
 function PluginRow({ plugin, product }: { plugin: PluginComponent; product?: ComponentsSnapshot['product'] }) {
   const version = plugin.installed_version || plugin.version;
-  const unavailable = Boolean(plugin.reason) || ['unavailable', 'invalid'].includes(plugin.state);
+  const unavailable = Boolean(plugin.failure_reason || plugin.reason) || ['unavailable', 'invalid'].includes(plugin.state);
   return <tr>
     <td><strong>{pluginLabel(plugin)}</strong><small>{plugin.id}</small>{plugin.instance && plugin.instance !== 'default' && <small>实例：{plugin.instance}</small>}</td>
-    <td><span>{product ? product.packages.some(item => item.name === plugin.package) ? '默认产品能力' : '独立安装的插件' : plugin.runtime === 'service' ? '服务插件' : '进程插件'}</span><small>{plugin.description || pluginPurposes[plugin.id] || `为 NetFleet 提供 ${pluginLabel(plugin)} ${plugin.runtime === 'service' ? '服务' : '功能'}`}</small></td>
+    <td><span>{product ? product.packages.some(item => item.name === plugin.package) ? '默认产品能力' : '独立安装的插件' : plugin.runtime === 'service' ? '服务插件' : '进程插件'}</span><small>{pluginPurpose(plugin)}</small></td>
     <td><strong>{displayVersion(version)}</strong><details><summary>版本详情</summary><small>{version}</small><small>{plugin.package}</small></details></td>
     <td className="nf-component-actions">{plugin.ui?.length ? plugin.ui.map(page => <button key={page.id} type="button" disabled title={previewReason}>{plugin.ui.length === 1 ? plugin.configuration ? '配置' : '打开页面' : page.title}</button>) : <small>无需单独配置</small>}</td>
     <td className="nf-component-actions">
-      <span>{typeof plugin.enabled !== 'boolean' ? '状态未确认' : plugin.enabled === false ? '已禁用' : unavailable ? '已启用 · 异常' : '已启用'}</span>
+      <span>{unavailable ? `失败：${plugin.failure_reason || plugin.reason || plugin.state}` : pluginRuntimeStatus(plugin)}</span>
       {typeof plugin.enabled !== 'boolean' && <small>请打开“查看状态”确认后操作</small>}
       {plugin.reason && plugin.reason !== 'plugin_disabled' && <small className="is-warning">{componentError(plugin.reason)}</small>}
       {plugin.revision && <button type="button" disabled title={previewReason}>查看状态</button>}
-      {plugin.revision && typeof plugin.enabled === 'boolean' && <button type="button" disabled title={plugin.enabled && ['product-ui', 'components', 'status', 'events', 'setup'].includes(plugin.id) ? '不可禁用：管理界面必需' : previewReason}>{plugin.enabled ? '禁用' : '启用'}</button>}
-      {['product-ui', 'components', 'status', 'events', 'setup'].includes(plugin.id) && <small>不可禁用：管理界面必需</small>}
+      {plugin.revision && typeof plugin.enabled === 'boolean' && <button type="button" disabled title={plugin.enabled && managementRequired(plugin) ? '不可禁用：管理界面必需' : previewReason}>{plugin.enabled ? '禁用' : '启用'}</button>}
+      {managementRequired(plugin) && <small>不可禁用：管理界面必需</small>}
     </td>
   </tr>;
 }
@@ -90,10 +46,10 @@ function ExtensionRow({ extension, onManage }: { extension: ExtensionComponent; 
   const warning = extension.state !== 'ready' && extension.state !== 'not_installed';
   return <tr>
     <td><strong>{pluginLabel(extension)}</strong><small>{extension.id}</small></td>
-    <td><span>可选模块</span><small>{extension.id === 'https-compat' ? '为指定设备和网站提供 HTTPS 协议兼容' : '提供 ' + extension.label + ' 功能'}</small></td>
+    <td><span>可选模块</span><small>{pluginPurpose(extension)}</small></td>
     <td><strong>{extension.installed_version ? displayVersion(extension.installed_version) : absent ? '未安装' : '安装版本未确认'}</strong>
       {extension.installed_version && <details><summary>版本详情</summary><small>{extension.installed_version}</small><small>{extension.package}</small></details>}</td>
-    <td className="nf-component-actions">{extension.id === 'https-compat' ? <button type="button" onClick={onManage}><Settings aria-hidden="true" />配置</button> : <small>由对应功能插件配置</small>}</td>
+    <td className="nf-component-actions">{extension.ui?.length || extension.configuration ? <button type="button" onClick={onManage}><Settings aria-hidden="true" />配置</button> : <small>由对应功能插件配置</small>}</td>
     <td>
       {extension.state !== 'not_installed' && <small className={warning ? 'is-warning' : ''}>{state}</small>}
       {extension.reason && <small>{componentError(extension.reason)}</small>}
@@ -110,10 +66,10 @@ function ExtensionRow({ extension, onManage }: { extension: ExtensionComponent; 
 
 function PluginPackages({ snapshot }: { snapshot: ComponentsSnapshot }) {
   return <section className="nf-component-modules"><h3>安装与维护独立插件</h3>
-    <p>从设备已信任的软件源读取。默认功能插件也可独立更新，必需插件不可单独卸载；HTTPS 引擎由 HTTPS 插件中的独立更新入口管理。</p>
+    <p>从设备已信任的软件源读取。默认功能插件也可独立更新，必需插件不可单独卸载；配套运行引擎由插件清单声明的关联关系管理。</p>
     <button type="button" disabled title={previewReason}>检查插件更新</button>
     {snapshot.plugin_packages?.length ? <div className="nf-table-wrap"><table><thead><tr><th>插件</th><th>安装与候选版本</th><th>软件包操作</th></tr></thead><tbody>
-      {snapshot.plugin_packages.map(item => <tr key={item.name}><td><strong>{pluginLabel(item)}</strong><small>{item.description || pluginPurposes[item.id]}</small><small>{item.name}</small></td>
+      {snapshot.plugin_packages.map(item => <tr key={item.name}><td><strong>{pluginLabel(item)}</strong><small>{item.description || pluginPurpose(item)}</small><small>{item.name}</small></td>
         <td><strong>{item.installed_version ? displayVersion(item.installed_version) : '未安装'}</strong><small>{item.available_version ? '更新源版本 ' + displayVersion(item.available_version) : '检查更新以读取候选版本'}</small></td>
         <td className="nf-component-actions">{!item.installed_version && item.available_version && <button disabled title={previewReason}>安装</button>}{item.update_available && <button disabled title={previewReason}>更新</button>}{item.installed_version && !item.required && <button disabled title={previewReason}>卸载</button>}</td></tr>)}
     </tbody></table></div> : <p>检查更新后显示软件源中的独立插件。</p>}

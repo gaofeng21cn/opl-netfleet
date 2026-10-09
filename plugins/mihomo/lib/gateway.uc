@@ -18,13 +18,14 @@ const capture_process = context.use("platform.process").capture;
 const sha256 = context.use("platform.storage").sha256;
 const profile_rules = create_rules();
 
-const BASE = "/etc/opl-netfleet/native";
-const RUN = `${BASE}/run`;
-const STATE = "/var/run/opl-netfleet-core";
+const paths = context.use("platform.paths");
+const BASE = paths.NATIVE_ROOT;
+const RUN = paths.BACKEND_RUN_DIR;
+const STATE = paths.NATIVE_STATE_DIR;
 const OWNERSHIP = `${STATE}/ownership.json`;
 const CONFIG = `${RUN}/config.yaml`;
 const VENDOR = "/usr/share/opl-netfleet/nikki";
-const SERVICE = "opl-netfleet-core";
+const SERVICE = context.use("platform.runtime").SERVICE;
 const COMMAND = ["/usr/bin/mihomo", "-d", RUN, "-f", CONFIG];
 const rule_data = loadfile(context.root + "/plugins/" + context.id + "/lib/rule-data.uc")()(context, { readiness: () => readiness(), process_state: () => process_state() });
 
@@ -99,7 +100,7 @@ status = function() {
 	return observed;
 };
 render_profile = function() {
-	if (read_json("/etc/opl-netfleet/backend.json")?.kind != "native-mihomo")
+	if (read_json(paths.BACKEND_PATH)?.kind != "native-mihomo")
 		return { ok: false, error: "native_backend_not_selected" };
 	const path = source_path(uci_value("config", "profile", null));
 	if (path == null) return { ok: false, error: "invalid_profile_reference" };
@@ -358,7 +359,7 @@ interception_snapshot = function(listener) {
 		});
 		if (defaults != 1) custom = true;
 	}
-	const declaration=parse(fs.readfile('/usr/libexec/opl-netfleet-compat/extension.json'));
+	const declaration=parse(fs.readfile(paths.COMPAT_EXTENSION_PATH));
 	const native_io=declaration?.gateway_io=='native'||fs.stat('/usr/lib/ucode/netfleet_interception.so')?require('netfleet_interception'):null;
 	let observed;
 	if(native_io) observed=native_io.observe();

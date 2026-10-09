@@ -18,6 +18,7 @@
         "mihomo.controller": 1,
         "mihomo.paths": 1,
         "mihomo.readback": 1,
+        "mihomo.runtime": 1,
         "models.activation": 1,
         "models.policy": 1,
         "models.subscription": 1,
@@ -48,5 +49,15 @@
       "access": "write"
     }
   },
-  "package_dependencies": []
+  "package_dependencies": [],
+  "presentation": {
+    "label": "订阅更新",
+    "description": "更新订阅并准备最新节点"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": false,
+    "owner": "refresh"
+  }
 }

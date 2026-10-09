@@ -50,7 +50,9 @@
         "platform.files": 1,
         "platform.storage": 1,
         "platform.process": 1,
-        "mihomo.controller": 1
+        "mihomo.controller": 1,
+        "platform.paths": 1,
+        "platform.runtime": 1
       }
     },
     "mihomo.interception": {
@@ -59,7 +61,8 @@
       "requires": {
         "mihomo.gateway": 1,
         "platform.files": 1,
-        "platform.process": 1
+        "platform.process": 1,
+        "platform.paths": 1
       }
     },
     "mihomo.artifacts": {
@@ -134,6 +137,16 @@
         "platform.process": 1,
         "platform.storage": 1
       }
+    },
+    "mihomo.runtime": {
+      "version": 1,
+      "module": "lib/runtime.uc",
+      "requires": {
+        "platform.profile": 1,
+        "mihomo.backend": 1,
+        "mihomo.readback": 1,
+        "mihomo.probes": 1
+      }
     }
   },
   "commands": {
@@ -206,5 +219,15 @@
       "service": "mihomo.lifecycle",
       "method": "resume"
     }
+  },
+  "presentation": {
+    "label": "Mihomo 接入",
+    "description": "连接代理核心并管理其运行配置"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": true,
+    "owner": "mihomo"
   }
 }

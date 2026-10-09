@@ -48,5 +48,15 @@
     "ca-bundle",
     "unzip",
     "coreutils-timeout"
-  ]
+  ],
+  "presentation": {
+    "label": "Zashboard",
+    "description": "提供实时面板入口与资源更新"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": false,
+    "owner": "dashboard"
+  }
 }

@@ -225,6 +225,21 @@ class PluginSDKTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         SDK.validate(source)
 
+    def test_action_contract_schemas_are_accepted_and_rejected_when_malformed(self):
+        source = self.scaffold(kind="service", template="complete")
+        manifest = json.loads((source / "manifest.json").read_text())
+        action = manifest["actions"]["config-set"]
+        action["params"] = {"type": "object", "required": ["value"],
+                             "properties": {"value": {"type": "string"}},
+                             "additionalProperties": False}
+        action["result"] = {"type": "object", "properties": {"saved": {"type": "boolean"}}}
+        (source / "manifest.json").write_text(json.dumps(manifest))
+        SDK.validate(source)
+        action["params"] = {"type": "object", "properties": {"value": {"type": "unknown"}}}
+        (source / "manifest.json").write_text(json.dumps(manifest))
+        with self.assertRaises(ValueError):
+            SDK.validate(source)
+
     def test_ui_only_service_plugin_requires_real_page_payload(self):
         source = self.scaffold(kind="service", template="complete")
         manifest = json.loads((source / "manifest.json").read_text())

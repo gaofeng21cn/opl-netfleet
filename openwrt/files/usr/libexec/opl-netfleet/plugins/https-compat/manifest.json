@@ -22,7 +22,8 @@
         "platform.runtime": 1,
         "platform.process": 1,
         "platform.files": 1,
-        "mihomo.interception": 1
+        "mihomo.interception": 1,
+        "platform.paths": 1
       }
     }
   },
@@ -98,13 +99,29 @@
       "service": "https-compat.control",
       "method": "config_get",
       "access": "read",
-      "lock": "plugin"
+      "lock": "plugin",
+      "params": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      }
     },
     "config-set": {
       "service": "https-compat.control",
       "method": "config_set",
       "access": "write",
-      "lock": "plugin"
+      "lock": "plugin",
+      "params": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      }
     },
     "enable": {
       "service": "https-compat.control",
@@ -157,5 +174,19 @@
     "ucode-mod-digest",
     "ucode-mod-socket",
     "ucode-mod-uloop"
-  ]
+  ],
+  "presentation": {
+    "label": "HTTPS 兼容",
+    "description": "为指定设备和网站提供 HTTPS 协议兼容"
+  },
+  "product": {
+    "required": false,
+    "unloadable": true,
+    "retained": true,
+    "owner": "https-compat",
+    "packages": [
+      "opl-netfleet-https-compat"
+    ],
+    "engine": "opl-netfleet-https-compat"
+  }
 }

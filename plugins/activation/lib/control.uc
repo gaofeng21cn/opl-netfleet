@@ -15,7 +15,7 @@ const load_manifest = context.use("mihomo.artifacts").load_manifest;
 const resolve_profile = context.use("mihomo.backend").resolve_profile;
 const ARTIFACT_PATH = context.use("mihomo.backend").ARTIFACT_PATH;
 const COMPILED_PROFILE = context.use("mihomo.backend").COMPILED_PROFILE;
-const restart = context.use("mihomo.backend").restart;
+const runtime_switch = context.use("mihomo.runtime").switch_profile;
 const MANIFEST_PATH = context.use("mihomo.backend").MANIFEST_PATH;
 const running = context.use("mihomo.backend").running;
 const test_profile = context.use("mihomo.controller").test_profile;
@@ -152,7 +152,8 @@ enable_action = function(policy, evidence, quiet, report) {
 		}
 	}
 	progress("switching_profile");
-	if (!set_profile(COMPILED_PROFILE) || !restart()) {
+	const switched = runtime_switch(COMPILED_PROFILE, manifest, policy);
+	if (!switched.ok) {
 		progress("rolling_back");
 		const recovery = restore_recovery_with_probes(policy, "owner_switch_failed");
 		if (!recovery.ok) {

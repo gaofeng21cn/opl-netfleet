@@ -46,5 +46,15 @@
     }
   },
   "commands": {},
-  "package_dependencies": []
+  "package_dependencies": [],
+  "presentation": {
+    "label": "操作与选路记录",
+    "description": "记录设备操作进度和选路事件"
+  },
+  "product": {
+    "required": true,
+    "unloadable": false,
+    "retained": false,
+    "owner": "events"
+  }
 }

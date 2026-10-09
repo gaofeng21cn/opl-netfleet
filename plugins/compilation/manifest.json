@@ -55,5 +55,15 @@
       "access": "read"
     }
   },
-  "package_dependencies": []
+  "package_dependencies": [],
+  "presentation": {
+    "label": "运行配置生成",
+    "description": "根据策略与节点来源生成代理运行配置"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": false,
+    "owner": "compilation"
+  }
 }

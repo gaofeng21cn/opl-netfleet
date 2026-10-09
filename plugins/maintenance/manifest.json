@@ -75,5 +75,15 @@
   },
   "package_dependencies": [
     "coreutils-timeout"
-  ]
+  ],
+  "presentation": {
+    "label": "配置文件与维护",
+    "description": "管理配置文件、备份与核心维护"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": false,
+    "owner": "maintenance"
+  }
 }

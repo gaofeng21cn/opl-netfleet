@@ -7,8 +7,8 @@ let private_file, private_directory, write_private, atomic_json, core_service;
 const read_json = context.use("platform.storage").read_json;
 const sha256 = context.use("platform.storage").sha256;
 
-const BASE = "/etc/opl-netfleet/native";
-const SERVICE = "opl-netfleet-core";
+const BASE = context.use("platform.paths").NATIVE_ROOT;
+const SERVICE = context.use("platform.runtime").SERVICE;
 
 private_file = function(path) {
 	const info = type(path) == "string" ? fs.lstat(path) : null;

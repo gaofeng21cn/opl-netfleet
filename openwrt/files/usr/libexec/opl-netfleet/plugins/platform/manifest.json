@@ -19,7 +19,9 @@
     "platform.paths": {
       "version": 1,
       "module": "lib/paths.uc",
-      "requires": {}
+      "requires": {
+        "platform.runtime": 1
+      }
     },
     "platform.process": {
       "version": 1,
@@ -30,5 +32,15 @@
   "commands": {},
   "package_dependencies": [
     "ucode-mod-ubus"
-  ]
+  ],
+  "presentation": {
+    "label": "运行环境",
+    "description": "提供设备进程与运行环境能力"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": false,
+    "owner": "platform"
+  }
 }

@@ -46,11 +46,12 @@ const POLICY_PATH = context.use("platform.paths").POLICY_PATH;
 const EVIDENCE_PATH = context.use("platform.paths").EVIDENCE_PATH;
 const load_providers = context.use("subscriptions.providers").load;
 
-const ROOT = "/etc/opl-netfleet";
-const CONFIG = "/etc/config/netfleet";
+const paths = context.use("platform.paths");
+const ROOT = paths.ROOT;
+const CONFIG = paths.CONFIG_PATH;
 const PROFILES = `${BASE}/profiles`;
-const MAIN = "/usr/libexec/opl-netfleet/main.uc";
-const GATEWAY = "/usr/libexec/opl-netfleet/main.uc";
+const MAIN = paths.MAIN_PATH;
+const GATEWAY = paths.MAIN_PATH;
 
 failure = function(error, result) { return { ok: false, error: error, result: result }; };
 capture = function(command) {

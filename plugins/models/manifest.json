@@ -67,5 +67,15 @@
     }
   },
   "commands": {},
-  "package_dependencies": []
+  "package_dependencies": [],
+  "presentation": {
+    "label": "策略数据",
+    "description": "提供机场、地区与出口的结构化配置"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": false,
+    "owner": "models"
+  }
 }

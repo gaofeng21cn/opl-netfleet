@@ -38,7 +38,7 @@ const POLICY_PATH = context.use("platform.paths").POLICY_PATH;
 const load_provider_profiles = context.use("subscriptions.providers").load;
 
 const WORK_DIR = "/tmp/opl-netfleet-config-apply";
-const MAIN_PATH = "/usr/libexec/opl-netfleet/main.uc";
+const MAIN_PATH = context.use("platform.paths").MAIN_PATH;
 
 profile_display_name = function(profile) {
 	const prefix = "subscription:";

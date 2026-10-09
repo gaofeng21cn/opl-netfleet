@@ -18,7 +18,8 @@
         "platform.runtime": 1,
         "platform.storage": 1,
         "platform.process": 1,
-        "platform.credentials": 1
+        "platform.credentials": 1,
+        "platform.paths": 1
       }
     }
   },
@@ -77,5 +78,36 @@
   "package_dependencies": [
     "curl",
     "ca-bundle"
-  ]
+  ],
+  "presentation": {
+    "label": "组件更新",
+    "description": "检查并更新基础软件与面板资源"
+  },
+  "product": {
+    "required": true,
+    "unloadable": false,
+    "retained": false,
+    "owner": "components",
+    "packages": [
+      "opl-netfleet",
+      "luci-app-netfleet",
+      "mihomo-meta"
+    ],
+    "dependencies": [
+      "ucode",
+      "ucode-mod-fs",
+      "ucode-mod-uci",
+      "ucode-mod-ubus",
+      "ucode-mod-uloop",
+      "yq",
+      "curl",
+      "ca-bundle",
+      "flock",
+      "unzip",
+      "ip-full",
+      "nftables-json",
+      "kmod-nft-socket",
+      "kmod-nft-tproxy"
+    ]
+  }
 }

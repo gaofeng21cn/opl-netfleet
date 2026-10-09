@@ -26,20 +26,41 @@ const read_json = context.use("platform.storage").read_json;
 const q = context.use("platform.process").shell_quote;
 const api_secret = context.use("platform.credentials").api_secret;
 const sha256 = context.use("platform.storage").sha256;
+const paths = context.use("platform.paths");
 
-const ROOT = "/etc/opl-netfleet/package-transactions";
+const ROOT = context.use("platform.paths").PACKAGE_TRANSACTIONS;
 const PENDING = `${ROOT}/pending.json`;
 const CACHE = `${ROOT}/checked.json`;
 const REQUEST = `${ROOT}/request.json`;
-const REPOSITORY = "/etc/apk/repositories.d/opl-netfleet.list";
+const REPOSITORY = context.use("platform.paths").APK_REPOSITORY;
 const UPDATE_SERVICE = "opl-netfleet-update";
 const RECOVERY_SERVICE = "opl-netfleet-update-recovery";
-const MAIN = "/usr/libexec/opl-netfleet/main.uc";
-const UPGRADE_STATE = "/tmp/opl-netfleet-package-upgrade-state";
-const PACKAGES = ["opl-netfleet", "luci-app-netfleet", "mihomo-meta"];
-const COMPATIBILITY_PACKAGE = "opl-netfleet-https-compat";
-const RETAINED_PACKAGES = ['opl-netfleet-plugin-mihomo', COMPATIBILITY_PACKAGE, 'opl-netfleet', 'opl-netfleet-plugin-network'];
-const DEPENDENCIES = ["ucode", "ucode-mod-fs", "ucode-mod-uci", "ucode-mod-ubus", "ucode-mod-uloop", "yq", "curl", "ca-bundle", "flock", "unzip", "ip-full", "nftables-json", "kmod-nft-socket", "kmod-nft-tproxy"];
+const MAIN = context.use("platform.paths").MAIN_PATH;
+const UPGRADE_STATE = context.use("platform.paths").UPGRADE_STATE;
+// Package lifecycle relationships belong to the owning manifest.  The update
+// worker keeps a conservative fallback for old installations whose manifest
+// predates product metadata, but new packages no longer need to be added here.
+function product_metadata() {
+	const result = {};
+	for (let row in context.inventory()) if (row.product != null) result[row.id] = row.product;
+	return result;
+}
+const component_product = product_metadata().components ?? {};
+const PACKAGES = component_product.packages ?? ["opl-netfleet", "luci-app-netfleet", "mihomo-meta"];
+const DEPENDENCIES = component_product.dependencies ?? ["ucode", "ucode-mod-fs", "ucode-mod-uci", "ucode-mod-ubus", "ucode-mod-uloop", "yq", "curl", "ca-bundle", "flock", "unzip", "ip-full", "nftables-json", "kmod-nft-socket", "kmod-nft-tproxy"];
+function compatibility_package() {
+	for (let id, metadata in product_metadata()) if (metadata.engine != null) return metadata.engine;
+	return "opl-netfleet-https-compat";
+}
+function retained_packages() {
+	const result = ["opl-netfleet"];
+	for (let id, metadata in product_metadata()) if (metadata.retained == true) {
+		const row = filter(context.inventory(), item => item.id == id)[0];
+		for (let name in metadata.packages ?? [row?.package]) if (index(result, name) < 0) push(result, name);
+		if (metadata.engine != null && index(result, metadata.engine) < 0) push(result, metadata.engine);
+	}
+	return result;
+}
 
 function network_enter() {
 	if (network_guard != null) return;
@@ -154,7 +175,7 @@ newer = function(candidate, current) {
 	return version_valid(candidate) && version_valid(current) && capture(`apk version --test ${q(current)} ${q(candidate)}`) == "<";
 };
 available = function(url) {
-	const managed = [...product_packages(), PACKAGES[2], COMPATIBILITY_PACKAGE];
+	const managed = [...product_packages(), PACKAGES[2], compatibility_package(), ...retained_packages()];
 	const rows = parsed(`apk --no-network query --from none -X ${q(url)} --format json --fields name,version ${join(" ", map(managed, q))}`);
 	if (type(rows) != "array") return null;
 	const result = {};
@@ -170,13 +191,13 @@ function package_owners(versions) {
 	// The service inventory contains control plugins, not optional engine rows.
 	// Bind the existing engine declaration to its installed control owner without
 	// loading that owner or inventing package dependency resolution.
-	const declaration = "/usr/libexec/opl-netfleet-compat/extension.json";
+	const declaration = paths.COMPAT_EXTENSION_PATH;
 	const info = fs.lstat(declaration);
-	if (result["opl-netfleet-plugin-https-compat"] == "https-compat" && versions?.[COMPATIBILITY_PACKAGE] != null &&
+	if (result["opl-netfleet-plugin-https-compat"] == "https-compat" && versions?.[compatibility_package()] != null &&
 		info?.type == "file" && info.uid == 0 && !(info.mode & 18) && info.size <= 4096) {
 		const descriptor = read_json(declaration);
 		if (descriptor?.id == "https-compat" && descriptor.api_version == 1)
-			result[COMPATIBILITY_PACKAGE] = descriptor.id;
+			result[compatibility_package()] = descriptor.id;
 	}
 	return result;
 }
@@ -601,7 +622,7 @@ archive = function(name, version, path, work, fallback_version, source) {
 	return null;
 };
 private_paths = function() {
-	return filter(["/etc/config/netfleet", "/etc/opl-netfleet/policy.json", "/etc/opl-netfleet/backend.json", "/etc/opl-netfleet/system.json",
+	return filter([paths.CONFIG_PATH, paths.POLICY_PATH, paths.BACKEND_PATH, paths.SYSTEM_PATH,
 		"/etc/opl-netfleet/plugins", "/etc/opl-netfleet/compatibility",
 		`${ROOT_DIR}/profiles`, `${ROOT_DIR}/subscriptions`, `${ROOT_DIR}/mixin.json`, `${ROOT_DIR}/mixin.yaml`,
 		...(KIND == "nikki-mihomo" ? ["/etc/config/nikki"] : [])], path => fs.lstat(path) != null);
@@ -676,7 +697,7 @@ restore_services = function(before, work) {
 		if (!same_inputs(before)) return false;
 		if (before.retained_engine != null) {
 			if (process_birth(before.retained_engine.pid) != before.retained_engine.birth) return false;
-			const state = read_json('/var/run/opl-netfleet-compat/state.json');
+			const state = read_json(paths.COMPAT_STATE_PATH);
 			if (state?.last_tick == null || state.last_tick == before.retained_compat.last_tick ||
 				(before.retained_compat.intercepting &&
 				 !length(filter(values(state.rule_recovery ?? {}), rule => rule.admitted === true)))) return false;
@@ -738,9 +759,9 @@ native_identity = function() {
 		files: input_identity(['/usr/libexec/mihomo', `${RUN_DIR}/config.yaml`]) };
 };
 function retained_payload(work, archive, versions, name) {
-	const engine = name == COMPATIBILITY_PACKAGE;
+	const engine = name == compatibility_package();
 	const product = name == 'opl-netfleet';
-	const prefix = engine ? '/usr/libexec/opl-netfleet-compat/' : product ? '/usr/share/opl-netfleet/' : '/usr/libexec/opl-netfleet/plugins/' + substr(name, length('opl-netfleet-plugin-')) + '/';
+	const prefix = engine ? `${paths.COMPAT_ROOT}/` : product ? '/usr/share/opl-netfleet/' : '/usr/libexec/opl-netfleet/plugins/' + substr(name, length('opl-netfleet-plugin-')) + '/';
 	const descriptor = engine ? 'extension.json' : product ? 'system.json' : 'manifest.json';
 	const extracted = `${work}/retained-payload-${name}`;
 	if (!directory(extracted) || !run_command(`apk extract --destination ${q(extracted)} ${q(archive)}`, work))
@@ -848,8 +869,8 @@ upgrade = function(request, work, candidates) {
 	let names = request.component == "plugins" ? request.names : request.component == "netfleet" ? product_packages() : [PACKAGES[2]];
 	const versions = installed();
 	if (versions == null) fail("package_manager_unavailable");
-	if (request.component == "netfleet" && versions[COMPATIBILITY_PACKAGE] != null &&
-		version_valid(candidates[COMPATIBILITY_PACKAGE])) push(names, COMPATIBILITY_PACKAGE);
+	if (request.component == "netfleet" && versions[compatibility_package()] != null &&
+		version_valid(candidates[compatibility_package()])) push(names, compatibility_package());
 	if (fs.lstat(UPGRADE_STATE) != null) fail("previous_update_incomplete");
 	if (request.component == "mihomo" && (KIND != "native-mihomo" || versions[PACKAGES[2]] == null)) fail("core_managed_externally");
 	if (request.component != "plugins" && candidates[request.component == "netfleet" ? PACKAGES[0] : PACKAGES[2]] != request.version)
@@ -915,8 +936,8 @@ upgrade = function(request, work, candidates) {
 		...(request.component == "mihomo" ? ["/usr/libexec/mihomo"] : [])], path => fs.lstat(path) != null);
 	if (before.scoped && request.plugin) before.runtime_paths = package_paths(names, versions);
 	before.runtime_inputs = input_identity(before.runtime_paths);
-	if (KIND == 'native-mihomo' && before.core && before.scoped && length(names) > 0 && length(names) <= length(RETAINED_PACKAGES) &&
-		!length(filter(names, name => index(RETAINED_PACKAGES, name) < 0))) {
+	if (KIND == 'native-mihomo' && before.core && before.scoped && length(names) > 0 && length(names) <= length(retained_packages()) &&
+		!length(filter(names, name => index(retained_packages(), name) < 0))) {
 		for (let name in names) {
 			const archive = filter(next, path => fs.basename(path) == `${name}-${candidates[name]}.apk`)[0];
 			if (archive == null) fail('runtime_retention_unavailable');
@@ -928,13 +949,13 @@ upgrade = function(request, work, candidates) {
 		before.retained_observers = index(names, 'opl-netfleet-plugin-mihomo') >= 0 ?
 			{ mihomo: observer(SERVICE, 'lifecycle', ['/usr/bin/ucode', MAIN, 'native-gateway-watch']) } : {};
 		if (service_running('opl-netfleet-compat')) {
-			before.retained_observers['https-compat'] = observer('opl-netfleet-compat', 'manager', ['/usr/libexec/opl-netfleet-compat/launcher', 'manager']);
+			before.retained_observers['https-compat'] = observer('opl-netfleet-compat', 'manager', [paths.COMPAT_LAUNCHER_PATH, 'manager']);
 			const engine = parsed(`ubus call service list '{"name":"opl-netfleet-compat"}'`)?.['opl-netfleet-compat']?.instances?.engine;
 			if (engine?.running != true) fail('seamless_engine_unavailable');
 			before.retained_engine = { pid: engine.pid, birth: process_birth(engine.pid) };
 			const compat = parsed(`ucode ${q(MAIN)} compatibility-get`);
 			if (compat?.ok != true) fail('seamless_engine_unavailable');
-			const state = read_json('/var/run/opl-netfleet-compat/state.json');
+			const state = read_json(paths.COMPAT_STATE_PATH);
 			if (state?.last_tick == null) fail('seamless_manager_unavailable');
 			before.retained_compat = { requested: compat.result.requested, intercepting: compat.result.intercepting, last_tick: state.last_tick };
 		}
@@ -1071,8 +1092,8 @@ function request_rollback(id) {
 	if (fs.lstat(PENDING) != null || update_process()?.running == true) fail('previous_update_incomplete');
 	const work = `${ROOT}/${id}`, state = read_json(`${work}/journal.json`);
 	if (state?.phase != 'complete' || state.before?.runtime_retained != true ||
-		length(state.names ?? []) < 1 || length(state.names) > length(RETAINED_PACKAGES) ||
-		length(filter(state.names, name => index(RETAINED_PACKAGES, name) < 0)))
+		length(state.names ?? []) < 1 || length(state.names) > length(retained_packages()) ||
+		length(filter(state.names, name => index(retained_packages(), name) < 0)))
 		fail('rollback_transaction_not_admitted');
 	for (let path, digest in state.inputs) if (index(path, `${work}/`) != 0 || sha256(path) != digest) fail('update_recovery_artifact_changed');
 	const current = installed();

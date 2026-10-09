@@ -58,7 +58,8 @@ const env = { ...cleanEnv, PATH: `${runtimeRoot}/bin:/usr/bin:/bin:/usr/sbin:/sb
   UCODE_PATH: `${runtimeRoot}/lib/ucode/*.so:${runtimeRoot}/share/ucode/*.uc` };
 const statePath = path.join(stateDir, 'state.json');
 const codeRoot = path.join(stateDir, 'ucode');
-let state, core, network, queue = Promise.resolve(), scheduled = false, closing = false, lastError = null, tickState = null, authorizeNetwork = false;
+let state, core, network, queue = Promise.resolve(), readQueue = Promise.resolve(), scheduled = false, closing = false, lastError = null, tickState = null, authorizeNetwork = false;
+let businessSnapshot = { status: null, events: null, config: null, configError: null, error: null };
 let webServer, rpcServer, origin;
 let ownerLease;
 async function acquireOwner() {
@@ -79,6 +80,11 @@ print('ready\\n'); fs.stdout.flush(); fs.stdin.read('all'); lock.close();`;
   ownerLease.on('exit', () => { if (!closing && core) serialized(shutdown).catch(() => { lastError = 'owner_lock_lost'; }); });
 }
 const serialized = work => { const pending = queue.then(work); queue = pending.catch(() => {}); return pending; };
+// Read requests have their own queue.  The UCode entry point takes a shared
+// flock for them, so an in-flight mutation still provides ordering, but a long
+// compile/update no longer prevents the desktop owner from returning its
+// current platform/runtime state.
+const sharedRead = work => { const pending = readQueue.then(work); readQueue = pending.catch(() => {}); return pending; };
 async function saveState(patch) { state = { ...state, ...patch }; await atomicJSON(statePath, state); return { ok: true }; }
 async function freePort() { const server = net.createServer(); await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); }); const port = server.address().port; await new Promise(resolve => server.close(resolve)); return port; }
 async function ucode(action, args = []) {
@@ -509,19 +515,21 @@ async function dashboardProjection(runtime) {
   return { available: reason === null, version: panel?.version ?? null, source: panel?.source ?? null, reason };
 }
 
-async function snapshot() {
+async function snapshot({ deep = true } = {}) {
   const runtime = await core.status();
   const networkState = await network.status();
   const actualMode = runtime.running ? (state.profile === 'file:OPL-NetFleet.json' ? 'netfleet' : 'mihomo') : networkState.clean !== false && !networkState.recoveryRequired ? 'direct' : 'unconfirmed';
   const subscriptions = Object.fromEntries(Object.entries(state.subscriptions).map(([id, value]) => [id, {
     name: value.name, enabled: value.enabled, imported: value.imported, hasUrl: Boolean(value.url),
     updatedAt: value.updatedAt ?? null, nodeCount: value.nodeCount ?? null }]));
-  let status = null, events = null, config = null, configError = null, error = null;
-  if (await readJSON(path.join(stateDir, 'policy.json'))) {
+  let status = businessSnapshot.status, events = businessSnapshot.events, config = businessSnapshot.config,
+    configError = businessSnapshot.configError, error = businessSnapshot.error;
+  if (deep && await readJSON(path.join(stateDir, 'policy.json'))) {
     try { status = await ucode('status'); events = await ucode('events'); }
     catch (failure) { error = failure.message; }
     try { config = await ucode('config-get'); }
     catch (failure) { configError = failure.message; }
+    businessSnapshot = { status, events, config, configError, error };
   }
   return { runtime: { ...runtime, platform: 'macos', mode: actualMode, requestedMode: state.mode, networkMode: state.network.mode,
     ports: state.ports, configured: state.configured, lastError }, policy: await readJSON(path.join(stateDir, 'policy.json')),
@@ -712,6 +720,7 @@ async function main() {
   await privateDir(codeRoot);
   await fs.cp(sourceRoot, codeRoot, { recursive: true, force: true });
   await fs.cp(path.join(desktopRoot, 'ucode'), codeRoot, { recursive: true, force: true });
+  await snapshot();
   webServer = http.createServer(async (request, response) => {
     try {
       const url = new URL(request.url, origin);
@@ -720,12 +729,16 @@ async function main() {
       if (url.pathname.startsWith('/api/')) {
         assert(request.headers.authorization === `Bearer ${token}`, 'unauthorized');
         assert(!request.headers.origin || request.headers.origin === origin, 'invalid_origin');
-        if (request.method === 'GET' && url.pathname === '/api/state') return respond(response, 200, { ok: true, result: await serialized(snapshot) });
+        if (request.method === 'GET' && url.pathname === '/api/state') return respond(response, 200, { ok: true, result: await sharedRead(() => snapshot({ deep: false })) });
         assert(request.method === 'POST' && url.pathname === '/api/action' && request.headers['content-type']?.startsWith('application/json'), 'invalid_request');
         const input = await requestBody(request);
         return respond(response, 200, { ok: true, result: await serialized(async () => {
           authorizeNetwork = input.authorize === true;
-          try { return await action(input); } finally { authorizeNetwork = false; }
+          try {
+            const result = await action(input);
+            await snapshot();
+            return result;
+          } finally { authorizeNetwork = false; }
         }) });
       }
       assert(request.method === 'GET', 'method_not_allowed');

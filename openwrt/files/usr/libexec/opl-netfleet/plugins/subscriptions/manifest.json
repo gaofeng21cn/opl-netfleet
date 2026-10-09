@@ -67,5 +67,15 @@
   "package_dependencies": [
     "curl",
     "ca-bundle"
-  ]
+  ],
+  "presentation": {
+    "label": "节点来源",
+    "description": "管理机场订阅与节点缓存"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": false,
+    "owner": "subscriptions"
+  }
 }

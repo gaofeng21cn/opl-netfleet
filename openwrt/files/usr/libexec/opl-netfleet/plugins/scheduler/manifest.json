@@ -25,5 +25,15 @@
     }
   },
   "commands": {},
-  "package_dependencies": []
+  "package_dependencies": [],
+  "presentation": {
+    "label": "自动运行",
+    "description": "按计划执行订阅更新与自动选优"
+  },
+  "product": {
+    "required": true,
+    "unloadable": true,
+    "retained": false,
+    "owner": "scheduler"
+  }
 }

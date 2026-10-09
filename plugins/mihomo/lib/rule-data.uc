@@ -6,13 +6,13 @@ const files = context.use("platform.files");
 const storage = context.use("platform.storage");
 const process = context.use("platform.process");
 const q = process.shell_quote;
-const ROOT = "/etc/opl-netfleet/native/run/rule-data";
-const RUN = "/etc/opl-netfleet/native/run";
+const ROOT = context.use("platform.paths").RULE_DATA_ROOT;
+const RUN = context.use("platform.paths").BACKEND_RUN_DIR;
 const CONFIG = RUN + "/config.yaml";
 const ACTIVE = ROOT + "/active.json";
 const HISTORY = ROOT + "/history.json";
 const PENDING = ROOT + "/pending.json";
-const LOCK = "/etc/opl-netfleet/rulesets.lock.json";
+const LOCK = context.use("platform.paths").RULE_LOCK_PATH;
 const UPSTREAM = "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/";
 function read(path) { return files.private_file(path) ? storage.read_json(path) : null; }
 function shell(command) { return system(command + " >/dev/null 2>&1") == 0; }
@@ -27,7 +27,7 @@ function directory(path) {
 function owned(path) { return type(path) == "string" && match(path, /^\/etc\/opl-netfleet\/native\/run\/rule-data\/generation\.[A-Za-z0-9]+$/) != null; }
 function discard(path) { if (owned(path)) shell("rm -rf " + q(path)); }
 function supported(policy) {
- return storage.read_json("/etc/opl-netfleet/backend.json")?.kind == "native-mihomo" &&
+ return storage.read_json(context.use("platform.paths").BACKEND_PATH)?.kind == "native-mihomo" &&
   policy?.policy_source?.kind == "bundle" && policy.policy_source.ref == "bundle:base-v1";
 }
 function status(policy) {

@@ -35,6 +35,7 @@ const protected_probes = context.use("mihomo.controller").protected_probes;
 const restore_runtime_selections = context.use("mihomo.paths").restore_runtime_selections;
 const capture_runtime_selections = context.use("mihomo.paths").capture_runtime_selections;
 const runtime_readback = context.use("mihomo.readback").runtime_readback;
+const runtime = context.use("mihomo.runtime");
 const is_active = context.use("models.activation").is_active;
 const guard_probe_url = context.use("models.policy").guard_probe_url;
 const automation_config = context.use("models.policy").automation;
@@ -155,10 +156,11 @@ reload_refresh_profile = function(snapshot, policy, rolling_back) {
 	if (!rolling_back) operation_update("reloading", { subject: null });
 	if (!restore_profile(snapshot.profile, null)) return { ok: false, error: "runtime_restart_failed" };
 	if (!rolling_back) operation_update("verifying");
-	const readback = runtime_readback(snapshot.profile, null);
+	const verified = runtime.verify(snapshot.profile, null, policy);
+	const readback = verified.readback;
 	const lan = lan_runtime_state(guard_probe_url(policy));
-	const probes = policy == null ? null : protected_probes(policy);
-	return { ok: readback.runtime_identity_ok && lan.transparent_proxy_ready && lan.dns_ready &&
+	const probes = verified.protected_probes;
+	return { ok: verified.ok && lan.transparent_proxy_ready && lan.dns_ready &&
 		(snapshot.protected_baseline != true || probes?.ok == true),
 		error: "owner_readback_failed", readback: readback, lan_runtime: lan, protected_probes: probes };
 };

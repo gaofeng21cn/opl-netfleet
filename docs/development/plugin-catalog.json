@@ -155,7 +155,8 @@
         "mihomo.policy-source",
         "mihomo.probes",
         "mihomo.profile-storage",
-        "mihomo.readback"
+        "mihomo.readback",
+        "mihomo.runtime"
       ],
       "version": "0.9.11"
     },

@@ -16,18 +16,20 @@ const read_json = context.use("platform.storage").read_json;
 const sha256 = context.use("platform.storage").sha256;
 const sha256_text = context.use("platform.storage").sha256_text;
 const shell_quote = context.use("platform.process").shell_quote;
+const capture_json = context.use("platform.process").capture_json;
 const POLICY_PATH = context.use("platform.paths").POLICY_PATH;
 const EVIDENCE_PATH = context.use("platform.paths").EVIDENCE_PATH;
 const validate_request = context.use("setup.native-model").validate_request;
 const upstream_candidates = context.use("setup.native-model").upstream_candidates;
 
-const BASE = "/etc/opl-netfleet/native";
-const STATE = "/var/run/opl-netfleet-core";
-const CONFIG = "/etc/config/netfleet";
-const MARKER = "/etc/opl-netfleet/backend.json";
+const paths = context.use("platform.paths");
+const BASE = paths.NATIVE_ROOT;
+const STATE = paths.NATIVE_STATE_DIR;
+const CONFIG = paths.CONFIG_PATH;
+const MARKER = paths.BACKEND_PATH;
 const TEMPLATE = "/usr/share/opl-netfleet/netfleet.config";
-const GATEWAY = "/usr/libexec/opl-netfleet/main.uc";
-const MAIN = "/usr/libexec/opl-netfleet/main.uc";
+const GATEWAY = paths.MAIN_PATH;
+const MAIN = paths.MAIN_PATH;
 
 shell = function(command) { return system(`(${command}) >/dev/null 2>&1`) == 0; };
 capture = function(command) {
@@ -37,7 +39,7 @@ capture = function(command) {
 	return process.close() == 0 ? value : null;
 };
 command_json = function(command) {
-	try { return json(capture(command)); } catch (error) { return null; }
+	return capture_json(command, 15);
 };
 gateway = function() { return command_json(`ucode ${shell_quote(GATEWAY)} native-gateway-status`); };
 failure = function(error, detail) { return { ok: false, error: error, result: detail ?? null }; };

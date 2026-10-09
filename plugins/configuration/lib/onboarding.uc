@@ -42,7 +42,7 @@ const EVIDENCE_PATH = context.use("platform.paths").EVIDENCE_PATH;
 const load_provider_profiles = context.use("subscriptions.providers").load;
 
 const WORK_DIR = "/tmp/opl-netfleet-onboarding";
-const MAIN_PATH = "/usr/libexec/opl-netfleet/main.uc";
+const MAIN_PATH = context.use("platform.paths").MAIN_PATH;
 
 profile_display_name = function(reference) {
 	const prefix = "subscription:";

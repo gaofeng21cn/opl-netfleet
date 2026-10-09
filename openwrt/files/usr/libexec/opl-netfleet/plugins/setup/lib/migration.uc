@@ -20,6 +20,7 @@ const read_yaml = context.use("platform.storage").read_yaml;
 const sha256 = context.use("platform.storage").sha256;
 const sha256_text = context.use("platform.storage").sha256_text;
 const shell_quote = context.use("platform.process").shell_quote;
+const capture_json = context.use("platform.process").capture_json;
 const POLICY_PATH = context.use("platform.paths").POLICY_PATH;
 const EVIDENCE_PATH = context.use("platform.paths").EVIDENCE_PATH;
 const migrate_object = context.use("setup.migration-model").migrate_object;
@@ -29,11 +30,12 @@ const relative_path = context.use("setup.migration-model").relative_path;
 const public_plan = context.use("setup.migration-model").public_plan;
 
 const OLD = "/etc/nikki";
-const BASE = "/etc/opl-netfleet/native";
-const MARKER = "/etc/opl-netfleet/backend.json";
-const MAIN = "/usr/libexec/opl-netfleet/main.uc";
-const GATEWAY = "/usr/libexec/opl-netfleet/main.uc";
-const CONFIG = "/etc/config/netfleet";
+const paths = context.use("platform.paths");
+const BASE = paths.NATIVE_ROOT;
+const MARKER = paths.BACKEND_PATH;
+const MAIN = paths.MAIN_PATH;
+const GATEWAY = paths.MAIN_PATH;
+const CONFIG = paths.CONFIG_PATH;
 
 shell = function(command) { return system(`(${command}) >/dev/null 2>&1`) == 0; };
 capture = function(command) {
@@ -43,7 +45,7 @@ capture = function(command) {
 	return p.close() == 0 ? value : null;
 };
 parsed_command = function(command) {
-	try { return json(capture(command)); } catch (error) { return null; }
+	return capture_json(command, 15);
 };
 gateway = function() { return parsed_command(`ucode ${shell_quote(GATEWAY)} native-gateway-status`); };
 directory = function(path) {
