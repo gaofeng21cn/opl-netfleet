@@ -224,12 +224,34 @@ def build(candidate, output, baseline=None):
             if not {"opl-netfleet", "luci-app-netfleet"}.issubset(item["package"] for item in legacy["artifacts"]):
                 raise SystemExit("Legacy fixture requires the monolith and LuCI APKs")
             legacy["key_sha256"] = hashlib.sha256((legacy_dir / "baseline.pem").read_bytes()).hexdigest()
+    native_baseline = os.environ.get("NETFLEET_VM_NATIVE_BASELINE")
+    native_cohort = []
+    if native_baseline:
+        baseline_dir = Path(native_baseline).resolve()
+        cohort_dir = output / "native-cohort"
+        cohort_dir.mkdir()
+        for name in ("opl-netfleet", "opl-netfleet-plugin-mihomo", "opl-netfleet-plugin-network"):
+            archives = list(baseline_dir.glob(f"{name}-[0-9]*.apk"))
+            if len(archives) != 1:
+                raise SystemExit(f"Native baseline requires one exact archive for {name}")
+            archive = archives[0]
+            target = cohort_dir / archive.name
+            shutil.copyfile(archive, target)
+            # Use the normal host wrapper; no signature bypass is permitted.
+            wrapper = Path(__file__).resolve().parents[1] / "openwrt-apk.py"
+            subprocess.run([str(wrapper), "verify", "--no-network", "--keys-dir", str(candidate), str(target)], check=True, capture_output=True)
+            info = json.loads(subprocess.check_output([str(wrapper), "adbdump", "--format", "json", str(target)], text=True))["info"]
+            if info["name"] != name:
+                raise SystemExit("Native baseline package identity mismatch")
+            native_cohort.append({"name": name, "old": {"artifact": target.name, "version": info["version"], "sha256": hashlib.sha256(target.read_bytes()).hexdigest()},
+                                  "new": {"artifact": artifacts[name], "version": current_versions[name], "sha256": hashlib.sha256((candidate / artifacts[name]).read_bytes()).hexdigest()}})
     (output / "fixture.json").write_text(json.dumps({
         "schema_version": 1, "version": version, "old_version": old_version, "bad_version": bad_version,
         "source_commit": manifest["source_commit"], "source_tree": manifest["source_tree"],
         "product_packages": product_packages,
         "package_versions": package_versions,
         "legacy": legacy,
+        "native_cohort": native_cohort,
         **core_versions,
     }, sort_keys=True) + "\n")
 

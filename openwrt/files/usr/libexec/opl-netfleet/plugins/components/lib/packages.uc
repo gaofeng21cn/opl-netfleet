@@ -34,11 +34,13 @@ export function validate(changed, request, installed, product, owned, native_bac
 				// The native HTTPS dependency closure can retain its data plane;
 				// the transaction separately verifies both payload contracts before writes.
 				const retained_dependency = native_backend === true && request.action == 'update' &&
-					request.name == 'opl-netfleet-https-compat' && owned[request.name] == 'https-compat' &&
-					row.name == 'opl-netfleet-plugin-mihomo' && installed[row.name] != null && row.action == 'Upgrading';
+					installed[row.name] != null && row.action == 'Upgrading' &&
+					(request.name == 'opl-netfleet-https-compat' && owned[request.name] == 'https-compat' &&
+					 index(['opl-netfleet-plugin-mihomo', 'opl-netfleet'], row.name) >= 0 ||
+					 request.name == 'opl-netfleet-plugin-mihomo' && row.name == 'opl-netfleet');
 				if (index(['Installing', 'Upgrading'], row.action) < 0 ||
 					index(['opl-netfleet', 'opl-netfleet-kernel', 'mihomo-meta', 'opl-netfleet-plugin-mihomo'], row.name) >= 0 && !retained_dependency ||
-					(installed[row.name] != null && !owned[row.name] && !match(row.name, /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/)))
+					(installed[row.name] != null && !owned[row.name] && !match(row.name, /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) && !retained_dependency))
 					die('plugin_dependency_change_required');
 			}
 			candidates[row.name] = row.version;

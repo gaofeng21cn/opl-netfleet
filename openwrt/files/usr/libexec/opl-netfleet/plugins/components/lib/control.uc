@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as package_model from "./packages.uc";
+import * as retained_contract from "./retained.uc";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
@@ -37,6 +38,7 @@ const MAIN = "/usr/libexec/opl-netfleet/main.uc";
 const UPGRADE_STATE = "/tmp/opl-netfleet-package-upgrade-state";
 const PACKAGES = ["opl-netfleet", "luci-app-netfleet", "mihomo-meta"];
 const COMPATIBILITY_PACKAGE = "opl-netfleet-https-compat";
+const RETAINED_PACKAGES = ['opl-netfleet-plugin-mihomo', COMPATIBILITY_PACKAGE, 'opl-netfleet', 'opl-netfleet-plugin-network'];
 const DEPENDENCIES = ["ucode", "ucode-mod-fs", "ucode-mod-uci", "ucode-mod-ubus", "ucode-mod-uloop", "yq", "curl", "ca-bundle", "flock", "unzip", "ip-full", "nftables-json", "kmod-nft-socket", "kmod-nft-tproxy"];
 
 function network_enter() {
@@ -737,8 +739,9 @@ native_identity = function() {
 };
 function retained_payload(work, archive, versions, name) {
 	const engine = name == COMPATIBILITY_PACKAGE;
-	const prefix = engine ? '/usr/libexec/opl-netfleet-compat/' : '/usr/libexec/opl-netfleet/plugins/mihomo/';
-	const descriptor = engine ? 'extension.json' : 'manifest.json';
+	const product = name == 'opl-netfleet';
+	const prefix = engine ? '/usr/libexec/opl-netfleet-compat/' : product ? '/usr/share/opl-netfleet/' : '/usr/libexec/opl-netfleet/plugins/' + substr(name, length('opl-netfleet-plugin-')) + '/';
+	const descriptor = engine ? 'extension.json' : product ? 'system.json' : 'manifest.json';
 	const extracted = `${work}/retained-payload-${name}`;
 	if (!directory(extracted) || !run_command(`apk extract --destination ${q(extracted)} ${q(archive)}`, work))
 		fail('runtime_retention_unavailable');
@@ -752,7 +755,8 @@ function retained_payload(work, archive, versions, name) {
 		for (let key in sort(keys(value))) ordered[key] = canonical(value[key]);
 		return ordered;
 	}
-	if (sprintf('%J', canonical(before)) != sprintf('%J', canonical(after))) fail('runtime_contract_changed');
+	if (engine ? sprintf('%J', canonical(before)) != sprintf('%J', canonical(after)) :
+		product ? !retained_contract.composition(before, after) : !retained_contract.manifest(before, after)) fail('runtime_contract_changed');
 	function mutable(path) {
 		return index(path, prefix) == 0 && (!engine || path != prefix + 'launcher') ||
 			engine && index(['/usr/lib/ucode/netfleet_probe.so', '/usr/lib/ucode/netfleet_interception.so'], path) >= 0;
@@ -777,6 +781,19 @@ function retained_payload(work, archive, versions, name) {
 		}
 	}
 	inspect('');
+}
+function retained_graph(work, next) {
+	const preview = `${work}/retained-graph`, root = `${preview}/usr/libexec/opl-netfleet`;
+	if (!directory(preview) || !run_command(`mkdir -p ${q(preview + '/usr/libexec')} && cp -a /usr/libexec/opl-netfleet ${q(root)}`, work)) fail('runtime_retention_unavailable');
+	for (let archive in next) if (!run_command(`apk extract --destination ${q(preview)} ${q(archive)}`, work)) fail('runtime_retention_unavailable');
+	const defaults = read_json(`${preview}/usr/share/opl-netfleet/system.json`) ?? read_json('/usr/share/opl-netfleet/system.json');
+	if (!atomic_json(`${root}/system.json`, { ...context.system, bindings: { ...defaults.bindings, ...context.system.bindings } })) fail('runtime_retention_unavailable');
+	const script = `import { create } from ${sprintf('%J', root + '/kernel/host.uc')};
+import { create as adapter } from ${sprintf('%J', root + '/adapters/openwrt.uc')};
+const host = create(${sprintf('%J', root)}, { adapter: adapter(${sprintf('%J', root)}), code_locks: false });
+for (let row in host.inventory()) if (row.enabled === true && row.state != 'available') die(row.reason);
+`;
+	if (!fs.writefile(`${preview}/validate.uc`, script) || !run_command(`ucode ${q(preview + '/validate.uc')}`, work)) fail('runtime_contract_changed');
 }
 rollback = function(before, work, names, versions, old, install_started, already_stopped) {
 	const errors = [];
@@ -897,14 +914,15 @@ upgrade = function(request, work, candidates) {
 		...(request.component == "mihomo" ? ["/usr/libexec/mihomo"] : [])], path => fs.lstat(path) != null);
 	if (before.scoped && request.plugin) before.runtime_paths = package_paths(names, versions);
 	before.runtime_inputs = input_identity(before.runtime_paths);
-	if (KIND == 'native-mihomo' && before.core && before.scoped && length(names) > 0 && length(names) <= 2 &&
-		!length(filter(names, name => index(['opl-netfleet-plugin-mihomo',COMPATIBILITY_PACKAGE], name) < 0)) &&
+	if (KIND == 'native-mihomo' && before.core && before.scoped && length(names) > 0 && length(names) <= length(RETAINED_PACKAGES) &&
+		!length(filter(names, name => index(RETAINED_PACKAGES, name) < 0)) &&
 		(index(names, COMPATIBILITY_PACKAGE) < 0 || service_running('opl-netfleet-compat'))) {
 		for (let name in names) {
 			const archive = filter(next, path => fs.basename(path) == `${name}-${candidates[name]}.apk`)[0];
 			if (archive == null) fail('runtime_retention_unavailable');
 			retained_payload(work, archive, versions, name);
 		}
+		retained_graph(work, next);
 		before.runtime_retained = true;
 		before.retained_core = native_identity();
 		before.retained_observers = index(names, 'opl-netfleet-plugin-mihomo') >= 0 ?
@@ -1053,8 +1071,8 @@ function request_rollback(id) {
 	if (fs.lstat(PENDING) != null || update_process()?.running == true) fail('previous_update_incomplete');
 	const work = `${ROOT}/${id}`, state = read_json(`${work}/journal.json`);
 	if (state?.phase != 'complete' || state.before?.runtime_retained != true ||
-		length(state.names ?? []) < 1 || length(state.names) > 2 ||
-		length(filter(state.names, name => index(['opl-netfleet-plugin-mihomo',COMPATIBILITY_PACKAGE], name) < 0)))
+		length(state.names ?? []) < 1 || length(state.names) > length(RETAINED_PACKAGES) ||
+		length(filter(state.names, name => index(RETAINED_PACKAGES, name) < 0)))
 		fail('rollback_transaction_not_admitted');
 	for (let path, digest in state.inputs) if (index(path, `${work}/`) != 0 || sha256(path) != digest) fail('update_recovery_artifact_changed');
 	const current = installed();

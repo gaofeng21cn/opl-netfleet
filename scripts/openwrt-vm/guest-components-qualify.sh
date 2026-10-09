@@ -293,11 +293,14 @@ rpc_ready
 # product upgrade above covers that transition; establish its current provider
 # here before asking the finite solver for the remaining UI dependency set.
 stage=shared_plugin_runtime_baseline
-runtime_plugin=opl-netfleet-plugin-mihomo
-runtime_version=$(package_version "$runtime_plugin" current)
-uclient-fetch -q -O "$work/$runtime_plugin-$runtime_version.apk" \
- "$feed_url/$runtime_plugin-$runtime_version.apk"
-install_fixture "$work/$runtime_plugin-$runtime_version.apk" >>"$work/independent.log" 2>&1
+runtime_archives=
+for runtime_plugin in opl-netfleet opl-netfleet-plugin-mihomo opl-netfleet-plugin-network; do
+ runtime_version=$(package_version "$runtime_plugin" current)
+ uclient-fetch -q -O "$work/$runtime_plugin-$runtime_version.apk" \
+  "$feed_url/$runtime_plugin-$runtime_version.apk"
+ runtime_archives="$runtime_archives $work/$runtime_plugin-$runtime_version.apk"
+done
+install_fixture $runtime_archives >>"$work/independent.log" 2>&1
 restore_fixture_world
 unchanged
 rpc_ready
@@ -540,9 +543,20 @@ apk list --manifest | grep -Fqx "mihomo-meta $core_current"
 [ "$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.core.pid')" = "$core_pid_before" ]
 unchanged
 stage=complete
+if [ "$(jsonfilter -i "$work/fixture.json" -e '@.native_cohort[0].name')" ]; then
+ . /tmp/scripts/openwrt-vm/guest-native-cohort.sh
+fi
 # Remove only roots introduced by the finite-update fixtures. The installed
 # product still requires these plugins; later product removal must not inherit
 # this test's independent installation intent.
 apk --no-network --repositories-file /dev/null del opl-netfleet-plugin-dashboard $shared_packages \
 	>"$work/independent-root-remove.log" 2>&1
 printf '%s\n' '{"ok":true,"checks":{"component_operator_window":true,"component_finite_observation":true,"component_finite_shared_models":true,"component_finite_plugin_update":true,"component_finite_rejects_extra_archive":true,"component_finite_rejects_stale_version":true,"component_finite_keeps_core_pid":true,"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"installer_complete_product_upgrade":true,"component_preserves_newer_independent_plugin":true,"component_world_preserved":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_durable_terminal_reconcile":true,"component_interrupted_install_recovery":true,"component_failed_package_hook_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_insufficient_space_rejected":true,"component_mihomo_upgrade":true,"component_signed_index_archive":true,"component_tampered_archive_rejected":true,"component_incompatible_core_rejected":true}}' >"$work/qualification.json"
+if [ -f "$work/native-cohort/qualification.json" ]; then
+ ucode - "$work/qualification.json" "$work/native-cohort/qualification.json" <<'UC'
+import * as fs from 'fs';
+const result=json(fs.readfile(ARGV[0])),extra=json(fs.readfile(ARGV[1]));
+assert(extra.ok===true);for(let key,passed in extra.checks){assert(passed===true);result.checks[key]=true;}
+fs.writefile(ARGV[0],sprintf('%J',result));
+UC
+fi

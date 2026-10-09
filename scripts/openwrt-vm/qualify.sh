@@ -178,6 +178,7 @@ tar -cf "$work/runtime-source.tar" -C "$workspace" \
 	openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json \
 	openwrt/files/etc/opl-netfleet/rulesets.lock.json examples/plugins plugins/device-identity tests scripts/update-openwrt-plugins-remote.sh scripts/observe-openwrt.uc \
 	scripts/https-compat/canary-rollback.sh \
+	scripts/openwrt-vm/guest-native-cohort.sh \
 	-C "$work" runtime-rulesets
 openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
 	-keyout "$work/local-probe-ca.key" -out "$work/local-probe.crt" \

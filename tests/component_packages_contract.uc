@@ -38,6 +38,11 @@ const compatRequest={action:'update',name:compat,version:'0.6.10',before_version
 const compatOwner={[compat]:'https-compat'},compatInstalled={[compat]:'0.6.9',[backend]:'0.9.9'};
 const closure=changes('(1/2) Upgrading '+backend+' (0.9.9 -> 0.9.10)\n(2/2) Upgrading '+compat+' (0.6.9 -> 0.6.10)');
 check(validate(closure,compatRequest,compatInstalled,[backend],compatOwner,true).candidates[backend]=='0.9.10','native HTTPS admits its installed backend dependency in one transaction');
+const nativeRequest={action:'update',name:backend,version:'0.9.11',before_version:'0.9.10',confirm:true};
+const nativeInstalled={[backend]:'0.9.10','opl-netfleet':'0.9.7','opl-netfleet-plugin-network':'0.8.4'};
+const nativeClosure=changes('(1/3) Upgrading opl-netfleet (0.9.7 -> 0.9.10)\n(2/3) Upgrading opl-netfleet-plugin-network (0.8.4 -> 0.8.5)\n(3/3) Upgrading '+backend+' (0.9.10 -> 0.9.11)');
+check(length(validate(nativeClosure,nativeRequest,nativeInstalled,[],{},true).names)==3,'native gateway update admits its required composition metadata and editor');
+rejects(()=>validate(nativeClosure,nativeRequest,nativeInstalled,[],{},false),'plugin_dependency_change_required');
 rejects(()=>validate(closure,compatRequest,compatInstalled,[backend],compatOwner,false),'plugin_dependency_change_required');
 rejects(()=>validate(closure,{...compatRequest,name:engine,version:'2.0.0',before_version:'1.0.0'},{...compatInstalled,[engine]:'1.0.0'},[backend],owner,true),'plugin_dependency_change_required');
 rejects(()=>validate(changes('(1/2) Installing '+backend+' (0.9.10)\n(2/2) Upgrading '+compat+' (0.6.9 -> 0.6.10)'),compatRequest,{[compat]:'0.6.9'},[],compatOwner,true),'plugin_dependency_change_required');

@@ -22,9 +22,9 @@ validate() {
  ucode - "$stage" <<'UC'
 import * as fs from 'fs';import {sha256} from 'digest';
 const dir=ARGV[0],value=json(fs.readfile(dir+'/rollback.json'));
-if(value.package!='opl-netfleet-https-compat')die('canary_package_not_allowed');
+if(index(['opl-netfleet-https-compat','opl-netfleet-plugin-mihomo'],value.package)<0)die('canary_package_not_allowed');
 if(value.world_entry!=null && (type(value.world_entry)!='string'||length(value.world_entry)>1024||
-   match(value.world_entry,/[\r\n]/)||!match(value.world_entry,/^opl-netfleet-https-compat([=<>~!]|$)/)))die('canary_world_entry_invalid');
+   match(value.world_entry,/[\r\n]/)||!match(value.world_entry,/^(opl-netfleet-https-compat|opl-netfleet-plugin-mihomo)([=<>~!]|$)/)))die('canary_world_entry_invalid');
 if(value.engine_identity!=null) {
  const e=value.engine_identity;
  if(type(e.pid)!='int'||e.pid<=1)die('canary_engine_identity_invalid');
@@ -33,8 +33,10 @@ if(value.engine_identity!=null) {
     sha256(fs.readfile('/proc/'+e.pid+'/exe')??'')!=e.sha256)die('canary_engine_identity_changed');
 }
 const companions=value.companions ?? [];
-if(type(companions)!='array'||length(companions)>1||length(filter(companions,row=>row.package!='opl-netfleet-plugin-mihomo')))die('canary_companion_not_allowed');
-const packages=fs.popen("apk --no-network query --from installed --format json --fields name,version 'opl-netfleet-https-compat' 'opl-netfleet-plugin-mihomo'");
+if(type(companions)!='array'||length(companions)>3||length(filter(companions,row=>index(['opl-netfleet-plugin-mihomo','opl-netfleet','opl-netfleet-plugin-network'],row.package)<0)))die('canary_companion_not_allowed');
+const names=[value.package,...map(companions,row=>row.package)];
+if(length(uniq(sort(names)))!=length(names))die('canary_companion_not_allowed');
+const packages=fs.popen("apk --no-network query --from installed --format json --fields name,version 'opl-netfleet-https-compat' 'opl-netfleet-plugin-mihomo' 'opl-netfleet' 'opl-netfleet-plugin-network'");
 const installed=json(packages.read('all'));if(packages.close()!=0)die('canary_installed_read_failed');
 const version=name=>filter(installed,row=>row.name==name)[0]?.version;
 for(let row in companions) if(version(row.package)!=(version(value.package)==value.new.version?row.new.version:row.old.version))die('canary_companion_identity_changed');
@@ -49,7 +51,8 @@ UC
  test "$(pidof mihomo)" = "$(jsonfilter -i rollback.json -e '@.core_pid')"
  old_version=$(jsonfilter -i rollback.json -e '@.old.version')
  new_version=$(jsonfilter -i rollback.json -e '@.new.version')
- installed=$(apk --no-network query --from installed --format json --fields name,version opl-netfleet-https-compat | jsonfilter -e '@[0].version')
+ primary=$(jsonfilter -i rollback.json -e '@.package')
+ installed=$(apk --no-network query --from installed --format json --fields name,version "$primary" | jsonfilter -e '@[0].version')
  if [ "$installed" = "$new_version" ]; then
   sha256sum -c new-runtime.sha256
  else
@@ -134,9 +137,19 @@ test ! -e /etc/opl-netfleet/package-transactions/pending.json
 validate
 sha256sum -c private.sha256
 test "$(pidof mihomo)" = "$(jsonfilter -i rollback.json -e '@.core_pid')"
-installed=$(apk --no-network query --from installed --format json --fields name,version opl-netfleet-https-compat | jsonfilter -e '@[0].version')
+installed=$(apk --no-network query --from installed --format json --fields name,version "$primary" | jsonfilter -e '@[0].version')
 test "$installed" = "$old_version"
 flock -u 9
+if [ "$(jsonfilter -i rollback.json -e '@.plugin_disabled')" = true ]; then
+ ucode "$main" plugins-list >restored-plugins.json
+ ucode - restored-plugins.json <<'UC'
+import * as fs from 'fs';
+const rows=json(fs.readfile(ARGV[0])).result.plugins;
+if(filter(rows,row=>row.id=='https-compat' && row.enabled===false && row.reason=='plugin_disabled')[0]==null)die('canary_disabled_state_changed');
+UC
+ state restored
+ exit 0
+fi
 intercepting=$(jsonfilter -i rollback.json -e '@.intercepting')
 for attempt in $(seq 1 60); do
  ucode "$main" compatibility-get >restored.json
