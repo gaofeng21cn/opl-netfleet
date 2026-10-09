@@ -25,7 +25,7 @@ export function manifest(before, after) {
 			if (next.requires?.[dependency] != version) return false;
 	}
 	return true;
-}
+};
 export function composition(before, after) {
 	if (type(before) != 'object' || type(after) != 'object') return false;
 	const a = { ...before }, b = { ...after };
@@ -33,4 +33,4 @@ export function composition(before, after) {
 	if (!equal(a, b)) return false;
 	for (let name, id in before.bindings ?? {}) if (after.bindings?.[name] != id) return false;
 	return true;
-}
+};
