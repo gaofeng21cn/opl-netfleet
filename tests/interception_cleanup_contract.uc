@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-const path=replace(sourcepath(), /[^/]+$/, '../plugins/mihomo/lib/interception.uc');
+const path=replace(sourcepath(), /[^/]+$/, '../openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/lib/interception.uc');
 const source=fs.readfile(path),start=index(source,'    function dispatch(owner,input) {'),end=index(source,'    function request(owner,input)',start);
 if(start<0||end<0)die('interception_dispatch_unavailable');
 loadstring(`
