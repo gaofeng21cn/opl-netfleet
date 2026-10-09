@@ -10,7 +10,7 @@
       "version": 1,
       "module": "lib/model.uc",
       "requires": {
-        "mihomo.profile": 1
+        "mihomo.profile-storage": 1
       }
     },
     "network.editor": {
@@ -28,7 +28,7 @@
         "platform.credentials": 1,
         "platform.profile": 1,
         "platform.paths": 1,
-        "mihomo.profile": 1
+        "mihomo.profile-storage": 1
       }
     }
   },

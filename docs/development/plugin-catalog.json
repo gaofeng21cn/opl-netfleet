@@ -154,7 +154,6 @@
         "mihomo.paths",
         "mihomo.policy-source",
         "mihomo.probes",
-        "mihomo.profile",
         "mihomo.profile-storage",
         "mihomo.readback"
       ],

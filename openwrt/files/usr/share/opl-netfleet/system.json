@@ -30,8 +30,6 @@
     "mihomo.paths": "mihomo",
     "mihomo.policy-source": "mihomo",
     "mihomo.probes": "mihomo",
-    "mihomo.profile": "mihomo",
-    "mihomo.profile-storage": "mihomo",
     "mihomo.readback": "mihomo",
     "models.activation": "models",
     "models.evidence": "models",
@@ -73,7 +71,8 @@
     "status.events": "status",
     "subscriptions.facts": "subscriptions",
     "subscriptions.providers": "subscriptions",
-    "subscriptions.store": "subscriptions"
+    "subscriptions.store": "subscriptions",
+    "mihomo.profile-storage": "mihomo"
   },
   "enabled": {
     "activation": true,

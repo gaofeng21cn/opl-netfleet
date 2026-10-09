@@ -51,7 +51,7 @@
         "platform.storage": 1,
         "platform.process": 1,
         "mihomo.controller": 1,
-        "mihomo.profile": 1
+        "mihomo.profile-storage": 1
       }
     },
     "mihomo.interception": {
@@ -135,11 +135,6 @@
         "platform.process": 1,
         "platform.storage": 1
       }
-    },
-    "mihomo.profile": {
-      "version": 1,
-      "module": "lib/profile.uc",
-      "requires": {}
     }
   },
   "commands": {

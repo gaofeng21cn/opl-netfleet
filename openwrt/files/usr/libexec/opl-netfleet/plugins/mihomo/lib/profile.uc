@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 // One projection for the native gateway and network configuration candidates.
-return function(context) {
+export function create() {
 	function sniff(value) {
 		if (type(value) != 'object') return value;
 		const result = json(sprintf('%J', value));

@@ -33,19 +33,22 @@ sha256sum /usr/libexec/mihomo /etc/opl-netfleet/native/run/config.yaml >"$cohort
 # Keep the exact original intent and archives available to the component owner.
 guard="$cohort/guard"
 mkdir -m 700 "$guard" "$guard/old" "$guard/new"
-cp "$cohort"/old/*.apk "$guard/old/"
-cp "$cohort"/new/*.apk "$guard/new/"
+while IFS="$(printf '\t')" read -r name old new; do
+ [ "$name" != opl-netfleet ] || continue
+ cp "$cohort/old/$old" "$guard/old/"
+ cp "$cohort/new/$new" "$guard/new/"
+done <"$cohort/packages.tsv"
 cp /tmp/scripts/https-compat/canary-rollback.sh "$guard/guard.sh"
 cp "$cohort/runtime.before" "$guard/private.sha256"
 sha256sum /etc/config/netfleet /etc/opl-netfleet/policy.json /etc/opl-netfleet/backend.json >>"$guard/private.sha256"
-for archive in "$cohort"/new/*.apk; do apk extract --destination "$cohort/extracted" "$archive" >>"$cohort/archives.log" 2>&1; done
+for archive in "$guard"/new/*.apk; do apk extract --destination "$cohort/extracted" "$archive" >>"$cohort/archives.log" 2>&1; done
 (cd "$cohort/extracted" && find usr -type f -exec sha256sum '{}' +) | sed 's@  usr/@  /usr/@' >"$guard/new-runtime.sha256"
 ucode - "$work/fixture.json" "$guard" "$core_pid_before" <<'UC'
 import * as fs from 'fs';
 const rows=json(fs.readfile(ARGV[0])).native_cohort;
 const primary=filter(rows,row=>row.name=='opl-netfleet-plugin-mihomo')[0];
 fs.writefile(ARGV[1]+'/rollback.json',sprintf('%J',{package:primary.name,old:primary.old,new:primary.new,
- companions:map(filter(rows,row=>row.name!=primary.name),row=>({package:row.name,old:row.old,new:row.new})),
+ companions:map(filter(rows,row=>row.name!=primary.name&&row.name!='opl-netfleet'),row=>({package:row.name,old:row.old,new:row.new})),
  core_pid:ARGV[2],plugin_disabled:true,timeout_seconds:60}));
 UC
 sh "$guard/guard.sh" "$guard" validate
@@ -63,7 +66,7 @@ UC
  ucode - "$cohort" <<'UC'
 import * as fs from 'fs';
 const dir=ARGV[0],r=json(fs.readfile(dir+'/request.json')),plan=json(fs.readfile(dir+'/plan.json')).result;
-assert(sprintf('%J',sort([...plan.names]))==sprintf('%J',sort(['opl-netfleet','opl-netfleet-plugin-mihomo','opl-netfleet-plugin-network'])));
+assert(sprintf('%J',sort([...plan.names]))==sprintf('%J',sort(['opl-netfleet-plugin-mihomo','opl-netfleet-plugin-network'])));
 r.request.confirm=true;r.request.plan=plan;fs.writefile(dir+'/request.json',sprintf('%J',r));
 UC
  ucode "$main" components-plugin "$cohort/request.json" >"$cohort/start.json"
@@ -75,6 +78,7 @@ UC
  test "$(pidof mihomo)" = "$core_pid_before"
  test "$(awk '{print $22}' "/proc/$core_pid_before/stat")" = "$core_birth_before"
  sha256sum -c "$cohort/runtime.before" >>"$cohort/runtime.log" 2>&1
+ test "$(apk query --from installed --format json --fields version opl-netfleet | jsonfilter -e '@[0].version')" = "$(jsonfilter -i "$work/fixture.json" -e '@.native_cohort[0].old.version')"
  unchanged
 }
 native_cohort_update

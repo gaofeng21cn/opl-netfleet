@@ -1,6 +1,8 @@
+import { create as create_rules } from './profile.uc';
 import { popen } from "fs";
 
 return function(context) {
+const rules = create_rules();
 const ROOT_DIR = context.use("platform.runtime").ROOT_DIR;
 const RUN_DIR = context.use("platform.runtime").RUN_DIR;
 const shell_quote = context.use("platform.process").shell_quote;
@@ -179,5 +181,5 @@ remove_artifact = function() {
 	return system(`rm -f ${shell_quote(ARTIFACT_PATH)} ${shell_quote(MANIFEST_PATH)}`) == 0;
 };
 
-return { ARTIFACT_DIR, ARTIFACT_PATH, MANIFEST_PATH, PROFILE_ENTRY_PATH, PROFILE_ENTRY_TARGET, COMPILED_PROFILE, PROXY_PROVIDER_DIR, resolve_profile, profile_exists, provider_runtime_path, link_target, subscription_cache_path, prepare_provider_links, remove_provider_links, make_json, test_profile_object, install_artifact, remove_artifact };
+return { rules, ARTIFACT_DIR, ARTIFACT_PATH, MANIFEST_PATH, PROFILE_ENTRY_PATH, PROFILE_ENTRY_TARGET, COMPILED_PROFILE, PROXY_PROVIDER_DIR, resolve_profile, profile_exists, provider_runtime_path, link_target, subscription_cache_path, prepare_provider_links, remove_provider_links, make_json, test_profile_object, install_artifact, remove_artifact };
 };

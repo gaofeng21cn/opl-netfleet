@@ -1,9 +1,10 @@
 import * as fs from 'fs';
+import { create as create_rules } from '../openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/lib/profile.uc';
 const path=replace(sourcepath(), /[^/]+$/, '../openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/lib/gateway.uc');
 const source=fs.readfile(path),start=index(source,'render_profile = function() {'),end=index(source,'prepare = function()',start);
 const merge_start=index(source,'merge = function('),merge_end=index(source,'source_path = function(',merge_start);
 if(start<0||end<0||merge_start<0||merge_end<0)die('native_profile_renderer_unavailable');
-const profile_rules=loadfile(replace(path, /gateway.uc$/, 'profile.uc'))()({});
+const profile_rules=create_rules();
 const suite=loadstring(`
 return function(profile_rules) {
 let render_profile,merge,profile_source,extra,overlay={};

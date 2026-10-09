@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 return function(context) {
-	const profile_rules = context.use('mihomo.profile');
+	const profile_rules = context.use('mihomo.profile-storage').rules;
 	function copy(value) { return value == null ? null : json(sprintf('%J', value)); }
 	// This registry is consumed by validation, persistence, provenance and both editors.
 	const definitions = [
