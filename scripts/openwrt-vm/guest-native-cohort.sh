@@ -13,12 +13,20 @@ while IFS="$(printf '\t')" read -r name old new; do
  uclient-fetch -q -O "$cohort/old/$old" "$feed_url/components-fixtures/native-cohort/$old"
  uclient-fetch -q -O "$cohort/new/$new" "$feed_url/$new"
 done <"$cohort/packages.tsv"
-apk --no-network verify "$cohort"/old/*.apk "$cohort"/new/*.apk
+apk --no-network verify "$cohort"/old/*.apk "$cohort"/new/*.apk >>"$cohort/archives.log" 2>&1
 stage=native_cohort_baseline
 install_fixture "$cohort"/old/*.apk >"$cohort/baseline.log" 2>&1
 restore_fixture_world
 rpc_ready
 unchanged
+# Installing the old fixture directly does not create a component transaction.
+# Seed its already verified original archives just as the production updater
+# does when the published Feed no longer contains those versions.
+mkdir -p /etc/opl-netfleet/package-transactions/archives
+for archive in "$cohort"/old/*.apk; do
+ target=/etc/opl-netfleet/package-transactions/archives/${archive##*/}
+ if [ -e "$target" ]; then cmp -s "$archive" "$target"; else cp "$archive" "$target"; fi
+done
 core_pid_before=$(pidof mihomo)
 core_birth_before=$(awk '{print $22}' "/proc/$core_pid_before/stat")
 sha256sum /usr/libexec/mihomo /etc/opl-netfleet/native/run/config.yaml >"$cohort/runtime.before"
@@ -30,7 +38,7 @@ cp "$cohort"/new/*.apk "$guard/new/"
 cp /tmp/scripts/https-compat/canary-rollback.sh "$guard/guard.sh"
 cp "$cohort/runtime.before" "$guard/private.sha256"
 sha256sum /etc/config/netfleet /etc/opl-netfleet/policy.json /etc/opl-netfleet/backend.json >>"$guard/private.sha256"
-for archive in "$cohort"/new/*.apk; do apk extract --destination "$cohort/extracted" "$archive"; done
+for archive in "$cohort"/new/*.apk; do apk extract --destination "$cohort/extracted" "$archive" >>"$cohort/archives.log" 2>&1; done
 (cd "$cohort/extracted" && find usr -type f -exec sha256sum '{}' +) | sed 's@  usr/@  /usr/@' >"$guard/new-runtime.sha256"
 ucode - "$work/fixture.json" "$guard" "$core_pid_before" <<'UC'
 import * as fs from 'fs';
@@ -66,7 +74,7 @@ UC
  assert_json "/etc/opl-netfleet/package-transactions/$rt_id/journal.json" '@.before.runtime_retained' true
  test "$(pidof mihomo)" = "$core_pid_before"
  test "$(awk '{print $22}' "/proc/$core_pid_before/stat")" = "$core_birth_before"
- sha256sum -c "$cohort/runtime.before"
+ sha256sum -c "$cohort/runtime.before" >>"$cohort/runtime.log" 2>&1
  unchanged
 }
 native_cohort_update
@@ -80,9 +88,9 @@ if [ "$(jsonfilter -i "$guard/guard-state.json" -e '@.state')" != restored ]; th
 fi
 test "$(pidof mihomo)" = "$core_pid_before"
 test "$(awk '{print $22}' "/proc/$core_pid_before/stat")" = "$core_birth_before"
-sha256sum -c "$cohort/runtime.before"
+sha256sum -c "$cohort/runtime.before" >>"$cohort/runtime.log" 2>&1
 unchanged
-ubus call service delete '{"name":"netfleet-native-cohort-guard"}'
+ubus call service delete '{"name":"netfleet-native-cohort-guard"}' >/dev/null
 stage=native_cohort_reinstall
 native_cohort_update
 printf '%s\n' '{"ok":true,"checks":{"native_cohort_retained_update":true,"native_cohort_autonomous_rollback":true,"native_cohort_pid_and_configuration_unchanged":true,"native_cohort_disabled_plugin_preserved":true}}' >"$cohort/qualification.json"
