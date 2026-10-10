@@ -926,8 +926,8 @@ upgrade = function(request, work, candidates) {
 	const before_status = parsed(`ucode ${q(MAIN)} status`)?.result;
 	const unconfigured = fs.lstat("/etc/opl-netfleet/policy.json") == null && !service_running(SERVICE);
 	if (before_status == null && !unconfigured) fail("runtime_readback_failed");
-	const paths = private_paths();
-	const before = { backend: KIND, core_enabled: capture(`/etc/init.d/${SERVICE} enabled`) != null, supervisor_enabled: capture("/etc/init.d/opl-netfleet enabled") != null, active: before_status?.active ?? false, unconfigured: unconfigured, core: service_running(SERVICE), supervisor: service_running("opl-netfleet"), selections: {}, paths: paths, inputs: input_identity(paths), world: package_world() };
+	const private_inputs = private_paths();
+	const before = { backend: KIND, core_enabled: capture(`/etc/init.d/${SERVICE} enabled`) != null, supervisor_enabled: capture("/etc/init.d/opl-netfleet enabled") != null, active: before_status?.active ?? false, unconfigured: unconfigured, core: service_running(SERVICE), supervisor: service_running("opl-netfleet"), selections: {}, paths: private_inputs, inputs: input_identity(private_inputs), world: package_world() };
 	before.scoped = index(names, "opl-netfleet-kernel") < 0 && index(names, PACKAGES[2]) < 0;
 	before.original_world = before.world;
 	before.world = recovery_world(names, before.world);
@@ -983,7 +983,7 @@ upgrade = function(request, work, candidates) {
 		for (let name, choice in before.selections) if (fresh?.[name]?.now != choice) fail('runtime_precondition_changed');
 	}
 	if (system("/etc/init.d/opl-netfleet-update-recovery enable >/dev/null 2>&1") != 0) fail("update_recovery_unavailable");
-	if (!atomic_json(`${work}/before.json`, before) || !run_command(`tar -cf ${q(`${work}/private.tar`)} -C / ${join(" ", map(paths, path => q(substr(path, 1))))}`, work)) fail("update_state_write_failed");
+	if (!atomic_json(`${work}/before.json`, before) || !run_command(`tar -cf ${q(`${work}/private.tar`)} -C / ${join(" ", map(private_inputs, path => q(substr(path, 1))))}`, work)) fail("update_state_write_failed");
 	// BusyBox tar refuses to create an empty archive. A first installation has no
 	// previous code; two zero blocks are the standard empty tar end marker.
 	const runtime_backup = length(before.runtime_paths) ?
