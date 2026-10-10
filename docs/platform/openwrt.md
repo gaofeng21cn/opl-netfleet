@@ -31,9 +31,10 @@ OpenWrt 默认绑定在 `/usr/share/opl-netfleet/system.json`，私有覆盖在
 `models >= 0.7.12` 和 `platform-openwrt >= 0.8.4`。从旧组合更新产品页面时，APK 在
 同一事务中升级必要提供者；不要求用户逐个配对安装，也不递增服务 API 来表达新增可选字段。
 
-默认产品、`maintenance` 及当前 SDK 生成的插件包声明内核最低版本为 `0.8.1`；
-当前 `product-ui` 与 LuCI 要求内核至少 `0.8.8`，`product-ui` 还要求 LuCI 至少 `0.8.4`，
-由软件包管理器解析版本依赖，确保安装后具备通用插件 RPC、贡献与作用域接口。
+当前官方服务插件要求内核至少 `0.9.13`，以解析插件拥有的动作与维护合同；
+`product-ui` 要求 LuCI 至少 `0.8.4`，以及支持共享探针编辑的 `configuration >= 0.7.7`。
+新的运行切换与平台路径调用分别要求 `mihomo >= 0.9.12`、`platform >= 0.8.9`。
+软件包管理器在同一事务中解析这些最低版本，避免新调用者与旧提供者混装。
 
 包列表、服务绑定与插件依赖从源码 manifest 生成。每个服务的 `requires` 解析为提供者包，
 `package_dependencies` 声明功能实际使用的 OpenWrt 系统包；构建前检查缺失服务、接口版本和
