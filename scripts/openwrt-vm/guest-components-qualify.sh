@@ -294,7 +294,7 @@ rpc_ready
 # here before asking the finite solver for the remaining UI dependency set.
 stage=shared_plugin_runtime_baseline
 runtime_archives=
-for runtime_plugin in opl-netfleet opl-netfleet-plugin-mihomo opl-netfleet-plugin-network; do
+for runtime_plugin in opl-netfleet opl-netfleet-kernel opl-netfleet-plugin-platform opl-netfleet-plugin-mihomo opl-netfleet-plugin-network; do
  runtime_version=$(package_version "$runtime_plugin" current)
  uclient-fetch -q -O "$work/$runtime_plugin-$runtime_version.apk" \
   "$feed_url/$runtime_plugin-$runtime_version.apk"
