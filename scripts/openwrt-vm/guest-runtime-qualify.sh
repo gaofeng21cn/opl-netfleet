@@ -854,7 +854,7 @@ supervisor_ticks_end=$(awk '{print $14 + $15}' "/proc/$supervisor_pid/stat")
 supervisor_finished=$(date +%s)
 supervisor_rss_kib=$(awk '/^VmRSS:/ {print $2}' "/proc/$supervisor_pid/status")
 [ "$((supervisor_rss_kib - supervisor_rss_warm))" -le 2048 ] || {
-	echo 'Supervisor idle memory did not plateau after warm-up' >&2
+	echo "Supervisor idle memory did not plateau after warm-up: warm=$supervisor_rss_warm final=$supervisor_rss_kib peak=$supervisor_rss_peak KiB" >&2
 	exit 1
 }
 

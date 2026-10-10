@@ -78,15 +78,21 @@ lifecycle_snapshot() {
 		printf("%J\n", result);' "$fixture/${1}.proxies" >"$fixture/${1}.routes"
 }
 lifecycle_restored() {
+	restore_stage=$stage
+	stage=${restore_stage}_status
 	ucode "$main" status >"$fixture/lifecycle-status.json"
 	[ "$(jsonfilter -i "$fixture/lifecycle-status.json" -e '@.result.active')" = true ]
+	stage=${restore_stage}_owners
 	/etc/init.d/opl-netfleet running >/dev/null 2>&1
 	/etc/init.d/nikki running >/dev/null 2>&1
+	stage=${restore_stage}_probe
 	ucode "$main" probe >"$fixture/lifecycle-probe.json"
 	[ "$(jsonfilter -i "$fixture/lifecycle-probe.json" -e '@.result.ok')" = true ]
+	stage=${restore_stage}_inputs
 	lifecycle_snapshot after
 	cmp "$fixture/${1}.inputs" "$fixture/after.inputs"
 	cmp "$fixture/${1}.routes" "$fixture/after.routes"
+	stage=${restore_stage}_markers
 	for marker in .kernel .kernel-plugins .coordinator; do
 		[ ! -e "/var/run/opl-netfleet-plugin-maintenance/$marker" ]
 	done
@@ -97,6 +103,7 @@ lifecycle_restored() {
 	[ ! -e /var/run/opl-netfleet-mihomo-handoff/state.json ]
 	[ ! -e /tmp/opl-netfleet-package-upgrade-state ]
 	[ ! -e /tmp/opl-netfleet-microkernel-migration ]
+	stage=$restore_stage
 }
 
 mkdir -p "$candidate"
@@ -522,7 +529,36 @@ for package_name in opl-netfleet-plugin-dashboard opl-netfleet-kernel; do
 	core_before=$(cat /var/run/nikki/mihomo.pid)
 	scheduler_before=$(ubus call service list '{"name":"opl-netfleet"}' |
 		jsonfilter -e '@["opl-netfleet"].instances.*.pid')
-	package_transaction "$candidate/$package_name-$package_old.apk"
+	cohort_current=
+	cohort_added=
+	if [ "$package_name" = opl-netfleet-kernel ]; then
+		# Current plugins can require the candidate kernel's ABI floor. Establish
+		# the compatible synthetic old cohort instead of downgrading its kernel
+		# under current callers. The signed candidate restores the full cohort.
+		cohort_old="$candidate/$package_name-$package_old.apk"
+		for cohort_name in $(jsonfilter -i "$fixture/lifecycle-fixture.json" -e '@.product_packages[*]'); do
+			case "$cohort_name" in opl-netfleet-plugin-*) ;; *) continue ;; esac
+			cohort_prior=$(ucode -e 'import { readfile } from "fs";
+				print(json(readfile(ARGV[0])).package_versions[ARGV[1]].old);' "$fixture/lifecycle-fixture.json" "$cohort_name")
+			cohort_next=$(ucode -e 'import { readfile } from "fs";
+				print(json(readfile(ARGV[0])).package_versions[ARGV[1]].current);' "$fixture/lifecycle-fixture.json" "$cohort_name")
+			uclient-fetch -q -O "$candidate/$cohort_name-$cohort_prior.apk" "$feed_url/components-fixtures/good/$cohort_name-$cohort_prior.apk"
+			uclient-fetch -q -O "$candidate/$cohort_name-$cohort_next.apk" "$feed_url/$cohort_name-$cohort_next.apk"
+			cohort_old="$cohort_old $candidate/$cohort_name-$cohort_prior.apk"
+			cohort_current="$cohort_current $candidate/$cohort_name-$cohort_next.apk"
+			if ! grep -Eq "^$cohort_name([@<>=~]|$)" "$fixture/lifecycle-world.before"; then
+				cohort_added="$cohort_added $cohort_name"
+			fi
+		done
+		package_transaction $cohort_old
+		# This multi-package downgrade only prepares the old caller fixture. Its
+		# intermediate hooks may stop automation; establish the baseline before
+		# testing the isolated kernel replacement's own restoration contract.
+		stage=prepare_kernel_caller_baseline
+		/etc/init.d/opl-netfleet start
+	else
+		package_transaction "$candidate/$package_name-$package_old.apk"
+	fi
 	"$real_apk" list --manifest | grep -Fqx "$package_name $package_old"
 	lifecycle_restored lifecycle-before
 	if [ "$package_name" = opl-netfleet-kernel ]; then
@@ -556,6 +592,13 @@ RPC_OLD
 		[ "$(ubus call service list '{"name":"opl-netfleet"}' |
 			jsonfilter -e '@["opl-netfleet"].instances.*.pid')" = "$scheduler_before" ]
 	fi
+	if [ -n "$cohort_current" ]; then
+		stage=restore_current_caller_fixture
+		package_transaction $cohort_current
+		[ -z "$cohort_added" ] || "$real_apk" --no-network del $cohort_added >>"$fixture/package-manager.log" 2>&1
+		/etc/init.d/opl-netfleet start
+		lifecycle_restored lifecycle-before
+	fi
 done
 "$real_apk" --no-network del opl-netfleet-plugin-dashboard opl-netfleet-kernel \
 	>>"$fixture/package-manager.log" 2>&1
@@ -576,7 +619,15 @@ for attempt in 1 2 3 4 5 6 7 8 9 10; do
 done
 [ -s "$fixture/rpc-methods-old.txt" ]
 ! cat "$fixture/rpc-methods-old.txt" | grep -Fq '"select_region"'
-owner_locked "$real_apk" fix --reinstall opl-netfleet-plugin-status >>"$fixture/package-manager.log" 2>&1
+# Local archive installs carry checksum identities that fix cannot retrieve
+# from a repository. Reinstall the exact signed candidate archive explicitly.
+status_current=$(ucode -e 'import { readfile } from "fs";
+	print(json(readfile(ARGV[0])).package_versions["opl-netfleet-plugin-status"].current);' "$fixture/lifecycle-fixture.json")
+owner_locked "$real_apk" --no-network add --force-reinstall \
+	"$candidate/opl-netfleet-plugin-status-$status_current.apk" >>"$fixture/package-manager.log" 2>&1
+if ! grep -Eq '^opl-netfleet-plugin-status([@<>=~]|$)' "$fixture/lifecycle-world.before"; then
+	"$real_apk" --no-network del opl-netfleet-plugin-status >>"$fixture/package-manager.log" 2>&1
+fi
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
 	ubus -v list opl-netfleet >"$fixture/rpc-methods-after.txt" 2>/dev/null && grep -Fq '"select_region"' "$fixture/rpc-methods-after.txt" && break
 	sleep 1
