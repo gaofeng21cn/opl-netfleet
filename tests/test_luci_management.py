@@ -160,6 +160,33 @@ class LuciManagementTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_shared_probe_edit_submits_both_aliases_and_distinct_probes_stay_independent(self):
+        self.run_js(r"""
+const owner = controller();
+owner.configSection = 'safety';
+owner.configDraft.health_probes_shared = true;
+owner.configDraft.safety.guard_probe_url = owner.configDraft.safety.path_probe_url;
+const config = configModule(module('managed.js', {}));
+let page = config.render(owner);
+assert(text(page).includes('通道健康检查地址'));
+assert(!text(page).includes('最终保护地址'));
+let inputs = all(page, node => node.tag === 'input' && node.attrs.type === 'url');
+assert.equal(inputs.length, 2);
+fire(inputs[1], 'change', { value: 'https://new-health.example' });
+assert.equal(config.request(owner.configDraft).safety.path_probe_url, 'https://new-health.example');
+assert.equal(config.request(owner.configDraft).safety.guard_probe_url, 'https://new-health.example');
+assert(!Object.hasOwn(config.request(owner.configDraft), 'health_probes_shared'));
+owner.configDraft.health_probes_shared = false;
+page = config.render(owner);
+inputs = all(page, node => node.tag === 'input' && node.attrs.type === 'url');
+assert.equal(inputs.length, 3);
+fire(inputs[1], 'change', { value: 'https://only-path.example' });
+assert.equal(config.request(owner.configDraft).safety.guard_probe_url, 'https://new-health.example');
+fire(inputs[2], 'change', { value: 'https://only-guard.example' });
+assert.equal(config.request(owner.configDraft).safety.path_probe_url, 'https://only-path.example');
+assert.equal(config.request(owner.configDraft).safety.guard_probe_url, 'https://only-guard.example');
+""");
+
     def test_advanced_json_invalid_draft_blocks_owner_call_and_omissions_are_preserved(self):
         self.run_js(r"""
 const owner = controller();

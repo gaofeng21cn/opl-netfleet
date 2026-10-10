@@ -3,6 +3,8 @@ let count = 0;
 function check(value, message) { if (!value) die(message); count++; }
 let history = {}, active = null, pending = false;
 const ports = {
+ 'platform.paths': { RULE_DATA_ROOT: '/etc/opl-netfleet/native/run/rule-data', BACKEND_RUN_DIR: '/etc/opl-netfleet/native/run',
+  RULE_LOCK_PATH: '/etc/opl-netfleet/rulesets.lock.json', BACKEND_PATH: '/etc/opl-netfleet/backend.json' },
  'platform.files': { private_file: p => index(p, 'history.json') >= 0 || (index(p, 'active.json') >= 0 && active != null) || (index(p, 'pending.json') >= 0 && pending) || index(p, '.mrs') >= 0 },
  'platform.storage': { read_json: p => index(p, 'backend.json') >= 0 ? { kind: 'native-mihomo' } : index(p, 'history.json') >= 0 ? history : active },
  'platform.process': { shell_quote: v => v }

@@ -454,6 +454,7 @@ function routing(controller) {
 
 function safety(controller) {
 	const value = controller.configDraft.safety;
+	const sharedProbe = controller.configDraft.health_probes_shared === true;
 	function numberField(field, min, max) {
 		return E('input', { 'class': 'cbi-input-text', 'type': 'number', 'min': min, 'max': max, 'value': value[field], 'change': function(event) {
 			update(controller, function(next) { next.safety[field] = Number(event.target.value); });
@@ -461,7 +462,10 @@ function safety(controller) {
 	}
 	function urlField(field) {
 		return E('input', { 'class': 'cbi-input-text', 'type': 'url', 'value': value[field], 'change': function(event) {
-			update(controller, function(next) { next.safety[field] = event.target.value; });
+			update(controller, function(next) {
+				next.safety[field] = event.target.value;
+				if (sharedProbe && field === 'path_probe_url') next.safety.guard_probe_url = event.target.value;
+			});
 		} });
 	}
 	return E('section', {}, [
@@ -477,8 +481,8 @@ function safety(controller) {
 				fieldRow('节点切换门槛', '避免同一地区内因微小差异频繁换节点。', numberField('leaf_switch_margin_ms', 0, 5000)),
 				fieldRow('运行失联保护', '连续失联超过该时间后进入受保护恢复。', numberField('runtime_grace_seconds', 15, 300)),
 				fieldRow('测速地址', '只用于同轮延迟比较。', urlField('latency_url')),
-				fieldRow('代理路径检查地址', '用于机场故障层的运行时健康确认。', urlField('path_probe_url')),
-				fieldRow('最终保护地址', '用于启用、切换和最终退路的业务确认。', urlField('guard_probe_url'))
+				fieldRow(sharedProbe ? '通道健康检查地址' : '代理路径检查地址', sharedProbe ? '代理路径和直连护栏共用此检查。选择独立、轻量的端点，避免业务站点波动引起回退；需符合设备已有的预期响应状态。' : '用于机场故障层的运行时健康确认；需符合设备已有的预期响应状态。', urlField('path_probe_url')),
+				sharedProbe ? null : fieldRow('最终保护地址', '用于启用、切换和最终退路的检查；需符合设备已有的预期响应状态。', urlField('guard_probe_url'))
 			])
 		])
 	]);

@@ -166,7 +166,7 @@ derive = function(input, require_runtime, builtin) {
 		evidence: { path: input?.evidence_path ?? "/etc/opl-netfleet/evidence.json" },
 		fail_open: {
 			healthcheck: { path_probe_id: "default-egress", guard_probe_id: "default-egress", timeout_ms: 5000, interval_seconds: 300, max_failed_times: 2 },
-			probes: [{ id: "default-egress", url: "https://www.gstatic.com/generate_204", expected_status: 204 }]
+			probes: [{ id: "default-egress", url: "https://www.cloudflare.com/robots.txt", expected_status: 200 }]
 		}
 	} : null;
 

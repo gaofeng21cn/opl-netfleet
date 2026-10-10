@@ -10,6 +10,7 @@ const harness = `
 let now = 0, sets = 0, starts = 0, chosen = "old", broken = false, changed = false, running = {};
 let restore_services;
 const SERVICE = "test-core", MAIN = "test-main", KIND = "native-mihomo";
+const paths = { COMPAT_STATE_PATH: "/unused/compat-state.json" };
 function time() { return now; }
 function system(command) { now++; return 0; }
 function run_command(command, work) { starts++; return true; }

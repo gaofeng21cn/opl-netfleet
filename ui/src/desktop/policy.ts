@@ -37,8 +37,8 @@ export function desktopConfigRequest(config: DeviceConfigSnapshot, draft: Config
       region_switch_margin_ms: draft.safety.regionSwitchMarginMs,
       leaf_switch_margin_ms: draft.safety.leafSwitchMarginMs,
       runtime_grace_seconds: draft.safety.runtimeGraceSeconds,
-      latency_url: draft.safety.latencyUrl, path_probe_url: draft.safety.protectedUrl,
-      guard_probe_url: config.safety.guard_probe_url,
+      latency_url: draft.safety.latencyUrl, path_probe_url: draft.safety.pathProbeUrl,
+      guard_probe_url: draft.safety.guardProbeUrl,
     },
   };
 }

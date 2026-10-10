@@ -11,7 +11,8 @@
       "module": "lib/files.uc",
       "requires": {
         "platform.storage": 1,
-        "platform.paths": 1
+        "platform.paths": 1,
+        "platform.runtime": 1
       }
     },
     "platform.documents": {

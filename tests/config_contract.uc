@@ -134,6 +134,31 @@ const request = {
 
 const merged = apply(policy, request, resources);
 
+// Shared probe aliases must be atomic; a conflicting UI request must never
+// silently let its second URL overwrite its first URL.
+const shared_policy = json(sprintf("%J", policy));
+shared_policy.fail_open.healthcheck.guard_probe_id = "path";
+const shared_before = sprintf("%J", shared_policy);
+const conflicting_probe = apply(shared_policy, request, resources);
+if (conflicting_probe.ok ||
+	index(conflicting_probe.errors, "shared health probe requires matching path and guard URLs") < 0 ||
+	sprintf("%J", shared_policy) != shared_before || project(shared_policy, resources).health_probes_shared != true ||
+	projection.health_probes_shared != false) {
+	print("shared_probe_conflict_not_rejected\n"); exit(1);
+}
+const shared_request = json(sprintf("%J", request));
+shared_request.safety.guard_probe_url = shared_request.safety.path_probe_url;
+const shared_result = apply(shared_policy, shared_request, resources);
+if (!shared_result.ok || shared_result.policy.fail_open.probes[0].url != shared_request.safety.path_probe_url ||
+	shared_result.policy.fail_open.probes[0].expected_status != shared_policy.fail_open.probes[0].expected_status) {
+	print("shared_probe_update_failed\n"); exit(1);
+}
+const equal_url_policy = json(sprintf("%J", policy));
+equal_url_policy.fail_open.probes[1].url = equal_url_policy.fail_open.probes[0].url;
+if (project(equal_url_policy, resources).health_probes_shared != false) {
+	print("equal_urls_mistaken_for_shared_identity\n"); exit(1);
+}
+
 const collision_policy = json(sprintf("%J", policy));
 collision_policy.regions.japan.display_order = 30;
 const duplicate_order_request = json(sprintf("%J", request));

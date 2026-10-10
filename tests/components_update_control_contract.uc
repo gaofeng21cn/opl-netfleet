@@ -10,6 +10,8 @@ function extract(begin, end) {
 const ownership = extract('function package_owners(', 'function package_paths(');
 loadstring(`
 const COMPATIBILITY_PACKAGE='opl-netfleet-https-compat';
+const paths={COMPAT_EXTENSION_PATH:'/unused/extension.json'};
+function compatibility_package(){return COMPATIBILITY_PACKAGE;}
 let rows=[{id:'https-compat',kind:'plugin',package:'opl-netfleet-plugin-https-compat'}];
 let info={type:'file',uid:0,mode:420,size:80}, descriptor={id:'https-compat',api_version:1};
 const context={inventory:()=>rows}, fs={lstat:()=>info};
@@ -128,6 +130,7 @@ const selection = extract('upgrade = function(', '\tconst space = capture(`df -P
 loadstring(`
 let upgrade,state;
 const PACKAGES=['opl-netfleet','luci-app-netfleet','mihomo-meta'],COMPATIBILITY_PACKAGE='opl-netfleet-https-compat',UPGRADE_STATE='marker';
+function compatibility_package(){return COMPATIBILITY_PACKAGE;}
 let versions={'opl-netfleet':'1','luci-app-netfleet':'1','opl-netfleet-kernel':'1','opl-netfleet-plugin-dashboard':'1'};
 function product_packages(){return keys(versions);}function installed(){return versions;}function newer(a,b){return a!=null&&b!=null&&int(a)>int(b);}
 function version_valid(v){return v!=null;}function fail(e){die(e);}function journal(w,v){state=v;}

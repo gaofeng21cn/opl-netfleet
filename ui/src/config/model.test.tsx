@@ -1,10 +1,20 @@
 import { renderToStaticMarkup } from 'react-dom/server';
+import { Children, isValidElement, type ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 import { fixtureScenarios } from '../data/fixtures';
 import type { DeviceConfigSnapshot } from '../types';
 import { ConfigView } from './ConfigView';
 import { FoundationSection, ProvidersSection, SafetySection } from './ConfigSections';
 import { configChanges, configSummary, createConfigDraft, validateConfigDraft, validCidr } from './model';
+import { desktopConfigRequest } from '../desktop/policy';
+
+function inputIn(node: ReactNode, id: string): { onChange?: (event: { target: { value: string } }) => void } | undefined {
+  if (!isValidElement<{ id?: string; children?: ReactNode; onChange?: (event: { target: { value: string } }) => void }>(node)) return undefined;
+  if (node.type === 'input' && node.props.id === id) return node.props;
+  let found;
+  Children.forEach(node.props.children, child => { found ??= inputIn(child, id); });
+  return found;
+}
 
 describe('本地配置参考模型', () => {
   it('策略基础下拉使用设备候选及真实选中值', () => {
@@ -121,6 +131,36 @@ describe('本地配置参考模型', () => {
     expect(draft.regions.map((item) => item.id)).toEqual(['japan']);
     expect(draft.capabilities[0]).toMatchObject({ entryGroup: 'OUTBOUND', policyGroups: [] });
     expect(draft.routingRules).toEqual([{ kind: 'domain_suffix', value: 'example.com', capability: 'standard' }]);
+    expect(desktopConfigRequest(config, draft).safety).toMatchObject({ path_probe_url: 'https://path.invalid', guard_probe_url: 'https://guard.invalid', runtime_grace_seconds: 45 });
+    const untouched = structuredClone(draft);
+    const distinctForm = SafetySection({ status, draft, onChange: next => Object.assign(draft, next) });
+    inputIn(distinctForm, 'nf-path-probe-url')!.onChange!({ target: { value: 'https://new-path.invalid' } });
+    expect(desktopConfigRequest(config, draft).safety).toMatchObject({ path_probe_url: 'https://new-path.invalid', guard_probe_url: 'https://guard.invalid' });
+    inputIn(SafetySection({ status, draft, onChange: next => Object.assign(draft, next) }), 'nf-guard-probe-url')!.onChange!({ target: { value: 'https://new-guard.invalid' } });
+    expect(desktopConfigRequest(config, draft).safety).toMatchObject({ path_probe_url: 'https://new-path.invalid', guard_probe_url: 'https://new-guard.invalid' });
+    const sharedConfig = { ...config, health_probes_shared: true, safety: { ...config.safety, guard_probe_url: config.safety.path_probe_url } };
+    const sharedDraft = createConfigDraft(status, sharedConfig);
+    const sharedForm = SafetySection({ status, draft: sharedDraft, onChange: next => Object.assign(sharedDraft, next) });
+    expect(inputIn(sharedForm, 'nf-guard-probe-url')).toBeUndefined();
+    inputIn(sharedForm, 'nf-path-probe-url')!.onChange!({ target: { value: 'https://shared.invalid' } });
+    expect(desktopConfigRequest(sharedConfig, sharedDraft).safety).toMatchObject({ path_probe_url: 'https://shared.invalid', guard_probe_url: 'https://shared.invalid' });
+    const formHtml = renderToStaticMarkup(<SafetySection status={status} draft={untouched} onChange={() => undefined} />);
+    expect(formHtml).toContain('id="nf-runtime-grace" type="number" min="15" max="300" value="45"');
+  });
+
+  it('保留零切换门槛，并校验运行失联保护的实际秒数', () => {
+    const status = structuredClone(fixtureScenarios.healthy.status);
+    status.selection!.region_switch_margin_ms = 0;
+    status.selection!.leaf_switch_margin_ms = 0;
+    const draft = createConfigDraft(status);
+    expect(draft.safety.regionSwitchMarginMs).toBe(0);
+    expect(draft.safety.leafSwitchMarginMs).toBe(0);
+    for (const value of [14, 301, 45.5, NaN]) {
+      draft.safety.runtimeGraceSeconds = value;
+      expect(validateConfigDraft(draft)).toContain('运行失联保护必须为 15 至 300 秒。');
+    }
+    draft.safety.runtimeGraceSeconds = 45;
+    expect(validateConfigDraft(draft)).not.toContain('运行失联保护必须为 15 至 300 秒。');
   });
 
   it('明确本地预览边界且不展示未实现后端选项', () => {

@@ -48,6 +48,9 @@ refresh 的下载范围和运行应用由共享刷新事务决定，不接受界
 未开放运行中应用的平台应拒绝，而不能降格成保存成功。订阅凭据由独立来源 owner 保存，
 不混入 policy；文件导入也必须经过校验，不能绕过已有配置应用链。
 
+配置读取的只读字段 `health_probes_shared` 表示 path/guard 是否引用同一个 probe ID，
+不进入配置写请求。探针地址的编辑、冲突校验与保留规则见[配置来源与应用解释](management.md#配置来源与应用解释)。
+
 高级配置允许用户在设备已经存在的资源边界内维护结构：从当前后端已有稳定命名 subscription 新增或移除 provider；使用同一共享地区目录维护 provider-region mapping；新增、移除和命名 capability，设置其自动依赖和地区许可；把当前 Policy Source 已存在的策略组声明为 `entry|policy` binding；新增或移除 `domain_suffix` 或 `ip_cidr` 的 target-local routing rule，目标为启用的 capability 或直连。规则字段与校验由[产品对象](domain-model.md#配置解耦合同)负责。新增 provider 的稳定 ID 固定使用当前后端 subscription section，地区 filter 固定来自设备 owner 返回的共享目录，浏览器不能提交自定义正则。所有结构变化仍先经过完整 policy validator，并且必须保留至少一个启用的主用 provider、每个启用 capability 恰好一个 entry、automatic 依赖无环且恰好一个根。
 
 ### 手动地区操作

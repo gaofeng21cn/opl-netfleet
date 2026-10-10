@@ -9,6 +9,7 @@ const suite=loadstring(`
 return function(profile_rules) {
 let render_profile,merge,profile_source,extra,overlay={};
 const BASE='/private',RUN='/private/run',VENDOR='/vendor';
+const paths={BACKEND_PATH:'/etc/opl-netfleet/backend.json'};
 const fs={lstat:()=>true};
 const rule_data={project:profile=>profile};
 function source_path(value) {return '/source';}

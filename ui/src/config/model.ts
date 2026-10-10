@@ -70,7 +70,9 @@ export interface ConfigDraft {
     leafSwitchMarginMs: number;
     runtimeGraceSeconds: number;
     latencyUrl: string;
-    protectedUrl: string;
+    pathProbeUrl: string;
+    guardProbeUrl: string;
+    sharedHealthProbe: boolean;
   };
 }
 
@@ -143,7 +145,9 @@ export function createConfigDraft(status: StatusSnapshot, config?: DeviceConfigS
       leafSwitchMarginMs: config.safety.leaf_switch_margin_ms,
       runtimeGraceSeconds: config.safety.runtime_grace_seconds,
       latencyUrl: config.safety.latency_url,
-      protectedUrl: config.safety.guard_probe_url,
+      pathProbeUrl: config.safety.path_probe_url,
+      guardProbeUrl: config.safety.guard_probe_url,
+      sharedHealthProbe: config.health_probes_shared === true,
     },
   };
   const visibleRegions = status.regions.filter((region) => (
@@ -201,11 +205,13 @@ export function createConfigDraft(status: StatusSnapshot, config?: DeviceConfigS
       ruleRefreshIntervalSeconds: automation?.rule_refresh_interval_seconds ?? 604800,
     },
     safety: {
-      regionSwitchMarginMs: status.selection?.region_switch_margin_ms || 150,
-      leafSwitchMarginMs: status.selection?.leaf_switch_margin_ms || 150,
+      regionSwitchMarginMs: status.selection?.region_switch_margin_ms ?? 150,
+      leafSwitchMarginMs: status.selection?.leaf_switch_margin_ms ?? 150,
       runtimeGraceSeconds: automation?.runtime_grace_seconds || 120,
       latencyUrl: 'https://www.gstatic.com/generate_204',
-      protectedUrl: 'https://www.gstatic.com/generate_204',
+      pathProbeUrl: 'https://www.cloudflare.com/robots.txt',
+      guardProbeUrl: 'https://www.cloudflare.com/robots.txt',
+      sharedHealthProbe: true,
     },
   };
 }
@@ -227,7 +233,10 @@ export function validateConfigDraft(draft: ConfigDraft): string[] {
   if (draft.automation.enabled && draft.automation.selectionIntervalSeconds < 300) errors.push('周期选优不能短于 5 分钟。');
   if (draft.safety.regionSwitchMarginMs < 0 || draft.safety.leafSwitchMarginMs < 0) errors.push('切换门槛不能为负数。');
   if (!draft.safety.latencyUrl.startsWith('https://')) errors.push('测速地址必须使用 HTTPS。');
-  if (!draft.safety.protectedUrl.startsWith('https://')) errors.push('业务保护地址必须使用 HTTPS。');
+  if (!draft.safety.pathProbeUrl.startsWith('https://')) errors.push('代理路径检查地址必须使用 HTTPS。');
+  if (!draft.safety.guardProbeUrl.startsWith('https://')) errors.push('最终保护地址必须使用 HTTPS。');
+  if (draft.safety.sharedHealthProbe && draft.safety.pathProbeUrl !== draft.safety.guardProbeUrl) errors.push('共用健康探针的两个地址必须一致。');
+  if (!Number.isInteger(draft.safety.runtimeGraceSeconds) || draft.safety.runtimeGraceSeconds < 15 || draft.safety.runtimeGraceSeconds > 300) errors.push('运行失联保护必须为 15 至 300 秒。');
   return errors;
 }
 

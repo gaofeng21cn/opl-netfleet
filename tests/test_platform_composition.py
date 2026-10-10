@@ -143,6 +143,18 @@ class PlatformCompositionTests(unittest.TestCase):
     def test_macos_bound_services_resolve(self):
         self.assertEqual([], self.macos.unresolved())
 
+    def test_literal_service_requests_are_declared(self):
+        """A resolvable graph must also admit the module's actual requests."""
+        for label, composition in (("openwrt", self.openwrt), ("macos", self.macos)):
+            for name in composition.bound_services():
+                plugin = composition.plugins[composition.bindings[name]]
+                service = plugin["services"][name]
+                module = plugin["__root"] / "plugins" / plugin["id"] / service["module"]
+                requests = set(re.findall(r'''context\.use\(\s*["']([^"']+)["']\s*\)''', module.read_text()))
+                with self.subTest(platform=label, service=name):
+                    self.assertEqual(set(), requests - set(service.get("requires") or {}),
+                                     f"{module.relative_to(ROOT)} requests undeclared dependencies")
+
     def test_missing_service_and_disabled_dependency_are_rejected(self):
         self.macos.bindings["missing.interface"] = "models"
         self.assertTrue(any("missing.interface" in problem for problem in self.macos.unresolved()))

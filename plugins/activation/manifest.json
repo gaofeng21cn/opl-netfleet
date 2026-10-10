@@ -32,6 +32,7 @@
       "version": 1,
       "module": "lib/control.uc",
       "requires": {
+        "mihomo.runtime": 1,
         "compilation.control": 1,
         "events.output": 1,
         "events.record": 1,

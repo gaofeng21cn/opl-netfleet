@@ -234,6 +234,7 @@ project = function(policy, resources) {
 		})),
 		capabilities: capabilities,
 		routing_rules: clone(policy?.routing_rules ?? []),
+		health_probes_shared: healthcheck.path_probe_id == healthcheck.guard_probe_id,
 		automation: {
 			enabled: policy?.automation?.enabled == true,
 			selection_interval_seconds: policy?.automation?.selection_interval_seconds,
@@ -405,6 +406,9 @@ validate_request = function(policy, request, resources) {
 			if (!nonempty(requested_safety[field]) || index(requested_safety[field], "https://") != 0)
 				push(errors, `safety.${field} must use https`);
 		}
+		if (policy?.fail_open?.healthcheck?.path_probe_id == policy?.fail_open?.healthcheck?.guard_probe_id &&
+			requested_safety.path_probe_url != requested_safety.guard_probe_url)
+			push(errors, "shared health probe requires matching path and guard URLs");
 	}
 	return { ok: length(errors) == 0, errors: errors };
 };

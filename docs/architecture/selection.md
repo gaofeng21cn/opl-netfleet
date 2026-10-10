@@ -31,6 +31,17 @@ compiler 不为每个 Provider/地区组创建独立 interval；速度测量来�
 
 配额只读所选后端已有 metadata。只有 metadata 明确报告剩余量为零或官方 exhausted 标记时才排除候选；`unknown` 仍可通过可用性和 delay 参与候选，但不能凭 unknown 获得优先级。测量结果只作为一次命令的临时对象输出，不保存 LKG、排名、generation 或“最佳”结论，比较器不得读取历史记录。
 
+首次接入的通道健康探针默认使用独立的轻量 HTTPS 静态端点
+`https://www.cloudflare.com/robots.txt`，HEAD/GET 均预期 200；速度比较继续使用 GStatic
+204 端点。已有设备的探针和预期状态保持其配置 owner 的声明，不自动迁移。
+绑定 path/guard 的端点应在代理与直连退路均可验证，避免单个业务站点自身故障决定整个
+出口是否退回直连。该探针只证明到所选端点的通道状态，不证明任意业务可用；需要独立
+业务验收时仍由 target-local protected probe 声明。
+
+`max_failed_times` 是拨号失败触发 URLTest 的门槛，不是连续定时探测失败次数。
+Mihomo fallback 使用对应 URL 的健康记录选路，单次 URLTest 失败即可更新该记录；
+调整此门槛或 interval 不提供多目标确认或连续失败迟滞。
+
 ### 标准化对象与 owner
 
 适配器之间只传递类似下列的脱敏对象，比较器不读取 UCI、订阅原文、`ping` 文本、`curl` 输出或 Mihomo 私有响应字段：

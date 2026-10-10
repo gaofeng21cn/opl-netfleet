@@ -33,6 +33,10 @@ function base_input() {
 };
 
 const result = discover(base_input());
+if (result.policy?.fail_open?.probes?.[0]?.url == result.policy?.checks?.latency?.url ||
+	result.policy?.fail_open?.probes?.[0]?.expected_status != 200) {
+	print("onboarding_health_probe_coupled_to_latency\n"); exit(1);
+}
 if (!result.ready || result.policy.policy_source.ref != "subscription:base" ||
 	result.policy.recovery_profile.ref != "subscription:base" ||
 	result.policy.bindings["节点选择"]?.kind != "entry" ||
