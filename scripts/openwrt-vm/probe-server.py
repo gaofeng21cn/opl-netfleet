@@ -47,11 +47,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     # Mihomo URLTest uses HEAD; curl business probes use GET.
     def do_HEAD(self):
-        self.send_response(204)
+        self.send_response(200 if urlsplit(self.path).path == '/robots.txt' else 204)
         self.end_headers()
 
     def do_GET(self):
         url = urlsplit(self.path)
+        if url.path == '/robots.txt':
+            body = b'User-agent: *\nDisallow:\n'
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if url.path == '/native-workload/payload':
             size = 8 * 1024 * 1024
             self.send_response(200)

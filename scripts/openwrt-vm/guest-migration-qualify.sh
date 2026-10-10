@@ -124,7 +124,7 @@ table ip netfleet_vm_migration_probe {
 EOF
 dnsmasq --keep-in-foreground --port=1054 --listen-address=127.0.0.1 --bind-interfaces \
 	--no-resolv --no-hosts --address=/netfleet-probe.test/192.168.1.2 \
-	--address=/www.gstatic.com/192.168.1.2 --pid-file="$work/dns.pid" >"$work/dns.log" 2>&1 &
+	--address=/www.gstatic.com/192.168.1.2 --address=/www.cloudflare.com/192.168.1.2 --pid-file="$work/dns.pid" >"$work/dns.log" 2>&1 &
 helper_pids="$helper_pids $!"
 for helper in primary reserve; do
 	"$previous/bin/netfleet-test-$helper" -d "$previous/helper-$helper" -f "$previous/helper-$helper.json" \

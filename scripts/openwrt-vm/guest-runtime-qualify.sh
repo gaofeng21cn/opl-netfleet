@@ -71,6 +71,7 @@ export PATH
 ip route replace default via 192.168.1.2 dev br-lan
 grep -Fq 'netfleet-probe.test' /etc/hosts || printf '192.168.1.2 netfleet-probe.test\n' >>/etc/hosts
 grep -Fq 'www.gstatic.com' /etc/hosts || printf '192.168.1.2 www.gstatic.com\n' >>/etc/hosts
+grep -Fq 'www.cloudflare.com' /etc/hosts || printf '192.168.1.2 www.cloudflare.com\n' >>/etc/hosts
 /etc/init.d/dnsmasq restart
 printf 'nameserver 192.168.1.3\n' >/etc/resolv.conf
 stage=install_dependencies
@@ -353,10 +354,10 @@ cat >"$work/manual-policy.json" <<EOF
 EOF
 
 cat >"$work/helper-primary.json" <<'EOF'
-{"socks-port":1081,"mode":"rule","log-level":"silent","ipv6":false,"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"192.168.1.2"},"rules":["MATCH,DIRECT"]}
+{"socks-port":1081,"mode":"rule","log-level":"silent","ipv6":false,"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"192.168.1.2","www.cloudflare.com":"192.168.1.2"},"rules":["MATCH,DIRECT"]}
 EOF
 cat >"$work/helper-reserve.json" <<'EOF'
-{"socks-port":1082,"mode":"rule","log-level":"silent","ipv6":false,"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"192.168.1.2"},"rules":["MATCH,DIRECT"]}
+{"socks-port":1082,"mode":"rule","log-level":"silent","ipv6":false,"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"192.168.1.2","www.cloudflare.com":"192.168.1.2"},"rules":["MATCH,DIRECT"]}
 EOF
 cat >"$work/runtime-owner.uc" <<'EOF'
 import { readfile, writefile } from "fs";
@@ -368,7 +369,7 @@ config["tproxy-port"] = 7892;
 config["allow-lan"] = true;
 config.secret = ARGV[1];
 config["external-controller"] = "0.0.0.0:9090";
-config.hosts = { "netfleet-probe.test": "192.168.1.2", "www.gstatic.com": "192.168.1.2" };
+config.hosts = { "netfleet-probe.test": "192.168.1.2", "www.gstatic.com": "192.168.1.2", "www.cloudflare.com": "192.168.1.2" };
 config.dns = { enable: true, listen: "[::]:1053", nameserver: ["system"] };
 config.mode = "rule";
 config["log-level"] = "warning";

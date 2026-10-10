@@ -399,7 +399,7 @@ else
 	/etc/init.d/opl-netfleet disable
 fi
 cat /tmp/local-probe.crt >>/etc/ssl/certs/ca-certificates.crt
-printf '192.168.1.2 netfleet-probe.test www.gstatic.com\n' >>/etc/hosts
+printf '192.168.1.2 netfleet-probe.test www.gstatic.com www.cloudflare.com\n' >>/etc/hosts
 
 stage=real_upstream
 ip netns add nf-setup-upstream
@@ -450,11 +450,11 @@ EOF
 nft -s list table ip netfleet_setup_fixture >"$work/foreign.before.nft"
 ip netns exec nf-setup-upstream dnsmasq --keep-in-foreground --port=53 \
 	--listen-address=198.18.1.2 --bind-interfaces --no-resolv --no-hosts \
-	--address=/netfleet-probe.test/192.168.1.2 --address=/www.gstatic.com/192.168.1.2 \
+	--address=/netfleet-probe.test/192.168.1.2 --address=/www.gstatic.com/192.168.1.2 --address=/www.cloudflare.com/192.168.1.2 \
 	--pid-file="$work/dns.pid" >"$work/dns.log" 2>&1 &
 helper_pids="$helper_pids $!"
 cat >"$work/helper.json" <<'EOF'
-{"mixed-port":1081,"allow-lan":true,"bind-address":"*","external-controller":"[::]:19091","mode":"direct","log-level":"warning","ipv6":true,"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"192.168.1.2"}}
+{"mixed-port":1081,"allow-lan":true,"bind-address":"*","external-controller":"[::]:19091","mode":"direct","log-level":"warning","ipv6":true,"hosts":{"netfleet-probe.test":"192.168.1.2","www.gstatic.com":"192.168.1.2","www.cloudflare.com":"192.168.1.2"}}
 EOF
 ip netns exec nf-setup-upstream "$work/bin/nf-setup-proxy" -d "$work" -f "$work/helper.json" >"$work/helper.log" 2>&1 &
 helper_pids="$helper_pids $!"

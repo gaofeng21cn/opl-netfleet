@@ -192,7 +192,7 @@ cat >"$work/local-probe-server.ext" <<'EOF'
 basicConstraints=critical,CA:FALSE
 keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
-subjectAltName=DNS:netfleet-probe.test,DNS:www.gstatic.com,IP:192.168.1.2
+subjectAltName=DNS:netfleet-probe.test,DNS:www.gstatic.com,DNS:www.cloudflare.com,IP:192.168.1.2
 EOF
 openssl x509 -req -sha256 -days 1 \
 	-in "$work/local-probe-server.csr" \

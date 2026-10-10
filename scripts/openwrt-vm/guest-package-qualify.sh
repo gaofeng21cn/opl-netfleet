@@ -372,6 +372,7 @@ rm -f /etc/opl-netfleet/policy.json /etc/opl-netfleet/evidence.json \
 	/etc/nikki/profiles/opl-netfleet/mvp.manifest.json
 rm -rf "$fixture/package-helper-primary" "$fixture/package-helper-reserve"
 grep -Fq 'www.gstatic.com' /etc/hosts || printf '192.168.1.2 www.gstatic.com\n' >>/etc/hosts
+grep -Fq 'www.cloudflare.com' /etc/hosts || printf '192.168.1.2 www.cloudflare.com\n' >>/etc/hosts
 nft add table ip netfleet_vm_probe
 nft 'add chain ip netfleet_vm_probe output { type nat hook output priority -100; policy accept; }'
 nft add rule ip netfleet_vm_probe output ip daddr 192.168.1.2 tcp dport 443 \
@@ -404,6 +405,7 @@ log-level: info
 ipv6: false
 hosts:
   www.gstatic.com: 192.168.1.2
+  www.cloudflare.com: 192.168.1.2
 proxies:
   - name: Base SOCKS
     type: socks5
