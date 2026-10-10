@@ -2,7 +2,7 @@ import * as fs from 'fs';
 const root=ARGV[1] ?? '/src/openwrt/files/usr/libexec/opl-netfleet',pid=+ARGV[0];
 const network={backend:'native-mihomo',ready:true,router_proxy:true,lan_proxy:true,compatibility_ownership_guard:true,interfaces:['nf-observe'],engine_pid:pid};
 const process=loadfile(root+'/plugins/platform/lib/process.uc')()({});
-const paths=loadfile(root+'/plugins/platform/lib/paths.uc')()({use:()=>({KIND:'native-mihomo'})});
+const paths=loadfile(root+'/plugins/platform/lib/paths.uc')()({use:()=>({ROOT_DIR:'/etc/opl-netfleet/native',RUN_DIR:'/etc/opl-netfleet/native/run'})});
 const context={root,id:'mihomo',use:name=>name=='mihomo.gateway'?{interception_snapshot:()=>({ok:true,result:{...network}})}:
     name=='platform.process'?process:
     name=='platform.paths'?paths:
