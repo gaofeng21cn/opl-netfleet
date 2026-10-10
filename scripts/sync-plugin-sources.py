@@ -2,8 +2,8 @@
 """Synchronize the canonical plugin sources into the OpenWrt payload projection.
 
 `plugins/` is the only editable tree.  The OpenWrt copy remains checked in so
-source tests and older release tooling can inspect the exact payload, but every
-package build refreshes it first and `check` rejects drift.
+source tests and release tooling can inspect the exact payload. Package builds
+check the frozen source before staging its verified projection into the SDK.
 """
 import argparse
 import shutil
