@@ -522,7 +522,31 @@ for package_name in opl-netfleet-plugin-dashboard opl-netfleet-kernel; do
 	core_before=$(cat /var/run/nikki/mihomo.pid)
 	scheduler_before=$(ubus call service list '{"name":"opl-netfleet"}' |
 		jsonfilter -e '@["opl-netfleet"].instances.*.pid')
-	package_transaction "$candidate/$package_name-$package_old.apk"
+	cohort_current=
+	cohort_added=
+	if [ "$package_name" = opl-netfleet-kernel ]; then
+		# Current plugins can require the candidate kernel's ABI floor. Establish
+		# the compatible synthetic old cohort instead of downgrading its kernel
+		# under current callers. The signed candidate restores the full cohort.
+		cohort_old="$candidate/$package_name-$package_old.apk"
+		for cohort_name in $(jsonfilter -i "$fixture/lifecycle-fixture.json" -e '@.product_packages[*]'); do
+			case "$cohort_name" in opl-netfleet-plugin-*) ;; *) continue ;; esac
+			cohort_prior=$(ucode -e 'import { readfile } from "fs";
+				print(json(readfile(ARGV[0])).package_versions[ARGV[1]].old);' "$fixture/lifecycle-fixture.json" "$cohort_name")
+			cohort_next=$(ucode -e 'import { readfile } from "fs";
+				print(json(readfile(ARGV[0])).package_versions[ARGV[1]].current);' "$fixture/lifecycle-fixture.json" "$cohort_name")
+			uclient-fetch -q -O "$candidate/$cohort_name-$cohort_prior.apk" "$feed_url/components-fixtures/good/$cohort_name-$cohort_prior.apk"
+			uclient-fetch -q -O "$candidate/$cohort_name-$cohort_next.apk" "$feed_url/$cohort_name-$cohort_next.apk"
+			cohort_old="$cohort_old $candidate/$cohort_name-$cohort_prior.apk"
+			cohort_current="$cohort_current $candidate/$cohort_name-$cohort_next.apk"
+			if ! grep -Eq "^$cohort_name([@<>=~]|$)" "$fixture/lifecycle-world.before"; then
+				cohort_added="$cohort_added $cohort_name"
+			fi
+		done
+		package_transaction $cohort_old
+	else
+		package_transaction "$candidate/$package_name-$package_old.apk"
+	fi
 	"$real_apk" list --manifest | grep -Fqx "$package_name $package_old"
 	lifecycle_restored lifecycle-before
 	if [ "$package_name" = opl-netfleet-kernel ]; then
@@ -540,6 +564,10 @@ RPC_OLD
 		! grep -Fq '"plugin_read"' "$fixture/kernel-rpc-old.txt"
 	fi
 	package_transaction "$candidate/$package_name-$package_current.apk"
+	if [ -n "$cohort_current" ]; then
+		package_transaction $cohort_current
+		[ -z "$cohort_added" ] || "$real_apk" --no-network del $cohort_added >>"$fixture/package-manager.log" 2>&1
+	fi
 	"$real_apk" list --manifest | grep -Fqx "$package_name $package_current"
 	lifecycle_restored lifecycle-before
 	if [ "$package_name" = opl-netfleet-kernel ]; then
