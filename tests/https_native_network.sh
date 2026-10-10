@@ -34,6 +34,17 @@ finish() {
         echo "Native network failure: $stage" >&2
         ucode /tmp/tests/https_native_guest.uc state >&2
         logread -e opl-netfleet-core | tail -20 >&2
+        for transaction_dir in /tmp/netfleet-plugin-update-test.*; do
+            [ -d "$transaction_dir" ] || continue
+            for transaction_file in start.json result.json operation.json; do
+                [ ! -f "$transaction_dir/$transaction_file" ] || cat "$transaction_dir/$transaction_file" >&2
+            done
+            transaction_id=$(jsonfilter -i "$transaction_dir/start.json" -e '@.result.operation.id' 2>/dev/null)
+            [ -z "$transaction_id" ] || {
+                cat "/etc/opl-netfleet/package-transactions/$transaction_id/journal.json" >&2
+                tail -60 "/etc/opl-netfleet/package-transactions/$transaction_id/log" >&2
+            }
+        done
         for file in "$work"/*.log; do tail -20 "$file" >&2; done
     fi
     ucode /tmp/tests/https_native_guest.uc disable >/dev/null 2>&1
