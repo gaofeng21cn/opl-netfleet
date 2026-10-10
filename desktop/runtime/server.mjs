@@ -736,7 +736,7 @@ async function main() {
           authorizeNetwork = input.authorize === true;
           try {
             const result = await action(input);
-            await snapshot();
+            if (!closing) await snapshot();
             return result;
           } finally { authorizeNetwork = false; }
         }) });
