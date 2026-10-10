@@ -551,6 +551,11 @@ for package_name in opl-netfleet-plugin-dashboard opl-netfleet-kernel; do
 			fi
 		done
 		package_transaction $cohort_old
+		# This multi-package downgrade only prepares the old caller fixture. Its
+		# intermediate hooks may stop automation; establish the baseline before
+		# testing the isolated kernel replacement's own restoration contract.
+		stage=prepare_kernel_caller_baseline
+		/etc/init.d/opl-netfleet start
 	else
 		package_transaction "$candidate/$package_name-$package_old.apk"
 	fi
@@ -571,10 +576,6 @@ RPC_OLD
 		! grep -Fq '"plugin_read"' "$fixture/kernel-rpc-old.txt"
 	fi
 	package_transaction "$candidate/$package_name-$package_current.apk"
-	if [ -n "$cohort_current" ]; then
-		package_transaction $cohort_current
-		[ -z "$cohort_added" ] || "$real_apk" --no-network del $cohort_added >>"$fixture/package-manager.log" 2>&1
-	fi
 	"$real_apk" list --manifest | grep -Fqx "$package_name $package_current"
 	lifecycle_restored lifecycle-before
 	if [ "$package_name" = opl-netfleet-kernel ]; then
@@ -590,6 +591,13 @@ RPC_OLD
 		[ "$(cat /var/run/nikki/mihomo.pid)" = "$core_before" ]
 		[ "$(ubus call service list '{"name":"opl-netfleet"}' |
 			jsonfilter -e '@["opl-netfleet"].instances.*.pid')" = "$scheduler_before" ]
+	fi
+	if [ -n "$cohort_current" ]; then
+		stage=restore_current_caller_fixture
+		package_transaction $cohort_current
+		[ -z "$cohort_added" ] || "$real_apk" --no-network del $cohort_added >>"$fixture/package-manager.log" 2>&1
+		/etc/init.d/opl-netfleet start
+		lifecycle_restored lifecycle-before
 	fi
 done
 "$real_apk" --no-network del opl-netfleet-plugin-dashboard opl-netfleet-kernel \
