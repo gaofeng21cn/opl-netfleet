@@ -619,7 +619,10 @@ for attempt in 1 2 3 4 5 6 7 8 9 10; do
 done
 [ -s "$fixture/rpc-methods-old.txt" ]
 ! cat "$fixture/rpc-methods-old.txt" | grep -Fq '"select_region"'
-owner_locked "$real_apk" fix --reinstall opl-netfleet-plugin-status >>"$fixture/package-manager.log" 2>&1
+# The restored local archives are not APK's download cache. Allow the exact
+# signed fixture feed to supply bytes so fix cannot silently skip reinstall.
+owner_locked "$real_apk" --timeout 30 --repositories-file /etc/apk/repositories.d/opl-netfleet.list \
+	fix --reinstall opl-netfleet-plugin-status >>"$fixture/package-manager.log" 2>&1
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
 	ubus -v list opl-netfleet >"$fixture/rpc-methods-after.txt" 2>/dev/null && grep -Fq '"select_region"' "$fixture/rpc-methods-after.txt" && break
 	sleep 1
