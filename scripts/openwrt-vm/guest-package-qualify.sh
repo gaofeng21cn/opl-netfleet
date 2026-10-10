@@ -619,10 +619,15 @@ for attempt in 1 2 3 4 5 6 7 8 9 10; do
 done
 [ -s "$fixture/rpc-methods-old.txt" ]
 ! cat "$fixture/rpc-methods-old.txt" | grep -Fq '"select_region"'
-# The restored local archives are not APK's download cache. Allow the exact
-# signed fixture feed to supply bytes so fix cannot silently skip reinstall.
-owner_locked "$real_apk" --timeout 30 --repositories-file /etc/apk/repositories.d/opl-netfleet.list \
-	fix --reinstall opl-netfleet-plugin-status >>"$fixture/package-manager.log" 2>&1
+# Local archive installs carry checksum identities that fix cannot retrieve
+# from a repository. Reinstall the exact signed candidate archive explicitly.
+status_current=$(ucode -e 'import { readfile } from "fs";
+	print(json(readfile(ARGV[0])).package_versions["opl-netfleet-plugin-status"].current);' "$fixture/lifecycle-fixture.json")
+owner_locked "$real_apk" --no-network add --force-reinstall \
+	"$candidate/opl-netfleet-plugin-status-$status_current.apk" >>"$fixture/package-manager.log" 2>&1
+if ! grep -Eq '^opl-netfleet-plugin-status([@<>=~]|$)' "$fixture/lifecycle-world.before"; then
+	"$real_apk" --no-network del opl-netfleet-plugin-status >>"$fixture/package-manager.log" 2>&1
+fi
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
 	ubus -v list opl-netfleet >"$fixture/rpc-methods-after.txt" 2>/dev/null && grep -Fq '"select_region"' "$fixture/rpc-methods-after.txt" && break
 	sleep 1
