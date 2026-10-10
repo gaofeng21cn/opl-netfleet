@@ -26,7 +26,7 @@ class MvpLayoutTests(unittest.TestCase):
             (root / "include/package.mk").touch()
             for source, package, required in ((ROOT / "openwrt", "opl-netfleet", True),
                                               (ROOT / "openwrt", "opl-netfleet-plugin-product-ui", True),
-                                              (ROOT / "openwrt", "opl-netfleet-plugin-models", False),
+                                              (ROOT / "openwrt", "opl-netfleet-plugin-models", True),
                                               (LUCI, "luci-app-netfleet", True)):
                 harness = root / "metadata.mk"
                 harness.write_text(f"$(info __BEGIN__)\n$(info $(Package/{package}))\n$(info __END__)\nall:;@:\n")
@@ -35,7 +35,7 @@ class MvpLayoutTests(unittest.TestCase):
                     f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", "all",
                 ], cwd=source, capture_output=True, text=True, check=True)
                 definition = result.stdout.split("__BEGIN__\n", 1)[1].split("__END__", 1)[0]
-                minimum = "0.8.8" if package in ("opl-netfleet-plugin-product-ui", "luci-app-netfleet") else "0.8.1"
+                minimum = "0.9.13" if package.startswith("opl-netfleet-plugin-") else ("0.8.8" if package == "luci-app-netfleet" else "0.8.1")
                 floor = f"EXTRA_DEPENDS:=opl-netfleet-kernel (>={minimum})"
                 self.assertEqual(required, floor in definition, package)
 

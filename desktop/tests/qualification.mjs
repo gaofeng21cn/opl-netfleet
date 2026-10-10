@@ -43,8 +43,8 @@ const sockets = new Set();
 relay.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
 relay.on('connect', (request, client, head) => {
   const [host, raw] = request.url.split(':');
-  // A real local proxy forwards only the explicit test destination.
-  if (host !== 'www.gstatic.com' || raw !== '443') return client.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+  // Forward the distinct latency and path-health destinations used by the policy.
+  if (!['www.gstatic.com', 'www.cloudflare.com'].includes(host) || raw !== '443') return client.end('HTTP/1.1 403 Forbidden\r\n\r\n');
   connections++;
   const upstream = net.connect(443, host, () => { client.write('HTTP/1.1 200 Connection Established\r\n\r\n'); if (head.length) upstream.write(head); upstream.pipe(client); client.pipe(upstream); });
   upstream.on('error', () => client.destroy()); client.on('error', () => upstream.destroy()); client.on('close', () => upstream.destroy());
