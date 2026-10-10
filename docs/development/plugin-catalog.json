@@ -11,7 +11,7 @@
         "activation.control",
         "activation.mode"
       ],
-      "version": "0.7.5"
+      "version": "0.7.6"
     },
     {
       "api_version": 1,
@@ -54,7 +54,7 @@
         "configuration.onboarding",
         "configuration.onboarding-model"
       ],
-      "version": "0.7.6"
+      "version": "0.7.7"
     },
     {
       "api_version": 1,
@@ -246,7 +246,7 @@
         "platform.files",
         "platform.storage"
       ],
-      "version": "0.8.3"
+      "version": "0.8.4"
     },
     {
       "api_version": 1,
@@ -270,7 +270,7 @@
         "opl-netfleet-plugin-subscriptions"
       ],
       "services": [],
-      "version": "0.10.16"
+      "version": "0.10.17"
     },
     {
       "api_version": 1,

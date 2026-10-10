@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet
-PKG_VERSION:=0.9.12
+PKG_VERSION:=0.9.13
 PKG_RELEASE:=
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=OPL NetFleet
@@ -384,7 +384,7 @@ define Package/opl-netfleet-plugin-$(1)
   EXTRA_DEPENDS+=$(if $(filter network,$(1)),opl-netfleet-plugin-mihomo (>=0.9.11))
   EXTRA_DEPENDS+=$(if $(filter mihomo,$(1)),$(comma) !opl-netfleet-plugin-network (<0.8.5))
   EXTRA_DEPENDS+=$(if $(filter scheduler status,$(1)),opl-netfleet-plugin-mihomo (>=0.9.8)$(comma) opl-netfleet-plugin-models (>=0.7.13))
-  EXTRA_DEPENDS+=$(if $(filter product-ui,$(1)),$(comma) opl-netfleet-plugin-configuration (>=0.7.6)$(comma) opl-netfleet-plugin-status (>=0.8.10))
+  EXTRA_DEPENDS+=$(if $(filter product-ui,$(1)),$(comma) opl-netfleet-plugin-configuration (>=0.7.7)$(comma) opl-netfleet-plugin-status (>=0.8.10))
   EXTRA_DEPENDS+=$(if $(filter subscriptions,$(1)),opl-netfleet-plugin-models (>=0.7.12)$(comma) opl-netfleet-plugin-platform (>=0.8.4)$(comma) opl-netfleet-plugin-platform-openwrt (>=0.8.4))$(if $(filter refresh scheduler,$(1)),$(if $(filter scheduler,$(1)),$(comma) )opl-netfleet-plugin-subscriptions (>=0.7.1))
   PKGARCH:=all
 endef
