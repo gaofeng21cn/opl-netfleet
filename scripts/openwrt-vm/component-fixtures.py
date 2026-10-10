@@ -150,7 +150,9 @@ def build(candidate, output, baseline=None):
                         continue
                     if key == "version":
                         value = target_version
-                    elif key == "depends" and target_version == prior:
+                    elif key == "depends" and (target_version == prior or feed == "independent"):
+                        # The independent dashboard fixture updates within the
+                        # synthetic old cohort, whose kernel has the current ABI.
                         value = prior_dependencies(value, current_versions)
                     arguments.extend(("--info", f"{key}:{' '.join(value) if isinstance(value, list) else value}"))
                 arguments.extend(script_args)
