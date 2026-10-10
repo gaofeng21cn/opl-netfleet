@@ -78,15 +78,21 @@ lifecycle_snapshot() {
 		printf("%J\n", result);' "$fixture/${1}.proxies" >"$fixture/${1}.routes"
 }
 lifecycle_restored() {
+	restore_stage=$stage
+	stage=${restore_stage}_status
 	ucode "$main" status >"$fixture/lifecycle-status.json"
 	[ "$(jsonfilter -i "$fixture/lifecycle-status.json" -e '@.result.active')" = true ]
+	stage=${restore_stage}_owners
 	/etc/init.d/opl-netfleet running >/dev/null 2>&1
 	/etc/init.d/nikki running >/dev/null 2>&1
+	stage=${restore_stage}_probe
 	ucode "$main" probe >"$fixture/lifecycle-probe.json"
 	[ "$(jsonfilter -i "$fixture/lifecycle-probe.json" -e '@.result.ok')" = true ]
+	stage=${restore_stage}_inputs
 	lifecycle_snapshot after
 	cmp "$fixture/${1}.inputs" "$fixture/after.inputs"
 	cmp "$fixture/${1}.routes" "$fixture/after.routes"
+	stage=${restore_stage}_markers
 	for marker in .kernel .kernel-plugins .coordinator; do
 		[ ! -e "/var/run/opl-netfleet-plugin-maintenance/$marker" ]
 	done
@@ -97,6 +103,7 @@ lifecycle_restored() {
 	[ ! -e /var/run/opl-netfleet-mihomo-handoff/state.json ]
 	[ ! -e /tmp/opl-netfleet-package-upgrade-state ]
 	[ ! -e /tmp/opl-netfleet-microkernel-migration ]
+	stage=$restore_stage
 }
 
 mkdir -p "$candidate"
