@@ -72,7 +72,7 @@ require PACKAGES; require COMPAT_PACKAGES
 [[ -f "$COMPAT_PACKAGES/compat-manifest.json" ]] || { printf 'Signed compatibility candidate missing.\n' >&2; exit 2; }
 if [[ -n "${BASE_QUALIFICATION:-}" && ( "$action" == qualify || "$action" == benchmark ) ]]; then
   require PREVIOUS
-  args=(); [[ "$action" != benchmark ]] || args=(--benchmark)
+  args=(--preflight); [[ "$action" != benchmark ]] || args+=(--benchmark)
   [[ -z "${RETAINED_BASE:-}" ]] || args+=(--retained-base "$RETAINED_BASE")
   python3 scripts/https-compat/qualify.py --packages "$PACKAGES" --base-qualification "$BASE_QUALIFICATION" \
     --candidate "$COMPAT_PACKAGES" --previous "$PREVIOUS" --output "$OUTPUT/plugin-qualification.json" "${args[@]}"
@@ -82,6 +82,7 @@ fi
 if [[ "$action" == qualify ]]; then
   bash scripts/openwrt-vm.sh --ref "$commit" --packages "$PACKAGES" --output "$OUTPUT/qualification.json"
 fi
+python3 scripts/netfleet-delivery-preflight.py --ref "$commit" --candidate "$PACKAGES"
 args=(); [[ -z "${BASE_QUALIFICATION:-}" ]] || args=(--base-qualification "$BASE_QUALIFICATION")
 bash scripts/openwrt-vm.sh --ref "$commit" --packages "$PACKAGES" "${args[@]}" \
   --diagnostic compatibility --compat-package "$COMPAT_PACKAGES" --output "$OUTPUT/compatibility.json"

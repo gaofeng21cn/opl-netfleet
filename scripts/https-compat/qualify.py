@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 from base import ROOT, sha, validate
 
@@ -121,6 +122,7 @@ def main():
     p.add_argument('--benchmark', action='store_true')
     p.add_argument('--retained-base', type=Path, help='exact signed plugins retained by the target')
     p.add_argument('--runtime-cycle', type=Path, help='signed native plugin upgrade and failed-candidate fixtures')
+    p.add_argument('--preflight', action='store_true', help='run cheap source, candidate and fixture checks before QEMU')
     p.add_argument('--validate-only', action='store_true')
     a = p.parse_args()
     current = artifact(a.candidate, 'compat-manifest.json')
@@ -154,6 +156,15 @@ def main():
                   'source_commit':execution_commit, 'source_tree':tree,
                   'base':base, 'engine':current, 'previous_engine':previous,
                   'identity':identity, 'packages':['opl-netfleet-https-compat']}
+    if a.preflight:
+        candidate_source = json.loads((a.packages / 'manifest.json').read_text())['source_commit']
+        command = [sys.executable, str(ROOT / 'scripts/netfleet-delivery-preflight.py'),
+                   '--ref', candidate_source, '--candidate', str(a.packages.resolve())]
+        if a.test_ref:
+            command.extend(['--test-ref', a.test_ref])
+        if a.runtime_cycle:
+            command.extend(['--fixture', str(a.runtime_cycle.resolve())])
+        subprocess.run(command, check=True)
     if a.validate_only:
         print(json.dumps(result)); return
     output = a.output.resolve()

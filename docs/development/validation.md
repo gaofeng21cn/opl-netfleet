@@ -209,6 +209,18 @@ world 约束恢复、无资源 owner 插件更新时核心 PID 不变，以及�
 
 HTTPS 的顺序固定为：基础组合资格 → HTTPS 独立资格 → 插件包 dry-run → 只更新 HTTPS 包的 canary → 目标回读 → 吸收 canonical `main`。订阅、平台、模型、UI 等共享插件由各自 owner 按同一顺序交付；它们的候选可以组成测试基座，但不能进入 HTTPS 插件提交。资格脚本必须对同一工作区加互斥锁，防止重复 QEMU 和共享证据目录互相污染。
 
+长 HTTPS 场景前先执行 `scripts/https-compat/qualify.py --preflight`。这是一道几秒内结束的
+宿主门，检查同源码候选、测试 ref 允许范围、fixture 载荷清洁度以及 `platform.paths` 的
+真实 provider 绑定；它用于提前截住路径为 `undefined/interception.json`、
+`native_observer_identity_unavailable`、`plugin_payload_name_invalid` 和
+`plugin_files_unsafe` 这类输入或装载错误。通过后才进入完整长连接、升级回退和资源压力场景。
+短门不能替代真实 QEMU 资格，也不能复用受生产代码影响的旧资格。
+
+HTTPS 资格输入目录在传入 VM 前必须是可清点的干净载荷：只允许预期的常规文件，禁止符号链接、
+`._*`、`.DS_Store`、交换文件和临时分片；`cycle.json`、`fixture.json` 等 JSON 必须能在宿主
+解析。短门失败时修复 owner 或输入后只重跑短门；完整资格失败时按回执中的阶段从失败 lane
+恢复，未受影响且身份仍一致的阶段可以复用其不可变回执。
+
 ### 同一核心的架构封装验证
 
 `openwrt-vm.sh --diagnostic setup --core-package <目录> --packages <已验证基础包> --base-qualification <基础回执>`

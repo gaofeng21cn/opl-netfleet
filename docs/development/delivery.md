@@ -70,6 +70,28 @@ SDK UCode 准备后使用本 SDK 的动态库路径，并执行 fs/socket 导入
 复用一次，部署不重新构建。设备更新与阶段计时的唯一 SOP 见
 [有限插件组合更新](../operations/canary-promotion.md#有限插件组合更新)。
 
+### 资格冻结与阶段化交付
+
+长资格开始前先冻结四个身份：源 commit/tree、候选 `manifest.json`、测试 ref 和资格输入
+目录。可以把以下只读预检作为长 QEMU 或 HTTPS 资格的第一步：
+
+```sh
+python3 scripts/netfleet-delivery-preflight.py \
+  --ref <source-commit> --candidate <candidate-dir> --fixture <fixture-dir> \
+  --require-clean --output <private-preflight.json>
+```
+
+预检会验证候选确实属于该源码、测试 ref 只改变测试工具、载荷没有 `._*` 或编辑器临时文件，
+并确认 components owner 仍通过 `platform.paths` 取得私有运行路径。HTTPS 资格可用
+`scripts/https-compat/qualify.py --preflight` 自动执行同一门；预检失败时不启动 QEMU。
+生产代码、候选包或依赖变更后必须重新冻结并取得完整资格；只有测试工具变化且身份仍绑定时，
+才允许使用 `--test-ref`。资格失败后按失败阶段恢复，保留同一身份下已经成立的阶段回执，
+不要把一个长场景的失败简单重跑成另一批候选。
+
+交付耗时按构建、预检、短门、完整资格、发布、设备事务和最终回读分别记录。并行阶段只能报告
+墙钟耗时与各阶段耗时，不能把并行子任务相加冒充端到端时长；历史耗时缺少阶段回执时只报告
+已知部分，不用估算补齐。
+
 1. 选定干净主线源码，更新实际变更的软件包版本，先完成源码、载荷同步、UI 和受影响故障路径检查，再冻结候选。未变更的插件不递增版本；不要在检查尚未完成时同时启动多批构建。
 2. 使用 `scripts/netfleet-package-build.sh` 本地构建，或手动运行
    `.github/workflows/netfleet-openwrt-candidate.yml`，输入源码 ref、SDK URL 及 SHA-256。

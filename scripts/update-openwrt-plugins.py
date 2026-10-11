@@ -171,6 +171,8 @@ def main() -> None:
     os.umask(0o077)
     if args.target.startswith('-') or not 10 <= args.observe_seconds <= 1800:
         parser.error('invalid target or observation duration (10..1800 seconds)')
+    if args.packages is None and len(args.plugin) != 1:
+        parser.error('Feed updates accept exactly one --plugin; repeat --plugin only for offline bootstrap')
     canonical = Path(run(['git', '-C', str(ROOT), 'rev-parse', '--path-format=absolute', '--git-common-dir'], text=True).strip()).parent
     if any(args.output.resolve().is_relative_to(root) for root in (ROOT, canonical)):
         raise ValueError('operation receipts must remain outside the repository')
