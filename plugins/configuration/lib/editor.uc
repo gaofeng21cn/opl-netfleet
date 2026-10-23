@@ -13,7 +13,6 @@ const operation = context.use("events.operation");
 const resolve_profile = context.use("mihomo.backend").resolve_profile;
 const profile_exists = context.use("mihomo.backend").profile_exists;
 const prepare_provider_links = context.use("mihomo.backend").prepare_provider_links;
-const remove_provider_links = context.use("mihomo.backend").remove_provider_links;
 const running = context.use("mihomo.backend").running;
 const ARTIFACT_PATH = context.use("mihomo.backend").ARTIFACT_PATH;
 const MANIFEST_PATH = context.use("mihomo.backend").MANIFEST_PATH;
@@ -36,6 +35,20 @@ const subscription_display_name = context.use("platform.subscriptions").subscrip
 const subscription_options = context.use("platform.subscriptions").subscription_options;
 const POLICY_PATH = context.use("platform.paths").POLICY_PATH;
 const load_provider_profiles = context.use("subscriptions.providers").load;
+const compile_result = context.use("compilation.control").compile_result;
+const replace_active = context.use("activation.control").replace_active;
+const capture = context.use("events.output").capture;
+const load_evidence = context.use("platform.documents").load_evidence;
+const capture_runtime_selections = context.use("mihomo.paths").capture_runtime_selections;
+const restore_runtime_selections = context.use("mihomo.paths").restore_runtime_selections;
+const protected_probes = context.use("mihomo.controller").protected_probes;
+const runtime_readback = context.use("mihomo.readback").runtime_readback;
+const COMPILED_PROFILE = context.use("mihomo.backend").COMPILED_PROFILE;
+const restart = context.use("mihomo.backend").restart;
+const set_profile = context.use("platform.profile").set_profile;
+const set_backend_enabled = context.use("platform.profile").set_backend_enabled;
+const api_secret = context.use("platform.credentials").api_secret;
+const restore_recovery_with_probes = context.use("recovery.control").restore_recovery_with_probes;
 
 const WORK_DIR = "/tmp/opl-netfleet-config-apply";
 const MAIN_PATH = context.use("platform.paths").MAIN_PATH;
@@ -154,11 +167,21 @@ snapshot_file = function(path, name, required) {
 	return { path: path, backup: backup, digest: digest, existed: true };
 };
 
-prepare_snapshot = function() {
+prepare_snapshot = function(policy) {
+	const active = is_active(current_profile()) && running();
+	const manifest = active ? read_json(MANIFEST_PATH) : null;
+	let selections = null;
+	if (active) {
+		const readback = runtime_readback(current_profile(), manifest);
+		const captured = capture_runtime_selections(manifest);
+		if (!readback.mihomo_running || !readback.mihomo_config_valid || !readback.state_available ||
+			!readback.runtime_identity_ok || !captured.ok || !protected_probes(policy).ok) return null;
+		selections = captured.selections;
+	}
 	if (system(`rm -rf ${shell_quote(WORK_DIR)}`) != 0 || system(`mkdir -p ${shell_quote(WORK_DIR)}`) != 0) return null;
 	const files = [snapshot_file(POLICY_PATH, "policy.json", true), snapshot_file(ARTIFACT_PATH, "artifact.json", false), snapshot_file(MANIFEST_PATH, "manifest.json", false)];
 	for (let i = 0; i < length(files); i++) if (files[i] == null) return null;
-	return { files: files, active: is_active(current_profile()) && running(),
+	return { files: files, active: active, manifest: manifest, selections: selections, runtime_changed: false,
 		stopped: backend_metadata().id == "native-mihomo" && backend_enabled() != true && !running() };
 };
 
@@ -207,25 +230,42 @@ cleanup_snapshot = function() {
 rollback = function(snapshot) {
 	if (!restore_snapshot(snapshot)) return { ok: false, error: "snapshot_restore_failed" };
 	if (snapshot.stopped) return enter_passthrough(load_policy(), "config_apply_failed", true);
+	if (snapshot.active == true) {
+		const policy = load_policy();
+		const providers = load_provider_profiles(policy);
+		if (!providers.ok || !prepare_provider_links(providers.profiles))
+			return { ok: false, error: "rollback_provider_prepare_failed" };
+		// A compile rejection never switched the running owner. Preserve its PID
+		// and choices; otherwise restore the original artifact directly, without
+		// making an unrelated native subscription a prerequisite for recovery.
+		if (snapshot.runtime_changed && ((!backend_enabled() && !set_backend_enabled(true)) ||
+			!set_profile(COMPILED_PROFILE) || !restart())) return { ok: false, error: "rollback_restart_failed" };
+		let readback = null;
+		for (let attempt = 0; attempt < 12; attempt++) {
+			readback = runtime_readback(COMPILED_PROFILE, snapshot.manifest);
+			if (readback.mihomo_running && readback.mihomo_config_valid && readback.state_available && readback.runtime_identity_ok) break;
+			if (attempt < 11) system("sleep 1");
+		}
+		if (!readback?.mihomo_running || !readback.mihomo_config_valid || !readback.state_available || !readback.runtime_identity_ok)
+			return { ok: false, error: "rollback_owner_readback_failed", readback: readback };
+		const restored = snapshot.runtime_changed ? restore_runtime_selections(api_secret(), snapshot.manifest, snapshot.selections, policy) :
+			protected_probes(policy).ok;
+		return restored ? { ok: true, state: "active_restored", readback: readback } :
+			{ ok: false, error: "rollback_selection_or_probe_failed", readback: readback };
+	}
 	const disabled = run_owner("disable");
 	if (!disabled.ok) return { ok: false, error: "rollback_disable_failed", disable: disabled.response };
-	if (snapshot.active != true) return { ok: true, state: "inactive_restored", disable: disabled.response };
-	const providers = load_provider_profiles(load_policy());
-	if (!providers.ok) return { ok: false, error: "rollback_provider_read_failed", detail: providers };
-	if (!prepare_provider_links(providers.profiles)) {
-		remove_provider_links(providers.profiles);
-		return { ok: false, error: "rollback_provider_prepare_failed" };
-	}
-	const enabled = run_owner("enable");
-	return enabled.ok ? { ok: true, state: "active_restored", enable: enabled.response } :
-		{ ok: false, error: "rollback_enable_failed", enable: enabled.response };
+	return { ok: true, state: "inactive_restored", disable: disabled.response };
 };
 
 fail_apply = function(snapshot, error, detail) {
 	operation.update("rolling_back");
 	const restored = rollback(snapshot);
+	if (!restored.ok) {
+		const recovery = restore_recovery_with_probes(load_policy(), "config_apply_rollback_failed");
+		fail("config-apply", "config_apply_rollback_failed", { error: error, detail: detail, rollback: restored, recovery: recovery });
+	}
 	cleanup_snapshot();
-	if (!restored.ok) fail("config-apply", "config_apply_rollback_failed", { error: error, detail: detail, rollback: restored });
 	fail("config-apply", error, { detail: detail, rollback: restored });
 };
 
@@ -263,26 +303,24 @@ apply = function(policy, envelope_path) {
 		return;
 	}
 	operation.update("snapshotting");
-	const snapshot = prepare_snapshot();
+	const snapshot = prepare_snapshot(policy);
 	if (snapshot == null) {
 		cleanup_snapshot();
 		fail("config-apply", "config_snapshot_failed", null);
 	}
-	if (snapshot.active == true) {
-		operation.update("deactivating");
-		const disabled = run_owner("disable");
-		if (!disabled.ok) {
-			cleanup_snapshot();
-			fail("config-apply", "active_disable_failed", disabled.response);
-		}
-	}
 	operation.update("saving");
 	if (!write_json_atomic(POLICY_PATH, change.policy) || load_policy() == null) fail_apply(snapshot, "policy_write_failed", null);
 	operation.update("compiling");
-	const compiled = run_owner("compile");
+	const compiled = snapshot.active ? compile_result(change.policy, true) : run_owner("compile");
 	if (!compiled.ok) fail_apply(snapshot, compiled.error, compiled);
 	operation.update("activating");
-	const enabled = run_owner("enable");
+	let enabled;
+	if (snapshot.active) {
+		snapshot.runtime_changed = true;
+		const activation = capture(() => replace_active(change.policy, load_evidence(),
+			(phase, details) => operation.update(phase, details)));
+		enabled = { ...activation, response: activation };
+	} else enabled = run_owner("enable");
 	if (!enabled.ok) fail_apply(snapshot, enabled.error, enabled);
 	operation.update("verifying");
 	const applied = load_policy();

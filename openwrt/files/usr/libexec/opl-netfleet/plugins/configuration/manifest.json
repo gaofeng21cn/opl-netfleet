@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "configuration",
   "label": "Policy configuration",
-  "version": "0.7.7",
+  "version": "0.7.8",
   "api_version": 1,
   "package": "opl-netfleet-plugin-configuration",
   "services": {
@@ -39,7 +39,13 @@
         "platform.process": 1,
         "platform.subscriptions": 1,
         "platform.paths": 1,
-        "recovery.control": 1
+        "recovery.control": 1,
+        "compilation.control": 1,
+        "activation.control": 1,
+        "mihomo.paths": 1,
+        "mihomo.controller": 1,
+        "mihomo.readback": 1,
+        "platform.credentials": 1
       }
     },
     "configuration.onboarding": {

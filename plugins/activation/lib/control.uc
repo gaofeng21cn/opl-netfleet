@@ -82,12 +82,17 @@ fail_enable_after_switch = function(policy, original_profile, reason, details) {
 	fail("enable", reason, details);
 };
 
-enable_action = function(policy, evidence, quiet, report) {
+enable_action = function(policy, evidence, quiet, report, replacing_active) {
 	const progress = type(report) == "function" ? report : () => null;
 	progress("checking_inputs", { total: 0, completed: 0, subject: null });
 	let current = current_profile();
+	if (replacing_active == true && (!is_active(current) || !running()))
+		fail("enable", "active_runtime_changed", null);
 	const reject = (reason, details) => {
 		progress("rolling_back");
+		// The configuration transaction owns a verified snapshot of the active
+		// runtime. Let it restore that snapshot before trying Recovery Profile.
+		if (replacing_active == true) fail("enable", reason, details);
 		fail_enable_after_switch(policy, current, reason, details);
 	};
 	const stopped = BACKEND_KIND == "native-mihomo" && backend_enabled() != true && !running();
@@ -111,7 +116,7 @@ enable_action = function(policy, evidence, quiet, report) {
 		fail("enable", "automatic_dependency_invalid", null);
 	}
 	const recovery_profile_ref = policy.recovery_profile.ref;
-	const precondition = enable_precondition(stopped ? recovery_profile_ref : current, recovery_profile_ref, manifest);
+	const precondition = enable_precondition(stopped || replacing_active == true ? recovery_profile_ref : current, recovery_profile_ref, manifest);
 	if (!precondition.ok) {
 		fail("enable", precondition.error, { current: current, expected: recovery_profile_ref });
 	}
@@ -143,7 +148,7 @@ enable_action = function(policy, evidence, quiet, report) {
 	for (let i = 0; i < length(capability_names); i++) {
 		const capability = capability_names[i];
 		previous_choices[capability] = capture_previous_choice(before_secret,
-			manifest.generated_groups[capability], policy.policy_source?.kind == "profile");
+			manifest.generated_groups[capability], replacing_active != true && policy.policy_source?.kind == "profile");
 		if (!previous_choices[capability].ok) {
 			fail("enable", previous_choices[capability].error, {
 				capability: capability,
@@ -155,6 +160,7 @@ enable_action = function(policy, evidence, quiet, report) {
 	const switched = runtime_switch(COMPILED_PROFILE, manifest, policy);
 	if (!switched.ok) {
 		progress("rolling_back");
+		if (replacing_active == true) fail("enable", "owner_switch_failed", switched);
 		const recovery = restore_recovery_with_probes(policy, "owner_switch_failed");
 		if (!recovery.ok) {
 			fail("enable", "rollback_failed", { profile: current, recovery: recovery });
@@ -409,5 +415,7 @@ command_resume = function(argv) {
 	guarded_mutation("resume", policy, () => resume_action(policy, evidence));
 };
 
-return { fail_enable_after_switch, enable_action, disable_action, resume_action, command_enable, command_disable, command_resume };
+return { fail_enable_after_switch, enable_action,
+	replace_active: (policy, evidence, report) => enable_action(policy, evidence, true, report, true),
+	disable_action, resume_action, command_enable, command_disable, command_resume };
 };

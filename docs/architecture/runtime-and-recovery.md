@@ -104,7 +104,13 @@ OpenWrt 原生后端的内置 bundle 可启用独立于机场订阅的规则数�
   Profile，再删除本次生成的 policy/artifact/provider link，并恢复 supervisor 原状态；恢复无法
   证明时返回真实 recovery blocker，不得继续覆盖或报告完成；
 
-- compile 仅在 NetFleet Profile 非 active 时执行；
+- 独立 compile 仅在 NetFleet Profile 非 active 时执行；运行中的配置应用与订阅刷新在
+  同一 mutation 锁内保存旧 artifact/manifest 和实际选择后，允许编译候选。
+- 运行中的配置应用先证明旧运行身份、选择与业务探针，再直接切换到已校验的候选，
+  复用 activation 的初始化、选优和最终回读，不以 Recovery Profile 作为中间运行状态。
+  候选失败先恢复旧 policy、artifact/manifest 与实际选择，并验证旧运行状态及业务探针；
+  恢复旧运行状态不经过普通 enable 的 Recovery Profile 前置探针。只有旧运行无法恢复
+  时才进入现有原生恢复与 DIRECT-first 清理；回滚未成功时保留快照和诊断材料。
 - enable 要求所选后端当前 Profile 仍是 RecoveryProfileRef，且 staged 中 Policy Source、Recovery Profile、policy 和 artifact 身份均未变化；`kind=profile` 还回读原入口 selector 供事件解释，`kind=bundle` 不要求 Recovery Profile 存在同名组，失败恢复始终切回完整 Recovery Profile；
 - enable 先安装完整 artifact，再调用所选后端 Profile 切换与 restart；
 - enable 后先给所选后端与 Mihomo 一个有界的 owner-readiness grace，确认 capability group 已发布且包含目标成员后只写一次 selector，再等待所选 provider/地区组出现真实叶子并回读 owner 状态和所有 target-local protected probes；所有 `automatic` capability 的可见 selector 必须最终精确回读为其“自动选优”成员，实际数据路径必须是优选或自动 fallback，不能把 `manual DIRECT` 当作启用成功；选定路径后只对该候选组执行一次 Mihomo 原生路径健康确认，刷新组级健康状态，不再并行遍历全部可见分支，结果不参与候选排名或延迟统计。未使用分支或祖先组在重启收敛期暂时报告 `alive=false`，不能推翻已绑定真实叶子、实际链和事务探针的成功 readback；grace 内只等待启动和 provider 收敛，不重试 selector 或健康确认；超时仍恢复原 Profile；
