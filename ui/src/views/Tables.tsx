@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { SubscriptionsPreview } from '../config/SubscriptionsPreview';
 import { averageDelay, countPair, delay, providerExpiry, providerName, quota, quotaResetLabel, regionName, sortProvidersForDisplay, sortRegionsForDisplay } from '../lib/format';
-import type { Measurement, Provider, StatusSnapshot, SubscriptionStatus } from '../types';
+import type { Measurement, Provider, Region, StatusSnapshot, SubscriptionStatus } from '../types';
 
 const role = (value: string) => value === 'reserve' ? '备用' : '主用';
 const billing = (value: string) => ({ subscription: '订阅制', buyout: '买断制' }[value] || value || '未知');
@@ -216,7 +216,14 @@ export function RegionTable({ snapshot, full = false, onChooseRegion, blockedRea
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('default');
   const [selectedOnly, setSelectedOnly] = useState(false);
-  const regions = sortRegionsForDisplay(snapshot, true).filter(r => (!selectedOnly || r.selected) && regionName(snapshot, r.id).toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+  const [showEmpty, setShowEmpty] = useState(false);
+  const availabilityMeasured = snapshot.active && snapshot.runtime.controller_available;
+  const isEmptyRegion = (region: Region) => availabilityMeasured && !region.selected &&
+    region.available_provider_count === 0 && region.provider_count === 0 &&
+    !(Number(region.available_count) > 0) && region.node_count == null;
+  const matchingRegions = sortRegionsForDisplay(snapshot, true).filter(r => (!selectedOnly || r.selected) && regionName(snapshot, r.id).toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+  const emptyCount = matchingRegions.filter(isEmptyRegion).length;
+  const regions = matchingRegions.filter(region => showEmpty || !isEmptyRegion(region));
   if (sort !== 'default') regions.sort((a, b) => sort === 'name' ? regionName(snapshot, a.id).localeCompare(regionName(snapshot, b.id), 'zh-CN') :
     (sort === 'average' ? (Number(a.delay_sample_count) >= 2 ? a.average_best_delay_ms : null) ?? Infinity : a.last_best_delay_ms ?? Infinity) -
     (sort === 'average' ? (Number(b.delay_sample_count) >= 2 ? b.average_best_delay_ms : null) ?? Infinity : b.last_best_delay_ms ?? Infinity));
@@ -224,6 +231,7 @@ export function RegionTable({ snapshot, full = false, onChooseRegion, blockedRea
     <section className="nf-table-section nf-region-table">
       <TableTools label="地区" query={query} onQuery={setQuery} sort={sort} onSort={setSort} selectedOnly={selectedOnly} onSelectedOnly={setSelectedOnly} />
       <p className="nf-table-caption">已配置 {snapshot.regions.length} 个地区 · {snapshot.active && snapshot.runtime.controller_available ? `${sortRegionsForDisplay(snapshot).length} 个有健康记录` : '实时状态未测量'} · 显示 {regions.length} 个</p>
+      {emptyCount > 0 && <p><button type="button" className="nf-button-secondary" aria-expanded={showEmpty} onClick={() => setShowEmpty(value => !value)}>{showEmpty ? '收起' : '展开'}暂无资源的地区（{emptyCount}）</button></p>}
       <div className="nf-table-wrap">
         <table>
           <thead><tr><th>地区</th><th>可用机场</th><th>可用节点</th><th>最近一次测速</th><th>历史测量</th><th>参与方式</th>{onChooseRegion && <th className="nf-region-action">操作</th>}</tr></thead>
@@ -237,7 +245,7 @@ export function RegionTable({ snapshot, full = false, onChooseRegion, blockedRea
             </tr>
           ))}</tbody>
         </table>
-        {regions.length === 0 && <p className="nf-empty">{query || selectedOnly ? '没有匹配的地区，请调整筛选。' : '尚未配置地区，请先添加机场订阅。'}</p>}
+        {regions.length === 0 && <p className="nf-empty">{emptyCount > 0 ? '当前没有可展示的地区，可展开查看暂无资源的地区。' : query || selectedOnly ? '没有匹配的地区，请调整筛选。' : '尚未配置地区，请先添加机场订阅。'}</p>}
       </div>
     </section>
   );

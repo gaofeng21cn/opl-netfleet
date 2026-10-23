@@ -50,3 +50,32 @@ it('states a candidate latency failure without inventing a cause', () => {
   expect(html).toContain('测速失败仅表示未取得有效延迟，核心不提供更细的错误原因');
   expect(html).not.toContain('未提供底层错误');
 });
+
+it('collapses empty directory rows while keeping loaded, usable and selected regions visible', () => {
+  const snapshot = structuredClone(fixtureScenarios.healthy.status);
+  const empty = { id: 'empty', display_name: '空目录地区', mode: 'automatic', available_count: 0,
+    available_provider_count: 0, provider_count: 0, node_count: null };
+  snapshot.regions = [empty,
+    { ...empty, id: 'loaded', display_name: '已有机场地区', provider_count: 4, node_count: 5 },
+    { ...empty, id: 'usable', display_name: '节点未知但路径可用地区', available_count: 1, available_provider_count: 1, provider_count: 1 },
+    { ...empty, id: 'selected', display_name: '当前使用地区', selected: true },
+  ];
+  const html = renderToStaticMarkup(<RegionTable snapshot={snapshot} />);
+  expect(html).not.toContain('空目录地区');
+  expect(html).toContain('已有机场地区');
+  expect(html).toContain('节点未知但路径可用地区');
+  expect(html).toContain('当前使用地区');
+  expect(html).toContain('显示 3 个');
+  expect(html).toContain('aria-expanded="false"');
+  expect(html).toContain('展开暂无资源的地区（1）');
+
+  snapshot.active = false;
+  const inactive = renderToStaticMarkup(<RegionTable snapshot={snapshot} />);
+  expect(inactive).toContain('空目录地区');
+  expect(inactive).not.toContain('展开暂无资源的地区');
+  snapshot.active = true;
+  snapshot.runtime.controller_available = false;
+  const unreadable = renderToStaticMarkup(<RegionTable snapshot={snapshot} />);
+  expect(unreadable).toContain('空目录地区');
+  expect(unreadable).not.toContain('展开暂无资源的地区');
+});

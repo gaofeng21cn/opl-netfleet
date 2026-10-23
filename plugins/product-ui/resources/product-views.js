@@ -973,6 +973,11 @@ function providersPage(status, controller) {
 
 function regionsPage(status, controller) {
 	const state = controller.regionTableState || (controller.regionTableState = {});
+	const availabilityMeasured = status.active && status.runtime.controller_available;
+	const isEmptyRegion = function(region) {
+		return availabilityMeasured && !region.selected && region.available_provider_count === 0 &&
+			region.provider_count === 0 && !(Number(region.available_count) > 0) && region.node_count == null;
+	};
 	const regions = (status.regions || []).slice().sort(function(a, b) {
 		return (finite(a.measurement?.best_delay_ms) ? Number(a.measurement.best_delay_ms) : Infinity) -
 			(finite(b.measurement?.best_delay_ms) ? Number(b.measurement.best_delay_ms) : Infinity) ||
@@ -998,14 +1003,24 @@ function regionsPage(status, controller) {
 	});
 	const list = E('div');
 	const caption = E('p', { 'class': 'netfleet-table-caption' });
+	const emptyToggle = E('p');
+	const toggleButton = E('button', { 'type': 'button', 'class': 'cbi-button',
+		'click': function() { state.showEmpty = !state.showEmpty; update(); }
+	});
 	const update = function() {
-		const visible = tableItems(regions, state, function(region) { return regionName(status, region.id); });
+		const matching = tableItems(regions, state, function(region) { return regionName(status, region.id); });
+		const emptyCount = matching.filter(isEmptyRegion).length;
+		const visible = matching.filter(function(region) { return state.showEmpty || !isEmptyRegion(region); });
 		caption.replaceChildren('已配置 ' + regions.length + ' 个地区 · ' + (status.active && status.runtime.controller_available ? currentRegionPlan(status).length + ' 个有健康记录' : '实时状态未测量') + ' · 显示 ' + visible.length + ' 个');
+		toggleButton.textContent = (state.showEmpty ? '收起' : '展开') + '暂无资源的地区（' + emptyCount + '）';
+		toggleButton.setAttribute('aria-expanded', state.showEmpty ? 'true' : 'false');
+		if (!emptyCount) emptyToggle.replaceChildren();
+		else if (!emptyToggle.children.length) emptyToggle.replaceChildren(toggleButton);
 		list.replaceChildren(simpleTable([ '地区', '机场健康记录', '节点健康记录', '最近一次候选测速', '历史测量', '参与方式', '操作' ],
-			visible.map(function(region) { return rows[regions.indexOf(region)]; }), '没有匹配的地区', 'netfleet-data-table'));
+			visible.map(function(region) { return rows[regions.indexOf(region)]; }), emptyCount ? '当前没有可展示的地区，可展开查看暂无资源的地区。' : '没有匹配的地区', 'netfleet-data-table'));
 	};
 	update();
-	return [ selectionToolbar(status, controller), E('section', {}, [ tableTools('地区', state, update, '最近一次测速（从低到高）'), caption,
+	return [ selectionToolbar(status, controller), E('section', {}, [ tableTools('地区', state, update, '最近一次测速（从低到高）'), caption, emptyToggle,
 		E('p', { 'class': 'netfleet-measurement-note' }, '健康记录为核心标记的健康数 / 已加载总数；候选测速每个机场在该地区核验一条线路。两者的测速目标与采样时间可能不同，健康数量不代表本轮测速成功数量；流量耗尽的机场仍不参与选优。'), list ]) ];
 }
 

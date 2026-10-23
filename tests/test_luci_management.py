@@ -630,6 +630,47 @@ assert.equal(rows[1].attrs.class, 'cbi-rowstyle-1');
 assert(text(rows[2]).startsWith('Old'));
 """)
 
+    def test_regions_collapse_empty_directory_rows_and_keep_runtime_states_visible(self):
+        self.run_js(r"""
+const view = modesModule({});
+const empty = {id:'empty',display_name:'空目录地区',mode:'automatic',available_count:0,available_provider_count:0,provider_count:0,node_count:null};
+const status = {active:true,runtime:{controller_available:true},regions:[empty,
+ {...empty,id:'loaded',display_name:'已有机场地区',provider_count:4,node_count:5},
+ {...empty,id:'usable',display_name:'节点未知但路径可用地区',available_count:1,available_provider_count:1,provider_count:1},
+ {...empty,id:'selected',display_name:'当前使用地区',selected:true}]};
+const owner = {};
+const page = view.regions(status, owner);
+const rows = () => all(page,n=>n.tag==='tr').filter(n=>all(n,n=>n.tag==='td').length > 1);
+assert.equal(rows().length,3);
+assert(!text(page).includes('空目录地区'));
+for (const name of ['已有机场地区','节点未知但路径可用地区','当前使用地区']) assert(text(page).includes(name));
+let toggle = button(page,'展开暂无资源的地区（1）');
+assert.equal(toggle.attrs['aria-expanded'],'false');
+await fire(toggle);
+assert.equal(rows().length,4);
+assert(text(page).includes('空目录地区'));
+assert(text(page).includes('显示 4 个'));
+assert.equal(button(page,'收起暂无资源的地区（1）').attrs['aria-expanded'],'true');
+await fire(button(page,'收起暂无资源的地区（1）'));
+assert.equal(rows().length,3);
+assert(text(page).includes('显示 3 个'));
+const search = find(page,n=>n.tag==='input' && n.attrs.type==='search');
+await fire(search,'input',{value:'空目录地区'});
+assert.equal(rows().length,0);
+assert(text(page).includes('可展开查看暂无资源的地区'));
+await fire(button(page,'展开暂无资源的地区（1）'));
+assert.equal(rows().length,1);
+assert(text(rows()[0]).startsWith('空目录地区'));
+await fire(search,'input',{value:'已有机场地区'});
+assert.equal(rows().length,1);
+assert(!button(page,'收起暂无资源的地区（1）'));
+status.active=false;
+assert(text(view.regions(status,{})).includes('空目录地区'));
+status.active=true;
+status.runtime.controller_available=false;
+assert(text(view.regions(status,{})).includes('空目录地区'));
+""")
+
     def test_measurement_keeps_success_quota_and_candidate_diagnostics_visible(self):
         self.run_js(r"""
 const view = modesModule({});
