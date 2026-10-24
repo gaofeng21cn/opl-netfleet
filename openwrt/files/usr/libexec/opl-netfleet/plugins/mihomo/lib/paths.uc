@@ -370,19 +370,23 @@ restore_runtime_selections = function(secret, manifest, before_groups, policy, d
 		const capability = names[i];
 		const entry = manifest?.generated_groups?.[capability];
 		const previous = before_groups[capability];
+		let preferred = previous?.preferred;
+		if (previous?.preferred_identity != null) {
+			const matches = filter(entry?.candidate_groups ?? [], candidate =>
+				candidate.provider == previous.preferred_identity.provider &&
+				candidate.region == previous.preferred_identity.region);
+			preferred = length(matches) == 1 ? matches[0].name : null;
+		}
 		if (entry == null || type(previous?.preferred) != "string" ||
+			type(preferred) != 'string' ||
 			type(previous?.visible) != "string" ||
-			!wait_for_group_member(secret, selection_group(entry), previous.preferred) ||
-			!select_proxy(secret, selection_group(entry), previous.preferred) ||
+			!wait_for_group_member(secret, selection_group(entry), preferred) ||
+			!select_proxy(secret, selection_group(entry), preferred) ||
 			!wait_for_group_member(secret, entry.name, previous.visible) ||
 			!select_proxy(secret, entry.name, previous.visible)) {
 			if (detail != null) {
 				detail.error = 'runtime_selector_restore_failed';
 				detail.capability = capability;
-				const state = proxies(secret, 2)?.proxies;
-				detail.previous = previous;
-				detail.preferred_members = state?.[selection_group(entry)]?.all;
-				detail.visible_members = state?.[entry?.name]?.all;
 			}
 			return false;
 		}
@@ -411,7 +415,10 @@ capture_runtime_selections = function(manifest) {
 		if (type(preferred) != "string" || type(visible) != "string") {
 			return { ok: false, error: "runtime_selection_unavailable", capability: names[i] };
 		}
+		const candidate = filter(entry?.candidate_groups ?? [], item => item.name == preferred)[0];
 		selections[names[i]] = { preferred: preferred, visible: visible };
+		if (candidate != null)
+			selections[names[i]].preferred_identity = { provider: candidate.provider, region: candidate.region };
 	}
 	return { ok: true, selections: selections };
 };

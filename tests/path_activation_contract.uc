@@ -65,6 +65,20 @@ selected_leaf = 'changed-leaf';
 const changed = activation_paths.activate_preferred_choice('fixture', automatic_entry, 'candidate', policy, false, false, {group:'candidate', candidate_id:'leaf'});
 check(!changed.ok && changed.error == 'selected_leaf_unavailable' && measures == 0, 'changed leaf cannot inherit prior speed evidence');
 
+const saved_entry = { ...entry, candidate_groups: [{ name: 'old label', provider: 'airport', region: 'test' }] };
+let selection_state = { preferred: { now: 'old label', all: ['old label'] }, visible: { now: 'automatic', all: ['automatic'] } };
+const restored_choices = [];
+services['mihomo.controller'].proxies = () => ({ proxies: selection_state });
+services['mihomo.controller'].select = (secret, group, choice) => { push(restored_choices, { group, choice }); return true; };
+const restoration_paths = factory({ use: name => services[name] });
+const saved = restoration_paths.capture_runtime_selections({ generated_groups: { standard: saved_entry } });
+check(saved.ok && saved.selections.standard.preferred_identity.provider == 'airport', 'capture stable provider and region identity before a rename');
+selection_state = { preferred: { all: ['new label'] }, visible: { all: ['automatic'] } };
+const renamed_entry = { ...entry, candidate_groups: [{ name: 'new label', provider: 'airport', region: 'test' }] };
+check(restoration_paths.restore_runtime_selections('fixture', { generated_groups: { standard: renamed_entry } }, saved.selections, policy) &&
+ restored_choices[0].choice == 'new label' && saved.selections.standard.preferred == 'old label', 'restore renamed candidate by stable identity and preserve rollback snapshot');
+check(!restoration_paths.restore_runtime_selections('fixture', { generated_groups: { standard: { ...entry, candidate_groups: [] } } }, saved.selections, policy), 'missing candidate identity cannot select a different provider');
+
 for(let mode in ['off','strict','always',null]) {
  const profile={rules:['PROCESS-NAME,haproxy,REJECT','MATCH,DIRECT']};
  if(mode!=null)profile['find-process-mode']=mode;

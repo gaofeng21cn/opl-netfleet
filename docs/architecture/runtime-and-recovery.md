@@ -141,7 +141,8 @@ OpenWrt 原生后端的内置 bundle 可启用独立于机场订阅的规则数�
 - 更新调用所选 subscription owner，保存原缓存与订阅元数据。上游不可用不开始更新；单来源失败保留其 LKG，不能擦除其他有效来源。
   全部内容摘要不变且当前节点 DNS 投影一致时只提交成功时间、quota 和来源接受身份，不 compile、restart 或修改 selector。
 - 内容变化且 NetFleet active 时，保存 artifact/manifest、原生订阅元数据与全部可见 selector，
-  重新编译、重启、恢复用户模式并执行共享 automatic 轮次和 protected probes。任一编译、
+  重新编译、重启、恢复用户模式并执行共享 automatic 轮次和 protected probes。优选候选按
+  provider/region ID 恢复，不把可编辑的机场显示名作为选择身份。任一编译、
   owner readback、选择或探针失败，恢复更新前 缓存、订阅元数据、artifact/manifest 与原 NetFleet runtime。
   所以“下载成功”不能单独宣称运行更新成功。
 - NetFleet inactive 但原生 core 已运行时，被当前 Profile 或其编译输入引用的变更仍须重载
