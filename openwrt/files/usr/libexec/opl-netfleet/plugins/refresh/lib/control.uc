@@ -62,6 +62,20 @@ const POLICY_PATH = context.use("platform.paths").POLICY_PATH;
 const restore_profile = context.use("recovery.control").restore_profile;
 const restore_recovery_with_probes = context.use("recovery.control").restore_recovery_with_probes;
 const subscription_update = context.use("subscriptions.store").update_result;
+const load_provider_profiles = context.use('subscriptions.providers').load;
+const project_subscription_dns = context.use('models.subscription').project_dns;
+
+function subscription_dns_current(policy) {
+	const sources = load_provider_profiles(policy);
+	if (!sources.ok) return false;
+	const projected = project_subscription_dns(keys(sources.profiles), sources.profiles);
+	if (!projected.ok) return false;
+	const current = read_json(ARTIFACT_PATH)?.['netfleet-subscription-dns'] ?? {};
+	if (length(keys(current)) != length(keys(projected.policies))) return false;
+	for (let host, values in projected.policies)
+		if (sprintf('%J', current[host]) != sprintf('%J', values)) return false;
+	return true;
+};
 
 const run_owner_result = context.use("platform.process").run_owner_result;
 const REFRESH_DIR = context.use("platform.paths").REFRESH_DIR;
@@ -303,7 +317,8 @@ refresh_action = function(policy, section, initiator) {
 	operation_update("validating", { subject: null });
 	const summary = summarize_refresh(outcomes);
 	const subscriptions = public_subscription_results(outcomes);
-	if (summary.changed_count == 0) {
+	const dns_changed = active && summary.failed_count == 0 && !subscription_dns_current(policy);
+	if (summary.changed_count == 0 && !dns_changed) {
 		const result = {
 			ok: summary.ok,
 			reason: summary.cache_reason,
@@ -379,7 +394,7 @@ refresh_action = function(policy, section, initiator) {
 	}
 	const result = {
 		ok: summary.ok,
-		reason: summary.active_reason,
+		reason: dns_changed && summary.changed_count == 0 ? 'updated' : summary.active_reason,
 		provider_count: summary.provider_count,
 		changed_count: summary.changed_count,
 		failed_count: summary.failed_count,

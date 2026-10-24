@@ -66,7 +66,9 @@ policy 中的精确域名或 `+.` 后缀，最后使用订阅显式的 `proxy-se
 重新应用该映射；没有默认节点 resolver 时使用现有普通 resolver 或 `system`，并保留原
 普通域名 policy 作为节点解析的默认策略。自动规则不写回订阅、手工 mixin 或 Recovery
 Profile；下一次编译从缓存重建，因此 DNS 凭据变化、节点增删及 provider 停用不残留旧投影。
-内容变化的 refresh 复用现有编译、应用、探针及失败回滚；内容未变不额外重启。
+refresh 复用现有编译、应用、探针及失败回滚；内容及节点 DNS 投影均未变时不额外重启。
+已运行的旧 Profile 缺少当前订阅 DNS 投影时，成功刷新后自动重新编译并应用一次，
+不要求修改订阅地址或制造策略变更；后续无变化刷新不再重新应用。
 
 Provider/地区候选组使用 `checks.latency` 的 Mihomo 原生 `url-test` 负责同目标 delay 和叶子切换；同地区聚合入口先在 primary Provider/地区候选中按同目标 delay 选择，再进入 reserve，最后 DIRECT。Provider tier 组使用 `path_probe_id` 的业务健康合同，不拿测速目标冒充兜底资格。automatic 模式的每个 Provider 组必须同时应用该 Provider 已生成地区组的授权 filter 并集，不能退回未过滤的机场全集；因此 preferred 与 primary/reserve tier 共享同一地区授权边界。compiler 生成 `visible capability selector -> automatic path | shared region aggregate | DIRECT`；automatic path 固定为 `当前优选 -> primary provider tier -> reserve provider tier -> DIRECT`，每个 tier 内由 Mihomo 在该层精确列出的 provider group 中选择健康路径。买断机场是否作为兜底只由其 provider `role=reserve` 表达。策略来源中的 `policy` 业务组会展开为同一 capability 的自动出口、全部合规共享地区和 DIRECT；原始组以 DIRECT 为首项时继续以直连为默认，否则以自动出口为默认，从而允许国内媒体、Steam、Xbox、PlayStation 和 Nintendo Switch 等业务在 Zashboard 临时改路但不改变其重启后的默认策略。Profile 顺序固定为 capability 出口、策略来源顺序中的 `policy` 业务组、其他保留组和 NetFleet 内部组；Mihomo 保留的 `GLOBAL` 只代表全局模式控制面，Policy Source 不得再创建大小写近似的 `Global` 业务组。内部组仍设置 hidden 供支持该字段的客户端使用，但正确拓扑和可见业务组绝不依赖 hidden。生成物引用节点、订阅、Policy Source 和 Recovery Profile，DNS 仅投影上文的节点解析声明。`DIRECT` 是明确的终端数据面逃生路径。`fail_open.probes` 是 enable/select 的成功条件；DIRECT、Recovery Profile 恢复和 passthrough 只把同一结果作为独立业务证据。artifact manifest 分别保存 Policy Source 和 Recovery Profile 的 ref/digest，并保存稳定 ID、entry/policy 映射、全部显示组、精确有序的 Fail-Open stages、provider section、runtime source path 和 policy digest。
 
@@ -137,7 +139,7 @@ OpenWrt 原生后端的内置 bundle 可启用独立于机场订阅的规则数�
   Recovery Profile 和当前 subscription Profile 的真实引用去重形成。单项更新只下载指定
   来源；来源已被任一对象引用时仍进入同一运行应用事务，真正未使用的来源只下载并校验缓存。
 - 更新调用所选 subscription owner，保存原缓存与订阅元数据。上游不可用不开始更新；单来源失败保留其 LKG，不能擦除其他有效来源。
-  全部内容摘要不变时只提交成功时间、quota 和来源接受身份，不 compile、restart 或修改 selector。
+  全部内容摘要不变且当前节点 DNS 投影一致时只提交成功时间、quota 和来源接受身份，不 compile、restart 或修改 selector。
 - 内容变化且 NetFleet active 时，保存 artifact/manifest、原生订阅元数据与全部可见 selector，
   重新编译、重启、恢复用户模式并执行共享 automatic 轮次和 protected probes。任一编译、
   owner readback、选择或探针失败，恢复更新前 缓存、订阅元数据、artifact/manifest 与原 NetFleet runtime。

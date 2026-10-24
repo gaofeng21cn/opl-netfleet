@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "refresh",
   "label": "Subscription refresh",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "api_version": 1,
   "package": "opl-netfleet-plugin-refresh",
   "services": {
@@ -10,6 +10,7 @@
       "version": 1,
       "module": "lib/control.uc",
       "requires": {
+        "subscriptions.providers": 1,
         "compilation.control": 1,
         "events.operation": 1,
         "events.output": 1,

@@ -295,6 +295,7 @@ stage=baseline_owner
 run_main prepare-recovery file:fixture.json restart >"$work/prepare-result.json"
 wait_ready
 stage=shared_enable
+ucode /tmp/tests/native_runtime_integration.uc legacy-dns >"$work/legacy-dns.log" 2>&1
 run_main enable vm >"$work/enable-result.json"
 wait_ready
 run_main select standard auto vm >"$work/select-result.json"
@@ -371,6 +372,10 @@ ucode "$main" status >"$work/refreshed-result.json"
 assert_json "$work/refreshed-result.json" '@.result.active' true
 ucode "$main" subscriptions-get >"$work/subscriptions-result.json"
 assert_json "$work/subscriptions-result.json" '@.result.sources[0].pending_update' false
+assert_json "$work/refresh-result.json" '@.result.result.reloaded' true
+ucode /tmp/tests/native_runtime_integration.uc dns-initial-verify >"$work/dns-adoption.log" 2>&1
+run_main refresh vm >"$work/dns-repeat-result.json"
+assert_json "$work/dns-repeat-result.json" '@.result.result.reloaded' false
 stage=subscription_dns_rotation
 ucode /tmp/tests/native_runtime_integration.uc dns-rotate >"$work/dns-rotate-source.log" 2>&1
 run_main subscriptions-refresh fixture vm >"$work/dns-rotate-result.json"
