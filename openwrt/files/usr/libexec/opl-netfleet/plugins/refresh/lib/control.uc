@@ -374,8 +374,10 @@ refresh_action = function(policy, section, initiator) {
 	}
 	const runtime = wait_active_runtime(manifest);
 	const secret = api_secret();
-	if (!runtime.ok || !secret || !restore_runtime_selections(secret, manifest, selections, policy)) {
+	const restoration = {};
+	if (!runtime.ok || !secret || !restore_runtime_selections(secret, manifest, selections, policy, restoration)) {
 		fail_refresh(snapshot, policy, selections, requested, runtime.error ?? "runtime_selection_restore_failed", {
+			restoration: restoration,
 			changed_count: summary.changed_count, failed_count: summary.failed_count,
 			subscriptions: subscriptions
 		});

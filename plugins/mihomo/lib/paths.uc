@@ -364,7 +364,7 @@ wait_for_candidate_provider_leaves = function(secret, entry, timeout_seconds, ur
 	return { state: state, provider_state: provider_state };
 };
 
-restore_runtime_selections = function(secret, manifest, before_groups, policy) {
+restore_runtime_selections = function(secret, manifest, before_groups, policy, detail) {
 	const names = keys(before_groups ?? {});
 	for (let i = 0; i < length(names); i++) {
 		const capability = names[i];
@@ -376,11 +376,20 @@ restore_runtime_selections = function(secret, manifest, before_groups, policy) {
 			!select_proxy(secret, selection_group(entry), previous.preferred) ||
 			!wait_for_group_member(secret, entry.name, previous.visible) ||
 			!select_proxy(secret, entry.name, previous.visible)) {
+			if (detail != null) {
+				detail.error = 'runtime_selector_restore_failed';
+				detail.capability = capability;
+			}
 			return false;
 		}
 		refresh_data_fallback(secret, entry, policy);
 	}
-	return protected_probes(policy).ok;
+	const probes = protected_probes(policy);
+	if (detail != null && !probes.ok) {
+		detail.error = probes.error;
+		detail.probes = probes;
+	}
+	return probes.ok;
 };
 
 capture_runtime_selections = function(manifest) {
