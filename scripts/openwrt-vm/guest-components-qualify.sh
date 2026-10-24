@@ -289,12 +289,11 @@ unchanged
 rpc_ready
 # Shared models legitimately drain the dependent core; verify that lifecycle
 # restoration completes before observing normal supervisor cycles.
-# The finite UI update cannot upgrade the protected Mihomo backend. The full
-# product upgrade above covers that transition; establish its current provider
-# here before asking the finite solver for the remaining UI dependency set.
+# Keep the shared plugin cohort at its compatible old versions. Select the
+# backend explicitly when its new dependency closure contains shared models.
 stage=shared_plugin_runtime_baseline
 runtime_archives=
-for runtime_plugin in opl-netfleet opl-netfleet-kernel opl-netfleet-plugin-platform opl-netfleet-plugin-mihomo opl-netfleet-plugin-network; do
+for runtime_plugin in opl-netfleet opl-netfleet-kernel opl-netfleet-plugin-platform; do
  runtime_version=$(package_version "$runtime_plugin" current)
  uclient-fetch -q -O "$work/$runtime_plugin-$runtime_version.apk" \
   "$feed_url/$runtime_plugin-$runtime_version.apk"
@@ -307,18 +306,18 @@ rpc_ready
 local_stage="$work/shared-install"
 mkdir -m 700 -p "$local_stage/old" "$local_stage/new"
 printf '%s\n' '{"schema":"opl-netfleet-plugin-install.v1","packages":[]}' >"$local_stage/request.json"
-# Let the real APK plan supply the UI dependency set. A fixed models/UI pair
-# ceases to be installable as soon as the UI needs a newer storage provider.
+# Let the real APK plan supply the backend's compatible dependency set.
 stage=shared_plugin_dependency_plan
-ui_current=$(package_version opl-netfleet-plugin-product-ui current)
-ui_old=$(package_version opl-netfleet-plugin-product-ui old)
+primary=opl-netfleet-plugin-mihomo
+primary_current=$(package_version "$primary" current)
+primary_old=$(package_version "$primary" old)
 ubus -t 30 call opl-netfleet components_plugin_plan \
- "{\"request\":{\"name\":\"opl-netfleet-plugin-product-ui\",\"action\":\"update\",\"before_version\":\"$ui_old\",\"version\":\"$ui_current\",\"confirm\":false}}" >"$work/shared-plan.json"
+ "{\"request\":{\"name\":\"$primary\",\"action\":\"update\",\"before_version\":\"$primary_old\",\"version\":\"$primary_current\",\"confirm\":false}}" >"$work/shared-plan.json"
 assert_json "$work/shared-plan.json" '@.ok' true
 shared_packages=$(ucode -e 'import {readfile} from "fs";
  const names=json(readfile(ARGV[0])).result.names;
- assert(index(names,"opl-netfleet-plugin-product-ui")>=0);
- for (let name in ["opl-netfleet-plugin-models","opl-netfleet-plugin-components"])
+ assert(index(names,"opl-netfleet-plugin-mihomo")>=0);
+ for (let name in ["opl-netfleet-plugin-models","opl-netfleet-plugin-product-ui","opl-netfleet-plugin-components"])
   if(index(names,name)<0)push(names,name);
  print(join(" ",names));' "$work/shared-plan.json")
 # Also exercise self-updating components through its frozen transaction code.
