@@ -379,6 +379,10 @@ restore_runtime_selections = function(secret, manifest, before_groups, policy, d
 			if (detail != null) {
 				detail.error = 'runtime_selector_restore_failed';
 				detail.capability = capability;
+				const state = proxies(secret, 2)?.proxies;
+				detail.previous = previous;
+				detail.preferred_members = state?.[selection_group(entry)]?.all;
+				detail.visible_members = state?.[entry?.name]?.all;
 			}
 			return false;
 		}
