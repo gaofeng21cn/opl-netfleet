@@ -6,7 +6,7 @@ function resolvers(value) {
 	for (let item in values)
 		if (type(item) != 'string' || !length(item) || match(item, /[[:space:][:cntrl:]]/)) return null;
 	return [...values];
-}
+};
 
 function matching(host, policies) {
 	let best = null, specificity = -1;
@@ -17,7 +17,7 @@ function matching(host, policies) {
 		if (rank > specificity) { best = { value }; specificity = rank; }
 	}
 	return best;
-}
+};
 
 export function project_dns(names, providers) {
 	const policies = {}, owners = {};
@@ -43,7 +43,7 @@ export function project_dns(names, providers) {
 		}
 	}
 	return { ok: true, policies };
-}
+};
 
 export function manual_dns(profile, source) {
 	const result = { ...profile, dns: { ...(profile.dns ?? {}) } };
@@ -54,7 +54,7 @@ export function manual_dns(profile, source) {
 			if (source?.['netfleet-subscription-dns']?.[lc(replace(host, /\.$/, ''))] != null) delete result.dns[field][host];
 	}
 	return result;
-}
+};
 export function apply_dns(profile, source) {
 	const managed = source?.['netfleet-subscription-dns'];
 	const result = { ...profile };
@@ -69,4 +69,4 @@ export function apply_dns(profile, source) {
 	}
 	dns['proxy-server-nameserver-policy'] = { ...(dns['proxy-server-nameserver-policy'] ?? {}), ...managed };
 	return result;
-}
+};
