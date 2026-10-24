@@ -35,9 +35,9 @@ export function project_dns(names, providers) {
 			const declared = rule != null ? rule.value : dns['proxy-server-nameserver'];
 			if (rule == null && (declared == null || type(declared) == 'array' && !length(declared))) continue;
 			const values = resolvers(declared);
-			if (values == null) return { ok: false, error: `invalid subscription node DNS: ${id}` };
+			if (values == null) return { ok: false, error: `invalid subscription DNS resolvers: ${id}` };
 			if (policies[host] != null && sprintf('%J', policies[host]) != sprintf('%J', values))
-				return { ok: false, error: `subscription node DNS conflict: ${owners[host]}/${id}` };
+				return { ok: false, error: `subscription DNS conflict: ${owners[host]}/${id}` };
 			policies[host] = values;
 			owners[host] = id;
 		}
