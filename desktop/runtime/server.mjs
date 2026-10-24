@@ -127,8 +127,10 @@ async function replaceSubscriptions(values) {
   return { saved: true, message: '订阅来源已保存，业务配置已同步。' };
 }
 async function downloadSubscription(item) {
+  assert(!item.info_url || item.info_url !== item.url, 'subscription_info_url_conflict');
   let response;
-  try { response = await fetch(item.url, { headers: { 'User-Agent': item.user_agent || 'clash.meta' }, signal: AbortSignal.timeout(45000) }); }
+  const headers = { 'User-Agent': item.user_agent || 'clash.meta' };
+  try { response = await fetch(item.url, { headers, signal: AbortSignal.timeout(45000) }); }
   catch { throw new Error('subscription_download_failed'); }
   assert(response.ok, 'subscription_download_failed');
   const chunks = []; let size = 0;
@@ -136,7 +138,15 @@ async function downloadSubscription(item) {
   const profile = await parse(Buffer.concat(chunks).toString('utf8'));
   assert(Array.isArray(profile.proxies) && profile.proxies.length > 0, 'subscription_has_no_nodes');
   await core.validate({ proxies: profile.proxies, rules: ['MATCH,DIRECT'] });
-  return { profile, metadata: { quota: undefined, subscriptionUserinfo: response.headers.get('subscription-userinfo'),
+  let subscriptionUserinfo = response.headers.get('subscription-userinfo');
+  if (item.info_url) {
+    // 用量地址不能把客户端引向未声明的其他来源。
+    try {
+      const information = await fetch(item.info_url, { headers, redirect: 'error', signal: AbortSignal.timeout(45000) });
+      if (information.ok) subscriptionUserinfo = information.headers.get('subscription-userinfo') ?? subscriptionUserinfo;
+    } catch {}
+  }
+  return { profile, metadata: { subscriptionUserinfo,
     updatedAt: new Date().toISOString(), nodeCount: profile.proxies.length } };
 }
 async function updateSubscription(id) {
@@ -520,7 +530,9 @@ async function snapshot({ deep = true } = {}) {
   const networkState = await network.status();
   const actualMode = runtime.running ? (state.profile === 'file:OPL-NetFleet.json' ? 'netfleet' : 'mihomo') : networkState.clean !== false && !networkState.recoveryRequired ? 'direct' : 'unconfirmed';
   const subscriptions = Object.fromEntries(Object.entries(state.subscriptions).map(([id, value]) => [id, {
-    name: value.name, enabled: value.enabled, imported: value.imported, hasUrl: Boolean(value.url),
+    name: value.name, alias: value.alias ?? null, enabled: value.enabled, imported: value.imported, hasUrl: Boolean(value.url),
+    hasInfoUrl: Boolean(value.info_url), quotaResetDay: value.quota_reset_day ?? null,
+    userAgent: value.user_agent ?? 'clash.meta',
     updatedAt: value.updatedAt ?? null, nodeCount: value.nodeCount ?? null }]));
   let status = businessSnapshot.status, events = businessSnapshot.events, config = businessSnapshot.config,
     configError = businessSnapshot.configError, error = businessSnapshot.error;
@@ -550,6 +562,16 @@ async function action(input) {
       await atomicJSON(envelope, { request: input.request });
       try { return await ucode('config-save', [envelope]); }
       finally { await fs.unlink(envelope).catch(() => {}); }
+    }
+    case 'config-apply': {
+      assert(object(input.request), 'config_request_unreadable');
+      const envelope = path.join(stateDir, 'candidate-config-request.json');
+      await atomicJSON(envelope, { request: input.request });
+      try {
+        const result = await ucode('config-apply', [envelope]);
+        if (result?.config?.active) await saveState({ mode: 'netfleet', enabled: true, scheduler: { enabled: true, running: true } });
+        return result;
+      } finally { await fs.unlink(envelope).catch(() => {}); }
     }
     case 'compile': await ensurePolicy(); return ucode('compile');
     case 'enable': {

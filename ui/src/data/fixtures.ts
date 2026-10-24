@@ -10,7 +10,7 @@ const healthy: StatusSnapshot = {
   recovery_profile: 'subscription:recovery',
   recovery_profile_display_name: '示例恢复配置',
   runtime: {
-    backend: { id: 'nikki-mihomo', display_name: 'Nikki + Mihomo' },
+    backend: { id: 'nikki-mihomo', display_name: 'Nikki + Mihomo', features: { config_apply: true, rule_refresh: false } },
     mihomo_running: true,
     backend_enabled: true,
     netfleet_present: true,
@@ -135,9 +135,9 @@ inactive.capabilities = inactive.capabilities.map((capability) => ({
 }));
 
 const native: StatusSnapshot = structuredClone(healthy);
-native.runtime.backend = { id: 'native-mihomo', display_name: 'NetFleet + Mihomo' };
+native.runtime.backend = { id: 'native-mihomo', display_name: 'NetFleet + Mihomo', features: { config_apply: true, rule_refresh: true } };
 const nativeInactive: StatusSnapshot = structuredClone(inactive);
-nativeInactive.runtime.backend = { id: 'native-mihomo', display_name: 'NetFleet + Mihomo' };
+nativeInactive.runtime.backend = { id: 'native-mihomo', display_name: 'NetFleet + Mihomo', features: { config_apply: true, rule_refresh: true } };
 nativeInactive.capabilities = nativeInactive.capabilities.map((capability) => ({ ...capability, runtime_path: [capability.base_group || '出口', '原生自动选择', 'Native-Leaf'] }));
 
 export const fixtureScenarios = {

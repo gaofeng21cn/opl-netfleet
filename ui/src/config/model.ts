@@ -46,6 +46,10 @@ export interface RoutingRuleDraft { kind: 'domain_suffix' | 'ip_cidr'; value: st
 export interface ConfigDraft {
   backend: string;
   backendDisplayName: string;
+  platformFeatures: {
+    configApply: boolean;
+    ruleRefresh: boolean;
+  };
   policySource: { kind: 'bundle' | 'profile'; ref: string; displayName: string };
   policySourceOptions: Array<{ kind: 'bundle' | 'profile'; ref: string; displayName: string }>;
   policyGroups: string[];
@@ -92,6 +96,7 @@ export function configChanges(before: ConfigDraft, after: ConfigDraft): string[]
     }
   }
   if (different(before.routingRules, after.routingRules)) result.push(`业务规则已修改：${before.routingRules.length} 条 → ${after.routingRules.length} 条`);
+  if (different(before.platformFeatures, after.platformFeatures)) result.push('平台能力已修改');
   return result;
 }
 
@@ -102,9 +107,15 @@ const capabilityMode = (value: string): CapabilityDraft['mode'] => value === 'ma
 
 export function createConfigDraft(status: StatusSnapshot, config?: DeviceConfigSnapshot): ConfigDraft {
   const automation = status.selection?.automation;
+  const features = config?.backend.features ?? status.runtime.backend?.features;
+  const platformFeatures = {
+    configApply: features?.config_apply === true,
+    ruleRefresh: features?.rule_refresh === true,
+  };
   if (config) return {
     backend: config.backend.id,
     backendDisplayName: config.backend.display_name,
+    platformFeatures,
     policySource: { kind: config.policy_source.kind, ref: config.policy_source.ref, displayName: config.policy_source.display_name },
     policySourceOptions: config.policy_source_options.map((item) => ({ kind: item.kind, ref: item.ref, displayName: item.display_name })),
     policyGroups: config.policy_groups.slice(),
@@ -156,6 +167,7 @@ export function createConfigDraft(status: StatusSnapshot, config?: DeviceConfigS
   return {
     backend: status.runtime.backend?.id || 'nikki-mihomo',
     backendDisplayName: status.runtime.backend?.display_name || 'Nikki + Mihomo',
+    platformFeatures,
     policySource: { kind: status.policy_source?.kind === 'profile' ? 'profile' : 'bundle', ref: status.policy_source?.ref || 'bundle:base-v1', displayName: status.policy_source?.kind === 'profile' ? '沿用当前配置' : 'NetFleet 内置基础策略' },
     policySourceOptions: [{ kind: status.policy_source?.kind === 'profile' ? 'profile' : 'bundle', ref: status.policy_source?.ref || 'bundle:base-v1', displayName: status.policy_source?.kind === 'profile' ? '沿用当前配置' : 'NetFleet 内置基础策略' }],
     policyGroups: Array.from(new Set(status.capabilities.flatMap((item) => item.base_groups || (item.base_group ? [item.base_group] : [])))),

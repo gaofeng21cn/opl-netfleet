@@ -83,8 +83,12 @@ const resources = {
 };
 
 const projection = project(policy, resources);
-const native_resources = { ...resources, backend: { id: "native-mihomo", display_name: "NetFleet + Mihomo" } };
-if (project(policy, native_resources).backend.id != "native-mihomo") {
+const native_resources = { ...resources, backend: { id: "native-mihomo", display_name: "NetFleet + Mihomo",
+	features: { config_apply: true, rule_refresh: true } } };
+const native_projection = project(policy, native_resources);
+if (native_projection.backend.id != "native-mihomo" ||
+	native_projection.backend.features.config_apply != true ||
+	native_projection.backend.features.rule_refresh != true) {
 	print("native_backend_projection_failed\n");
 	exit(1);
 }

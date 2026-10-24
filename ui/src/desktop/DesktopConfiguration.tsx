@@ -50,7 +50,9 @@ export function DesktopConfiguration({ snapshot, disabled, client, run, onManage
     let request: Record<string, unknown>;
     try { request = desktopConfigRequest(original, draft); }
     catch (reason) { setValidation([reason instanceof Error ? reason.message : String(reason)]); return; }
-    void run('保存业务配置', () => client.action('config-save', { request })).then(ok => { if (ok) { setSaved(draft); setReview(false); } });
+    const applying = snapshot.runtime.mode === 'netfleet' && draft.platformFeatures.configApply;
+    void run(applying ? '应用业务配置' : '保存业务配置', () => client.action(applying ? 'config-apply' : 'config-save', { request }))
+      .then(ok => { if (ok) { setSaved(draft); setReview(false); } });
   };
   return <div className="nf-config-view">
     <div className="nf-config-layout">
@@ -76,8 +78,8 @@ export function DesktopConfiguration({ snapshot, disabled, client, run, onManage
     {structuredSections.includes(section) && draft && saved && <>
       {validation.length > 0 && <div className="nf-config-validation is-error" role="alert"><ul>{validation.map(item => <li key={item}>{item}</li>)}</ul></div>}
       {review && <section className="nf-config-review"><h2>变更预览</h2>{dirty ? <ul>{configChanges(saved, draft).map(item => <li key={item}>{item}</li>)}</ul> : <p>没有尚未保存的更改。</p>}</section>}
-      {snapshot.runtime.mode === 'netfleet' && <div className="nf-management-note">退出增强后可以保存配置，草稿会保留。<button type="button" className="nf-button-secondary" disabled={disabled} onClick={() => void run('退出增强并保留原生代理', () => client.disable())}>退出增强</button></div>}
-      <div className="nf-config-actions"><span>{dirty ? '有尚未保存的更改' : '与已保存策略一致'}</span><div><button type="button" disabled={disabled || !dirty} onClick={() => { setDraft(saved); setValidation([]); }}>放弃更改</button><button type="button" onClick={() => { setValidation(validateConfigDraft(draft)); setReview(!review); }}>校验与变更</button><button type="button" className="nf-button-primary" disabled={disabled || !dirty || advancedDirty || snapshot.runtime.mode === 'netfleet'} onClick={save}>保存配置</button><button type="button" disabled={disabled || dirty || advancedDirty} onClick={() => void run('校验并编译', () => client.action('compile'))}>编译已保存配置</button></div></div>
+      {snapshot.runtime.mode === 'netfleet' && !draft.platformFeatures.configApply && <div className="nf-management-note">退出增强后可以保存配置，草稿会保留。<button type="button" className="nf-button-secondary" disabled={disabled} onClick={() => void run('退出增强并保留原生代理', () => client.disable())}>退出增强</button></div>}
+      <div className="nf-config-actions"><span>{dirty ? '有尚未保存的更改' : '与已保存策略一致'}</span><div><button type="button" disabled={disabled || !dirty} onClick={() => { setDraft(saved); setValidation([]); }}>放弃更改</button><button type="button" onClick={() => { setValidation(validateConfigDraft(draft)); setReview(!review); }}>校验与变更</button><button type="button" className="nf-button-primary" disabled={disabled || !dirty || advancedDirty || (snapshot.runtime.mode === 'netfleet' && !draft.platformFeatures.configApply)} onClick={save}>{snapshot.runtime.mode === 'netfleet' && draft.platformFeatures.configApply ? '应用配置' : '保存配置'}</button><button type="button" disabled={disabled || dirty || advancedDirty} onClick={() => void run('校验并编译', () => client.action('compile'))}>编译已保存配置</button></div></div>
     </>}
   </div>;
 }

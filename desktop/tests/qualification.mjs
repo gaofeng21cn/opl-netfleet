@@ -33,12 +33,18 @@ const nodeList = `proxies:
     port: 18080
 `;
 const relay = http.createServer((request, response) => {
+  if (request.method === 'GET' && request.url.startsWith('/information')) {
+    informationAgent = request.headers['user-agent'] ?? null;
+    return response.writeHead(200, { 'Content-Type': 'text/plain', 'Subscription-Userinfo': 'upload=1; download=2; total=10' }).end();
+  }
   if (request.method === 'GET' && request.url.startsWith('/subscription')) {
+    subscriptionAgent = request.headers['user-agent'] ?? null;
     return response.writeHead(200, { 'Content-Type': 'text/yaml', 'Subscription-Userinfo': 'upload=2; download=3; total=9' }).end(nodeList.replaceAll('port: 18080', `port: ${relay.address().port}`));
   }
   response.writeHead(405).end();
 });
 let connections = 0, processHandle, base, token, stopped = false, subscriptionHandle, subscriptionStateDir;
+let subscriptionAgent = null, informationAgent = null;
 const sockets = new Set();
 relay.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
 relay.on('connect', (request, client, head) => {
@@ -101,11 +107,66 @@ try {
   assert.equal((await state()).runtime.running, false); evidence.checks.push('compile_has_no_running_core');
   const enabled = await api('enable'); assert.equal(enabled.ok, true, JSON.stringify(enabled)); evidence.checks.push('shared_activation_and_selection');
   const active = await state(); assert.equal(active.runtime.running, true); assert.equal(active.runtime.mode, 'netfleet');
+  assert.equal(active.config.backend.features?.config_apply, true);
+  assert.equal(active.config.backend.features?.rule_refresh, false);
   for (const field of ['capabilities', 'providers', 'regions']) assert.ok(Array.isArray(active.status[field]), field);
   assert.ok(Array.isArray(active.events.events));
   const connectionRead = await api('connections');
   assert.equal(connectionRead.ok, true); assert.ok(Array.isArray(connectionRead.result.connections));
   evidence.checks.push('shared_react_status_and_connections_contract');
+  const configurationRequest = config => {
+    const value = {
+      revision: config.revision,
+      policy_source: { kind: config.policy_source.kind, ref: config.policy_source.ref },
+      recovery_profile_ref: config.recovery_profile.ref,
+      providers: Object.fromEntries(config.providers.map(item => [item.id, {
+        section: item.section, enabled: item.enabled, role: item.role, billing: item.billing, region_ids: item.region_ids,
+      }])),
+      regions: Object.fromEntries(config.regions.map(item => [item.id, { display_name: item.display_name, mode: item.mode }])),
+      capabilities: Object.fromEntries(config.capabilities.map(item => [item.id, {
+        display_name: item.display_name, enabled: item.enabled, mode: item.mode, region_ids: item.region_ids,
+        prefer_region_from: item.prefer_region_from ?? null,
+        entry_group: item.entry_group, policy_groups: item.policy_groups,
+      }])),
+      routing_rules: config.routing_rules,
+      automation: {
+        enabled: config.automation.enabled,
+        selection_interval_seconds: config.automation.selection_interval_seconds,
+        subscription_refresh_enabled: config.automation.subscription_refresh_enabled,
+        subscription_refresh_interval_seconds: config.automation.subscription_refresh_interval_seconds,
+        rule_refresh_enabled: config.automation.rule_refresh_enabled ?? false,
+        rule_refresh_interval_seconds: config.automation.rule_refresh_interval_seconds ?? 604800,
+      },
+      safety: {
+        region_switch_margin_ms: config.safety.region_switch_margin_ms,
+        leaf_switch_margin_ms: config.safety.leaf_switch_margin_ms,
+        runtime_grace_seconds: config.safety.runtime_grace_seconds,
+        latency_url: config.safety.latency_url,
+        path_probe_url: config.safety.path_probe_url,
+        guard_probe_url: config.safety.guard_probe_url,
+      },
+    };
+    return value;
+  };
+  const liveRequest = configurationRequest(active.config);
+  liveRequest.automation.selection_interval_seconds += 60;
+  const liveApply = await api('config-apply', { request: liveRequest });
+  assert.equal(liveApply.ok, true, JSON.stringify(liveApply) + JSON.stringify(active.config));
+  const afterLiveApply = await state();
+  assert.equal(afterLiveApply.runtime.running, true);
+  assert.equal(afterLiveApply.runtime.mode, 'netfleet');
+  assert.equal(afterLiveApply.config.automation.selection_interval_seconds, liveRequest.automation.selection_interval_seconds);
+  const appliedPid = afterLiveApply.runtime.pid, appliedPolicy = JSON.stringify(afterLiveApply.policy);
+  const invalidLiveRequest = configurationRequest(afterLiveApply.config);
+  Object.values(invalidLiveRequest.providers)[0].region_ids = ['unavailable-region'];
+  const rejectedLiveApply = await api('config-apply', { request: invalidLiveRequest });
+  assert.equal(rejectedLiveApply.ok, false, JSON.stringify(rejectedLiveApply));
+  const afterRejectedApply = await state();
+  assert.equal(afterRejectedApply.runtime.running, true);
+  assert.equal(afterRejectedApply.runtime.mode, 'netfleet');
+  assert.equal(afterRejectedApply.runtime.pid, appliedPid);
+  assert.equal(JSON.stringify(afterRejectedApply.policy), appliedPolicy);
+  evidence.checks.push('live_configuration_apply_and_failed_apply_preserves_runtime');
   // 本机核心设置投影必须来自 owner：平台交给核心的值、Profile 声明值与运行回读，
   // 并且不把 controller 密钥带进页面数据。
   const projection = active.core;
@@ -223,13 +284,29 @@ try {
   subscriptionStateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'netfleet-macos-subscription-'));
   subscriptionHandle = await boot(subscriptionStateDir);
   const submission = `http://127.0.0.1:${relay.address().port}/subscription`;
-  const prepared = await api('subscription-prepare', { subscription: { name: '节点列表 qualification', url: submission } });
+  const prepared = await api('subscription-prepare', { subscription: { name: '节点列表 qualification', url: submission,
+    info_url: `http://127.0.0.1:${relay.address().port}/information`, user_agent: 'netfleet-qualification', quota_reset_day: 15 } });
   assert.equal(prepared.ok, true, JSON.stringify(prepared)); assert.equal(prepared.result.ready, true, JSON.stringify(prepared));
   const preparedState = await state();
   assert.equal(preparedState.runtime.running, false); assert.equal(preparedState.runtime.networkMode, 'explicit');
   assert.deepEqual(Object.keys(preparedState.policy.regions).sort(), ['hong_kong', 'japan', 'singapore']);
   assert.ok(preparedState.policy.providers[prepared.result.id]);
   assert.equal(preparedState.subscriptions[prepared.result.id].nodeCount, 3);
+  assert.equal(preparedState.subscriptions[prepared.result.id].userAgent, 'netfleet-qualification');
+  assert.equal(preparedState.subscriptions[prepared.result.id].hasInfoUrl, true);
+  assert.equal(preparedState.subscriptions[prepared.result.id].quotaResetDay, 15);
+  const storedSource = JSON.parse(await fs.readFile(path.join(subscriptionStateDir, 'state.json'))).subscriptions[prepared.result.id];
+  assert.equal(storedSource.user_agent, 'netfleet-qualification');
+  assert.equal(storedSource.quota_reset_day, 15);
+  assert.equal(subscriptionAgent, 'netfleet-qualification');
+  assert.equal(informationAgent, 'netfleet-qualification');
+  assert.equal((await api('subscription-prepare', { id: prepared.result.id, subscription: { name: '节点列表 qualification',
+    info_url: submission, user_agent: 'netfleet-qualification', quota_reset_day: 15 } })).ok, false);
+  assert.equal((await state()).subscriptions[prepared.result.id].hasInfoUrl, true);
+  const preparedProvider = preparedState.status.providers.find(item => item.id === prepared.result.id);
+  assert.equal(preparedProvider.quota.remaining_bytes, 7);
+  assert.equal(preparedProvider.quota.reset_day, 15);
+  evidence.checks.push('desktop_subscription_metadata_and_information_quota');
   const generated = JSON.parse(await fs.readFile(path.join(subscriptionStateDir, 'backend/profiles/Original.json')));
   assert.deepEqual(generated.rules, ['MATCH,Proxy']); assert.equal(generated['proxy-groups'][0].name, 'Proxy');
   assert.deepEqual(preparedState.policy.policy_source, { kind: 'bundle', ref: 'bundle:base-v1' });
@@ -276,7 +353,7 @@ try {
   assert.deepEqual(withSecond.policy.bindings, policy.bindings);
   assert.deepEqual(withSecond.policy.recovery_profile, policy.recovery_profile);
   assert.deepEqual(withSecond.policy.private_extension, policy.private_extension);
-  assert.equal(withSecond.status.providers.find(item => item.id === 'business').quota.remaining_bytes, 4);
+  assert.equal(withSecond.status.providers.find(item => item.id === 'business').quota.remaining_bytes, 7);
   const sources = { ...withSecond.subscriptions }; delete sources[second.result.id];
   const removed = await api('subscriptions-set', { subscriptions: sources });
   assert.equal(removed.ok, true);

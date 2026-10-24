@@ -8,6 +8,7 @@ let timestamp, native_selected, revision, directory_ready, cache_path, source_id
 const cache_accepted = context.use("models.subscription").cache_accepted;
 const valid_id = context.use("models.subscriptions").valid_id;
 const desired_source = context.use("models.subscriptions").desired_source;
+const quota_reset_day = context.use("models.subscriptions").quota_reset_day;
 const userinfo = context.use("models.subscriptions").userinfo;
 const referenced = context.use("models.subscriptions").referenced;
 const public_source = context.use("models.subscriptions").public_source;
@@ -124,6 +125,7 @@ get = function() {
 		entry.alias = source.alias ?? "";
 		entry.user_agent = source.user_agent ?? "clash.meta";
 		entry.info_url = source.info_url ?? "";
+		entry.quota_reset_day = quota_reset_day(source.quota_reset_day);
 		push(sources, entry);
 	});
 	return { ok: true, result: { managed_by: "netfleet", manage_externally: false, sources: sources, revision: revision() } };

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { fixtureScenarios } from '../data/fixtures';
 import type { DeviceConfigSnapshot } from '../types';
 import { ConfigView } from './ConfigView';
-import { FoundationSection, ProvidersSection, SafetySection } from './ConfigSections';
+import { AutomationSection, FoundationSection, ProvidersSection, SafetySection } from './ConfigSections';
 import { configChanges, configSummary, createConfigDraft, validateConfigDraft, validCidr } from './model';
 import { desktopConfigRequest } from '../desktop/policy';
 
@@ -105,7 +105,7 @@ describe('本地配置参考模型', () => {
     const status = structuredClone(fixtureScenarios.healthy.status);
     const config: DeviceConfigSnapshot = {
       revision: 'a'.repeat(64), active: true, pending_apply: false,
-      backend: { id: 'nikki-mihomo', display_name: 'Nikki + Mihomo' },
+      backend: { id: 'nikki-mihomo', display_name: 'Nikki + Mihomo', features: { config_apply: true, rule_refresh: false } },
       policy_source: { kind: 'bundle', ref: 'bundle:base-v1', display_name: 'NetFleet 内置基础策略' },
       policy_source_options: [{ kind: 'bundle', ref: 'bundle:base-v1', display_name: 'NetFleet 内置基础策略' }],
       policy_groups: ['OUTBOUND', 'AI'],
@@ -182,6 +182,25 @@ describe('本地配置参考模型', () => {
     expect(html).toContain('机场');
     expect(html).toContain('Nikki + Mihomo');
     expect(html).not.toContain('sing-box');
+  });
+  it('平台能力只读取 owner 声明，不从后端名称推断', () => {
+    const status = structuredClone(fixtureScenarios.native.status);
+    status.runtime.backend = { id: 'native-mihomo', display_name: 'NetFleet + Mihomo' };
+    const withoutFeatures = createConfigDraft(status);
+    expect(withoutFeatures.platformFeatures).toEqual({ configApply: false, ruleRefresh: false });
+    const draft = createConfigDraft(status, {
+      revision: 'a'.repeat(64), active: true, pending_apply: false,
+      backend: { id: 'native-mihomo', display_name: 'NetFleet + Mihomo', features: { config_apply: true, rule_refresh: false } },
+      policy_source: { kind: 'bundle', ref: 'bundle:base-v1', display_name: 'NetFleet 内置基础策略' },
+      policy_source_options: [{ kind: 'bundle', ref: 'bundle:base-v1', display_name: 'NetFleet 内置基础策略' }],
+      policy_groups: [], recovery_profile: { ref: 'subscription:recovery', display_name: '恢复配置' },
+      recovery_profile_options: [], providers: [], provider_options: [], regions: [], region_options: [], capabilities: [],
+      routing_rules: [],
+      automation: { enabled: true, selection_interval_seconds: 1800, subscription_refresh_enabled: true, subscription_refresh_interval_seconds: 43200 },
+      safety: { region_switch_margin_ms: 150, leaf_switch_margin_ms: 150, runtime_grace_seconds: 120, latency_url: 'https://latency.example.invalid', path_probe_url: 'https://path.example.invalid', guard_probe_url: 'https://guard.example.invalid' },
+    });
+    expect(draft.platformFeatures).toEqual({ configApply: true, ruleRefresh: false });
+    expect(renderToStaticMarkup(<AutomationSection draft={draft} status={status} onChange={() => undefined} />)).not.toContain('定期更新分流数据');
   });
 
   it('支持 IPv4/IPv6 网段及直连目标，并拒绝非法网段和双重目标', () => {

@@ -193,6 +193,26 @@ class PlatformCompositionTests(unittest.TestCase):
         for name in sorted(platform_services - shared_services - set(self.macos.bindings)):
             self.fail(f"{name} is provided by platform-macos but never bound")
 
+    def test_platform_capabilities_match_their_owners(self):
+        expected = {
+            "openwrt": {"config_apply": "true", "rule_refresh": 'KIND == "native-mihomo"'},
+            "macos": {"config_apply": "true", "rule_refresh": "false"},
+        }
+        roots = {
+            "openwrt": SHARED_ROOT / "plugins/platform/lib/runtime.uc",
+            "macos": DESKTOP_ROOT / "plugins/platform-macos/lib/runtime.uc",
+        }
+        for platform, path in roots.items():
+            source = path.read_text()
+            with self.subTest(platform=platform):
+                for feature, declaration in expected[platform].items():
+                    self.assertIn(
+                        f"{feature}: {declaration}",
+                        source,
+                        f"{platform} must declare {feature}",
+                    )
+        self.assertIn("CONFIG_APPLY_WORK_DIR", (SHARED_ROOT / "plugins/configuration/lib/editor.uc").read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

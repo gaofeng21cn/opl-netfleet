@@ -167,11 +167,14 @@ function normalize_sources(values, previous, imported) {
 			result[id] = { name, enabled: value.enabled != false, imported: true };
 			continue;
 		}
-		const desired = desired_source({ revision: "candidate", source: { id, name, url,
-			user_agent: value.user_agent ?? old?.user_agent ?? "clash.meta" } }, old);
+		const desired = desired_source({ revision: "candidate", source: { id, name, alias: value.alias, url,
+			user_agent: value.user_agent ?? old?.user_agent ?? "clash.meta", info_url: value.info_url,
+			quota_reset_day: exists(value, "quota_reset_day") ? value.quota_reset_day : undefined } }, old);
 		if (!desired.ok) return desired;
-		result[id] = { name: desired.source.name, url: desired.source.url,
-			user_agent: desired.source.user_agent, enabled: value.enabled != false, imported: false };
+		result[id] = { name: desired.source.name, alias: desired.source.alias, url: desired.source.url,
+			user_agent: desired.source.user_agent, info_url: desired.source.info_url,
+			quota_reset_day: desired.source.quota_reset_day,
+			enabled: value.enabled != false, imported: false };
 	}
 	return { ok: true, sources: result };
 }

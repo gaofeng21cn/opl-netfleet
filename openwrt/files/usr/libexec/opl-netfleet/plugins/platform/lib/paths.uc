@@ -22,6 +22,7 @@ return function(context) {
 		PACKAGE_TRANSACTIONS: "/etc/opl-netfleet/package-transactions",
 		APK_REPOSITORY: "/etc/apk/repositories.d/opl-netfleet.list",
 		UPGRADE_STATE: "/tmp/opl-netfleet-package-upgrade-state",
+		CONFIG_APPLY_WORK_DIR: "/tmp/opl-netfleet-config-apply",
 		RULE_DATA_ROOT: `${backend}/run/rule-data`,
 		RULE_LOCK_PATH: `${root}/rulesets.lock.json`,
 		ROOT_DIR: root,

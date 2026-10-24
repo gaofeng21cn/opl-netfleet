@@ -203,7 +203,8 @@ project = function(policy, resources) {
 	const recovery_profile_options = resources?.recovery_profile_options ?? [];
 	const healthcheck = policy?.fail_open?.healthcheck ?? {};
 	return {
-		backend: resources?.backend ?? { id: "nikki-mihomo", display_name: "Nikki + Mihomo" },
+		backend: resources?.backend ?? { id: "nikki-mihomo", display_name: "Nikki + Mihomo",
+			features: { config_apply: false, rule_refresh: false } },
 		main_enabled: policy?.main?.enabled == true,
 		policy_source: {
 			kind: policy.policy_source.kind,
@@ -240,7 +241,8 @@ project = function(policy, resources) {
 			selection_interval_seconds: policy?.automation?.selection_interval_seconds,
 			subscription_refresh_enabled: policy?.automation?.subscription_refresh_enabled == true,
 			subscription_refresh_interval_seconds: policy?.automation?.subscription_refresh_interval_seconds,
-			rule_refresh_enabled: policy?.automation?.rule_refresh_enabled ?? false,
+			rule_refresh_enabled: (resources?.backend?.features?.rule_refresh == true) &&
+				(policy?.automation?.rule_refresh_enabled ?? false),
 			rule_refresh_interval_seconds: policy?.automation?.rule_refresh_interval_seconds ?? 604800
 		},
 		safety: {

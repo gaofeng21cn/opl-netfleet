@@ -4,9 +4,13 @@ export type DesktopMode = 'direct' | 'mihomo' | 'netfleet';
 export type NetworkMode = 'explicit' | 'system' | 'tun';
 export interface DesktopSubscription {
   name: string;
+  alias?: string | null;
   enabled: boolean;
   imported?: boolean;
   hasUrl?: boolean;
+  hasInfoUrl?: boolean;
+  quotaResetDay?: number | null;
+  userAgent?: string;
   quota?: Quota;
   updatedAt?: string | null;
   nodeCount?: number | null;

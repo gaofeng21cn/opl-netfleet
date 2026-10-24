@@ -84,4 +84,12 @@ assert(shared_model.quota_state({ available: 0 }).state == "exhausted");
 assert(shared_model.quota_state({ total: 0, used: 0 }).state == "exhausted");
 assert(shared_model.quota_state({ available: -1, total: 9, used: 2 }).state == "exhausted");
 assert(shared_model.quota_state({ total: 9, used: 2, reset_day: "15" }).reset_day_source == "manual");
+const managed = shared_model.normalize_sources({ source_a: {
+	name: "Source", alias: "主账号", url: "https://example.invalid/subscription",
+	user_agent: "mihomo", info_url: "https://example.invalid/quota", quota_reset_day: 15,
+} }, {}, {});
+assert(managed.ok && managed.sources.source_a.alias == "主账号" &&
+	managed.sources.source_a.info_url == "https://example.invalid/quota" &&
+	managed.sources.source_a.quota_reset_day == 15 &&
+	managed.sources.source_a.user_agent == "mihomo", "shared source normalization preserves metadata");
 release_services();

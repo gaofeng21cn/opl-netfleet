@@ -162,7 +162,14 @@ export interface DeviceConfigSnapshot {
   revision: string;
   active: boolean;
   pending_apply: boolean;
-  backend: { id: string; display_name: string };
+  backend: {
+    id: string;
+    display_name: string;
+    features?: {
+      config_apply?: boolean;
+      rule_refresh?: boolean;
+    };
+  };
   policy_source: { kind: 'bundle' | 'profile'; ref: string; display_name: string };
   policy_source_options: Array<{ kind: 'bundle' | 'profile'; ref: string; display_name: string }>;
   policy_groups: string[];
@@ -191,7 +198,14 @@ export interface StatusSnapshot {
   recovery_profile_display_name?: string | null;
   native_runtime?: Record<string, unknown> | null;
   runtime: {
-    backend?: { id: string; display_name: string };
+    backend?: {
+      id: string;
+      display_name: string;
+      features?: {
+        config_apply?: boolean;
+        rule_refresh?: boolean;
+      };
+    };
     mihomo_running?: boolean;
     backend_enabled?: boolean;
     netfleet_present?: boolean;

@@ -148,4 +148,5 @@ macOS VM 验收后才发布。应用签名、两次公证、最终 DMG 摘要、
 
 macOS-only Release 必须使用 `gh release create --latest=false`，避免抢占 OpenWrt
 安装入口依赖的 `/releases/latest/download/install-netfleet.sh`。公开 macOS 资产通过
-对应 tag 获取；本流程不提供应用内自动更新，也不自动更新已安装的本机应用。
+对应 tag 获取；分发构建支持用户确认后的应用自更新，不执行后台静默替换，也不自动
+更新本地开发构建。

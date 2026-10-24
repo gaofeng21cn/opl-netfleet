@@ -32,7 +32,8 @@ const LOG_PATH = `/var/log/${UCI_PACKAGE}/core.log`;
 const API = "http://127.0.0.1:9090";
 
 metadata = function() {
-	return { id: KIND, display_name: KIND == "native-mihomo" ? "NetFleet + Mihomo" : "Nikki + Mihomo" };
+	return { id: KIND, display_name: KIND == "native-mihomo" ? "NetFleet + Mihomo" : "Nikki + Mihomo",
+		features: { config_apply: true, rule_refresh: KIND == "native-mihomo" } };
 };
 
 environment = function() { return { backend: KIND }; };

@@ -18,6 +18,7 @@ const messages: Record<string, string> = {
   subscription_download_failed: '订阅下载失败，请检查地址、网络或订阅是否失效。原有配置仍保留。',
   subscription_has_no_nodes: '订阅没有返回可用节点，请使用 Clash / Mihomo 格式的订阅地址。',
   subscription_too_large: '订阅内容超过 8 MB，请检查是否使用了正确的订阅地址。',
+  subscription_info_url_conflict: '用量查询地址不能与订阅下载地址相同。',
   subscription_already_exists: '这个订阅地址已经添加，请更新已有来源。',
   subscription_required: '请先添加一个机场订阅。',
   subscription_url_required: '请填写机场订阅地址。',
@@ -35,6 +36,8 @@ const messages: Record<string, string> = {
   mihomo_connections_unavailable: '无法读取代理连接信息，请检查核心状态后重试。',
   config_revision_conflict: '配置已被其他操作修改，请重新载入配置后再保存。当前草稿仍保留。',
   active_requires_apply: '请先退出 NetFleet 增强代理，再保存配置。',
+  config_snapshot_failed: '当前运行状态不足以安全切换配置，原配置和运行状态已保留。',
+  config_apply_rollback_failed: '新配置应用失败，旧运行状态也未能完全恢复，请立即检查诊断信息。',
   config_invalid: '配置校验失败，请检查机场、地区、出口绑定与探针设置。',
   'not-authorized': '系统授权未完成，网络接管未启用。',
 };

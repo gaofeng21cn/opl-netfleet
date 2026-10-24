@@ -50,7 +50,7 @@ const set_backend_enabled = context.use("platform.profile").set_backend_enabled;
 const api_secret = context.use("platform.credentials").api_secret;
 const restore_recovery_with_probes = context.use("recovery.control").restore_recovery_with_probes;
 
-const WORK_DIR = "/tmp/opl-netfleet-config-apply";
+const WORK_DIR = context.use("platform.paths").CONFIG_APPLY_WORK_DIR;
 const MAIN_PATH = context.use("platform.paths").MAIN_PATH;
 
 profile_display_name = function(profile) {

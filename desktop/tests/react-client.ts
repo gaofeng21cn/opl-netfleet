@@ -52,13 +52,15 @@ try {
   assert.equal(saved.runtime.running, false);
   await assert.rejects(client.action('config-save', { request }), /配置已被其他操作修改/);
   assert.deepEqual((await client.readSnapshot()).policy, saved.policy);
+  assert.equal(saved.config.backend.features?.config_apply, true);
+  assert.equal(saved.config.backend.features?.rule_refresh, false);
   const invalid = desktopConfigRequest(saved.config!, toDesktopDraft(saved));
   (Object.values(invalid.providers as Record<string, { region_ids: string[] }>)[0]).region_ids = ['unavailable-region'];
   await assert.rejects(client.action('config-save', { request: invalid }), /配置校验失败/);
   assert.deepEqual((await client.readSnapshot()).policy, saved.policy);
   assert.deepEqual((await client.connections()).connections, []);
   passed = true;
-  const receipt = { ok: true, checks: ['real_react_client_import_compile', 'shared_configuration_projection', 'structured_editor_save',
+  const receipt = { ok: true, checks: ['real_react_client_import_compile', 'shared_configuration_projection', 'structured_editor_save', 'owner_platform_capabilities',
     'unrelated_policy_preserved', 'stale_revision_rejected', 'invalid_edit_preserves_policy', 'no_core_started'], systemNetworkMutated: false };
   await fs.mkdir(path.join(repo, '.build/macos'), { recursive: true });
   await fs.writeFile(path.join(repo, '.build/macos/react-client-qualification.json'), JSON.stringify(receipt, null, 2));

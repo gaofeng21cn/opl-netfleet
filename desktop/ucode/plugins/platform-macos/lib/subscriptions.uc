@@ -17,7 +17,8 @@ return function(context) {
 			const date = gmtime(values.expire);
 			expires_at = sprintf('%04d-%02d-%02dT%02d:%02d:%02d.000Z', date.year, date.mon, date.mday, date.hour, date.min, date.sec);
 		}
-		return model.quota_state({ available: values?.avaliable, total: values?.total, used: values?.used, expires_at });
+		return model.quota_state({ available: values?.avaliable, total: values?.total, used: values?.used,
+			expires_at, reset_day: source?.quota_reset_day });
 	}
 	function update_result(id) { return rpc('subscription.update', { id }); }
 	return { subscription_exists, subscription_display_name, subscription_options, subscription_quota, update_result };
