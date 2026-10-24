@@ -21,6 +21,21 @@ function request(source, revision, deleted) {
 	fs.chmod(input, 0600);
 	return set(input);
 };
+if (ARGV[0] == 'dns-rotate') {
+	const old = sha256(cached), pid = core_service().service.instances.core.pid;
+	check(request({ id: 'fixture', url: cursor().get('netfleet', 'fixture', 'url') + '&dns=rotated' }).ok, 'DNS rotation source edit accepted');
+	check(sha256(cached) == old && core_service().service.instances.core.pid == pid, 'source edit leaves cache and core unchanged until refresh');
+	lock.close(); host.release(); exit(0);
+}
+if (ARGV[0] == 'dns-verify') {
+	const rendered = json(fs.readfile('/etc/opl-netfleet/native/run/config.yaml'));
+	check(rendered.dns['proxy-server-nameserver-policy']['relay.node.test'][0] == '127.0.0.1:1054', 'DNS-only subscription refresh updates the effective node resolver');
+	check(rendered['netfleet-subscription-dns']['relay.node.test'][0] == '127.0.0.1:1054', 'effective ownership follows accepted DNS');
+	const network = host.use('network.editor').get();
+	check(network.ok && network.result.resources.subscription_dns_count == 1, 'network editor reports automatic DNS ownership');
+	check(!length(filter(network.result.settings.dns.proxy_policies, p => p.domain == 'relay.node.test')), 'automatic DNS cannot be frozen by the manual editor');
+	lock.close(); host.release(); exit(0);
+}
 if (ARGV[0] == "active") {
 	const lan = host.use("mihomo.backend").lan_runtime_state(null);
 	check(lan.dns_query_ok == true && lan.dns_ready == true && lan.dns_hijack_rule_present == true && lan.transparent_proxy_ready == true,

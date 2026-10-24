@@ -189,6 +189,7 @@ nft -s list table ip6 netfleet_native_fixture >"$work/foreign6.nft"
 dnsmasq --keep-in-foreground --port=1054 --listen-address=127.0.0.1 --bind-interfaces \
 	--no-resolv --no-hosts --address=/native-proof.test/203.0.113.42 \
 	--address=/netfleet-probe.test/192.168.1.2 --address=/www.gstatic.com/192.168.1.2 \
+	--address=/relay.node.test/127.0.0.1 \
 	--pid-file="$work/dns.pid" >"$work/dns.log" 2>&1 &
 fixture_pids="$fixture_pids $!"
 ip netns exec nf-upstream dnsmasq --keep-in-foreground --port=19999 \
@@ -370,6 +371,12 @@ ucode "$main" status >"$work/refreshed-result.json"
 assert_json "$work/refreshed-result.json" '@.result.active' true
 ucode "$main" subscriptions-get >"$work/subscriptions-result.json"
 assert_json "$work/subscriptions-result.json" '@.result.sources[0].pending_update' false
+stage=subscription_dns_rotation
+ucode /tmp/tests/native_runtime_integration.uc dns-rotate >"$work/dns-rotate-source.log" 2>&1
+run_main subscriptions-refresh fixture vm >"$work/dns-rotate-result.json"
+assert_json "$work/dns-rotate-result.json" '@.result.result.reloaded' true
+ucode /tmp/tests/native_runtime_integration.uc dns-verify >"$work/dns-rotate-readback.log" 2>&1
+wait_ready
 stage=rule_data_refresh
 sh /tmp/tests/rule_data_native.sh "$work/rule-data" >"$work/rule-data-result.json"
 assert_json "$work/rule-data-result.json" '@.ok' true
