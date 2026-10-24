@@ -27,10 +27,21 @@ if (ARGV[0] == 'dns-rotate') {
 	check(sha256(cached) == old && core_service().service.instances.core.pid == pid, 'source edit leaves cache and core unchanged until refresh');
 	lock.close(); host.release(); exit(0);
 }
-if (ARGV[0] == 'dns-verify') {
+if (ARGV[0] == 'legacy-dns') {
+	check(fs.stat('/tmp/netfleet-native-fixture')?.type == 'directory', 'isolated fixture required');
+	const backend = host.use('mihomo.backend'), storage = host.use('platform.storage');
+	const artifact = storage.read_json(backend.ARTIFACT_PATH), manifest = storage.read_json(backend.MANIFEST_PATH);
+	delete artifact['netfleet-subscription-dns'];
+	fs.writefile(backend.ARTIFACT_PATH, sprintf('%J', artifact)); fs.chmod(backend.ARTIFACT_PATH, 0600);
+	manifest.artifact_sha256 = sha256(backend.ARTIFACT_PATH);
+	fs.writefile(backend.MANIFEST_PATH, sprintf('%J', manifest)); fs.chmod(backend.MANIFEST_PATH, 0600);
+	lock.close(); host.release(); exit(0);
+}
+if (index(['dns-verify', 'dns-initial-verify'], ARGV[0]) >= 0) {
+	const expected = ARGV[0] == 'dns-verify' ? '127.0.0.1:1054' : 'udp://127.0.0.1:1054';
 	const rendered = json(fs.readfile('/etc/opl-netfleet/native/run/config.yaml'));
-	check(rendered.dns['proxy-server-nameserver-policy']['relay.node.test'][0] == '127.0.0.1:1054', 'DNS-only subscription refresh updates the effective node resolver');
-	check(rendered['netfleet-subscription-dns']['relay.node.test'][0] == '127.0.0.1:1054', 'effective ownership follows accepted DNS');
+	check(rendered.dns['proxy-server-nameserver-policy']['relay.node.test'][0] == expected, 'subscription refresh updates the effective resolver');
+	check(rendered['netfleet-subscription-dns']['relay.node.test'][0] == expected, 'effective ownership follows accepted DNS');
 	const network = host.use('network.editor').get();
 	check(network.ok && network.result.resources.subscription_dns_count == 1, 'network editor reports automatic DNS ownership');
 	check(!length(filter(network.result.settings.dns.proxy_policies, p => p.domain == 'relay.node.test')), 'automatic DNS cannot be frozen by the manual editor');
