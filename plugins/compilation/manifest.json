@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "compilation",
   "label": "Policy compilation",
-  "version": "0.7.6",
+  "version": "0.7.7",
   "api_version": 1,
   "package": "opl-netfleet-plugin-compilation",
   "services": {
@@ -10,7 +10,8 @@
       "version": 1,
       "module": "lib/compiler.uc",
       "requires": {
-        "models.policy": 1
+        "models.policy": 1,
+        "models.subscription": 1
       }
     },
     "compilation.control": {

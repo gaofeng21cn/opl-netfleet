@@ -63,7 +63,7 @@ automatic capability 必须形成无环依赖图，并且只有一个不声明 `
 
 | Owner | 唯一责任 |
 | --- | --- |
-| Policy Source | 提供流量分类、首条命中规则顺序、原始组名和未绑定组行为；内置 bundle 使用锁定 MRS 做业务分类，但不声明 DNS；`kind=profile` 继续逐字保留原 Profile 规则和 DNS；只作为 compiler 输入 |
+| Policy Source | 提供流量分类、首条命中规则顺序、原始组名和未绑定组行为；内置 bundle 使用锁定 MRS 做业务分类，但不声明普通 DNS；`kind=profile` 保留原 Profile 规则和 DNS，节点 DNS 按[编译合同](runtime-and-recovery.md)叠加订阅声明；只作为 compiler 输入 |
 | Recovery Profile | NetFleet 关闭、事务失败和进程级恢复时由所选后端选择的完整原始 Profile；不参与正常选优 |
 | Platform declaration | 声明本平台可配置的运行与接入参数，由平台 owner 校验、快照、应用和回读，业务模型不生成系统网络规则 |
 | Ruleset lock | 公共 `rulesets.lock.json` 锁定上游 commit、URL、格式、大小、SHA-256 和许可证；提供内置 Policy Source 已引用的业务、地域和私网 MRS，不拥有规则顺序或自动更新 |

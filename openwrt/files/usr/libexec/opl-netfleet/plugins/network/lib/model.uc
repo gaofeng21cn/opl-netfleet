@@ -7,6 +7,7 @@ let copy, array, enabled, error_code, exact_domain, internal_domain, policy_doma
 
 
 const advanced = loadfile(`${context.root}/plugins/${context.id}/lib/advanced.uc`)()(context);
+const subscription_model = context.use('models.subscription');
 
 copy = function(value) { return json(sprintf("%J", value)); };
 array = function(value) { return type(value) == "array" ? value : value == null ? [] : [value]; };
@@ -46,6 +47,7 @@ policies = function(values) {
 };
 
 project = function(profile, sections) {
+	profile = subscription_model.manual_dns(profile, profile);
 	const by_name = {};
 	for (let section in sections) by_name[section[".name"]] = section;
 	const rules = [];
@@ -173,6 +175,9 @@ validate_request = function(request, revision, current, resources) {
 			push(errors, { path: "dns.nameservers", reason: "resolver_required" });
 		if (length(settings.dns.proxy_policies ?? []) && !length(settings.dns.proxy_nameservers ?? []))
 			push(errors, { path: "dns.proxy_nameservers", reason: "proxy_resolver_required" });
+		for (let entry in settings.dns.proxy_policies ?? [])
+			if (entry.match == 'exact' && index(resources.subscription_dns_domains ?? [], lc(entry.domain ?? '')) >= 0)
+				push(errors, { path: 'dns.proxy_policies', reason: 'subscription_dns_managed' });
 		if (length(current.dns.default_nameservers) && !length(settings.dns.default_nameservers ?? []))
 			push(errors, { path: "dns.default_nameservers", reason: "default_resolver_required" });
 	}
@@ -267,7 +272,7 @@ runtime_profile = function(original, settings, inherited) {
 	profile.port = settings.listeners.http_port;
 	profile["socks-port"] = settings.listeners.socks_port;
 	profile.authentication = settings.listeners.authentication_enabled ? map(settings.listeners.credentials, (entry) => `${entry.username}:${entry.password}`) : [];
-	return profile;
+	return subscription_model.apply_dns(profile, inherited ?? original);
 };
 
 return { error_code, project, public_settings, validate_request, managed_policy, runtime_profile };

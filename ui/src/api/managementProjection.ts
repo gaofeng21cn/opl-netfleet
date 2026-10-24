@@ -42,6 +42,7 @@ export function projectNetwork(snapshot: NetworkSnapshot): NetworkSnapshot {
       interfaces: snapshot.resources.interfaces.map(item => ({ name: item.name, up: item.up, device: item.device })),
       preserved_dns_policy_count: snapshot.resources.preserved_dns_policy_count,
       preserved_proxy_policy_count: snapshot.resources.preserved_proxy_policy_count,
+      subscription_dns_count: snapshot.resources.subscription_dns_count,
     } : undefined,
   };
 }

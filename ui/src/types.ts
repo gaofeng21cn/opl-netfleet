@@ -448,7 +448,7 @@ export interface NetworkSnapshot {
   running?: boolean;
   settings: NetworkSettings | null;
   preview_redacted?: boolean;
-  resources?: { interfaces: Array<{ name: string; up: boolean; device: string | null }>; preserved_dns_policy_count: number; preserved_proxy_policy_count: number };
+  resources?: { interfaces: Array<{ name: string; up: boolean; device: string | null }>; preserved_dns_policy_count: number; preserved_proxy_policy_count: number; subscription_dns_count?: number };
 }
 
 export interface MaintenanceSnapshot {

@@ -17,6 +17,7 @@ const shell_quote = context.use("platform.process").shell_quote;
 const capture_process = context.use("platform.process").capture;
 const sha256 = context.use("platform.storage").sha256;
 const profile_rules = create_rules();
+const subscription_dns = context.use('models.subscription').apply_dns;
 
 const paths = context.use("platform.paths");
 const BASE = paths.NATIVE_ROOT;
@@ -129,7 +130,7 @@ render_profile = function() {
 	// Only an explicitly saved advanced protocol map replaces the source map.
 	// Existing private partial overlays retain their original deep-merge behavior.
 	if (extra["netfleet-replace-sniff"] == true && type(extra.sniffer?.sniff) == "object" && type(source.sniffer) == "object") delete source.sniffer.sniff;
-	const profile = profile_rules.normalize(rule_data.project(merge(merge(source, extra), overlay)));
+	const profile = subscription_dns(profile_rules.normalize(rule_data.project(merge(merge(source, extra), overlay))), source);
 	delete profile["netfleet-replace-sniff"];
 	for (let field in ["proxies", "proxy-groups", "rules"]) {
 		const additions = profile[`netfleet-${field}`] ?? [];

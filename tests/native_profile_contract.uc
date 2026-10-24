@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { apply_dns as subscription_dns } from '../openwrt/files/usr/libexec/opl-netfleet/plugins/models/lib/subscription-dns.uc';
 import { create as create_rules } from '../openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/lib/profile.uc';
 const path=replace(sourcepath(), /[^/]+$/, '../openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/lib/gateway.uc');
 const source=fs.readfile(path),start=index(source,'render_profile = function() {'),end=index(source,'prepare = function()',start);
@@ -6,7 +7,7 @@ const merge_start=index(source,'merge = function('),merge_end=index(source,'sour
 if(start<0||end<0||merge_start<0||merge_end<0)die('native_profile_renderer_unavailable');
 const profile_rules=create_rules();
 const suite=loadstring(`
-return function(profile_rules) {
+return function(profile_rules, subscription_dns) {
 let render_profile,merge,profile_source,extra,overlay={};
 const BASE='/private',RUN='/private/run',VENDOR='/vendor';
 const paths={BACKEND_PATH:'/etc/opl-netfleet/backend.json'};
@@ -42,12 +43,25 @@ fixture(sniffer);extra={sniffer:{sniff:{TLS:{'override-destination':false}}}};
 const before=sprintf('%J',extra);
 check(render_profile().result.profile.sniffer.sniff.TLS['override-destination']===true,'private_override_bypassed_tls_identity');
 check(sprintf('%J',extra)==before,'private_mixin_mutated');
+profile_source['netfleet-subscription-dns']={'node.test':['https://dns.test/current-account']};
+profile_source.dns['proxy-server-nameserver-policy']={'node.test':['https://dns.test/current-account']};
+extra.dns={'proxy-server-nameserver':['system'],'proxy-server-nameserver-policy':{
+ 'node.test':['https://dns.test/stale-account'],'+.test':['https://dns.test/stale-suffix'],
+ 'NODE.TEST.':['https://dns.test/stale-case'],'manual.example':['192.0.2.53']}};
+extra['netfleet-subscription-dns']={'node.test':['https://dns.test/forged-owner']};
+const dns_input=sprintf('%J',{profile_source,extra}),dns_profile=render_profile().result.profile;
+check(dns_profile.dns['proxy-server-nameserver-policy']['node.test'][0]=='https://dns.test/current-account','manual_rule_overrode_subscription_DNS');
+check(dns_profile.dns['proxy-server-nameserver-policy']['NODE.TEST.']==null,'duplicate_case_rule_survived_projection');
+check(dns_profile.dns['proxy-server-nameserver-policy']['manual.example'][0]=='192.0.2.53','unrelated_manual_DNS_changed');
+check(dns_profile['netfleet-subscription-dns']['node.test'][0]=='https://dns.test/current-account','private_mixin_forged_DNS_ownership');
+check(sprintf('%J',{profile_source,extra})==dns_input,'DNS_renderer_mutated_private_inputs');
+delete profile_source['netfleet-subscription-dns'];delete profile_source.dns['proxy-server-nameserver-policy'];
 extra={sniffer:{sniff:{TLS:{port:[8443],'override-destination':false}}}};
 const legacy=sprintf('%J',extra),legacy_render=render_profile().result.profile;
 check(sprintf('%J',legacy_render.sniffer.sniff.TLS.ports)==sprintf('%J',[8443]),'legacy_override_lost_to_inherited_ports');
 check(legacy_render.sniffer.sniff.TLS.port==null&&sprintf('%J',extra)==legacy,'legacy_port_conversion_mutated_private_input');
 return profile;
 };`)();
-const profile=suite(profile_rules);
+const profile=suite(profile_rules, subscription_dns);
 if(ARGV[0]) {if(!fs.writefile(ARGV[0],sprintf('%J',profile)))die('fixture_profile_write_failed');}
 print('native profile: TLS DNS identity, protocol exclusions and private input preservation passed\n');

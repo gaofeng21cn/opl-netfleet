@@ -1,5 +1,4 @@
-
-
+import { project_dns, apply_dns, manual_dns } from './subscription-dns.uc';
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
 let sorted_names, enabled_sections, referenced_sections, quota_config, cache_accepted, evaluate_entry, summarize, public_results, unavailable_results, history_update, refresh_due_at, public_quota, project;
@@ -223,5 +222,5 @@ project = function(automation, facts, history) {
 	};
 };
 
-return { enabled_sections, referenced_sections, quota_config, cache_accepted, evaluate_entry, summarize, public_results, unavailable_results, history_update, refresh_due_at, project };
+return { enabled_sections, referenced_sections, quota_config, cache_accepted, evaluate_entry, summarize, public_results, unavailable_results, history_update, refresh_due_at, project, project_dns, apply_dns, manual_dns };
 };

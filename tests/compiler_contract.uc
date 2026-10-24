@@ -114,6 +114,49 @@ const providers = {
 	backup: { path: "/tmp/backup.yaml", runtime_path: "/tmp/backup.yaml", display_name: "Backup机场", profile: { proxies: [{ name: "far-1" }] } }
 };
 const result = compile(profile, policy, "source", "recovery", "policy", providers);
+// Account DNS is derived from each accepted cache, never a shared suffix credential.
+const dns_providers = json(sprintf('%J', providers));
+dns_providers.alpha.profile = { proxies: [{ name: 'near-1', server: 'A.nodes.test' }, { name: 'near-ip', server: '192.0.2.1' }],
+	dns: { 'nameserver-policy': { '+.nodes.test': 'https://dns.test/account-a', 'a.nodes.test': ['https://dns.test/account-a-exact'] },
+		nameserver: ['https://dns.test/ordinary'] } };
+dns_providers.backup.profile = { proxies: [{ name: 'far-1', server: 'b.nodes.test' }],
+	dns: { 'nameserver-policy': { '+.nodes.test': ['https://dns.test/account-b'] } } };
+const dns_inputs = sprintf('%J', { profile, policy, dns_providers });
+const dns_result = compile(profile, policy, 'source', 'recovery', 'policy', dns_providers);
+if (!dns_result.ok || dns_result.profile.dns['proxy-server-nameserver-policy']['a.nodes.test'][0] != 'https://dns.test/account-a-exact' ||
+	dns_result.profile.dns['proxy-server-nameserver-policy']['b.nodes.test'][0] != 'https://dns.test/account-b' ||
+	length(keys(dns_result.profile['netfleet-subscription-dns'])) != 2 ||
+	dns_result.profile.dns.nameserver[0] != profile.dns.nameserver[0] ||
+	sprintf('%J', { profile, policy, dns_providers }) != dns_inputs) die('subscription DNS projection or input preservation failed');
+dns_providers.alpha.profile.dns['nameserver-policy']['a.nodes.test'] = 'https://dns.test/rotated';
+dns_providers.backup.profile.proxies = [{ name: 'notice', server: '127.0.0.1' }];
+const rotated_dns = compile(profile, policy, 'source', 'recovery', 'policy', dns_providers);
+if (!rotated_dns.ok || rotated_dns.profile.dns['proxy-server-nameserver-policy']['a.nodes.test'][0] != 'https://dns.test/rotated' ||
+	rotated_dns.profile['netfleet-subscription-dns']['b.nodes.test'] != null) die('refresh retained obsolete account DNS');
+dns_providers.backup.profile.proxies = [{ name: 'far-1', server: 'a.nodes.test' }];
+const conflict_dns = compile(profile, policy, 'source', 'recovery', 'policy', dns_providers);
+if (conflict_dns.ok || index(conflict_dns.errors[0], 'conflict') < 0 || index(sprintf('%J', conflict_dns), 'https://') >= 0)
+	die('conflicting account credentials were accepted or disclosed');
+dns_providers.backup.profile.dns['nameserver-policy']['+.nodes.test'] = 'https://dns.test/rotated';
+if (!compile(profile, policy, 'source', 'recovery', 'policy', dns_providers).ok) die('same account DNS was not shareable');
+dns_providers.alpha.profile.dns['nameserver-policy']['a.nodes.test'] = [];
+if (compile(profile, policy, 'source', 'recovery', 'policy', dns_providers).ok) die('empty subscription DNS accepted');
+dns_providers.alpha.profile.dns = { 'proxy-server-nameserver': ['https://dns.test/node-default'] };
+dns_providers.backup.profile.proxies = [{ name: 'far-1', server: '198.51.100.1' }];
+const default_dns = compile(profile, policy, 'source', 'recovery', 'policy', dns_providers);
+if (!default_dns.ok || default_dns.profile['netfleet-subscription-dns']['a.nodes.test'][0] != 'https://dns.test/node-default')
+	die('explicit subscription node DNS default lost');
+const no_node_default = json(sprintf('%J', profile));
+delete no_node_default.dns['proxy-server-nameserver'];
+const inherited_dns = compile(no_node_default, policy, 'source', 'recovery', 'policy', dns_providers);
+if (!inherited_dns.ok || inherited_dns.profile.dns['proxy-server-nameserver'][0] != profile.dns.nameserver[0] ||
+	inherited_dns.profile.dns['proxy-server-nameserver-policy']['rule-set:geolocation-non-cn'][0] !=
+	profile.dns['nameserver-policy']['rule-set:geolocation-non-cn'][0]) die('node DNS fallback lost existing ordinary resolver policies');
+const disabled_dns_policy = json(sprintf('%J', policy));
+disabled_dns_policy.providers.backup.enabled = false;
+dns_providers.backup.profile.proxies = [{ name: 'far-1', server: 'a.nodes.test' }];
+if (!compile(profile, disabled_dns_policy, 'source', 'recovery', 'policy', dns_providers).ok)
+	die('disabled provider introduced DNS conflict');
 // Equivalent candidates share the actual URLTest owner, without expanding authorization.
 const shared_policy = json(sprintf("%J", policy));
 shared_policy.capabilities["ai-compatible"].leaf_switch_margin_ms = 150;

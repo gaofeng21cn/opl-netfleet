@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "network",
   "label": "Network configuration",
-  "version": "0.8.6",
+  "version": "0.8.7",
   "api_version": 1,
   "package": "opl-netfleet-plugin-network",
   "services": {
@@ -10,6 +10,7 @@
       "version": 1,
       "module": "lib/model.uc",
       "requires": {
+        "models.subscription": 1,
         "mihomo.profile-storage": 1
       }
     },
@@ -17,6 +18,7 @@
       "version": 1,
       "module": "lib/editor.uc",
       "requires": {
+        "models.subscription": 1,
         "mihomo.backend": 1,
         "mihomo.controller": 1,
         "network.model": 1,

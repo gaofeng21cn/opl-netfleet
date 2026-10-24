@@ -65,6 +65,7 @@ export function NetworkSection({ client }: { client?: NetFleetClient }) {
       </div></section>
       <PolicyList title="域名解析特例" policies={draft.dns.policies} preserved={data.resources?.preserved_dns_policy_count || 0} onChange={policies => setDns({ policies })} />
       <PolicyList title="机场域名解析特例" policies={draft.dns.proxy_policies} preserved={data.resources?.preserved_proxy_policy_count || 0} onChange={proxy_policies => setDns({ proxy_policies })} />
+      {!!data.resources?.subscription_dns_count && <p className="nf-management-note">另有 {data.resources.subscription_dns_count} 个节点域名使用订阅自带的 DNS，随订阅刷新自动更新。</p>}
       <section className="nf-management-subsection"><h3>代理范围</h3><div className="nf-form-rows">
         <div className="nf-form-row"><div><label>局域网透明代理</label></div><Toggle label="局域网透明代理" checked={draft.lan.enabled} onChange={enabled => change({ ...draft, lan: { ...draft.lan, enabled } })} /></div>
         <div className="nf-form-row"><div><label>路由器本机代理</label></div><Toggle label="路由器本机代理" checked={draft.router.enabled} onChange={enabled => change({ ...draft, router: { enabled } })} /></div>

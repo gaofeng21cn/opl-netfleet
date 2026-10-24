@@ -74,6 +74,19 @@ changed.settings.dns.proxy_policies = [];
 const valid = validate_request(changed, "current", current, resources);
 check(valid.ok, "supported_network_change_accepted");
 const rendered = runtime_profile(profile, valid.settings);
+const automatic_dns = clone(profile);
+automatic_dns['netfleet-subscription-dns'] = { 'exit.example.test': ['https://dns.test/current'] };
+automatic_dns.dns['proxy-server-nameserver-policy']['exit.example.test'] = ['https://dns.test/current'];
+const automatic_settings = project(automatic_dns, sections);
+check(policy(automatic_settings.dns.proxy_policies, 'exit.example.test') == null, 'automatic DNS exposed as editable manual state');
+const automatic_rendered = runtime_profile(automatic_dns, automatic_settings, automatic_dns);
+check(automatic_rendered.dns['proxy-server-nameserver-policy']['exit.example.test'][0] == 'https://dns.test/current', 'network edit dropped subscription DNS');
+const manual_only = use('models.subscription').manual_dns(automatic_rendered, automatic_dns);
+check(manual_only.dns['proxy-server-nameserver-policy']['exit.example.test'] == null, 'network persistence froze generated DNS');
+const manual_override = clone(automatic_settings);
+push(manual_override.dns.proxy_policies, { domain: 'exit.example.test', match: 'exact', nameservers: ['192.0.2.1'] });
+check(!validate_request({ revision: 'current', settings: public_settings(manual_override) }, 'current', automatic_settings,
+	{ ...resources, subscription_dns_domains: ['exit.example.test'] }).ok, 'manual edit could overwrite subscription DNS');
 check(rendered.dns["nameserver-policy"]["example.test"] == null && rendered.dns["proxy-server-nameserver-policy"]["exit.example.test"] == null,
 	"deleted_exact_domain_removed");
 check(rendered.dns["nameserver-policy"]["+.private.test"] == null, "deleted_suffix_domain_removed");

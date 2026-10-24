@@ -1,5 +1,3 @@
-
-
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
 let clone, group_index, generated_name_conflicts, binding_capability, binding_kind, rewritten_member, rewrite_group_members, rule_target, rewrite_rule, rewrite_rule_list, capability_group_name, inject_routing_rules, legacy_closure, normalize_policy_group, entry_alias, standardize_profile, has, region_display_name, provider_display_name, provider_group_name, provider_tier_name, provider_source_name, region_group_name, region_aggregate_name, region_layer_name, preferred_group_name, proxy_path_group_name, automatic_group_name, direct_guard_group_name, provider_before, ordered_enabled_providers, automatic_capability, capability_generation_order, array_has, push_unique, capability_allows_region, protected_probe, mapping_filter, compile;
@@ -9,6 +7,7 @@ const ordered_regions = context.use("models.policy").ordered_regions;
 const region_switch_margin = context.use("models.policy").region_switch_margin;
 const leaf_switch_margin = context.use("models.policy").leaf_switch_margin;
 const canonical_cidr = context.use("models.policy").canonical_cidr;
+const subscription_model = context.use('models.subscription');
 
 clone = function(value) {
 	const value_type = type(value);
@@ -842,6 +841,15 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 	const standardized = standardize_profile(compiled, groups, enabled_bindings, enabled_capabilities, generated_groups);
 	if (!standardized.ok) return { ok: false, errors: [standardized.error] };
 	compiled["proxy-providers"] = compiled_provider_sources;
+	const subscription_dns = subscription_model.project_dns(provider_names, provider_profiles);
+	if (!subscription_dns.ok) return { ok: false, errors: [subscription_dns.error] };
+	delete compiled['netfleet-subscription-dns'];
+	if (length(keys(subscription_dns.policies))) {
+		compiled['netfleet-subscription-dns'] = subscription_dns.policies;
+		compiled.dns = { ...(compiled.dns ?? {}), 'proxy-server-nameserver-policy': {
+			...(compiled.dns?.['proxy-server-nameserver-policy'] ?? {}), ...subscription_dns.policies } };
+		compiled.dns = subscription_model.apply_dns(compiled, compiled).dns;
+	}
 	const manifest = {
 		kind: "opl-netfleet-manifest",
 		schema_version: 2,

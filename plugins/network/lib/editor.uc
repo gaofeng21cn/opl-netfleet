@@ -32,6 +32,7 @@ const capture_json = context.use("platform.process").capture_json;
 const api_secret = context.use("platform.credentials").api_secret;
 const current_profile = context.use("platform.profile").current_profile;
 const POLICY_PATH = context.use("platform.paths").POLICY_PATH;
+const subscription_model = context.use('models.subscription');
 
 const paths = context.use("platform.paths");
 const BASE = paths.NATIVE_ROOT;
@@ -86,10 +87,13 @@ discover = function() {
 	return { available: true, backend: KIND, revision: after, running: is_running, settings: settings, profile: profile, source: source, sections: sections, active_profile: active_profile,
 		explanation: advanced.explain(profile, source, extra, sections, active_profile),
 		resources: { advanced_fields: advanced.fields(), interfaces: interfaces, reserved_ports: filter(reserved, (value) => value > 0),
+			subscription_dns_domains: keys(source?.['netfleet-subscription-dns'] ?? {}),
+			subscription_dns_count: length(keys(source?.['netfleet-subscription-dns'] ?? {})),
 			preserved_dns_policy_count: length(keys(profile.dns?.["nameserver-policy"] ?? {})) - length(settings.dns.policies),
-			preserved_proxy_policy_count: length(keys(profile.dns?.["proxy-server-nameserver-policy"] ?? {})) - length(settings.dns.proxy_policies) } };
+			preserved_proxy_policy_count: length(keys(subscription_model.manual_dns(profile, source).dns?.["proxy-server-nameserver-policy"] ?? {})) - length(settings.dns.proxy_policies) } };
 };
 public_state = function(found) {
+	if (found.available) delete found.resources.subscription_dns_domains;
 	return found.available ? { available: true, backend: found.backend, revision: found.revision, running: found.running,
 		settings: public_settings(found.settings), explanation: found.explanation, resources: found.resources } : found;
 };
@@ -154,7 +158,7 @@ set_value = function(uci, section, field, value) {
 stage = function(found, settings, work) {
 	if (!shell(`cp -p ${shell_quote(CONFIG)} ${shell_quote(`${work}/netfleet`)}`)) return false;
 	const uci = cursor(work);
-	const profile = runtime_profile(found.profile, settings, found.source);
+	const profile = subscription_model.manual_dns(runtime_profile(found.profile, settings, found.source), found.source);
 	const extra = fs.lstat(MIXIN) == null ? {} : read_json(MIXIN);
 	if (type(extra) != "object") return false;
 	advanced.persist(extra, uci, found.settings.advanced, settings.advanced);

@@ -133,6 +133,7 @@ function network(controller) {
 		E('fieldset', { 'disabled': locked || null, 'class': 'netfleet-management-fields' }, [ E('h4', {}, 'DNS'), E('div', { 'class': 'netfleet-config-rows' }, rows),
 			policies('policies', '按域名指定 DNS', state.resources.preserved_dns_policy_count),
 			policies('proxy_policies', '按代理节点域名指定 DNS', state.resources.preserved_proxy_policy_count),
+			state.resources.subscription_dns_count ? E('p', { 'class': 'netfleet-management-help' }, '另有 ' + state.resources.subscription_dns_count + ' 个节点域名使用订阅自带的 DNS，随订阅刷新自动更新。') : '',
 			advanced.render(controller),
 			E('h4', {}, '代理范围'),
 			row('路由器本机', toggle(draft.router.enabled, function(value) { draft.router.enabled = value; controller.redraw(); })),
