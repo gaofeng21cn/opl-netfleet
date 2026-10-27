@@ -60,6 +60,10 @@ compiler 不下载、合并或复制节点。订阅下载、凭据与内容校�
 编译从每个启用 provider 的已接受缓存提取节点 DNS，而不从待接受的订阅地址取配置。
 只处理实际 `proxies[].server` 域名：优先匹配订阅的节点 DNS policy，再匹配普通 DNS
 policy 中的精确域名或 `+.` 后缀，最后使用订阅显式的 `proxy-server-nameserver`。
+订阅中的回环 DNS 地址（`127.0.0.0/8`、`::1`、`localhost`）依赖订阅客户端的本机服务，
+不作为可移植的节点解析声明导入；同列表的其他 resolver 保留。过滤后没有 resolver 时
+不生成该域名的自动规则，继续使用设备既有节点 DNS 配置。设备 owner 显式配置的本地
+DNS 不受此过滤影响。
 不导入整套普通网站 DNS；IP 节点和通知占位项不产生域名规则。每个域名生成精确的
 `proxy-server-nameserver-policy`，同域名的账户声明不同 resolver 时拒绝编译，错误不带凭据。
 生成映射随 Profile 保存在私有的 `netfleet-subscription-dns` 字段，原生后端合并手工覆写后

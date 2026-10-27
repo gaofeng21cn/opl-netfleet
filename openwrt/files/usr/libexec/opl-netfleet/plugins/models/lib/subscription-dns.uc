@@ -1,11 +1,20 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 // Only accepted provider caches enter this pure compiler projection.
+function loopback_resolver(value) {
+	const address = replace(lc(value), /^[a-z][a-z0-9+.-]*:\/\//, '');
+	const authority = split(split(split(address, '/')[0], '?')[0], '#')[0];
+	return match(authority, /^(localhost\.?|127\.[0-9]+\.[0-9]+\.[0-9]+)(:[0-9]+)?$/) != null ||
+		match(authority, /^\[[0:]*:1\](:[0-9]+)?$/) != null || authority == '::1';
+};
+
 function resolvers(value) {
 	const values = type(value) == 'array' ? value : value == null ? [] : [value];
 	if (!length(values)) return null;
 	for (let item in values)
 		if (type(item) != 'string' || !length(item) || match(item, /[[:space:][:cntrl:]]/)) return null;
-	return [...values];
+	// A subscription cannot provision a resolver on this device's loopback.
+	// Preserve device-owned local DNS and all portable subscription resolvers.
+	return filter(values, item => !loopback_resolver(item));
 };
 
 function matching(host, policies) {
@@ -36,6 +45,7 @@ export function project_dns(names, providers) {
 			if (rule == null && (declared == null || type(declared) == 'array' && !length(declared))) continue;
 			const values = resolvers(declared);
 			if (values == null) return { ok: false, error: `invalid subscription DNS resolvers: ${id}` };
+			if (!length(values)) continue;
 			if (policies[host] != null && sprintf('%J', policies[host]) != sprintf('%J', values))
 				return { ok: false, error: `subscription DNS conflict: ${owners[host]}/${id}` };
 			policies[host] = values;

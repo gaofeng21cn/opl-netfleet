@@ -146,6 +146,31 @@ dns_providers.backup.profile.proxies = [{ name: 'far-1', server: '198.51.100.1' 
 const default_dns = compile(profile, policy, 'source', 'recovery', 'policy', dns_providers);
 if (!default_dns.ok || default_dns.profile['netfleet-subscription-dns']['a.nodes.test'][0] != 'https://dns.test/node-default')
 	die('explicit subscription node DNS default lost');
+// Subscription-local resolvers must not replace the target's working node DNS.
+const local_dns_profile = json(sprintf('%J', profile));
+local_dns_profile.dns['proxy-server-nameserver'] = ['system'];
+local_dns_profile.dns['nameserver-policy']['local.example.test'] = ['udp://127.0.0.1:5353'];
+const portable_dns_providers = json(sprintf('%J', dns_providers));
+for (let resolver in ['udp://127.0.0.1:7874', '127.2.3.4:53', 'tcp://localhost:5353',
+	'https://LOCALHOST.:443/dns-query', 'tls://[::1]:853', 'udp://[0:0:0:0:0:0:0:1]:53', '::1']) {
+	portable_dns_providers.alpha.profile.dns = { 'proxy-server-nameserver': [resolver] };
+	const before = sprintf('%J', { local_dns_profile, portable_dns_providers });
+	const local_dns = compile(local_dns_profile, policy, 'source', 'recovery', 'policy', portable_dns_providers);
+	if (!local_dns.ok || local_dns.profile['netfleet-subscription-dns']?.['a.nodes.test'] != null ||
+		local_dns.profile.dns['proxy-server-nameserver'][0] != 'system' ||
+		local_dns.profile.dns['nameserver-policy']['local.example.test'][0] != 'udp://127.0.0.1:5353' ||
+		sprintf('%J', { local_dns_profile, portable_dns_providers }) != before)
+		die('subscription loopback DNS replaced device DNS or changed inputs');
+}
+portable_dns_providers.alpha.profile.dns = { 'nameserver-policy': {
+	'+.nodes.test': ['udp://127.0.0.1:7874', 'https://dns.test/account-a#h3=true'] } };
+const mixed_dns = compile(local_dns_profile, policy, 'source', 'recovery', 'policy', portable_dns_providers);
+if (!mixed_dns.ok || sprintf('%J', mixed_dns.profile['netfleet-subscription-dns']['a.nodes.test']) !=
+	sprintf('%J', ['https://dns.test/account-a#h3=true'])) die('portable subscription resolver lost in mixed policy');
+portable_dns_providers.alpha.profile.dns = { 'proxy-server-nameserver-policy': { 'a.nodes.test': 'udp://127.0.0.1:7874' } };
+const local_policy_dns = compile(local_dns_profile, policy, 'source', 'recovery', 'policy', portable_dns_providers);
+if (!local_policy_dns.ok || local_policy_dns.profile['netfleet-subscription-dns']?.['a.nodes.test'] != null)
+	die('subscription-local DNS policy was imported');
 const no_node_default = json(sprintf('%J', profile));
 delete no_node_default.dns['proxy-server-nameserver'];
 const inherited_dns = compile(no_node_default, policy, 'source', 'recovery', 'policy', dns_providers);
