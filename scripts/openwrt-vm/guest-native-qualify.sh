@@ -186,7 +186,7 @@ table ip6 netfleet_native_fixture {
 EOF
 nft -s list table ip netfleet_native_fixture >"$work/foreign4.nft"
 nft -s list table ip6 netfleet_native_fixture >"$work/foreign6.nft"
-dnsmasq --keep-in-foreground --port=1054 --listen-address=127.0.0.1 --bind-interfaces \
+dnsmasq --keep-in-foreground --port=1054 --listen-address=127.0.0.1,192.168.1.1 --bind-interfaces \
 	--no-resolv --no-hosts --address=/native-proof.test/203.0.113.42 \
 	--address=/netfleet-probe.test/192.168.1.2 --address=/www.gstatic.com/192.168.1.2 \
 	--address=/relay.node.test/127.0.0.1 \

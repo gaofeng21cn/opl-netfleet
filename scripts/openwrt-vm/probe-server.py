@@ -120,7 +120,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             body = json.dumps({"proxies": [{"name": "native-region-node", "type": "socks5",
                 "server": "relay.node.test", "port": 1081, "udp": True}],
                 "dns": {"enable": True, "nameserver": ["udp://127.0.0.1:1054"],
-                    "nameserver-policy": {"+.node.test": ["127.0.0.1:1054" if parse_qs(url.query).get("dns") == ["rotated"] else "udp://127.0.0.1:1054"]}},
+                    "nameserver-policy": {"+.node.test": ["192.168.1.1:1054" if parse_qs(url.query).get("dns") == ["rotated"] else "udp://192.168.1.1:1054"]}},
                 "mixed-port": 1111, "rules": ["MATCH,REJECT"]}).encode()
             if kind == "setup":
                 body = json.dumps({"proxies": [{"name": "JP Japan setup-node", "type": "socks5",

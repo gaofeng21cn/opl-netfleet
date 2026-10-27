@@ -38,7 +38,7 @@ if (ARGV[0] == 'legacy-dns') {
 	lock.close(); host.release(); exit(0);
 }
 if (index(['dns-verify', 'dns-initial-verify'], ARGV[0]) >= 0) {
-	const expected = ARGV[0] == 'dns-verify' ? '127.0.0.1:1054' : 'udp://127.0.0.1:1054';
+	const expected = ARGV[0] == 'dns-verify' ? '192.168.1.1:1054' : 'udp://192.168.1.1:1054';
 	const rendered = json(fs.readfile('/etc/opl-netfleet/native/run/config.yaml'));
 	check(rendered.dns['proxy-server-nameserver-policy']['relay.node.test'][0] == expected, 'subscription refresh updates the effective resolver');
 	check(rendered['netfleet-subscription-dns']['relay.node.test'][0] == expected, 'effective ownership follows accepted DNS');
