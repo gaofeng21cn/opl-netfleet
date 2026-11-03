@@ -161,9 +161,9 @@ export function ProviderTable({ snapshot, full = false, onManageSubscriptions, s
       <TableTools label="机场" query={query} onQuery={setQuery} sort={sort} onSort={setSort} selectedOnly={selectedOnly} onSelectedOnly={setSelectedOnly} />
       {full && <p className="nf-table-caption">{availabilityMeasured ? '资源数：当前可用 / 已加载。延迟：每轮最快的有效测量。' : snapshot.active ? '控制接口暂不可读；以下延迟为历史有效测量。' : 'NetFleet 未接管；以下延迟为历史有效测量。'}</p>}
       <div className={`nf-master-detail ${focused ? 'has-detail' : ''}`}>
-      <div className="nf-table-wrap">
+      <div className="nf-table-wrap" tabIndex={0} role="region" aria-label="机场比较表">
         <table className="nf-provider-table">
-          <thead><tr><th>机场</th><th className="nf-col-role">定位</th><th>可用资源</th><th>最近一次测速</th><th>订阅状态</th><th>剩余流量</th><th className="nf-col-expiry">到期时间</th></tr></thead>
+          <thead><tr><th className="nf-col-name">机场</th><th className="nf-col-role">定位</th><th>可用资源</th><th className="nf-col-measurement">最近一次测速</th><th>订阅状态</th><th>剩余流量</th><th className="nf-col-expiry">到期时间</th></tr></thead>
           <tbody>{providers.map((provider) => {
             const subscription = subscriptionFor(snapshot, provider);
             const section = provider.subscription_section || '';
@@ -232,9 +232,9 @@ export function RegionTable({ snapshot, full = false, onChooseRegion, blockedRea
       <TableTools label="地区" query={query} onQuery={setQuery} sort={sort} onSort={setSort} selectedOnly={selectedOnly} onSelectedOnly={setSelectedOnly} />
       <p className="nf-table-caption">已配置 {snapshot.regions.length} 个地区 · {snapshot.active && snapshot.runtime.controller_available ? `${sortRegionsForDisplay(snapshot).length} 个有健康记录` : '实时状态未测量'} · 显示 {regions.length} 个</p>
       {emptyCount > 0 && <p><button type="button" className="nf-button-secondary" aria-expanded={showEmpty} onClick={() => setShowEmpty(value => !value)}>{showEmpty ? '收起' : '展开'}暂无资源的地区（{emptyCount}）</button></p>}
-      <div className="nf-table-wrap">
+      <div className="nf-table-wrap" tabIndex={0} role="region" aria-label="地区比较表">
         <table>
-          <thead><tr><th>地区</th><th>可用机场</th><th>可用节点</th><th>最近一次测速</th><th>历史测量</th><th>参与方式</th>{onChooseRegion && <th className="nf-region-action">操作</th>}</tr></thead>
+          <thead><tr><th>地区</th><th>可用机场</th><th>可用节点</th><th className="nf-col-measurement">最近一次测速</th><th className="nf-col-history">历史测量</th><th>参与方式</th>{onChooseRegion && <th className="nf-region-action">操作</th>}</tr></thead>
           <tbody>{regions.map((region) => (
             <tr className={region.selected ? 'is-selected' : ''} key={region.id}>
               <td><span className="nf-table-name">{regionName(snapshot, region.id)}</span>{region.selected && <small>{snapshot.capabilities.filter(item => item.enabled && item.region_id === region.id && ['preferred', 'manual_region'].includes(item.data_path)).map(item => item.display_name || item.id).join('、') || '当前使用'}</small>}</td>

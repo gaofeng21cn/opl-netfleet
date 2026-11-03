@@ -227,9 +227,9 @@ function simpleTable(headers, rows, emptyText, extraClass) {
 	const body = rows.length ? rows : [ E('tr', {}, [
 		E('td', { 'colspan': headers.length }, emptyText || '暂无数据')
 	]) ];
-	return E('div', { 'class': 'table cbi-section-table' + (extraClass ? ' ' + extraClass : '') }, [
+	return E('div', { 'class': 'table cbi-section-table' + (extraClass ? ' ' + extraClass : ''), 'tabindex': 0, 'role': 'region', 'aria-label': headers[0] + '数据表格' }, [
 		E('table', { 'class': 'table' }, [
-			E('thead', {}, E('tr', {}, headers.map(function(header) { return E('th', {}, header); }))),
+			E('thead', {}, E('tr', {}, headers.map(function(header) { return E('th', { 'scope': 'col' }, header); }))),
 			E('tbody', {}, body)
 		])
 	]);

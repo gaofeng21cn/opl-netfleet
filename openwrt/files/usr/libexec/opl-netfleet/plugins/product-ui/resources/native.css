@@ -24,6 +24,7 @@
 	font-size: 15px;
 	line-height: 1.55;
 	color: var(--nf-text);
+	scrollbar-color: var(--nf-muted) var(--nf-page);
 }
 
 .netfleet-native,
@@ -49,6 +50,10 @@
 	--nf-danger: #ff9b96;
 	color-scheme: dark;
 }
+
+.netfleet-native ::selection { color: var(--nf-text); background: var(--nf-accent-soft); }
+.netfleet-native :is(input, textarea) { caret-color: var(--nf-accent); }
+.netfleet-native a { text-underline-offset: 3px; }
 
 .netfleet-native :is(h3, h4) {
 	color: var(--nf-text);
@@ -80,7 +85,7 @@
 	padding: 0 !important;
 	border: 0 !important;
 	background: transparent !important;
-	font-size: 20px;
+	font-size: 24px;
 	line-height: 1.25;
 	color: var(--nf-text) !important;
 }
@@ -170,10 +175,12 @@
 	opacity: 0.45;
 }
 
-.netfleet-native :is(button, a, input, select, summary):focus-visible {
+.netfleet-native :is(button, a, input, textarea, select, summary, [tabindex="0"]):focus-visible {
 	outline: 2px solid var(--nf-accent);
 	outline-offset: 2px;
 }
+
+.netfleet-native .table.cbi-section-table:focus-visible { outline-offset: -2px; }
 
 .netfleet-native .cbi-section {
 	margin: 0 0 22px;
@@ -650,7 +657,7 @@
 	gap: 24px;
 	margin: 0 0 26px;
 	padding: 13px 17px;
-	border-left: 3px solid var(--nf-warning);
+	border-left: 1px solid var(--nf-warning);
 	border-radius: 0 var(--nf-radius-control) var(--nf-radius-control) 0;
 	background: rgba(161, 92, 0, 0.07);
 	color: var(--nf-text);
@@ -730,6 +737,8 @@
 	display: table;
 	width: 100%;
 	font-size: 14.5px;
+	border-collapse: separate;
+	border-spacing: 0;
 }
 
 .netfleet-native table.table th,
@@ -743,13 +752,18 @@
 .netfleet-native table.table thead th {
 	background: var(--nf-surface-muted);
 	color: var(--nf-muted);
-	font-size: 13.5px;
+	font-size: 13px;
 	font-weight: 650;
 	white-space: nowrap;
 }
 
-.netfleet-native table.table tbody tr:hover {
+.netfleet-native table.table tbody tr:hover,
+.netfleet-native table.table tbody tr:focus-within {
 	background: var(--nf-accent-soft);
+}
+
+.netfleet-native table.table tbody tr:not(:last-child) > :is(td, th) {
+	border-bottom: 1px solid var(--nf-border-subtle);
 }
 
 .netfleet-native table.table tbody th {
@@ -819,7 +833,7 @@
 	margin-bottom: 22px;
 	padding: 14px 16px 16px;
 	border: 1px solid var(--nf-border);
-	border-left: 3px solid var(--nf-accent);
+	border-left: 1px solid var(--nf-accent);
 	border-radius: var(--nf-radius-surface);
 	background: var(--nf-surface);
 }
@@ -931,7 +945,7 @@
 	min-height: 46px;
 	padding: 0 18px;
 	border: 0;
-	border-left: 3px solid transparent;
+	border-left: 1px solid transparent;
 	background: transparent;
 	color: inherit;
 	font: inherit;
@@ -1271,7 +1285,7 @@
 
 .netfleet-recovery-summary {
 	padding: 15px 17px;
-	border-left: 3px solid var(--nf-accent);
+	border-left: 1px solid var(--nf-accent);
 	background: var(--nf-accent-soft);
 }
 
@@ -1601,7 +1615,7 @@
 .netfleet-native .netfleet-operation {
 	margin: 14px 0;
 	padding: 14px 16px;
-	border-left: 3px solid var(--primary-color, #5e72e4);
+	border-left: 1px solid var(--primary-color, #5e72e4);
 	background: rgba(127, 127, 127, 0.06);
 }
 .netfleet-native .netfleet-operation[hidden] { display: none; }
@@ -1700,11 +1714,11 @@
 .netfleet-native .netfleet-status-line { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin: 0 0 20px; border: 1px solid var(--nf-border); border-radius: var(--nf-radius-surface); background: var(--nf-surface); }
 .netfleet-native .netfleet-status-group { min-width: 0; padding: 14px 18px; border-right: 1px solid var(--nf-border); }
 .netfleet-native .netfleet-status-group:last-child { border-right: 0; }
-.netfleet-native .netfleet-status-group h3 { margin: 0 0 10px; padding: 0; border: 0; background: transparent; font-size: 14px; line-height: 1.5; font-weight: 600; }
+.netfleet-native .netfleet-status-group h3 { margin: 0 0 8px; padding: 0; border: 0; background: transparent; font-size: 14px; line-height: 1.5; font-weight: 600; }
 .netfleet-native .netfleet-status-group dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 7px 16px; margin: 0; font-size: 14px; line-height: 1.5; }
 .netfleet-native .netfleet-status-group dt { margin: 0; color: var(--nf-muted); font-weight: 400; }
 .netfleet-native .netfleet-status-group dd { min-width: 0; margin: 0; font-weight: 550; overflow-wrap: anywhere; }
-@media (max-width: 1100px) {
+@media (max-width: 960px) {
 	.netfleet-native .netfleet-status-line { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 	.netfleet-native .netfleet-status-group:first-child { grid-column: 1 / -1; border-right: 0; border-bottom: 1px solid var(--nf-border); }
 }
@@ -1726,7 +1740,7 @@
 .netfleet-native .netfleet-subscription-summary .netfleet-metrics { display: flex; flex-wrap: wrap; gap: 8px 20px; flex: 1; border: 0; background: transparent; }
 .netfleet-native .netfleet-subscription-summary .netfleet-metrics dl { padding: 0; border: 0; }
 .netfleet-native .netfleet-subscription-summary .netfleet-metrics :is(dt, dd) { margin: 0; font-size: 13px; }
-.netfleet-native .netfleet-table-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 14px; font-size: 14px; }
+.netfleet-native .netfleet-table-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 14px; }
 .netfleet-native .netfleet-table-caption { margin: 0 0 12px; color: var(--nf-muted); font-size: 13px; }
 .netfleet-native .netfleet-table-tools > input { width: 220px; min-width: 0; }
 .netfleet-native .netfleet-table-tools > select { width: 150px; min-width: 0; }
@@ -1736,7 +1750,7 @@
 .netfleet-native .netfleet-master-detail.has-detail { grid-template-columns: minmax(0, 1fr) 340px; }
 .netfleet-native .netfleet-list-pane { min-width: 0; overflow-x: auto; }
 .netfleet-native .netfleet-name-link { min-height: 30px; border: 0; padding: 4px 0; background: transparent; color: var(--nf-accent); text-align: left; font: inherit; font-weight: 600; cursor: pointer; }
-.netfleet-native .netfleet-name-link:hover { text-decoration: underline; }
+.netfleet-native .netfleet-name-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 .netfleet-native .netfleet-inspector { min-width: 0; padding: 0 0 20px 22px; margin-left: 20px; border-left: 1px solid var(--nf-border); }
 .netfleet-native .netfleet-inspector[hidden] { display: none; }
 .netfleet-native .netfleet-inspector-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
@@ -1753,7 +1767,7 @@
 .netfleet-native .netfleet-quota-meter::-webkit-meter-optimum-value { background: var(--nf-accent); }
 .netfleet-native .netfleet-quota-meter::-moz-meter-bar { background: var(--nf-accent); }
 .netfleet-native table.table tr.is-inspected > td { background: var(--nf-accent-soft); }
-.netfleet-native table.table tr.is-inspected > td:first-child { box-shadow: inset 3px 0 var(--nf-accent); }
+.netfleet-native table.table tr.is-inspected .netfleet-name-link { text-decoration: underline; text-underline-offset: 3px; }
 .netfleet-native :is(td, dd, time) { font-variant-numeric: tabular-nums; }
 .netfleet-native .netfleet-operating-mode { min-width: 0; margin: 0 0 24px; padding: 24px; border: 1px solid var(--nf-border); border-radius: var(--nf-radius-surface); background: var(--nf-surface, #fff); }
 .netfleet-native .netfleet-mode-heading h3 { margin: 0; padding: 0; border: 0; font-size: 18px; }

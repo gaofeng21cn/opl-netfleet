@@ -13,7 +13,7 @@ html, body, #root { height: 100%; background: #f5f6f8; }
   --nf-accent-foreground: var(--nf-host-accent-foreground, #fff);
   min-height: 100vh;
   font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-  /* The sidebar column stays transparent so the window material shows through. */
+  /* The host owns window integration; the page paints its readable surfaces. */
   background: transparent;
   -webkit-font-smoothing: antialiased;
 }
@@ -32,7 +32,7 @@ html, body, #root { height: 100%; background: #f5f6f8; }
 .nf-desktop .nf-nav-separator { display: block; height: 1px; margin: 10px 10px 8px; background: var(--nf-hairline); }
 .nf-desktop .nf-stage { margin-left: 196px; padding: 0; min-width: 0; height: 100vh; display: flex; flex-direction: column; background: var(--nf-soft); }
 .nf-desktop .nf-toolbar { position: static; height: 44px; min-height: 44px; margin-top: 30px; padding: 0 20px; background: transparent; border-bottom: 1px solid var(--nf-hairline); }
-.nf-desktop-title { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: 0; }
+.nf-desktop-title { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 0; }
 .nf-desktop .nf-toolbar-actions { gap: 2px; }
 .nf-desktop .nf-toolbar-actions button { border: 0; height: var(--nf-control-height); padding: 0 10px; border-radius: var(--nf-radius-control); color: var(--nf-text); }
 .nf-desktop .nf-toolbar-actions button:hover:not(:disabled) { background: rgba(0, 0, 0, .06); }
@@ -49,8 +49,8 @@ html, body, #root { height: 100%; background: #f5f6f8; }
 .nf-desktop .nf-management-note, .nf-desktop .nf-table-caption { font-size: 12px; line-height: 1.5; margin: 8px 0; }
 .nf-desktop .nf-table-wrap { overflow-x: auto; border-radius: var(--nf-radius-surface); border-color: var(--nf-hairline); }
 .nf-desktop :is(table th,table td) { padding: 8px 12px; border-color: var(--nf-hairline); font-size: 13px; line-height: 1.5; }
-.nf-desktop table th { background: rgba(0,0,0,.025); color: var(--nf-muted); font-size: 11px; font-weight: 500; }
-.nf-desktop .nf-table-wrap tbody tr:hover { background: rgba(0,0,0,.02); }
+.nf-desktop table th { background: rgba(0,0,0,.025); color: var(--nf-muted); font-size: 12px; font-weight: 500; }
+.nf-desktop .nf-table-wrap tbody tr:hover { background: var(--nf-accent-soft); }
 .nf-desktop .nf-table-wrap td small { display: block; margin-top: 3px; color: var(--nf-muted); font-size: 12px; }
 .nf-desktop .nf-table-tools { margin-bottom: 10px; gap: 10px; flex-wrap: wrap; }
 .nf-desktop .nf-provider-workspace { min-width: 0; }
@@ -113,7 +113,7 @@ html, body, #root { height: 100%; background: #f5f6f8; }
 .nf-desktop .nf-desktop-status .nf-status-group dl { gap: 3px 12px; font-size: 12px; }
 .nf-desktop .nf-desktop-status .nf-status-group dd { font-weight: 500; }
 .nf-desktop-connection-main { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
-.nf-desktop-connection-main h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.nf-desktop-connection-main h2 { margin: 0; font-size: 18px; font-weight: 600; }
 .nf-desktop-connection-main p { margin: 3px 0 0; font-size: 12px; color: var(--nf-muted); }
 .nf-desktop-connection-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .nf-desktop-access { border: 0; border-top: 1px solid var(--nf-border); margin: 0; padding: 10px 16px; min-width: 0; }
@@ -127,7 +127,7 @@ html, body, #root { height: 100%; background: #f5f6f8; }
 .nf-desktop-connection-foot button { border: 0; background: transparent; color: var(--nf-accent); font: inherit; padding: 0; cursor: pointer; }
 .nf-desktop-overview { display: grid; gap: 16px; }
 .nf-desktop-section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-.nf-desktop-section-title h2 { margin: 0; font-size: 13px; font-weight: 600; }
+.nf-desktop-section-title h2 { margin: 0; font-size: 14px; font-weight: 600; }
 .nf-desktop-section-title p { margin: 2px 0 0; color: var(--nf-muted); font-size: 12px; }
 .nf-desktop-section-title button { display: flex; align-items: center; border: 0; background: transparent; color: var(--nf-accent); font: inherit; font-size: 12px; cursor: pointer; }
 .nf-desktop-section-title svg { width: 14px; height: 14px; }
@@ -137,7 +137,7 @@ html, body, #root { height: 100%; background: #f5f6f8; }
 .nf-desktop-digest { border-top: 1px solid var(--nf-hairline); border-bottom: 1px solid var(--nf-hairline); }
 .nf-desktop-digest-row { appearance: none; -webkit-appearance: none; width: 100%; min-height: 34px; display: grid; grid-template-columns: 88px minmax(0,1fr) 14px; align-items: center; gap: 12px; padding: 5px 6px; border: 0; border-bottom: 1px solid var(--nf-hairline); border-radius: 0; background: transparent; color: var(--nf-text); font: inherit; text-align: left; cursor: pointer; font-variant-numeric: tabular-nums; }
 .nf-desktop-digest-row:last-child { border-bottom: 0; }
-.nf-desktop-digest-row:hover { background: rgba(0,0,0,.02); }
+.nf-desktop-digest-row:hover { background: var(--nf-accent-soft); }
 .nf-desktop-digest-label { display: flex; align-items: center; gap: 7px; color: var(--nf-muted); font-size: 12px; }
 .nf-desktop-digest-label svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .nf-desktop-digest-facts { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; min-width: 0; font-size: 13px; }
@@ -150,20 +150,21 @@ html, body, #root { height: 100%; background: #f5f6f8; }
 
 /* Exit summary reads as one comparison table: name, path, selection, measurement. */
 .nf-desktop .nf-exit-list { border-color: var(--nf-hairline); border-radius: var(--nf-radius-surface); background: var(--nf-surface); }
-.nf-desktop .nf-exit-list-head, .nf-desktop .nf-exit-row { display: grid; grid-template-columns: minmax(76px,1fr) minmax(120px,2fr) minmax(88px,1.25fr) minmax(52px,.7fr) minmax(62px,.8fr) auto; align-items: center; column-gap: 12px; padding: 0 14px; }
-.nf-desktop .nf-exit-list-head { min-height: 28px; color: var(--nf-muted); background: rgba(0,0,0,.025); border-bottom: 1px solid var(--nf-hairline); font-size: 11px; font-weight: 500; }
-.nf-desktop .nf-exit-row { min-height: 42px; border-bottom: 1px solid var(--nf-hairline); }
+.nf-desktop .nf-exit-list-head, .nf-desktop .nf-exit-row { display: grid; grid-template-columns: minmax(68px,1fr) minmax(104px,1.6fr) minmax(88px,1.2fr) minmax(44px,.6fr) minmax(52px,.7fr) 74px; align-items: center; column-gap: 10px; padding: 0 12px; }
+.nf-desktop .nf-exit-list-head { min-height: 32px; color: var(--nf-muted); background: rgba(0,0,0,.025); border-bottom: 1px solid var(--nf-hairline); font-size: 12px; font-weight: 500; }
+.nf-desktop .nf-exit-row { min-height: 60px; padding-top: 6px; border-bottom: 1px solid var(--nf-hairline); }
 .nf-desktop .nf-exit-row:last-child { border-bottom: 0; }
-.nf-desktop .nf-exit-row:hover { background: rgba(0,0,0,.02); }
+.nf-desktop .nf-exit-row:hover, .nf-desktop .nf-exit-row:focus-within { background: var(--nf-accent-soft); }
 .nf-desktop .nf-exit-row h3 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
-.nf-desktop .nf-exit-row .nf-exit-current { display: grid; grid-column: 2 / 6; grid-template-columns: minmax(120px,2fr) minmax(88px,1.25fr) minmax(52px,.7fr) minmax(62px,.8fr); align-items: center; gap: 12px; margin: 0; }
+.nf-desktop .nf-exit-row .nf-exit-current { display: grid; grid-column: 2 / 6; grid-template-columns: minmax(104px,1.6fr) minmax(88px,1.2fr) minmax(44px,.6fr) minmax(52px,.7fr); align-items: center; gap: 10px; margin: 0; }
 @supports (grid-template-columns: subgrid) { .nf-desktop .nf-exit-row .nf-exit-current { grid-template-columns: subgrid; } }
 .nf-desktop .nf-exit-row .nf-exit-current dt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .nf-desktop .nf-exit-row .nf-exit-current dd { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 400; }
-.nf-desktop .nf-exit-row .nf-exit-current dd small { display: inline; margin-left: 6px; color: var(--nf-muted); font-size: 12px; font-weight: 400; }
+.nf-desktop .nf-exit-row .nf-exit-current dd small { display: block; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; color: var(--nf-muted); font-size: 12px; font-weight: 400; }
+.nf-desktop .nf-exit-row .nf-exit-path dd { font-weight: 600; }
 .nf-desktop .nf-exit-row .nf-exit-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .nf-desktop .nf-exit-row .nf-exit-actions button { min-height: 28px; padding: 0 10px; border-radius: var(--nf-radius-control); font-size: inherit; }
-.nf-desktop .nf-exit-row-reason { grid-column: 1 / -1; margin: 0 0 8px; color: var(--nf-muted); font-size: 12px; }
+.nf-desktop .nf-exit-row-reason { grid-column: 1 / -1; margin: 2px 0 6px; color: var(--nf-muted); font-size: 12px; }
 .nf-desktop .nf-overview-attention { border-radius: var(--nf-radius-surface); }
 /* Without a running measurement both columns answer the same question, so the
    row keeps one measurement cell and the header states the same scope. */
@@ -219,9 +220,23 @@ html, body, #root { height: 100%; background: #f5f6f8; }
 .nf-desktop .nf-table-wrap td.nf-col-wide { white-space: normal; overflow-wrap: anywhere; }
 .nf-desktop :is(.nf-provider-table,.nf-region-table) td { white-space: normal; }
 .nf-desktop .nf-master-detail .nf-table-wrap { min-width: 0; }
+/* Reserve name space when the inspector shares the list; keep every fact. */
+.nf-desktop .nf-master-detail.has-detail .nf-provider-table { table-layout: fixed; }
+.nf-desktop .nf-master-detail.has-detail .nf-provider-table :is(th,td) { padding: 8px; white-space: normal; overflow-wrap: anywhere; }
+.nf-desktop .nf-master-detail.has-detail .nf-provider-table .nf-col-name { width: 28%; }
 .nf-desktop .nf-desktop-access-row { flex-wrap: nowrap; }
 .nf-desktop .nf-config-tabs { display: flex; flex-direction: column; flex-wrap: nowrap; padding: 0; }
 .nf-desktop .nf-config-tabs button { width: 100%; }
+
+/* Override the shared web table budget: desktop keeps all columns in its pane. */
+.nf-desktop .nf-region-table table { min-width: 0; table-layout: fixed; }
+.nf-desktop .nf-region-table :is(th,td) { padding-inline: 8px; }
+.nf-desktop .nf-region-table th { white-space: normal; }
+.nf-desktop .nf-region-table .nf-measurement { min-width: 0; }
+.nf-desktop .nf-region-table details { white-space: normal; overflow-wrap: anywhere; }
+.nf-desktop .nf-region-table .nf-col-measurement { width: 104px; }
+.nf-desktop .nf-region-table .nf-col-history { width: 96px; }
+.nf-desktop .nf-region-table .nf-region-action { width: 108px; }
 
 /* Keep the row action reachable while comparing a wide region table. */
 .nf-desktop .nf-region-action { position: sticky; right: 0; background: var(--nf-surface); box-shadow: -1px 0 var(--nf-border); }
