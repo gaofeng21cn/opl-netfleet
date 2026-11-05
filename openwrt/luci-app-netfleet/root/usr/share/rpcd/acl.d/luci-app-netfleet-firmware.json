@@ -1,0 +1,16 @@
+{
+  "luci-app-netfleet-firmware": {
+    "description": "Prepare and explicitly install native OpenWrt firmware updates",
+    "read": {
+      "file": {
+        "/usr/libexec/opl-netfleet-firmware describe": [ "exec" ],
+        "/usr/libexec/opl-netfleet-firmware status": [ "exec" ]
+      }
+    },
+    "write": {
+      "file": {
+        "/usr/libexec/opl-netfleet-firmware install *": [ "exec" ]
+      }
+    }
+  }
+}

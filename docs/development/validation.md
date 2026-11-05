@@ -87,6 +87,13 @@ libuci 和 `/proc`，其他机器上由 `check-mvp.sh` 明确列为延期，不�
 
 ## 隔离 OpenWrt
 
+原生固件维护的宿主合同由 `python3 -m unittest tests.test_native_firmware` 验证。
+在一次性 OpenWrt guest 中安装候选 LuCI 载荷及其依赖后，执行
+`NETFLEET_DISPOSABLE_GUEST=1 sh tests/native_firmware_device.sh`，验证真实解释器、下载身份拒绝、
+配置篡改拒绝、服务禁用意图与 sysupgrade 备份往返。该夹具创建合成配置与 Nikki init script，
+只用于空白 disposable guest，不运行于已配置 target。此检查不写固件，不代替同候选的
+完整软件包资格及实际固件升级后的启动验收。
+
 运行 `scripts/openwrt-vm.sh --help` 确认当前命令与模式；qualification 入口在
 `scripts/openwrt-vm/qualify.sh`。Apple Silicon macOS 路径使用原生 ARM64 QEMU/HVF 与
 官方 OpenWrt armsr/armv8 镜像。一次性镜像可以扩容，原缓存镜像及设备磁盘不改写。

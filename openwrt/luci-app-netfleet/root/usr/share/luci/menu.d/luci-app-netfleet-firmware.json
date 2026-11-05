@@ -1,0 +1,6 @@
+{
+  "admin/system/attendedsysupgrade/overview": {
+    "action": { "type": "view", "path": "netfleet/firmware" },
+    "depends": { "acl": [ "luci-app-netfleet-firmware" ] }
+  }
+}

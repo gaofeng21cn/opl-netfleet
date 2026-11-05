@@ -255,6 +255,13 @@ for plugin_dir in "$payload/usr/libexec/opl-netfleet/plugins/"*; do
   python3 "$work/openwrt/plugin_payload.py" project "$plugin_dir" "$payload/www"
 done
 cp -R "$work/openwrt/luci-app-netfleet/root/." "$payload/"
+if [[ "$package_format" != apk ]]; then
+  rm -rf "$payload/usr/libexec/netfleet-firmware" "$payload/usr/share/netfleet-firmware"
+  rm -f "$payload/usr/libexec/opl-netfleet-firmware" "$payload/lib/upgrade/keep.d/netfleet" \
+    "$payload/www/luci-static/resources/view/netfleet/firmware.js" \
+    "$payload/usr/share/luci/menu.d/luci-app-netfleet-firmware.json" \
+    "$payload/usr/share/rpcd/acl.d/luci-app-netfleet-firmware.json"
+fi
 view_version="v${luci_version//./_}"
 sh "$work/openwrt/luci-app-netfleet/stage-assets.sh" \
   "$payload/www/luci-static/resources" "$view_version"
@@ -268,6 +275,9 @@ chmod 0755 "$payload/usr/libexec/opl-netfleet/main.uc" \
   "$payload/usr/libexec/opl-netfleet/supervisor.uc" \
   "$payload/usr/libexec/rpcd/opl-netfleet" "$payload/usr/libexec/rpcd/opl-netfleet.plugins" \
   "$payload/etc/init.d/opl-netfleet" "$payload/etc/init.d/opl-netfleet-core" "$payload/etc/init.d/opl-netfleet-update-recovery"
+if [[ "$package_format" == apk ]]; then
+  chmod 0755 "$payload/usr/libexec/opl-netfleet-firmware" "$payload/usr/share/netfleet-firmware/restore-defaults"
+fi
 files_manifest=$output/FILES.sha256
 # Hash in one process; per-file shell/awk launches are costly on an emulated SDK.
 python3 - "$payload" "$files_manifest" <<'PYFILES'
@@ -418,12 +428,15 @@ if [[ "$package_format" == apk ]]; then
     "${package_files[@]}"
   [[ -s "$output/packages.adb" ]] || die 'APK feed index is empty'
   chmod 0600 "$output/packages.adb"
-  python3 - "$output/manifest.json" "$output/packages.adb" <<'PY'
+  python3 "$repo_dir/scripts/openwrt-feed-metadata.py" --apk "$sdk/staging_dir/host/bin/apk" \
+    --index "$output/packages.adb" --architecture "$build_target_arch" --output "$output/index.json"
+  python3 - "$output/manifest.json" "$output/packages.adb" "$output/index.json" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
-manifest_path, index_path = map(Path, sys.argv[1:])
+manifest_path, index_path, metadata_path = map(Path, sys.argv[1:])
 manifest = json.loads(manifest_path.read_text())
 manifest['feed_index'] = {'name': index_path.name, 'sha256': hashlib.sha256(index_path.read_bytes()).hexdigest()}
+manifest['feed_metadata'] = {'name': metadata_path.name, 'sha256': hashlib.sha256(metadata_path.read_bytes()).hexdigest()}
 manifest_path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + '\n')
 PY
 fi

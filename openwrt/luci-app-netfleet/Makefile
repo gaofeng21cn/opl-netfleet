@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-netfleet
-PKG_VERSION:=0.8.13
+PKG_VERSION:=0.9.0
 PKG_RELEASE:=
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=OPL NetFleet
@@ -14,7 +14,7 @@ define Package/luci-app-netfleet
   SECTION:=luci
   CATEGORY:=LuCI
   TITLE:=OPL NetFleet status and recovery interface
-  DEPENDS:=+luci-base +opl-netfleet-kernel
+  DEPENDS:=+luci-base +opl-netfleet-kernel +USE_APK:luci-app-attendedsysupgrade +USE_APK:uclient-fetch
   EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.8)
   PKGARCH:=all
 endef
@@ -37,10 +37,25 @@ define Package/luci-app-netfleet/install
 	sh ./stage-assets.sh $(1)/www/luci-static/resources $(NETFLEET_VIEW_VERSION)
 	$(INSTALL_DATA) ./root/usr/share/luci/menu.d/luci-app-netfleet.json $(1)/usr/share/luci/menu.d/luci-app-netfleet.json
 	$(INSTALL_DATA) ./root/usr/share/rpcd/acl.d/luci-app-netfleet.json $(1)/usr/share/rpcd/acl.d/luci-app-netfleet.json
+	$(if $(CONFIG_USE_APK),$(INSTALL_DIR) $(1)/usr/libexec)
+	$(if $(CONFIG_USE_APK),$(CP) ./root/lib $(1)/)
+	$(if $(CONFIG_USE_APK),$(CP) ./root/usr/libexec/. $(1)/usr/libexec/)
+	$(if $(CONFIG_USE_APK),$(INSTALL_DIR) $(1)/usr/share/netfleet-firmware)
+	$(if $(CONFIG_USE_APK),$(INSTALL_BIN) ./root/usr/share/netfleet-firmware/restore-defaults $(1)/usr/share/netfleet-firmware/restore-defaults)
+	$(if $(CONFIG_USE_APK),$(INSTALL_DATA) ./htdocs/luci-static/resources/view/netfleet/firmware.js $(1)/www/luci-static/resources/view/netfleet/firmware.js)
+	$(if $(CONFIG_USE_APK),$(INSTALL_DATA) ./root/usr/share/luci/menu.d/luci-app-netfleet-firmware.json $(1)/usr/share/luci/menu.d/luci-app-netfleet-firmware.json)
+	$(if $(CONFIG_USE_APK),$(INSTALL_DATA) ./root/usr/share/rpcd/acl.d/luci-app-netfleet-firmware.json $(1)/usr/share/rpcd/acl.d/luci-app-netfleet-firmware.json)
 endef
 
 define Package/luci-app-netfleet/postinst
 #!/bin/sh
+if [ -n "$${IPKG_INSTROOT}" ]; then
+	if [ -f "$${IPKG_INSTROOT}/usr/share/netfleet-firmware/restore-defaults" ]; then
+		mkdir -p "$${IPKG_INSTROOT}/etc/uci-defaults" || exit 1
+		cp "$${IPKG_INSTROOT}/usr/share/netfleet-firmware/restore-defaults" "$${IPKG_INSTROOT}/etc/uci-defaults/00-netfleet-firmware-restore" || exit 1
+	fi
+	exit 0
+fi
 [ -n "$${IPKG_INSTROOT}" ] || {
 	changed=0
 	rpcd_timeout=$$(uci -q get 'rpcd.@rpcd[0].timeout' 2>/dev/null || true)

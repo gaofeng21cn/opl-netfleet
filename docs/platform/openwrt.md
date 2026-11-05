@@ -109,6 +109,24 @@ OpenWrt 默认 package lifecycle 会启动新安装或升级后的 init script�
 `/etc/apk/repositories.d/opl-netfleet.list`，之后即可使用 `apk update`、`apk policy`
 和 `apk upgrade`。feed 只拥有代码包，不拥有订阅、policy、Nikki mixin 或运行时数据。
 
+### 原生固件更新
+
+网页固件安装由 OpenWrt 的 ASU 与 sysupgrade 完成，Feed 元数据同时兼容 owut；不调用虚拟化宿主，也不属于
+NetFleet 代理运行命令。LuCI 的系统更新扩展复用已安装的 Attended Sysupgrade 页面和
+官方构建服务，补充第三方 repository 与公钥；明确的系统更新权限与安装点击才允许刷写。
+包的普通安装、更新和 NetFleet 恢复命令不触发固件升级。
+
+APK Feed 同时提供从同一签名索引生成的 `index.json`（可选 Feed 为 `compat-index.json`），
+供 owut 读取候选包版本。JSON 是发现投影，包信任仍由 APK 签名索引与受信任公钥建立。
+发送给公共构建服务的 repository 必须是无凭据的 HTTPS URL；私有输入留在设备备份中。
+
+升级保留 NetFleet 当前配置、订阅缓存、独立更新的核心程序和服务启用意图。镜像构建前
+排除的已安装 Argon 包只允许从上游精确 Release 的 SHA-256 取得原归档，随配置备份离线
+恢复；其他缺失包由 ASU 拒绝，不跳过依赖或签名。首次启动在网络 owner 启动前核对保留
+输入、恢复这三个限定包及服务意图，避免首次安装脚本重置主题或启用已禁用的 Nikki。
+升级前检查实际备份空间；备份或恢复条件不满足时不写固件。自动恢复旧固件依赖设备自身
+能力，本扩展不承诺通用双分区回退。实例的可选宿主备份仍由私有运维流程拥有。
+
 空白设备所需的 `mihomo` 由同一签名 feed 中的 `mihomo-meta` 提供；包名、虚拟依赖和
 `/usr/bin/mihomo` alternatives 复用 Nikki 的约定。核心来自官方固定版本预编译资产，
 `openwrt/mihomo-meta/source.json` 是版本、架构、下载摘要和对应 GPL 源码的唯一来源，

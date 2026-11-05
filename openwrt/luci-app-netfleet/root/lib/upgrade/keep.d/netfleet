@@ -1,0 +1,9 @@
+/etc/opl-netfleet/
+/etc/config/netfleet
+/etc/config/nikki
+/etc/config/argon
+/etc/nikki/profiles/
+/etc/nikki/subscriptions/
+/etc/nikki/run/
+/etc/nikki/mixin.yaml
+/usr/libexec/mihomo

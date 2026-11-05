@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/libexec/opl-netfleet-firmware restore

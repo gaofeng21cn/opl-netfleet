@@ -35,5 +35,8 @@ while IFS= read -r name; do artifacts+=("$output/$name"); cp "$packages/$name" "
   --output "$output/packages.adb" --sign "$sign_key" \
   "${artifacts[@]}"
 [[ -s "$output/packages.adb" ]] || die 'generated feed index is empty'
+architecture=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["build_target_arch"])' "$packages/manifest.json")
+python3 "$repo_dir/scripts/openwrt-feed-metadata.py" --apk "$apk_tool" \
+  --index "$output/packages.adb" --architecture "$architecture" --output "$output/index.json"
 chmod 0644 "$output"/*.apk "$output/packages.adb"
 printf '%s\n' "$output/packages.adb"

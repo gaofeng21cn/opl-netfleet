@@ -137,6 +137,11 @@ NETFLEET_INSTALL_PROFILE=full sh /tmp/install-netfleet.sh
 
 ## 升级
 
+OpenWrt 固件更新使用 LuCI“系统 → Attended Sysupgrade”的原生流程。APK 设备的 NetFleet
+扩展沿用同一页面补齐第三方 Feed，并由设备下载、校验和安装镜像，保留配置、订阅缓存、
+独立核心资源及服务开关。安装需明确确认，设备随后重启；不依赖操作电脑或虚拟化宿主。
+适用条件、第三方包信任和恢复边界见[OpenWrt 平台实现](docs/platform/openwrt.md#原生固件更新)。
+
 LuCI 的“插件与更新”页显示组件安装版本、Mihomo 运行版本及关键依赖，可手动检查软件源。
 “功能插件”中可安装、升级和卸载受信软件源提供的独立插件。操作前会列出实际软件包变化，
 确认后在后台执行并显示进度；卸载须先禁用插件，存在服务引用时拒绝卸载，私有配置保留。

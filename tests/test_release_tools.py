@@ -401,7 +401,12 @@ all:
                     with tempfile.TemporaryDirectory() as feed_temp:
                         feed_root = Path(feed_temp)
                         apk_tool = feed_root / 'apk'
-                        apk_tool.write_text('#!/bin/sh\nwhile [ "$#" -gt 0 ]; do\n'
+                        index_rows = [{'name': item['package'], 'version': item['name'][len(item['package'])+1:-4],
+                                       'arch': item.get('package_arch', 'noarch')}
+                                      for item in manifest['artifacts'] + manifest['dependency_artifacts']]
+                        apk_tool.write_text('#!/bin/sh\nif [ "$1" = adbdump ]; then\ncat <<\'JSON\'\n'
+                                            + json.dumps({'packages':index_rows}) + '\nJSON\nexit 0\nfi\n'
+                                            'while [ "$#" -gt 0 ]; do\n'
                                             '  if [ "$1" = --output ]; then shift; output=$1; fi\n'
                                             '  case "$1" in *.apk) packages="$packages $1";; esac\n'
                                             '  shift\ndone\nprintf "%s\\n" "$packages" >"$output"\n')
@@ -926,7 +931,7 @@ class OptionalReleaseTests(unittest.TestCase):
                     if failure=='composition-check':proof['checks']={**checks,'real_gateway_h2':False}
                     if failure=='composition-incomplete':proof['composition_qualified']=False
                 proof_path.write_text(json.dumps(proof))
-                index = [{'name': name, 'version': '1.0.0'} for name in
+                index = [{'name': name, 'version': '1.0.0', 'arch': 'aarch64_generic'} for name in
                          ('opl-netfleet-https-compat', 'opl-netfleet-plugin-device-identity')]
                 if failure == 'index': index.pop()
                 expected_index = json.dumps({'packages': index})

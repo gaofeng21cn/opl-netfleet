@@ -1,0 +1,78 @@
+#!/bin/sh
+# OpenWrt ASU/sysupgrade adapter; never contacts a VM host.
+set -eu
+umask 077
+control=/usr/libexec/netfleet-firmware/control.uc
+status=/tmp/opl-netfleet-firmware.json
+case "${1:-}" in
+ describe) exec ucode "$control" describe ;;
+ status)
+  if [ -f "$status" ]; then cat "$status"
+  elif [ -f /etc/opl-netfleet/firmware/last.json ]; then cat /etc/opl-netfleet/firmware/last.json
+  else printf '%s\n' '{"phase":"idle"}'; fi
+  exit 0 ;;
+ restore)
+  if ! ucode "$control" restore; then
+   # A new boot has no old interception rules: keep the failed owner stopped.
+   for owner in opl-netfleet opl-netfleet-core nikki; do
+    [ ! -x "/etc/init.d/$owner" ] || "/etc/init.d/$owner" disable
+   done
+   exit 1
+  fi
+  exit 0 ;;
+ install) [ "$#" = 4 ] || exit 2 ;;
+ *) exit 2 ;;
+esac
+url=$2
+digest=$3
+version=$4
+exec 8>/var/lock/opl-netfleet-operator.lock
+flock -n 8 || exit 1
+exec 9>/var/lock/opl-netfleet-deploy.lock
+flock -n 9 || exit 1
+ucode "$control" admit "$url" "$digest" "$version"
+phase() {
+ printf '{"phase":"%s"}\n' "$1" >"$status.tmp"
+ mv "$status.tmp" "$status"
+}
+phase starting
+(
+ writing_firmware=0
+ failed() {
+  phase failed
+  [ "$writing_firmware" = 1 ] || rm -f /etc/opl-netfleet/firmware/pending.json
+ }
+ trap failed EXIT
+ phase downloading
+ uclient-fetch -q -T 120 -O /tmp/opl-netfleet-firmware.bin "$url"
+ printf '%s  %s\n' "$digest" /tmp/opl-netfleet-firmware.bin | sha256sum -c - >/dev/null
+ sysupgrade --test /tmp/opl-netfleet-firmware.bin
+ phase preserving
+ ucode "$control" prepare "$version"
+ sysupgrade --create-backup /tmp/opl-netfleet-firmware-backup.tgz
+ # ARM EFI upgrades carry the configuration archive on the existing ESP.
+ # Measure actual free space there, instead of assuming rootfs free space.
+ if [ -d /sys/firmware/efi ]; then
+ (
+  # OpenWrt's upgrade libraries intentionally read optional unset variables.
+  set +u
+  . /lib/functions.sh
+  . /lib/upgrade/common.sh
+  export_bootdevice
+  export_partdevice firmware_boot 1
+  mkdir -p /tmp/opl-netfleet-firmware-esp
+  mount -o ro "/dev/$firmware_boot" /tmp/opl-netfleet-firmware-esp
+  available=$(df -Pk /tmp/opl-netfleet-firmware-esp | awk 'END {print $4}')
+  umount /tmp/opl-netfleet-firmware-esp
+  rmdir /tmp/opl-netfleet-firmware-esp
+  required=$(du -k /tmp/opl-netfleet-firmware-backup.tgz | awk '{print $1}')
+  case "$available:$required" in *[!0-9:]*|:*|*:) exit 1 ;; esac
+  [ "$available" -gt "$((required + 4096))" ]
+ )
+ fi
+ phase installing
+ writing_firmware=1
+ sysupgrade -f /tmp/opl-netfleet-firmware-backup.tgz /tmp/opl-netfleet-firmware.bin
+ trap - EXIT
+) </dev/null >/tmp/opl-netfleet-firmware.log 2>&1 &
+printf '%s\n' '{"started":true}'

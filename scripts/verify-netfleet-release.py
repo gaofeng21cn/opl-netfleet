@@ -81,6 +81,8 @@ def optional_files(files: dict[str, Path], manifest_path: Path, architecture: st
     if not isinstance(artifacts, list) or len(artifacts) != 2:
         fail('optional feed package set is invalid')
     names = {'compat-public-key.pem', 'compat-packages.adb'}
+    if 'compat-index.json' in hashes:
+        names.add('compat-index.json')
     for item, package in zip(artifacts, ('opl-netfleet-https-compat', 'opl-netfleet-plugin-device-identity')):
         if not isinstance(item, dict) or set(item) != {'artifact', 'sha256', 'source_commit', 'source_tree'}:
             fail('optional feed artifact metadata is invalid')
@@ -98,6 +100,13 @@ def optional_files(files: dict[str, Path], manifest_path: Path, architecture: st
     for name, expected in hashes.items():
         if name not in files or require_digest(expected, name) != digest(files[name]):
             fail(f'optional feed bytes do not match: {name}')
+    if 'compat-index.json' in names:
+        expected_packages = {}
+        for item, package in zip(artifacts, ('opl-netfleet-https-compat', 'opl-netfleet-plugin-device-identity')):
+            expected_packages[package] = item['artifact'][len(package)+1:-4]
+        if json.loads(files['compat-index.json'].read_text()) != {
+                'version': 2, 'architecture': architecture, 'packages': expected_packages}:
+            fail('optional ASU metadata differs from the declared packages')
     key = files['compat-public-key.pem'].read_bytes()
     if b'PRIVATE KEY' in key or not key.startswith(b'-----BEGIN PUBLIC KEY-----'):
         fail('optional feed public key is invalid')
@@ -229,6 +238,21 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
     elif package_format != "apk" and feed_index is not None:
         fail("IPK release must not declare an APK feed index")
 
+    feed_metadata = manifest.get('feed_metadata')
+    if package_format == 'apk' and parsed_version >= (0, 9, 17) and feed_metadata is None:
+        fail('APK release is missing ASU feed metadata')
+    if feed_metadata is not None:
+        path = files.get('index.json')
+        if (package_format != 'apk' or not isinstance(feed_metadata, dict)
+                or feed_metadata.get('name') != 'index.json' or path is None
+                or require_digest(feed_metadata.get('sha256'), 'index.json') != digest(path)):
+            fail('ASU feed metadata identity is invalid')
+        expected = {item['package']: artifact_version(item) for item in artifacts}
+        expected.update({item['package']: item['name'][len(item['package']) + 1:-4] for item in dependencies})
+        value = json.loads(path.read_text())
+        if value != {'version': 2, 'architecture': build_target_arch, 'packages': expected}:
+            fail('ASU feed metadata differs from the declared packages')
+
     feed_bootstrap = manifest.get("feed_bootstrap")
     if package_format == "apk" and parsed_version >= BOOTSTRAP_MINIMUM_VERSION:
         if not isinstance(feed_bootstrap, dict) or feed_bootstrap.get("name") != "install-netfleet.sh":
@@ -275,6 +299,8 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
             expected_names.add("packages.adb")
     if feed_bootstrap is not None:
         expected_names.add("install-netfleet.sh")
+    if feed_metadata is not None:
+        expected_names.add('index.json')
     expected_names.update(optional_files(files, manifest_path, build_target_arch))
     if set(files) != expected_names:
         fail("release file set does not match the manifest")

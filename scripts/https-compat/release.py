@@ -112,6 +112,12 @@ def prepare(packages, base_qualification, candidate, qualification, apk, output)
         shutil.copyfile(path, output / path.name)
     for name in names:
         shutil.copyfile(candidate / name, output / name)
+    metadata_spec = importlib.util.spec_from_file_location('feed_metadata', ROOT / 'scripts/openwrt-feed-metadata.py')
+    metadata_module = importlib.util.module_from_spec(metadata_spec)
+    metadata_spec.loader.exec_module(metadata_module)
+    metadata = metadata_module.metadata({'packages': indexed}, manifest['build_target_arch'])
+    (output / 'compat-index.json').write_text(json.dumps(metadata, sort_keys=True, indent=2) + '\n')
+    names.append('compat-index.json')
     # Only publication metadata enters the release. Private VM/device receipts,
     # runtime inventories and local paths are deliberately not copied.
     public = {
