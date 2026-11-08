@@ -150,6 +150,7 @@ support. See the chosen release and the [package contract](docs/architecture/pac
 
 The local macOS MVP shares NetFleet's core business services and React UI components,
 with a native window, application menus, and keyboard shortcuts.
+The optional [OPL NetFleet Connector](integrations/opl-netfleet-connector/README.md) exposes a local status summary and an open action in OPL Mini App; the native app remains independently installed and operated.
 See the [macOS build and validation guide](docs/development/macos.md). System proxy and TUN
 require local administrator authorization. Local `.app` builds use ad-hoc signing. The DMG distribution path requires Developer ID signing,
 notarization, and final-package VM qualification; the feed

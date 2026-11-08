@@ -1,0 +1,19 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "opl-netfleet-connector",
+  "version": "0.1.0",
+  "description": "Read local NetFleet status and open its independent macOS app.",
+  "author": { "name": "OPL" },
+  "repository": "https://github.com/gaofeng21cn/opl-netfleet",
+  "license": "Apache-2.0",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "OPL NetFleet Connector",
+        "shortDescription": "Local status and access to the independent NetFleet app.",
+        "developerName": "OPL",
+        "category": "Productivity"
+      }
+    }
+  }
+}

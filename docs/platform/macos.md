@@ -189,6 +189,19 @@ socket 供当前 UCode 调用平台方法，socket 和所在目录限定当前�
 接口。用户操作串行，调度器复用同一入口，平台回调不得建立第二轮选优。连接诊断只返回本应用
 所管理核心的连接摘要；控制接口读取失败时报告失败，不伪装为空列表。
 
+同一私有 socket 为 OPL 连接模块提供 `GET /miniapp/status`。此入口只信任当前用户对
+socket 的访问权限，不接受任意路径、URL、bundle ID 或业务命令；`/rpc` 继续要求原有
+独立随机令牌。连接模块不读取状态文件、RPC token 或 UI token，
+也不建立凭证存储、共享授权或常驻进程。socket 路径由当前用户 ID 与默认状态目录摘要确定；
+自定义状态目录只允许由本机运行环境 `NETFLEET_STATE_DIR` 选择，不接受页面输入。
+
+状态读取只调用现有 core/network owner，并按[接口合同](../architecture/interfaces.md#opl-mini-app-连接模块)
+筛选字段；owner 未运行或未提供接口时显示不可用，不启动服务。连接模块的打开入口仅在
+macOS 可用，用系统 `path to application id` 查询固定 bundle ID `com.onepersonlab.netfleet`
+是否已安装，执行时再次查询，随后仅调用 `/usr/bin/open -b com.onepersonlab.netfleet`。
+它可启动或重新聚焦 App，不改变网络模式；返回 `accepted` 不构成原生窗口验收。未安装时
+拒绝打开；状态读取不可用不影响用户显式打开已安装 App。
+
 ## 桌面布局与系统交互
 
 macOS 客户端复用 `ui/` 的 React 桌面入口和同一套侧栏、概览、出口面板、机场/地区表格与事件组件，按实际能力提供概览、出口、机场、地区、配置、诊断六页。macOS 专属的运行控制、网络接入、导入和备份沿用相同视觉 token 与表单样式，不另建 HTML/CSS 业务界面。宿主只提供窗口、菜单、快捷键、文件面板与生命周期；导航和编辑状态归 React，Cmd+1 至 Cmd+6 切换页面，Cmd+R 刷新数据。宿主与资源加载机制见[界面宿主与资源加载](#界面宿主与资源加载)。

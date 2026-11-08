@@ -10,6 +10,7 @@ import { installBuiltin, verifyInstalledBuiltin } from './builtin.mjs';
 import { CoreOwner, projectProfile } from './core.mjs';
 import { NetworkOwner } from './network.mjs';
 import { coreSettingRows } from './settings.mjs';
+import { miniappStatus, serveMiniappStatus } from './miniapp.mjs';
 import { expandPanelArchive, installPanel, materializePanel } from './dashboard.mjs';
 import { MAX_APP_IMAGE_BYTES, TEAM_ID, applicationBundle, componentState, latestRelease, releaseCandidate, sha256, verifyBundle, withMountedApp } from './update.mjs';
 import { privateDir, atomicJSON, readJSON, object, assert, run, requestBody, codeDigest } from './io.mjs';
@@ -734,6 +735,9 @@ async function main() {
   await installBuiltin(builtinRoot, stateDir);
   await saveState({});
   rpcServer = http.createServer(async (request, response) => {
+    if (await serveMiniappStatus(request, response, async () => miniappStatus({
+      runtime: await core.status(), network: await network.status(), state,
+    }))) return;
     try { assert(request.method === 'POST' && request.url === '/rpc' && request.headers.authorization === `Bearer ${rpcToken}`, 'unauthorized');
       respond(response, 200, await rpc(await requestBody(request))); }
     catch (error) { respond(response, 400, { ok: false, error: error.message }); }

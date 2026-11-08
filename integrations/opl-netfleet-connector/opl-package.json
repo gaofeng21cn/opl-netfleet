@@ -1,0 +1,113 @@
+{
+  "surface_kind": "opl_capability_package_manifest.v2",
+  "package_id": "opl-netfleet-connector",
+  "display_name": "OPL NetFleet Connector",
+  "publisher": "one-person-lab",
+  "version": "0.1.0",
+  "source": "first_party_repo_local",
+  "source_repo": "https://github.com/gaofeng21cn/opl-netfleet.git",
+  "package_role": "capability_package",
+  "publication_channel_admission": "development_only",
+  "capability_abi": {
+    "id": "opl.netfleet.connector.v1",
+    "version": "1.0.0",
+    "compatibility_policy": "same_major"
+  },
+  "exports": {
+    "core_skill_ids": [
+      "opl-netfleet-connector"
+    ],
+    "core_module_ids": [
+      "opl.netfleet.connector.v1"
+    ],
+    "optional_skill_policy_ref": "skills/opl-netfleet-connector/SKILL.md",
+    "optional_skills_installed_by_default": false
+  },
+  "codex_surface": {
+    "plugin_id": "opl-netfleet-connector",
+    "plugin_source_path": ".",
+    "codex_default_exposure": false,
+    "optional_install_policy": "core_skills_only",
+    "interaction_mode": "headless_internal",
+    "configured_codex_plugin_carrier": {
+      "kind": "codex_plugin_manager",
+      "plugin_selector": "opl-netfleet-connector@opl-netfleet",
+      "executor_route": "codex_cli",
+      "marketplace_source": "gaofeng21cn/opl-netfleet",
+      "publication_ref": null
+    },
+    "app_contribution_abi": {
+      "schema_version": "opl-package-app-contribution-cli.v1",
+      "transport": "stdin_json_stdout_json",
+      "argv": [
+        "opl",
+        "app",
+        "contribution",
+        "adapter",
+        "--stdin"
+      ],
+      "request_schema": "opl-package-app-contribution-request.v1",
+      "response_schema": "opl-package-app-contribution-response.v1"
+    },
+    "app_contribution_adapter": {
+      "manifest": "app-contribution-adapter.json"
+    }
+  },
+  "app_contributions": {
+    "schema_version": "opl-app-contributions.v1",
+    "views": [
+      {
+        "view_id": "opl-netfleet.status",
+        "view_type": "service_status",
+        "title_i18n": {
+          "zh-CN": "NetFleet 本机状态",
+          "en-US": "Local NetFleet status"
+        },
+        "data_ref": "opl.netfleet.connector.v1#status",
+        "command_ids": [
+          "opl-netfleet.open"
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command_id": "opl-netfleet.open",
+        "label_i18n": {
+          "zh-CN": "打开 NetFleet",
+          "en-US": "Open NetFleet"
+        },
+        "action_ref": "opl.netfleet.connector.v1#open",
+        "confirmation_required": false
+      }
+    ],
+    "ui": [
+      {
+        "contribution_id": "opl-netfleet.status",
+        "slot": "settings.section",
+        "contribution_kind": "view",
+        "trust_tier": "declarative",
+        "scope": "root",
+        "sort_order": 900,
+        "view_id": "opl-netfleet.status"
+      }
+    ]
+  },
+  "authority_boundary": {
+    "runtime_owner": "independent_netfleet_app",
+    "credential_owner": "independent_netfleet_app",
+    "network_control_allowed": false,
+    "app_lifecycle_management_allowed": false
+  },
+  "content_lock": {
+    "algorithm": "sha256",
+    "canonicalization": "ordered_path_length_file_length_bytes",
+    "paths": [
+      "README.md",
+      "app-contribution-adapter.json",
+      "connector.mjs",
+      "plugin.json",
+      "skills/opl-netfleet-connector/SKILL.md"
+    ],
+    "digest": "sha256:30501a734b18f21e674e1e9fdd564111f9a0ce00e6c09ac93e2b268106b50498"
+  }
+}

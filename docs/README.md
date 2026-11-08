@@ -20,6 +20,7 @@
 - [`development/plugins.md`](development/plugins.md)：插件接口与独立升级兼容性、开发模板、软件包构建、安装与热加载。
 - [`development/delivery.md`](development/delivery.md)：双平台共享检查、独立交付、版本身份与实际交付状态。
 - [`development/macos.md`](development/macos.md)：macOS 本机构建、启动、签名与 DMG 验证。
+- [`OPL NetFleet Connector`](../integrations/opl-netfleet-connector/README.md)：独立桌面 App 的可选 OPL Mini App 连接入口。
 
 ## 目标与理由
 

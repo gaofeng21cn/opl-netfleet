@@ -13,6 +13,19 @@
 
 ## 当前运行接口
 
+### OPL Mini App 连接模块
+
+`opl-netfleet-connector` 是独立 NetFleet App 的轻量连接模块，由已安装 descriptor
+声明 `service_status` 视图与固定打开动作。它不管理 NetFleet 安装、进程、网络或订阅。
+摘要仅包含当前平台、运行模式、网络接入方式、核心是否运行、是否已配置、是否需要恢复、
+本机 App 是否可打开及读取时间；未知和不可读分别返回明确状态，不使用私有文件补全。
+摘要不含设备标识、地址、端口、订阅、节点、policy、日志或凭据。
+
+打开动作只接受空输入，由连接模块调用平台原生能力打开固定 NetFleet App。执行前重新检查本机
+安装，返回 `accepted` 仅表示系统接受打开请求，不代表窗口已经呈现、代理启动或网络就绪。
+其他运行与配置操作仍在专业 App 中完成。具体本机传输见
+[macOS 本机接口](../platform/macos.md#本机接口)。
+
 `status`、`events`、`probe`、`compile`、`enable`、`disable`、`select`、`refresh` 路由到
 同一组业务服务。读取不测速或选路；probe 是显式有界探测；compile 只生成候选；
 enable 和 select 需完成真实运行与业务回读；disable 按恢复合同退出增强。

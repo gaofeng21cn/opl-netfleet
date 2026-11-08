@@ -1,0 +1,17 @@
+{
+  "schema_version": "opl-package-app-contribution-adapter.v1",
+  "reads": {
+    "opl.netfleet.connector.v1#status": {
+      "kind": "command", "cwd": "package", "stdin": "input_json", "passthrough": true,
+      "argv": ["node", "connector.mjs", "status"],
+      "input_schema": { "type": "object", "properties": {}, "additionalProperties": false }
+    }
+  },
+  "actions": {
+    "opl.netfleet.connector.v1#open": {
+      "kind": "command", "cwd": "package", "stdin": "input_json", "passthrough": true,
+      "argv": ["node", "connector.mjs", "open"],
+      "input_schema": { "type": "object", "properties": {}, "additionalProperties": false }
+    }
+  }
+}
