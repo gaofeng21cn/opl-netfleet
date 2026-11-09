@@ -10,6 +10,8 @@ import { pathToFileURL } from 'node:url';
 const execute = promisify(execFile);
 export const BUNDLE_ID = 'com.onepersonlab.netfleet';
 const OPEN_ACTION = 'opl.netfleet.connector.v1#open';
+const MAX_STATUS_AGE_MS = 15000;
+const MAX_CLOCK_SKEW_MS = 5000;
 
 export function ownerSocketPath(stateDirectory = process.env.NETFLEET_STATE_DIR
   || path.join(os.homedir(), 'Library/Application Support/OPL NetFleet')) {
@@ -26,7 +28,7 @@ export async function appInstalled({ platform = process.platform, run = execute 
   } catch { return false; }
 }
 
-export async function readOwner(socketPath) {
+export async function readOwner(socketPath, { now = () => Date.now() } = {}) {
   const [directory, socket] = await Promise.all([fs.lstat(path.dirname(socketPath)), fs.lstat(socketPath)]);
   if (!directory.isDirectory() || !socket.isSocket()
     || [directory, socket].some(info => info.uid !== process.getuid() || (info.mode & 0o077)))
@@ -44,11 +46,19 @@ export async function readOwner(socketPath) {
         try {
           const value = JSON.parse(text);
           if (response.statusCode !== 200 || value.schema !== 'opl-netfleet-miniapp-status.v1'
+            || value.platform !== 'macos'
             || !['direct', 'mihomo', 'netfleet', 'unconfirmed'].includes(value.mode)
             || !['explicit', 'system', 'tun', 'unknown'].includes(value.network_mode)
             || typeof value.running !== 'boolean' || typeof value.configured !== 'boolean'
             || typeof value.recovery_required !== 'boolean' || !Number.isFinite(Date.parse(value.read_at)))
             throw new Error('owner_unavailable');
+          const checkedAt = now(), age = checkedAt - Date.parse(value.read_at);
+          if (age > MAX_STATUS_AGE_MS || age < -MAX_CLOCK_SKEW_MS) {
+            const error = new Error(age < 0 ? 'owner_clock_invalid' : 'owner_snapshot_stale');
+            error.observedAt = value.read_at;
+            reject(error);
+            return;
+          }
           resolve({ mode: value.mode, network_mode: value.network_mode, running: value.running,
             configured: value.configured, recovery_required: value.recovery_required, read_at: value.read_at });
         } catch { reject(new Error('owner_unavailable')); }
@@ -73,12 +83,24 @@ export async function contribute(operation, input = {}, options = {}) {
       return { state: 'ready', result: { status: 'accepted', bundle_id: BUNDLE_ID } };
     } catch { return { state: 'unavailable', reason: 'open_failed' }; }
   }
-  const status = await readOwner(options.socketPath || ownerSocketPath()).catch(() => null);
+  let ownerError;
+  const status = await readOwner(options.socketPath || ownerSocketPath(), options).catch(error => {
+    ownerError = error;
+    return null;
+  });
+  const stale = ownerError?.message === 'owner_snapshot_stale';
+  const reason = stale || ownerError?.message === 'owner_clock_invalid' ? ownerError.message : 'owner_unavailable';
+  const freshness = { state: status ? 'fresh' : stale ? 'stale' : 'unavailable',
+    observed_at: status?.read_at || ownerError?.observedAt || null,
+    checked_at: new Date((options.now || Date.now)()).toISOString(), max_age_seconds: MAX_STATUS_AGE_MS / 1000,
+    ...(status ? {} : { reason }) };
   const item = { id: 'local-netfleet', title: 'OPL NetFleet',
-    status: status ? status.mode : 'owner_unavailable',
-    summary: status ? `运行模式：${status.mode} · 网络接入：${status.network_mode}`
+    status: status ? status.mode : reason,
+    summary: status ? `运行模式：${status.mode} · 网络接入：${status.network_mode} · 读取：${status.read_at}`
+      : stale ? `本机观测已过期（${freshness.observed_at}），请刷新或打开 NetFleet 查看。`
       : installed ? '本机状态暂不可读，可打开 NetFleet 查看。' : '未找到本机 NetFleet App。',
-    installed, ...status, actions: installed ? [{ action_ref: OPEN_ACTION, input: {} }] : [],
+    installed, owner_available: Boolean(status), freshness, ...status,
+    actions: installed ? [{ action_ref: OPEN_ACTION, input: {} }] : [],
   };
   return { state: 'ready', data: { items: [item] } };
 }

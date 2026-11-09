@@ -28,7 +28,7 @@ else
 fi
 
 if command -v node >/dev/null 2>&1 && [ -f "$root/desktop/tests/runtime.test.mjs" ]; then
-	node --test "$root/desktop/tests/runtime.test.mjs"
+	node --test "$root/desktop/tests/runtime.test.mjs" "$root/tests/desktop-miniapp.test.mjs" "$root/tests/desktop-miniapp-carrier.test.mjs"
 else
 	printf '%s\n' 'node unavailable; macOS desktop runtime contracts deferred.' >&2
 fi

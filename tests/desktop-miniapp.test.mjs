@@ -27,6 +27,9 @@ test('private socket supplies a bounded summary to the real connector', async t 
   assert.equal(value.state, 'ready');
   assert.equal(value.data.items[0].status, 'netfleet');
   assert.equal(value.data.items[0].running, true);
+  assert.equal(value.data.items[0].owner_available, true);
+  assert.equal(value.data.items[0].freshness.state, 'fresh');
+  assert.equal(value.data.items[0].freshness.observed_at, value.data.items[0].read_at);
   assert.equal(value.data.items[0].actions[0].action_ref, 'opl.netfleet.connector.v1#open');
   assert.equal(JSON.stringify(value).includes('secret'), false);
   assert.equal(JSON.stringify(value).includes('subscriptions'), false);
@@ -56,4 +59,43 @@ test('missing owner is visible and never reads a private fallback', async () => 
   assert.equal(result.data.items[0].status, 'owner_unavailable');
   assert.equal(result.data.items[0].installed, false);
   assert.deepEqual(result.data.items[0].actions, []);
+  assert.equal(result.data.items[0].owner_available, false);
+  assert.equal(result.data.items[0].freshness.state, 'unavailable');
+});
+
+test('old or future owner observations never become current network state', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'netfleet-age-'));
+  await fs.chmod(directory, 0o700);
+  const socketPath = path.join(directory, 'owner.sock');
+  const now = Date.now();
+  let observedAt = new Date(now - 16000);
+  const server = http.createServer((request, response) => serveMiniappStatus(request, response,
+    () => miniappStatus({ state: { configured: true, network: { mode: 'tun' } },
+      runtime: { running: true }, network: { recoveryRequired: true }, now: observedAt })));
+  await new Promise(resolve => server.listen(socketPath, resolve));
+  await fs.chmod(socketPath, 0o600);
+  t.after(async () => { await new Promise(resolve => server.close(resolve)); await fs.rm(directory, { recursive: true, force: true }); });
+  const options = { platform: 'darwin', socketPath, now: () => now,
+    run: async () => ({ stdout: '/Applications/OPL NetFleet.app/\n' }) };
+  const stale = (await contribute('status', {}, options)).data.items[0];
+  assert.equal(stale.status, 'owner_snapshot_stale');
+  assert.equal(stale.installed, true);
+  assert.equal(stale.owner_available, false);
+  assert.equal(stale.freshness.state, 'stale');
+  assert.equal(stale.freshness.observed_at, observedAt.toISOString());
+  assert.equal(stale.running, undefined);
+  assert.equal(stale.recovery_required, undefined);
+  assert.equal(stale.actions.length, 1, 'explicit open remains available');
+  observedAt = new Date(now + 6000);
+  const future = (await contribute('status', {}, options)).data.items[0];
+  assert.equal(future.status, 'owner_clock_invalid');
+  assert.equal(future.freshness.state, 'unavailable');
+  observedAt = new Date(now);
+  const fresh = (await contribute('status', {}, options)).data.items[0];
+  assert.equal(fresh.freshness.state, 'fresh');
+  assert.equal(fresh.running, true);
+  await new Promise(resolve => server.close(resolve));
+  const unavailable = (await contribute('status', {}, options)).data.items[0];
+  assert.equal(unavailable.freshness.state, 'unavailable');
+  assert.equal(unavailable.read_at, undefined, 'closed owner does not retain a previous snapshot');
 });

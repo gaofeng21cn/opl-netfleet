@@ -196,7 +196,8 @@ socket 的访问权限，不接受任意路径、URL、bundle ID 或业务命令
 自定义状态目录只允许由本机运行环境 `NETFLEET_STATE_DIR` 选择，不接受页面输入。
 
 状态读取只调用现有 core/network owner，并按[接口合同](../architecture/interfaces.md#opl-mini-app-连接模块)
-筛选字段；owner 未运行或未提供接口时显示不可用，不启动服务。连接模块的打开入口仅在
+筛选字段；`freshness` 同时包含 owner 观测时间和本次检查时间，状态读取成功不代表网络业务验收。
+owner 未运行、未提供接口或观测已过期时显示对应状态，不启动服务。连接模块的打开入口仅在
 macOS 可用，用系统 `path to application id` 查询固定 bundle ID `com.onepersonlab.netfleet`
 是否已安装，执行时再次查询，随后仅调用 `/usr/bin/open -b com.onepersonlab.netfleet`。
 它可启动或重新聚焦 App，不改变网络模式；返回 `accepted` 不构成原生窗口验收。未安装时

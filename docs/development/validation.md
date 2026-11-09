@@ -42,6 +42,23 @@ macOS 完整入口为 `scripts/check-platform.sh macos`，复用 shared 检查�
 
 ## 源码与 UI
 
+### MiniApp 连接模块
+
+`node --test tests/desktop-miniapp.test.mjs` 通过实际私有 socket 验证状态筛选、过期与
+未来观测、owner 关闭、固定打开入口和输入边界。原生载体验收在 macOS 提供已就绪的
+Framework CLI 后运行：
+
+```sh
+NETFLEET_OPL_BIN=/absolute/path/to/one-person-lab/bin/opl node --test tests/desktop-miniapp-carrier.test.mjs
+```
+
+它在临时 OPL state 中用 Codex 原生插件管理器安装本地开发源，通过 Framework
+关闭内部模块的交互曝光并发现、调用共享视图，再核对重新读取、过期和断开行为，最后卸载。
+不读取用户默认配置、不打开 App、不改变网络；只证明本地开发 carrier 与合成 owner 的调用，
+不代表发行、签名安装、原生窗口或真实网络业务验收。
+
+### 共享源码与界面
+
 在仓库根目录运行 `scripts/check-fast.sh`，它检查 Git 空白错误、Python source/package/UI
 合同，并在本机有 UCode 时调用 `scripts/check-mvp.sh`，在有 Bun 时调用 `scripts/check-ui.sh`
 并构建桌面生产入口，在有 Node 时运行 macOS 桌面运行契约。每个缺失工具都会明确提示延期，
