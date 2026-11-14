@@ -46,7 +46,7 @@ Feed；不能因为源码领先、另有开发任务或构建工具可用，就�
 Linux x86_64 SDK 不能由 macOS 的 Make、OpenSSL 直接执行。构建入口在非 Linux x86_64
 宿主上自动使用本地 `opl-netfleet-openwrt-sdk-builder:latest` Docker 镜像；可通过
 `NETFLEET_SDK_IMAGE` 指定已准备的构建镜像。首次准备镜像执行
-`docker build --platform linux/amd64 -f scripts/openwrt-sdk.Dockerfile -t opl-netfleet-openwrt-sdk-builder:latest .`。源码与签名材料只读挂载，SDK 与输出目录可写。
+`docker build --platform linux/amd64 -f scripts/openwrt-sdk.Dockerfile -t opl-netfleet-openwrt-sdk-builder:latest .`。源码与签名材料只读挂载，SDK 与输出目录可写。GitHub 候选构建固定使用 Ubuntu 24.04，与本地 SDK 容器的宿主工具链一致。
 原生 Linux 路径检查 GNU Make 4+、工具和 SDK OpenSSL，所有 Make 调用遵循 `MAKE`。
 SDK UCode 构建前按 SDK 自带的固定提交初始化 base feed，再安装 host 构建依赖；新解压的 SDK 与已有缓存使用同一路径。准备后使用本 SDK 的动态库路径，并执行 fs/socket 导入自检，避免 SDK 搬迁后失效的旧 RPATH。
 架构优先从 SDK `.config` 读取，未配置时才查询 Make。共享 SDK 由构建锁保护，冲突立即
