@@ -468,6 +468,10 @@ for attempt in $(seq 1 15); do
 	sleep 1
 done
 ip netns add nf-setup-client
+# The client uses only the fixture's static gateway. Slirp router adverts also
+# reach this bridge and would add an unrelated default route and source prefix.
+ip netns exec nf-setup-client sysctl -q -w net.ipv6.conf.all.accept_ra=0 \
+	net.ipv6.conf.default.accept_ra=0 net.ipv6.conf.default.autoconf=0
 ip netns exec nf-setup-client ip link add nf-setup-client type veth peer name nf-setup-lan netns 1
 ip link set nf-setup-lan master br-lan
 ip link set nf-setup-lan up
