@@ -166,7 +166,7 @@ work_dir=$(mktemp -d "${TMPDIR:-/tmp}/opl-netfleet-openwrt-vm.XXXXXX")
 trap 'rm -rf -- "$work_dir"' EXIT
 source_dir=$work_dir/source
 mkdir -p "$source_dir"
-git -C "$repo_dir" archive "$source_commit" \
+git -c tar.umask=0022 -C "$repo_dir" archive "$source_commit" \
 	openwrt/Makefile \
 	openwrt/plugin_payload.py \
 	openwrt/mihomo-meta/source.json \
@@ -208,7 +208,7 @@ if [[ -n "$test_ref" ]]; then
         ':(exclude)scripts/update-openwrt-plugins.py' \
         ':(exclude)tests' ':(exclude)desktop/tests' ':(exclude)docs' || die "test ref changes product inputs"
     rm -rf "$source_dir/scripts/openwrt-vm" "$source_dir/tests"
-    git -C "$repo_dir" archive "$test_commit" scripts/openwrt-vm scripts/openwrt-apk.py scripts/https-compat tests | tar -C "$source_dir" -xf -
+    git -c tar.umask=0022 -C "$repo_dir" archive "$test_commit" scripts/openwrt-vm scripts/openwrt-apk.py scripts/https-compat tests | tar -C "$source_dir" -xf -
     test_identity=$(python3 -c 'import json,sys;print(json.dumps(dict(source_commit=sys.argv[1],source_tree=sys.argv[2])))' "$test_commit" "$test_tree")
 fi
 
