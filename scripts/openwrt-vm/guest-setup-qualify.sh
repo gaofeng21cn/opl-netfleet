@@ -101,20 +101,21 @@ package_identity() {
 }
 direct_probe() {
 	curl -fsS --noproxy '*' --connect-timeout 2 --max-time 8 \
-		--cacert /tmp/local-probe.crt "https://192.168.1.2:$probe_port/generate_204"
+		--cacert /tmp/local-probe.crt "https://192.168.1.2:$probe_port/generate_204" || return 1
 	if [ -e "$work/client-ready" ]; then
-		ip netns exec nf-setup-client nslookup -type=A www.gstatic.com 192.168.1.1 >>"$work/client-dns.log" 2>&1
+		ip netns exec nf-setup-client nslookup -type=A www.gstatic.com 192.168.1.1 >>"$work/client-dns.log" 2>&1 || return 1
 		ip netns exec nf-setup-client curl -fsS --noproxy '*' --max-time 8 \
-			http://198.18.1.2:19091/version >>"$work/client-ipv4.log"
+			http://198.18.1.2:19091/version >>"$work/client-ipv4.log" || return 1
 		ip netns exec nf-setup-client curl -gfsS --noproxy '*' --max-time 8 \
-			'http://[fd77:a::2]:19091/version' >>"$work/client-ipv6.log"
+			'http://[fd77:a::2]:19091/version' >>"$work/client-ipv6.log" || return 1
 		ip netns exec nf-setup-client curl -fsS --noproxy '*' --max-time 10 \
 			--cacert /tmp/local-probe.crt --resolve netfleet-probe.test:19443:198.18.1.2 \
-			https://netfleet-probe.test:19443/generate_204
+			https://netfleet-probe.test:19443/generate_204 || return 1
 		ip netns exec nf-setup-client curl -fsS --noproxy '*' --max-time 10 \
 			--cacert /tmp/local-probe.crt --resolve 'netfleet-probe.test:19443:[fd77:a::2]' \
-			https://netfleet-probe.test:19443/generate_204
+			https://netfleet-probe.test:19443/generate_204 || return 1
 	fi
+	return 0
 }
 package_transaction() {
 	(
@@ -477,14 +478,12 @@ ip netns exec nf-setup-client ip addr add 192.168.1.20/24 dev nf-setup-client
 ip netns exec nf-setup-client ip -6 addr add fd77:9::2/64 dev nf-setup-client nodad
 ip netns exec nf-setup-client ip route add default via 192.168.1.1
 ip netns exec nf-setup-client ip -6 route add default via fd77:9::1
+touch "$work/client-ready"
 for attempt in $(seq 1 10); do
-	if ip netns exec nf-setup-client curl -gfsS --noproxy '*' --max-time 2 \
-		'http://[fd77:a::2]:19091/version' >>"$work/client-ready.log" 2>&1; then break; fi
+	if direct_probe >>"$work/client-ready.log" 2>&1; then break; fi
 	[ "$attempt" -lt 10 ] || exit 1
 	sleep 1
 done
-touch "$work/client-ready"
-direct_probe
 
 stage=setup_read_only
 unconfigured
