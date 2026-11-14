@@ -9,12 +9,16 @@ function call(action, request) {
 		fs.writefile(request_path, sprintf("%J", { request }));
 		fs.chmod(request_path, 0600);
 	}
-	const child = fs.popen(`ucode ${main} ${action}${request == null ? "" : " " + request_path}`);
-	const raw = child.read("all");
-	const rc = child.close();
-	const result = json(raw);
-	check(rc == 0 || result?.ok == false, "mode owner response missing");
-	return result;
+	for (let attempt = 0; attempt < 10; attempt++) {
+		const child = fs.popen(`ucode ${main} ${action}${request == null ? "" : " " + request_path}`);
+		const raw = child.read("all");
+		const rc = child.close();
+		const result = json(raw);
+		check(rc == 0 || result?.ok == false, "mode owner response missing");
+		if (action != "plugin-call" || result?.error != "mutation_busy") return result;
+		system("sleep 1");
+	}
+	die("mode mutation remained busy");
 }
 const inventory = call("plugins-list").result.plugins;
 const plugin = filter(inventory, row => row.id == "activation" && row.instance == "default")[0];

@@ -86,6 +86,8 @@ chmod 0755 /usr/libexec/rpcd/opl-netfleet.plugins
 cp /tmp/openwrt/files/usr/libexec/rpcd/opl-netfleet /usr/libexec/rpcd/opl-netfleet
 chmod 0755 /usr/libexec/rpcd/opl-netfleet
 mkdir -p /usr/share/opl-netfleet /etc/opl-netfleet/native/profiles /etc/opl-netfleet/native/subscriptions
+mkdir -p /etc/opl-netfleet/policy-sources
+cp /tmp/openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json /etc/opl-netfleet/policy-sources/base-v1.json
 cp -R /tmp/openwrt/files/usr/share/opl-netfleet/. /usr/share/opl-netfleet/
 cp /tmp/openwrt/files/etc/config/netfleet /etc/config/netfleet
 cp /tmp/openwrt/files/etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet-core
