@@ -126,7 +126,7 @@ if ! command -v resize2fs >/dev/null 2>&1 && command -v brew >/dev/null 2>&1; th
 	ext_prefix=$(brew --prefix e2fsprogs 2>/dev/null || true)
 	[[ ! -d "$ext_prefix/sbin" ]] || export PATH="$ext_prefix/sbin:$PATH"
 fi
-for tool in curl dd e2fsck git gzip openssl python3 qemu-img qemu-system-aarch64 resize2fs sgdisk ssh ssh-keygen tar; do
+for tool in curl dd e2fsck git gzip mcopy openssl python3 qemu-img qemu-system-aarch64 resize2fs sgdisk ssh ssh-keygen tar; do
 	command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 qemu-system-aarch64 -accel help 2>/dev/null | grep -Eq "(^|[[:space:]])$qemu_accelerator([[:space:]]|$)" ||

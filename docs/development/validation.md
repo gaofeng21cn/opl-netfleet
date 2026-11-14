@@ -115,7 +115,8 @@ libuci 和 `/proc`，其他机器上由 `check-mvp.sh` 明确列为延期，不�
 `scripts/openwrt-vm/qualify.sh`。Apple Silicon macOS 路径使用原生 ARM64 QEMU/HVF 与
 官方 OpenWrt armsr/armv8 镜像；ARM64 Linux 使用可用的 KVM，缺少 KVM 时使用 TCG。
 所有路径执行同一 guest 测试并在回执中记录实际 accelerator。一次性镜像可以扩容，
-原缓存镜像及设备磁盘不改写。
+原缓存镜像及设备磁盘不改写。宿主需要 `mtools`；入口在一次性 EFI 分区中为内核显式指定
+`ttyAMA0` 主控制台，避免不同 EFI 固件将交互终端选到 `tty0`。
 receipt 绑定精确 commit/tree、runner/guest 架构、QEMU、accelerator 和阶段结果；
 不能用测试文件存在或 VM 启动替代完整 qualification。
 固定规则集由宿主机按 lock 下载和缓存，随校验过的载荷传入 VM；运行夹具再次核对
