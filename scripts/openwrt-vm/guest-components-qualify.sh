@@ -100,8 +100,10 @@ request() {
 	wait_operation "$id"
 }
 rpc_ready() {
+	# TCG needs more than five seconds to enumerate the installed plugin graph.
+	# Match the component request budget and retain errors for failed runs.
 	for attempt in $(seq 1 20); do
-		if ubus -t 5 call opl-netfleet components_get '{}' >"$work/rpc-result.json" 2>/dev/null &&
+		if ubus -t 20 call opl-netfleet components_get '{}' >"$work/rpc-result.json" 2>"$work/rpc.log" &&
 			[ "$(jsonfilter -i "$work/rpc-result.json" -e '@.ok')" = true ]; then return 0; fi
 		sleep 1
 	done
