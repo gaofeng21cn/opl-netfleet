@@ -62,7 +62,7 @@ jobs:
           name: netfleet-openwrt-candidate-${{ needs.identity.outputs.source }}
           path: ${{ runner.temp }}/candidate
       - name: Prepare the isolated ARM64 QEMU host
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-utils qemu-efi-aarch64 gdisk e2fsprogs
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-utils qemu-efi-aarch64 gdisk e2fsprogs mtools
       - name: Qualify the exact candidate bytes
         env:
           SOURCE: ${{ needs.identity.outputs.source }}
