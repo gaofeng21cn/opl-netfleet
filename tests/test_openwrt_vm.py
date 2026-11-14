@@ -84,7 +84,7 @@ class OpenWrtVmTests(unittest.TestCase):
         )
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("--output", result.stdout)
-        self.assertIn("Apple Silicon QEMU/HVF", result.stdout)
+        self.assertTrue(result.stdout.startswith("Usage: scripts/openwrt-vm.sh"))
         self.assertNotIn("--rebuild", result.stdout)
 
         scripts = (WRAPPER, RUNNER, GUEST, RUNTIME_GUEST, PACKAGE_GUEST, NATIVE_GUEST, SETUP_GUEST, MIGRATION_GUEST, INSTALLER, RECOVERY)
