@@ -115,8 +115,13 @@ done
 [[ "$diagnostic" != package || -n "$packages" ]] || die "package diagnostic requires --packages"
 [[ "$diagnostic" == all || "$diagnostic" == package || "$diagnostic" == setup || "$diagnostic" == compatibility || -z "$packages" ]] || die "this diagnostic does not accept --packages"
 [[ "$source_ref" != -* ]] || die "source ref cannot begin with '-'"
-[[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] ||
-	die "native QEMU qualification requires macOS on Apple Silicon"
+case "$(uname -s):$(uname -m)" in
+  Darwin:arm64) qemu_accelerator=hvf; qemu_cpu=host ;;
+  Linux:aarch64|Linux:arm64)
+    if [[ -r /dev/kvm && -w /dev/kvm ]]; then qemu_accelerator=kvm; qemu_cpu=host
+    else qemu_accelerator=tcg; qemu_cpu=cortex-a72; fi ;;
+  *) die "QEMU qualification requires an ARM64 macOS or Linux host" ;;
+esac
 if ! command -v resize2fs >/dev/null 2>&1 && command -v brew >/dev/null 2>&1; then
 	ext_prefix=$(brew --prefix e2fsprogs 2>/dev/null || true)
 	[[ ! -d "$ext_prefix/sbin" ]] || export PATH="$ext_prefix/sbin:$PATH"
@@ -124,8 +129,8 @@ fi
 for tool in curl dd e2fsck git gzip openssl python3 qemu-img qemu-system-aarch64 resize2fs sgdisk ssh ssh-keygen tar; do
 	command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
-qemu-system-aarch64 -accel help 2>/dev/null | grep -Eq '(^|[[:space:]])hvf([[:space:]]|$)' ||
-	die "qemu-system-aarch64 does not support the HVF accelerator"
+qemu-system-aarch64 -accel help 2>/dev/null | grep -Eq "(^|[[:space:]])$qemu_accelerator([[:space:]]|$)" ||
+	die "QEMU does not support the selected host accelerator"
 qemu_version=$(qemu-system-aarch64 --version | awk 'NR == 1 { print $4 }')
 [[ -n "$qemu_version" ]] || die "cannot determine qemu-system-aarch64 version"
 
@@ -134,6 +139,9 @@ if [[ -z "$firmware" ]]; then
 	qemu_bin=$(command -v qemu-system-aarch64)
 	qemu_prefix=$(cd -- "$(dirname -- "$qemu_bin")/.." && pwd)
 	firmware="$qemu_prefix/share/qemu/edk2-aarch64-code.fd"
+    if [[ ! -f "$firmware" && -f /usr/share/AAVMF/AAVMF_CODE.fd ]]; then
+        firmware=/usr/share/AAVMF/AAVMF_CODE.fd
+    fi
 fi
 [[ -f "$firmware" ]] ||
 	die "AArch64 QEMU EFI firmware not found; set NETFLEET_QEMU_FIRMWARE"
@@ -277,6 +285,8 @@ NETFLEET_WORKSPACE=$source_dir \
 NETFLEET_VM_CACHE="$cache_root/opl-netfleet/openwrt-vm" \
 NETFLEET_QEMU_FIRMWARE=$firmware \
 NETFLEET_QEMU_VERSION=$qemu_version \
+NETFLEET_QEMU_ACCELERATOR=$qemu_accelerator \
+NETFLEET_QEMU_CPU=$qemu_cpu \
 	NETFLEET_VM_LANE=$diagnostic \
 	NETFLEET_COMPAT_RUNTIME="$compat_runtime" \
 	NETFLEET_COMPAT_PACKAGE="$compat_package" \

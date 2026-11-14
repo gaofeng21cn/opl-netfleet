@@ -29,8 +29,8 @@ App 图标由仓库现有 logo 通过 AppKit 绘制与 `iconutil` 生成；侧�
 
 ## 本地交付
 
-平台版本只在 `desktop/app/Info.plist` 中维护；功能或修复交付时更新应用版本或构建修订，
-不要求与 OpenWrt 包版本一致。先完成下文严格检查并把源码吸收到主线，再在干净源码上执行：
+产品版本在 `product-version.json` 维护，发布准备同步到 `desktop/app/Info.plist`，
+内部构建修订独立递增。先完成下文严格检查并把源码吸收到主线，再在干净源码上执行：
 
 ```sh
 python3 scripts/macos/build-app.py --require-clean-source

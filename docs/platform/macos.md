@@ -131,8 +131,8 @@ UCode 没有版本开关，退回随包清单里的固定源码身份。应用�
 下载后首次运行是独立证据层，
 构建与验证入口见[macOS 开发](../development/macos.md)。
 
-macOS 平台版本与构建修订由 `desktop/app/Info.plist` 的 `CFBundleShortVersionString`、
-`CFBundleVersion` 唯一维护。构建器从同一源码读取这些值，连同完整 `source_commit`、
+产品版本由 `product-version.json` 维护，发布准备同步 Info.plist 的
+`CFBundleShortVersionString` 并递增内部 `CFBundleVersion`。构建器读取这些值，连同完整 `source_commit`、
 `source_tree`、架构、渠道与 dirty 标志写入签名覆盖的 `Contents/Resources/build.json`，
 外部 `build-receipt.json` 使用相同字段并附带构建检查结果。原生“关于”窗口显示平台版本、
 修订、渠道与短提交号；完整身份以包内文件为准。
@@ -163,8 +163,8 @@ Release 为每个资产提供 `sha256:` 摘要，用于下载内容的完整性�
 证明——即使账号被冒用上传了别的包，也无法用本产品的 Developer ID 证书签名并通过 Apple
 公证。
 
-检查时从 `releases?per_page=20` 选出 tag 形如 `macos-vX.Y.Z` 且非草稿、非预发布的最高
-版本，并要求 Release 同时提供 DMG 资产与 GitHub 计算的 sha256 摘要；没有摘要的 Release
+检查时从 `releases?per_page=20` 选出带合格 DMG 的最高产品 `vX.Y.Z` 版本，兼容读取
+旧 `macos-vX.Y.Z` 资产。要求非草稿、非预发布，且提供 GitHub sha256 摘要；没有摘要的 Release
 只作为手动下载入口。安装是独立确认后的动作：下载后先比对大小与摘要，再挂载只读镜像并
 验证其中的应用——`codesign --verify --deep --strict`、Developer ID 授权、Team ID 与产品
 一致（`SVVC4TA784`）、`build.json` 为干净的分发构建且版本与 Release 相符，最后要求

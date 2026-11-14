@@ -6,7 +6,7 @@ import { assert, run } from './io.mjs';
 // 应用更新的信任锚是 Apple 代码签名与公证，不是自建密钥：Developer ID 证书
 // 已经承担签名职责，再加一层清单密钥只会重复同一个信任问题。GitHub Release
 // 提供 DMG 的 sha256 摘要用于完整性校验，来源身份由签名与公证证明。
-export const RELEASE_TAG = /^macos-v(\d+\.\d+\.\d+)$/;
+export const RELEASE_TAG = /^(?:macos-)?v(\d+\.\d+\.\d+)$/;
 export const DMG_ASSET = /^OPL-NetFleet-.*macos-arm64\.dmg$/;
 // 公开事实：应用的 Developer ID 团队标识，用于确认候选确实来自本产品。
 export const TEAM_ID = 'SVVC4TA784';
@@ -30,8 +30,8 @@ export function newerVersion(candidate, installed) {
 /** 从 Release 列表选出版本最高的正式 macOS Release。 */
 export function latestRelease(releases) {
   return (Array.isArray(releases) ? releases : [])
-    .filter(item => item?.draft === false && item?.prerelease === false && RELEASE_TAG.test(String(item?.tag_name ?? '')))
-    .sort((left, right) => String(right.tag_name).localeCompare(String(left.tag_name), 'en', { numeric: true }))[0] ?? null;
+    .filter(item => releaseCandidate(item) !== null)
+    .sort((left, right) => RELEASE_TAG.exec(String(right.tag_name))[1].localeCompare(RELEASE_TAG.exec(String(left.tag_name))[1], 'en', { numeric: true }))[0] ?? null;
 }
 
 /** Release 必须同时给出 DMG 与 GitHub 计算的 sha256 摘要，否则不可安装。 */

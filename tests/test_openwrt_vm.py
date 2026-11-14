@@ -116,18 +116,18 @@ class OpenWrtVmTests(unittest.TestCase):
         self.assertRegex(core["sha256"], r"^[0-9a-f]{64}$")
         self.assertIn("openwrt/mihomo-meta/source.json", runner + wrapper)
         self.assertIn("version=25.12.5", runner)
-        self.assertIn('"$(uname -s)" == Darwin', wrapper)
-        self.assertIn('"$(uname -m)" == arm64', wrapper)
+        self.assertIn('Darwin:arm64)', wrapper)
+        self.assertIn('Linux:aarch64|Linux:arm64)', wrapper)
         self.assertIn("qemu-system-aarch64 -accel help", wrapper)
-        self.assertIn("-accel hvf", runner)
-        self.assertIn("-cpu host", runner)
+        self.assertIn('-accel "${NETFLEET_QEMU_ACCELERATOR:?}"', runner)
+        self.assertIn('-cpu "${NETFLEET_QEMU_CPU:?}"', runner)
         self.assertIn('sock.bind(("127.0.0.1", 0))', runner)
         self.assertIn("'$probe_port'", runner)
         self.assertIn("NETFLEET_PACKAGE_ARCHIVE", wrapper + runner)
         self.assertIn('python3 -m http.server "$feed_port"', runner)
         self.assertIn('feed_url="http://192.168.1.2:$feed_port"', runner)
         self.assertIn("opl-netfleet-openwrt-vm-qualification.v2", runner)
-        self.assertIn('"accelerator": "hvf"', runner)
+        self.assertIn('"accelerator": os.environ["NETFLEET_QEMU_ACCELERATOR"]', runner)
         self.assertIn('"qemu_version": sys.argv[11]', runner)
         self.assertNotRegex(
             combined, r"docker|linux/amd64|qemu-system-x86|-accel tcg|virtio-net-pci"
@@ -191,15 +191,21 @@ class OpenWrtVmTests(unittest.TestCase):
                 args = [str(receipt), 'a' * 40, 'b' * 40, '25.12.5', 'e' * 64,
                         str(work), 'f' * 64, '1' * 64, 'arm64', 'aarch64', '10.0',
                         '1', '1', '1', '1', '5', 'all', 'c' * 64]
-                result = subprocess.run(['python3', '-c', program, *args], text=True, capture_output=True)
+                env = {**os.environ, 'NETFLEET_QEMU_ACCELERATOR': 'hvf'}
+                result = subprocess.run(['python3', '-c', program, *args], text=True, capture_output=True, env=env)
                 self.assertEqual(result.returncode == 0, failure is None, result.stderr)
                 if failure is None:
                     parsed = json.loads(receipt.read_text())
                     self.assertTrue(parsed['qualified'])
                     self.assertTrue(parsed['package_qualified'])
                     self.assertEqual(set(parsed['lanes']), set(names))
+                    self.assertEqual(parsed['platform']['accelerator'], 'hvf')
+                    linux = subprocess.run(['python3', '-c', program, *args], text=True, capture_output=True,
+                                           env={**env, 'NETFLEET_QEMU_ACCELERATOR': 'tcg'})
+                    self.assertEqual(linux.returncode, 0, linux.stderr)
+                    self.assertEqual(json.loads(receipt.read_text())['platform']['accelerator'], 'tcg')
                     args[-2:] = ['native', '']
-                    diagnostic = subprocess.run(['python3', '-c', program, *args], text=True, capture_output=True)
+                    diagnostic = subprocess.run(['python3', '-c', program, *args], text=True, capture_output=True, env=env)
                     self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
                     parsed = json.loads(receipt.read_text())
                     self.assertFalse(parsed['qualified'])

@@ -1,6 +1,20 @@
 name: NetFleet OpenWrt 候选包构建
 
 on:
+  workflow_call:
+    inputs:
+      source_ref:
+        required: true
+        type: string
+      sdk_url:
+        required: true
+        type: string
+      sdk_sha256:
+        required: true
+        type: string
+    secrets:
+      NETFLEET_APK_PRIVATE_KEY:
+        required: false
   workflow_dispatch:
     inputs:
       source_ref:
