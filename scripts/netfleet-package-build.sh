@@ -207,7 +207,7 @@ if grep -Eq '^CONFIG_USE_APK=y$' "$sdk/.config" 2>/dev/null; then
   "$sdk/staging_dir/host/bin/openssl" ec -in "$sdk/private-key.pem" -pubout >"$sdk/public-key.pem"
 fi
 preflight_seconds=$SECONDS
-(cd "$sdk" && ./scripts/feeds install -p base ucode)
+(cd "$sdk" && ./scripts/feeds update base && ./scripts/feeds install -p base ucode)
 "$make_bin" -C "$sdk" package/feeds/base/ucode/host/compile V=s
 # SDK hostpkg tools may retain an absolute RPATH from a previous build location.
 # Keep resolution local to this SDK instead of relying on the host's libraries.
