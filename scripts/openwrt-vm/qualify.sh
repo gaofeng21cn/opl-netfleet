@@ -48,7 +48,7 @@ ports=$(python3 - <<'PY'
 import socket
 
 sockets = []
-for _ in range(3):
+for _ in range(4):
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
     sockets.append(sock)
@@ -58,10 +58,13 @@ PY
 ssh_port=${ports%% *}
 remaining_ports=${ports#* }
 probe_port=${remaining_ports%% *}
-feed_port=${remaining_ports##* }
+remaining_ports=${remaining_ports#* }
+feed_port=${remaining_ports%% *}
+mirror_port=${remaining_ports##* }
 stage=assets
 probe_pid=
 feed_pid=
+mirror_pid=
 qemu_pid=
 now_ms() {
 	python3 -c 'import time; print(time.time_ns() // 1000000)'
@@ -90,6 +93,10 @@ cleanup() {
 		kill "$feed_pid" >/dev/null 2>&1 || true
 		wait "$feed_pid" >/dev/null 2>&1 || true
 	fi
+	if [ -n "$mirror_pid" ]; then
+		kill "$mirror_pid" >/dev/null 2>&1 || true
+		wait "$mirror_pid" >/dev/null 2>&1 || true
+	fi
 	rm -rf -- "$work"
 }
 finish() {
@@ -97,12 +104,12 @@ finish() {
 	trap - EXIT INT TERM
 	if [ "$rc" -ne 0 ]; then
 		echo "OpenWrt qualification failed at stage: $stage" >&2
-		for dump in "$work"/*-result.json "$work"/*-result.stderr "$qemu_log"; do
+		for dump in "$work"/*-result.json "$work"/*-result.stderr "$work/official-package-mirror.log" "$qemu_log"; do
 			[ ! -s "$dump" ] || { echo "--- $dump" >&2; cat "$dump" >&2; }
 		done
 		if [ "${NETFLEET_VM_DEBUG_KEEP:-0}" = 1 ]; then
-			printf 'Debug VM retained: work=%s ssh_port=%s qemu_pid=%s probe_pid=%s feed_pid=%s\n' \
-				"$work" "$ssh_port" "$qemu_pid" "$probe_pid" "$feed_pid" >&2
+			printf 'Debug VM retained: work=%s ssh_port=%s qemu_pid=%s probe_pid=%s feed_pid=%s mirror_pid=%s\n' \
+				"$work" "$ssh_port" "$qemu_pid" "$probe_pid" "$feed_pid" "$mirror_pid" >&2
 			printf '%s\n' 'No qualification receipt: stop these exact processes and remove this directory after debugging.' >&2
 			exit "$rc"
 		fi
@@ -113,6 +120,18 @@ finish() {
 trap finish EXIT INT TERM
 
 mkdir -p "$work" "$cache"
+if [ -z "$package_mirror" ]; then
+	python3 "$workspace/scripts/openwrt-vm/official-package-mirror.py" "$work/official-packages" "$mirror_port" "$version" \
+		>"$work/official-package-mirror.log" 2>&1 &
+	mirror_pid=$!
+	for attempt in $(seq 1 20); do
+		if curl -fsS "http://127.0.0.1:$mirror_port/healthz" >/dev/null; then break; fi
+		[ "$attempt" -lt 20 ] || exit 1
+		sleep 1
+	done
+	package_mirror="http://192.168.1.2:$mirror_port"
+	export NETFLEET_VM_PACKAGE_MIRROR="$package_mirror"
+fi
 cached="$cache/$image_name"
 if [ ! -f "$cached" ] || [ "$(sha256_file "$cached")" != "$image_sha" ]; then
 	temporary="$cached.tmp.$$"
