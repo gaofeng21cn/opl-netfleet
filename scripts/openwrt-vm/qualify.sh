@@ -401,7 +401,7 @@ while True:
 sock.settimeout(1)
 buffer = b""
 while time.monotonic() < deadline:
-    sock.sendall(b"\n")
+    sock.sendall(b"\r")
     try:
         chunk = sock.recv(65536)
         if chunk:
@@ -412,6 +412,7 @@ while time.monotonic() < deadline:
         break
     time.sleep(1)
 else:
+    sys.stderr.buffer.write(buffer[-16384:])
     raise SystemExit("OpenWrt serial console did not reach a root shell")
 
 command = (
