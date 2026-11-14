@@ -27,6 +27,25 @@ RECOVERY = ROOT / "scripts" / "recover-openwrt-local.sh"
 
 
 class OpenWrtVmTests(unittest.TestCase):
+    def test_setup_probe_keeps_failure_when_called_from_if(self):
+        source = SETUP_GUEST.read_text()
+        start = source.index('direct_probe() {')
+        probe = source[start:source.index('\npackage_transaction()', start)]
+        program = '''set -eu
+work=$1
+probe_port=443
+curl() { [ "$NETFLEET_READY_TEST_FAILURE" != tls ]; }
+ip() { [ "$NETFLEET_READY_TEST_FAILURE" != dns ]; }
+''' + probe + '\nif direct_probe; then exit 0; else exit 17; fi\n'
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, 'client-ready').touch()
+            for failure, expected in (('dns', 17), ('tls', 17), ('', 0)):
+                with self.subTest(failure=failure):
+                    result = subprocess.run(['sh', '-c', program, 'probe-test', directory],
+                                            env={**os.environ, 'NETFLEET_READY_TEST_FAILURE': failure},
+                                            text=True, capture_output=True)
+                    self.assertEqual(result.returncode, expected, result.stderr)
+
     def test_signed_plugin_fixtures_stage_real_sdk_payload_and_upgrade_hooks(self):
         spec = importlib.util.spec_from_file_location("netfleet_plugin_fixtures", ROOT / "scripts/openwrt-vm/plugin-fixtures.py")
         fixtures = importlib.util.module_from_spec(spec)
