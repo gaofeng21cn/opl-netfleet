@@ -19,9 +19,14 @@ PR 与 `main` 更新运行 `NetFleet 双平台检查`。检查结果只证明所
 先完成本地验证，再进入主线。正式交付从干净、已吸收的源码构建，记录精确 commit/tree，
 不要把可移动的 `main` 名称当作永久身份。主线继续前进不表示已安装版本同步更新。
 
-平台版本分别维护；OpenWrt 插件继续独立版本化，macOS 应用也不跟随 OpenWrt 包号强制
-递增。比较共享代码看源码身份，判断安装情况看目标实际产物。一个平台交付失败不回滚
-另一平台已经验收的交付；失败平台修复后重新验证自己的候选。
+产品版本由 `product-version.json` 维护，版本准备同步 OpenWrt 产品包与 macOS
+应用；OpenWrt 插件继续独立版本化。各平台制品使用同一个产品 tag 和源码身份，
+安装情况以目标实际产物为准。某个平台待验收时保留该状态，修复后验证原候选。
+
+统一每日产品任务检测交付变化并经 PR/CI 准备版本，`release.yml` 使用固定 SDK
+构建签名候选，在 ARM64 Linux QEMU 中运行完整包资格，再调用既有 Feed 发布器。
+`scripts/openwrt-sdk.json` 固定 SDK URL 与 SHA-256；构建、资格与发布绑定同一源码
+及候选摘要。设备安装与可选引擎组合仍按各自的推广和验收入口执行。
 
 ## OpenWrt 公开发布
 
@@ -139,14 +144,14 @@ Release 并下载公开资产校验。主线前进后仍使用已冻结并验收
 
 ## macOS DMG 公开分发
 
-macOS 使用独立的 `macos-vX.Y.Z` tag，版本对应应用 `Info.plist`，不与 OpenWrt 包号绑定。
+macOS 使用同一产品 `vX.Y.Z` tag，版本对应应用 `Info.plist`。旧 `macos-v` Release
+保留原资产；新的合格 DMG 追加到同一产品 Release。
 应用自更新只依赖该 Release 里的 DMG 资产与 GitHub 计算的 `sha256:` 摘要，加上 Apple
 签名与公证作为来源证明，因此不需要额外的签名清单；没有摘要的 Release 只作为手动下载入口。
 按[签名与 DMG](macos.md#签名与-dmg)构建、公证并冻结 arm64 DMG，完成最终包的隔离
 macOS VM 验收后才发布。应用签名、两次公证、最终 DMG 摘要、源码身份和 VM 结果分别
 回读；发布后下载公开资产并核对相同摘要。内部验收日志与订阅数据不进入 Release。
 
-macOS-only Release 必须使用 `gh release create --latest=false`，避免抢占 OpenWrt
-安装入口依赖的 `/releases/latest/download/install-netfleet.sh`。公开 macOS 资产通过
-对应 tag 获取；分发构建支持用户确认后的应用自更新，不执行后台静默替换，也不自动
-更新本地开发构建。
+同一 tag 的 OpenWrt Feed 与 macOS DMG 各自核对自己的资产和摘要。追加已验收的
+DMG 保持既有 Feed 资产原字节，不创建独立版本。分发构建支持用户确认后的应用
+自更新，不执行后台静默替换，也不自动更新本地开发构建。

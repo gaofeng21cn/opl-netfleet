@@ -358,9 +358,9 @@ vm_memory=512
 # base services, so the VM must provide the same 2 GiB headroom as Home.
 [ "$lane_mode" != compatibility ] || vm_memory=2048
 qemu-system-aarch64 \
-	-accel hvf \
+	-accel "${NETFLEET_QEMU_ACCELERATOR:?}" \
 	-machine virt \
-	-cpu host \
+	-cpu "${NETFLEET_QEMU_CPU:?}" \
 	-m "$vm_memory" \
 	-smp 2 \
 	-bios "$firmware" \
@@ -658,7 +658,7 @@ value = {
         "runner_arch": sys.argv[9],
         "guest_arch": sys.argv[10],
         "qemu_system": "aarch64",
-        "accelerator": "hvf",
+        "accelerator": os.environ["NETFLEET_QEMU_ACCELERATOR"],
         "qemu_version": sys.argv[11],
     },
     "qualification_metrics": {

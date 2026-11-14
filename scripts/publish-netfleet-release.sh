@@ -123,12 +123,13 @@ release_state=$(gh release view "$tag" --repo "$repo" --json tagName 2>/dev/null
 
 remote_tag=$(git -C "$repo_dir" ls-remote --refs origin "refs/tags/$tag" | awk 'NR == 1 { print $1 }')
 if [[ -n "$remote_tag" ]]; then
-  [[ "$remote_tag" == "$source_commit" ]] || die 'release tag points to another commit'
+  git -C "$repo_dir" fetch --quiet origin "refs/tags/$tag"
+  [[ "$(git -C "$repo_dir" rev-parse 'FETCH_HEAD^{commit}')" == "$source_commit" ]] || die 'release tag points to another commit'
 else
   if git -C "$repo_dir" rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
     [[ "$(git -C "$repo_dir" rev-list -n 1 "$tag")" == "$source_commit" ]] || die 'local tag points to another commit'
   else
-    git -C "$repo_dir" tag "$tag" "$source_commit"
+    git -C "$repo_dir" tag -a "$tag" -m "NetFleet $tag" "$source_commit"
   fi
   git -C "$repo_dir" push origin "refs/tags/$tag"
 fi

@@ -182,14 +182,15 @@ test('a macOS release is installable only with a DMG and its published digest', 
     { ...good, prerelease: true },
     { ...good, draft: true },
   ]) assert.equal(releaseCandidate(broken), null);
-  // 选版本最高的正式 Release，忽略草稿、预发布与 OpenWrt tag。
+  // 选带合格 DMG 的最高产品版本，保留旧 macos-v 安装的迁移读取。
   assert.equal(latestRelease([
     { tag_name: 'v0.9.0', draft: false, prerelease: false },
-    { tag_name: 'macos-v0.1.7', draft: false, prerelease: false },
+    good,
     { tag_name: 'macos-v0.2.0', draft: true, prerelease: false },
     { tag_name: 'macos-v0.1.10', draft: false, prerelease: true },
     { tag_name: 'macos-v0.1.8', draft: false, prerelease: false, assets: [] },
-  ]).tag_name, 'macos-v0.1.8');
+    { ...good, tag_name: 'v0.9.1' },
+  ]).tag_name, 'v0.9.1');
   assert.equal(latestRelease([]), null);
 });
 

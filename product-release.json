@@ -1,0 +1,44 @@
+{
+  "schema_version": "opl.product-release.v1",
+  "product_id": "opl-netfleet",
+  "repository": "gaofeng21cn/opl-netfleet",
+  "strategy": "daily_patch",
+  "trigger": "tag",
+  "tag_prefix": "v",
+  "publisher_workflow": "release.yml",
+  "channel": {
+    "kind": "github_release"
+  },
+  "version_file": {
+    "path": "product-version.json",
+    "kind": "json"
+  },
+  "version_files": [
+    {
+      "path": "product-version.json",
+      "kind": "json"
+    },
+    {
+      "path": "desktop/app/Info.plist",
+      "kind": "plist_bundle"
+    }
+  ],
+  "release_paths": [
+    "openwrt",
+    "plugins",
+    "ui",
+    "desktop",
+    "scripts",
+    "sdk",
+    "product-version.json",
+    ".github/workflows/release.yml",
+    ".github/workflows/netfleet-openwrt-candidate.yml"
+  ],
+  "prepare": [
+    [
+      "python3",
+      "scripts/prepare-product-release.py"
+    ]
+  ],
+  "verify": []
+}

@@ -1,0 +1,103 @@
+name: Release NetFleet
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: netfleet-stable-release
+  cancel-in-progress: false
+jobs:
+  identity:
+    runs-on: ubuntu-latest
+    outputs:
+      source: ${{ steps.source.outputs.source }}
+      sdk_url: ${{ steps.source.outputs.sdk_url }}
+      sdk_sha256: ${{ steps.source.outputs.sdk_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind the product source and SDK
+        id: source
+        run: |
+          set -euo pipefail
+          git fetch origin main --quiet
+          git merge-base --is-ancestor HEAD origin/main
+          test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag
+          python3 - <<'PY'
+          import json, os, plistlib, re
+          from pathlib import Path
+          version = json.loads(Path('product-version.json').read_text())['version']
+          assert os.environ['GITHUB_REF_NAME'] == 'v' + version
+          assert re.search(r'^PKG_VERSION:=' + re.escape(version) + r'$', Path('openwrt/Makefile').read_text(), re.M)
+          assert plistlib.loads(Path('desktop/app/Info.plist').read_bytes())['CFBundleShortVersionString'] == version
+          sdk = json.loads(Path('scripts/openwrt-sdk.json').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+              stream.write('source=' + os.environ['GITHUB_SHA'] + '\n')
+              stream.write('sdk_url=' + sdk['url'] + '\n')
+              stream.write('sdk_sha256=' + sdk['sha256'] + '\n')
+          PY
+  candidate:
+    needs: identity
+    uses: ./.github/workflows/netfleet-openwrt-candidate.yml
+    with:
+      source_ref: ${{ needs.identity.outputs.source }}
+      sdk_url: ${{ needs.identity.outputs.sdk_url }}
+      sdk_sha256: ${{ needs.identity.outputs.sdk_sha256 }}
+    secrets:
+      NETFLEET_APK_PRIVATE_KEY: ${{ secrets.NETFLEET_APK_PRIVATE_KEY }}
+  qualify:
+    needs: [identity, candidate]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: netfleet-openwrt-candidate-${{ needs.identity.outputs.source }}
+          path: ${{ runner.temp }}/candidate
+      - name: Prepare the isolated ARM64 QEMU host
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-utils qemu-efi-aarch64 gdisk e2fsprogs
+      - name: Qualify the exact candidate bytes
+        env:
+          SOURCE: ${{ needs.identity.outputs.source }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/qualification"
+          scripts/openwrt-vm.sh --ref "$SOURCE" --packages "$RUNNER_TEMP/candidate" \
+            --output "$RUNNER_TEMP/qualification/receipt.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: netfleet-release-qualification-${{ needs.identity.outputs.source }}
+          path: ${{ runner.temp }}/qualification/receipt.json
+          if-no-files-found: warn
+  publish:
+    needs: [identity, qualify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: netfleet-openwrt-candidate-${{ needs.identity.outputs.source }}
+          path: ${{ runner.temp }}/candidate
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: netfleet-release-qualification-${{ needs.identity.outputs.source }}
+          path: ${{ runner.temp }}/qualification
+      - name: Publish the VM-qualified default Feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          scripts/publish-netfleet-release.sh --tag "$GITHUB_REF_NAME" \
+            --candidate "$RUNNER_TEMP/candidate" \
+            --qualification "$RUNNER_TEMP/qualification/receipt.json"
