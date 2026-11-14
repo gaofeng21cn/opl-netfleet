@@ -44,11 +44,11 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/octet-stream')
-        self.send_header('Content-Length', str(target.stat().st_size))
-        self.end_headers()
         with target.open('rb') as package:
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/octet-stream')
+            self.send_header('Content-Length', str(os.fstat(package.fileno()).st_size))
+            self.end_headers()
             shutil.copyfileobj(package, self.wfile)
 
 
