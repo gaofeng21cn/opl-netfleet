@@ -6,8 +6,8 @@ usage() {
 	cat <<'EOF'
 Usage: scripts/openwrt-vm.sh --output <receipt.json> [--ref <git-ref>] [--packages <candidate-dir>]
 
-Boot a pinned official OpenWrt image with native Apple Silicon QEMU/HVF and
-qualify the exact Git commit/tree.
+Boot a pinned official ARM64 OpenWrt image with QEMU and the available
+HVF/KVM/TCG accelerator; qualify the exact Git commit/tree.
 The default suite verifies native runtime, first setup without Nikki, and
 Nikki migration in independent clean VMs. Package candidates add a clean lane.
 Individual diagnostic lanes cannot authorize deployment. No real devices are contacted.

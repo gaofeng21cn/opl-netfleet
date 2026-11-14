@@ -288,7 +288,12 @@ PY
 		if [ -n "${NETFLEET_VM_PACKAGE_BASELINE:-}" ]; then
 			set -- "$@" --baseline "$NETFLEET_VM_PACKAGE_BASELINE"
 		fi
-		python3 "$workspace/scripts/openwrt-vm/component-fixtures.py" "$@"
+		if [ -n "${NETFLEET_VM_COMPONENT_FIXTURES:-}" ]; then
+			python3 "$workspace/scripts/openwrt-vm/component-fixtures.py" "$feed_dir" "$NETFLEET_VM_COMPONENT_FIXTURES" --verify-existing
+			cp -R "$NETFLEET_VM_COMPONENT_FIXTURES" "$feed_dir/components-fixtures"
+		else
+			python3 "$workspace/scripts/openwrt-vm/component-fixtures.py" "$@"
+		fi
 	fi
 	python3 -m http.server "$feed_port" --bind 0.0.0.0 --directory "$feed_dir" \
 		>"$work/package-feed.log" 2>&1 &
