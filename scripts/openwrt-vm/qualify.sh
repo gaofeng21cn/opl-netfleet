@@ -352,6 +352,31 @@ qemu-img resize -f raw "$work/openwrt.img" "$disk_size" >/dev/null
 sgdisk -e -a 1 -d 2 -n "2:$root_start:+$root_size" -u "2:$root_uuid" -t 2:8300 "$work/openwrt.img" >/dev/null
 dd if="$work/root.ext4" of="$work/openwrt.img" bs=512 seek="$root_start" conv=notrunc 2>/dev/null
 rm "$work/root.ext4"
+# Pin the primary console in this disposable image. EFI may otherwise select
+# tty0 while still mirroring kernel messages to the serial port.
+boot_start=$(sgdisk -i 1 "$work/openwrt.img" | awk '/^First sector:/ { print $3 }')
+[ -n "$boot_start" ] || exit 1
+efi_disk="$work/openwrt.img@@$((boot_start * 512))"
+mcopy -o -i "$efi_disk" ::/efi/openwrt/grub.cfg "$work/grub.cfg"
+python3 - "$work/grub.cfg" <<'PY'
+from pathlib import Path
+import re
+import sys
+path = Path(sys.argv[1])
+text = path.read_text()
+lines = 0
+def serial(match):
+    global lines
+    lines += 1
+    return match[0] + ' console=ttyAMA0,115200n8'
+text = re.sub(r'(?m)^\s*linux\s+[^\r\n]+$', serial, text)
+if lines == 0:
+    raise SystemExit('OpenWrt EFI config has no kernel entry')
+path.write_text(text)
+PY
+mcopy -o -i "$efi_disk" "$work/grub.cfg" ::/efi/openwrt/grub.cfg
+mcopy -o -i "$efi_disk" ::/efi/openwrt/grub.cfg "$work/grub-readback.cfg"
+cmp -s "$work/grub.cfg" "$work/grub-readback.cfg"
 image_elapsed_ms=$((image_elapsed_ms + $(now_ms) - image_started_ms))
 
 [ -f "$firmware" ] || { echo "AArch64 QEMU EFI firmware not found" >&2; exit 1; }
