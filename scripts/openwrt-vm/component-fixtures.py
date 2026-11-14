@@ -56,6 +56,39 @@ def prior_dependencies(dependencies, versions):
     return result
 
 
+def seal_prebuilt(candidate, output):
+    metadata_path = output / "fixture.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata["source_manifest_sha256"] = hashlib.sha256((candidate / "manifest.json").read_bytes()).hexdigest()
+    metadata["files_sha256"] = {
+        path.relative_to(output).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(output.rglob("*")) if path.is_file() and path != metadata_path
+    }
+    metadata_path.write_text(json.dumps(metadata, sort_keys=True) + "\n")
+
+
+def validate_prebuilt(candidate, output):
+    if output.is_symlink() or not output.is_dir():
+        raise SystemExit("Component fixtures require a regular directory")
+    paths = list(output.rglob("*"))
+    if any(path.is_symlink() or not (path.is_file() or path.is_dir()) for path in paths):
+        raise SystemExit("Component fixtures contain a non-regular resource")
+    metadata_path = output / "fixture.json"
+    metadata = json.loads(metadata_path.read_text())
+    manifest = json.loads((candidate / "manifest.json").read_text())
+    version = manifest["package_version"]
+    if manifest.get("package_release") is not None:
+        version += "-r" + manifest["package_release"]
+    if metadata.get("schema_version") != 1 or metadata.get("version") != version:
+        raise SystemExit("Component fixture version differs from the candidate")
+    if any(metadata.get(key) != manifest[key] for key in ("source_commit", "source_tree")) or metadata.get("source_manifest_sha256") != hashlib.sha256((candidate / "manifest.json").read_bytes()).hexdigest():
+        raise SystemExit("Component fixtures select a different candidate")
+    files = {path.relative_to(output).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+             for path in paths if path.is_file() and path != metadata_path}
+    if not files or metadata.get("files_sha256") != files:
+        raise SystemExit("Component fixture resources differ from their sealed bytes")
+
+
 def build(candidate, output, baseline=None):
     sdk = sdk_path()
     apk = sdk / "staging_dir/host/bin/apk"
@@ -256,6 +289,7 @@ def build(candidate, output, baseline=None):
         "native_cohort": native_cohort,
         **core_versions,
     }, sort_keys=True) + "\n")
+    seal_prebuilt(candidate, output)
 
 
 if __name__ == "__main__":
@@ -263,6 +297,10 @@ if __name__ == "__main__":
     parser.add_argument("candidate", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--baseline", type=Path)
+    parser.add_argument("--verify-existing", action="store_true")
     arguments = parser.parse_args()
-    build(arguments.candidate.resolve(), arguments.output.resolve(),
-          arguments.baseline.resolve() if arguments.baseline is not None else None)
+    if arguments.verify_existing:
+        validate_prebuilt(arguments.candidate.resolve(), arguments.output.absolute())
+    else:
+        build(arguments.candidate.resolve(), arguments.output.resolve(),
+              arguments.baseline.resolve() if arguments.baseline is not None else None)

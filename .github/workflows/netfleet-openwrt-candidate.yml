@@ -110,11 +110,21 @@ jobs:
             --source-commit "$NETFLEET_SOURCE_COMMIT" \
             --source-tree "$NETFLEET_SOURCE_TREE"
 
+      - name: Build and seal disposable VM update fixtures
+        run: |
+          sudo env "NETFLEET_SDK=$NETFLEET_SDK" python3 scripts/openwrt-vm/component-fixtures.py \
+            "$RUNNER_TEMP/netfleet-output" "$RUNNER_TEMP/netfleet-vm-components"
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/netfleet-vm-components"
+          python3 scripts/openwrt-vm/component-fixtures.py \
+            "$RUNNER_TEMP/netfleet-output" "$RUNNER_TEMP/netfleet-vm-components" --verify-existing
+
       - name: Upload candidate for ARM64 VM qualification
         uses: actions/upload-artifact@v4
         with:
           name: netfleet-openwrt-candidate-${{ env.NETFLEET_SOURCE_COMMIT }}
-          path: ${{ runner.temp }}/netfleet-output/*
+          path: |
+            ${{ runner.temp }}/netfleet-output
+            ${{ runner.temp }}/netfleet-vm-components
           if-no-files-found: error
           compression-level: 0
           retention-days: 7

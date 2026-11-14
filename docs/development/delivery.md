@@ -100,7 +100,7 @@ python3 scripts/netfleet-delivery-preflight.py \
 1. 选定干净主线源码，更新实际变更的软件包版本，先完成源码、载荷同步、UI 和受影响故障路径检查，再冻结候选。未变更的插件不递增版本；不要在检查尚未完成时同时启动多批构建。
 2. 使用 `scripts/netfleet-package-build.sh` 本地构建，或手动运行
    `.github/workflows/netfleet-openwrt-candidate.yml`，输入源码 ref、SDK URL 及 SHA-256。
-   工作流只上传保留 7 天的候选，不因推送 tag 自动发布。
+   工作流上传保留 7 天的候选，其中 `netfleet-output/` 保存公开软件包，`netfleet-vm-components/` 保存一次性升级与回滚测试包。测试包在 SDK 宿主生成，并绑定候选清单、源码和文件摘要；ARM64 QEMU 通过 `NETFLEET_VM_COMPONENT_FIXTURES` 复用，无需 SDK。正式发布入口只消费公开软件包目录。
 3. 按[软件包资格验证](validation.md)完成同源码、同候选资产的 ARM64 OpenWrt VM 验收。
 4. 使用已有发布入口：
 

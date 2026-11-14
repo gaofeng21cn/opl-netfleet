@@ -66,9 +66,10 @@ jobs:
       - name: Qualify the exact candidate bytes
         env:
           SOURCE: ${{ needs.identity.outputs.source }}
+          NETFLEET_VM_COMPONENT_FIXTURES: ${{ runner.temp }}/candidate/netfleet-vm-components
         run: |
           mkdir -p "$RUNNER_TEMP/qualification"
-          scripts/openwrt-vm.sh --ref "$SOURCE" --packages "$RUNNER_TEMP/candidate" \
+          scripts/openwrt-vm.sh --ref "$SOURCE" --packages "$RUNNER_TEMP/candidate/netfleet-output" \
             --output "$RUNNER_TEMP/qualification/receipt.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
@@ -99,5 +100,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           scripts/publish-netfleet-release.sh --tag "$GITHUB_REF_NAME" \
-            --candidate "$RUNNER_TEMP/candidate" \
+            --candidate "$RUNNER_TEMP/candidate/netfleet-output" \
             --qualification "$RUNNER_TEMP/qualification/receipt.json"
