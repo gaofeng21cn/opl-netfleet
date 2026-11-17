@@ -377,6 +377,7 @@ apk --no-network del luci-app-attendedsysupgrade >"$work/remove-new-dependency.l
 ! apk list --manifest | grep -q '^luci-app-attendedsysupgrade '
 cp /etc/apk/world "$work/update-world"
 mv "$work/distfeeds.list" /etc/apk/repositories.d/distfeeds.list
+apk --timeout 30 update >"$work/new-dependency-feed.log" 2>&1
 stage=component_update
 rpcd_before=$(pidof rpcd)
 request components_update "$current"
