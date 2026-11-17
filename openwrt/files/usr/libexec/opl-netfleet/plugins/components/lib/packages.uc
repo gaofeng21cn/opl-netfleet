@@ -2,8 +2,8 @@
 export function changes(output) {
 	const result = [];
 	for (let line in split(output ?? '', '\n')) {
-		if (!match(line, /^\([0-9]+\/[0-9]+\) /)) continue;
-		const row = match(line, /^\([0-9]+\/[0-9]+\) (Installing|Upgrading|Downgrading|Purging|Reinstalling) ([a-z0-9][a-z0-9+_.-]*) \(([^)]+)\)$/);
+		if (!match(line, /^\( *[0-9]+\/[0-9]+\) /)) continue;
+		const row = match(line, /^\( *[0-9]+\/[0-9]+\) (Installing|Upgrading|Downgrading|Purging|Reinstalling) ([a-z0-9][a-z0-9+_.-]*) \(([^)]+)\)$/);
 		if (row == null) die('package_plan_unreadable');
 		const versions = split(row[3], ' -> ');
 		push(result, { action: row[1], name: row[2], version: versions[length(versions) - 1] });

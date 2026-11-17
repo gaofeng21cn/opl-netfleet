@@ -10,6 +10,9 @@ const installed = { 'opl-netfleet': '1.0.0', libc: '1.0' }, product = ['opl-netf
 const output = '(1/2) Installing helper (1.0)\n(2/2) Installing ' + name + ' (1.1.0)\nOK: 2 packages';
 const result = validate(changes(output), request, installed, product);
 check(length(result.names) == 2 && result.candidates.helper == '1.0', 'missing dependencies join the exact transaction');
+const padded = changes('( 1/12) Installing helper (1.0)\n(12/12) Upgrading ' + name + ' (1.0.0 -> 1.1.0)');
+check(length(padded) == 2 && padded[0].name == 'helper' && padded[1].version == '1.1.0', 'APK aligns counters for transactions with ten or more packages');
+rejects(() => changes('( 1/12) Changing example unexpectedly'), 'package_plan_unreadable');
 rejects(() => validate(changes(output), { ...request, confirm: false }, installed, product), 'invalid_plugin_package_request');
 rejects(() => validate(changes(output), request, { ...installed, [name]: '1.0.0' }, product), 'installed_version_changed');
 rejects(() => validate(changes('(1/2) Upgrading libc (1.0 -> 2.0)\n' + output), request, installed, product), 'plugin_dependency_change_required');

@@ -872,9 +872,6 @@ function core_space_available(bytes, work) {
 function product_plan(names, versions, candidates) {
 	const selected = [...names];
 	// Product dependencies may not be cached on an older target. Resolve the
-	// exact candidate against the refreshed signed indexes before downloading
-	// archives; the later offline simulation remains the write-time guard.
-	// Product dependencies may not be cached on an older target. Resolve the
 	// exact candidate against the refreshed signed indexes before downloading;
 	// the later offline simulation remains the write-time guard.
 	const output = capture(`LC_ALL=C apk --timeout 90 --cache-max-age 1440 --simulate add ${join(" ", map(names, name => q(`${name}=${candidates[name]}`)))}`);
