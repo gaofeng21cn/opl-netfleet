@@ -441,9 +441,13 @@ if ubus -t 1 list log >/dev/null 2>&1; then
 	echo "log owner still registered after stop" >&2
 	exit 1
 fi
-events_started=$(date +%s)
+events_started=$(awk '{ print int($1 * 1000) }' /proc/uptime)
 ucode "$main" events >"$work/events-without-logd-result.json"
-test "$(( $(date +%s) - events_started ))" -lt 5
+events_elapsed=$(awk -v started="$events_started" '{ now=int($1 * 1000); print now-started }' /proc/uptime)
+# TCG ARM64 guests can spend several seconds in one UCode process even when
+# the log-free event path itself is healthy. Keep a bounded guest-local limit
+# without making the check depend on host wall-clock scheduling.
+test "$events_elapsed" -lt 30000
 assert_json "$work/events-without-logd-result.json" '@.ok' true
 /etc/init.d/log start
 stage=shared_disable
