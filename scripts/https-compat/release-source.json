@@ -1,0 +1,26 @@
+{
+  "base_url": "https://github.com/gaofeng21cn/opl-netfleet/releases/download/v0.9.17",
+  "engine": {
+    "architecture": "aarch64_generic",
+    "artifact": "opl-netfleet-https-compat-0.6.12.apk",
+    "engine": "haproxy",
+    "engine_version": "3.2.21",
+    "native_runtime": {
+      "name": "native-runtime.json",
+      "sha256": "e5037cbe2123256be0fb61f3b9566031ad6cf15b9e7361a1b0a0f105ab3797c0"
+    },
+    "sha256": "c9fa5a825c14359b53d67b4ef1523fe52ce2a1542d589da0b8f293a578e18918",
+    "source_commit": "03d5910d5aadcd23bd599a36d091d56ff212c50a",
+    "source_tree": "b2bfb19ff5157a0024202bfdcf87bfcc81b68e00"
+  },
+  "identity": {
+    "artifact": "opl-netfleet-plugin-device-identity-0.2.4.apk",
+    "sha256": "ec05720b65e29312478080b2513c1bdf5f901c0bfce9ca2e7412af64ec6f5b6d",
+    "source_commit": "8ef72f725acec7545d19428650d3ac645ad76324",
+    "source_tree": "fae508449e44bd5048d32a000f4e49cb16cdd7a6"
+  },
+  "files": {
+    "compat-packages.adb": "a2d3766b0b2c10e2e3a1c0ec3d30fb453538f9755bdc60b9cd185b747e2d7a55",
+    "compat-public-key.pem": "abce3b3605318785117b78c067dfcbcb317cf4114591a03428a915a9df4077fe"
+  }
+}

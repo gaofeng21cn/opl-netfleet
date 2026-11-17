@@ -100,7 +100,7 @@ python3 scripts/netfleet-delivery-preflight.py \
 1. 选定干净主线源码，更新实际变更的软件包版本，先完成源码、载荷同步、UI 和受影响故障路径检查，再冻结候选。未变更的插件不递增版本；不要在检查尚未完成时同时启动多批构建。
 2. 使用 `scripts/netfleet-package-build.sh` 本地构建，或手动运行
    `.github/workflows/netfleet-openwrt-candidate.yml`，输入源码 ref、SDK URL 及 SHA-256。
-   工作流上传保留 7 天的候选，其中 `netfleet-output/` 保存公开软件包，`netfleet-vm-components/` 保存一次性升级与回滚测试包。测试包在 SDK 宿主生成，并绑定候选清单、源码和文件摘要；ARM64 QEMU 通过 `NETFLEET_VM_COMPONENT_FIXTURES` 复用，无需 SDK。正式发布入口只消费公开软件包目录。
+   工作流上传保留 7 天的候选，其中 `netfleet-output/` 保存默认软件包，`netfleet-optional/` 保存可选签名包及构建身份，`netfleet-vm-components/` 保存一次性升级与回滚测试包。可选来源由 `scripts/https-compat/release-source.json` 固定，不重建同版本不同字节；复用入口校验源码未变、下载摘要、签名及原生依赖。测试包在 SDK 宿主生成，并绑定候选清单、源码和文件摘要；ARM64 QEMU 通过 `NETFLEET_VM_COMPONENT_FIXTURES` 复用，无需 SDK。
 3. 按[软件包资格验证](validation.md)完成同源码、同候选资产的 ARM64 OpenWrt VM 验收。
 4. 使用已有发布入口：
 
@@ -117,8 +117,8 @@ scripts/publish-netfleet-release.sh --tag vX.Y.Z \
 在 macOS 使用已准备的本地构建镜像执行签名校验与索引工具。输入目录只读、索引输出目录可写，
 不需要每次部署临时拼装 Docker 包装器，也不直接执行异平台二进制。
 
-完整发行版提供上述可选包参数；只发布默认产品时省略 `--compat-candidate` 和
-`--compat-qualification`、`--apk`，并明确没有完整安装组合。
+正式产品发布工作流先取得默认资格，再取得精确可选组合资格，最后提供上述全部参数发布完整 Feed。
+仅默认包的手动发布入口可省略可选参数，但不用于产品稳定渠道。
 复用未变化的可选 APK 且实际依赖调用链变化时，用
 `scripts/https-compat/qualify.py --composition` 对新的默认候选执行组合验证；
 未变调用链可复用原独立资格，发布入口逐文件验证其适用性。组合验证传入 `--packages`、`--base-qualification`、

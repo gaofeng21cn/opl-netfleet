@@ -55,16 +55,46 @@ trap cleanup EXIT INT TERM
 fetch() {
 	url=$1
 	destination=$2
-	if command -v uclient-fetch >/dev/null 2>&1; then
+	if command -v curl >/dev/null 2>&1; then
+		curl -q -fsSL --connect-timeout 10 --max-time 90 -o "$destination" "$url"
+	elif command -v uclient-fetch >/dev/null 2>&1; then
 		uclient-fetch -q -O "$destination" "$url"
 	elif command -v wget >/dev/null 2>&1; then
 		wget -q -O "$destination" "$url"
-	elif command -v curl >/dev/null 2>&1; then
-		curl -fsSL --retry 3 -o "$destination" "$url"
 	else
 		die 'uclient-fetch, wget, or curl is required'
 	fi
 }
+
+# OpenWrt APK invokes wget through PATH. Keep the reliable curl transport local
+# to this installer; APK still authenticates all indexes and package contents.
+if command -v curl >/dev/null 2>&1; then
+	mkdir "$work/apk-fetch"
+	cat >"$work/apk-fetch/wget" <<'FETCH'
+#!/bin/sh
+set -eu
+limit=90
+destination=-
+url=
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		-q) shift ;;
+		-T) limit=$2; shift 2 ;;
+		-O) destination=$2; shift 2 ;;
+		http://*|https://*) [ -z "$url" ] || exit 2; url=$1; shift ;;
+		*) exit 2 ;;
+	esac
+done
+case "$limit" in ''|*[!0-9]*) exit 2 ;; esac
+[ "$limit" -gt 0 ] || limit=90
+[ -n "$url" ] || exit 2
+exec curl -q -fsSL --proto '=http,https' --proto-redir '=http,https' \
+	--connect-timeout 10 --max-time "$limit" --output "$destination" "$url"
+FETCH
+	chmod 0700 "$work/apk-fetch/wget"
+	PATH="$work/apk-fetch:$PATH"
+	export PATH
+fi
 
 key_name=opl-netfleet-apk.pem
 key_download="$work/$key_name"

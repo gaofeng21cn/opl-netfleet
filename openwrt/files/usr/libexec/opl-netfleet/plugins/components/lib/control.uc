@@ -538,6 +538,10 @@ start = function(action, component, version) {
 run_command = function(command, work) {
 	return system(`${command} >>${q(`${work}/log`)} 2>&1`) == 0;
 };
+function apk_download(command, work) {
+	const downloader = `${context.root}/plugins/components/lib/apk-fetch`;
+	return run_command(`PATH=${q(downloader)}:"$PATH" ${command}`, work);
+}
 refresh_index = function(request, work) {
 	operation.update("checking");
 	// Reuse the recent signed index after an explicit check; still read candidates
@@ -548,7 +552,7 @@ refresh_index = function(request, work) {
 		const values = available(request.feed);
 		if (values != null) return values;
 	}
-	const success = run_command("apk --timeout 30 update", work);
+	const success = apk_download("apk --timeout 90 update", work);
 	const values = success ? available(request.feed) : null;
 	const checked = { feed: request.feed, checked_at: time(), versions: values ?? {}, plugin_catalog: success ? plugin_catalog() : {}, error: values == null ? "feed_check_failed" : null };
 	if (!atomic_json(CACHE, checked)) fail("update_state_write_failed");
@@ -591,7 +595,7 @@ archive = function(name, version, path, work, fallback_version, source) {
 		let fetched = false;
 		// APK 3 fetch without --recursive matches names, not dependency constraints.
 		for (let repository in exact?.repositories ?? []) {
-			if (run_command(`apk --timeout 30 fetch --from none -X ${q(repository)} --all-matches --output ${q(path)} ${q(name)}`, work) && fs.stat(target) != null) {
+			if (apk_download(`apk --timeout 90 fetch --from none -X ${q(repository)} --all-matches --output ${q(path)} ${q(name)}`, work) && fs.stat(target) != null) {
 				fetched = true;
 				break;
 			}

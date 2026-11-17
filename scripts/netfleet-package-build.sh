@@ -275,6 +275,7 @@ chmod 0755 "$payload/usr/libexec/opl-netfleet/main.uc" \
   "$payload/usr/libexec/opl-netfleet/supervisor.uc" \
   "$payload/usr/libexec/rpcd/opl-netfleet" "$payload/usr/libexec/rpcd/opl-netfleet.plugins" \
   "$payload/etc/init.d/opl-netfleet" "$payload/etc/init.d/opl-netfleet-core" "$payload/etc/init.d/opl-netfleet-update-recovery"
+chmod 0755 "$payload/usr/libexec/opl-netfleet/plugins/components/lib/apk-fetch/wget"
 if [[ "$package_format" == apk ]]; then
   chmod 0755 "$payload/usr/libexec/opl-netfleet-firmware" "$payload/usr/share/netfleet-firmware/restore-defaults"
 fi

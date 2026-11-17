@@ -115,7 +115,7 @@ let refresh_index, now=1000, refreshes=0, saved;
 const CACHE='cache';
 let cached={feed:'feed',checked_at:999,error:null}, values={product:'2'};
 function time(){return now;}function private_file(){return true;}function read_json(){return cached;}
-function available(){return values;}function run_command(){refreshes++;return true;}
+function available(){return values;}function apk_download(){refreshes++;return true;}
 function plugin_catalog(){return {};}function atomic_json(p,v){saved=v;return true;}function fail(e){die(e);}
 const operation={update:()=>true};
 function check(v,m){if(!v)die(m);}

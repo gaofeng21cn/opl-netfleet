@@ -118,6 +118,13 @@ jobs:
           python3 scripts/openwrt-vm/component-fixtures.py \
             "$RUNNER_TEMP/netfleet-output" "$RUNNER_TEMP/netfleet-vm-components" --verify-existing
 
+      - name: Reuse the unchanged signed optional packages
+        run: |
+          python3 scripts/https-compat/reuse.py --output "$RUNNER_TEMP/netfleet-optional" \
+            --apk "$NETFLEET_SDK/staging_dir/host/bin/apk"
+          tar -czf "$RUNNER_TEMP/netfleet-apk-tools.tar.gz" -C "$NETFLEET_SDK/staging_dir/host" \
+            bin/apk bin/.apk.bin lib
+
       - name: Upload candidate for ARM64 VM qualification
         uses: actions/upload-artifact@v4
         with:
@@ -125,6 +132,8 @@ jobs:
           path: |
             ${{ runner.temp }}/netfleet-output
             ${{ runner.temp }}/netfleet-vm-components
+            ${{ runner.temp }}/netfleet-optional
+            ${{ runner.temp }}/netfleet-apk-tools.tar.gz
           if-no-files-found: error
           compression-level: 0
           retention-days: 7

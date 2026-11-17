@@ -77,6 +77,21 @@ jobs:
           name: netfleet-release-qualification-${{ needs.identity.outputs.source }}
           path: ${{ runner.temp }}/qualification/receipt.json
           if-no-files-found: warn
+      - name: Qualify the exact complete installation composition
+        run: |
+          python3 scripts/https-compat/qualify.py --composition --preflight \
+            --packages "$RUNNER_TEMP/candidate/netfleet-output" \
+            --base-qualification "$RUNNER_TEMP/qualification/receipt.json" \
+            --candidate "$RUNNER_TEMP/candidate/netfleet-optional" \
+            --output "$RUNNER_TEMP/qualification/optional.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: netfleet-optional-qualification-${{ needs.identity.outputs.source }}
+          path: |
+            ${{ runner.temp }}/qualification/optional.json
+            ${{ runner.temp }}/qualification/optional.diagnostic.json
+          if-no-files-found: warn
   publish:
     needs: [identity, qualify]
     runs-on: ubuntu-latest
@@ -95,10 +110,19 @@ jobs:
         with:
           name: netfleet-release-qualification-${{ needs.identity.outputs.source }}
           path: ${{ runner.temp }}/qualification
-      - name: Publish the VM-qualified default Feed
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: netfleet-optional-qualification-${{ needs.identity.outputs.source }}
+          path: ${{ runner.temp }}/qualification
+      - name: Publish the VM-qualified complete Feed
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          mkdir "$RUNNER_TEMP/apk-tools"
+          tar -xzf "$RUNNER_TEMP/candidate/netfleet-apk-tools.tar.gz" -C "$RUNNER_TEMP/apk-tools"
           scripts/publish-netfleet-release.sh --tag "$GITHUB_REF_NAME" \
             --candidate "$RUNNER_TEMP/candidate/netfleet-output" \
-            --qualification "$RUNNER_TEMP/qualification/receipt.json"
+            --qualification "$RUNNER_TEMP/qualification/receipt.json" \
+            --compat-candidate "$RUNNER_TEMP/candidate/netfleet-optional" \
+            --compat-qualification "$RUNNER_TEMP/qualification/optional.json" \
+            --apk "$RUNNER_TEMP/apk-tools/bin/apk"

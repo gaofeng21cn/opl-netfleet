@@ -70,6 +70,33 @@ def write_release(directory: Path, commit: str, tree: str, version: str = '0.4.5
     (directory / 'manifest.json').write_text(json.dumps(manifest, sort_keys=True) + '\n')
 
 class ReleaseToolsTests(unittest.TestCase):
+    def test_transaction_downloader_implements_apk_wget_protocol_without_insecure_options(self):
+        downloader = ROOT / 'plugins/components/lib/apk-fetch/wget'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            curl = root / 'curl'
+            curl.write_text('#!' + sys.executable + '\nimport json,os,sys\n'
+                            'open(os.environ["CURL_ARGS"],"w").write(json.dumps(sys.argv[1:]))\n'
+                            'sys.stdout.buffer.write(b"signed-index-bytes")\n')
+            curl.chmod(0o755)
+            env = {**os.environ, 'PATH': str(root) + os.pathsep + os.environ['PATH'],
+                   'CURL_ARGS': str(root / 'args.json')}
+            result = subprocess.run([str(downloader), '-q', '-T', '30',
+                                     'https://example.invalid/packages.adb', '-O', '-'],
+                                    env=env, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, b'signed-index-bytes')
+            arguments = json.loads((root / 'args.json').read_text())
+            self.assertEqual(arguments[0], '-q')
+            self.assertIn('-fsSL', arguments)
+            self.assertEqual(arguments[arguments.index('--max-time') + 1], '30')
+            self.assertNotIn('-k', arguments)
+            (root / 'args.json').unlink()
+            refused = subprocess.run([str(downloader), '--no-check-certificate',
+                                      'https://example.invalid/packages.adb'], env=env, capture_output=True)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertFalse((root / 'args.json').exists())
+
     def test_native_receipt_binds_all_artifacts_without_breaking_old_releases(self):
         import importlib.util
         spec = importlib.util.spec_from_file_location('release_verifier', VERIFIER)
@@ -586,6 +613,16 @@ all:
                 'cp "$NETFLEET_FIXTURE_FEED/${url##*/}" "$destination"\n'
             )
             fetcher.chmod(0o755)
+            curl = bin_dir / 'curl'
+            curl.write_text(
+                '#!/bin/sh\n'
+                'destination=\nurl=\n'
+                'while [ "$#" -gt 0 ]; do\n'
+                '  case "$1" in --output|-o) destination=$2; shift 2 ;; --*) shift ;; *) url=$1; shift ;; esac\n'
+                'done\n'
+                'cp "$NETFLEET_FIXTURE_FEED/${url##*/}" "$destination"\n'
+            )
+            curl.chmod(0o755)
             apk = bin_dir / 'apk'
             apk.write_text(
                 '#!/bin/sh\n'
@@ -713,6 +750,9 @@ all:
                 'cp "$NETFLEET_FIXTURE_FEED/${url##*/}" "$destination"\n'
             )
             fetcher.chmod(0o755)
+            curl = bin_dir / 'curl'
+            curl.write_text('#!/bin/sh\nwhile [ "$#" -gt 0 ]; do case "$1" in -o) destination=$2; shift 2 ;; *) url=$1; shift ;; esac; done\ncp "$NETFLEET_FIXTURE_FEED/${url##*/}" "$destination"\n')
+            curl.chmod(0o755)
             apk = bin_dir / 'apk'
             apk.write_text('#!/bin/sh\n[ "$1" != info ] || exit 1\nprintf called >>"$NETFLEET_APK_LOG"\n')
             apk.chmod(0o755)

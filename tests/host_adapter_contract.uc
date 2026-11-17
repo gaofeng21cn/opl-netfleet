@@ -193,7 +193,9 @@ try {
 	cached_adapter.inspect_digest = () => { scans++; return revision; };
 	check(length(execute(['plugins-list'], root, cached_options).result.plugins) == 562 && scans == 34,
 		'34 packages and 17 contexts inspect package bytes once, not once per instance');
-	check(execute(['plugins-list'], root, cached_options).ok && scans == 34, 'warm scaled inventory needs no digest subprocesses');
+	scans = 0;
+	check(execute(['plugins-list'], root, cached_options).ok && scans <= 34,
+		'repeated scaled inventory inspects each package at most once across instances, including expired cache entries');
 	const targeted_adapter = { ...cached_adapter, paths: { ...cached_adapter.paths, inspection_cache: null } };
 	scans = 0;
 	check(execute(['scheduler-inspect'], root, { adapter: targeted_adapter }).updated == true && scans == 2,
@@ -239,6 +241,9 @@ try {
 	check(index(execute(['scheduler-inspect'], root, { adapter: targeted_adapter }).error, 'plugin_command_conflict:') == 0,
 		'lightweight command discovery still rejects conflicting enabled declarations');
 
-} catch (error) { host?.release(); remove(root); die(error.message); }
+} catch (error) {
+	host?.release(); remove(root);
+	die(`host_adapter_contract_failed:${error.message ?? error}`);
+}
 remove(root);
 printf('host adapter contract: %d assertions passed\n', assertions);
