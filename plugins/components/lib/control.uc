@@ -833,8 +833,6 @@ rollback = function(before, work, names, versions, old, install_started, already
 		if (install_started) fs.unlink(UPGRADE_STATE);
 		attempt("rollback_configuration_failed", () => run_command(`tar -xf ${q(`${work}/private.tar`)} -C /`, work));
 		if (install_started) {
-			const added = filter(names, name => versions[name] == null);
-			if (length(added)) attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null del ${join(" ", map(added, q))}`, work));
 			// Restore the known-good hook implementation before APK invokes it.
 			// A failed candidate may have installed a core start hook that cannot
 			// run, including while earlier dependency packages are rolling back.
@@ -842,6 +840,8 @@ rollback = function(before, work, names, versions, old, install_started, already
 				run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work) &&
 				sprintf("%J", input_identity(before.runtime_paths)) == sprintf("%J", before.runtime_inputs));
 			if (hooks_restored && length(old)) attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null ${before.runtime_retained ? '--scripts=no ' : ''}${already_stopped ? "--force-reinstall " : ""}add ${archive_arguments(old)}`, work));
+			const added = filter(names, name => versions[name] == null);
+			if (length(added)) attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null del ${join(" ", map(added, q))}`, work));
 			attempt("rollback_world_failed", () => restore_world(names, before.world, work, true));
 			attempt("rollback_runtime_files_failed", () => run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work));
 			attempt("rollback_runtime_failed", () => resume_resources(work));
@@ -868,6 +868,25 @@ function core_space_available(bytes, work) {
 			return false;
 	}
 	return true;
+}
+function product_plan(names, versions, candidates) {
+	const selected = [...names];
+	const output = capture(`LC_ALL=C apk --timeout 10 --cache-max-age 1440 --simulate add ${join(" ", map(names, name => q(`${name}=${candidates[name]}`)))}`);
+	if (output == null) fail("product_dependencies_unavailable");
+	for (let row in package_model.changes(output)) {
+		if (index(selected, row.name) >= 0) {
+			if (row.action != "Upgrading" || row.version != candidates[row.name]) fail("candidate_changed");
+		} else {
+			// Existing system packages require their own maintenance window. Only
+			// newly required dependencies belong to this product transaction.
+			if (row.action != "Installing" || versions[row.name] != null ||
+				!match(row.name ?? "", /^[a-z0-9][a-z0-9+_.-]*$/) || !version_valid(row.version))
+				fail("product_dependency_change_required");
+			candidates[row.name] = row.version;
+			push(selected, row.name);
+		}
+	}
+	return selected;
 }
 upgrade = function(request, work, candidates) {
 	let names = request.component == "plugins" ? request.names : request.component == "netfleet" ? product_packages() : [PACKAGES[2]];
@@ -899,6 +918,7 @@ upgrade = function(request, work, candidates) {
 	const space = capture(`df -Pk ${q(ROOT)} | awk 'NR == 2 { print $4 }'`);
 	const footprint = capture(`du -sk ${q(`${work}/code`)} | awk '{print $1}'`);
 	if (!match(space ?? "", /^[0-9]+$/) || !match(footprint ?? "", /^[0-9]+$/) || int(space) < int(footprint) * 3 + 8192) fail("insufficient_update_space");
+	if (request.component == "netfleet" && !request.plugin) names = product_plan(names, versions, candidates);
 	const olddir = `${work}/old`, nextdir = `${work}/new`;
 	if (!directory(olddir) || !directory(nextdir)) fail("update_stage_failed");
 	const old = [], next = [];
@@ -906,14 +926,14 @@ upgrade = function(request, work, candidates) {
 	operation.update("downloading", { total: length(filter(names, name => versions[name] != null)) + length(filter(names, name => candidates[name] != null)), completed: 0 });
 	for (let name in names) {
 		cancellation(work);
-		if (versions[name] == null && !request.plugin) fail("package_not_installed");
+		if (versions[name] == null && !request.plugin && request.component != "netfleet") fail("package_not_installed");
 		const rollback = versions[name] == null ? null : archive(name, versions[name], olddir, work, build?.version, null);
 		if (versions[name] != null && rollback == null) fail("rollback_package_unavailable");
 		if (rollback != null) push(old, rollback);
 		operation.update("downloading", { completed: length(old) + length(next) });
 		if (candidates[name] == null) continue;
 		const candidate = candidates[name] == versions[name] ? rollback :
-			archive(name, candidates[name], nextdir, work, null, request.plugin ? null : request.feed);
+			archive(name, candidates[name], nextdir, work, null, request.plugin || system_archive(name) ? null : request.feed);
 		if (candidate == null) fail("candidate_download_failed");
 		push(next, candidate);
 		operation.update("downloading", { completed: length(old) + length(next) });

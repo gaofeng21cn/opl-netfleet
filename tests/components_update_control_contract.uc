@@ -126,6 +126,24 @@ now=1301;refresh_index({action:'update',feed:'feed'},'/work');check(refreshes==2
 now=900;refresh_index({action:'update',feed:'feed'},'/work');check(refreshes==3,'clock rollback never extends cache');
 now=1000;refresh_index({action:'update',feed:'other'},'/work');check(refreshes==4,'feed change refreshes');
 `)();
+const dependency_plan = extract('function product_plan(', 'upgrade = function(');
+loadstring(`
+let rows=[], command;
+const package_model={changes:()=>rows};
+function capture(value){command=value;return 'plan';}function q(v){return v;}
+function fail(e){die(e);}function version_valid(v){return v!=null;}
+function check(v,m){if(!v)die(m);}
+`+dependency_plan+`
+let versions={product:'1',lib:'1'}, candidates={product:'2'};
+rows=[{action:'Installing',name:'new-dependency',version:'1'},{action:'Upgrading',name:'product',version:'2'}];
+let names=product_plan(['product'],versions,candidates);
+check(join(',',names)=='product,new-dependency' && candidates['new-dependency']=='1','include missing dependency in exact transaction');
+check(index(command,'product=2')>=0,'solve exact selected product version');
+for(let row in [{action:'Upgrading',name:'lib',version:'2'},{action:'Purging',name:'lib',version:'1'}]){
+ rows=[row];let reason;try{product_plan(['product'],versions,{product:'2'});}catch(e){reason=e.message;}
+ check(reason=='product_dependency_change_required','never mutate unrelated installed libraries');
+}
+`)();
 const selection = extract('upgrade = function(', '\tconst space = capture(`df -Pk');
 loadstring(`
 let upgrade,state;

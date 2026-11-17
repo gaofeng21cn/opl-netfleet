@@ -370,10 +370,19 @@ unchanged
 # The following product transaction must preserve that accepted world state.
 grep -Fxq "$plugin" /etc/apk/world
 cp /etc/apk/world "$work/update-world"
+stage=component_update_missing_system_dependency
+# The synthetic old LuCI package predates this official dependency. Exercise
+# the real product solver/download path with an installed-but-absent dependency.
+apk --no-network del luci-app-attendedsysupgrade >"$work/remove-new-dependency.log" 2>&1
+! apk list --manifest | grep -q '^luci-app-attendedsysupgrade '
+cp /etc/apk/world "$work/update-world"
+mv "$work/distfeeds.list" /etc/apk/repositories.d/distfeeds.list
 stage=component_update
 rpcd_before=$(pidof rpcd)
 request components_update "$current"
 assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
+apk list --manifest | grep -q '^luci-app-attendedsysupgrade '
+mv /etc/apk/repositories.d/distfeeds.list "$work/distfeeds.list"
 cmp /etc/apk/world "$work/update-world"
 for name in $product_packages; do
 	expected=$(package_version "$name" current)
@@ -412,6 +421,7 @@ assert_json "$work/operation-result.json" '@.result.packages.state' failed
 # deliberately broken start hook therefore fails before final verification.
 assert_json "$work/operation-result.json" '@.result.packages.error' package_install_failed_rolled_back
 assert_json "$work/operation-result.json" '@.result.packages.recovery' restored
+! apk list --manifest | grep -q '^netfleet-qualification-dependency '
 cmp /etc/apk/world "$work/update-world"
 for name in $product_packages; do
 	expected=$(package_version "$name" current)
@@ -426,6 +436,7 @@ request components_update "$current"
 assert_json "$work/operation-result.json" '@.result.packages.state' failed
 assert_json "$work/operation-result.json" '@.result.packages.error' package_install_failed_rolled_back
 assert_json "$work/operation-result.json" '@.result.packages.recovery' restored
+! apk list --manifest | grep -q '^netfleet-qualification-dependency '
 cmp /etc/apk/world "$work/update-world"
 for name in $product_packages; do
 	expected=$(package_version "$name" current)
@@ -476,6 +487,7 @@ unchanged
 ucode "$owner" components-operation >"$work/recovered-result.json"
 assert_json "$work/recovered-result.json" '@.result.packages.recovery' restored
 assert_json "$work/recovered-result.json" '@.result.packages.state' failed
+! apk list --manifest | grep -q '^netfleet-qualification-dependency '
 cmp /etc/apk/world "$work/update-world"
 for name in $product_packages; do
 	expected=$(package_version "$name" current)

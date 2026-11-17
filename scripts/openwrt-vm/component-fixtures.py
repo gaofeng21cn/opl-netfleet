@@ -187,6 +187,10 @@ def build(candidate, output, baseline=None):
                         # The independent dashboard fixture updates within the
                         # synthetic old cohort, whose kernel has the current ABI.
                         value = prior_dependencies(value, current_versions)
+                    if key == "depends" and name == "luci-app-netfleet" and target_version == prior:
+                        value = [dep for dep in value if dep != "luci-app-attendedsysupgrade"]
+                    if key == "depends" and name == "opl-netfleet-plugin-configuration" and feed in ("bad", "bad-hook", "interrupted"):
+                        value = [*value, "netfleet-qualification-dependency"]
                     arguments.extend(("--info", f"{key}:{' '.join(value) if isinstance(value, list) else value}"))
                 arguments.extend(script_args)
                 for trigger in metadata.get("triggers", []):
@@ -227,6 +231,14 @@ def build(candidate, output, baseline=None):
                 core.write_text("#!/bin/sh\nexit 1\n")
                 core.chmod(0o755)
             package(following, "bad-core" if name == "mihomo-meta" else "bad")
+        dependency_root = scratch / "new-dependency"
+        dependency_root.mkdir()
+        (dependency_root / "qualification-marker").write_text("new product dependency\n")
+        for feed in ("bad", "bad-hook", "interrupted"):
+            run("mkpkg", "--files", dependency_root, "--sign-key", private_key,
+                "--output", output / feed / "netfleet-qualification-dependency-1.0.0.apk",
+                "--info", "name:netfleet-qualification-dependency", "--info", "version:1.0.0",
+                "--info", "arch:noarch", "--info", "description:New product dependency fixture", "--info", "license:MIT")
         for kind in ("old", "good", "bad", "bad-core", "bad-hook", "interrupted", "independent", "unsigned-core", "core-current"):
             run("--allow-untrusted", "mkndx", "--output", output / kind / "packages.adb",
                 "--sign", private_key, *sorted((output / kind).glob("*.apk")))
