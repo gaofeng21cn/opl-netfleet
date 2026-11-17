@@ -840,8 +840,14 @@ rollback = function(before, work, names, versions, old, install_started, already
 				run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work) &&
 				sprintf("%J", input_identity(before.runtime_paths)) == sprintf("%J", before.runtime_inputs));
 			if (hooks_restored && length(old)) attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null ${before.runtime_retained ? '--scripts=no ' : ''}${already_stopped ? "--force-reinstall " : ""}add ${archive_arguments(old)}`, work));
-			const added = filter(names, name => versions[name] == null);
-			if (length(added)) attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null del ${join(" ", map(added, q))}`, work));
+			// Restoring old roots may already collect newly added dependencies,
+			// including after an interrupted APK write. Remove only survivors.
+			attempt("rollback_install_failed", () => {
+				const current = installed();
+				if (current == null) return false;
+				const added = filter(names, name => versions[name] == null && current[name] != null);
+				return !length(added) || run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null del ${join(" ", map(added, q))}`, work);
+			});
 			attempt("rollback_world_failed", () => restore_world(names, before.world, work, true));
 			attempt("rollback_runtime_files_failed", () => run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work));
 			attempt("rollback_runtime_failed", () => resume_resources(work));
