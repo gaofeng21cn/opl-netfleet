@@ -379,6 +379,8 @@ cp /etc/apk/world "$work/update-world"
 mv "$work/distfeeds.list" /etc/apk/repositories.d/distfeeds.list
 apk --timeout 30 update >"$work/new-dependency-feed.log" 2>&1
 stage=component_update
+apk --no-network query --from installed --format json --fields name,version 'opl-netfleet*' 'luci-app-netfleet' >"$work/dependency-installed.log"
+LC_ALL=C apk --timeout 10 --cache-max-age 1440 --simulate add "luci-app-netfleet=$(package_version luci-app-netfleet current)" >"$work/dependency-plan.log" 2>&1
 rpcd_before=$(pidof rpcd)
 request components_update "$current"
 assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
