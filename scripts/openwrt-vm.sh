@@ -190,8 +190,11 @@ git -c tar.umask=0022 -C "$repo_dir" archive "$source_commit" \
 	scripts/openwrt-vm \
 	scripts/openwrt-apk.py \
 	scripts/install-netfleet.sh \
-	scripts/verify-netfleet-release.py examples/plugins plugins/device-identity tests |
-	tar -C "$source_dir" -xf -
+	scripts/verify-netfleet-release.py examples/plugins plugins/device-identity tests >"$work_dir/source.tar"
+# BSD tar can stop at the end markers before Git finishes its padding blocks.
+# A complete archive avoids SIGPIPE under pipefail on macOS.
+tar -C "$source_dir" -xf "$work_dir/source.tar"
+rm "$work_dir/source.tar"
 
 test_identity=""
 if [[ -n "$test_ref" ]]; then
@@ -208,7 +211,9 @@ if [[ -n "$test_ref" ]]; then
         ':(exclude)scripts/update-openwrt-plugins.py' \
         ':(exclude)tests' ':(exclude)desktop/tests' ':(exclude)docs' || die "test ref changes product inputs"
     rm -rf "$source_dir/scripts/openwrt-vm" "$source_dir/tests"
-    git -c tar.umask=0022 -C "$repo_dir" archive "$test_commit" scripts/openwrt-vm scripts/openwrt-apk.py scripts/https-compat tests | tar -C "$source_dir" -xf -
+    git -c tar.umask=0022 -C "$repo_dir" archive "$test_commit" scripts/openwrt-vm scripts/openwrt-apk.py scripts/https-compat tests >"$work_dir/tests.tar"
+    tar -C "$source_dir" -xf "$work_dir/tests.tar"
+    rm "$work_dir/tests.tar"
     test_identity=$(python3 -c 'import json,sys;print(json.dumps(dict(source_commit=sys.argv[1],source_tree=sys.argv[2])))' "$test_commit" "$test_tree")
 fi
 
