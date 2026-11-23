@@ -27,20 +27,14 @@ python3 scripts/netfleet-plugin.py scaffold workspace-note /tmp/workspace-note \
 python3 scripts/netfleet-plugin.py validate /tmp/workspace-note
 ```
 
-完整模板包含 UCode 服务、CLI 命令、配置读写动作和浏览器 ES 模块页面。仓库内置插件的唯一开发源码目录是根目录 `plugins/<id>/`；`openwrt/files/usr/libexec/opl-netfleet/plugins/` 是生成的 OpenWrt payload 投影，不得直接编辑。同步和检查使用：
-
-```sh
-python3 scripts/sync-plugin-sources.py sync
-python3 scripts/sync-plugin-sources.py check
-```
+完整模板包含 UCode 服务、CLI 命令、配置读写动作和浏览器 ES 模块页面。仓库内置插件的唯一开发与构建真源是根目录 `plugins/<id>/`，OpenWrt 打包、部署与 macOS 运行时在构建或暂存阶段直接从中消费服务插件，不再维护镜像副本。
 
 外部插件仍可直接成为独立仓库，不要求加入 NetFleet 源码树。
 仓库内置插件目录由 [`plugin-catalog.json`](plugin-catalog.json) 机器可读地登记。它由
 manifest 生成，供代码审查、构建器和工具发现，不替代设备上的签名 APK 索引。设备更新仍只
 接受受信任 feed、精确版本、架构和签名验证；catalog 出现条目不会自动安装或启用插件。
 `manifest.json` 的动作和页面声明就是宿主接入入口，无需修改宿主的 RPC 或导航表。
-插件源码以仓库根目录 `plugins/<id>/` 为唯一编辑入口；OpenWrt 下的同路径是构建期投影，
-发布前由 `scripts/sync-plugin-sources.py` 重新生成并做字节校验，禁止在投影目录直接修补。
+修改 `plugins/<id>/` 后同步更新版本号和目录索引（`python3 scripts/plugin-catalog.py write`）。
 SDK 排除顶层 `.git`、`.gitignore`、`.gitattributes` 和 `.github` 开发元数据，其余目录
 按可安装 payload 校验。前端依赖和构建中间文件放在 payload 外，仅把最终资源输出到
 `resources/`；也可以把生成目录作为独立仓库内的 `plugin/` 子目录。

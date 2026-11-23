@@ -5,8 +5,7 @@
   "type": "module",
   "packageManager": "bun@1.4.0",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && bun run build:desktop",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "build:desktop": "vite build --config vite.desktop.config.ts"

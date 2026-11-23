@@ -1,7 +1,7 @@
 import * as fs from 'fs';
-import { apply_dns as subscription_dns } from '../openwrt/files/usr/libexec/opl-netfleet/plugins/models/lib/subscription-dns.uc';
-import { create as create_rules } from '../openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/lib/profile.uc';
-const path=replace(sourcepath(), /[^/]+$/, '../openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/lib/gateway.uc');
+import { apply_dns as subscription_dns } from '../plugins/models/lib/subscription-dns.uc';
+import { create as create_rules } from '../plugins/mihomo/lib/profile.uc';
+const path=replace(sourcepath(), /[^/]+$/, '../plugins/mihomo/lib/gateway.uc');
 const source=fs.readfile(path),start=index(source,'render_profile = function() {'),end=index(source,'prepare = function()',start);
 const merge_start=index(source,'merge = function('),merge_end=index(source,'source_path = function(',merge_start);
 if(start<0||end<0||merge_start<0||merge_end<0)die('native_profile_renderer_unavailable');

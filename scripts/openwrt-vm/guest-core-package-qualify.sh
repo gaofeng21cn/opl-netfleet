@@ -1,8 +1,6 @@
 #!/bin/sh
-set -eu
-umask 077
+. "$(dirname -- "$0")/guest-common.sh"
 p=/tmp/netfleet-core-package
-main=/usr/libexec/opl-netfleet/main.uc
 root=/etc/opl-netfleet/package-transactions
 version=$(jsonfilter -i "$p/core-manifest.json" -e '@.version')
 arch=$(jsonfilter -i "$p/core-manifest.json" -e '@.architecture')

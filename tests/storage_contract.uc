@@ -1,12 +1,13 @@
 import * as fs from "fs";
 import { create } from "../openwrt/files/usr/libexec/opl-netfleet/kernel/host.uc";
-import { create as create_adapter } from "./host-test-adapter.uc";
+import { create as create_adapter, stage_runtime } from "./host-test-adapter.uc";
 
 const root = fs.realpath(replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet"));
 const workspace = fs.mkdtemp("/tmp/netfleet-storage.XXXXXX");
 if (workspace == null) die("workspace unavailable");
+const runtime_root = stage_runtime(`${workspace}/runtime`);
 const path = `${workspace}/value.json`;
-const host = create(root, { adapter: create_adapter(), trusted_owner: fs.stat(root).uid, code_locks: false,
+const host = create(runtime_root, { adapter: create_adapter(), trusted_owner: fs.stat(runtime_root).uid, code_locks: false,
 	system: json(fs.readfile(`${root}/../../share/opl-netfleet/system.json`)),
 	override_path: `${workspace}/system.json`, maintenance_root: `${workspace}/maintenance` });
 let assertions = 0;

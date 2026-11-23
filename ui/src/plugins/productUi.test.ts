@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { it } from 'vitest';
 
 it('mounts the packaged product page through its actual ESM and LuCI module adapter', () => {
-  const page = new URL('../../../openwrt/files/usr/libexec/opl-netfleet/plugins/product-ui/resources/pages/overview.js', import.meta.url).href;
+  const page = new URL('../../../plugins/product-ui/resources/pages/overview.js', import.meta.url).href;
   const host = new URL('../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/plugin-host.js', import.meta.url).href;
   execFileSync(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';

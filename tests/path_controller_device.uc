@@ -1,6 +1,6 @@
 import * as fs from "fs";
-const root = fs.realpath(replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet"));
-const factory = loadfile(`${root}/plugins/mihomo/lib/controller.uc`)();
+const plugins_root = fs.realpath(replace(sourcepath(), /[^/]+$/, "../plugins"));
+const factory = loadfile(`${plugins_root}/mihomo/lib/controller.uc`)();
 const q = value => `'${replace(`${value}`, "'", "'\\''")}'`;
 const controller = factory({ use: name => name == "platform.runtime" ? { API: ARGV[0], RUN_DIR: "/tmp" } :
  name == "platform.process" ? { shell_quote: q } : {} });

@@ -1,46 +1,35 @@
 #!/bin/sh
-set -eu
-umask 077
+. "$(dirname -- "$0")/guest-common.sh"
 feed_url=${1:?}
 work=/tmp/netfleet-components-fixture
-owner=/usr/libexec/opl-netfleet/main.uc
-main=/usr/libexec/opl-netfleet/main.uc
-stage=precondition
+owner=$main
 test -f /tmp/netfleet-setup-vm-authorized
 test -f "$owner"
 mkdir -p "$work"
 cp /etc/apk/repositories.d/opl-netfleet.list "$work/original-feed"
 cp /etc/apk/world "$work/original-world"
-finish() {
-	rc=$?
-	trap - EXIT INT TERM
+guest_cleanup() {
 	cp "$work/original-feed" /etc/apk/repositories.d/opl-netfleet.list
 	if [ -f "$work/distfeeds.list" ]; then
 		mv "$work/distfeeds.list" /etc/apk/repositories.d/distfeeds.list
 	fi
 	rm -f /etc/apk/repositories.d/netfleet-component-fixture.list
 	rm -f /root/netfleet-component-space-fixture
-	if [ "$rc" -ne 0 ]; then
-		echo "Component qualification failed at: $stage" >&2
-		ubus call service list '{"name":"opl-netfleet-update-recovery"}' >&2
-		for file in "$work"/*-result.json "$work"/*-plan.json "$work"/*.log /tmp/opl-netfleet-operation-packages.json /etc/opl-netfleet/package-transactions/*/log; do
-			[ ! -f "$file" ] || { echo "--- $file" >&2; head -60 "$file" >&2; tail -50 "$file" >&2; }
-		done
-	fi
-	exit "$rc"
 }
-trap finish EXIT INT TERM
+guest_on_failure() {
+	echo "Component qualification failed at: $stage" >&2
+	ubus call service list '{"name":"opl-netfleet-update-recovery"}' >&2
+	for file in "$work"/*-result.json "$work"/*-plan.json "$work"/*.log /tmp/opl-netfleet-operation-packages.json /etc/opl-netfleet/package-transactions/*/log; do
+		[ ! -f "$file" ] || { echo "--- $file" >&2; head -60 "$file" >&2; tail -50 "$file" >&2; }
+	done
+}
+guest_setup_trap
 # The setup lane intentionally replaces public DNS and outbound traffic with
 # local fixtures. Dependencies are already installed; keep every component
 # transaction on the signed local feed and restore system feeds on exit.
 mv /etc/apk/repositories.d/distfeeds.list "$work/distfeeds.list"
-assert_json() { [ "$(jsonfilter -i "$1" -e "$2")" = "$3" ]; }
 install_fixture() {
-	(
-		exec 9>/var/lock/opl-netfleet-deploy.lock
-		flock 9
-		apk --no-network add "$@" 9>&-
-	)
+	run_locked "$lock" apk --no-network add "$@"
 }
 snapshot() {
 	sha256sum /etc/config/netfleet /etc/opl-netfleet/policy.json /etc/opl-netfleet/backend.json \

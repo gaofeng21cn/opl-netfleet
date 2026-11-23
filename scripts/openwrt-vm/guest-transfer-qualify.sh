@@ -1,9 +1,7 @@
 #!/bin/sh
 # Exercise LuCI's real authenticated cgi-io transport without a large ubus payload.
-set -eu
-umask 077
+. "$(dirname -- "$0")/guest-common.sh"
 work=/tmp/netfleet-transfer-fixture
-main=/usr/libexec/opl-netfleet/main.uc
 helper=/usr/libexec/opl-netfleet-transfer
 profile=transfer-fixture.yaml
 profile_path=/etc/opl-netfleet/native/profiles/$profile
@@ -15,7 +13,6 @@ success_upload=/tmp/opl-netfleet-upload.$success_id.json
 stale_upload=/tmp/opl-netfleet-upload.$stale_id.json
 invalid_upload=/tmp/opl-netfleet-upload.$invalid_id.json
 denied_upload=/tmp/opl-netfleet-upload.$denied_id.json
-stage=precondition
 test -f /tmp/netfleet-setup-vm-authorized
 test "$(jsonfilter -i /etc/opl-netfleet/backend.json -e '@.kind')" = native-mihomo
 test -x /www/cgi-bin/cgi-upload
@@ -29,10 +26,7 @@ done
 mkdir -p "$work"
 chmod 0700 "$work"
 
-finish() {
-	rc=$?
-	trap - EXIT INT TERM
-	set +e
+guest_cleanup() {
 	if [ -s "$work/session-destroy.json" ]; then
 		ubus call session destroy "$(cat "$work/session-destroy.json")" >/dev/null 2>&1
 	fi
@@ -43,7 +37,7 @@ finish() {
 			writefile(ARGV[1], sprintf("%J", {request:{revision:state.result.revision,id:ARGV[2]}}));' \
 			"$work/cleanup-state.json" "$work/cleanup-request.json" "$profile" 2>/dev/null
 		(
-			exec 9>/var/lock/opl-netfleet-deploy.lock
+			exec 9>"$lock"
 			flock -w 10 9
 			ucode "$main" profile-delete "$work/cleanup-request.json" 9>&- >/dev/null 2>&1
 		)
@@ -54,13 +48,11 @@ finish() {
 		"$work/grant-ubus.json" "$work/grant-upload.json" "$work/rpc-request.json" "$work/upload-request.json" \
 		"$work/stale-request.json" "$work/invalid-request.json" "$work/profile-response.json" \
 		"$work/backup-response.json" "$work/expected-profile.yaml" "$work/cleanup-request.json"
-	if [ "$rc" -ne 0 ]; then
-		echo "LuCI transfer qualification failed at: $stage" >&2
-	fi
-	exit "$rc"
 }
-trap finish EXIT INT TERM
-assert_json() { [ "$(jsonfilter -i "$1" -e "$2")" = "$3" ]; }
+guest_on_failure() {
+	echo "LuCI transfer qualification failed at: $stage" >&2
+}
+guest_setup_trap
 rpc_request() {
 	ucode -e 'import { readfile, writefile } from "fs";
 		const args = ARGV[3] == "" ? {} : json(ARGV[3]);

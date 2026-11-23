@@ -10,8 +10,7 @@ if command -v "${UCODE:-ucode}" >/dev/null 2>&1 || [ -x "${UCODE:-}" ]; then
 fi
 
 git diff --check
-python3 -m unittest tests.test_mvp_layout tests.test_platform_composition tests.test_openwrt_vm tests.test_release_tools tests.test_native_firmware tests.test_delivery_preflight tests.test_macos_build tests.test_native_lifecycle tests.test_backend_health tests.test_luci_management tests.test_plugin_sdk tests.test_plugin_update tests.test_plugin_bytecode
-python3 scripts/sync-plugin-sources.py check
+python3 -m unittest tests.test_mvp_layout tests.test_platform_composition tests.test_openwrt_vm tests.test_release_tools tests.test_native_firmware tests.test_delivery_preflight tests.test_macos_build tests.test_native_lifecycle tests.test_backend_health tests.test_plugin_sdk tests.test_plugin_update tests.test_plugin_bytecode tests.test_component_fixtures tests.test_https_dev tests.test_native_runtime_gate tests.test_official_package_mirror tests.test_plugin_package_hook
 python3 scripts/plugin-catalog.py check
 
 if command -v "${UCODE:-ucode}" >/dev/null 2>&1; then
@@ -22,13 +21,12 @@ fi
 
 if command -v bun >/dev/null 2>&1; then
 	./scripts/check-ui.sh
-	(cd "$root/ui" && bun run build:desktop)
 else
 	printf '%s\n' 'bun unavailable; shared React UI gates and the desktop production build are deferred.' >&2
 fi
 
 if command -v node >/dev/null 2>&1 && [ -f "$root/desktop/tests/runtime.test.mjs" ]; then
-	node --test "$root/desktop/tests/runtime.test.mjs" "$root/tests/desktop-miniapp.test.mjs" "$root/tests/desktop-miniapp-carrier.test.mjs"
+	node --test "$root/desktop/tests/runtime.test.mjs" "$root/tests/desktop-miniapp.test.mjs" "$root/tests/desktop-miniapp-carrier.test.mjs" "$root/tests/luci-management.test.mjs"
 else
 	printf '%s\n' 'node unavailable; macOS desktop runtime contracts deferred.' >&2
 fi

@@ -1,9 +1,9 @@
 #!/usr/bin/ucode
 import * as fs from 'fs';
 import { use, release } from './services.uc';
-import { create_history } from '../openwrt/files/usr/libexec/opl-netfleet/plugins/subscriptions/lib/history.uc';
+import { create_history } from '../plugins/subscriptions/lib/history.uc';
 
-const root = fs.realpath(replace(sourcepath(), /[^/]+$/, '../openwrt/files/usr/libexec/opl-netfleet'));
+const plugins_root = fs.realpath(replace(sourcepath(), /[^/]+$/, '../plugins'));
 const workspace = fs.mkdtemp('/tmp/netfleet-refresh-history.XXXXXX');
 const path = `${workspace}/subscription-history.json`;
 const model = use('models.subscription');
@@ -73,7 +73,7 @@ try {
  ports['models.policy'] = {automation: () => config, guard_probe_url: () => 'fixture'};
  ports['models.activation'] = {is_active: () => true};
  ports['recovery.state'] = {pending: () => null};
- const scheduler_factory = loadfile(`${root}/plugins/scheduler/lib/control.uc`)();
+ const scheduler_factory = loadfile(`${plugins_root}/scheduler/lib/control.uc`)();
  function restart_scheduler() { return scheduler_factory({use: name => ports[name]}).tick(null); };
  restart_scheduler();
  check(length(commands) == 0, 'process restart before persisted deadline does not refresh early');
@@ -97,10 +97,10 @@ try {
  ports['platform.device'] = {upstream_ready: () => false};
  ports['events.operation'] = {begin: () => {}, update: () => {}};
  ports['events.store'].write_events = value => { log = value; return true; };
- ports['events.record'] = loadfile(`${root}/plugins/events/lib/record.uc`)()({use: name => ports[name]});
+ ports['events.record'] = loadfile(`${plugins_root}/events/lib/record.uc`)()({use: name => ports[name]});
  let output;
  ports['events.output'] = {ok: (action, result) => { output = result; }, fail: (action, error) => die(error)};
- const refresh = loadfile(`${root}/plugins/refresh/lib/control.uc`)()({use: name => ports[name] ?? {}});
+ const refresh = loadfile(`${plugins_root}/refresh/lib/control.uc`)()({use: name => ports[name] ?? {}});
  const success_before = history.read().last_success_at;
  refresh.refresh_action({providers: {alpha: {enabled: true, section: 'alpha'}}}, null, 'scheduled');
  check(output?.state == 'failed' && reopen().read().latest.reason == 'upstream_unavailable' &&
@@ -114,7 +114,7 @@ try {
  ports['platform.process'].shell_quote = use('platform.process').shell_quote;
  ports['recovery.control'] = {restore_recovery_with_probes: () => { recovered = true; return {ok: true}; }};
  ports['subscriptions.facts'] = {read_history: () => history.read(), record_history: () => false};
- const failing_writer = loadfile(`${root}/plugins/refresh/lib/control.uc`)()({use: name => ports[name] ?? {}});
+ const failing_writer = loadfile(`${plugins_root}/refresh/lib/control.uc`)()({use: name => ports[name] ?? {}});
  let write_rejected = false;
  try {
   failing_writer.fail_refresh({active: false, entries: [], backend_config: {

@@ -22,3 +22,14 @@ export function create() {
 		return digest.close() == 0 && match(value, /^[a-f0-9]{64}$/) ? value : null;
 	} };
 };
+
+export function stage_runtime(target) {
+	const repo = fs.realpath(replace(sourcepath(), /[^/]+$/, '..'));
+	const script = `rm -rf ${q(target)} && mkdir -p ${q(target)}/plugins && cp -R ${q(repo + '/openwrt/files/usr/libexec/opl-netfleet')}/. ${q(target)}/ && for p in ${q(repo + '/plugins')}/*; do [ -f "$p/manifest.json" ] || continue; [ "$(basename "$p")" = "device-identity" ] || cp -R "$p" ${q(target)}/plugins/; done && chmod -R u+rwX,go-w ${q(target)}`;
+	if (system(script) != 0) die('stage_runtime_failed');
+	return target;
+};
+
+export function remove_tree(target) {
+	if (fs.lstat(target) != null && system(`rm -rf ${q(target)}`) != 0) die('remove_tree_failed');
+};

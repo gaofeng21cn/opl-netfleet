@@ -1,31 +1,28 @@
 #!/bin/sh
 # Exercise the shipped native owner inside an isolated, disposable OpenWrt VM.
-set -eu
-umask 077
+. "$(dirname -- "$0")/guest-common.sh"
 commit=${1:?}
 tree=${2:?}
 probe_port=${3:?}
 work=/tmp/netfleet-native-fixture
-main=/usr/libexec/opl-netfleet/main.uc
-gateway=/usr/libexec/opl-netfleet/main.uc
-lock=/var/lock/opl-netfleet-deploy.lock
-stage=precondition
 fixture_pids=
 test -f /tmp/netfleet-native-vm-authorized
 test ! -e /etc/init.d/nikki
 test -z "$(pidof mihomo 2>/dev/null || true)"
 mkdir -p "$work/bin"
-finish() {
-	rc=$?
-	trap - EXIT INT TERM
-	set +e
-	if [ "$rc" -ne 0 ]; then
-		secret=$(uci -q get netfleet.mixin.api_secret)
-		for endpoint in proxies providers/proxies; do
-			curl -fsS --noproxy '*' --max-time 3 -H "Authorization: Bearer $secret" \
-				"http://127.0.0.1:9090/$endpoint" >"$work/controller-${endpoint%%/*}.log"
-		done
-	fi
+guest_on_failure() {
+	secret=$(uci -q get netfleet.mixin.api_secret)
+	for endpoint in proxies providers/proxies; do
+		curl -fsS --noproxy '*' --max-time 3 -H "Authorization: Bearer $secret" \
+			"http://127.0.0.1:9090/$endpoint" >"$work/controller-${endpoint%%/*}.log"
+	done
+	echo "Native runtime qualification failed at: $stage" >&2
+	for file in "$work"/*.log "$work"/*.stderr "$work"/*-result.json; do
+		[ ! -f "$file" ] || { echo "--- $file" >&2; tail -60 "$file" >&2; }
+	done
+	ubus call service list '{"name":"opl-netfleet-core"}' >&2
+}
+guest_cleanup() {
 	/etc/init.d/opl-netfleet stop >/dev/null 2>&1
 	/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1
 	for pid in $fixture_pids; do kill "$pid" 2>/dev/null; done
@@ -37,18 +34,8 @@ finish() {
 	ip link del nf-uplink 2>/dev/null
 	nft delete table ip netfleet_native_fixture 2>/dev/null
 	nft delete table ip6 netfleet_native_fixture 2>/dev/null
-	if [ "$rc" -ne 0 ]; then
-		echo "Native runtime qualification failed at: $stage" >&2
-		for file in "$work"/*.log "$work"/*.stderr "$work"/*-result.json; do
-			[ ! -f "$file" ] || { echo "--- $file" >&2; tail -60 "$file" >&2; }
-		done
-		ubus call service list '{"name":"opl-netfleet-core"}' >&2
-	fi
-	exit "$rc"
 }
-trap finish EXIT INT TERM
-run_main() { flock "$lock" ucode "$main" "$@"; }
-assert_json() { [ "$(jsonfilter -i "$1" -e "$2")" = "$3" ]; }
+guest_setup_trap
 
 stage=dependencies
 ip route replace default via 192.168.1.2 dev br-lan
@@ -78,6 +65,10 @@ ln -s "$work/bin/yq" /usr/bin/yq
 export PATH="$work/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
+mkdir -p /usr/libexec/opl-netfleet/plugins
+for plugin in /tmp/plugins/*; do
+	[ -d "$plugin" ] && [ "$(basename -- "$plugin")" != "device-identity" ] && cp -R "$plugin" /usr/libexec/opl-netfleet/plugins/
+done
 cp /tmp/openwrt/files/usr/libexec/opl-netfleet-plugin-package /usr/libexec/
 chmod 0755 /usr/libexec/opl-netfleet-plugin-package
 mkdir -p /usr/libexec/rpcd
@@ -86,6 +77,7 @@ chmod 0755 /usr/libexec/rpcd/opl-netfleet.plugins
 cp /tmp/openwrt/files/usr/libexec/rpcd/opl-netfleet /usr/libexec/rpcd/opl-netfleet
 chmod 0755 /usr/libexec/rpcd/opl-netfleet
 mkdir -p /usr/share/opl-netfleet /etc/opl-netfleet/native/profiles /etc/opl-netfleet/native/subscriptions
+[ ! -f /tmp/LICENSE ] || cp /tmp/LICENSE /usr/share/opl-netfleet/LICENSE.Apache-2.0
 mkdir -p /etc/opl-netfleet/policy-sources
 cp /tmp/openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json /etc/opl-netfleet/policy-sources/base-v1.json
 cp -R /tmp/openwrt/files/usr/share/opl-netfleet/. /usr/share/opl-netfleet/

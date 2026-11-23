@@ -1,10 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createPageHost, createScope, pageHash, pageFromHash, pluginPages, pluginNavigation, resourceUrl, type PluginContext, type PluginsSnapshot } from '../../../openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/plugin-host.js';
-import { PluginApplication } from './PluginApplication';
-import { pageLabel } from '../lib/vocabulary';
 
 const snapshot = (revision = 'revision-1'): PluginsSnapshot => ({ plugins: [{ id: 'example', revision, enabled: true, runtime: 'ucode', ui: [{ id: 'settings', title: '独立配置', module: 'resources/page.js' }], configuration: { read: 'settings_get', write: 'settings_save' } }] });
 const page = () => pluginPages(snapshot())[0];
@@ -161,14 +158,6 @@ it('reloads the complete static ES module graph through the native ESM loader', 
     assert.equal(second.dataset.helper, 'helper-2');
     await host.dispose();
   `], { stdio: 'pipe' });
-});
-
-it('renders independent React plugin navigation without status or product methods', () => {
-  const html = renderToStaticMarkup(<PluginApplication client={api()} initialPlugins={snapshot()} readOnly />);
-  expect(html).toContain('独立配置');
-  expect(html).toContain('只读');
-  // 产品页标题来自共享词汇表，插件宿主不得渲染它。
-  expect(html).not.toContain(pageLabel('overview'));
 });
 
 it('loads and replaces independent LuCI pages without product status or onboarding', async () => {

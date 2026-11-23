@@ -91,8 +91,7 @@ trap restore_sdk EXIT
 for name in .config private-key.pem public-key.pem; do
   [[ ! -e "$sdk/$name" ]] || cp -p "$sdk/$name" "$backup/$name"
 done
-git -C "$repo_dir" archive "$commit" openwrt plugins scripts/sync-plugin-sources.py scripts/install-netfleet.sh scripts/verify-native-runtime.py | tar -C "$work" -xf -
-python3 "$work/scripts/sync-plugin-sources.py" check
+git -C "$repo_dir" archive "$commit" LICENSE openwrt plugins scripts/install-netfleet.sh scripts/verify-native-runtime.py | tar -C "$work" -xf -
 version=$(awk -F':=' '/^PKG_VERSION[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/Makefile")
 release=$(awk -F':=' '/^PKG_RELEASE[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/Makefile")
 [[ -n "$version" ]] || die 'package version metadata is missing'
@@ -191,7 +190,18 @@ cp -R "$work/openwrt/Makefile" "$sdk/package/opl-netfleet/"
 cp "$work/openwrt/plugin-packages.py" "$sdk/package/opl-netfleet/"
 cp "$work/openwrt/plugin_payload.py" "$sdk/package/opl-netfleet/"
 cp "$work/openwrt/compile-plugins.py" "$sdk/package/opl-netfleet/"
+cp "$work/LICENSE" "$sdk/package/opl-netfleet/LICENSE"
 cp -R "$work/openwrt/files" "$sdk/package/opl-netfleet/"
+mkdir -p "$sdk/package/opl-netfleet/plugins"
+python3 - "$work/plugins" "$sdk/package/opl-netfleet/plugins" <<'PY'
+import json, shutil, sys
+from pathlib import Path
+src, dst = Path(sys.argv[1]), Path(sys.argv[2])
+for manifest_path in sorted(src.glob('*/manifest.json')):
+    manifest = json.loads(manifest_path.read_text())
+    if manifest.get('schema') == 'opl-netfleet-service-plugin.v1':
+        shutil.copytree(manifest_path.parent, dst / manifest_path.parent.name)
+PY
 mkdir -p "$sdk/package/luci-app-netfleet"
 cp -R "$work/openwrt/luci-app-netfleet/." "$sdk/package/luci-app-netfleet/"
 cp -R "$work/openwrt/mihomo-meta" "$sdk/package/mihomo-meta"
@@ -246,6 +256,7 @@ cp "$work/openwrt/files/etc/init.d/opl-netfleet" "$payload/etc/init.d/opl-netfle
 cp "$work/openwrt/files/etc/init.d/opl-netfleet-core" "$payload/etc/init.d/opl-netfleet-core"
 cp "$work/openwrt/files/etc/init.d/opl-netfleet-update-recovery" "$payload/etc/init.d/opl-netfleet-update-recovery"
 cp -R "$work/openwrt/files/usr/share/opl-netfleet/." "$payload/usr/share/opl-netfleet/"
+cp "$work/LICENSE" "$payload/usr/share/opl-netfleet/LICENSE.Apache-2.0"
 cp "$work/openwrt/files/etc/config/netfleet" "$payload/usr/share/opl-netfleet/netfleet.config"
 cp -R "$work/openwrt/files/etc/opl-netfleet/." "$payload/etc/opl-netfleet/"
 cp "$build_identity" "$payload/usr/share/opl-netfleet/build.json"
@@ -311,11 +322,13 @@ while read -r package_name package_version; do
   product_packages+=("$package_name")
   product_versions+=("$package_version")
 done < <(
-  python3 - "$work/openwrt/files/usr/libexec/opl-netfleet/plugins" <<'PY'
+  python3 - "$work/plugins" <<'PY'
 import json, sys
 from pathlib import Path
 for path in sorted(Path(sys.argv[1]).glob('*/manifest.json')):
     manifest = json.loads(path.read_text())
+    if path.parent.name == 'device-identity' and manifest.get('schema') == 'opl-netfleet-plugin.v1':
+        continue
     if manifest['schema'] != 'opl-netfleet-service-plugin.v1':
         raise SystemExit(f'unsupported built-in plugin manifest: {path}')
     print(manifest['package'], manifest['version'])
@@ -374,8 +387,13 @@ if [[ "$package_format" == apk ]]; then
   cp "$public_key" "$trusted_dir/opl-netfleet-apk.pem"
   "$sdk/staging_dir/host/bin/apk" verify --keys-dir "$trusted_dir" "${signed_artifacts[@]}"
   artifacts=("${signed_artifacts[@]}")
+  rm -rf "$work/source-root"
+  mkdir -p "$work/source-root"
+  cp -R "$work/openwrt/files/." "$work/source-root/"
+  mkdir -p "$work/source-root/usr/libexec/opl-netfleet/plugins"
+  cp -R "$sdk/package/opl-netfleet/plugins/." "$work/source-root/usr/libexec/opl-netfleet/plugins/"
   python3 "$work/scripts/verify-native-runtime.py" --apk "$sdk/staging_dir/host/bin/apk" \
-    --source-root "$work/openwrt/files" --bytecode-manifest "$work/bytecode.json" \
+    --source-root "$work/source-root" --bytecode-manifest "$work/bytecode.json" \
     "${artifacts[@]:0:${#product_packages[@]}}" >"$output/native-runtime.json"
 fi
 python3 - "$output" "$commit" "$tree" "$version" "$release" "$package_format" "$package_arch" "$build_target_arch" "$policy_schema" "$public_key" "$runtime_payload_sha256" "$files_sha256" "$bootstrap_sha256" "$core_lock" "${artifacts[@]}" <<'PY'

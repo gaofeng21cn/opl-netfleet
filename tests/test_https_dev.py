@@ -121,6 +121,10 @@ class EngineArtifacts(unittest.TestCase):
         source=ROOT/'openwrt/files'
         paths=[p for p in source.rglob('*') if p.is_file()]
         inventory={str(p.relative_to(source)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
+        plugins_dir=ROOT/'plugins'
+        for p in plugins_dir.rglob('*'):
+            if p.is_file():
+                inventory[f'usr/libexec/opl-netfleet/plugins/{p.relative_to(plugins_dir)}']=hashlib.sha256(p.read_bytes()).hexdigest()
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             def write():

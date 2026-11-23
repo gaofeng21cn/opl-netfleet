@@ -17,7 +17,6 @@ Options:
   --test-ref <ref>  Use revised VM tests with identical product source
   --packages <dir>  Also install and qualify the exact APK candidate directory
   --diagnostic <lane>  Run native, setup, migration, runtime, package, or compatibility diagnostics
-  --compat-runtime <dir>  Isolated musl engine binary for compatibility diagnostics
   --core-package <dir>  Qualify a same-binary core architecture variant against --base-qualification
   --compat-package <dir>  Signed optional APK candidate; requires --packages
   --base-qualification <file>  Reuse an unchanged qualified base for HTTPS diagnostics
@@ -38,7 +37,6 @@ source_ref=origin/main
 output=""
 packages=""
 diagnostic=all
-compat_runtime=""
 compat_package=""
 core_package=""
 plugin_packages=""
@@ -72,11 +70,6 @@ while (($#)); do
 			case "$diagnostic" in native|setup|migration|runtime|package|compatibility) ;; *) die "unknown diagnostic lane: $diagnostic" ;; esac
 			shift 2
 			;;
-		--compat-runtime)
-			(($# >= 2)) || die "--compat-runtime requires a directory"
-			compat_runtime=$(cd "$2" && pwd)
-			shift 2
-			;;
 		--core-package)
 			(($# >= 2)) || die "--core-package requires a directory"
 			core_package=$(cd "$2" && pwd); shift 2 ;;
@@ -108,9 +101,8 @@ done
 [[ "$benchmark" == 0 || "$diagnostic" == compatibility ]] || die 'benchmark requires compatibility diagnostics'
 [[ -z "$base_qualification" || -n "$packages" && ( "$diagnostic" == compatibility && -n "$compat_package" || "$diagnostic" == setup && -n "$core_package" ) ]] || die 'base qualification requires signed compatibility diagnostics'
 [[ -z "$core_package" || "$diagnostic" == setup && -f "$base_qualification" ]] || die "core variants require a qualified unchanged base and setup lane"
-[[ "$diagnostic" != compatibility || -x "$compat_runtime/haproxy" || -f "$compat_package/compat-manifest.json" ]] || die "compatibility diagnostic requires --compat-runtime or --compat-package"
+[[ "$diagnostic" != compatibility || -f "$compat_package/compat-manifest.json" ]] || die "compatibility diagnostic requires --compat-package"
 [[ -z "$compat_package" || "$diagnostic" == compatibility && -n "$packages" ]] || die "--compat-package requires compatibility diagnostic and --packages"
-[[ "$diagnostic" == compatibility || -z "$compat_runtime" ]] || die "compatibility payload is diagnostic-only"
 [[ -z "$plugin_packages" || "$diagnostic" == all || "$diagnostic" == native ]] || die "plugin packages require the full suite or native diagnostic lane"
 [[ "$diagnostic" != package || -n "$packages" ]] || die "package diagnostic requires --packages"
 [[ "$diagnostic" == all || "$diagnostic" == package || "$diagnostic" == setup || "$diagnostic" == compatibility || -z "$packages" ]] || die "this diagnostic does not accept --packages"
@@ -167,7 +159,7 @@ trap 'rm -rf -- "$work_dir"' EXIT
 source_dir=$work_dir/source
 mkdir -p "$source_dir"
 git -c tar.umask=0022 -C "$repo_dir" archive "$source_commit" \
-	openwrt/Makefile \
+	LICENSE openwrt/Makefile \
 	openwrt/plugin_payload.py \
 	openwrt/mihomo-meta/source.json \
 	openwrt/https-compat \
@@ -190,7 +182,7 @@ git -c tar.umask=0022 -C "$repo_dir" archive "$source_commit" \
 	scripts/openwrt-vm \
 	scripts/openwrt-apk.py \
 	scripts/install-netfleet.sh \
-	scripts/verify-netfleet-release.py examples/plugins plugins/device-identity tests >"$work_dir/source.tar"
+	scripts/verify-netfleet-release.py examples/plugins plugins tests >"$work_dir/source.tar"
 # BSD tar can stop at the end markers before Git finishes its padding blocks.
 # A complete archive avoids SIGPIPE under pipefail on macOS.
 tar -C "$source_dir" -xf "$work_dir/source.tar"
@@ -293,7 +285,6 @@ NETFLEET_QEMU_VERSION=$qemu_version \
 NETFLEET_QEMU_ACCELERATOR=$qemu_accelerator \
 NETFLEET_QEMU_CPU=$qemu_cpu \
 	NETFLEET_VM_LANE=$diagnostic \
-	NETFLEET_COMPAT_RUNTIME="$compat_runtime" \
 	NETFLEET_COMPAT_PACKAGE="$compat_package" \
 	NETFLEET_COMPAT_BASE_IDENTITY="$base_identity" \
 	NETFLEET_COMPAT_DEVICE_IDENTITY="$device_identity" \

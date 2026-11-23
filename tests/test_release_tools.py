@@ -270,9 +270,9 @@ all:
         with tempfile.TemporaryDirectory() as temp:
             directory = Path(temp)
             shutil.copy2(ROOT / 'openwrt/plugin-packages.py', directory)
-            plugins = directory / 'files/usr/libexec/opl-netfleet/plugins'
-            shutil.copytree(ROOT / 'openwrt/files/usr/libexec/opl-netfleet/plugins', plugins)
-            path = next(plugins.glob('*/manifest.json'))
+            plugins = directory / 'plugins'
+            shutil.copytree(ROOT / 'plugins', plugins)
+            path = next(p for p in sorted(plugins.glob('*/manifest.json')) if p.parent.name != 'device-identity')
             manifest = json.loads(path.read_text())
             manifest['package_dependencies'] = ['bad$(shell command)']
             path.write_text(json.dumps(manifest))

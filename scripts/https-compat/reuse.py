@@ -11,7 +11,11 @@ from base import ROOT, sha
 def prepare(source, output, apk):
     lock = json.loads(source.read_text())
     engine, identity = lock['engine'], lock['identity']
-    for row, paths in ((engine, ['openwrt/https-compat', 'openwrt/native/atomic-replace.c']),
+    for row, paths in ((engine, ['openwrt/https-compat/Makefile', 'openwrt/https-compat/src',
+                               'openwrt/https-compat/patches', 'openwrt/https-compat/files/etc',
+                               'openwrt/https-compat/files/usr/libexec/opl-netfleet-compat/extension.json',
+                               'openwrt/https-compat/files/usr/libexec/opl-netfleet-compat/*.uc',
+                               'openwrt/native/atomic-replace.c']),
                        (identity, ['plugins/device-identity'])):
         tree = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse',
                                        row['source_commit'] + '^{tree}'], text=True).strip()

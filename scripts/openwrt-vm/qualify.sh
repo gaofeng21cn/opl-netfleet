@@ -180,7 +180,7 @@ while IFS="$(printf '\t')" read -r rule_id rule_sha rule_url rule_size; do
 	mv "$work/ruleset-$rule_sha.mrs" "$work/runtime-rulesets/$rule_id.mrs"
 done <"$work/ruleset-assets.tsv"
 tar -cf "$work/runtime-source.tar" -C "$workspace" \
-	openwrt/Makefile \
+	LICENSE openwrt/Makefile \
 	openwrt/plugin_payload.py \
 	openwrt/https-compat \
 	openwrt/files/usr/libexec/opl-netfleet \
@@ -195,7 +195,7 @@ tar -cf "$work/runtime-source.tar" -C "$workspace" \
 	openwrt/files/usr/share/opl-netfleet \
 	openwrt/files/etc/opl-netfleet/policy.example.json \
 	openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json \
-	openwrt/files/etc/opl-netfleet/rulesets.lock.json examples/plugins plugins/device-identity tests scripts/update-openwrt-plugins-remote.sh scripts/observe-openwrt.uc \
+	openwrt/files/etc/opl-netfleet/rulesets.lock.json examples/plugins plugins tests scripts/update-openwrt-plugins-remote.sh scripts/observe-openwrt.uc \
 	scripts/https-compat/canary-rollback.sh \
 	scripts/openwrt-vm/guest-native-cohort.sh \
 	-C "$work" runtime-rulesets
@@ -499,9 +499,9 @@ fi
 stage=transfer
 transfer_started_ms=$(now_ms)
 tar -cf - -C "$workspace/scripts" deploy-openwrt-remote.sh update-openwrt-plugins-remote.sh observe-openwrt.uc \
-	-C "$workspace/scripts/openwrt-vm" guest-qualify.sh guest-runtime-qualify.sh guest-package-qualify.sh \
+	-C "$workspace/scripts/openwrt-vm" guest-common.sh guest-qualify.sh guest-runtime-qualify.sh guest-package-qualify.sh \
 	guest-native-qualify.sh guest-setup-qualify.sh guest-migration-qualify.sh guest-components-qualify.sh \
-	guest-compatibility-qualify.sh guest-compatibility-native-qualify.sh \
+	guest-compatibility-native-qualify.sh \
 	guest-maintenance-qualify.sh guest-network-management-qualify.sh guest-rules-dashboard-qualify.sh guest-transfer-qualify.sh \
 	-C "$work" runtime-source.tar local-probe.crt "$mihomo_name" "$yq_name" |
 ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf -'
@@ -509,6 +509,7 @@ expected_transfer=$(printf '%s\n' \
 	"$(sha256_file "$workspace/scripts/deploy-openwrt-remote.sh")" \
 	"$(sha256_file "$workspace/scripts/update-openwrt-plugins-remote.sh")" \
 	"$(sha256_file "$workspace/scripts/observe-openwrt.uc")" \
+	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-common.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-runtime-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-package-qualify.sh")" \
@@ -516,7 +517,6 @@ expected_transfer=$(printf '%s\n' \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-setup-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-migration-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-components-qualify.sh")" \
-	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-compatibility-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-compatibility-native-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-maintenance-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-network-management-qualify.sh")" \
@@ -527,7 +527,7 @@ expected_transfer=$(printf '%s\n' \
 	"$(sha256_file "$work/$mihomo_name")" \
 	"$(sha256_file "$work/$yq_name")")
 actual_transfer=$(ssh $ssh_common root@127.0.0.1 \
-	"sha256sum /tmp/deploy-openwrt-remote.sh /tmp/update-openwrt-plugins-remote.sh /tmp/observe-openwrt.uc /tmp/guest-qualify.sh /tmp/guest-runtime-qualify.sh /tmp/guest-package-qualify.sh /tmp/guest-native-qualify.sh /tmp/guest-setup-qualify.sh /tmp/guest-migration-qualify.sh /tmp/guest-components-qualify.sh /tmp/guest-compatibility-qualify.sh /tmp/guest-compatibility-native-qualify.sh /tmp/guest-maintenance-qualify.sh /tmp/guest-network-management-qualify.sh /tmp/guest-rules-dashboard-qualify.sh /tmp/guest-transfer-qualify.sh /tmp/runtime-source.tar /tmp/local-probe.crt /tmp/$mihomo_name /tmp/$yq_name | awk '{print \$1}'")
+	"sha256sum /tmp/deploy-openwrt-remote.sh /tmp/update-openwrt-plugins-remote.sh /tmp/observe-openwrt.uc /tmp/guest-common.sh /tmp/guest-qualify.sh /tmp/guest-runtime-qualify.sh /tmp/guest-package-qualify.sh /tmp/guest-native-qualify.sh /tmp/guest-setup-qualify.sh /tmp/guest-migration-qualify.sh /tmp/guest-components-qualify.sh /tmp/guest-compatibility-native-qualify.sh /tmp/guest-maintenance-qualify.sh /tmp/guest-network-management-qualify.sh /tmp/guest-rules-dashboard-qualify.sh /tmp/guest-transfer-qualify.sh /tmp/runtime-source.tar /tmp/local-probe.crt /tmp/$mihomo_name /tmp/$yq_name | awk '{print \$1}'")
 [ "$actual_transfer" = "$expected_transfer" ] || {
 	echo "OpenWrt qualification source transfer mismatch" >&2
 	exit 1
@@ -559,7 +559,7 @@ run_guest() {
 	case "$guest_kind" in
 		management) guest_script=guest-qualify.sh; guest_arguments= ;;
 		package) guest_arguments="'$package_manifest_sha' '$probe_port' '$feed_url'" ;;
-		compatibility) guest_arguments="'$feed_url' '$probe_port'" ;;
+		compatibility) guest_script=guest-compatibility-native-qualify.sh; guest_arguments="'$feed_url' '$probe_port'" ;;
 		native|setup|migration)
 			ssh $ssh_common root@127.0.0.1 "touch /tmp/netfleet-${guest_kind}-vm-authorized" ;;
 	esac
@@ -594,11 +594,7 @@ fi
 if [ "$lane_mode" = compatibility ]; then
 	boot_clean_vm
 	stage=compatibility_transfer
-	if [ -n "${NETFLEET_COMPAT_PACKAGE:-}" ]; then
-		COPYFILE_DISABLE=1 tar -cf "$work/compat-runtime.tar" -C "$NETFLEET_COMPAT_PACKAGE" .
-	else
-		COPYFILE_DISABLE=1 tar -cf "$work/compat-runtime.tar" -C "${NETFLEET_COMPAT_RUNTIME:?}" haproxy
-	fi
+	COPYFILE_DISABLE=1 tar -cf "$work/compat-runtime.tar" -C "${NETFLEET_COMPAT_PACKAGE:?}" .
 	compat_runtime_sha=$(sha256_file "$work/compat-runtime.tar")
 	ssh $ssh_common root@127.0.0.1 'cat >/tmp/compat-runtime.tar' <"$work/compat-runtime.tar"
 	actual_sha=$(ssh $ssh_common root@127.0.0.1 'sha256sum /tmp/compat-runtime.tar' | awk '{print $1}')

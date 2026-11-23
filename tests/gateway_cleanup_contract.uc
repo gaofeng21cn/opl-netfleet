@@ -1,6 +1,6 @@
 import * as fs from "fs";
 
-const path = replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/lib/gateway.uc");
+const path = replace(sourcepath(), /[^/]+$/, "../plugins/mihomo/lib/gateway.uc");
 const source = fs.readfile(path);
 const start = index(source, "cleanup = function(");
 const end = index(source, "attach = function(", start);

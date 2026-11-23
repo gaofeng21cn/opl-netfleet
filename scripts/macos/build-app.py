@@ -109,6 +109,10 @@ def build(output, cache, require_clean=False, signing_identity=None):
         shutil.copytree(web, resources / "desktop/web")
         builtin_assets.prepare_builtin(resources / "builtin", cache / "rulesets")
         shutil.copytree(REPO / "openwrt/files/usr/libexec/opl-netfleet", resources / "shared")
+        (resources / "shared/plugins").mkdir(parents=True, exist_ok=True)
+        for manifest_path in sorted((REPO / "plugins").glob("*/manifest.json")):
+            if json.loads(manifest_path.read_text()).get("schema") == "opl-netfleet-service-plugin.v1":
+                shutil.copytree(manifest_path.parent, resources / "shared/plugins" / manifest_path.parent.name)
         (resources / "runtime/bin").mkdir(parents=True)
         for name in ("ucode", "node", "mihomo", "yq", "sha256sum"):
             shutil.copy2(runtime / "bin" / name, resources / "runtime/bin" / name)

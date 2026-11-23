@@ -298,7 +298,7 @@ if (!result.ok || result.candidate_id != "allowed-fast") die("excluded parent mu
 print("selection_contract_ok\n");
 
 {
-const factory = loadstring(readfile(replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet/plugins/selection/lib/control.uc")))();
+const factory = loadstring(readfile(replace(sourcepath(), /[^/]+$/, "../plugins/selection/lib/control.uc")))();
 let writes=0, restored=0, failed=false, out=null;
 const policy={main:{enabled:true},capabilities:{standard:{enabled:true}}};
 const entry={name:"Exit",mode:"automatic",region_groups:[{name:"Singapore",region:"sg"}],candidate_groups:[{}]};
@@ -333,7 +333,7 @@ if(kept_current!=true)die("manual remeasure bypassed region stickiness");
 
 }
 {
-const factory = loadfile(replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet/plugins/selection/lib/round.uc"))() ;
+const factory = loadfile(replace(sourcepath(), /[^/]+$/, "../plugins/selection/lib/round.uc"))() ;
 let samples = 0, healthy = true;
 const state = {proxies: {shared: {all: ["common"], now: "common"}}};
 const services = {

@@ -158,10 +158,7 @@ PATH="$runtime/bin:$PATH" UCODE_LIB="$runtime/lib/ucode/*.so" NETFLEET_RUNTIME_R
 构建和 helper 自检。日常局部修改可使用 `check-fast.sh`；已列为未执行的检查不能算通过。
 OpenWrt 专属的 libuci 与 `/proc` 合同仍由 QEMU 验证，详见[开发验证](validation.md)。
 
-地区选择的界面回归使用 `ui/tests/selection-preview.html`。在 `ui/` 运行
-`bunx vite --config vite.desktop.config.ts --host 127.0.0.1` 后打开该路径；测试页明确显示
-脱敏数据，只记录确认回调，不连接设备或调用代理。检查地区行预选、出口授权过滤、
-Escape 取消与焦点返回，以及“打开确认框后撤销授权”阻止提交。测试入口不进入应用包。
+地区选择的界面回归（地区行预选、出口授权过滤、Escape 取消与焦点返回，以及“打开确认框后撤销授权”阻止提交）通过 `ui/` 内的 Vitest 桌面组件测试 (`bun run test`) 覆盖，相关测试不进入应用包。
 
 资格脚本启动隔离状态目录和本地 HTTP 代理，再通过真实 Mihomo 访问固定 HTTPS
 204 目标；需要网络能访问该目标。它验证共享编译与选优、刷新、恢复、停止、备份、

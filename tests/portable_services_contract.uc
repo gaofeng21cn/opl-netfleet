@@ -3,6 +3,7 @@ import * as fs from "fs";
 // Compose real service factories against alternate capabilities, without an
 // OpenWrt host, native modules, credentials, or filesystem mutation outside /tmp.
 const root = fs.realpath(replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet"));
+const plugins_root = fs.realpath(replace(sourcepath(), /[^/]+$/, "../plugins"));
 const system = json(fs.readfile(`${root}/../../share/opl-netfleet/system.json`));
 const workspace = fs.mkdtemp("/tmp/netfleet-portable.XXXXXX");
 if (workspace == null) die("workspace unavailable");
@@ -21,13 +22,13 @@ function use(name) {
 		`unexpected platform dependency: ${name}`);
 	loading[name] = true;
 	const owner = system.bindings[name];
-	const manifest = json(fs.readfile(`${root}/plugins/${owner}/manifest.json`));
+	const manifest = json(fs.readfile(`${plugins_root}/${owner}/manifest.json`));
 	const service = manifest.services[name];
 	for (let dependency, major in service.requires) {
 		check(major == 1, `unsupported interface ${dependency}`);
 		use(dependency);
 	}
-	const factory = loadfile(`${root}/plugins/${owner}/${service.module}`)();
+	const factory = loadfile(`${plugins_root}/${owner}/${service.module}`)();
 	instances[name] = factory({ argv: ["select", "standard", "auto"], use: dependency => {
 		check(service.requires[dependency] == 1, `undeclared ${dependency}`);
 		return use(dependency);

@@ -11,6 +11,7 @@ import unittest
 
 ROOT = Path(__file__).parents[1]
 RUNTIME = ROOT / "openwrt" / "files" / "usr" / "libexec" / "opl-netfleet"
+PLUGINS = ROOT / "plugins"
 LUCI = ROOT / "openwrt" / "luci-app-netfleet"
 PAYLOAD_SPEC = importlib.util.spec_from_file_location("netfleet_payload", ROOT / "openwrt/plugin_payload.py")
 PAYLOAD = importlib.util.module_from_spec(PAYLOAD_SPEC)
@@ -83,7 +84,7 @@ class MvpLayoutTests(unittest.TestCase):
             (root / "rules.mk").touch()
             (root / "include/package.mk").touch()
             stage = root / "stage"
-            shutil.copytree(RUNTIME / "plugins/product-ui", root / "compiled-plugins/product-ui")
+            shutil.copytree(PLUGINS / "product-ui", root / "compiled-plugins/product-ui")
             for source, package in ((ROOT / "openwrt", "opl-netfleet-plugin-product-ui"),
                                     (LUCI, "luci-app-netfleet")):
                 harness = root / f"{package}.mk"
@@ -99,7 +100,7 @@ class MvpLayoutTests(unittest.TestCase):
             shell_modules = public / f"v{package_version.replace('.', '_')}"
             self.assertEqual({"api.js", "plugin-host.js"}, {path.name for path in shell_modules.glob("*.js")})
             self.assertEqual([], list(public.glob("*.js")))
-            product = RUNTIME / "plugins/product-ui/resources"
+            product = PLUGINS / "product-ui/resources"
             revision = PAYLOAD.payload_revision(product.parent)
             installed_product = public / "plugins/product-ui" / revision / "resources"
             self.assertEqual({path.relative_to(product): path.read_bytes()
@@ -177,7 +178,7 @@ class MvpLayoutTests(unittest.TestCase):
             (root / "include/package.mk").touch()
             for name in ("Makefile", "plugin-packages.py", "plugin_payload.py"):
                 shutil.copyfile(ROOT / "openwrt" / name, root / name)
-            plugin = root / "files/usr/libexec/opl-netfleet/plugins/layout-test"
+            plugin = root / "plugins/layout-test"
             (plugin / "lib").mkdir(parents=True)
             (plugin / "config").mkdir()
             (plugin / "resources/nested").mkdir(parents=True)
@@ -229,9 +230,9 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertTrue(all(path.is_file() for path in required))
         system = json.loads((ROOT / "openwrt/files/usr/share/opl-netfleet/system.json").read_text())
         for service, plugin in system["bindings"].items():
-            manifest = json.loads((RUNTIME / "plugins" / plugin / "manifest.json").read_text())
+            manifest = json.loads((PLUGINS / plugin / "manifest.json").read_text())
             self.assertIn(service, manifest["services"])
-            self.assertTrue((RUNTIME / "plugins" / plugin / manifest["services"][service]["module"]).is_file())
+            self.assertTrue((PLUGINS / plugin / manifest["services"][service]["module"]).is_file())
 
         package_files = [
             path for path in (ROOT / "openwrt" / "files").rglob("*") if path.is_file()
@@ -292,7 +293,7 @@ class MvpLayoutTests(unittest.TestCase):
 
     def test_runtime_core_has_no_provider_or_business_literals(self):
         forbidden = ("192.168.", "provider.example.invalid")
-        sources = list((RUNTIME / "plugins/models/lib").glob("*.uc"))
+        sources = list((PLUGINS / "models/lib").glob("*.uc"))
         self.assertTrue(sources)
         for source in sources:
             text = source.read_text()
@@ -406,26 +407,26 @@ class MvpLayoutTests(unittest.TestCase):
         )
 
     def test_yaml_adapter_is_read_only(self):
-        source = "\n".join(path.read_text() for path in RUNTIME.rglob("*.uc"))
+        source = "\n".join(path.read_text() for path in (*RUNTIME.rglob("*.uc"), *PLUGINS.rglob("*.uc")))
         self.assertNotIn("yq -i", source)
         self.assertNotIn("eval-all", source)
         self.assertNotIn("yq -M -P -o yaml", source)
         self.assertIn("yq -M -p yaml -o json", source)
 
     def test_runtime_fail_open_health_and_lock_contract(self):
-        policy = (RUNTIME / "plugins/models/lib/policy.uc").read_text()
-        activation = (RUNTIME / "plugins/activation/lib/control.uc").read_text()
-        compilation = (RUNTIME / "plugins/compilation/lib/control.uc").read_text()
-        supervisor = (RUNTIME / "plugins/scheduler/lib/control.uc").read_text()
+        policy = (PLUGINS / "models/lib/policy.uc").read_text()
+        activation = (PLUGINS / "activation/lib/control.uc").read_text()
+        compilation = (PLUGINS / "compilation/lib/control.uc").read_text()
+        supervisor = (PLUGINS / "scheduler/lib/control.uc").read_text()
         supervisor_entry = (RUNTIME / "supervisor.uc").read_text()
         host = (RUNTIME / "kernel/host.uc").read_text()
-        nikki = (RUNTIME / "plugins/mihomo/lib/backend.uc").read_text()
+        nikki = (PLUGINS / "mihomo/lib/backend.uc").read_text()
         runtime_makefile = (ROOT / "openwrt" / "Makefile").read_text()
         rpcd = (
             ROOT / "openwrt" / "files" / "usr" / "libexec" / "rpcd" / "opl-netfleet"
         ).read_text()
-        api = (RUNTIME / "plugins/product-ui/resources/api.js").read_text()
-        overview = (RUNTIME / "plugins/product-ui/resources/product-pages.js").read_text()
+        api = (PLUGINS / "product-ui/resources/api.js").read_text()
+        overview = (PLUGINS / "product-ui/resources/product-pages.js").read_text()
 
         self.assertIn("startup_grace_seconds: configured.startup_grace_seconds ?? 120", policy)
         self.assertIn("runtime_grace_seconds: configured.runtime_grace_seconds ?? 45", policy)
@@ -457,13 +458,13 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertNotIn("exit 1", rpcd)
         self.assertIn('ucode "$$main" package-cleanup', runtime_makefile)
         self.assertNotIn('[ "$$1" = "remove" ]', runtime_makefile)
-        commands = json.loads((RUNTIME / "plugins/compilation/manifest.json").read_text())["commands"]
+        commands = json.loads((PLUGINS / "compilation/manifest.json").read_text())["commands"]
         self.assertEqual("command_package_cleanup", commands["package-cleanup"]["method"])
         self.assertIn('remove_artifact()', compilation)
         self.assertIn('"provider_link_cleanup_failed"', compilation)
         self.assertIn('context.use("subscriptions.providers").load', compilation)
         self.assertNotIn("function load_provider_profiles", compilation)
-        self.assertIn("return removed", (RUNTIME / "plugins/mihomo/lib/profile-storage.uc").read_text())
+        self.assertIn("return removed", (PLUGINS / "mihomo/lib/profile-storage.uc").read_text())
         for method in ("enable", "refresh", "selectAuto", "configApply", "onboardingApply"):
             self.assertRegex(api, rf"{method}: function\([^)]*\)\s*\{{\s*return withRpcTimeout\(300")
         self.assertNotIn("withRpcTimeout(120", api)
@@ -485,7 +486,7 @@ class MvpLayoutTests(unittest.TestCase):
                 / "overview.js"
             ).is_file()
         )
-        self.assertTrue((RUNTIME / "plugins/product-ui/resources/config.js").is_file())
+        self.assertTrue((PLUGINS / "product-ui/resources/config.js").is_file())
         package_makefiles = (ROOT / "openwrt" / "Makefile").read_text() + (
             LUCI / "Makefile"
         ).read_text()
@@ -511,7 +512,7 @@ class MvpLayoutTests(unittest.TestCase):
             acl["luci-app-netfleet"]["read"]["ubus"]["opl-netfleet"],
         )
 
-        native_style = (RUNTIME / "plugins/product-ui/resources/native.css").read_text()
+        native_style = (PLUGINS / "product-ui/resources/native.css").read_text()
         pagination_rule = re.search(
             r"\.netfleet-native\s+\.netfleet-event-pagination\s*\{([^}]*)\}",
             native_style,
@@ -548,7 +549,7 @@ class MvpLayoutTests(unittest.TestCase):
 
     def test_native_control_spec_has_one_shape_source(self):
         """设备页控件形状只取 token：圆角、控件高度与边框色都不再内联声明。"""
-        native = (RUNTIME / "plugins/product-ui/resources/native.css").read_text()
+        native = (PLUGINS / "product-ui/resources/native.css").read_text()
         roots = re.findall(r"([^{}]+)\{([^{}]*)\}", native)
 
         # 形状 token 只在根块定义一次。
@@ -595,7 +596,7 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertEqual(sorted(set(re.findall(r"var\((--nf-[\w-]+)", native)) - defined), [])
 
     def test_native_luci_uses_display_cache_then_revalidates_once(self):
-        overview = RUNTIME / "plugins/product-ui/resources/product-pages.js"
+        overview = PLUGINS / "product-ui/resources/product-pages.js"
         harness = r"""
 const assert = require('assert');
 const fs = require('fs');
@@ -1038,7 +1039,7 @@ function createPage(storage, api, notifications) {
         self.assertEqual(0, result.returncode, result.stderr)
 
     def test_native_luci_config_renders_real_regions_and_owner_actions(self):
-        config_module = RUNTIME / "plugins/product-ui/resources/config.js"
+        config_module = PLUGINS / "product-ui/resources/config.js"
         harness = r"""
 const assert = require('assert');
 const fs = require('fs');

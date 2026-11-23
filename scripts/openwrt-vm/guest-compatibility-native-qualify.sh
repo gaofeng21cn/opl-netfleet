@@ -1,7 +1,6 @@
 #!/bin/sh
 # Native-runtime diagnostic lane; no Python is installed in this guest.
-set -eu
-umask 077
+. "$(dirname -- "$0")/guest-common.sh"
 commit=${1:?}
 tree=${2:?}
 feed_url=${3:?}
@@ -9,9 +8,7 @@ probe_port=${4:?}
 work=/tmp/compat-native-fixture
 mkdir -p "$work"
 stage=dependencies
-failure() {
- rc=$?
- [ "$rc" -eq 0 ] && return
+guest_on_failure() {
  printf 'Native compatibility failed at %s\n' "$stage" >&2
  # Keep the first failed assertion and transaction evidence across tmpfs loss
  # when a retained diagnostic image is started again with QEMU -snapshot.
@@ -26,7 +23,7 @@ failure() {
   [ ! -f "$file" ] || tail -35 "$file" >&2
  done
 }
-trap failure EXIT
+guest_setup_trap
 test "$(uname -m)" = aarch64
 test "$(readlink /var)" = tmp
 ip route replace default via 192.168.1.2

@@ -12,5 +12,4 @@ path = root / 'openwrt/Makefile'
 text, count = re.subn(r'(?m)^PKG_VERSION:=.*$', 'PKG_VERSION:=' + version, path.read_text())
 assert count == 1
 path.write_text(text)
-subprocess.run(['python3', 'scripts/sync-plugin-sources.py', 'sync'], cwd=root, check=True)
 subprocess.run(['python3', 'scripts/plugin-catalog.py', 'write'], cwd=root, check=True)

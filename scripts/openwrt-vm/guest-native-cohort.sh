@@ -1,5 +1,6 @@
 #!/bin/sh
 # Source from the isolated setup qualification, never from a real device.
+[ -n "${_NETFLEET_GUEST_COMMON:-}" ] || . "$(dirname -- "$0")/guest-common.sh"
 test -f /tmp/netfleet-setup-vm-authorized
 cohort="$work/native-cohort"
 mkdir -m 700 -p "$cohort/old" "$cohort/new" "$cohort/extracted"

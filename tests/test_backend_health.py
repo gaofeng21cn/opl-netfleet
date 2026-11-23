@@ -12,14 +12,14 @@ import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE = ROOT / "openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/lib/health.uc"
+MODULE = ROOT / "plugins/mihomo/lib/health.uc"
 UCODE = os.environ.get("UCODE") or shutil.which("ucode")
 
 
 @unittest.skipUnless(UCODE, "ucode required (also exercised by OpenWrt qualification)")
 class BackendHealthTests(unittest.TestCase):
     def test_gateway_batches_route_reads_and_rejects_partial_or_failed_observations(self):
-        source = (ROOT / 'openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/lib/gateway.uc').read_text()
+        source = (ROOT / 'plugins/mihomo/lib/gateway.uc').read_text()
         implementation = source[source.index('routes_present = function('):source.index('readiness = function(')]
         with tempfile.TemporaryDirectory() as directory:
             fake_ip = Path(directory) / 'ip'
@@ -79,7 +79,7 @@ class BackendHealthTests(unittest.TestCase):
                     self.assertEqual(args.read_text().strip(), '-j -t list table inet fixture')
 
     def test_candidate_reset_retries_only_transient_failures_and_keeps_diagnostics(self):
-        module = ROOT / 'openwrt/files/usr/libexec/opl-netfleet/plugins/mihomo/lib/controller.uc'
+        module = ROOT / 'plugins/mihomo/lib/controller.uc'
         for replies, expected, attempts in [([204], True, 1), ([503, 204], True, 2),
                                             ([None, 204], True, 2), ([404], False, 1),
                                             ([401], False, 1), ([503, 503], False, 2)]:

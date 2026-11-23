@@ -1,4 +1,4 @@
-import { manifest, composition } from '../openwrt/files/usr/libexec/opl-netfleet/plugins/components/lib/retained.uc';
+import { manifest, composition } from '../plugins/components/lib/retained.uc';
 function check(value, message) { if (!value) die(message); }
 const before = { id: 'mihomo', version: '0.9.10', api_version: 1,
 	services: { gateway: { version: 1, module: 'gateway.uc', requires: { storage: 1 } } },

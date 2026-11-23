@@ -1,6 +1,6 @@
 import * as fs from "fs";
 
-const root = replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet/plugins/");
+const root = replace(sourcepath(), /[^/]+$/, "../plugins/");
 const model = loadfile(root + "models/lib/activation.uc")()({});
 const operation_directory = fs.mkdtemp("/tmp/netfleet-mode-progress.XXXXXX");
 const operation_context = { use: name => name == "platform.paths" ? { OPERATION_DIR: operation_directory } :

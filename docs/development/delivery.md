@@ -36,9 +36,8 @@ Feed；不能因为源码领先、另有开发任务或构建工具可用，就�
 
 ### 构建前预检与候选复用
 
-先检查源码与设备载荷，而不是先启动编译。修改 `plugins/` 后执行
-`python3 scripts/sync-plugin-sources.py sync`，只递增真实变更插件的 manifest 版本，
-再执行 `python3 scripts/plugin-catalog.py write`。检查和提交必须包含这些投影。
+先检查源码与设备载荷，而不是先启动编译。修改 `plugins/` 后，只递增真实变更插件的 manifest 版本，
+再执行 `python3 scripts/plugin-catalog.py write`。检查和提交必须包含这些更新；OpenWrt 打包与部署脚本在构建阶段直接从 `plugins/` 取用服务插件。
 冻结前同时核对新版调用者所需的最低提供者版本；新字段保存等能力即使未改变服务 API，
 也须在真实 APK 依赖中约束最低版本，不能让页面升级后仍组合到不具备该能力的旧存储。
 构建入口会对归档 ref 再运行载荷一致性检查；本地工作区同步不能补救旧 ref 的缺失。

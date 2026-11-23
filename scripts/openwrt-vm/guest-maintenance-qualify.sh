@@ -1,24 +1,16 @@
 #!/bin/sh
-set -eu
-umask 077
+. "$(dirname -- "$0")/guest-common.sh"
 work=/tmp/netfleet-maintenance-fixture
-main=/usr/libexec/opl-netfleet/main.uc
-gateway=/usr/libexec/opl-netfleet/main.uc
 test -f /tmp/netfleet-setup-vm-authorized
 test "$(jsonfilter -i /etc/opl-netfleet/backend.json -e '@.kind')" = native-mihomo
 test -f /etc/opl-netfleet/policy.json
 mkdir -p "$work"
 stage=active
-finish() {
-	rc=$?
-	trap - EXIT INT TERM
-	if [ "$rc" -ne 0 ]; then
-		echo "Maintenance qualification failed at: $stage" >&2
-		for path in "$work"/*.log; do [ ! -f "$path" ] || tail -60 "$path" >&2; done
-	fi
-	exit "$rc"
+guest_on_failure() {
+	echo "Maintenance qualification failed at: $stage" >&2
+	for path in "$work"/*.log; do [ ! -f "$path" ] || tail -60 "$path" >&2; done
 }
-trap finish EXIT INT TERM
+guest_setup_trap
 ucode /tmp/tests/maintenance_device.uc >"$work/active.log" 2>&1
 stage=composition
 ucode -e '

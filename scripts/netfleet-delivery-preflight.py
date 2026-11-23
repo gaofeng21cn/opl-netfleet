@@ -125,9 +125,9 @@ def source_contract(source_commit: str) -> dict[str, object]:
     def show(path: str) -> str:
         return git("show", f"{source_commit}:{path}")
 
-    platform_manifest = json.loads(show("openwrt/files/usr/libexec/opl-netfleet/plugins/platform/manifest.json"))
-    components_manifest = json.loads(show("openwrt/files/usr/libexec/opl-netfleet/plugins/components/manifest.json"))
-    control = show("openwrt/files/usr/libexec/opl-netfleet/plugins/components/lib/control.uc")
+    platform_manifest = json.loads(show("plugins/platform/manifest.json"))
+    components_manifest = json.loads(show("plugins/components/manifest.json"))
+    control = show("plugins/components/lib/control.uc")
     paths = platform_manifest.get("services", {}).get("platform.paths", {})
     requires = components_manifest.get("services", {}).get("components.control", {}).get("requires", {})
     if paths.get("version") != 1 or requires.get("platform.paths") != 1:

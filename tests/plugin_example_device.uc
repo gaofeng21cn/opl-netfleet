@@ -4,7 +4,7 @@ function check(value, message) { if (!value) die(message); };
 check(fs.stat("/tmp/netfleet-native-vm-authorized") != null, "isolated VM authorization required");
 const root = "/usr/libexec/opl-netfleet/plugins/device-info";
 check(fs.lstat(root) == null && fs.mkdir(root, 0755), "example installation is isolated");
-for (let name in ["manifest.json", "control", "LICENSE"]) {
+for (let name in ["manifest.json", "control"]) {
 	check(fs.writefile(`${root}/${name}`, fs.readfile(`/tmp/examples/plugins/device-info/${name}`)), "copy actual example");
 	fs.chmod(`${root}/${name}`, name == "control" ? 0755 : 0644);
 }
@@ -27,6 +27,6 @@ const inspected = call("plugin_read", "inspect");
 check(inspected.ok && inspected.result.uptime_seconds > 0 && inspected.result.release.distribution == "OpenWrt", "example reads actual device via ubus");
 check(call("plugin_call", "reload", plugin.revision).result.loaded, "example reloads through real RPC");
 check(call("plugin_call", "unload", plugin.revision).result.loaded == false, "example exit readback");
-for (let name in ["manifest.json", "control", "LICENSE"]) fs.unlink(`${root}/${name}`);
+for (let name in ["manifest.json", "control"]) fs.unlink(`${root}/${name}`);
 fs.rmdir(root); fs.unlink(request);
 print("plugin_example_device_ok\n");

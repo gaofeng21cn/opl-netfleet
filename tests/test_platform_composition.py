@@ -41,6 +41,8 @@ def load_plugins(roots):
     for root in roots:
         for manifest in sorted((root / "plugins").glob("*/manifest.json")):
             data = json.loads(manifest.read_text())
+            if data.get("schema") != PLUGIN_SCHEMA:
+                continue
             data["__root"] = root
             plugins[data["id"]] = data
     return plugins
@@ -112,14 +114,16 @@ class Composition:
 class PlatformCompositionTests(unittest.TestCase):
     def setUp(self):
         self.api_version = kernel_api_version()
-        self.openwrt = Composition(OPENWRT_SYSTEM, [SHARED_ROOT])
-        self.macos = Composition(MACOS_SYSTEM, [SHARED_ROOT, DESKTOP_ROOT])
+        self.openwrt = Composition(OPENWRT_SYSTEM, [ROOT])
+        self.macos = Composition(MACOS_SYSTEM, [ROOT, DESKTOP_ROOT])
 
     def test_plugin_manifests_match_the_kernel_api(self):
         seen = 0
-        for root in (SHARED_ROOT, DESKTOP_ROOT):
+        for root in (ROOT, DESKTOP_ROOT):
             for manifest in sorted((root / "plugins").glob("*/manifest.json")):
                 data = json.loads(manifest.read_text())
+                if root == ROOT and manifest.parent.name == "device-identity":
+                    continue
                 label = manifest.relative_to(ROOT)
                 self.assertEqual(PLUGIN_SCHEMA, data.get("schema"), label)
                 self.assertEqual(self.api_version, data.get("api_version"), label)
@@ -199,8 +203,8 @@ class PlatformCompositionTests(unittest.TestCase):
             "macos": {"config_apply": "true", "rule_refresh": "false"},
         }
         roots = {
-            "openwrt": SHARED_ROOT / "plugins/platform/lib/runtime.uc",
-            "macos": DESKTOP_ROOT / "plugins/platform-macos/lib/runtime.uc",
+            "openwrt": ROOT / "plugins/platform/lib/runtime.uc",
+            "macos": DESKTOP_ROOT / "plugins/platform-macos/lib/system.uc",
         }
         for platform, path in roots.items():
             source = path.read_text()
@@ -211,7 +215,7 @@ class PlatformCompositionTests(unittest.TestCase):
                         source,
                         f"{platform} must declare {feature}",
                     )
-        self.assertIn("CONFIG_APPLY_WORK_DIR", (SHARED_ROOT / "plugins/configuration/lib/editor.uc").read_text())
+        self.assertIn("CONFIG_APPLY_WORK_DIR", (ROOT / "plugins/configuration/lib/editor.uc").read_text())
 
 
 if __name__ == "__main__":

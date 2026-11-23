@@ -1,18 +1,13 @@
 #!/bin/sh
 # Continue the synthetic Nikki lifecycle fixture with a real native cutover.
-set -eu
-umask 077
+. "$(dirname -- "$0")/guest-common.sh"
 source_commit=${1:?}
 source_tree=${2:?}
 probe_port=${3:?}
 work=/tmp/netfleet-migration-fixture
 previous=/tmp/netfleet-runtime-fixture
-main=/usr/libexec/opl-netfleet/main.uc
-gateway=/usr/libexec/opl-netfleet/main.uc
-lock=/var/lock/opl-netfleet-deploy.lock
 policy=/etc/opl-netfleet/policy.json
 bundle=/etc/opl-netfleet/policy-sources/base-v1.json
-stage=precondition
 helper_pids=
 wan_created=false
 
@@ -26,10 +21,18 @@ test ! -e /etc/config/netfleet
 test ! -e /etc/opl-netfleet/native
 mkdir -p "$work/config"
 
-finish() {
-	rc=$?
-	trap - EXIT INT TERM
-	set +e
+guest_check_receipt() {
+	[ "$stage" = complete ] && [ -s "$work/qualification.json" ]
+}
+guest_on_failure() {
+	echo "Migration qualification failed at: $stage" >&2
+	for file in "$work"/*-result.json "$work"/*.stderr "$work"/*.log; do
+		[ ! -f "$file" ] || { echo "--- $file" >&2; tail -60 "$file" >&2; }
+	done
+	ubus call service list '{"name":"opl-netfleet-core"}' >&2
+	logread | tail -60 >&2
+}
+guest_cleanup() {
 	/etc/init.d/opl-netfleet stop >/dev/null 2>&1
 	/etc/init.d/opl-netfleet disable >/dev/null 2>&1
 	/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1
@@ -42,29 +45,9 @@ finish() {
 		ubus call network.interface.wan down >/dev/null 2>&1
 		ip link del nf-migrate-wan >/dev/null 2>&1
 	fi
-	if [ "$rc" -eq 0 ] && { [ "$stage" != complete ] || [ ! -s "$work/qualification.json" ]; }; then rc=1; fi
-	if [ "$rc" -ne 0 ]; then
-		echo "Migration qualification failed at: $stage" >&2
-		for file in "$work"/*-result.json "$work"/*.stderr "$work"/*.log; do
-			[ ! -f "$file" ] || { echo "--- $file" >&2; tail -60 "$file" >&2; }
-		done
-		ubus call service list '{"name":"opl-netfleet-core"}' >&2
-		logread | tail -60 >&2
-	fi
-	exit "$rc"
 }
-trap finish EXIT INT TERM
+guest_setup_trap
 
-run_main() {
-	# Do not pass the parent's lock descriptor into a daemon started by a child.
-	(
-		exec 9>"$lock"
-		flock 9
-		ucode "$main" "$@" 9>&-
-	)
-}
-assert_json() { [ "$(jsonfilter -i "$1" -e "$2")" = "$3" ]; }
-digest() { sha256sum "$1" | awk '{print $1}'; }
 request() {
 	ucode -e '
 		import { readfile, writefile } from "fs";
@@ -88,10 +71,15 @@ for executable in mihomo yq; do
 	test -x "/usr/bin/$executable"
 done
 cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
+mkdir -p /usr/libexec/opl-netfleet/plugins
+for plugin in /tmp/plugins/*; do
+	[ -d "$plugin" ] && [ "$(basename -- "$plugin")" != "device-identity" ] && cp -R "$plugin" /usr/libexec/opl-netfleet/plugins/
+done
 cp /tmp/openwrt/files/usr/libexec/opl-netfleet-plugin-package /usr/libexec/
 chmod 0755 /usr/libexec/opl-netfleet-plugin-package
 mkdir -p /usr/share/opl-netfleet
 cp -R /tmp/openwrt/files/usr/share/opl-netfleet/. /usr/share/opl-netfleet/
+[ ! -f /tmp/LICENSE ] || cp /tmp/LICENSE /usr/share/opl-netfleet/LICENSE.Apache-2.0
 cp /tmp/openwrt/files/etc/init.d/opl-netfleet-core /etc/init.d/opl-netfleet-core
 cp /tmp/openwrt/files/etc/init.d/opl-netfleet /etc/init.d/opl-netfleet
 chmod 0755 "$main" /usr/libexec/opl-netfleet/supervisor.uc /etc/init.d/opl-netfleet /etc/init.d/opl-netfleet-core

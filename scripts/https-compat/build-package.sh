@@ -29,7 +29,7 @@ trap restore EXIT
 for name in private-key.pem public-key.pem .config; do
   test ! -f "$sdk/$name" || cp -p "$sdk/$name" "$work/$name"
 done
-git -C "$repo" archive "$commit" openwrt plugins/device-identity scripts/netfleet-plugin.py scripts/verify-native-runtime.py | tar -xf - -C "$work"
+git -C "$repo" archive "$commit" LICENSE openwrt plugins scripts/netfleet-plugin.py scripts/verify-native-runtime.py | tar -xf - -C "$work"
 # Git archive preserves executable bits, but some tar implementations apply the
 # caller's group-write umask while extracting. Normalize the staged plugin
 # before the payload validator enforces its runtime permission contract.
@@ -43,7 +43,14 @@ mkdir -p "$sdk/package/opl-netfleet"
 cp "$work/openwrt/Makefile" "$sdk/package/opl-netfleet/"
 cp "$work/openwrt/plugin-packages.py" "$sdk/package/opl-netfleet/"
 cp "$work/openwrt/plugin_payload.py" "$sdk/package/opl-netfleet/"
+cp "$work/LICENSE" "$sdk/package/opl-netfleet/"
 cp -R "$work/openwrt/files" "$sdk/package/opl-netfleet/"
+mkdir -p "$sdk/package/opl-netfleet/plugins"
+for manifest in "$work/plugins"/*/manifest.json; do
+  if grep -Fq '"opl-netfleet-service-plugin.v1"' "$manifest"; then
+    cp -R "$(dirname "$manifest")" "$sdk/package/opl-netfleet/plugins/"
+  fi
+done
 cp -R "$work/openwrt/mihomo-meta" "$sdk/package/mihomo-meta"
 (cd "$sdk" && ./scripts/feeds install -p base openssl ca-bundle libmnl libnftnl libjson-c ucode libmd)
 # Official SDKs may project the base feed into package/ directly.

@@ -1,17 +1,12 @@
 #!/bin/sh
 # Exercise the public first-install path on a disposable VM without Nikki.
-set -eu
-umask 077
+. "$(dirname -- "$0")/guest-common.sh"
 source_commit=${1:?}
 source_tree=${2:?}
 probe_port=${3:?}
 feed_url=${4:-}
 work=/tmp/netfleet-setup-fixture
 candidate=$work/feed
-main=/usr/libexec/opl-netfleet/main.uc
-gateway=/usr/libexec/opl-netfleet/main.uc
-lock=/var/lock/opl-netfleet-deploy.lock
-stage=precondition
 helper_pids=
 package_checks=
 legacy_checks=
@@ -28,27 +23,33 @@ test ! -e /var/run/opl-netfleet-core
 test -z "$(pidof mihomo 2>/dev/null || true)"
 mkdir -p "$work/bin"
 
-finish() {
-	rc=$?
-	trap - EXIT INT TERM
-	set +e
-	if [ "$rc" -ne 0 ]; then
-		ip -j addr show >"$work/failed-addresses.log"
-		ip -6 route show table all >"$work/failed-ipv6-routes.log"
-		ip -6 neigh show >"$work/failed-neighbors.log"
-		ip -6 rule show >"$work/failed-ipv6-rules.log"
-		sysctl net.ipv6.conf.all.forwarding >"$work/failed-forwarding.log"
-		curl -gfsS --noproxy '*' --max-time 2 'http://[fd77:a::2]:19091/version' >"$work/failed-upstream-ipv6.log" 2>&1
-		nft list chain inet fw4 forward_lan >"$work/failed-forward-lan.log"
-		nft list chain inet fw4 accept_to_wan >"$work/failed-accept-wan.log"
-		ip netns exec nf-setup-upstream ip -6 route show table all >"$work/failed-upstream-routes.log"
-		nft list ruleset >"$work/failed-nft.log"
-		secret=$(uci -q get netfleet.mixin.api_secret)
-		for endpoint in proxies providers/proxies; do
-			curl -fsS --noproxy '*' --max-time 3 -H "Authorization: Bearer $secret" \
-				"http://127.0.0.1:9090/$endpoint" >"$work/controller-${endpoint%%/*}.log"
-		done
-	fi
+guest_check_receipt() {
+	[ "$stage" = complete ] && [ -s "$work/qualification.json" ]
+}
+guest_on_failure() {
+	ip -j addr show >"$work/failed-addresses.log"
+	ip -6 route show table all >"$work/failed-ipv6-routes.log"
+	ip -6 neigh show >"$work/failed-neighbors.log"
+	ip -6 rule show >"$work/failed-ipv6-rules.log"
+	sysctl net.ipv6.conf.all.forwarding >"$work/failed-forwarding.log"
+	curl -gfsS --noproxy '*' --max-time 2 'http://[fd77:a::2]:19091/version' >"$work/failed-upstream-ipv6.log" 2>&1
+	nft list chain inet fw4 forward_lan >"$work/failed-forward-lan.log"
+	nft list chain inet fw4 accept_to_wan >"$work/failed-accept-wan.log"
+	ip netns exec nf-setup-upstream ip -6 route show table all >"$work/failed-upstream-routes.log"
+	nft list ruleset >"$work/failed-nft.log"
+	secret=$(uci -q get netfleet.mixin.api_secret)
+	for endpoint in proxies providers/proxies; do
+		curl -fsS --noproxy '*' --max-time 3 -H "Authorization: Bearer $secret" \
+			"http://127.0.0.1:9090/$endpoint" >"$work/controller-${endpoint%%/*}.log"
+	done
+	echo "Native setup qualification failed at: $stage" >&2
+	for file in "$work"/*-result.json "$work"/*.log; do
+		[ ! -f "$file" ] || { echo "--- $file" >&2; tail -60 "$file" >&2; }
+	done
+	ubus call service list '{"name":"opl-netfleet-core"}' >&2
+	logread | tail -60 >&2
+}
+guest_cleanup() {
 	/etc/init.d/opl-netfleet stop >/dev/null 2>&1
 	/etc/init.d/opl-netfleet disable >/dev/null 2>&1
 	/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1
@@ -61,28 +62,8 @@ finish() {
 	ip -6 addr del fd77:9::1/64 dev br-lan >/dev/null 2>&1
 	ip link del nf-setup-uplink >/dev/null 2>&1
 	nft delete table ip netfleet_setup_fixture >/dev/null 2>&1
-	if [ "$rc" -eq 0 ] && { [ "$stage" != complete ] || [ ! -s "$work/qualification.json" ]; }; then rc=1; fi
-	if [ "$rc" -ne 0 ]; then
-		echo "Native setup qualification failed at: $stage" >&2
-		for file in "$work"/*-result.json "$work"/*.log; do
-			[ ! -f "$file" ] || { echo "--- $file" >&2; tail -60 "$file" >&2; }
-		done
-		ubus call service list '{"name":"opl-netfleet-core"}' >&2
-		logread | tail -60 >&2
-	fi
-	exit "$rc"
 }
-trap finish EXIT INT TERM
-run_main() {
-	# The lock stays in the parent shell, never in procd or its children.
-	(
-		exec 9>"$lock"
-		flock 9
-		ucode "$main" "$@" 9>&-
-	)
-}
-assert_json() { [ "$(jsonfilter -i "$1" -e "$2")" = "$3" ]; }
-digest() { sha256sum "$1" | awk '{print $1}'; }
+guest_setup_trap
 package_identity() {
 	apk info -e opl-netfleet luci-app-netfleet mihomo-meta >>"$work/packages.log" 2>&1
 	assert_json /usr/share/opl-netfleet/build.json '@.source_commit' "$source_commit"
@@ -371,10 +352,15 @@ else
 	chmod 0755 "$work/bin/yq"
 	ln -s "$work/bin/yq" /usr/bin/yq
 	cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
+	mkdir -p /usr/libexec/opl-netfleet/plugins
+	for plugin in /tmp/plugins/*; do
+		[ -d "$plugin" ] && [ "$(basename -- "$plugin")" != "device-identity" ] && cp -R "$plugin" /usr/libexec/opl-netfleet/plugins/
+	done
 cp /tmp/openwrt/files/usr/libexec/opl-netfleet-plugin-package /usr/libexec/
 chmod 0755 /usr/libexec/opl-netfleet-plugin-package
 	mkdir -p /usr/share/opl-netfleet /etc/opl-netfleet/policy-sources
 	cp -R /tmp/openwrt/files/usr/share/opl-netfleet/. /usr/share/opl-netfleet/
+	[ ! -f /tmp/LICENSE ] || cp /tmp/LICENSE /usr/share/opl-netfleet/LICENSE.Apache-2.0
 	cp /tmp/openwrt/files/etc/config/netfleet /usr/share/opl-netfleet/netfleet.config
 	cp /tmp/openwrt/files/etc/opl-netfleet/policy.example.json /etc/opl-netfleet/policy.example.json
 	cp /tmp/openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json /etc/opl-netfleet/policy-sources/base-v1.json

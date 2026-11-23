@@ -3,7 +3,6 @@ import { Children, isValidElement, type ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 import { fixtureScenarios } from '../data/fixtures';
 import type { DeviceConfigSnapshot } from '../types';
-import { ConfigView } from './ConfigView';
 import { AutomationSection, FoundationSection, ProvidersSection, SafetySection } from './ConfigSections';
 import { configChanges, configSummary, createConfigDraft, validateConfigDraft, validCidr } from './model';
 import { desktopConfigRequest } from '../desktop/policy';
@@ -163,26 +162,6 @@ describe('本地配置参考模型', () => {
     expect(validateConfigDraft(draft)).not.toContain('运行失联保护必须为 15 至 300 秒。');
   });
 
-  it('明确本地预览边界且不展示未实现后端选项', () => {
-    const status = fixtureScenarios.healthy.status;
-    const draft = createConfigDraft(status);
-    const html = renderToStaticMarkup(<ConfigView
-      draft={draft}
-      savedDraft={draft}
-      status={status}
-      onChange={() => undefined}
-      onSave={() => undefined}
-    />);
-
-    expect(html).toContain('本地配置交互预览');
-    expect(html).toContain('不会写入设备');
-    expect(html).toContain('基础接入');
-    expect(html).toContain('网络接入');
-    expect(html).toContain('配置文件与备份');
-    expect(html).toContain('机场');
-    expect(html).toContain('Nikki + Mihomo');
-    expect(html).not.toContain('sing-box');
-  });
   it('平台能力只读取 owner 声明，不从后端名称推断', () => {
     const status = structuredClone(fixtureScenarios.native.status);
     status.runtime.backend = { id: 'native-mihomo', display_name: 'NetFleet + Mihomo' };

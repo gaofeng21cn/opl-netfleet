@@ -1,6 +1,5 @@
 #!/bin/sh
-set -eu
-umask 077
+. "$(dirname -- "$0")/guest-common.sh"
 
 source_commit=${1:?}
 source_tree=${2:?}
@@ -9,7 +8,6 @@ feed_url=${4:-}
 work=/tmp/netfleet-runtime-fixture
 bin=$work/bin
 metrics=$work/metrics
-main=/usr/libexec/opl-netfleet/main.uc
 supervisor=/usr/libexec/opl-netfleet/supervisor.uc
 secret=netfleet-vm-fixture
 probe_url=https://netfleet-probe.test:$probe_port/generate_204
@@ -19,49 +17,45 @@ helper_reserve_pid=""
 stage=bootstrap
 
 cleanup() {
-	set +e
 	[ -z "$supervisor_pid" ] || kill "$supervisor_pid" >/dev/null 2>&1
 	/etc/init.d/nikki stop >/dev/null 2>&1
 	[ -z "$helper_primary_pid" ] || kill "$helper_primary_pid" >/dev/null 2>&1
 	[ -z "$helper_reserve_pid" ] || kill "$helper_reserve_pid" >/dev/null 2>&1
 	nft delete table ip netfleet_vm_runtime_probe >/dev/null 2>&1 || true
 }
-finish() {
-	rc=$?
-	trap - EXIT INT TERM
-	if [ "$rc" -eq 0 ] && { [ "$stage" != complete ] || [ ! -s "$work/qualification.json" ]; }; then
+guest_check_receipt() {
+	if [ "$stage" != complete ] || [ ! -s "$work/qualification.json" ]; then
 		echo "OpenWrt runtime qualification exited without a complete receipt at stage: $stage" >&2
-		rc=1
+		return 1
 	fi
-	if [ "$rc" -ne 0 ]; then
-		echo "OpenWrt runtime qualification failed at stage: $stage" >&2
-		df -h /tmp /overlay >&2 || true
-		echo '--- installed plugin discovery' >&2
-		ls -ld /usr/libexec/opl-netfleet /usr/libexec/opl-netfleet/kernel \
-			/usr/libexec/opl-netfleet/plugins /usr/libexec/opl-netfleet/plugins/* \
-			/usr/libexec/opl-netfleet/plugins/*/manifest.json \
-			/usr/share/opl-netfleet /usr/share/opl-netfleet/system.json >&2 || true
-		timeout 10 ucode "$main" plugins-list >&2 || true
-		for dump in "$work"/connections.json "$work"/enable.json "$work"/compile.json "$work"/refresh*.json; do
-			[ ! -f "$dump" ] || { echo "--- $dump" >&2; cat "$dump" >&2; }
-		done
-		if [ -f "$work/enable.json" ]; then
-			echo "--- enable error" >&2
-			jsonfilter -i "$work/enable.json" -e '@.error' >&2 || true
-			jsonfilter -i "$work/enable.json" -e '@.detail.automatic.error' >&2 || true
-			jsonfilter -i "$work/enable.json" -e '@.detail.automatic.summary' >&2 || true
-			jsonfilter -i "$work/enable.json" -e '@.detail.automatic.provider_measurement_ok' >&2 || true
-			jsonfilter -i "$work/enable.json" -e '@.detail.automatic.provider_state_available' >&2 || true
-		fi
-		for log in "$work"/package-manager.log "$work"/helper-primary.log "$work"/helper-reserve.log \
-			"$work"/mihomo.log "$work"/supervisor.log "$work"/*.stderr "$work"/*.txt; do
-			[ ! -f "$log" ] || { echo "--- $log" >&2; cat "$log" >&2; }
-		done
-	fi
-	cleanup
-	exit "$rc"
 }
-trap finish EXIT INT TERM
+guest_on_failure() {
+	echo "OpenWrt runtime qualification failed at stage: $stage" >&2
+	df -h /tmp /overlay >&2 || true
+	echo '--- installed plugin discovery' >&2
+	ls -ld /usr/libexec/opl-netfleet /usr/libexec/opl-netfleet/kernel \
+		/usr/libexec/opl-netfleet/plugins /usr/libexec/opl-netfleet/plugins/* \
+		/usr/libexec/opl-netfleet/plugins/*/manifest.json \
+		/usr/share/opl-netfleet /usr/share/opl-netfleet/system.json >&2 || true
+	timeout 10 ucode "$main" plugins-list >&2 || true
+	for dump in "$work"/connections.json "$work"/enable.json "$work"/compile.json "$work"/refresh*.json; do
+		[ ! -f "$dump" ] || { echo "--- $dump" >&2; cat "$dump" >&2; }
+	done
+	if [ -f "$work/enable.json" ]; then
+		echo "--- enable error" >&2
+		jsonfilter -i "$work/enable.json" -e '@.error' >&2 || true
+		jsonfilter -i "$work/enable.json" -e '@.detail.automatic.error' >&2 || true
+		jsonfilter -i "$work/enable.json" -e '@.detail.automatic.summary' >&2 || true
+		jsonfilter -i "$work/enable.json" -e '@.detail.automatic.provider_measurement_ok' >&2 || true
+		jsonfilter -i "$work/enable.json" -e '@.detail.automatic.provider_state_available' >&2 || true
+	fi
+	for log in "$work"/package-manager.log "$work"/helper-primary.log "$work"/helper-reserve.log \
+		"$work"/mihomo.log "$work"/supervisor.log "$work"/*.stderr "$work"/*.txt; do
+		[ ! -f "$log" ] || { echo "--- $log" >&2; cat "$log" >&2; }
+	done
+}
+guest_cleanup() { cleanup; }
+guest_setup_trap
 
 mkdir -p "$bin" "$metrics" /etc/nikki/subscriptions /etc/nikki/profiles/opl-netfleet \
 	/etc/nikki/run /etc/opl-netfleet/policy-sources /var/lib/opl-netfleet /usr/libexec
@@ -131,10 +125,15 @@ ln "$bin/mihomo" "$bin/netfleet-test-reserve"
 ln /tmp/yq_linux_arm64-v4.53.6 "$bin/yq"
 chmod 0755 "$bin/mihomo" "$bin/netfleet-test-primary" "$bin/netfleet-test-reserve" "$bin/yq"
 cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
+mkdir -p /usr/libexec/opl-netfleet/plugins
+for plugin in /tmp/plugins/*; do
+	[ -d "$plugin" ] && [ "$(basename -- "$plugin")" != "device-identity" ] && cp -R "$plugin" /usr/libexec/opl-netfleet/plugins/
+done
 cp /tmp/openwrt/files/usr/libexec/opl-netfleet-plugin-package /usr/libexec/
 chmod 0755 /usr/libexec/opl-netfleet-plugin-package
 mkdir -p /usr/share/opl-netfleet
 cp -R /tmp/openwrt/files/usr/share/opl-netfleet/. /usr/share/opl-netfleet/
+[ ! -f /tmp/LICENSE ] || cp /tmp/LICENSE /usr/share/opl-netfleet/LICENSE.Apache-2.0
 cp /tmp/openwrt/files/etc/init.d/opl-netfleet /etc/init.d/opl-netfleet
 cp /tmp/openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json \
 	/etc/opl-netfleet/policy-sources/base-v1.json
@@ -491,16 +490,6 @@ run_timed() {
 	finished_ms=$(date +%s%3N)
 	printf '%s\n' "$((finished_ms - started_ms))" >"$metrics/$label.ms"
 	[ "$(jsonfilter -i "$work/$label.json" -e '@.ok')" = true ]
-}
-
-run_locked() {
-	lock=$1
-	shift
-	(
-		exec 9>"$lock"
-		flock 9
-		"$@" 9>&-
-	)
 }
 
 assert_controller() {

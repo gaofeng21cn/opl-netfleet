@@ -106,7 +106,7 @@ ip() { [ "$NETFLEET_READY_TEST_FAILURE" != dns ]; }
         self.assertTrue(result.stdout.startswith("Usage: scripts/openwrt-vm.sh"))
         self.assertNotIn("--rebuild", result.stdout)
 
-        scripts = (WRAPPER, RUNNER, GUEST, RUNTIME_GUEST, PACKAGE_GUEST, NATIVE_GUEST, SETUP_GUEST, MIGRATION_GUEST, INSTALLER, RECOVERY)
+        scripts = (WRAPPER, RUNNER, *sorted((ROOT / "scripts" / "openwrt-vm").glob("guest-*.sh")), INSTALLER, RECOVERY)
         for script in scripts:
             parsed = subprocess.run(
                 ["bash", "-n", str(script)], text=True, capture_output=True, check=False

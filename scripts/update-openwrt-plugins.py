@@ -259,7 +259,7 @@ def main() -> None:
                          'sha256': sha(new), 'before_sha256': sha(old)})
     files['request.json'] = json.dumps({'schema': 'opl-netfleet-plugin-install.v1', 'packages': packages}).encode()
     for name in ['manifest.json', 'lib/control.uc', 'lib/packages.uc', 'lib/retained.uc', 'recover.uc', 'lifecycle-retained.uc']:
-        files[f'components/{name}'] = source(commit, f'openwrt/files/usr/libexec/opl-netfleet/plugins/components/{name}')
+        files[f'components/{name}'] = source(commit, f'plugins/components/{name}')
     files['run.sh'] = source(commit, 'scripts/update-openwrt-plugins-remote.sh')
     files['observe.uc'] = source(commit, 'scripts/observe-openwrt.uc')
     files['SHA256SUMS'] = ''.join(f'{sha(data)}  {name}\n' for name, data in files.items()).encode()

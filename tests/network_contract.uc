@@ -122,7 +122,7 @@ const omitted = clone(profile);
 delete omitted.dns["default-nameserver"];
 check(runtime_profile(omitted, project(omitted, sections)).dns["default-nameserver"] == null, "omitted_bootstrap_not_replaced_by_invalid_empty_list");
 
-const advanced = loadfile(replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet/plugins/network/lib/advanced.uc"))()({use});
+const advanced = loadfile(replace(sourcepath(), /[^/]+$/, "../plugins/network/lib/advanced.uc"))()({use});
 const legacy_sniff = { sniffer: { sniff: { TLS: { port: [443] } } } };
 check(advanced.project(legacy_sniff)["sniffer.sniff"].TLS.ports[0] == 443 && legacy_sniff.sniffer.sniff.TLS.ports == null,
 	"legacy_sniff_read_conversion_preserves_private_input");

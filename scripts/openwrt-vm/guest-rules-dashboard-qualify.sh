@@ -1,7 +1,6 @@
 #!/bin/sh
 # Run only inside the repository's disposable native-backend qualification guest.
-set -eu
-umask 077
+. "$(dirname -- "$0")/guest-common.sh"
 test -f /tmp/netfleet-native-vm-authorized || test -f /tmp/netfleet-setup-vm-authorized
 test "$(jsonfilter -i /etc/opl-netfleet/backend.json -e '@.kind')" = native-mihomo
 command -v unzip >/dev/null
@@ -25,18 +24,17 @@ test ! -e "$ui.netfleet-previous"
 if [ -e "$ui" ]; then mv "$ui" "$work/original-ui"; fi
 if [ -f "$state" ]; then mv "$state" "$work/original-state"; fi
 if [ -d "$cache" ]; then mv "$cache" "$work/original-cache"; fi
-finish() {
-	rc=$?
-	trap - EXIT INT TERM
+guest_cleanup() {
 	rm -rf "$ui" "$ui.netfleet-stage" "$ui.netfleet-previous" "$cache"
 	[ ! -d "$work/original-ui" ] || mv "$work/original-ui" "$ui"
 	rm -f "$state"
 	[ ! -f "$work/original-state" ] || mv "$work/original-state" "$state"
 	[ ! -d "$work/original-cache" ] || mv "$work/original-cache" "$cache"
-	if [ "$rc" -ne 0 ]; then echo "Rules/dashboard qualification failed; evidence: $work" >&2; fi
-	exit "$rc"
 }
-trap finish EXIT INT TERM
+guest_on_failure() {
+	echo "Rules/dashboard qualification failed; evidence: $work" >&2
+}
+guest_setup_trap
 mkdir -p "$ui"
 printf '<!doctype html><title>Previous dashboard</title>\n' >"$ui/index.html"
 printf '%s\n' "$ui" >"$work/ui-path"

@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-const factory = loadfile(replace(sourcepath(), /[^/]+$/, '../openwrt/files/usr/libexec/opl-netfleet/plugins/status/lib/events.uc'))();
+const factory = loadfile(replace(sourcepath(), /[^/]+$/, '../plugins/status/lib/events.uc'))();
 let logs = 0, manifests = 0, output;
 const services = {
  'events.model': { validate: () => ({ok:true}) },

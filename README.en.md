@@ -342,14 +342,14 @@ Full fake-device deployment matrix:
 scripts/check-full.sh
 ```
 
-The local React/Vite app supports the same page plugin host and retains live
-read-only and offline reference development entry points. On devices, the LuCI
-shell loads pages contributed by installed plugins:
+On devices, the LuCI shell loads pages contributed by installed plugins. The
+macOS desktop UI lives in `ui/` and is verified and built via:
 
 ```bash
 cd ui
-bun install
-NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
+bun install --frozen-lockfile
+bun run test
+bun run build
 ```
 
 ## Documentation And License
@@ -375,7 +375,7 @@ except for files with explicit alternative license notices. LuCI and other
 MIT-licensed files retain their notices.
 The combined distribution containing Nikki-derived modules remains subject to
 [GNU GPL 3.0](openwrt/files/usr/share/opl-netfleet/nikki/LICENSE). Original NetFleet files retain their Apache-2.0 notices;
-the license text remains in [LICENSE.Apache-2.0](openwrt/files/usr/share/opl-netfleet/LICENSE.Apache-2.0).
+the license text remains in [LICENSE](./LICENSE).
 Imported Nikki modules retain their GPL-3.0 license, copyright, pinned upstream
 revision, and [modification notice](openwrt/files/usr/share/opl-netfleet/nikki/NOTICE).
 Combining the distribution does not remove third-party notices.

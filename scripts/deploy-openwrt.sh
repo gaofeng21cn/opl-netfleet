@@ -440,7 +440,7 @@ if [[ "$release_mode" == package ]]; then
 	git -C "$repo_dir" archive "$source_commit" scripts/deploy-openwrt-remote.sh openwrt/files/etc/opl-netfleet/rulesets.lock.json |
 		tar -C "$source_dir" -xf -
 else
-	git -C "$repo_dir" archive "$source_commit" openwrt scripts/deploy-openwrt-remote.sh |
+	git -C "$repo_dir" archive "$source_commit" LICENSE openwrt plugins scripts/deploy-openwrt-remote.sh |
 		tar -C "$source_dir" -xf -
 fi
 
@@ -459,7 +459,7 @@ required=(
 	"openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/api.js"
 	"openwrt/luci-app-netfleet/htdocs/luci-static/resources/netfleet/plugin-host.js"
 	"openwrt/files/usr/libexec/opl-netfleet/adapters/openwrt.uc"
-	"openwrt/files/usr/libexec/opl-netfleet/plugins/product-ui/resources/native.css"
+	"plugins/product-ui/resources/native.css"
 	"openwrt/luci-app-netfleet/htdocs/luci-static/resources/view/netfleet/overview.js"
 	"openwrt/luci-app-netfleet/root/usr/share/luci/menu.d/luci-app-netfleet.json"
 	"openwrt/luci-app-netfleet/root/usr/share/rpcd/acl.d/luci-app-netfleet.json"
@@ -476,6 +476,12 @@ if [[ "$release_mode" == source ]]; then
 		"$payload_dir/etc/opl-netfleet" "$payload_dir/etc/init.d" "$payload_dir/www" \
 		"$payload_dir/usr/share/luci" "$payload_dir/usr/share/rpcd"
 	cp -R "$source_dir/openwrt/files/usr/libexec/opl-netfleet" "$payload_dir/usr/libexec/"
+	mkdir -p "$payload_dir/usr/libexec/opl-netfleet/plugins"
+	for plugin in "$source_dir/plugins/"*; do
+		[ -d "$plugin" ] || continue
+		[ "$(basename -- "$plugin")" != "device-identity" ] || continue
+		cp -R "$plugin" "$payload_dir/usr/libexec/opl-netfleet/plugins/"
+	done
 	cp "$source_dir/openwrt/files/usr/libexec/opl-netfleet-transfer" "$payload_dir/usr/libexec/"
 	cp "$source_dir/openwrt/files/usr/libexec/opl-netfleet-plugin-package" "$payload_dir/usr/libexec/"
 	cp "$source_dir/openwrt/files/usr/libexec/rpcd/opl-netfleet" \
@@ -488,12 +494,13 @@ if [[ "$release_mode" == source ]]; then
 	cp "$source_dir/openwrt/files/etc/init.d/opl-netfleet-update-recovery" "$payload_dir/etc/init.d/opl-netfleet-update-recovery"
 	mkdir -p "$payload_dir/usr/share/opl-netfleet"
 	cp -R "$source_dir/openwrt/files/usr/share/opl-netfleet/." "$payload_dir/usr/share/opl-netfleet/"
+	cp "$source_dir/LICENSE" "$payload_dir/usr/share/opl-netfleet/LICENSE.Apache-2.0"
 	cp "$source_dir/openwrt/files/etc/config/netfleet" "$payload_dir/usr/share/opl-netfleet/netfleet.config"
 	cp -R "$source_dir/openwrt/files/etc/opl-netfleet/." "$payload_dir/etc/opl-netfleet/"
 	cp -R "$source_dir/openwrt/luci-app-netfleet/htdocs/." "$payload_dir/www/"
 	find "$payload_dir/www" -type f -name '*.d.ts' -delete
 	cp -R "$source_dir/openwrt/luci-app-netfleet/root/." "$payload_dir/"
-	for plugin in "$source_dir/openwrt/files/usr/libexec/opl-netfleet/plugins/"*; do
+	for plugin in "$payload_dir/usr/libexec/opl-netfleet/plugins/"*; do
 		python3 "$source_dir/openwrt/plugin_payload.py" project "$plugin" "$payload_dir/www"
 	done
 	view_version="v${luci_version//./_}"

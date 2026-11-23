@@ -8,7 +8,7 @@ it('dispatches reads and mutations without depending on a visible-tab animation 
     declarations.push(options);
     return options.nobatch ? dispatch : () => new Promise(() => {});
   } };
-  const source = readFileSync(new URL('../../../openwrt/files/usr/libexec/opl-netfleet/plugins/product-ui/resources/api.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../../plugins/product-ui/resources/api.js', import.meta.url), 'utf8');
   const api = new Function('baseclass', 'rpc', 'L', source)({ extend: (value: unknown) => value }, rpc, { env: { rpctimeout: 20 } });
   await expect(api.dashboardGet()).resolves.toEqual({ available: true });
   await expect(api.subscriptionsGet()).resolves.toEqual({ available: true });

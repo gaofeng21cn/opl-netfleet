@@ -13,6 +13,8 @@ NETFLEET_METADATA:=$(shell python3 ./plugin-packages.py metadata)
 netfleet_metadata=$(patsubst $(1)=%,%,$(filter $(1)=%,$(NETFLEET_METADATA)))
 NETFLEET_PLUGINS:=$(call netfleet_metadata,id)
 NETFLEET_DEFAULT_PLUGINS:=$(call netfleet_metadata,default)
+NETFLEET_LICENSE_SOURCE:=$(firstword $(wildcard ./LICENSE ../LICENSE))
+NETFLEET_PLUGINS_SOURCE:=$(firstword $(wildcard ./plugins ../plugins))
 ifeq ($(strip $(NETFLEET_PLUGINS)),)
   $(error NetFleet default plugin composition is invalid)
 endif
@@ -36,7 +38,7 @@ define Package/opl-netfleet-kernel/install
 	$(INSTALL_DATA) ./files/usr/libexec/opl-netfleet/adapters/*.uc $(1)/usr/libexec/opl-netfleet/adapters/
 	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet-plugin-package $(1)/usr/libexec/opl-netfleet-plugin-package
 	$(INSTALL_BIN) ./files/usr/libexec/rpcd/opl-netfleet.plugins $(1)/usr/libexec/rpcd/opl-netfleet.plugins
-	$(INSTALL_DATA) ./files/usr/share/opl-netfleet/LICENSE.Apache-2.0 $(1)/usr/share/opl-netfleet/LICENSE.Apache-2.0
+	$(INSTALL_DATA) $(NETFLEET_LICENSE_SOURCE) $(1)/usr/share/opl-netfleet/LICENSE.Apache-2.0
 endef
 
 define Package/opl-netfleet-kernel/preinst
@@ -202,7 +204,10 @@ endef
 
 define Build/Compile
 	$(RM) -r $(PKG_BUILD_DIR)/compiled-plugins
-	$(CP) ./files/usr/libexec/opl-netfleet/plugins $(PKG_BUILD_DIR)/compiled-plugins
+	$(INSTALL_DIR) $(PKG_BUILD_DIR)/compiled-plugins
+	for plugin in $(NETFLEET_PLUGINS); do \
+		$(CP) "$(NETFLEET_PLUGINS_SOURCE)/$$plugin" "$(PKG_BUILD_DIR)/compiled-plugins/" || exit 1; \
+	done
 	python3 ./compile-plugins.py --root $(PKG_BUILD_DIR)/compiled-plugins --compiler $(STAGING_DIR_HOSTPKG)/bin/ucode --libraries $(STAGING_DIR_HOSTPKG)/lib/ucode >$(PKG_BUILD_DIR)/bytecode.json
 endef
 

@@ -1,6 +1,5 @@
 #!/bin/sh
-set -eu
-umask 077
+. "$(dirname -- "$0")/guest-common.sh"
 
 source_commit=${1:?}
 source_tree=${2:?}

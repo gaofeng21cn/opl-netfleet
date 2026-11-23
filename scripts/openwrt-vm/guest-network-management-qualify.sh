@@ -1,5 +1,5 @@
 #!/bin/sh
-set -eu
+. "$(dirname -- "$0")/guest-common.sh"
 
 # Called inside the native qualification guest after shared enable/select.
 # Its real DNS, gateway, controller and authenticated probe fixtures remain active.
@@ -8,15 +8,14 @@ mkdir -p "$work"
 chmod 0700 "$work"
 service=/etc/init.d/opl-netfleet-core
 cp -p "$service" "$work/core-service"
-cleanup() {
-	rc=$?
-	if [ "$rc" -ne 0 ]; then
-		for log in "$work"/*.log; do [ ! -f "$log" ] || tail -40 "$log" >&2; done
-	fi
+guest_on_failure() {
+	for log in "$work"/*.log; do [ ! -f "$log" ] || tail -40 "$log" >&2; done
+}
+guest_cleanup() {
 	cp -p "$work/core-service" "$service"
 	rm -f "$work/fail-next-start"
 }
-trap cleanup EXIT HUP INT TERM
+trap guest_finish EXIT HUP INT TERM
 
 ucode /tmp/tests/network_device.uc "$work" legacy_sniff >"$work/legacy-sniff.log" 2>&1
 ucode /tmp/tests/network_device.uc "$work" runtime_drift >"$work/runtime-drift.log" 2>&1

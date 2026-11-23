@@ -2,7 +2,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { fixtureScenarios } from '../data/fixtures';
 import { OverviewDigest } from './OverviewDigest';
-import { OverviewExitSummary } from './OverviewExitSummary';
 import { ProviderTable, QuotaMeter, RegionTable } from '../views/Tables';
 
 it('流量条只接受可靠的总量和剩余流量', () => {
@@ -28,20 +27,6 @@ it('月重置日与剩余流量一起显示，买断和未设置不制造空态'
 });
 
 describe('概览信息层级', () => {
-  it('出口摘要只显示态势，不复制出口页诊断内容', () => {
-    const html = renderToStaticMarkup(
-      <OverviewExitSummary snapshot={fixtureScenarios.healthy.status} onOpen={() => undefined} />,
-    );
-
-    expect(html).toContain('出口态势');
-    expect(html).toContain('Alpha 正式机场');
-    expect(html).toContain('JP 日本');
-    expect(html).toContain('78 ms');
-    expect(html).not.toContain('JP-Tokyo-02');
-    expect(html).not.toContain('运行时网络退路');
-    expect(html).not.toContain('保护探针');
-  });
-
   it('机场、地区和最近决策显示可行动的具体内容', () => {
     const html = renderToStaticMarkup(
       <OverviewDigest
@@ -250,17 +235,4 @@ describe('概览信息层级', () => {
     expect(html).toContain('需要关注');
     expect(html).toContain('当前使用地区已无可用路径：JP 日本');
   });
-});
-
-it('核心停止时出口不冒充健康或展示内部模式', () => {
-  const status = structuredClone(fixtureScenarios.healthy.status);
-  status.active = false;
-  status.runtime.mihomo_running = false;
-  for (const capability of status.capabilities) { capability.alive = true; capability.mode = 'native_profile'; }
-  const html = renderToStaticMarkup(<OverviewExitSummary snapshot={status} onOpen={() => undefined} />);
-  expect(html).toContain('已停止');
-  expect(html).toContain('未测量');
-  expect(html).not.toContain('native_profile');
-  expect(html).not.toContain('nf-health-dot');
-  expect(html).not.toContain('78 ms');
 });

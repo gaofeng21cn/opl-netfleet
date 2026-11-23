@@ -227,12 +227,13 @@ scripts/check-fast.sh
 scripts/check-full.sh
 ```
 
-本机 React/Vite 支持同一页面插件宿主，并保留实时只读与离线参考开发入口。设备端由 LuCI 壳加载已安装插件贡献的页面：
+设备端由 LuCI 壳加载已安装插件贡献的页面；macOS 桌面端 UI 位于 `ui/`，通过 `bun run test` 与 `bun run build` 验证与构建桌面产物：
 
 ```bash
 cd ui
-bun install
-NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
+bun install --frozen-lockfile
+bun run test
+bun run build
 ```
 
 ## 文档
@@ -255,4 +256,4 @@ NETFLEET_UI_TARGET=<ssh-alias> NETFLEET_UI_TARGET_LABEL="Canary" bun run dev
 
 ## 许可证
 
-OPL NetFleet 默认采用 [Apache License 2.0](./LICENSE)，另有明确许可声明的文件除外。LuCI 等文件保留其 MIT 声明。包含 Nikki 派生模块的组合分发仍须遵循 [GNU GPL 3.0](openwrt/files/usr/share/opl-netfleet/nikki/LICENSE)。原有 NetFleet 文件的 Apache-2.0 声明继续保留，许可正文见 [Apache-2.0](openwrt/files/usr/share/opl-netfleet/LICENSE.Apache-2.0)；复用的 Nikki 模块保留其 GPL-3.0 许可证、版权、固定上游版本和[修改说明](openwrt/files/usr/share/opl-netfleet/nikki/NOTICE)。第三方原始声明不因组合分发而移除。
+OPL NetFleet 默认采用 [Apache License 2.0](./LICENSE)，另有明确许可声明的文件除外。LuCI 等文件保留其 MIT 声明。包含 Nikki 派生模块的组合分发仍须遵循 [GNU GPL 3.0](openwrt/files/usr/share/opl-netfleet/nikki/LICENSE)。原有 NetFleet 文件的 Apache-2.0 声明继续保留，许可正文见 [Apache-2.0](./LICENSE)；复用的 Nikki 模块保留其 GPL-3.0 许可证、版权、固定上游版本和[修改说明](openwrt/files/usr/share/opl-netfleet/nikki/NOTICE)。第三方原始声明不因组合分发而移除。

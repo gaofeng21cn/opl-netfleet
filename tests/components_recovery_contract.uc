@@ -1,6 +1,6 @@
 import * as fs from "fs";
 
-const path = ARGV[0] ?? replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet/plugins/components/lib/control.uc");
+const path = ARGV[0] ?? replace(sourcepath(), /[^/]+$/, "../plugins/components/lib/control.uc");
 const source = fs.readfile(path);
 const start = index(source, "restore_services = function(");
 const end = index(source, "rollback = function(", start);

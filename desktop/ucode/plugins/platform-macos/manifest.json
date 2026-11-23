@@ -8,67 +8,82 @@
   "services": {
     "platform.process": {
       "version": 1,
-      "module": "lib/process.uc",
+      "module": "lib/system.uc",
       "requires": {}
     },
     "platform.runtime": {
       "version": 1,
-      "module": "lib/runtime.uc",
+      "module": "lib/system.uc",
       "requires": {}
     },
     "platform.paths": {
       "version": 1,
-      "module": "lib/paths.uc",
+      "module": "lib/platform.uc",
       "requires": {
-        "platform.runtime": 1
+        "platform.runtime": 1,
+        "platform.storage": 1,
+        "models.subscriptions": 1,
+        "mihomo.profile-storage": 1
       }
     },
     "platform.profile": {
       "version": 1,
-      "module": "lib/profile.uc",
+      "module": "lib/system.uc",
       "requires": {}
     },
     "platform.credentials": {
       "version": 1,
-      "module": "lib/credentials.uc",
+      "module": "lib/system.uc",
       "requires": {}
     },
     "platform.device": {
       "version": 1,
-      "module": "lib/device.uc",
+      "module": "lib/system.uc",
       "requires": {}
     },
     "platform.service": {
       "version": 1,
-      "module": "lib/service.uc",
+      "module": "lib/system.uc",
       "requires": {}
     },
     "platform.subscriptions": {
       "version": 1,
-      "module": "lib/subscriptions.uc",
+      "module": "lib/platform.uc",
       "requires": {
-        "models.subscriptions": 1
+        "platform.runtime": 1,
+        "platform.storage": 1,
+        "models.subscriptions": 1,
+        "mihomo.profile-storage": 1
       }
     },
     "platform.files": {
       "version": 1,
-      "module": "lib/files.uc",
+      "module": "lib/platform.uc",
       "requires": {
-        "platform.storage": 1
+        "platform.runtime": 1,
+        "platform.storage": 1,
+        "models.subscriptions": 1,
+        "mihomo.profile-storage": 1
       }
     },
     "mihomo.backend": {
       "version": 1,
-      "module": "lib/backend.uc",
+      "module": "lib/platform.uc",
       "requires": {
+        "platform.runtime": 1,
+        "platform.storage": 1,
+        "models.subscriptions": 1,
         "mihomo.profile-storage": 1
       }
     },
     "subscriptions.store": {
       "version": 1,
-      "module": "lib/subscriptions.uc",
+      "module": "lib/platform.uc",
       "requires": {
-        "models.subscriptions": 1
+        "platform.runtime": 1,
+        "platform.storage": 1,
+        "models.subscriptions": 1,
+        "mihomo.profile-storage": 1
       }
     },
     "events.output": {

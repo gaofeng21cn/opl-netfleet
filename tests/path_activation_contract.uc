@@ -1,6 +1,6 @@
 import * as fs from "fs";
-const root = fs.realpath(replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet"));
-const factory = loadfile(`${root}/plugins/mihomo/lib/paths.uc`)();
+const plugins_root = fs.realpath(replace(sourcepath(), /[^/]+$/, "../plugins"));
+const factory = loadfile(`${plugins_root}/mihomo/lib/paths.uc`)();
 const calls = [];
 let business_failed = false, stale = true, probe_count = 0;
 const services = {

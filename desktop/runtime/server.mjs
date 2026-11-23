@@ -745,6 +745,14 @@ async function main() {
   await new Promise((resolve, reject) => { rpcServer.once('error', reject); rpcServer.listen(socketPath, resolve); }); await fs.chmod(socketPath, 0o600);
   await privateDir(codeRoot);
   await fs.cp(sourceRoot, codeRoot, { recursive: true, force: true });
+  if (!process.env.NETFLEET_SOURCE_ROOT) {
+    const pluginsRoot = path.resolve(desktopRoot, '../plugins');
+    await fs.mkdir(path.join(codeRoot, 'plugins'), { recursive: true });
+    for (const entry of await fs.readdir(pluginsRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name === 'device-identity') continue;
+      await fs.cp(path.join(pluginsRoot, entry.name), path.join(codeRoot, 'plugins', entry.name), { recursive: true, force: true });
+    }
+  }
   await fs.cp(path.join(desktopRoot, 'ucode'), codeRoot, { recursive: true, force: true });
   await snapshot();
   webServer = http.createServer(async (request, response) => {

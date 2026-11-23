@@ -8,10 +8,9 @@ import re
 
 
 ROOT = Path(__file__).resolve().parent
-# `plugins/` is the editable source of truth.  Keep the checked-in OpenWrt
-# projection as a compatibility fixture for existing tests and release tools;
-# the sync command verifies it before a package is built.
-PLUGIN_ROOT = ROOT.parent / "plugins" if (ROOT.parent / "plugins").is_dir() else ROOT / "files/usr/libexec/opl-netfleet/plugins"
+# `plugins/` is the single editable source of truth; OpenWrt SDK builds stage
+# service plugins alongside `openwrt/` into the package source directory.
+PLUGIN_ROOT = ROOT / "plugins" if (ROOT / "plugins").is_dir() else ROOT.parent / "plugins"
 ID = re.compile(r"[a-z][a-z0-9-]*")
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 OPTIONAL_PLUGINS = frozenset({"https-compat"})

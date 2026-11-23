@@ -1,6 +1,5 @@
 #!/bin/sh
-set -eu
-umask 077
+. "$(dirname -- "$0")/guest-common.sh"
 
 source_commit=${1:?}
 source_tree=${2:?}
@@ -10,49 +9,38 @@ feed_url=${5:?}
 fixture=/tmp/netfleet-runtime-fixture
 candidate=$fixture/feed-readback
 probe_url=https://netfleet-probe.test:$probe_port/generate_204
-main=/usr/libexec/opl-netfleet/main.uc
 legacy_upgraded=false
 legacy_source_commit=
 legacy_source_tree=
 legacy_artifacts='[]'
 stage=feed_readback
 
-finish() {
-	rc=$?
-	trap - EXIT INT TERM
-	if [ "$rc" -eq 0 ] && [ "$stage" != complete ]; then
-		echo "OpenWrt package qualification exited before completion at stage: $stage" >&2
-		rc=1
-	fi
-	if [ "$rc" -ne 0 ]; then
-		echo "OpenWrt package qualification failed at stage: $stage" >&2
-		for path in "$candidate/manifest.json" "$fixture/package-onboarding.json" \
-			"$fixture/package-apply.json" "$fixture/package-disable.json" \
-			"$fixture/package-status.json" \
-			"$fixture/package-info.after" \
-			"$fixture/package-rpcd-direct.json" "$fixture/package-rpcd-ubus.txt" \
-			"$fixture/kernel-rpc-old.txt" "$fixture/kernel-rpc-after.txt" "$fixture/kernel-rpc-object.json" \
-			"$fixture/package-helper-primary.log" "$fixture/package-helper-reserve.log" \
-			"$fixture"/lifecycle-*.json "$fixture"/lifecycle-*.log \
-			/tmp/opl-netfleet-onboarding/*.json /etc/opl-netfleet/policy.json \
-			/etc/nikki/profiles/opl-netfleet/mvp.manifest.json; do
-			[ ! -s "$path" ] || { echo "--- $path" >&2; cat "$path" >&2; }
-		done
-		ps w >&2 || true
-		netstat -lnt >&2 || true
-		tail -n 100 "$fixture/package-manager.log" >&2 || true
-		logread | tail -n 100 >&2 || true
-	fi
-	exit "$rc"
+guest_check_receipt() {
+	[ "$stage" = complete ]
 }
-trap finish EXIT INT TERM
+guest_on_failure() {
+	echo "OpenWrt package qualification failed at stage: $stage" >&2
+	for path in "$candidate/manifest.json" "$fixture/package-onboarding.json" \
+		"$fixture/package-apply.json" "$fixture/package-disable.json" \
+		"$fixture/package-status.json" \
+		"$fixture/package-info.after" \
+		"$fixture/package-rpcd-direct.json" "$fixture/package-rpcd-ubus.txt" \
+		"$fixture/kernel-rpc-old.txt" "$fixture/kernel-rpc-after.txt" "$fixture/kernel-rpc-object.json" \
+		"$fixture/package-helper-primary.log" "$fixture/package-helper-reserve.log" \
+		"$fixture"/lifecycle-*.json "$fixture"/lifecycle-*.log \
+		/tmp/opl-netfleet-onboarding/*.json /etc/opl-netfleet/policy.json \
+		/etc/nikki/profiles/opl-netfleet/mvp.manifest.json; do
+		[ ! -s "$path" ] || { echo "--- $path" >&2; cat "$path" >&2; }
+	done
+	ps w >&2 || true
+	netstat -lnt >&2 || true
+	tail -n 100 "$fixture/package-manager.log" >&2 || true
+	logread | tail -n 100 >&2 || true
+}
+guest_setup_trap
 
 owner_locked() {
-	(
-		exec 9>/var/lock/opl-netfleet-deploy.lock
-		flock 9
-		"$@" 9>&-
-	)
+	run_locked "$lock" "$@"
 }
 package_transaction() {
 	owner_locked "$real_apk" --no-network add "$@" >>"$fixture/package-manager.log" 2>&1
@@ -193,7 +181,7 @@ rmdir "$saved_runtime"
 # keep its unowned fixture sources out of the installed-file assertions.
 ! "$real_apk" info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1
 cmp /usr/libexec/opl-netfleet/plugins/https-compat/manifest.json \
-	/tmp/openwrt/files/usr/libexec/opl-netfleet/plugins/https-compat/manifest.json
+	/tmp/plugins/https-compat/manifest.json
 mv /usr/libexec/opl-netfleet/plugins/https-compat "$fixture/optional-management-source"
 
 # Source deployments predate package ownership and exercise APK's protected

@@ -11,7 +11,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 BASE_PATHS = ['openwrt/Makefile', 'openwrt/plugin_payload.py', 'openwrt/plugin-packages.py',
               'openwrt/files', 'openwrt/luci-app-netfleet', 'openwrt/mihomo-meta',
-              'plugins/device-identity', 'openwrt/native']
+              'plugins', 'LICENSE', 'openwrt/native']
 
 
 def runtime_files(packages):
