@@ -27,23 +27,24 @@ class Handler(BaseHTTPRequestHandler):
         target = self.server.cache_root / self.path.lstrip('/')
         temporary = None
         try:
-            if not target.is_file():
-                target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-                with request.urlopen('https://downloads.openwrt.org' + self.path, timeout=120) as origin:
-                    with tempfile.NamedTemporaryFile(dir=target.parent, prefix='.download-', delete=False) as output:
-                        temporary = Path(output.name)
-                        shutil.copyfileobj(origin, output)
-                    expected = origin.headers.get('Content-Length')
-                    if expected is not None and temporary.stat().st_size != int(expected):
-                        raise OSError('Incomplete official package download')
-                os.replace(temporary, target)
-                temporary = None
+            try:
+                if not target.is_file():
+                    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    with request.urlopen('https://downloads.openwrt.org' + self.path, timeout=120) as origin:
+                        with tempfile.NamedTemporaryFile(dir=target.parent, prefix='.download-', delete=False) as output:
+                            temporary = Path(output.name)
+                            shutil.copyfileobj(origin, output)
+                        expected = origin.headers.get('Content-Length')
+                        if expected is not None and temporary.stat().st_size != int(expected):
+                            raise OSError('Incomplete official package download')
+                    os.replace(temporary, target)
+                    temporary = None
+            finally:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
         except (OSError, ValueError, HTTPException):
             self.send_error(502, 'Official package download failed')
             return
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
         with target.open('rb') as package:
             self.send_response(200)
             self.send_header('Content-Type', 'application/octet-stream')

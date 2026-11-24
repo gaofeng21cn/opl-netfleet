@@ -60,10 +60,18 @@ class MirrorTests(unittest.TestCase):
         origin = io.BytesIO(b'partial')
         origin.headers = {'Content-Length': '100'}
         path = '/releases/25.12.5/packages/aarch64_generic/base/packages.adb'
-        with mock.patch.object(mirror.request, 'urlopen', return_value=origin):
+        pending_at_reply = []
+        send_error = mirror.Handler.send_error
+
+        def record_error(handler, *args):
+            pending_at_reply.extend(self.server.cache_root.rglob('.download-*'))
+            return send_error(handler, *args)
+
+        with (mock.patch.object(mirror.request, 'urlopen', return_value=origin),
+              mock.patch.object(mirror.Handler, 'send_error', record_error)):
             self.assertEqual(self.read(path)[0], 502)
         self.assertEqual(list(self.server.cache_root.rglob('*adb')), [])
-        self.assertEqual(list(self.server.cache_root.rglob('.download-*')), [])
+        self.assertEqual(pending_at_reply, [])
 
     def test_origin_failure_is_not_cached(self):
         with mock.patch.object(mirror.request, 'urlopen', side_effect=OSError('unavailable')):
