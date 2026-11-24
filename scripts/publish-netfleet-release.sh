@@ -40,6 +40,7 @@ qualification=$(cd "$(dirname "$qualification")" 2>/dev/null && pwd)/$(basename 
   die 'supply the default candidate plus --compat-candidate and --compat-qualification; precomposed optional publication is not admitted'
 command -v gh >/dev/null 2>&1 || die 'gh is required'
 command -v git >/dev/null 2>&1 || die 'git is required'
+command -v curl >/dev/null 2>&1 || die 'curl is required'
 
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 if [[ -z "$repo" ]]; then
@@ -87,6 +88,7 @@ PY
 
 publication=$candidate
 publication_work=''
+upload_work=''
 readback=''
 draft_created=0
 cleanup() {
@@ -94,6 +96,7 @@ cleanup() {
     gh release delete "$tag" --repo "$repo" --yes >/dev/null 2>&1 || true
   fi
   [[ -z "$publication_work" ]] || rm -rf -- "$publication_work"
+  [[ -z "$upload_work" ]] || rm -rf -- "$upload_work"
   [[ -z "$readback" ]] || rm -rf -- "$readback"
 }
 trap cleanup EXIT
@@ -142,17 +145,75 @@ gh release create "$tag" --repo "$repo" --verify-tag --draft \
   --title "NetFleet $tag" \
   --notes "Versioned NetFleet OpenWrt packages qualified for installation and runtime behavior on ARM64 OpenWrt 25.12.5."
 draft_created=1
+release_id=$(gh release view "$tag" --repo "$repo" --json databaseId --jq .databaseId)
+[[ "$release_id" =~ ^[0-9]+$ ]] || die 'cannot resolve draft release id'
+upload_work=$(mktemp -d "${TMPDIR:-/tmp}/netfleet-release-upload.XXXXXX")
+chmod 700 "$upload_work"
+curl_auth="$upload_work/auth.cfg"
+upload_resp="$upload_work/response.json"
+(
+  umask 077
+  token=$(gh auth token)
+  [[ -n "$token" ]] || exit 1
+  printf 'header = "Authorization: Bearer %s"\n' "$token" > "$curl_auth"
+) || die 'cannot resolve GitHub auth token'
 for asset in "$publication"/*; do
   [[ -f "$asset" ]] || continue
+  asset_name=$(basename "$asset")
+  asset_size=$(wc -c < "$asset" | tr -d '[:space:]')
+  encoded_name=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$asset_name")
   uploaded=0
   for attempt in 1 2 3 4; do
-    if gh release upload "$tag" --repo "$repo" --clobber "$asset"; then
+    if (( attempt > 1 )); then
+      while read -r stale_id; do
+        [[ "$stale_id" =~ ^[0-9]+$ ]] || continue
+        gh api -X DELETE "repos/$repo/releases/assets/$stale_id" >/dev/null 2>&1 || true
+      done < <(gh api "repos/$repo/releases/$release_id/assets?per_page=100" | python3 -c '
+import json, sys
+target = sys.argv[1]
+for item in json.load(sys.stdin):
+    if isinstance(item, dict) and item.get("name") == target and item.get("id") is not None:
+        print(item["id"])
+' "$asset_name")
+    fi
+    rm -f -- "$upload_resp"
+    curl_rc=0
+    http_code=$(curl -sS --http1.1 \
+      --config "$curl_auth" \
+      --connect-timeout 15 \
+      --speed-time 20 \
+      --speed-limit 10240 \
+      --max-time 180 \
+      -X POST \
+      -H 'Accept: application/vnd.github+json' \
+      -H 'X-GitHub-Api-Version: 2022-11-28' \
+      -H 'Content-Type: application/octet-stream' \
+      -H 'Expect:' \
+      --data-binary "@$asset" \
+      -o "$upload_resp" \
+      -w '%{http_code}' \
+      "https://uploads.github.com/repos/$repo/releases/$release_id/assets?name=$encoded_name") || curl_rc=$?
+    if [[ "$curl_rc" == 0 && "$http_code" == 201 ]] && python3 - "$upload_resp" "$asset_name" "$asset_size" <<'PY'
+import json, sys
+from pathlib import Path
+data = json.loads(Path(sys.argv[1]).read_text())
+if not (
+    isinstance(data, dict)
+    and data.get("state") == "uploaded"
+    and data.get("name") == sys.argv[2]
+    and int(data.get("size", -1)) == int(sys.argv[3])
+):
+    raise SystemExit(1)
+PY
+    then
       uploaded=1
       break
     fi
+    printf 'publish-netfleet-release: upload attempt %s failed for %s (curl_rc=%s http=%s)\n' \
+      "$attempt" "$asset_name" "$curl_rc" "${http_code:-none}" >&2
     sleep 3
   done
-  [[ "$uploaded" == 1 ]] || die "failed to upload release asset: $(basename "$asset")"
+  [[ "$uploaded" == 1 ]] || die "failed to upload release asset: $asset_name"
 done
 gh release edit "$tag" --repo "$repo" --draft=false
 draft_created=0
@@ -161,7 +222,7 @@ readback=$(mktemp -d "${TMPDIR:-/tmp}/netfleet-release-readback.XXXXXX")
 downloaded=0
 for attempt in 1 2 3; do
   rm -rf -- "$readback"/*
-  if gh release download "$tag" --repo "$repo" --dir "$readback"; then
+  if GODEBUG=http2client=0 gh release download "$tag" --repo "$repo" --dir "$readback"; then
     downloaded=1
     break
   fi
