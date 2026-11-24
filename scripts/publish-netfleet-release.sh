@@ -178,12 +178,12 @@ for item in json.load(sys.stdin):
     fi
     rm -f -- "$upload_resp"
     curl_rc=0
-    http_code=$(curl -sS --http1.1 \
+    upload_stats=$(curl -sS --http1.1 \
       --config "$curl_auth" \
-      --connect-timeout 15 \
-      --speed-time 20 \
-      --speed-limit 10240 \
-      --max-time 180 \
+      --connect-timeout 20 \
+      --speed-time 45 \
+      --speed-limit 2048 \
+      --max-time 900 \
       -X POST \
       -H 'Accept: application/vnd.github+json' \
       -H 'X-GitHub-Api-Version: 2022-11-28' \
@@ -191,8 +191,9 @@ for item in json.load(sys.stdin):
       -H 'Expect:' \
       --data-binary "@$asset" \
       -o "$upload_resp" \
-      -w '%{http_code}' \
+      -w '%{http_code} %{size_upload} %{speed_upload} %{time_total}' \
       "https://uploads.github.com/repos/$repo/releases/$release_id/assets?name=$encoded_name") || curl_rc=$?
+    read -r http_code sent_bytes speed_bps elapsed_s <<<"${upload_stats:-000 0 0 0}"
     if [[ "$curl_rc" == 0 && "$http_code" == 201 ]] && python3 - "$upload_resp" "$asset_name" "$asset_size" <<'PY'
 import json, sys
 from pathlib import Path
@@ -206,11 +207,13 @@ if not (
     raise SystemExit(1)
 PY
     then
+      printf 'publish-netfleet-release: uploaded %s (%s B, %s B/s, %ss)\n' \
+        "$asset_name" "$asset_size" "${speed_bps:-0}" "${elapsed_s:-0}" >&2
       uploaded=1
       break
     fi
-    printf 'publish-netfleet-release: upload attempt %s failed for %s (curl_rc=%s http=%s)\n' \
-      "$attempt" "$asset_name" "$curl_rc" "${http_code:-none}" >&2
+    printf 'publish-netfleet-release: upload attempt %s failed for %s (curl_rc=%s http=%s sent=%s speed=%sB/s time=%ss)\n' \
+      "$attempt" "$asset_name" "$curl_rc" "${http_code:-none}" "${sent_bytes:-0}" "${speed_bps:-0}" "${elapsed_s:-0}" >&2
     sleep 3
   done
   [[ "$uploaded" == 1 ]] || die "failed to upload release asset: $asset_name"
