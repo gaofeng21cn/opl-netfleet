@@ -82,10 +82,11 @@ status_action = function(policy, evidence) {
 		}
 	}
 	const supervisor = service_state();
+	const netfleet_present = state_has_netfleet(state, manifest, profile);
 	ok("status", build_status(policy, manifest, state, evidence, {
 		operating_mode: operating_mode({ profile: profile, backend_enabled: enabled, mihomo_running: mihomo_running,
 			active: is_active(profile), controller_available: state?.proxies != null,
-			netfleet_present: state_has_netfleet(state, manifest, profile), cleanup: cleanup, supervisor: supervisor,
+			netfleet_present: netfleet_present, cleanup: cleanup, supervisor: supervisor,
 			compatibility: service_state("opl-netfleet-compat") }),
 		build: installed_build(),
 		backend: backend_metadata(),
@@ -94,7 +95,7 @@ status_action = function(policy, evidence) {
 		profile: profile,
 		profile_display_name: profile_display_name(profile),
 		recovery_profile_display_name: profile_display_name(policy.recovery_profile.ref),
-		netfleet_present: state_has_netfleet(state, manifest, profile),
+		netfleet_present: netfleet_present,
 		backend_enabled: enabled,
 		mihomo_running: mihomo_running,
 		lan_runtime: mihomo_running ? lan_runtime_state(null, observation) : null,

@@ -5,9 +5,11 @@ import { create as create_adapter, stage_runtime } from "./host-test-adapter.uc"
 const root = fs.realpath(replace(sourcepath(), /[^/]+$/, "../openwrt/files/usr/libexec/opl-netfleet"));
 const workspace = fs.mkdtemp("/tmp/netfleet-storage.XXXXXX");
 if (workspace == null) die("workspace unavailable");
-const runtime_root = stage_runtime(`${workspace}/runtime`);
+const shared_runtime = getenv("NETFLEET_TEST_RUNTIME");
+const use_shared = shared_runtime != null && length(shared_runtime) > 0 && fs.lstat(shared_runtime)?.type == "directory";
+const runtime_root = use_shared ? fs.realpath(shared_runtime) : stage_runtime(`${workspace}/runtime`);
 const path = `${workspace}/value.json`;
-const host = create(runtime_root, { adapter: create_adapter(), trusted_owner: fs.stat(runtime_root).uid, code_locks: false,
+const host = create(runtime_root, { adapter: create_adapter(), trusted_owner: fs.stat(runtime_root).uid, code_locks: false, lazy_inspection: true,
 	system: json(fs.readfile(`${root}/../../share/opl-netfleet/system.json`)),
 	override_path: `${workspace}/system.json`, maintenance_root: `${workspace}/maintenance` });
 let assertions = 0;
@@ -43,6 +45,9 @@ try {
 	check(profiles.resolve_profile("file:../outside") == null && profiles.resolve_profile("subscription:../outside") == null,
 		"shared profile references reject traversal without loading OpenWrt");
 	check(storage.mkdir(`${workspace}/subscriptions`), "create isolated subscription cache");
+	check(storage.mkdir(`${workspace}/nested/a/b`) && fs.stat(`${workspace}/nested/a/b`)?.type == "directory", "mkdir creates nested parent directories");
+	check(storage.write_text(`${workspace}/nested/file`, "x") && !storage.mkdir(`${workspace}/nested/file/child`), "mkdir rejects file parent conflict");
+	check(storage.sha256_text("hello") == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824", "sha256_text computes exact hex digest");
 	const alpha = `${workspace}/subscriptions/alpha.yaml`, beta = `${workspace}/subscriptions/beta.yaml`;
 	check(storage.write_json_atomic(alpha, { proxies: [] }) && storage.write_json_atomic(beta, { proxies: [] }), "prepare owned caches");
 	const link = profiles.provider_runtime_path("sample");

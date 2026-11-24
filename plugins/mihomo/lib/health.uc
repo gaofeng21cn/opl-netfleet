@@ -52,14 +52,15 @@ export function dns_response_ok(data) {
 		substr(data, 4) == substr(QUERY, 4);
 };
 
-export function dns_ready(port) {
+export function dns_ready(port, timeout_ms) {
 	if (type(port) != "int" || port < 1 || port > 65535) return false;
+	const wait_ms = type(timeout_ms) == "int" && timeout_ms > 0 ? timeout_ms : 1000;
 	const sock = socket.create(socket.AF_INET, socket.SOCK_DGRAM | socket.SOCK_NONBLOCK);
 	if (sock == null) return false;
 	let ready = false;
 	try {
 		if (sock.connect("127.0.0.1", port) && sock.send(QUERY) == length(QUERY)) {
-			const events = socket.poll(1000, [sock, socket.POLLIN]);
+			const events = socket.poll(wait_ms, [sock, socket.POLLIN]);
 			if (length(events ?? []) > 0 && (events[0][1] & socket.POLLIN))
 				ready = dns_response_ok(sock.recv(512));
 		}

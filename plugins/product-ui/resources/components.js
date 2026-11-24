@@ -315,9 +315,41 @@ function pluginPackages(controller, snapshot) {
 			E('td', { 'class': 'netfleet-component-actions' }, actions)
 		]);
 	});
+	const updatable = (snapshot.plugin_packages || []).filter(function(item) { return item.installed_version && item.update_available && item.available_version; });
+	const batchUpdate = updatable.length ? button('更新全部可升级插件 (' + updatable.length + ')', function() {
+		const items = updatable.map(function(item) {
+			return { name: item.name, before_version: item.installed_version, version: item.available_version };
+		});
+		const request = { action: 'update', items: items, confirm: true };
+		const planView = E('p', { role: 'status' }, '正在确认批量软件包变化…');
+		let closed = false;
+		const confirm = button('确认全部更新', function() {
+			closed = true; ui.hideModal(); return startPackageOperation(controller, null, request);
+		}, true);
+		ui.showModal('批量更新可升级插件', [
+			E('p', {}, '将一次性求解并更新所列 ' + updatable.length + ' 个可升级组件。无内核或核心停机的插件会在线热替换；若任一包需要核心或内核维护，将由依赖检查拦下并提示手动处理。'),
+			E('p', {}, '任务在设备后台执行，可离开页面；进度和结果会持续回读。'),
+			planView, E('div', { 'class': 'right' }, [button('取消', function() { closed = true; ui.hideModal(); }), ' ', confirm])
+		]);
+		return api.componentsPluginPlan({ ...request, confirm: false }).then(function(plan) {
+			if (closed) return;
+			request.plan = plan;
+			planView.replaceChildren(E('ul', {}, plan.names.map(function(name) {
+				return E('li', {}, name + (plan.candidates[name] ? ' → ' + displayVersion(plan.candidates[name]) : '：卸载'));
+			})));
+			confirm.disabled = false;
+		}).catch(function(error) { if (!closed) planView.textContent = errorLabel(error.message); });
+	}, active || !snapshot.feed.configured || !!snapshot.feed.error) : null;
+	const autoUpdate = snapshot.auto_update;
+	const autoSummary = autoUpdate ? E('p', { 'class': 'netfleet-follow-note' },
+		'安全插件自动更新：' + (autoUpdate.enabled ? '已开启（每 ' + Math.round((autoUpdate.interval_seconds || 86400) / 3600) + ' 小时）' : '已关闭（可在“配置 → 自动运行”开启）') +
+		(autoUpdate.last_result ? ' · 最近状态：' + ({ updated: '已自动更新', up_to_date: '已是最新', started: '更新中', deferred: '存在需手动确认的底座更新', rolled_back: '已回退并退避', failed: '失败并退避', check_failed: '源检查失败' }[autoUpdate.last_result] || autoUpdate.last_result) : '') +
+		(autoUpdate.deferred_packages && autoUpdate.deferred_packages.length ? ' · 待手动确认：' + autoUpdate.deferred_packages.map(function(item) { return item.name + (item.version ? ' → ' + displayVersion(item.version) : ''); }).join('、') : '')
+	) : null;
 	return E('section', { 'class': 'netfleet-component-modules' }, [E('h3', {}, '安装与维护独立插件'),
-		E('p', {}, '从设备已信任的软件源读取。插件和已安装的配套运行引擎统一在此更新，依赖由系统软件包管理器自动处理；必需插件不可单独卸载。'),
-		button('检查插件更新', function() { return startPackageOperation(controller); }, active || !snapshot.feed.configured),
+		E('p', {}, '从设备已信任的软件源读取。插件、LuCI 接入组件和已安装的配套运行引擎统一在此更新，依赖由系统软件包管理器自动处理；必需插件不可单独卸载。'),
+		autoSummary,
+		E('div', { 'class': 'netfleet-inline-actions' }, [button('检查插件更新', function() { return startPackageOperation(controller); }, active || !snapshot.feed.configured), batchUpdate].filter(Boolean)),
 		rows.length ? E('div', { 'class': 'netfleet-component-table' }, E('table', { 'class': 'table' }, [
 			E('thead', {}, E('tr', {}, ['插件', '安装与候选版本', '软件包操作'].map(label => E('th', {}, label)))), E('tbody', {}, rows)
 		])) : E('p', {}, snapshot.feed.checked_at && !snapshot.feed.error ? '当前软件源没有额外插件。安装完整发行版可配置官方可选插件源。' : '检查更新后显示软件源中的独立插件。')

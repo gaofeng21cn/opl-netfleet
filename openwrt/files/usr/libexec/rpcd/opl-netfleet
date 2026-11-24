@@ -143,8 +143,8 @@ case "$1" in
 				;;
 			dashboard_update) management_argument dashboard-update version 1 ;;
 			components_get) respond_owner ucode "$main" components-get ;;
-			components_plugin) config_request components-plugin 1 4096 ;;
-			components_plugin_plan) config_request components-plugin-plan 0 4096 ;;
+			components_plugin) config_request components-plugin 1 32768 ;;
+			components_plugin_plan) config_request components-plugin-plan 0 32768 ;;
 			operation_get)
 				transaction_owner
 				if [ -n "$transaction" ]; then respond_owner ucode "$transaction" operation; fi

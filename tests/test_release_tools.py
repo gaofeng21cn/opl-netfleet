@@ -1,4 +1,5 @@
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -245,9 +246,18 @@ class ReleaseToolsTests(unittest.TestCase):
             return [token.split('=', 1)[1] for token in tokens if token.startswith(name + '=')]
         self.assertEqual(field('id'), query('ids'))
         self.assertEqual(field('default'), query('default-ids'))
-        for identity in field('id'):
-            self.assertEqual(field('version.' + identity), query('version', identity))
-            self.assertEqual(field('depends.' + identity), query('dependencies', identity))
+        identities = field('id')
+        self.assertGreater(len(identities), 0)
+        self.assertEqual(field('version.' + identities[0]), query('version', identities[0]))
+        self.assertEqual(field('depends.' + identities[0]), query('dependencies', identities[0]))
+        spec = importlib.util.spec_from_file_location('plugin_packages', script)
+        package_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(package_mod)
+        plugins, _, graph = package_mod.composition()
+        for identity in identities:
+            self.assertEqual(field('version.' + identity), [plugins[identity]['version']])
+            deps = sorted({*plugins[identity].get('package_dependencies', []), *(plugins[req]['package'] for req in graph[identity])})
+            self.assertEqual(field('depends.' + identity), [f'+{name}' for name in deps])
         # Exercise actual Make expansion, including nested plugin template eval.
         source = (ROOT / 'openwrt/Makefile').read_text()
         header = source[source.index('NETFLEET_METADATA:='):source.index('define Package/opl-netfleet-kernel')]
@@ -641,12 +651,7 @@ all:
             uci.write_text('#!/bin/sh\nprintf "%s\\n" "subscription:fixture"\n')
             uci.chmod(0o755)
             jsonfilter = bin_dir / 'jsonfilter'
-            jsonfilter.write_text(
-                '#!/usr/bin/env python3\nimport json, sys\n'
-                'with open(sys.argv[2]) as source:\n'
-                '    for row in json.load(source):\n'
-                '        print("\\n".join(row["depends"]))\n'
-            )
+            jsonfilter.write_text('#!/bin/sh\ntr \'"\' \'\\n\' <"$2" | awk \'NR%2==0 && $0!="depends"\'\n')
             jsonfilter.chmod(0o755)
             ucode = bin_dir / 'ucode'
             ucode.write_text('#!/bin/sh\ncat >/dev/null\nprintf \"management-load\\n\" >>\"$NETFLEET_APK_LOG\"\n')
@@ -1006,84 +1011,136 @@ class PackageLifecycleTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         for path in ('bin', 'etc/init.d', 'etc/config', 'etc/opl-netfleet',
-                     'usr/libexec/opl-netfleet', 'tmp'):
+                     'usr/libexec/opl-netfleet', 'tmp', 'mock-state'):
             (self.root / path).mkdir(parents=True, exist_ok=True)
-        self.state = self.root / 'state.json'
-        self.state.write_text(json.dumps({
-            'backend': 'native-mihomo', 'calls': [], 'nikki_profile': 'file:OPL-NetFleet.json',
-            'opl-netfleet': {'enabled': True, 'running': True, 'generation': 1},
-            'opl-netfleet-core': {'enabled': True, 'running': True, 'generation': 1},
-        }))
+        self.state_dir = self.root / 'mock-state'
+        self._write_state_file('backend', 'native-mihomo')
+        self._write_state_file('nikki_profile', 'file:OPL-NetFleet.json')
+        self._write_state_file('not_ready', '0')
+        self._write_state_file('dirty', '0')
+        self._write_state_file('calls.log', '')
+        for svc in ('opl-netfleet', 'opl-netfleet-core'):
+            self._write_state_file(f'{svc}.enabled', '1')
+            self._write_state_file(f'{svc}.running', '1')
+            self._write_state_file(f'{svc}.generation', '1')
         (self.root / 'etc/opl-netfleet/backend.json').write_text('{"kind":"native-mihomo"}')
         (self.root / 'etc/config/nikki').write_text('fixture')
         (self.root / 'usr/libexec/opl-netfleet/main.uc').touch(mode=0o755)
-        mock = f'#!{sys.executable}\n' + r'''
-import json, os, sys
-from pathlib import Path
-root = Path(os.environ['NETFLEET_TEST_ROOT'])
-path = root / 'state.json'
-state = json.loads(path.read_text())
-name = Path(sys.argv[0]).name
-args = sys.argv[1:]
-state['calls'].append([name, *args])
-code = 0
-if name in ('opl-netfleet', 'opl-netfleet-core'):
-    action = args[0]
-    service = state[name]
-    if action in ('running', 'enabled'):
-        code = 0 if service[action] else 1
-    elif action == 'stop':
-        service['running'] = False
-    elif action in ('enable', 'disable'):
-        service['enabled'] = action == 'enable'
-    elif action in ('start', 'restart'):
-        guarded = (root / 'tmp/opl-netfleet-package-upgrade-state').exists()
-        if not guarded or os.environ.get('NETFLEET_PACKAGE_RESTORE') == '1':
-            service['running'] = True
-            service['generation'] += 1
-elif name == 'ucode':
-    if args[0] == '-e':
-        print(state['backend'])
-    elif args[1] == 'native-gateway-status':
-        running = state['opl-netfleet-core']['running']
-        print(json.dumps({'ok': True, 'result': {
-            'core_running': running, 'ready': running and not state.get('not_ready'),
-            'clean': not running and not state.get('dirty'),
-        }}))
-    elif args[1] == 'disable':
-        state['nikki_profile'] = 'subscription:recovery'
-    elif args[1] == 'package-cleanup':
-        pass
-    else:
-        code = 1
-elif name == 'jsonfilter':
-    value = json.loads(Path(args[args.index('-i') + 1]).read_text()) if '-i' in args else json.load(sys.stdin)
-    for key in args[args.index('-e') + 1].removeprefix('@.').split('.'):
-        value = value[key]
-    print(str(value).lower() if isinstance(value, bool) else value)
-elif name == 'uci' and 'get' in args:
-    print(state['nikki_profile'])
-path.write_text(json.dumps(state))
-sys.exit(code)
+        mock_sh = r'''#!/bin/sh
+S="$NETFLEET_TEST_ROOT/mock-state"
+name=${0##*/}
+if [ "$#" -gt 0 ]; then
+  line="$name"
+  for a in "$@"; do line="$line	$a"; done
+else
+  line="$name"
+fi
+printf '%s\n' "$line" >>"$S/calls.log"
+code=0
+case "$name" in
+  opl-netfleet|opl-netfleet-core)
+    action=${1:-}
+    case "$action" in
+      running) [ "$(cat "$S/$name.running")" = 1 ] || code=1 ;;
+      enabled) [ "$(cat "$S/$name.enabled")" = 1 ] || code=1 ;;
+      stop) printf '0' >"$S/$name.running" ;;
+      enable) printf '1' >"$S/$name.enabled" ;;
+      disable) printf '0' >"$S/$name.enabled" ;;
+      start|restart)
+        if [ ! -e "$NETFLEET_TEST_ROOT/tmp/opl-netfleet-package-upgrade-state" ] || [ "${NETFLEET_PACKAGE_RESTORE:-}" = 1 ]; then
+          printf '1' >"$S/$name.running"
+          gen=$(cat "$S/$name.generation")
+          printf '%s' "$((gen + 1))" >"$S/$name.generation"
+        fi
+        ;;
+    esac
+    ;;
+  ucode)
+    if [ "${1:-}" = -e ]; then
+      cat "$S/backend"
+      printf '\n'
+    elif [ "${2:-}" = native-gateway-status ]; then
+      run=$(cat "$S/opl-netfleet-core.running")
+      nr=$(cat "$S/not_ready")
+      dirty=$(cat "$S/dirty")
+      [ "$run" = 1 ] && cr=true || cr=false
+      [ "$run" = 1 ] && [ "$nr" = 0 ] && rd=true || rd=false
+      [ "$run" = 0 ] && [ "$dirty" = 0 ] && cl=true || cl=false
+      printf '{"ok":true,"result":{"core_running":%s,"ready":%s,"clean":%s}}\n' "$cr" "$rd" "$cl"
+    elif [ "${2:-}" = disable ]; then
+      printf 'subscription:recovery' >"$S/nikki_profile"
+    elif [ "${2:-}" = package-cleanup ]; then
+      :
+    else
+      code=1
+    fi
+    ;;
+  jsonfilter)
+    if [ "${1:-}" = -i ]; then
+      src=$(cat "$2")
+      expr=$4
+    else
+      src=$(cat)
+      expr=$2
+    fi
+    key=${expr##*.}
+    printf '%s' "$src" | tr -d '{}" \t\n\r' | tr ',' '\n' | awk -v k="$key" -F: '{ for (i=1; i<NF; i++) if ($i == k) { print $(i+1); exit } }'
+    ;;
+  uci)
+    case " $* " in *" get "*) cat "$S/nikki_profile"; printf '\n' ;; esac
+    ;;
+esac
+exit "$code"
 '''
         for name in ('ucode', 'jsonfilter', 'uci', 'sleep'):
             target = self.root / 'bin' / name
-            target.write_text(mock)
+            target.write_text(mock_sh)
             target.chmod(0o755)
         for name in ('opl-netfleet', 'opl-netfleet-core'):
             target = self.root / 'etc/init.d' / name
-            target.write_text(mock)
+            target.write_text(mock_sh)
             target.chmod(0o755)
         self.env = {**os.environ, 'PATH': f'{self.root}/bin:{os.environ["PATH"]}',
                     'NETFLEET_TEST_ROOT': str(self.root), 'PKG_UPGRADE': '1'}
 
+    def _write_state_file(self, name: str, value: str):
+        (self.state_dir / name).write_text(value)
+
     def read_state(self):
-        return json.loads(self.state.read_text())
+        calls = [line.split('\t') for line in (self.state_dir / 'calls.log').read_text().splitlines() if line]
+        result = {
+            'backend': (self.state_dir / 'backend').read_text(),
+            'calls': calls,
+            'nikki_profile': (self.state_dir / 'nikki_profile').read_text(),
+            'not_ready': (self.state_dir / 'not_ready').read_text() == '1',
+            'dirty': (self.state_dir / 'dirty').read_text() == '1',
+        }
+        for svc in ('opl-netfleet', 'opl-netfleet-core'):
+            result[svc] = {
+                'enabled': (self.state_dir / f'{svc}.enabled').read_text() == '1',
+                'running': (self.state_dir / f'{svc}.running').read_text() == '1',
+                'generation': int((self.state_dir / f'{svc}.generation').read_text()),
+            }
+        return result
 
     def update_state(self, **changes):
-        self.state.write_text(json.dumps({**self.read_state(), **changes}))
         if 'backend' in changes:
+            self._write_state_file('backend', str(changes['backend']))
             (self.root / 'etc/opl-netfleet/backend.json').write_text(json.dumps({'kind': changes['backend']}))
+        if 'nikki_profile' in changes:
+            self._write_state_file('nikki_profile', str(changes['nikki_profile']))
+        if 'not_ready' in changes:
+            self._write_state_file('not_ready', '1' if changes['not_ready'] else '0')
+        if 'dirty' in changes:
+            self._write_state_file('dirty', '1' if changes['dirty'] else '0')
+        if 'calls' in changes:
+            self._write_state_file('calls.log', ''.join('\t'.join(row) + '\n' for row in changes['calls']))
+        for svc in ('opl-netfleet', 'opl-netfleet-core'):
+            if svc in changes:
+                info = changes[svc]
+                self._write_state_file(f'{svc}.enabled', '1' if info['enabled'] else '0')
+                self._write_state_file(f'{svc}.running', '1' if info['running'] else '0')
+                self._write_state_file(f'{svc}.generation', str(info['generation']))
 
     def hook(self, name, **environment):
         source = (ROOT / 'openwrt/Makefile').read_text()
@@ -1176,6 +1233,222 @@ sys.exit(code)
         actions = [call[-1] for call in self.read_state()['calls'] if call[0] == 'ucode']
         self.assertIn('disable', actions)
         self.assertIn('package-cleanup', actions)
+
+
+class DeliveryPreflightTests(unittest.TestCase):
+    @staticmethod
+    def _module():
+        spec = importlib.util.spec_from_file_location(
+            'delivery_preflight', ROOT / 'scripts/netfleet-delivery-preflight.py'
+        )
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        return module
+
+    def test_source_contract_binds_components_to_platform_paths(self):
+        module = self._module()
+        result = module.source_contract(module.git('rev-parse', 'HEAD'))
+        self.assertEqual(
+            result,
+            {
+                'platform_paths_provider': True,
+                'components_path_dependency': True,
+                'path_shadowing': False,
+            },
+        )
+
+    def test_fixture_inventory_rejects_editor_files_and_symlinks(self):
+        module = self._module()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'cycle.json').write_text('{}\n')
+            (root / '._cycle.json').write_text('temporary\n')
+            with self.assertRaisesRegex(ValueError, 'temporary'):
+                module.fixture_inventory(root)
+            (root / '._cycle.json').unlink()
+            (root / 'link').symlink_to(root / 'cycle.json')
+            with self.assertRaisesRegex(ValueError, 'symlink'):
+                module.fixture_inventory(root)
+
+    def test_test_ref_path_policy_is_narrow(self):
+        module = self._module()
+        self.assertTrue(module.is_test_only_path('scripts/openwrt-vm/guest-qualify.sh'))
+        self.assertTrue(module.is_test_only_path('tests/fixture.uc'))
+        self.assertFalse(module.is_test_only_path('openwrt/files/usr/libexec/opl-netfleet/main.uc'))
+
+
+class PrebuiltComponentFixtures(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('component_fixtures', ROOT / 'scripts/openwrt-vm/component-fixtures.py')
+        self.fixtures = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.fixtures)
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.candidate = self.root / 'candidate'
+        self.output = self.root / 'fixtures'
+        self.candidate.mkdir(); self.output.mkdir()
+        self.manifest = {'source_commit': 'a' * 40, 'source_tree': 'b' * 40, 'package_version': '1.2.3'}
+        (self.candidate / 'manifest.json').write_text(json.dumps(self.manifest))
+        (self.output / 'fixture.json').write_text(json.dumps({'schema_version': 1, 'version': '1.2.3', **self.manifest}))
+        (self.output / 'old').mkdir()
+        (self.output / 'old/package.apk').write_bytes(b'synthetic update bytes')
+        self.fixtures.seal_prebuilt(self.candidate, self.output)
+
+    def test_frozen_candidate_and_complete_fixture_resources_are_reusable(self):
+        self.fixtures.validate_prebuilt(self.candidate, self.output)
+        for kind in ('changed', 'extra', 'symlink'):
+            path = self.output / ('old/package.apk' if kind == 'changed' else kind)
+            if kind == 'changed': path.write_bytes(b'different bytes')
+            elif kind == 'extra': path.write_bytes(b'undeclared resource')
+            else: path.symlink_to(self.candidate / 'manifest.json')
+            with self.assertRaises(SystemExit): self.fixtures.validate_prebuilt(self.candidate, self.output)
+            if kind == 'changed': path.write_bytes(b'synthetic update bytes')
+            else: path.unlink()
+        self.fixtures.validate_prebuilt(self.candidate, self.output)
+
+    def test_other_candidate_bytes_cannot_reuse_the_fixture(self):
+        (self.candidate / 'manifest.json').write_text(json.dumps({**self.manifest, 'package_version': '1.2.4'}))
+        with self.assertRaises(SystemExit): self.fixtures.validate_prebuilt(self.candidate, self.output)
+        (self.candidate / 'manifest.json').write_text(json.dumps(self.manifest))
+        path = self.output / 'fixture.json'
+        value = json.loads(path.read_text()); value['version'] = '9.9.9'
+        path.write_text(json.dumps(value))
+        with self.assertRaises(SystemExit): self.fixtures.validate_prebuilt(self.candidate, self.output)
+
+
+class IncrementalPackagingTests(unittest.TestCase):
+    def test_plugins_flag_requires_reuse_feed_and_rejects_core_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sdk = root / 'sdk'
+            sdk.mkdir()
+            (sdk / 'Makefile').write_text('all:\n\t@true\n')
+            reuse = root / 'reuse'
+            reuse.mkdir()
+            (reuse / 'manifest.json').write_text('{}\n')
+            res1 = subprocess.run(
+                [str(PACKAGER), '--sdk', str(sdk), '--plugins', 'compilation'],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertNotEqual(res1.returncode, 0)
+            self.assertIn('--reuse-feed', res1.stderr)
+            res2 = subprocess.run(
+                [str(PACKAGER), '--sdk', str(sdk), '--plugins', 'compilation', '--reuse-feed', str(reuse), '--core-only'],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertNotEqual(res2.returncode, 0)
+            self.assertIn('--core-only', res2.stderr)
+
+    def test_compile_plugins_only_and_exclude_filters(self):
+        spec = importlib.util.spec_from_file_location('compile_plugins', ROOT / 'openwrt/compile-plugins.py')
+        mod = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(mod)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for pid in ('alpha', 'beta'):
+                pdir = root / pid
+                (pdir / 'lib').mkdir(parents=True)
+                (pdir / 'manifest.json').write_text(json.dumps({
+                    'id': pid,
+                    'services': {f'{pid}.s': {'module': 'lib/s.uc'}},
+                }))
+                (pdir / 'lib/s.uc').write_text(f'return {{ id: "{pid}" }};\n')
+            fake_ucode = root / 'ucode'
+            fake_ucode.write_text('#!' + sys.executable + '\nimport pathlib, sys\n'
+                                  'out = sys.argv[sys.argv.index("-o") + 1]\n'
+                                  'pathlib.Path(out).write_bytes(b"\\x1bucbfake")\n')
+            fake_ucode.chmod(0o755)
+            rows = mod.compile_plugins(root, fake_ucode, root, only=['alpha'])
+            self.assertEqual([r['plugin'] for r in rows], ['alpha'])
+            self.assertEqual((root / 'beta/lib/s.uc').read_text(), 'return { id: "beta" };\n')
+            rows_ex = mod.compile_plugins(root, fake_ucode, root, exclude=['beta'])
+            self.assertEqual([r['plugin'] for r in rows_ex], ['alpha'])
+            with self.assertRaisesRegex(ValueError, 'missing'):
+                mod.compile_plugins(root, fake_ucode, root, only=['missing'])
+
+    def test_feed_build_merge_feed_overlays_by_package_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base_feed = root / 'base_feed'
+            cand = root / 'cand'
+            out = root / 'out'
+            base_feed.mkdir(); cand.mkdir()
+            sign_key = root / 'priv.pem'
+            sign_key.write_text('dummy-key\n')
+            pub_key = root / 'opl-netfleet-apk.pem'
+            pub_key.write_text('-----BEGIN PUBLIC KEY-----\ndummy\n-----END PUBLIC KEY-----\n')
+            (cand / 'opl-netfleet-apk.pem').write_text(pub_key.read_text())
+
+            base_a = base_feed / 'opl-netfleet-plugin-compilation-0.9.0.apk'
+            base_b = base_feed / 'opl-netfleet-plugin-models-0.8.0.apk'
+            new_a = cand / 'opl-netfleet-plugin-compilation-0.9.1.apk'
+            base_a.write_bytes(b'old-comp-apk')
+            base_b.write_bytes(b'keep-models-apk')
+            new_a.write_bytes(b'new-comp-apk')
+            (cand / 'plugin-release.json').write_text(json.dumps({
+                'schema': 'opl-netfleet-plugin-release.v1',
+                'build_target_arch': 'aarch64_generic',
+                'artifacts': [{
+                    'package': 'opl-netfleet-plugin-compilation',
+                    'name': new_a.name,
+                    'sha256': sha256(new_a),
+                    'size': new_a.stat().st_size,
+                    'version': '0.9.1',
+                }],
+                'dependency_artifacts': [],
+            }))
+
+            fake_apk = root / 'apk'
+            fake_apk.write_text('#!' + sys.executable + '''
+import json, pathlib, re, sys
+args = sys.argv[1:]
+cmd = args[0]
+def meta(p):
+    m = re.fullmatch(r'(.+)-([0-9]+\\.[0-9]+\\.[0-9]+)\\.apk', pathlib.Path(p).name)
+    return {'name': m.group(1), 'version': m.group(2), 'arch': 'noarch'}
+if cmd == 'verify':
+    sys.exit(0)
+if cmd == 'adbdump':
+    target = args[-1]
+    if target.endswith('.adb'):
+        print(pathlib.Path(target).read_text())
+    else:
+        print(json.dumps({'info': meta(target)}))
+    sys.exit(0)
+if cmd == 'mkndx':
+    out_idx = args[args.index('--output') + 1]
+    apks = [a for a in args if a.endswith('.apk')]
+    pathlib.Path(out_idx).write_text(json.dumps({'packages': [meta(a) for a in apks]}))
+    sys.exit(0)
+raise SystemExit(f'unexpected apk cmd: {args}')
+''')
+            fake_apk.chmod(0o755)
+            res = subprocess.run(
+                [str(FEED_BUILDER), '--packages', str(cand), '--merge-feed', str(base_feed),
+                 '--apk', str(fake_apk), '--sign-key', str(sign_key), '--output', str(out)],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(0, res.returncode, res.stderr)
+            self.assertTrue((out / new_a.name).is_file())
+            self.assertTrue((out / base_b.name).is_file())
+            self.assertFalse((out / base_a.name).exists())
+            idx = json.loads((out / 'index.json').read_text())
+            self.assertEqual(idx['packages'], {
+                'opl-netfleet-plugin-compilation': '0.9.1',
+                'opl-netfleet-plugin-models': '0.8.0',
+            })
+            # Duplicate base package in merge-feed must be rejected cleanly.
+            dup = base_feed / 'opl-netfleet-plugin-models-0.8.1.apk'
+            dup.write_bytes(b'dup')
+            bad_res = subprocess.run(
+                [str(FEED_BUILDER), '--packages', str(cand), '--merge-feed', str(base_feed),
+                 '--apk', str(fake_apk), '--sign-key', str(sign_key), '--output', str(out)],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertNotEqual(bad_res.returncode, 0)
 
 
 if __name__ == '__main__': unittest.main()

@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet
-PKG_VERSION:=0.9.25
+PKG_VERSION:=0.9.26
 PKG_RELEASE:=
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=OPL NetFleet
@@ -13,6 +13,9 @@ NETFLEET_METADATA:=$(shell python3 ./plugin-packages.py metadata)
 netfleet_metadata=$(patsubst $(1)=%,%,$(filter $(1)=%,$(NETFLEET_METADATA)))
 NETFLEET_PLUGINS:=$(call netfleet_metadata,id)
 NETFLEET_DEFAULT_PLUGINS:=$(call netfleet_metadata,default)
+NETFLEET_SELECTED_PLUGINS:=$(if $(strip $(NETFLEET_ONLY_PLUGINS)),$(filter $(NETFLEET_ONLY_PLUGINS),$(NETFLEET_PLUGINS)),$(NETFLEET_PLUGINS))
+NETFLEET_EMPTY:=
+NETFLEET_SPACE:=$(NETFLEET_EMPTY) $(NETFLEET_EMPTY)
 NETFLEET_LICENSE_SOURCE:=$(firstword $(wildcard ./LICENSE ../LICENSE))
 NETFLEET_PLUGINS_SOURCE:=$(firstword $(wildcard ./plugins ../plugins))
 ifeq ($(strip $(NETFLEET_PLUGINS)),)
@@ -205,10 +208,10 @@ endef
 define Build/Compile
 	$(RM) -r $(PKG_BUILD_DIR)/compiled-plugins
 	$(INSTALL_DIR) $(PKG_BUILD_DIR)/compiled-plugins
-	for plugin in $(NETFLEET_PLUGINS); do \
+	for plugin in $(NETFLEET_SELECTED_PLUGINS); do \
 		$(CP) "$(NETFLEET_PLUGINS_SOURCE)/$$plugin" "$(PKG_BUILD_DIR)/compiled-plugins/" || exit 1; \
 	done
-	python3 ./compile-plugins.py --root $(PKG_BUILD_DIR)/compiled-plugins --compiler $(STAGING_DIR_HOSTPKG)/bin/ucode --libraries $(STAGING_DIR_HOSTPKG)/lib/ucode >$(PKG_BUILD_DIR)/bytecode.json
+	python3 ./compile-plugins.py --root $(PKG_BUILD_DIR)/compiled-plugins --compiler $(STAGING_DIR_HOSTPKG)/bin/ucode --libraries $(STAGING_DIR_HOSTPKG)/lib/ucode $(if $(strip $(NETFLEET_SKIP_COMPILE_PLUGINS)),--exclude "$(subst $(NETFLEET_SPACE),$(comma),$(strip $(NETFLEET_SKIP_COMPILE_PLUGINS)))") >$(PKG_BUILD_DIR)/bytecode.json
 endef
 
 define Package/opl-netfleet/preinst
@@ -387,15 +390,15 @@ define Package/opl-netfleet-plugin-$(1)
   EXTRA_DEPENDS+=$(if $(filter platform-openwrt,$(1)),$(comma) opl-netfleet-plugin-models (>=0.7.12))
   EXTRA_DEPENDS+=$(if $(filter selection,$(1)),$(comma) opl-netfleet-plugin-models (>=0.7.6))
   EXTRA_DEPENDS+=$(if $(filter configuration,$(1)),$(comma) opl-netfleet-plugin-activation (>=0.7.7))
-  EXTRA_DEPENDS+=$(if $(filter product-ui,$(1)),$(comma) luci-app-netfleet (>=0.8.4)$(comma) opl-netfleet-plugin-subscriptions (>=0.7.4)$(comma) opl-netfleet-plugin-network (>=0.8.7)$(comma) opl-netfleet-plugin-components (>=0.8.11))
+  EXTRA_DEPENDS+=$(if $(filter product-ui,$(1)),$(comma) luci-app-netfleet (>=0.8.4)$(comma) opl-netfleet-plugin-subscriptions (>=0.7.4)$(comma) opl-netfleet-plugin-network (>=0.8.7)$(comma) opl-netfleet-plugin-components (>=0.8.16))
   EXTRA_DEPENDS+=$(if $(filter compilation mihomo network,$(1)),$(comma) opl-netfleet-plugin-models (>=0.7.15))
   EXTRA_DEPENDS+=$(if $(filter compilation network,$(1)),$(comma) opl-netfleet-plugin-mihomo (>=0.9.13))
   EXTRA_DEPENDS+=$(if $(filter refresh,$(1)),$(comma) opl-netfleet-plugin-compilation (>=0.7.7))
   EXTRA_DEPENDS+=$(if $(filter activation components network setup scheduler status,$(1)),$(comma) opl-netfleet-plugin-mihomo (>=0.9.12))
   EXTRA_DEPENDS+=$(if $(filter configuration maintenance mihomo network refresh setup components platform-storage,$(1)),$(comma) opl-netfleet-plugin-platform (>=0.8.9))
   EXTRA_DEPENDS+=$(if $(filter mihomo,$(1)),$(comma) !opl-netfleet-plugin-network (<0.8.7))
-  EXTRA_DEPENDS+=$(if $(filter scheduler status,$(1)),$(comma) opl-netfleet-plugin-models (>=0.7.13))
-  EXTRA_DEPENDS+=$(if $(filter product-ui,$(1)),$(comma) opl-netfleet-plugin-configuration (>=0.7.7)$(comma) opl-netfleet-plugin-status (>=0.8.10))
+  EXTRA_DEPENDS+=$(if $(filter configuration scheduler status,$(1)),$(comma) opl-netfleet-plugin-models (>=0.7.18))
+  EXTRA_DEPENDS+=$(if $(filter product-ui,$(1)),$(comma) opl-netfleet-plugin-configuration (>=0.7.10)$(comma) opl-netfleet-plugin-status (>=0.8.12))
   EXTRA_DEPENDS+=$(if $(filter subscriptions,$(1)),$(comma) opl-netfleet-plugin-models (>=0.7.12)$(comma) opl-netfleet-plugin-platform (>=0.8.4)$(comma) opl-netfleet-plugin-platform-openwrt (>=0.8.4))$(if $(filter refresh scheduler,$(1)),$(comma) opl-netfleet-plugin-subscriptions (>=0.7.1))
   PKGARCH:=all
 endef
@@ -463,6 +466,10 @@ rm -f /var/run/opl-netfleet-mihomo-handoff/state.json || exit 1
 [ ! -d /var/run/opl-netfleet-mihomo-handoff ] || rmdir /var/run/opl-netfleet-mihomo-handoff
 endef
 
+ifeq ($(strip $(NETFLEET_ONLY_PLUGINS)),)
 $(eval $(call BuildPackage,opl-netfleet-kernel))
 $(foreach plugin,$(NETFLEET_PLUGINS),$(eval $(call BuildPackage,opl-netfleet-plugin-$(plugin))))
 $(eval $(call BuildPackage,opl-netfleet))
+else
+$(foreach plugin,$(NETFLEET_SELECTED_PLUGINS),$(eval $(call BuildPackage,opl-netfleet-plugin-$(plugin))))
+endif

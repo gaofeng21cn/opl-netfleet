@@ -80,7 +80,7 @@ ip() { [ "$NETFLEET_READY_TEST_FAILURE" != dns ]; }
         scope = dict(http=http, json=json, urlsplit=urlsplit, parse_qs=parse_qs)
         exec(compile(ast.Module(body=[handler], type_ignores=[]), '<vm-probe-handler>', 'exec'), scope)
         with http.server.ThreadingHTTPServer(('127.0.0.1', 0), scope['Handler']) as server:
-            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.01}, daemon=True)
             thread.start()
             try:
                 for method in ('GET', 'HEAD'):

@@ -21,21 +21,22 @@ const provider_round_summary = context.use("models.selector").provider_round_sum
 const resolve_runtime = context.use("models.status").resolve_runtime;
 const provider_quotas = context.use("subscriptions.facts").provider_quotas;
 
-automatic_candidates = function(manifest, quotas, state, provider_state, capability, latency_round) {
+automatic_candidates = function(manifest, quotas, state, provider_state, capability, latency_round, index_cache) {
 	const entry = manifest?.generated_groups?.[capability];
 	const result = [];
 	const groups = entry?.candidate_groups ?? [];
+	const cache = index_cache ?? {};
 	for (let i = 0; i < length(groups); i++) {
 		const group = groups[i];
 		// Mihomo owns node-level URLTest inside each provider/region group.
 		// NetFleet compares only that group's current leaf once per round.
 		const source_name = entry?.providers?.[group.provider]?.source_name;
-		const candidate_id = provider_group_leaf(state?.proxies, provider_state,
-			source_name, group.name, latency_round?.target);
+		const group_measurement_reason = provider_group_measurement_reason(state?.proxies, provider_state,
+			source_name, group.name, latency_round?.target, cache);
+		const candidate_id = group_measurement_reason == null ? state?.proxies?.[group.name]?.now ?? null : null;
 		const latency = latency_round?.results?.[group.name] ??
 			{ method: "mihomo_delay", status: "unavailable", reason: "delay_test_failed" };
-		const measurement_reason = provider_group_measurement_reason(state?.proxies, provider_state,
-			source_name, group.name, latency_round?.target) ??
+		const measurement_reason = group_measurement_reason ??
 			(latency?.status != "ok" ? "delay_unavailable" : null);
 		const reason = quotas[group.provider]?.state == "exhausted" ? "quota_exhausted" : measurement_reason;
 		const available = candidate_id != null && latency?.status == "ok";
@@ -63,9 +64,9 @@ current_region = function(manifest_entry, state) {
 };
 
 // Cache keys describe the measured resource, never the capability display name.
-function measurement_key(entry, group, state, providers, target) {
+function measurement_key(entry, group, state, providers, target, index_cache) {
 	const source = entry?.providers?.[group.provider]?.source_name;
-	const leaf = provider_group_leaf(state?.proxies, providers, source, group.name, target);
+	const leaf = provider_group_leaf(state?.proxies, providers, source, group.name, target, index_cache);
 	return sprintf("%J", [group.name, source, group.region, group.filter, leaf,
 		state?.proxies?.[group.name]?.all ?? []]);
 };
@@ -83,8 +84,10 @@ automatic_round = function(policy, manifest, manifest_entry, capability, secret,
 	}
 	const reused = {};
 	let reusable = shared?.state != null;
+	if (reusable && shared.index_cache == null) shared.index_cache = {};
+	const shared_index = reusable ? shared.index_cache : null;
 	for (let group in manifest_entry.candidate_groups ?? []) {
-		const key = measurement_key(manifest_entry, group, shared?.state, shared?.provider_state, policy.checks.latency.url);
+		const key = measurement_key(manifest_entry, group, shared?.state, shared?.provider_state, policy.checks.latency.url, shared_index);
 		if (shared?.entries?.[key] == null) reusable = false;
 		else if (shared.entries[key].latency != null) reused[group.name] = shared.entries[key].latency;
 	}
@@ -95,26 +98,29 @@ automatic_round = function(policy, manifest, manifest_entry, capability, secret,
 		return { ok: false, error: "mihomo_state_unavailable_after_delay", candidates: [] };
 	}
 	let provider_state = reusable ? shared.provider_state : proxy_providers(secret, 1)?.providers ?? null;
-	if (!reusable && !candidate_provider_leaves_ready(manifest_entry, measured_state.proxies, provider_state, policy.checks.latency.url)) {
+	let round_index = reusable ? shared_index : {};
+	if (!reusable && !candidate_provider_leaves_ready(manifest_entry, measured_state.proxies, provider_state, policy.checks.latency.url, round_index)) {
 		const waited = wait_for_candidate_provider_leaves(secret, manifest_entry,
 			candidate_leaf_wait_seconds(policy), policy.checks.latency.url);
 		if (waited.state != null && waited.state.proxies != null) {
 			measured_state = waited.state;
 		}
 		provider_state = waited.provider_state ?? provider_state;
+		round_index = {};
 	}
 	latency_round = complete_from_fresh_history(latency_round, before, measured_state,
 		candidate_group_names(manifest_entry), policy.checks);
 	if (shared != null && !reusable) {
 		shared.state = measured_state;
 		shared.provider_state = provider_state;
+		shared.index_cache = round_index;
 		for (let group in manifest_entry.candidate_groups ?? []) {
-			const key = measurement_key(manifest_entry, group, measured_state, provider_state, policy.checks.latency.url);
+			const key = measurement_key(manifest_entry, group, measured_state, provider_state, policy.checks.latency.url, round_index);
 			shared.entries[key] = { latency: latency_round.results?.[group.name] ?? null };
 		}
 	}
 	const candidates = automatic_candidates(manifest, provider_quotas(policy), measured_state,
-		provider_state, capability, latency_round);
+		provider_state, capability, latency_round, round_index);
 	const decision = choose_automatic(candidates, policy, capability,
 		keep_current && preferred_candidate == null ? current_region(manifest_entry, measured_state) : null, preferred_region, preferred_candidate);
 	return {
@@ -122,7 +128,7 @@ automatic_round = function(policy, manifest, manifest_entry, capability, secret,
 		error: decision.error,
 		decision: decision,
 		candidates: candidates,
-		summary: provider_round_summary(manifest_entry, measured_state?.proxies, provider_state, policy.checks.latency.url),
+		summary: provider_round_summary(manifest_entry, measured_state?.proxies, provider_state, policy.checks.latency.url, round_index),
 		latency_round: latency_round,
 		provider_state_available: provider_state != null,
 		provider_measurement_ok: provider_measurement_ok

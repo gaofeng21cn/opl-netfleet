@@ -20,7 +20,7 @@ class MirrorTests(unittest.TestCase):
         self.server = mirror.ThreadingHTTPServer(('127.0.0.1', 0), mirror.Handler)
         self.server.cache_root = Path(self.directory.name)
         self.server.release_prefix = '/releases/25.12.5/'
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread = threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.01}, daemon=True)
         self.thread.start()
 
     def tearDown(self):

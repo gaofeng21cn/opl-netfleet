@@ -305,6 +305,23 @@ if (!result.ok || sprintf("%J", result.profile?.dns) != sprintf("%J", profile.dn
 	result.manifest.generated_groups.standard.region_switch_margin_ms != 150 ||
 	result.manifest.generated_groups["ai-compatible"].region_switch_margin_ms != 200 ||
 	result.manifest.generated_groups["ai-compatible"].leaf_switch_margin_ms != 80 ||
+	groups["常规出口 · 🇯🇵 日本 · Alpha机场"]?.interval != 300 ||
+	groups["常规出口 · 🇯🇵 日本 · Alpha机场"]?.lazy != true ||
+	groups["常规出口 · Alpha机场"]?.interval != 300 ||
+	groups["常规出口 · Alpha机场"]?.lazy != false ||
+	groups["AI 出口 · Alpha机场"]?.interval != 300 ||
+	groups["AI 出口 · Alpha机场"]?.lazy != false ||
+	groups["常规出口 · 🇯🇵 日本 · 主用"]?.interval != 300 ||
+	groups["常规出口 · 🇯🇵 日本 · 主用"]?.lazy != true ||
+	groups["常规出口 · 🇯🇵 日本"]?.["max-failed-times"] != 6 ||
+	groups["常规出口 · 主用机场"]?.interval != 300 ||
+	groups["常规出口 · 主用机场"]?.lazy != false ||
+	groups["AI 出口 · 主用机场"]?.interval != 300 ||
+	groups["AI 出口 · 主用机场"]?.lazy != false ||
+	groups["常规出口 · 代理路径"]?.lazy != false ||
+	groups["AI 出口 · 代理路径"]?.lazy != false ||
+	groups["常规出口 · 自动选优"]?.["max-failed-times"] != 8 ||
+	groups["AI 出口 · 自动选优"]?.["max-failed-times"] != 8 ||
 	("cache" in result.manifest.generated_groups.standard.providers.alpha)) {
 	print("multi_capability_compiler_failed\n");
 	exit(1);
@@ -585,6 +602,56 @@ if (method_groups == 0 || method_policy.fail_open.probes[0].expected_status != p
 for (let invalid in [null, "404", 99, 600]) {
  method_policy.fail_open.probes[0].head_expected_status = invalid;
  if (validate(method_policy).ok) die("invalid HEAD expected status accepted");
+}
+
+const primary_only_policy = json(sprintf("%J", policy));
+primary_only_policy.providers.backup.enabled = false;
+primary_only_policy.fail_open.healthcheck.interval_seconds = 30;
+primary_only_policy.fail_open.healthcheck.max_failed_times = 2;
+const primary_only_result = compile(profile, primary_only_policy, "source", "recovery", "policy", providers);
+if (!primary_only_result.ok) die("primary-only 30s healthcheck failed compilation");
+const primary_only_groups = {};
+for (let group in primary_only_result.profile["proxy-groups"]) primary_only_groups[group.name] = group;
+if (primary_only_groups["常规出口 · 🇯🇵 日本 · Alpha机场"]?.interval != 30 ||
+	primary_only_groups["常规出口 · 🇯🇵 日本 · Alpha机场"]?.lazy != true ||
+	primary_only_groups["常规出口 · Alpha机场"]?.interval != 30 ||
+	primary_only_groups["常规出口 · Alpha机场"]?.lazy != false ||
+	primary_only_groups["AI 出口 · Alpha机场"]?.interval != 30 ||
+	primary_only_groups["AI 出口 · Alpha机场"]?.lazy != false ||
+	primary_only_groups["常规出口 · 🇯🇵 日本 · 主用"]?.interval != 30 ||
+	primary_only_groups["常规出口 · 🇯🇵 日本 · 主用"]?.lazy != true ||
+	primary_only_groups["常规出口 · 🇯🇵 日本"]?.["max-failed-times"] != 4 ||
+	primary_only_groups["常规出口 · 主用机场"]?.interval != 30 ||
+	primary_only_groups["常规出口 · 主用机场"]?.lazy != false ||
+	primary_only_groups["AI 出口 · 主用机场"]?.interval != 30 ||
+	primary_only_groups["AI 出口 · 主用机场"]?.lazy != false ||
+	primary_only_groups["常规出口 · 代理路径"]?.lazy != false ||
+	primary_only_groups["AI 出口 · 代理路径"]?.lazy != false ||
+	primary_only_groups["常规出口 · 自动选优"]?.["max-failed-times"] != 6 ||
+	primary_only_groups["AI 出口 · 自动选优"]?.["max-failed-times"] != 6) {
+	die("primary-only fail-open timing mismatch");
+}
+
+const manual_policy = json(sprintf("%J", policy));
+manual_policy.capabilities.standard.mode = "manual";
+manual_policy.capabilities["ai-compatible"].enabled = false;
+delete manual_policy.capabilities["ai-compatible"].prefer_region_from;
+delete manual_policy.bindings.AI;
+delete manual_policy.bindings.Claude;
+const manual_profile = json(sprintf("%J", profile));
+manual_profile["proxy-groups"] = filter(manual_profile["proxy-groups"], item => item.name != "AI" && item.name != "Claude");
+manual_profile.rules = filter(manual_profile.rules, rule => index(rule, ",AI") < 0);
+manual_profile["sub-rules"] = {};
+const manual_result = compile(manual_profile, manual_policy, "source", "recovery", "policy", providers);
+if (!manual_result.ok) die("manual capability fixture failed compilation");
+const manual_groups = {};
+for (let group in manual_result.profile["proxy-groups"]) manual_groups[group.name] = group;
+if (manual_groups["常规出口 · Alpha机场"]?.lazy != true ||
+	manual_groups["常规出口 · 主用机场"]?.lazy != true ||
+	manual_groups["常规出口 · 代理路径"]?.lazy != true ||
+	manual_groups["常规出口 · Alpha机场"]?.interval != 300 ||
+	manual_groups["常规出口 · 主用机场"]?.interval != 300) {
+	die("manual capability must keep standby groups lazy");
 }
 
 print("multi_capability_compiler_ok\n");

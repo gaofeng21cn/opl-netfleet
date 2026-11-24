@@ -48,7 +48,7 @@ macOS 完整入口为 `scripts/check-platform.sh macos`，复用 shared 检查�
 Framework CLI 后运行：
 
 ```sh
-NETFLEET_OPL_BIN=/absolute/path/to/one-person-lab/bin/opl node --test tests/desktop-miniapp-carrier.test.mjs
+NETFLEET_OPL_BIN=/absolute/path/to/one-person-lab/bin/opl node --test tests/desktop-miniapp.test.mjs
 ```
 
 它在临时 OPL state 中用 Codex 原生插件管理器安装本地开发源，通过 Framework
@@ -86,11 +86,11 @@ libuci 和 `/proc`，其他机器上由 `check-mvp.sh` 明确列为延期，不�
 该阶段。
 
 算法证据的入口是 `tests/selection_contract.uc`、`tests/adapter_contract.uc` 和
-`tests/compiler_contract.uc`；三模式切换与失败恢复由 `tests/operating_mode_contract.uc` 覆盖；运行、状态和显示聚合分别由 `tests/activation_contract.uc`、
+`tests/compiler_contract.uc`；三模式切换、失败恢复与运行激活由 `tests/activation_contract.uc` 覆盖；状态和显示聚合分别由
 `tests/status_contract.uc`、`tests/evidence_contract.uc` 覆盖。它们分别证明纯函数、
 平台响应映射与生成合同；不证明某台设备的实时延迟、业务或网络恢复。
 
-微内核组合的源码入口为 `tests/scope_contract.uc`、`tests/host_adapter_contract.uc` 和
+微内核组合的源码入口为 `tests/plugin_schema_contract.uc`、`tests/host_adapter_contract.uc` 和
 `tests/composition_contract.uc`，分别验证资源撤销、显式平台注入及插件动作、实例、绑定和
 生命周期。它们已由 `check-mvp.sh` 调用，可在提供相应 UCode 模块的原生开发环境运行；
 不会因开发机可运行共享逻辑就推断完整平台宿主已经可发布。
@@ -103,7 +103,7 @@ libuci 和 `/proc`，其他机器上由 `check-mvp.sh` 明确列为延期，不�
 
 ## 隔离 OpenWrt
 
-原生固件维护的宿主合同由 `python3 -m unittest tests.test_native_firmware` 验证。
+原生固件维护的宿主合同由 `python3 -m unittest tests.test_native_openwrt` 验证。
 在一次性 OpenWrt guest 中安装候选 LuCI 载荷及其依赖后，执行
 `NETFLEET_DISPOSABLE_GUEST=1 sh tests/native_firmware_device.sh`，验证真实解释器、下载身份拒绝、
 配置篡改拒绝、服务禁用意图与 sysupgrade 备份往返。该夹具创建合成配置与 Nikki init script，

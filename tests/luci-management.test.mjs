@@ -1584,43 +1584,55 @@ test('plugin switch terminal result and process inventory', async () => {
 });
 
 test('plugin state busy read is bounded and instance scoped', async () => {
-  const owner = controller();
-  owner.componentsSection = 'plugins';
-  const plugin = { id: 'device-identity', kind: 'plugin', runtime: 'process', revision: 'r1', instance: 'review', enabled: null };
-  owner.components = { supported: true, feed: {}, components: [], extensions: [plugin] };
-  let attempts = 0, busy = 2;
-  const managed = loadModule('managed.js', {
-    componentsGet: async () => owner.components,
-    pluginRead: async request => {
-      attempts++;
-      assert.equal(request.instance, 'review');
-      if (busy-- > 0) throw Error('mutation_busy');
-      return { loaded: false, ready: false, revision: 'r1' };
-    },
-    pluginCall: async () => { throw Error('reads must never write'); },
-  });
-  await managed.loadComponents(owner);
-  assert.equal(attempts, 3);
-  assert.equal(plugin.enabled, false, 'brief contention resolves without manual state recovery');
-  assert(button(managed.components(owner), '启用'));
-  attempts = 0;
-  busy = 9;
-  await managed.loadComponents(owner);
-  assert.equal(attempts, 3, 'persistent contention is bounded');
-  assert.equal(plugin.enabled, null, 'failed fresh reads must not retain a stale toggle');
-  const page = managed.components(owner);
-  assert.equal(all(page, n => n.tag === 'button' && text(n) === '查看状态').length, 1);
-  assert(!button(page, '读取状态'));
-  assert(!button(page, '启用') && !button(page, '禁用'));
-  assert(text(page).includes('暂时无法读取'));
-  attempts = 0;
-  busy = 0;
-  await fire(button(page, '查看状态'));
-  await tick();
-  assert.equal(attempts, 1);
-  assert.equal(plugin.enabled, false);
-  assert(!text(managed.components(owner)).includes('暂时无法读取'));
-  assert(!button(modal.content, '启用').hidden && button(modal.content, '禁用').hidden);
+  const realSetTimeout = globalThis.setTimeout;
+  const retryDelays = [];
+  globalThis.setTimeout = (fn, ms, ...args) => {
+    retryDelays.push(ms);
+    queueMicrotask(() => fn(...args));
+    return 0;
+  };
+  try {
+    const owner = controller();
+    owner.componentsSection = 'plugins';
+    const plugin = { id: 'device-identity', kind: 'plugin', runtime: 'process', revision: 'r1', instance: 'review', enabled: null };
+    owner.components = { supported: true, feed: {}, components: [], extensions: [plugin] };
+    let attempts = 0, busy = 2;
+    const managed = loadModule('managed.js', {
+      componentsGet: async () => owner.components,
+      pluginRead: async request => {
+        attempts++;
+        assert.equal(request.instance, 'review');
+        if (busy-- > 0) throw Error('mutation_busy');
+        return { loaded: false, ready: false, revision: 'r1' };
+      },
+      pluginCall: async () => { throw Error('reads must never write'); },
+    });
+    await managed.loadComponents(owner);
+    assert.equal(attempts, 3);
+    assert.equal(plugin.enabled, false, 'brief contention resolves without manual state recovery');
+    assert(button(managed.components(owner), '启用'));
+    attempts = 0;
+    busy = 9;
+    await managed.loadComponents(owner);
+    assert.equal(attempts, 3, 'persistent contention is bounded');
+    assert.equal(plugin.enabled, null, 'failed fresh reads must not retain a stale toggle');
+    const page = managed.components(owner);
+    assert.equal(all(page, n => n.tag === 'button' && text(n) === '查看状态').length, 1);
+    assert(!button(page, '读取状态'));
+    assert(!button(page, '启用') && !button(page, '禁用'));
+    assert(text(page).includes('暂时无法读取'));
+    attempts = 0;
+    busy = 0;
+    await fire(button(page, '查看状态'));
+    await tick();
+    assert.equal(attempts, 1);
+    assert.equal(plugin.enabled, false);
+    assert(!text(managed.components(owner)).includes('暂时无法读取'));
+    assert(!button(modal.content, '启用').hidden && button(modal.content, '禁用').hidden);
+    assert.deepEqual(retryDelays, [200, 600, 200, 600]);
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+  }
 });
 
 test('https service exposes configuration without loading engine', () => {
@@ -2168,4 +2180,459 @@ test('compatibility direct toggle and edit recheck capabilities', async () => {
   assert(!button(root, '刷新状态').disabled);
   assert(text(root).includes('请在组件列表安装 HTTP/2 转发引擎'));
   assert(!text(root).includes('extension_component_not_installed'));
+});
+
+test('native luci uses display cache then revalidates once', async () => {
+  const source = fs.readFileSync(path.join(RESOURCES, 'product-pages.js'), 'utf8')
+    .split('return baseclass.extend({\n\tmount:')[0] + '\nreturn productController;';
+  function domNode(tag, attrs, children) {
+    const node = {
+      tag,
+      attrs: attrs || {},
+      children: Array.isArray(children) ? children : children == null ? [] : [children],
+      replaceChildren() { this.children = Array.from(arguments); },
+      getAttribute(name) { return this.attrs[name] == null ? null : this.attrs[name]; },
+      setAttribute(name, value) { this.attrs[name] = String(value); },
+      addEventListener(name, callback) { this.attrs[name] = callback; },
+      focus() { this.focused = true; },
+    };
+    node.classList = {
+      add: name => { node.attrs.class = [...new Set(String(node.attrs.class || '').split(' ').concat(name))].join(' '); },
+      remove: name => { node.attrs.class = String(node.attrs.class || '').split(' ').filter(item => item !== name).join(' '); },
+    };
+    return node;
+  }
+  function walkDom(value, visit) {
+    if (Array.isArray(value)) { value.forEach(item => walkDom(item, visit)); return; }
+    if (!value || typeof value !== 'object') return;
+    visit(value);
+    walkDom(value.children, visit);
+  }
+  function nodeText(value) {
+    if (Array.isArray(value)) return value.map(nodeText).join('');
+    if (value == null) return '';
+    return typeof value === 'object' ? nodeText(value.children) : String(value);
+  }
+  function findNode(root, predicate) {
+    let found = null;
+    walkDom(root, node => { if (!found && predicate(node)) found = node; });
+    return found;
+  }
+  function deferred() {
+    let resolve, reject;
+    const promise = new Promise((ok, fail) => { resolve = ok; reject = fail; });
+    return { promise, resolve, reject };
+  }
+  function makeStatus(active, actions) {
+    return {
+      build: { version: '0.3.0', source_commit: 'a'.repeat(40), source_tree: 'b'.repeat(40) },
+      active, actions: actions || {}, capabilities: [], providers: [], regions: [], selection: {},
+      runtime: { netfleet_present: active, mihomo_running: active, controller_available: true, supervisor: {}, lan_runtime: { dashboard_lan_ready: active } },
+    };
+  }
+  function makeEvent(index) {
+    return {
+      at: index + 1, action: 'select', trigger: 'scheduled', initiator: 'supervisor',
+      capability: 'ordinary', region_id: 'hk', provider_id: 'primary',
+      leaf: 'node-' + String(index), delay_ms: 20 + index, reason: 'fastest_eligible',
+    };
+  }
+  function createStorage(seed) {
+    const values = new Map(Object.entries(seed || {}));
+    return {
+      getItem: key => values.has(key) ? values.get(key) : null,
+      setItem: (key, value) => values.set(key, String(value)),
+      removeItem: key => values.delete(key),
+      value: key => values.get(key),
+    };
+  }
+  function createPage(storage, api, notifications) {
+    const styleLink = domNode('link', { id: 'netfleet-native-style' });
+    const doc = { body: {}, documentElement: { dataset: {} }, getElementById: () => styleLink, head: { appendChild() {} } };
+    const netfleetConfig = { clone: v => JSON.parse(JSON.stringify(v)), dirty: () => false, render: () => domNode('div', {}, 'config') };
+    let dashboardOpens = 0;
+    const pageUi = {
+      addNotification: (_, message, level) => notifications.push({ message: nodeText(message), level }),
+      showModal() {}, hideModal() {},
+    };
+    const managedStub = {
+      displayVersion: value => value ? value.replace(/^v/, '').replace(/-r\d+$/, '') : '版本未提供',
+      quotaResetLabel: day => Number.isInteger(day) && day >= 1 && day <= 31 ? '每月 ' + day + ' 日重置' : '',
+      notify: pageUi.addNotification,
+      preloadSubscriptions: () => Promise.resolve(),
+      readOperations: () => Promise.resolve(),
+      loadComponents: () => Promise.resolve(),
+      operationNode: () => null,
+    };
+    api.nativeSetupGet = () => Promise.resolve({ ready: false });
+    api.dashboardGet = () => Promise.resolve({ available: true, port: 9090, protocol: 'http', ui_name: 'zashboard', secret: 'private-secret' });
+    const managementLoads = [];
+    const managementStub = { load: (_, section) => { managementLoads.push(section); return Promise.resolve(); }, maintenance: () => null, dashboard: () => null };
+    const productSource = fs.readFileSync(path.join(RESOURCES, 'product.js'), 'utf8');
+    const product = new Function('baseclass', 'E', productSource)({ extend: value => value }, domNode);
+    const productViews = new Function('baseclass', 'ui', 'managed', 'E', fs.readFileSync(path.join(RESOURCES, 'product-views.js'), 'utf8'))({ extend: value => value }, pageUi, managedStub, domNode);
+    const factory = new Function('view', 'ui', 'managed', 'management', 'netfleet', 'netfleetConfig', 'E', 'L', 'window', 'document', 'compatibility', 'poll', 'product', 'resourceUrl', 'productViews', 'getComputedStyle', source);
+    const page = factory(
+      { extend: value => value }, pageUi, managedStub, managementStub, api, netfleetConfig, domNode,
+      { resource: value => value, url: value => '/cgi-bin/luci/' + value },
+      { localStorage: storage, location: { hostname: 'router.example' }, open: () => { dashboardOpens++; return { location: { replace(url) {
+        const parsed = new URL(url);
+        assert.equal(parsed.hostname, 'router.example');
+        assert.equal(parsed.pathname, '/ui/zashboard/');
+        assert.equal(parsed.searchParams.get('secret'), 'private-secret');
+      } }, close() {} }; } },
+      doc, { refresh: () => Promise.resolve(), label: () => '未安装' }, { add() {} }, product,
+      name => 'resources/' + name + '?v=revision-1', productViews, () => ({ backgroundColor: 'rgb(255, 255, 255)' }),
+    );
+    page.pageId = 'overview';
+    page.navigated = null;
+    page.context = { signal: new AbortController().signal, navigate(id) { page.navigated = id; } };
+    page.styleLink = styleLink;
+    page.dashboardOpens = () => dashboardOpens;
+    page.managementLoads = managementLoads;
+    return page;
+  }
+
+  const cacheKey = 'opl-netfleet:luci-display:v1';
+  const cachedStatus = makeStatus(false, { can_enable: true });
+  cachedStatus.providers = [{ id: 'primary', display_name: '正式机场', available_count: 0, available_region_count: 0, candidate_count: 3, region_count: 2 }];
+  const storage = createStorage({ [cacheKey]: JSON.stringify({ schema: 1, status: cachedStatus, events: { events: [makeEvent(0)], core_lines: [] }, fetched_at_ms: Date.now() - 60000, read_duration_ms: 1664 }) });
+  const liveStatus = deferred(), liveEvents = deferred(), liveConfig = deferred(), notifications = [];
+  const page = createPage(storage, { onboardingGet: () => Promise.resolve({ required: false }), status: () => liveStatus.promise, events: () => liveEvents.promise, configGet: () => liveConfig.promise }, notifications);
+
+  let initialResolved = false;
+  const initialPromise = page.load().then(value => { initialResolved = true; return value; });
+  await tick();
+  assert.equal(initialResolved, true, 'cached load must not wait for RPC');
+  const root = page.render(await initialPromise);
+  assert(nodeText(root).includes('概览'));
+  assert(!nodeText(root).includes('NetFleet v0.3.0 · aaaaaaa'), 'build identity belongs in component details, not the page header');
+  assert.equal(page.styleLink.attrs.href, 'resources/native.css?v=revision-1');
+  assert.equal(page.liveDataReady, false);
+  assert(nodeText(root).includes('缓存数据，正在更新'));
+  assert(nodeText(root).includes('NetFleet 当前未接管，机场和地区的实时可用性未测量'));
+  assert(!nodeText(root).includes('不可用机场：'), 'inactive availability must not be reported as provider outage');
+  const cachedEnable = findNode(root, node => node.tag === 'button' && nodeText(node) === '切换模式');
+  assert(cachedEnable && cachedEnable.attrs.disabled === true, 'cached actions must stay disabled');
+
+  liveStatus.resolve(makeStatus(true, { can_disable: true }));
+  liveEvents.resolve({ events: Array.from({ length: 25 }, (_, index) => makeEvent(index)), core_lines: ['private log'], core_lines_persistent: false });
+  liveConfig.resolve({ revision: 'a'.repeat(64), active: true, pending_apply: false });
+  await page.initialRefresh;
+  await tick();
+  assert.equal(page.liveDataReady, true);
+  assert.equal(page.readDurationMs >= 0, true);
+  const persisted = JSON.parse(storage.value(cacheKey));
+  assert.deepEqual(persisted.events.core_lines, [], 'raw logs must not be persisted');
+  assert.equal(persisted.status.active, true);
+  const runtimeEntry = findNode(root, node => node.tag === 'button' && nodeText(node) === 'Zashboard ↗');
+  assert(runtimeEntry && runtimeEntry.attrs['aria-disabled'] !== 'true', 'healthy dashboard entry must be enabled');
+  assert.equal(page.dashboardUrl, undefined, 'normal page does not read dashboard credentials');
+  await page.prepareDashboard();
+  const dashboardUrl = new URL(page.dashboardUrl);
+  assert.equal(dashboardUrl.hostname, 'router.example');
+  assert.equal(dashboardUrl.pathname, '/ui/zashboard/');
+  assert.equal(dashboardUrl.hash, '#/setup', 'saved backend credentials must not bypass the new connection');
+  assert.equal(findNode(root, node => node.tag === 'ul' && node.attrs.class === 'cbi-tabmenu'), null, 'plugin pages delegate navigation to the shell');
+  assert.equal(dashboardUrl.searchParams.get('secret'), 'private-secret');
+  assert.equal(typeof runtimeEntry.attrs.click, 'function', 'Dashboard resolves fresh credentials on demand');
+  assert.equal(page.dashboardOpens(), 0, 'normal navigation must not create an intermediate blank window');
+  assert(!storage.value(cacheKey).includes('private-secret'), 'dashboard credentials must remain memory-only');
+  await tick();
+  page.status.runtime.lan_runtime.dashboard_lan_ready = false;
+  page.redraw();
+  const disabledRuntimeEntry = findNode(root, node => node.tag === 'button' && nodeText(node) === 'Zashboard ↗');
+  assert(disabledRuntimeEntry && disabledRuntimeEntry.attrs.disabled === true, 'unready dashboard entry must be disabled');
+  assert.equal(disabledRuntimeEntry.attrs.title, 'Zashboard 的局域网访问条件尚未就绪');
+  page.status.runtime.lan_runtime.dashboard_lan_ready = true;
+  page.redraw();
+
+  page.status.capabilities = [{
+    id: 'standard', display_name: '海外加速', base_group: '海外加速', data_path: 'preferred',
+    provider_id: 'primary', region_id: 'hk', leaf: '香港-专线(AnyTLS)', alive: true, user_mode: 'automatic',
+    reason: { kind: 'automatic_decision', delay_ms: 8, protected_probes_ok: true },
+    business_routes: [
+      { name: 'Netflix', default_route: 'capability' }, { name: 'Nintendo Switch', default_route: 'capability' },
+      { name: 'Steam', default_route: 'direct' }, { name: '国内媒体', default_route: 'direct' },
+    ],
+    fail_open_stages: [{ kind: 'provider_tier', role: 'primary', provider_ids: ['primary'] }, { kind: 'direct', provider_ids: [] }],
+  }];
+  page.status.providers = [{ id: 'primary', display_name: 'Alpha 正式机场' }];
+  page.status.regions = [{ id: 'hk', display_name: '🇭🇰 香港' }];
+  page.currentView = 'exits';
+  page.redraw();
+  const runningMetrics = findNode(findNode(root, node => node.attrs.class === 'netfleet-page-content'), node => node.tag === 'div' && String(node.attrs.class || '').includes('netfleet-metrics is-five'));
+  assert(runningMetrics && runningMetrics.children.length === 5, 'running metrics must use the balanced five-item layout');
+  assert(nodeText(root).includes('默认走此出口') && nodeText(root).includes('默认直连，可在 Zashboard 临时切换'));
+  assert(nodeText(root).includes('Netflix') && nodeText(root).includes('Steam') && !nodeText(root).includes('接管的原始策略组'));
+  assert(String(root.children[root.children.length - 1].children[0].attrs.class).includes('netfleet-source'), 'data source must follow page content');
+  assert(findNode(root.children[0], node => node.tag === 'button' && nodeText(node) === '刷新'), 'page actions share the title row');
+
+  page.status.providers = [{
+    id: 'primary', display_name: 'Alpha 正式机场', subscription_section: 'primary', selected: true, role: 'primary',
+    billing: 'subscription', available_region_count: 2, region_count: 2, available_node_count: 47, node_count: 50,
+    node_count_known: true, available_count: 3, candidate_count: 4, last_best_delay_ms: 18,
+    average_best_delay_ms: 20, delay_sample_count: 3, delay_sampled_at: 1700000000,
+    quota: { state: 'available', remaining_bytes: 1024, expires_at: '2027-01-01' },
+  }];
+  page.status.subscription_refresh = { enabled: true, interval_seconds: 43200, provider_count: 1, last_run_at: 1700000000, last_result: 'unchanged', last_success_at: 1699999000, next_run_at: 1700043200 };
+  page.status.subscriptions = [{ section: 'primary', ref: 'subscription:primary', display_name: 'Alpha 正式机场', cache_present: true, cache_sha256: 'c'.repeat(64), node_count: 52, last_attempt: 1700000000, last_success: 1700000000, last_result: 'updated' }];
+  page.currentView = 'providers';
+  page.redraw();
+  const providerPageText = nodeText(findNode(root, node => node.attrs.class === 'netfleet-page-content'));
+  assert(providerPageText.includes('1 / 1 正常') && providerPageText.includes('最近全部更新') && providerPageText.includes('最近尝试') && providerPageText.includes('下次更新'));
+  assert(!providerPageText.includes('暂无成功记录') && providerPageText.includes('资源数：当前可用 / 已加载') && providerPageText.includes('47/50 节点 · 订阅 52 条'));
+  assert(!providerPageText.includes('3/4 节点') && providerPageText.includes('订阅正常') && providerPageText.includes('管理订阅'));
+  const subscriptionLink = findNode(findNode(root, node => node.attrs.class === 'netfleet-page-content'), node => node.tag === 'button' && nodeText(node) === '管理订阅');
+  assert(subscriptionLink && subscriptionLink.attrs.class === 'netfleet-inline-link');
+  assert(!providerPageText.includes('订阅更新时间') && !providerPageText.includes('更新完成并已重载') && !providerPageText.includes('订阅缓存'));
+  const providerDetail = findNode(root, node => node.tag === 'aside' && node.attrs.id === 'netfleet-provider-inspector');
+  const providerDetailToggle = findNode(root, node => node.tag === 'button' && nodeText(node) === 'Alpha 正式机场');
+  assert(providerDetail && providerDetail.attrs.hidden === true && providerDetailToggle && providerDetailToggle.attrs['aria-expanded'] === 'false');
+  providerDetailToggle.attrs.click();
+  assert.equal(providerDetail.hidden, false);
+  const providerTable = findNode(root, node => String(node.attrs.class || '').includes('netfleet-provider-table'));
+  const headers = findNode(providerTable, node => node.tag === 'thead').children[0].children;
+  const cells = findNode(providerTable, node => node.tag === 'tbody').children[0].children;
+  assert.deepEqual(headers.map(nodeText), ['机场', '定位', '可用资源', '最近一次测速', '订阅状态', '剩余流量', '到期时间']);
+  assert.equal(cells.length, headers.length);
+  assert.equal(nodeText(cells[4]), '订阅正常');
+  assert(nodeText(cells[6]).includes('2027'));
+  assert.equal(providerDetailToggle.attrs['aria-expanded'], 'true');
+  assert(nodeText(providerDetail).includes('订阅更新时间') && nodeText(providerDetail).includes('cccccccccccc'));
+  assert(!findNode(providerDetail, node => node.tag === 'meter'), 'unknown quota totals must not invent a ratio');
+  providerDetail.attrs.keydown({ key: 'Escape' });
+  assert.equal(providerDetail.hidden, true);
+  assert(providerDetailToggle.focused, 'closing detail must return keyboard focus');
+  const search = findNode(root, node => node.attrs['aria-label'] === '搜索机场');
+  search.attrs.input({ target: { value: '不存在' } });
+  assert(nodeText(root).includes('没有匹配的机场'));
+  search.attrs.input({ target: { value: 'Alpha' } });
+  assert(nodeText(root).includes('47/50 节点'));
+  page.status.subscriptions[0].last_attempt = null;
+  page.status.subscriptions[0].last_success = null;
+  page.redraw();
+  findNode(root, node => node.tag === 'button' && nodeText(node) === 'Alpha 正式机场').attrs.click();
+  assert(nodeText(root).includes('最近尝试尚未执行') && nodeText(root).includes('订阅更新时间尚未执行'));
+  page.status.providers.push({ ...page.status.providers[0], id: 'faster', display_name: 'Beta', selected: false, average_best_delay_ms: 10, delay_sample_count: 2 });
+  page.status.providers.push({ ...page.status.providers[0], id: 'single', display_name: 'Gamma', selected: false, average_best_delay_ms: 1, delay_sample_count: 1 });
+  page.providerTableState.query = '';
+  page.redraw();
+  findNode(root, node => node.attrs['aria-label'] === '机场排序').attrs.change({ target: { value: 'average' } });
+  let names = [];
+  walkDom(root, node => { if (node.tag === 'button' && node.attrs.class === 'netfleet-name-link') names.push(nodeText(node)); });
+  assert.deepEqual(names, ['Beta', 'Alpha 正式机场', 'Gamma'], 'one-sample averages must sort after real averages');
+  findNode(root, node => node.tag === 'input' && node.attrs.type === 'checkbox').attrs.change({ target: { checked: true } });
+  names = [];
+  walkDom(root, node => { if (node.tag === 'button' && node.attrs.class === 'netfleet-name-link') names.push(nodeText(node)); });
+  assert.deepEqual(names, ['Alpha 正式机场']);
+
+  const refreshConnections = page.refreshConnections;
+  let connectionReads = 0;
+  page.refreshConnections = () => { connectionReads++; };
+  findNode(root, node => node.tag === 'button' && nodeText(node) === '事件与诊断').attrs.click();
+  assert.equal(page.navigated, 'events');
+  assert.equal(connectionReads, 0, 'new plugin page owns its own reads');
+  page.refreshConnections = refreshConnections;
+  page.status.regions = [
+    { id: 'hk', display_name: 'HK 香港', selected: true, available_count: 1, available_provider_count: 1 },
+    { id: 'jp', display_name: 'JP 日本', available_count: 1, available_provider_count: 1 },
+    { id: 'ch', display_name: 'CH 瑞士', available_count: 0, available_provider_count: 0 },
+  ];
+  page.currentView = 'regions';
+  page.redraw();
+  assert(nodeText(root).includes('已配置 3 个地区') && nodeText(root).includes('显示 3 个') && nodeText(root).includes('CH 瑞士'));
+  findNode(root, node => node.attrs['aria-label'] === '搜索地区').attrs.input({ target: { value: '日本' } });
+  assert(nodeText(root).includes('已配置 3 个地区') && nodeText(root).includes('显示 1 个'));
+
+  page.currentView = 'events';
+  page.redraw();
+  const eventPageText = nodeText(findNode(root, node => node.attrs.class === 'netfleet-page-content'));
+  assert(eventPageText.includes('选路事件') && !eventPageText.includes('Mihomo 原始日志') && !eventPageText.includes('当前活动连接'));
+  page.diagnosticSection = 'core'; page.redraw();
+  const diagnosticMetrics = findNode(findNode(root, node => node.attrs.class === 'netfleet-page-content'), node => node.tag === 'div' && String(node.attrs.class || '') === 'netfleet-metrics');
+  assert(diagnosticMetrics && diagnosticMetrics.children.length === 4);
+  const diagnosticNote = findNode(findNode(root, node => node.attrs.class === 'netfleet-page-content'), node => node.tag === 'div' && String(node.attrs.class || '').includes('netfleet-diagnostic-note'));
+  assert(diagnosticNote && nodeText(diagnosticNote).includes('原始日志：临时窗口'));
+  page.diagnosticSection = 'website'; page.redraw();
+  const connectionDetails = findNode(root, node => node.tag === 'details' && String(node.attrs.class || '').includes('netfleet-connection-details'));
+  assert(connectionDetails && connectionDetails.attrs.open === undefined && nodeText(connectionDetails).includes('详细规则命中链、连接流量和实时代理组观察请使用 Zashboard'));
+  page.diagnosticSection = 'events'; page.redraw();
+  let body = findNode(root, node => node.tag === 'tbody' && node.children.length === 20);
+  assert.equal(body.children.length, 20, 'first page must contain 20 events');
+  assert(findNode(root, node => node.tag === 'div' && String(node.attrs.class || '').includes('netfleet-event-pagination')));
+  const next = findNode(root, node => node.tag === 'button' && nodeText(node) === '下一页');
+  assert(next && next.attrs.disabled !== true);
+  next.attrs.click();
+  body = findNode(root, node => node.tag === 'tbody' && node.children.length === 5);
+  assert.equal(body.children.length, 5, 'second page must contain remaining events');
+  assert.equal(page.eventPage, 1);
+
+  const failedStatus = deferred(), failedNotifications = [];
+  const failedPage = createPage(storage, { onboardingGet: () => Promise.resolve({ required: false }), status: () => failedStatus.promise, events: () => Promise.resolve({ events: [] }), configGet: () => Promise.resolve({ revision: 'b'.repeat(64), active: false, pending_apply: false }) }, failedNotifications);
+  const failedInitial = await failedPage.load();
+  const failedRoot = failedPage.render(failedInitial);
+  failedStatus.reject(new Error('offline'));
+  await failedPage.initialRefresh;
+  await tick();
+  assert.equal(failedPage.liveDataReady, false);
+  assert(nodeText(failedRoot).includes('缓存数据，刷新失败'));
+  const failedDisable = findNode(failedRoot, node => node.tag === 'button' && nodeText(node) === '切换模式');
+  assert(failedDisable && failedDisable.attrs.disabled === true);
+  const retry = findNode(failedRoot, node => node.tag === 'button' && nodeText(node) === '刷新');
+  assert(retry && retry.attrs.disabled !== true);
+  assert.equal(failedNotifications.length, 1);
+});
+
+test('native luci config renders real regions and owner actions', () => {
+  const config = configModule({});
+  const deviceConfig = {
+    revision: 'a'.repeat(64), active: true, pending_apply: false,
+    backend: { id: 'nikki-mihomo', display_name: 'Nikki + Mihomo' },
+    policy_source: { kind: 'bundle', ref: 'bundle:base-v1', display_name: 'NetFleet 内置基础策略' },
+    policy_source_options: [{ kind: 'bundle', ref: 'bundle:base-v1', display_name: 'NetFleet 内置基础策略' }],
+    policy_groups: ['节点选择', '流媒体'],
+    recovery_profile: { ref: 'subscription:base', display_name: '当前原生配置' },
+    recovery_profile_options: [{ ref: 'subscription:base', display_name: '当前原生配置' }],
+    providers: [],
+    provider_options: [{ id: 'alpha', section: 'alpha', display_name: 'Alpha 机场', region_ids: ['japan', 'singapore'] }],
+    regions: [{ id: 'japan', flag: '🇯🇵', display_name: '日本', mode: 'automatic' }, { id: 'switzerland', flag: '🇨🇭', display_name: '瑞士', mode: 'automatic' }],
+    region_options: [{ id: 'japan', code: 'JP', display_name: '日本', display_order: 10 }, { id: 'singapore', code: 'SG', display_name: '新加坡', display_order: 20 }],
+    capabilities: [{ id: 'standard', display_name: '常规出口', enabled: true, mode: 'automatic', region_ids: ['japan', 'switzerland'], entry_group: '节点选择', policy_groups: [], base_groups: ['节点选择'] }],
+    routing_rules: [],
+    automation: { enabled: true, selection_interval_seconds: 1800, subscription_refresh_enabled: true, subscription_refresh_interval_seconds: 43200 },
+    safety: { region_switch_margin_ms: 150, leaf_switch_margin_ms: 150, runtime_grace_seconds: 45, latency_url: 'https://latency.invalid', path_probe_url: 'https://path.invalid', guard_probe_url: 'https://guard.invalid' },
+  };
+  const owner = {
+    config: config.clone(deviceConfig), configDraft: config.clone(deviceConfig), configSection: 'regions',
+    status: { providers: [], regions: [{ id: 'japan', available_provider_count: 2, available_node_count: 4 }, { id: 'switzerland', available_provider_count: 0, available_node_count: 0 }], runtime: {} },
+    busy: false, liveDataReady: true, redraw() {}, showConfigWizard() {}, discardConfig() {}, previewConfigChanges() {}, saveConfig() {}, confirmConfigApply() {},
+  };
+  let root = config.render(owner);
+  assert(text(root).includes('JP'));
+  assert(find(root, node => node.tag === 'input' && node.attrs.value === '日本'));
+  assert(find(root, node => node.tag === 'input' && node.attrs.value === '瑞士'), 'configured regions must remain removable even when currently unavailable');
+  assert(!find(root, node => node.tag === 'button' && text(node) === '保存配置'), 'active policy offers one apply action rather than an unusable save button');
+  let apply = find(root, node => node.tag === 'button' && text(node) === '应用更改');
+  assert(apply && apply.disabled === true);
+
+  owner.configSection = 'providers';
+  root = config.render(owner);
+  const addProvider = find(root, node => node.tag === 'button' && text(node) === '添加机场');
+  assert(addProvider, 'an available Nikki subscription must be addable');
+  addProvider.attrs.click();
+  assert.equal(owner.configDraft.providers.length, 1);
+  assert.equal(owner.configDraft.providers[0].section, 'alpha');
+  assert(owner.configDraft.regions.some(region => region.id === 'singapore'), 'adding a provider must bring in discovered regions');
+
+  owner.configSection = 'capabilities';
+  root = config.render(owner);
+  assert(text(root).includes('JP 日本') && text(root).includes('瑞士') && !text(root).includes('null'));
+
+  owner.configDraft.regions[0].display_name = '日本线路';
+  root = config.render(owner);
+  apply = find(root, node => node.tag === 'button' && text(node) === '应用更改');
+  assert(apply && apply.disabled === false);
+  assert(config.changeText({ scope: 'region', id: 'japan', field: 'display_name', before: '日本', after: '日本线路' }, owner).includes('日本线路'));
+  assert(text(config.wizard(owner, 0)).includes('环境与恢复'));
+
+  owner.configDraft = config.clone(owner.config);
+  owner.configDraft.active = false;
+  root = config.render(owner);
+  apply = find(root, node => node.tag === 'button' && text(node) === '应用并接管');
+  assert(apply && apply.disabled === false, 'inactive saved config must remain applicable');
+});
+
+test('components page supports batch update preview and auto-update status summary', async () => {
+  const owner = controller();
+  owner.componentsSection = 'plugins';
+  const items = [
+    { name: 'opl-netfleet-plugin-compilation', id: 'compilation', installed_version: '0.9.0', available_version: '0.9.1', update_available: true, dependencies: [] },
+    { name: 'luci-app-netfleet', id: 'luci', installed_version: '0.9.0', available_version: '0.9.1', update_available: true, dependencies: [] },
+  ];
+  owner.components = {
+    supported: true,
+    feed: { configured: true },
+    components: [],
+    extensions: [],
+    plugin_packages: items,
+    auto_update: {
+      enabled: true,
+      interval_seconds: 86400,
+      last_result: 'deferred',
+      deferred_packages: [{ name: 'opl-netfleet-kernel', version: '0.9.26' }],
+    },
+  };
+  let plannedRequest = null, executedRequest = null;
+  const plan = {
+    names: ['opl-netfleet-plugin-compilation', 'luci-app-netfleet'],
+    candidates: { 'opl-netfleet-plugin-compilation': '0.9.1', 'luci-app-netfleet': '0.9.1' },
+  };
+  const managed = loadModule('managed.js', {
+    componentsPluginPlan: async request => { plannedRequest = request; return plan; },
+    componentsPlugin: async request => { executedRequest = request; return { operation: { id: 'batch-1', state: 'running' } }; },
+    operationGet: async () => ({ packages: { id: 'batch-1', state: 'running' } }),
+  });
+  const root = managed.components(owner);
+  assert(text(root).includes('安全插件自动更新：已开启（每 24 小时）'));
+  assert(text(root).includes('存在需手动确认的底座更新'));
+  assert(text(root).includes('opl-netfleet-kernel → 0.9.26'));
+  await fire(button(root, '更新全部可升级插件 (2)'));
+  assert.equal(plannedRequest.confirm, false);
+  assert.equal(plannedRequest.items.length, 2);
+  assert(text(modal.content).includes('opl-netfleet-plugin-compilation → 0.9.1'));
+  await fire(button(modal.content, '确认全部更新'));
+  assert.equal(executedRequest.confirm, true);
+  assert.deepEqual(executedRequest.plan, plan);
+  clearTimeout(owner.operationTimer);
+  clearTimeout(owner.resultTimer);
+});
+
+test('config page renders plugin auto-update controls and change labels', () => {
+  const config = configModule({});
+  const deviceConfig = {
+    revision: 'a'.repeat(64), active: true, pending_apply: false,
+    backend: { id: 'native-mihomo', display_name: 'NetFleet + Mihomo', features: { rule_refresh: false } },
+    policy_source: { kind: 'bundle', ref: 'bundle:base-v1', display_name: 'NetFleet 内置基础策略' },
+    policy_source_options: [{ kind: 'bundle', ref: 'bundle:base-v1', display_name: 'NetFleet 内置基础策略' }],
+    policy_groups: ['OUTBOUND'],
+    recovery_profile: { ref: 'subscription:base', display_name: '当前原生配置' },
+    recovery_profile_options: [{ ref: 'subscription:base', display_name: '当前原生配置' }],
+    providers: [],
+    provider_options: [],
+    regions: [{ id: 'japan', flag: '🇯🇵', display_name: '日本', mode: 'automatic' }],
+    region_options: [{ id: 'japan', code: 'JP', display_name: '日本', display_order: 10 }],
+    capabilities: [{ id: 'standard', display_name: '常规出口', enabled: true, mode: 'automatic', region_ids: ['japan'], entry_group: 'OUTBOUND', policy_groups: [], base_groups: ['OUTBOUND'] }],
+    routing_rules: [],
+    automation: {
+      enabled: true, selection_interval_seconds: 1800,
+      subscription_refresh_enabled: true, subscription_refresh_interval_seconds: 43200,
+      plugin_auto_update_enabled: false, plugin_auto_update_interval_seconds: 86400,
+    },
+    safety: { region_switch_margin_ms: 150, leaf_switch_margin_ms: 150, runtime_grace_seconds: 45, latency_url: 'https://latency.invalid', path_probe_url: 'https://path.invalid', guard_probe_url: 'https://guard.invalid' },
+  };
+  const owner = {
+    config: config.clone(deviceConfig), configDraft: config.clone(deviceConfig), configSection: 'automation',
+    status: { providers: [], regions: [], runtime: {} },
+    busy: false, liveDataReady: true, redraw() {}, showConfigWizard() {}, discardConfig() {}, previewConfigChanges() {}, saveConfig() {}, confirmConfigApply() {},
+  };
+  let root = config.render(owner);
+  assert(text(root).includes('定期自动更新安全插件'));
+  assert(text(root).includes('插件自动更新周期'));
+  const toggleRow = find(root, node => text(node).includes('定期自动更新安全插件') && all(node, child => child.tag === 'input').length === 1);
+  const checkboxInput = find(toggleRow, node => node.tag === 'input' && node.attrs.type === 'checkbox');
+  const intervalRow = find(root, node => text(node).includes('插件自动更新周期') && all(node, child => child.tag === 'select').length === 1);
+  const intervalSelect = find(intervalRow, node => node.tag === 'select');
+  assert.equal(checkboxInput.checked, false);
+  assert.equal(intervalSelect.disabled, true);
+  checkboxInput.attrs.change({ target: { checked: true } });
+  assert.equal(owner.configDraft.automation.plugin_auto_update_enabled, true);
+  root = config.render(owner);
+  const enabledRow = find(root, node => text(node).includes('插件自动更新周期') && all(node, child => child.tag === 'select').length === 1);
+  const enabledSelect = find(enabledRow, node => node.tag === 'select');
+  assert.equal(enabledSelect.disabled, false);
+  enabledSelect.attrs.change({ target: { value: '21600' } });
+  assert.equal(owner.configDraft.automation.plugin_auto_update_interval_seconds, 21600);
+  assert(config.changeText({ scope: 'automation', field: 'plugin_auto_update_enabled', before: false, after: true }, owner).includes('自动更新安全插件'));
+  assert(config.changeText({ scope: 'automation', field: 'plugin_auto_update_interval_seconds', before: 86400, after: 21600 }, owner).includes('插件自动更新周期'));
 });

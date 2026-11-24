@@ -283,7 +283,7 @@ snapshot = function(work, paths, allow_unhealthy) {
 wait_runtime = function() {
 	for (let i = 0; i < 20; i++) {
 		if (gateway()?.ready == true) return true;
-		if (i < 19) system("sleep 1");
+		if (i < 19) sleep(1000);
 	}
 	return false;
 };

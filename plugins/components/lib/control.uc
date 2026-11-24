@@ -7,7 +7,7 @@ return function(context) {
 let observer, process_birth, pause_observer, resume_observer, drain_resource, native_identity;
 let network_guard = null;
 const adapter = loadstring(sprintf('import { create } from %J; return create;', context.root + '/adapters/openwrt.uc'))()(context.root);
-let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, recovery_world, restore_world, feed, newer, available, update_process, progress, get, local_stage, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, recovery_stop, restore_services, rollback, recover, journal, upgrade, command;
+let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, recovery_world, restore_world, feed, newer, available, update_process, progress, get, local_stage, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, recovery_stop, restore_services, rollback, recover, journal, upgrade, command, prune_archives, auto_update_policy, reconcile_auto_update, auto_update_summary, auto_update;
 
 const gateway = context.use("mihomo.gateway");
 const dashboard_resource = context.use("dashboard.control").resource;
@@ -32,6 +32,7 @@ const ROOT = context.use("platform.paths").PACKAGE_TRANSACTIONS;
 const PENDING = `${ROOT}/pending.json`;
 const CACHE = `${ROOT}/checked.json`;
 const REQUEST = `${ROOT}/request.json`;
+const AUTO_UPDATE = `${ROOT}/auto-update.json`;
 const REPOSITORY = context.use("platform.paths").APK_REPOSITORY;
 const UPDATE_SERVICE = "opl-netfleet-update";
 const RECOVERY_SERVICE = "opl-netfleet-update-recovery";
@@ -219,10 +220,10 @@ function package_paths(names, versions) {
 }
 function plugin_catalog() {
 	const owned = package_owners(installed());
-	const rows = parsed(`apk --no-network query --from repositories --all-matches --format json --fields name,version,description,depends,repositories 'opl-netfleet-plugin-*' ${join(" ", map(keys(owned), q))}`);
+	const rows = parsed(`apk --no-network query --from repositories --all-matches --format json --fields name,version,description,depends,repositories 'opl-netfleet-plugin-*' ${q(PACKAGES[1])} ${join(" ", map(keys(owned), q))}`);
 	const result = {};
 	for (let row in rows ?? []) {
-		if ((!owned[row.name] && !match(row.name ?? "", /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/)) || !version_valid(row.version)) continue;
+		if ((!owned[row.name] && row.name != PACKAGES[1] && !match(row.name ?? "", /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/)) || !version_valid(row.version)) continue;
 		if (result[row.name] == null || newer(row.version, result[row.name].version)) result[row.name] = row;
 	}
 	return result;
@@ -230,8 +231,13 @@ function plugin_catalog() {
 function plugin_packages(versions, product, catalog) {
 	const owned = package_owners(versions);
 	const names = sort(keys(catalog ?? {}));
-	for (let name in keys(versions ?? {})) if ((owned[name] || match(name, /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/)) && index(names, name) < 0) push(names, name);
-	return map(names, name => ({
+	for (let name in keys(versions ?? {})) if ((owned[name] || name == PACKAGES[1] || match(name, /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/)) && index(names, name) < 0) push(names, name);
+	return map(names, name => name == PACKAGES[1] ? ({
+		name, id: "luci", label: "LuCI 接入组件", runtime_package: false, required: true,
+		description: catalog?.[name]?.description ?? "提供 LuCI 菜单、权限与插件页面加载",
+		installed_version: versions?.[name] ?? null, available_version: catalog?.[name]?.version ?? null,
+		update_available: newer(catalog?.[name]?.version, versions?.[name]), dependencies: catalog?.[name]?.depends ?? []
+	}) : ({
 		name, id: owned[name] ?? substr(name, length("opl-netfleet-plugin-")), runtime_package: !match(name, /^opl-netfleet-plugin-/), required: index(product, name) >= 0, description: catalog?.[name]?.description,
 		installed_version: versions?.[name] ?? null, available_version: catalog?.[name]?.version ?? null,
 		update_available: newer(catalog?.[name]?.version, versions?.[name]), dependencies: catalog?.[name]?.depends ?? []
@@ -242,7 +248,22 @@ function plugin_plan(request, work, preview) {
 	const versions = installed();
 	if (versions == null) fail("package_manager_unavailable");
 	const owned = package_owners(versions);
-	if ((!match(request.name ?? "", /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) && !(owned[request.name] && request.action == "update")) || (index(product_packages(), request.name) >= 0 && request.action != "update"))
+	if (request.action == "update" && type(request.items) == "array") {
+		if (!length(request.items) || length(request.items) > 64) fail("invalid_plugin_package_request");
+		const specs = [];
+		for (let item in request.items) {
+			if (type(item) != "object" || !version_valid(item.version)) fail("invalid_plugin_package_request");
+			if (!match(item.name ?? "", /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) && item.name != PACKAGES[1] && !owned[item.name])
+				fail("plugin_package_protected");
+			push(specs, q(`${item.name}=${item.version}`));
+		}
+		const output = capture(`LC_ALL=C apk --timeout 10 --cache-max-age 1440 --simulate add ${join(" ", specs)}`);
+		if (output == null) fail("plugin_dependencies_unavailable");
+		const plan = package_model.validate(package_model.changes(output), preview ? { ...request, confirm: true } : request, versions, product_packages(), owned, KIND == "native-mihomo");
+		if (!preview && sprintf("%J", request.plan) != sprintf("%J", plan)) fail("candidate_changed");
+		return plan;
+	}
+	if ((!match(request.name ?? "", /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) && !(request.name == PACKAGES[1] && request.action == "update") && !(owned[request.name] && request.action == "update")) || (index(product_packages(), request.name) >= 0 && request.action != "update"))
 		fail("plugin_package_protected");
 	if (request.action != "remove" && !version_valid(request.version)) fail("invalid_plugin_package_request");
 	if (request.action == "remove") {
@@ -456,6 +477,7 @@ get = function() {
 	return { supported: versions != null, backend: KIND, architecture: capture("apk --print-arch"),
 		feed: { configured: url != null, url: url, checked_at: cache?.checked_at, error: cache?.error }, components: rows,
 		plugin_packages: plugin_packages(versions, product, cache?.plugin_catalog),
+		auto_update: type(auto_update_summary) == "function" ? auto_update_summary() : null,
 		dashboard: dashboard, extensions: context.inventory(versions),
 		product: { packages: map(product, name => ({ name, installed_version: versions?.[name], available_version: candidates[name] })), missing, updates },
 		dependencies: map(DEPENDENCIES, name => ({ id: name, label: name, installed_version: versions?.[name], available: versions?.[name] != null })) };
@@ -1066,11 +1088,14 @@ upgrade = function(request, work, candidates) {
 	} catch (failure) { error = error_code(failure); }
 	if (error != null) network_enter();
 	if (error == null) {
-		// Keep installed signed plugin archives available when a feed advances.
-		if (directory(`${ROOT}/archives`)) for (let path in next) {
-			const name = replace(path, /^.*\//, "");
-			if (match(name, /^(opl-netfleet|luci-app-netfleet)/) && run_command(`cp ${q(path)} ${q(`${ROOT}/archives/${name}`)}`, work))
-				fs.chmod(`${ROOT}/archives/${name}`, 0600);
+		// Keep installed signed plugin archives available when a feed advances, bounded per package.
+		if (directory(`${ROOT}/archives`)) {
+			for (let path in next) {
+				const name = replace(path, /^.*\//, "");
+				if (match(name, /^(opl-netfleet|luci-app-netfleet)/) && run_command(`cp ${q(path)} ${q(`${ROOT}/archives/${name}`)}`, work))
+					fs.chmod(`${ROOT}/archives/${name}`, 0600);
+			}
+			prune_archives(names);
 		}
 		journal(work, { ...read_json(`${work}/journal.json`), phase: "complete" }); fs.unlink(PENDING); system("sync"); return;
 	}
@@ -1196,6 +1221,157 @@ recover = function() {
 	return { recovered: true };
 };
 
+prune_archives = function(packages) {
+	const dir = `${ROOT}/archives`;
+	const entries = fs.lsdir(dir);
+	if (type(entries) != "array" || !length(entries)) return;
+	for (let pkg in packages ?? []) {
+		if (!match(pkg ?? "", /^(opl-netfleet|luci-app-netfleet)/)) continue;
+		const prefix = `${pkg}-`;
+		const matched = [];
+		for (let file in entries) {
+			if (index(file, prefix) != 0 || substr(file, -4) != ".apk") continue;
+			const ver = substr(file, length(prefix), length(file) - length(prefix) - 4);
+			if (match(ver, /^[0-9]/)) push(matched, { file, ver });
+		}
+		if (length(matched) <= 2) continue;
+		for (let i = 1; i < length(matched); i++) {
+			for (let j = i; j > 0 && newer(matched[j].ver, matched[j - 1].ver); j--) {
+				const tmp = matched[j - 1]; matched[j - 1] = matched[j]; matched[j] = tmp;
+			}
+		}
+		for (let i = 2; i < length(matched); i++) fs.unlink(`${dir}/${matched[i].file}`);
+	}
+};
+auto_update_policy = function() {
+	const cfg = read_json(paths.POLICY_PATH)?.automation;
+	const raw = cfg?.plugin_auto_update_interval_seconds;
+	return {
+		enabled: cfg?.plugin_auto_update_enabled == true,
+		interval_seconds: type(raw) == "int" && raw >= 3600 && raw <= 2592000 ? raw : 86400
+	};
+};
+reconcile_auto_update = function(raw, persist) {
+	const state = type(raw) == "object" ? { ...raw } : {};
+	let changed = false;
+	if (state.last_result == "started" && match(state.last_tx_id ?? "", /^[a-f0-9]{32}$/)) {
+		const terminal = private_file(`${ROOT}/${state.last_tx_id}/journal.json`) ? read_json(`${ROOT}/${state.last_tx_id}/journal.json`) : null;
+		if (terminal?.phase == "complete") {
+			state.last_result = "updated";
+			state.last_error = null;
+			state.consecutive_failures = 0;
+			state.last_failed_signature = null;
+			state.backoff_until = null;
+			changed = true;
+		} else if (index(["rolled_back", "failed"], terminal?.phase) >= 0) {
+			const failures = (type(state.consecutive_failures) == "int" ? state.consecutive_failures : 0) + 1;
+			state.last_result = terminal.phase;
+			state.last_error = terminal.error ?? terminal.failure_reason ?? "update_failed";
+			state.consecutive_failures = failures;
+			state.last_failed_signature = state.last_plan_signature ?? null;
+			state.backoff_until = (terminal.finished_at ?? int(time())) + package_model.backoff_seconds(failures);
+			changed = true;
+		}
+	}
+	if (changed && persist && directory(ROOT)) atomic_json(AUTO_UPDATE, state);
+	return state;
+};
+auto_update_summary = function() {
+	const cfg = auto_update_policy();
+	const raw = private_file(AUTO_UPDATE) ? read_json(AUTO_UPDATE) : null;
+	const state = reconcile_auto_update(raw, false);
+	let next_at = cfg.enabled ? (state.last_check_at != null ? state.last_check_at + cfg.interval_seconds : null) : null;
+	if (cfg.enabled && type(state.backoff_until) == "int" && (next_at == null || state.backoff_until > next_at))
+		next_at = state.backoff_until;
+	return {
+		enabled: cfg.enabled,
+		interval_seconds: cfg.interval_seconds,
+		last_check_at: state.last_check_at ?? null,
+		last_attempt_at: state.last_attempt_at ?? null,
+		last_result: state.last_result ?? null,
+		last_error: state.last_error ?? null,
+		last_updated_packages: state.last_updated_packages ?? [],
+		deferred_packages: state.deferred_packages ?? [],
+		backoff_until: state.backoff_until ?? null,
+		next_run_at: next_at
+	};
+};
+auto_update = function(trigger) {
+	const cfg = auto_update_policy();
+	if (!cfg.enabled) return { skipped: true, reason: "disabled" };
+	if (!directory(ROOT)) fail("unsafe_update_directory");
+	const state = reconcile_auto_update(private_file(AUTO_UPDATE) ? read_json(AUTO_UPDATE) : {}, true);
+	const url = feed();
+	if (url == null) return { skipped: true, reason: "feed_not_configured" };
+	if (fs.lstat(PENDING) != null || fs.lstat(UPGRADE_STATE) != null || update_process()?.running == true)
+		return { skipped: true, reason: "mutation_busy" };
+	const now = int(time());
+	const due = (state.last_check_at ?? 0) + cfg.interval_seconds;
+	if (trigger == "scheduled" && now < due) return { skipped: true, reason: "not_due", next_run_at: due };
+	const cached = private_file(CACHE) ? read_json(CACHE) : null;
+	let values = null, catalog = null;
+	if (cached?.feed == url && cached.error == null && type(cached.checked_at) == "int" &&
+		now >= cached.checked_at && now - cached.checked_at <= 300) {
+		values = available(url);
+		catalog = values != null ? plugin_catalog() : null;
+	}
+	if (values == null) {
+		const check_work = capture(`mktemp -d ${q(`${ROOT}/auto-check.XXXXXX`)}`);
+		if (check_work == null || !private_directory(check_work)) fail("update_stage_failed");
+		const success = apk_download("apk --timeout 90 update", check_work);
+		system(`rm -rf ${q(check_work)}`);
+		values = success ? available(url) : null;
+		catalog = values != null ? plugin_catalog() : {};
+		atomic_json(CACHE, { feed: url, checked_at: now, versions: values ?? {}, plugin_catalog: catalog, error: values == null ? "feed_check_failed" : null });
+	}
+	if (values == null) {
+		const failures = (type(state.consecutive_failures) == "int" ? state.consecutive_failures : 0) + 1;
+		atomic_json(AUTO_UPDATE, { ...state, last_check_at: now, last_result: "check_failed", last_error: "feed_check_failed",
+			consecutive_failures: failures, backoff_until: now + package_model.backoff_seconds(failures) });
+		fail("feed_check_failed");
+	}
+	const versions = installed();
+	if (versions == null) fail("package_manager_unavailable");
+	const rows = plugin_packages(versions, product_packages(), catalog);
+	const choice = package_model.select_auto_update(rows, versions, values, context.inventory(versions), retained_packages(), KIND == "native-mihomo", newer);
+	const deferred = [...choice.deferred];
+	if (!length(choice.items)) {
+		atomic_json(AUTO_UPDATE, { ...state, last_check_at: now, last_result: length(deferred) ? "deferred" : "up_to_date",
+			last_error: null, deferred_packages: deferred });
+		return { updated: false, deferred_packages: deferred };
+	}
+	const req = { action: "update", items: choice.items, confirm: true };
+	let plan;
+	try { plan = plugin_plan(req, null, true); }
+	catch (error) {
+		const code = error_code(error);
+		if (code == "plugin_dependency_change_required") {
+			for (let item in choice.items) push(deferred, { name: item.name, version: item.version, reason: "manual_maintenance_required" });
+			atomic_json(AUTO_UPDATE, { ...state, last_check_at: now, last_result: "deferred", last_error: null, deferred_packages: deferred });
+			return { updated: false, deferred_packages: deferred };
+		}
+		const failures = (type(state.consecutive_failures) == "int" ? state.consecutive_failures : 0) + 1;
+		atomic_json(AUTO_UPDATE, { ...state, last_check_at: now, last_result: "plan_failed", last_error: code,
+			consecutive_failures: failures, backoff_until: now + package_model.backoff_seconds(failures), deferred_packages: deferred });
+		fail(code);
+	}
+	const sig = sprintf("%J", plan.candidates);
+	if (state.last_failed_signature == sig && type(state.backoff_until) == "int" && now < state.backoff_until) {
+		atomic_json(AUTO_UPDATE, { ...state, last_check_at: now, deferred_packages: deferred });
+		return { skipped: true, reason: "backoff", backoff_until: state.backoff_until };
+	}
+	const req_file = capture(`mktemp ${q(`${ROOT}/auto-request.XXXXXX`)}`);
+	if (req_file == null || !private_file(req_file)) fail("update_state_write_failed");
+	if (!atomic_json(req_file, { request: { ...req, plan } })) { fs.unlink(req_file); fail("update_state_write_failed"); }
+	let started;
+	try { started = start("plugin", req_file); }
+	catch (error) { fs.unlink(req_file); die(error_code(error)); }
+	fs.unlink(req_file);
+	atomic_json(AUTO_UPDATE, { ...state, last_check_at: now, last_attempt_at: now, last_tx_id: started.operation?.id ?? null,
+		last_plan_signature: sig, last_updated_packages: plan.names, last_result: "started", last_error: null, deferred_packages: deferred });
+	return { started: true, wave: choice.wave, operation: started.operation, packages: plan.names, deferred_packages: deferred };
+};
+
 command = function(argv) {
 	const ARGV = [substr(argv[0], 11), ...slice(argv, 1)];
 
@@ -1207,6 +1383,7 @@ try {
 	else if (ARGV[0] == 'rollback') response = { ok: true, result: request_rollback(ARGV[1]) };
 	else if (ARGV[0] == "cancel") response = { ok: true, result: cancel_update(ARGV[1]) };
 	else if (ARGV[0] == "get") response = { ok: true, result: get() };
+	else if (ARGV[0] == "auto-update") response = { ok: true, result: auto_update(ARGV[1]) };
 	else if (ARGV[0] == "plugin-plan") response = { ok: true, result: plugin_plan(private_file(ARGV[1]) ? read_json(ARGV[1])?.request : null, null, true) };
 	else if (ARGV[0] == "operation") response = { ok: true, result: { mode: operation.get("mode"), configuration: operation.get("configuration"), subscription: operation.get("subscription"), selection: operation.get("selection"), packages: progress() } };
 	else if (index(["install", "check", "update", "plugin"], ARGV[0]) >= 0) response = { ok: true, result: start(ARGV[0], ARGV[1], ARGV[2]) };

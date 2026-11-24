@@ -1,4 +1,5 @@
 import { create as create_rules } from './profile.uc';
+import { request as http_request } from './http.uc';
 import * as fs from "fs";
 import { cursor } from "uci";
 import { connect } from "ubus";
@@ -65,8 +66,14 @@ process_state = function() {
 		running: instance?.running == true && actual == join("\u0000", COMMAND) + "\u0000" };
 };
 controller_ready = function() {
-	return type(parse(capture(`curl -q -fsS --max-time 2 --noproxy '*' --proxy '' ` +
-		`--unix-socket ${shell_quote(`${RUN}/controller.sock`)} http://localhost/version`))?.version) == "string";
+	const response = http_request({ unix_path: `${RUN}/controller.sock` }, {
+		method: "GET",
+		path: "/version",
+		connect_timeout_ms: 2000,
+		timeout_ms: 2000
+	});
+	return response?.ok == true && response.status >= 200 && response.status < 300 &&
+		type(parse(response.body)?.version) == "string";
 };
 ownership = function() {
 	return private_file(OWNERSHIP) ? read_json(OWNERSHIP) : null;
@@ -213,7 +220,7 @@ attach = function() {
 	for (let i = 0; i < 15; i++) {
 		if (process_state().running && controller_ready()) break;
 		if (i == 14) return { ok: false, error: "core_not_ready" };
-		system("sleep 1");
+		sleep(1000);
 	}
 	const pid = process_state().pid;
 	if (fs.stat("/sys/fs/cgroup/cgroup.controllers") != null) {

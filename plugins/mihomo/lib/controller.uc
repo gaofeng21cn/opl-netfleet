@@ -1,4 +1,5 @@
 import { popen } from "fs";
+import { request as http_request } from "./http.uc";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
@@ -24,21 +25,21 @@ api_json = function(secret, path, timeout_seconds) {
 	// controller request is dispatched ("remaining timeout too small").  Two
 	// seconds remains bounded and does not add latency to successful reads.
 	const timeout = requested < 2 ? 2 : requested;
-	const command = `curl -fsS --connect-timeout ${timeout} --max-time ${timeout} -H ${shell_quote(`Authorization: Bearer ${secret}`)} ${shell_quote(`${API}${path}`)}`;
-	const process = popen(command);
-	if (!process) {
+	const response = http_request(API, {
+		method: "GET",
+		path,
+		headers: { Authorization: `Bearer ${secret}` },
+		connect_timeout_ms: timeout * 1000,
+		timeout_ms: timeout * 1000
+	});
+	if (!response?.ok || response.status < 200 || response.status >= 300 || type(response.body) != "string") {
 		return null;
 	}
-	let result = null;
 	try {
-		// A trailing newline after an exact 1024-byte JSON chunk is rejected
-		// by ucode stream parsing. Parse the complete controller response.
-		result = json(process.read("all"));
+		return json(response.body);
 	} catch (error) {
-		result = null;
+		return null;
 	}
-	process.close();
-	return result;
 };
 
 url_path_segment = function(value) {
@@ -155,9 +156,19 @@ connections = function(secret, timeout_seconds) {
 
 select = function(secret, group, choice) {
 	const body = sprintf("%J", { name: choice });
-	const endpoint = `${API}/proxies/${url_path_segment(group)}`;
-	const command = `curl -fsS --connect-timeout 3 --max-time 5 -X PUT -H ${shell_quote(`Authorization: Bearer ${secret}`)} -H 'Content-Type: application/json' --data ${shell_quote(body)} ${shell_quote(endpoint)}`;
-	return system(command) == 0;
+	const response = http_request(API, {
+		method: "PUT",
+		path: `/proxies/${url_path_segment(group)}`,
+		headers: {
+			Authorization: `Bearer ${secret}`,
+			"Content-Type": "application/json"
+		},
+		body,
+		connect_timeout_ms: 3000,
+		timeout_ms: 5000,
+		discard_body: true
+	});
+	return response?.ok == true && response.status >= 200 && response.status < 300;
 };
 
 unfix = function(secret, group, detail) {
@@ -166,14 +177,20 @@ unfix = function(secret, group, detail) {
 		if (detail != null) detail.error = "invalid_candidate_reset_request";
 		return false;
 	}
-	const endpoint = `${API}/proxies/${url_path_segment(group)}`;
+	const path = `/proxies/${url_path_segment(group)}`;
 	// DELETE clears URLTest's cached choice and is idempotent. Retain only
 	// bounded diagnostic fields, never response bodies, credentials or commands.
-	const command = `curl -q -sS --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' -X DELETE -H ${shell_quote(`Authorization: Bearer ${secret}`)} ${shell_quote(endpoint)} 2>/dev/null`;
 	for (let attempt = 1; attempt <= 2; attempt++) {
-		const child = popen(command);
-		const status = child == null ? 0 : int(trim(child.read("all")));
-		const transport = child == null ? -1 : child.close();
+		const response = http_request(API, {
+			method: "DELETE",
+			path,
+			headers: { Authorization: `Bearer ${secret}` },
+			connect_timeout_ms: 2000,
+			timeout_ms: 5000,
+			discard_body: true
+		});
+		const status = response?.ok ? response.status : 0;
+		const transport = response?.ok ? 0 : (response?.transport_code ?? 52);
 		const ok = transport == 0 && status >= 200 && status < 300;
 		if (detail != null) {
 			detail.group = group; detail.http_status = status;
@@ -196,14 +213,14 @@ proxy_port = function(secret) {
 	return valid_port(config?.["mixed-port"]) ?? valid_port(config?.port);
 };
 
-probe = function(policy, entry, through_proxy, limit_seconds) {
+probe = function(policy, entry, through_proxy, limit_seconds, proxy_context) {
 	let command = "curl -4 -L -sS";
 	if (through_proxy) {
-		const port = proxy_port(api_secret());
+		const port = proxy_context != null ? proxy_context.port : proxy_port(api_secret());
 		if (port == null) {
 			return null;
 		}
-		const auth = proxy_authentication();
+		const auth = proxy_context != null ? proxy_context.auth : proxy_authentication();
 		const auth_arg = auth == null ? "" : `--proxy-user ${shell_quote(`${auth.username}:${auth.password}`)}`;
 		command += ` --noproxy '' --proxy ${shell_quote(`http://127.0.0.1:${port}`)} ${auth_arg}`;
 	} else {
@@ -228,9 +245,13 @@ protected_probes = function(policy, limit_seconds) {
 	if (type(probes) != "array" || length(probes) == 0) {
 		return { ok: false, error: "protected_probes_missing" };
 	}
+	const proxy_context = {
+		port: proxy_port(api_secret()),
+		auth: proxy_authentication()
+	};
 	for (let i = 0; i < length(probes); i++) {
 		const entry = probes[i];
-		const status = probe(policy, entry, true, limit_seconds);
+		const status = probe(policy, entry, true, limit_seconds, proxy_context);
 		const expected = `${entry?.expected_status ?? ""}`;
 		if (status != expected) {
 			return {

@@ -620,8 +620,10 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 					url: latency_check.url,
 					"expected-status": latency_check.expected_status,
 					timeout: latency_check.timeout_ms,
+					interval: healthcheck.interval_seconds,
 					"max-failed-times": healthcheck.max_failed_times,
 					tolerance: leaf_tolerance,
+					lazy: true,
 					hidden: true
 				});
 			}
@@ -646,8 +648,10 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 				url: path_probe.url,
 				"expected-status": path_probe.head_expected_status ?? path_probe.expected_status,
 				timeout: healthcheck.timeout_ms,
+				interval: healthcheck.interval_seconds,
 				"max-failed-times": healthcheck.max_failed_times,
 				tolerance: leaf_tolerance,
+				lazy: !automatic,
 				hidden: true
 			});
 		}
@@ -694,8 +698,10 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 					url: latency_check.url,
 					"expected-status": latency_check.expected_status,
 					timeout: latency_check.timeout_ms,
+					interval: healthcheck.interval_seconds,
 					"max-failed-times": healthcheck.max_failed_times,
 					tolerance: 0,
+					lazy: true,
 					hidden: true
 				});
 				layer_names[layer] = layer_name;
@@ -711,7 +717,7 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 				"expected-status": path_probe.head_expected_status ?? path_probe.expected_status,
 				timeout: healthcheck.timeout_ms,
 				interval: healthcheck.interval_seconds,
-				"max-failed-times": healthcheck.max_failed_times,
+				"max-failed-times": healthcheck.max_failed_times * length(aggregate_members),
 				lazy: true,
 				hidden: true
 			});
@@ -758,8 +764,10 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 				url: path_probe.url,
 				"expected-status": path_probe.head_expected_status ?? path_probe.expected_status,
 				timeout: healthcheck.timeout_ms,
+				interval: healthcheck.interval_seconds,
 				"max-failed-times": healthcheck.max_failed_times,
 				tolerance: 0,
+				lazy: !automatic,
 				hidden: true
 			});
 			push(proxy_members, tier_name);
@@ -781,7 +789,7 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 			timeout: healthcheck.timeout_ms,
 			interval: healthcheck.interval_seconds,
 			"max-failed-times": healthcheck.max_failed_times,
-			lazy: true,
+			lazy: !automatic,
 			hidden: true
 		});
 		const automatic_members = [proxy_path_group, direct_guard];
@@ -795,7 +803,7 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 				"expected-status": guard_probe.head_expected_status ?? guard_probe.expected_status,
 				timeout: healthcheck.timeout_ms,
 				interval: healthcheck.interval_seconds,
-				"max-failed-times": healthcheck.max_failed_times,
+				"max-failed-times": healthcheck.max_failed_times * (length(proxy_members) + 1),
 				lazy: true,
 				hidden: true
 			});

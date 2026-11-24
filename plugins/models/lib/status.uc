@@ -184,12 +184,18 @@ provider_nodes = function(provider_state, source_name) {
 	return result;
 };
 
-group_nodes = function(proxy_state, provider_state, source_name, group_name) {
+group_nodes = function(proxy_state, provider_state, source_name, group_name, provider_cache) {
 	const members = proxy_state?.[group_name]?.all;
 	if (type(members) != "array") {
 		return { known: false, members: {} };
 	}
-	const provider_members = provider_nodes(provider_state, source_name);
+	let provider_members = null;
+	if (provider_cache != null && type(source_name) == "string") {
+		if (!exists(provider_cache, source_name)) provider_cache[source_name] = provider_nodes(provider_state, source_name);
+		provider_members = provider_cache[source_name];
+	} else {
+		provider_members = provider_nodes(provider_state, source_name);
+	}
 	const result = {};
 	for (let i = 0; i < length(members); i++) {
 		const member = members[i];
@@ -411,6 +417,12 @@ resolve_runtime = function(entry, state) {
 build = function(policy, manifest, state, evidence, owner) {
 	const proxy_state = state?.proxies ?? {};
 	const provider_state = state?.providers ?? {};
+	const provider_nodes_cache = {};
+	function cached_provider_nodes(source_name) {
+		if (type(source_name) != "string") return null;
+		if (!exists(provider_nodes_cache, source_name)) provider_nodes_cache[source_name] = provider_nodes(provider_state, source_name);
+		return provider_nodes_cache[source_name];
+	}
 	const capabilities = [];
 	const providers = {};
 	const regions = {};
@@ -558,14 +570,20 @@ build = function(policy, manifest, state, evidence, owner) {
 			runtime.leaf = null;
 			runtime.alive = true;
 		}
+		const delay_by_group = {};
+		for (let entry_item in display_evidence?.entries ?? []) {
+			if (type(entry_item?.candidate) == "string" && entry_item.ok == true &&
+				type(entry_item.delay_ms) == "int" && !exists(delay_by_group, entry_item.candidate))
+				delay_by_group[entry_item.candidate] = entry_item.delay_ms;
+		}
 		const groups = entry?.candidate_groups ?? [];
 		for (let j = 0; j < length(groups); j++) {
 			const group = groups[j];
 			const group_state = proxy_state?.[group.name];
 			const provider_source = entry?.providers?.[group.provider]?.source_name;
-			const nodes = group_nodes(proxy_state, provider_state, provider_source, group.name);
+			const nodes = group_nodes(proxy_state, provider_state, provider_source, group.name, provider_nodes_cache);
 			const available = group_state?.alive == true && nodes.known && has_available_node(nodes);
-			const delay = evidence_delay(display_evidence, group.name);
+			const delay = delay_by_group[group.name] ?? null;
 			const provider = providers[group.provider];
 			const region = regions[group.region];
 			if (provider != null) {
@@ -714,7 +732,7 @@ build = function(policy, manifest, state, evidence, owner) {
 		const provider = providers[provider_names[i]];
 		const source = provider_sources[provider_names[i]];
 		const inventory = source != null && source.conflicted != true ?
-			provider_nodes(provider_state, source.source_name) : null;
+			cached_provider_nodes(source.source_name) : null;
 		if (inventory != null) {
 			const node_names = keys(inventory);
 			provider.node_count = length(node_names);

@@ -396,7 +396,15 @@ function automation(controller) {
             rules?.supported ? fieldRow('分流数据更新周期', ruleNote, select(value.rule_refresh_interval_seconds || 604800,
                 [ [ 86400, '每天' ], [ 604800, '每周' ], [ 2592000, '每 30 天' ] ], function(event) {
                     update(controller, function(next) { next.automation.rule_refresh_interval_seconds = Number(event.target.value); });
-                }, !value.rule_refresh_enabled)) : null
+                }, !value.rule_refresh_enabled)) : null,
+            fieldRow('定期自动更新安全插件', '仅自动更新无需内核或核心停机的插件与界面；失败自动回退，核心升级仍需手动确认。', checkbox(value.plugin_auto_update_enabled === true,
+                value.plugin_auto_update_enabled ? '已开启' : '已关闭', function(event) {
+                    update(controller, function(next) { next.automation.plugin_auto_update_enabled = event.target.checked; });
+                })),
+            fieldRow('插件自动更新周期', '在网络健康且无在途更新时检查已信任软件源并按安全波次更新。', select(value.plugin_auto_update_interval_seconds || 86400,
+                [ [ 21600, '6 小时' ], [ 43200, '12 小时' ], [ 86400, '24 小时' ], [ 604800, '7 天' ] ], function(event) {
+                    update(controller, function(next) { next.automation.plugin_auto_update_interval_seconds = Number(event.target.value); });
+                }, !value.plugin_auto_update_enabled))
 		])
 	]);
 }
@@ -629,7 +637,7 @@ function changeText(change, controller) {
 		region_ids: '可用地区', policy_source: '策略基础', recovery_profile: '退出与故障恢复', item: '配置项',
 		entry_group: '默认出口组', policy_groups: '业务分类', prefer_region_from: '地区协同', routing_rules: '域名规则',
 		selection_interval_seconds: '选优周期', subscription_refresh_enabled: '定期更新订阅',
-		subscription_refresh_interval_seconds: '订阅更新周期', rule_refresh_enabled: '定期更新分流数据', rule_refresh_interval_seconds: '分流数据更新周期', region_switch_margin_ms: '地区切换门槛',
+		subscription_refresh_interval_seconds: '订阅更新周期', rule_refresh_enabled: '定期更新分流数据', rule_refresh_interval_seconds: '分流数据更新周期', plugin_auto_update_enabled: '自动更新安全插件', plugin_auto_update_interval_seconds: '插件自动更新周期', region_switch_margin_ms: '地区切换门槛',
 		leaf_switch_margin_ms: '节点切换门槛', runtime_grace_seconds: '运行失联保护', latency_url: '测速地址',
 		path_probe_url: '代理路径检查地址', guard_probe_url: '最终保护地址'
 	};

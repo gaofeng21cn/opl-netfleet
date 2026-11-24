@@ -42,7 +42,7 @@ set_service_state = function(desired, name) {
 		readback = service_state(name);
 		if (readback.enabled == (desired?.enabled == true) &&
 			readback.running == (desired?.running == true)) break;
-		if (attempt < 19) system("sleep 1");
+		if (attempt < 19) sleep(1000);
 	}
 	return {
 		ok: ok && readback.enabled == (desired?.enabled == true) && readback.running == (desired?.running == true),

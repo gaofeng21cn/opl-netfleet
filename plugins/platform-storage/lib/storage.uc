@@ -1,9 +1,11 @@
-import { popen, writefile, readfile, stat, mkdtemp, unlink, rmdir } from "fs";
+import { popen, writefile, readfile, stat, lstat, mkdtemp, unlink, rmdir, rename, mkdir as fs_mkdir } from "fs";
 
 return function(context) {
 	const shell_quote = context.use("platform.process").shell_quote;
 	const state = context.state ?? {};
 	state.yaml_cache ??= [];
+	let native_sha256 = null;
+	try { native_sha256 = require("digest").sha256; } catch (error) {}
 	// Store only expensive YAML conversions. JSON already has a native parser.
 	// Exact source bytes, not mtime, decide reuse; callers receive a fresh object.
 	function forget_yaml(path) {
@@ -53,6 +55,14 @@ return function(context) {
 		try { return json(readfile(path)); } catch (error) { return null; }
 	}
 	function sha256(path) {
+		if (native_sha256 != null) {
+			const info = stat(path);
+			if (info?.type != "file") return null;
+			if (info.size <= 16777216) {
+				const content = readfile(path);
+				return content == null ? null : native_sha256(content);
+			}
+		}
 		const process = popen(`sha256sum ${shell_quote(path)}`);
 		if (!process) return null;
 		const line = process.read("line");
@@ -64,6 +74,7 @@ return function(context) {
 		return info?.type == "file" && info.mtime > 0 ? int(info.mtime) : null;
 	}
 	function sha256_text(value) {
+		if (native_sha256 != null) return native_sha256(`${value}`);
 		const process = popen(`printf '%s' ${shell_quote(value)} | sha256sum`);
 		if (!process) return null;
 		const line = process.read("line");
@@ -74,16 +85,35 @@ return function(context) {
 		const written = writefile(path, content);
 		return type(written) == "int" && written == length(content);
 	}
-	function mkdir(path) { return system(`mkdir -p ${shell_quote(path)}`) == 0; }
+	function mkdir(path) {
+		if (type(path) != "string" || length(path) == 0) return false;
+		const clean = path == "/" ? "/" : replace(path, /\/+$/, "");
+		if (length(clean) == 0) return true;
+		if (stat(clean)?.type == "directory") return true;
+		if (lstat(clean) != null) return false;
+		const parent = replace(clean, /\/[^/]+$/, "");
+		if (length(parent) > 0 && parent != clean && !mkdir(parent)) return false;
+		return fs_mkdir(clean, 0755) == true || stat(clean)?.type == "directory";
+	}
 	function write_json_atomic(path, value) {
 		const content = sprintf("%J", value), temporary = `${path}.tmp`;
-		if (content == null || !write_text(temporary, content) || read_json(temporary) == null) {
-			system(`rm -f ${shell_quote(temporary)}`);
+		if (content == null || !write_text(temporary, content)) {
+			unlink(temporary);
 			return false;
 		}
-		const digest = sha256(temporary);
-		if (digest == null || system(`mv -f ${shell_quote(temporary)} ${shell_quote(path)}`) != 0 || sha256(path) != digest) {
-			system(`rm -f ${shell_quote(temporary)}`);
+		let parsed = null;
+		const staged = readfile(temporary);
+		if (staged != content) {
+			unlink(temporary);
+			return false;
+		}
+		try { parsed = json(staged); } catch (error) { parsed = null; }
+		if (parsed == null) {
+			unlink(temporary);
+			return false;
+		}
+		if (!rename(temporary, path) || readfile(path) != content) {
+			unlink(temporary);
 			return false;
 		}
 		return true;

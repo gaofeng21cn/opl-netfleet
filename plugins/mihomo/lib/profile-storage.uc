@@ -1,5 +1,5 @@
 import { create as create_rules } from './profile.uc';
-import { popen } from "fs";
+import * as fs from "fs";
 
 return function(context) {
 const rules = create_rules();
@@ -42,7 +42,7 @@ resolve_profile = function(reference) {
 
 profile_exists = function(reference) {
 	const path = resolve_profile(reference);
-	return path != null && system(`test -f ${shell_quote(path)}`) == 0;
+	return path != null && fs.stat(path)?.type == "file";
 };
 
 provider_runtime_path = function(provider_name) {
@@ -50,13 +50,7 @@ provider_runtime_path = function(provider_name) {
 };
 
 link_target = function(path) {
-	const process = popen(`readlink ${shell_quote(path)}`);
-	if (!process) {
-		return null;
-	}
-	const target = process.read("line");
-	process.close();
-	return target ? trim(target) : null;
+	return fs.readlink(path);
 };
 
 subscription_cache_path = function(path) {
@@ -77,20 +71,23 @@ prepare_provider_links = function(provider_profiles) {
 		if (!source || !target) {
 			return false;
 		}
-		if (system(`test -L ${shell_quote(target)}`) == 0) {
+		const info = fs.lstat(target);
+		if (info?.type == "link") {
 			const existing = link_target(target);
 			if (existing == source) {
 				continue;
 			}
+			const temporary = `${target}.tmp`;
+			fs.unlink(temporary);
 			if (!subscription_cache_path(existing) || !subscription_cache_path(source) ||
-				system(`ln -sfn ${shell_quote(source)} ${shell_quote(target)}`) != 0 ||
+				!fs.symlink(source, temporary) || !fs.rename(temporary, target) ||
 				link_target(target) != source) {
+				fs.unlink(temporary);
 				return false;
 			}
 			continue;
 		}
-		if (system(`test -e ${shell_quote(target)}`) == 0 ||
-			system(`ln -s ${shell_quote(source)} ${shell_quote(target)}`) != 0) {
+		if (info != null || !fs.symlink(source, target)) {
 			return false;
 		}
 	}
@@ -105,10 +102,9 @@ remove_provider_links = function(provider_profiles) {
 		const source = provider_profiles[name]?.path;
 		const target = provider_runtime_path(name);
 		if (!source) continue;
-		const is_link = system(`test -L ${shell_quote(target)}`) == 0;
-		if (!is_link && system(`test -e ${shell_quote(target)}`) != 0) continue;
-		if (!is_link || link_target(target) != source ||
-			system(`rm -f ${shell_quote(target)}`) != 0) removed = false;
+		const info = fs.lstat(target);
+		if (info == null) continue;
+		if (info.type != "link" || link_target(target) != source || !fs.unlink(target)) removed = false;
 	}
 	return removed;
 };
@@ -123,7 +119,7 @@ test_profile_object = function(profile) {
 		return false;
 	}
 	const result = system(`mihomo -d ${shell_quote(RUN_DIR)} -f ${shell_quote(`${ARTIFACT_DIR}/.test.json`)} -t >/dev/null 2>&1`) == 0;
-	system(`rm -f ${shell_quote(`${ARTIFACT_DIR}/.test.json`)}`);
+	fs.unlink(`${ARTIFACT_DIR}/.test.json`);
 	return result;
 };
 
@@ -132,37 +128,41 @@ install_artifact = function(profile, manifest) {
 	if (profile_text_value == null || type(manifest) != "object" || !mkdir(ARTIFACT_DIR)) {
 		return false;
 	}
-	if (system(`test -L ${shell_quote(PROFILE_ENTRY_PATH)}`) == 0) {
+	const entry_info = fs.lstat(PROFILE_ENTRY_PATH);
+	if (entry_info?.type == "link") {
 		if (link_target(PROFILE_ENTRY_PATH) != PROFILE_ENTRY_TARGET) {
 			return false;
 		}
-	} else if (system(`test -e ${shell_quote(PROFILE_ENTRY_PATH)}`) == 0) {
+	} else if (entry_info != null) {
 		return false;
 	}
 	const profile_tmp = `${ARTIFACT_DIR}/.mvp.json.tmp`;
 	const manifest_tmp = `${ARTIFACT_DIR}/.mvp.manifest.json.tmp`;
 	if (!write_text(profile_tmp, profile_text_value)) {
-		system(`rm -f ${shell_quote(profile_tmp)} ${shell_quote(manifest_tmp)}`);
+		fs.unlink(profile_tmp);
+		fs.unlink(manifest_tmp);
 		return false;
 	}
 	const artifact_digest = sha256(profile_tmp);
 	if (artifact_digest == null) {
-		system(`rm -f ${shell_quote(profile_tmp)} ${shell_quote(manifest_tmp)}`);
+		fs.unlink(profile_tmp);
+		fs.unlink(manifest_tmp);
 		return false;
 	}
 	manifest.artifact_sha256 = artifact_digest;
 	if (!write_text(manifest_tmp, sprintf("%J", manifest)) ||
 		system(`mihomo -d ${shell_quote(RUN_DIR)} -f ${shell_quote(profile_tmp)} -t >/dev/null 2>&1`) != 0) {
-		system(`rm -f ${shell_quote(profile_tmp)} ${shell_quote(manifest_tmp)}`);
+		fs.unlink(profile_tmp);
+		fs.unlink(manifest_tmp);
 		return false;
 	}
-	if (system(`mv -f ${shell_quote(profile_tmp)} ${shell_quote(ARTIFACT_PATH)}`) != 0 ||
-		system(`mv -f ${shell_quote(manifest_tmp)} ${shell_quote(MANIFEST_PATH)}`) != 0) {
-		system(`rm -f ${shell_quote(profile_tmp)} ${shell_quote(manifest_tmp)}`);
+	if (!fs.rename(profile_tmp, ARTIFACT_PATH) || !fs.rename(manifest_tmp, MANIFEST_PATH)) {
+		fs.unlink(profile_tmp);
+		fs.unlink(manifest_tmp);
 		return false;
 	}
-	if (system(`test -L ${shell_quote(PROFILE_ENTRY_PATH)}`) != 0 &&
-		system(`ln -s ${shell_quote(PROFILE_ENTRY_TARGET)} ${shell_quote(PROFILE_ENTRY_PATH)}`) != 0) {
+	if (fs.lstat(PROFILE_ENTRY_PATH)?.type != "link" &&
+		!fs.symlink(PROFILE_ENTRY_TARGET, PROFILE_ENTRY_PATH)) {
 		return false;
 	}
 	return link_target(PROFILE_ENTRY_PATH) == PROFILE_ENTRY_TARGET &&
@@ -172,13 +172,14 @@ install_artifact = function(profile, manifest) {
 };
 
 remove_artifact = function() {
-	if (system(`test -L ${shell_quote(PROFILE_ENTRY_PATH)}`) == 0) {
-		if (link_target(PROFILE_ENTRY_PATH) != PROFILE_ENTRY_TARGET ||
-			system(`rm -f ${shell_quote(PROFILE_ENTRY_PATH)}`) != 0) return false;
-	} else if (system(`test -e ${shell_quote(PROFILE_ENTRY_PATH)}`) == 0) {
+	const entry_info = fs.lstat(PROFILE_ENTRY_PATH);
+	if (entry_info?.type == "link") {
+		if (link_target(PROFILE_ENTRY_PATH) != PROFILE_ENTRY_TARGET || !fs.unlink(PROFILE_ENTRY_PATH)) return false;
+	} else if (entry_info != null) {
 		return false;
 	}
-	return system(`rm -f ${shell_quote(ARTIFACT_PATH)} ${shell_quote(MANIFEST_PATH)}`) == 0;
+	return (fs.lstat(ARTIFACT_PATH) == null || fs.unlink(ARTIFACT_PATH)) &&
+		(fs.lstat(MANIFEST_PATH) == null || fs.unlink(MANIFEST_PATH));
 };
 
 return { rules, ARTIFACT_DIR, ARTIFACT_PATH, MANIFEST_PATH, PROFILE_ENTRY_PATH, PROFILE_ENTRY_TARGET, COMPILED_PROFILE, PROXY_PROVIDER_DIR, resolve_profile, profile_exists, provider_runtime_path, link_target, subscription_cache_path, prepare_provider_links, remove_provider_links, make_json, test_profile_object, install_artifact, remove_artifact };

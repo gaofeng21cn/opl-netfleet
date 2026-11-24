@@ -1,5 +1,7 @@
 
 
+import { stat } from "fs";
+
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
 let compile_result, compile_action, package_cleanup_action, command_compile, command_package_cleanup, command_validate_schema, command_validate;
@@ -10,12 +12,10 @@ const ok = context.use("events.output").ok;
 const resolve_profile = context.use("mihomo.backend").resolve_profile;
 const prepare_provider_links = context.use("mihomo.backend").prepare_provider_links;
 const remove_provider_links = context.use("mihomo.backend").remove_provider_links;
-const test_profile_object = context.use("mihomo.backend").test_profile_object;
 const install_artifact = context.use("mihomo.backend").install_artifact;
 const ARTIFACT_PATH = context.use("mihomo.backend").ARTIFACT_PATH;
 const MANIFEST_PATH = context.use("mihomo.backend").MANIFEST_PATH;
 const remove_artifact = context.use("mihomo.backend").remove_artifact;
-const test_profile = context.use("mihomo.controller").test_profile;
 const resolve_policy_source = context.use("mihomo.policy-source").resolve;
 const load_policy_source = context.use("mihomo.policy-source").load;
 const is_active = context.use("models.activation").is_active;
@@ -23,7 +23,6 @@ const load_policy = context.use("platform.documents").load_policy;
 const current_profile = context.use("platform.profile").current_profile;
 const backend_enabled = context.use("platform.profile").backend_enabled;
 const running = context.use("mihomo.backend").running;
-const shell_quote = context.use("platform.process").shell_quote;
 const sha256 = context.use("platform.storage").sha256;
 const POLICY_PATH = context.use("platform.paths").POLICY_PATH;
 const read_json = context.use("platform.storage").read_json;
@@ -40,7 +39,7 @@ compile_result = function(policy, allow_active) {
 		return { ok: false, error: "active_profile_requires_disable", detail: current };
 	}
 	const source_path = resolve_policy_source(policy.policy_source);
-	if (source_path == null || system(`test -f ${shell_quote(source_path)}`) != 0) {
+	if (source_path == null || stat(source_path)?.type != "file") {
 		return { ok: false, error: "policy_source_missing", detail: policy.policy_source.ref };
 	}
 	const baseline = load_policy_source(policy.policy_source);
@@ -48,7 +47,7 @@ compile_result = function(policy, allow_active) {
 		return { ok: false, error: "policy_source_unreadable", detail: source_path };
 	}
 	const recovery_path = resolve_profile(policy.recovery_profile.ref);
-	if (recovery_path == null || system(`test -f ${shell_quote(recovery_path)}`) != 0) {
+	if (recovery_path == null || stat(recovery_path)?.type != "file") {
 		return { ok: false, error: "recovery_profile_missing", detail: policy.recovery_profile.ref };
 	}
 	const provider_result = load_provider_profile_result(policy);
@@ -68,11 +67,9 @@ compile_result = function(policy, allow_active) {
 		if (allow_active != true) remove_provider_links(provider_profiles);
 		return { ok: false, error: "provider_link_prepare_failed", detail: null };
 	}
-	if (!test_profile_object(result.profile)) {
-		if (allow_active != true) remove_provider_links(provider_profiles);
-		return { ok: false, error: "staged_profile_test_failed", detail: null };
-	}
-	if (!install_artifact(result.profile, result.manifest) || !test_profile(ARTIFACT_PATH)) {
+	// install_artifact runs pre-rename `mihomo -t`, atomic rename, digest
+	// readback, and post-symlink `mihomo -t` via PROFILE_ENTRY_PATH.
+	if (!install_artifact(result.profile, result.manifest)) {
 		if (allow_active != true) remove_provider_links(provider_profiles);
 		return { ok: false, error: "staged_readback_failed", detail: null };
 	}
@@ -134,12 +131,12 @@ command_validate = function(argv) {
 	const policy = load_policy(policy_path);
 	if (policy == null) fail("validate", "policy_unreadable", policy_path);
 	const source_path = resolve_policy_source(policy.policy_source);
-	if (source_path == null || system(`test -f ${shell_quote(source_path)}`) != 0) {
+	if (source_path == null || stat(source_path)?.type != "file") {
 		fail("validate", "policy_source_missing", policy.policy_source.ref);
 	}
 	const baseline = load_policy_source(policy.policy_source);
 	const recovery_path = resolve_profile(policy.recovery_profile.ref);
-	if (recovery_path == null || system(`test -f ${shell_quote(recovery_path)}`) != 0) {
+	if (recovery_path == null || stat(recovery_path)?.type != "file") {
 		fail("validate", "recovery_profile_missing", policy.recovery_profile.ref);
 	}
 	const provider_profiles = require_provider_profiles(policy, "validate");

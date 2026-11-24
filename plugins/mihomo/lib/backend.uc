@@ -1,4 +1,4 @@
-import { popen } from "fs";
+import { lstat, popen } from "fs";
 import { cursor } from "uci";
 import { listeners, rule_snapshot, dns_ready as native_dns_ready } from "./health.uc";
 
@@ -180,7 +180,7 @@ no_route = function(family, table) {
 };
 
 path_absent = function(path) {
-	return system(`test ! -e ${shell_quote(path)}`) == 0;
+	return lstat(path) == null;
 };
 
 // Observe only the selected owner's cleanup contract; mutation stays in its init service.
@@ -264,7 +264,7 @@ stop = function() {
 			return { ok: true, requested: requested, readback: readback };
 		}
 		if (attempt < 8) {
-			system("sleep 1");
+			sleep(1000);
 		}
 	}
 	return { ok: false, requested: requested, readback: readback };

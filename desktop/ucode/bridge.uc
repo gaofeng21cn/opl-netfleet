@@ -7,8 +7,14 @@ function owner() {
 	if (global.__netfleetDesktopOwner == null) die('desktop_executor_unavailable');
 	return global.__netfleetDesktopOwner;
 }
+let cached_state = null;
 export function shell_quote(value) { return `'${replace(`${value}`, "'", "'\\''")}'`; }
 export function rpc(method, params) {
+	const cacheable = method == 'state.get' && (params == null || length(keys(params)) == 0);
+	if (cacheable && cached_state != null) return cached_state;
+	if (index(['state.patch', 'subscription.update', 'core.start', 'core.stop', 'scheduler.set'], method) >= 0) {
+		cached_state = null;
+	}
 	const body = sprintf('%J', { method, params: params ?? {} });
 	const connection = socket.connect({ path: getenv('NETFLEET_SOCKET') }, null, null, 3000);
 	if (connection == null) die('desktop_owner_unavailable');
@@ -43,12 +49,21 @@ export function rpc(method, params) {
 		if (!match(headers, /^HTTP\/1\.[01] 200 /)) die(result?.error ?? 'desktop_owner_failed');
 	} catch (error) { connection.close(); die(error.message); }
 	connection.close();
+	if (cacheable) cached_state = result;
 	return result;
 }
 export function respond(value) {
 	const responses = owner().responses;
 	if (!length(responses)) die('desktop_response_without_command');
 	responses[length(responses) - 1] = value;
+}
+export function capture_response(fn) {
+	const responses = owner().responses;
+	push(responses, null);
+	let failed = null;
+	try { fn(); } catch (error) { failed = error.message; }
+	const response = pop(responses);
+	return response ?? (failed != null ? { ok: false, error: failed } : null);
 }
 export function invoke(argv) {
 	const dispatcher = owner(), responses = dispatcher.responses;
@@ -73,5 +88,5 @@ export function process_identity(pid) {
 
 export function set_executor(value) {
 	if (global.__netfleetDesktopOwner != null) die('desktop_executor_already_initialized');
-	global.__netfleetDesktopOwner = { executor: value, responses: [], rpc, shell_quote, process_identity, invoke, respond };
+	global.__netfleetDesktopOwner = { executor: value, responses: [], rpc, shell_quote, process_identity, invoke, respond, capture_response };
 }

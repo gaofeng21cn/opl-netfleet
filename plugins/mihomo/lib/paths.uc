@@ -19,7 +19,13 @@ const provider_group_leaf = context.use("models.selector").provider_group_leaf;
 const resolve_runtime = context.use("models.status").resolve_runtime;
 const api_secret = context.use("platform.credentials").api_secret;
 
-wait_for_group_member = function(secret, group, member, wait_seconds) {
+wait_for_group_member = function(secret, group, member, wait_seconds, initial_state) {
+	if (initial_state != null) {
+		const initial_members = initial_state?.proxies?.[group]?.all;
+		if (type(initial_members) == "array" && index(initial_members, member) >= 0) {
+			return true;
+		}
+	}
 	const attempts = type(wait_seconds) == "int" && wait_seconds > 0 ? wait_seconds : 10;
 	for (let attempt = 0; attempt < attempts; attempt++) {
 		const state = proxies(secret, 1);
@@ -28,7 +34,7 @@ wait_for_group_member = function(secret, group, member, wait_seconds) {
 			return true;
 		}
 		if (attempt + 1 < attempts) {
-			system("sleep 1");
+			sleep(1000);
 		}
 	}
 	return false;
@@ -161,7 +167,7 @@ activate_preferred_choice = function(secret, entry, choice, policy, after_restar
 	}
 	const visible = entry?.name;
 	const automatic = entry?.automatic_name;
-	if (type(automatic) != "string" || !wait_for_group_member(secret, visible, automatic) ||
+	if (type(automatic) != "string" || !wait_for_group_member(secret, visible, automatic, null, state) ||
 		!select_proxy(secret, visible, automatic)) {
 		return { ok: false, error: "proxy_guard_write_failed", choice: choice, leaf: leaf.leaf };
 	}
@@ -331,16 +337,17 @@ reset_candidate_groups = function(secret, entry, detail, progress) {
 	return true;
 };
 
-candidate_provider_leaves_ready = function(entry, proxy_state, provider_state, url) {
+candidate_provider_leaves_ready = function(entry, proxy_state, provider_state, url, index_cache) {
 	const groups = entry?.candidate_groups ?? [];
 	if (length(groups) == 0 || type(proxy_state) != "object" ||
 		type(provider_state) != "object") {
 		return false;
 	}
+	const cache = index_cache ?? {};
 	for (let i = 0; i < length(groups); i++) {
 		const group = groups[i];
 		const source_name = entry?.providers?.[group?.provider]?.source_name;
-		if (provider_group_leaf(proxy_state, provider_state, source_name, group?.name, url) == null) {
+		if (provider_group_leaf(proxy_state, provider_state, source_name, group?.name, url, cache) == null) {
 			return false;
 		}
 	}
@@ -354,11 +361,11 @@ wait_for_candidate_provider_leaves = function(secret, entry, timeout_seconds, ur
 	for (let attempt = 0; attempt < attempts; attempt++) {
 		state = proxies(secret, 1);
 		provider_state = proxy_providers(secret, 1)?.providers ?? null;
-		if (candidate_provider_leaves_ready(entry, state?.proxies, provider_state, url)) {
+		if (candidate_provider_leaves_ready(entry, state?.proxies, provider_state, url, {})) {
 			break;
 		}
 		if (attempt < attempts - 1) {
-			system("sleep 1");
+			sleep(1000);
 		}
 	}
 	return { state: state, provider_state: provider_state };

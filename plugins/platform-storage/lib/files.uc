@@ -5,7 +5,6 @@ return function(context) {
 let private_file, private_directory, write_private, atomic_json, core_service;
 
 const read_json = context.use("platform.storage").read_json;
-const sha256 = context.use("platform.storage").sha256;
 
 const BASE = context.use("platform.paths").NATIVE_ROOT;
 const SERVICE = context.use("platform.runtime").SERVICE;
@@ -36,12 +35,11 @@ atomic_json = function(path, value) {
 		fs.unlink(temporary);
 		return false;
 	}
-	const digest = sha256(temporary);
-	if (digest == null || !fs.rename(temporary, path)) {
+	if (!fs.rename(temporary, path)) {
 		fs.unlink(temporary);
 		return false;
 	}
-	return sha256(path) == digest;
+	return fs.readfile(path) == content;
 };
 
 core_service = function() {

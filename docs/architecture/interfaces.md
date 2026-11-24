@@ -134,3 +134,16 @@ rule_refresh_interval_seconds（默认 604800，允许 86400–2592000）。stat
 last_error、next_run_at、upstream_commit 与 pending；浏览器不计算调度期限。
 rules-refresh 是由现有 scheduler 调用、宿主串行的内部写命令。运行和恢复合同见
 [规则数据更新](runtime-and-recovery.md#规则数据更新)。
+
+## 插件批量更新与自动更新接口
+
+`policy.automation` 包含可选字段 `plugin_auto_update_enabled`（默认 `false`）与
+`plugin_auto_update_interval_seconds`（默认 `86400`，允许 `3600–2592000`）。
+`components-get` 的 `plugin_packages` 同时包含 `opl-netfleet-plugin-*`、受管配套运行包与
+`luci-app-netfleet`，并投影 `auto_update` 状态（`enabled`、`interval_seconds`、`last_check_at`、
+`last_attempt_at`、`last_result`、`last_error`、`last_updated_packages`、`deferred_packages`、
+`backoff_until`、`next_run_at`）。`components_plugin_plan` 与 `components_plugin` 除单包
+`{ name, action, before_version, version, confirm }` 外，支持批量更新请求
+`{ action: "update", items: [{ name, before_version, version }], confirm, plan }`。
+`components-auto-update` 是由 `scheduler` 在网络健康期调用的内部写命令，安全边界见
+[软件包合同](packaging.md#更新与恢复)。

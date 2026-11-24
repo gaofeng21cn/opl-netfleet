@@ -312,10 +312,21 @@ async function networkComponentState() {
   return { state, helper: helper.state, core: core.state };
 }
 
+let profileCache = null;
 async function sourceProfile() {
-  if (typeof state.profile !== 'string') return null;
-  try { return await core.parseProfile(await fs.readFile(core.resolveProfile(state.profile), 'utf8')); }
-  catch { return null; }
+  if (typeof state.profile !== 'string') { profileCache = null; return null; }
+  try {
+    const file = core.resolveProfile(state.profile);
+    const info = await fs.stat(file, { bigint: true });
+    const key = `${file}:${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`;
+    if (profileCache?.key === key) return profileCache.parsed;
+    const parsed = await core.parseProfile(await fs.readFile(file, 'utf8'));
+    profileCache = { key, parsed };
+    return parsed;
+  } catch {
+    profileCache = null;
+    return null;
+  }
 }
 
 // 本机核心设置只投影三层真实事实：Profile 声明、平台交给核心的配置、特权会话覆写。
@@ -463,10 +474,14 @@ async function snapshot({ deep = true } = {}) {
   let status = businessSnapshot.status, events = businessSnapshot.events, config = businessSnapshot.config,
     configError = businessSnapshot.configError, error = businessSnapshot.error;
   if (deep && await readJSON(path.join(stateDir, 'policy.json'))) {
-    try { status = await ucode('status'); events = await ucode('events'); }
-    catch (failure) { error = failure.message; }
-    try { config = await ucode('config-get'); }
-    catch (failure) { configError = failure.message; }
+    try {
+      const bundle = await ucode('desktop-snapshot');
+      if (bundle.status != null) status = bundle.status;
+      if (bundle.events != null) events = bundle.events;
+      error = bundle.error ?? null;
+      if (bundle.config != null) { config = bundle.config; configError = null; }
+      else if (bundle.configError) configError = bundle.configError;
+    } catch (failure) { error = failure.message; }
     businessSnapshot = { status, events, config, configError, error };
   }
   return { runtime: { ...runtime, platform: 'macos', mode: actualMode, requestedMode: state.mode, networkMode: state.network.mode,

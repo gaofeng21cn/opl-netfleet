@@ -9,7 +9,14 @@ let clone, valid_event, validate, append;
 const EVENT_LIMIT = 1024;
 
 clone = function(value) {
-	return json(sprintf("%J", value));
+	const kind = type(value);
+	if (kind == "array") return map(value, clone);
+	if (kind == "object") {
+		const copy = {};
+		for (let key, item in value) copy[key] = clone(item);
+		return copy;
+	}
+	return value;
 };
 
 valid_event = function(event) {

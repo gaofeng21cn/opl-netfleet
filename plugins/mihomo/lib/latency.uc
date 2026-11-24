@@ -1,4 +1,4 @@
-import { popen } from "fs";
+import { request as http_request, request_all as http_request_all } from "./http.uc";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
@@ -6,7 +6,6 @@ let controller_timeout_seconds, measure_providers, measure, latest_history, comp
 
 const url_path_segment = context.use("mihomo.controller").url_path_segment;
 const API = context.use("platform.runtime").API;
-const shell_quote = context.use("platform.process").shell_quote;
 
 controller_timeout_seconds = function(timeout_ms) {
 	let seconds = int((timeout_ms + 999) / 1000) + 3;
@@ -30,20 +29,31 @@ measure_providers = function(secret, sources, checks) {
 	} else if (max_time > 30) {
 		max_time = 30;
 	}
-	const jobs = [];
+	const specs = [];
+	const timeout_ms = max_time * 1000;
 	for (let i = 0; i < length(sources); i++) {
 		const source = sources[i];
 		if (type(source) != "string" || length(source) == 0) {
 			return false;
 		}
-		const endpoint = `${API}/providers/proxies/${source}/healthcheck`;
-		push(jobs, `curl -fsS --connect-timeout 2 --max-time ${max_time} -H ${shell_quote(`Authorization: Bearer ${secret}`)} ${shell_quote(endpoint)} >/dev/null 2>&1 & pids="$pids $!";`);
+		push(specs, {
+			target: API,
+			method: "GET",
+			path: `/providers/proxies/${url_path_segment(source)}/healthcheck`,
+			headers: { Authorization: `Bearer ${secret}` },
+			connect_timeout_ms: 2000,
+			timeout_ms,
+			discard_body: true
+		});
 	}
 	// Trigger providers concurrently, but retain their real completion status.
 	// A failed provider does not cancel the other measurements.
-	const command = `pids=""; failed=0; ${join(" ", jobs)} ` +
-		`for pid in $pids; do wait "$pid" || failed=1; done; exit "$failed"`;
-	return system(`sh -c ${shell_quote(command)}`) == 0;
+	const responses = http_request_all(specs, timeout_ms);
+	for (let i = 0; i < length(responses); i++) {
+		const response = responses[i];
+		if (!response?.ok || response.status < 200 || response.status >= 300) return false;
+	}
+	return true;
 };
 
 measure = function(secret, group, checks) {
@@ -58,23 +68,23 @@ measure = function(secret, group, checks) {
 	}
 
 	const max_time = controller_timeout_seconds(timeout_ms);
-	const command = `curl -fsS --connect-timeout 2 --max-time ${max_time} ` +
-		`-H ${shell_quote(`Authorization: Bearer ${secret}`)} --get ` +
-		`--data-urlencode ${shell_quote(`url=${url}`)} ` +
-		`--data-urlencode ${shell_quote(`timeout=${timeout_ms}`)} ` +
-		`--data-urlencode ${shell_quote(`expected=${expected_status}`)} ` +
-		shell_quote(`${API}/group/${url_path_segment(group)}/delay`);
-	const process = popen(command);
-	if (!process) {
-		return { method: "mihomo_delay", status: "unavailable", reason: "controller_unavailable", results: {} };
-	}
+	const path = `/group/${url_path_segment(group)}/delay?url=${url_path_segment(url)}` +
+		`&timeout=${timeout_ms}&expected=${expected_status}`;
+	const response = http_request(API, {
+		method: "GET",
+		path,
+		headers: { Authorization: `Bearer ${secret}` },
+		connect_timeout_ms: 2000,
+		timeout_ms: max_time * 1000
+	});
 	let result = null;
-	try {
-		result = json(process.read("all"));
-	} catch (error) {
-		result = null;
+	if (response?.ok && response.status >= 200 && response.status < 300 && type(response.body) == "string") {
+		try {
+			result = json(response.body);
+		} catch (error) {
+			result = null;
+		}
 	}
-	process.close();
 	if (type(result) != "object") {
 		return { method: "mihomo_delay", status: "unavailable", reason: "delay_test_failed", results: {} };
 	}

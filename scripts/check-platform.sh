@@ -10,6 +10,7 @@ case "$lane" in
 esac
 # Resolve the same complete runtime used by all host checks.
 UCODE_PREFLIGHT='fs socket' . "$root/scripts/resolve-ucode-runtime.sh"
+export UCODE UCODE_LIB NETFLEET_UCODE_RESOLVED=1
 
 for program in python3 bun node "$UCODE"; do
   command -v "$program" >/dev/null 2>&1 || { printf 'Required tool missing: %s\n' "$program" >&2; exit 2; }

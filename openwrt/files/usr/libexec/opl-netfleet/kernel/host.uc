@@ -9,7 +9,16 @@ let create, resource_pause, data_lock, resource_owners;
 export { create };
 
 function failure(error) { return { ok: false, error: error }; };
-function clone(value) { return json(sprintf('%J', value)); };
+function clone(value) {
+	const kind = type(value);
+	if (kind == 'array') return map(value, clone);
+	if (kind == 'object') {
+		const copy = {};
+		for (let key, item in value) copy[key] = clone(item);
+		return copy;
+	}
+	return value;
+};
 function raise(error) { die(error); };
 function guarded(work, cleanup) {
 	let result, failed;
@@ -744,11 +753,15 @@ function management(action, argv, root, options) {
 		input = read_json(path)?.request;
 		if (type(input) != 'object' || !valid_id(input.id) || type(input.action) != 'string' ||
 			(input.instance != null && !valid_id(input.instance)) || (input.params != null && type(input.params) != 'object')) return failure('plugin_request_invalid');
-		host = create(root, { ...options, instance: input.instance ?? 'default', lazy_inspection: action == 'plugin-read' });
-		local = host.found[input.id]?.manifest?.actions?.[input.action]?.lock == 'plugin';
+		const resolved_root = fs.realpath(root) ?? root;
+		const instance_id = input.instance ?? 'default';
+		if (instance_id != 'default' && system_profile(resolved_root, options).instances?.[instance_id] == null)
+			raise('plugin_instance_unknown');
+		const precheck = describe(resolved_root, input.id, options.trusted_owner);
+		local = precheck?.manifest?.actions?.[input.action]?.lock == 'plugin';
 	}
 	const lock = local ? private_action_lock(options, input.id, action != 'plugin-read') : adapter.network_lock(options.network_lock, action != 'plugin-read');
-	if (lock == null) { host?.release(); return failure('mutation_busy'); }
+	if (lock == null) return failure('mutation_busy');
 	const base = options.maintenance_root;
 	return guarded(() => {
 		if (!local && action != 'plugin-read' && (!mkdir_private(base, options.trusted_owner) || !atomic_json(`${base}/.coordinator`, adapter.process_identity()))) return failure('plugin_package_marker_failed');

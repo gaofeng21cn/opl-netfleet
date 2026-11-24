@@ -1,8 +1,8 @@
-import { popen } from "fs";
+import { popen, stat } from "fs";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let profile_display_name, has_reference, source_group_names, provider_display_names, resources, projection, load_change, snapshot_file, prepare_snapshot, restore_snapshot, diagnostic, run_owner, cleanup_snapshot, rollback, fail_apply, get, validate, save, apply, command_config_get, command_config_validate, command_config_save, command_config_apply;
+let profile_display_name, has_reference, group_names_from_profile, source_group_names, provider_display_names, resources, projection, load_change, snapshot_file, prepare_snapshot, restore_snapshot, diagnostic, run_owner, cleanup_snapshot, rollback, fail_apply, get, validate, save, apply, command_config_get, command_config_validate, command_config_save, command_config_apply;
 
 const project = context.use("configuration.model").project;
 const apply_request = context.use("configuration.model").apply;
@@ -70,8 +70,7 @@ has_reference = function(options, kind, ref) {
 	return false;
 };
 
-source_group_names = function(source) {
-	const profile = load_policy_source(source);
+group_names_from_profile = function(profile) {
 	const groups = profile?.["proxy-groups"] ?? [];
 	const result = [];
 	for (let i = 0; i < length(groups); i++) {
@@ -79,6 +78,10 @@ source_group_names = function(source) {
 		if (type(name) == "string" && length(trim(name)) > 0 && index(result, name) < 0) push(result, name);
 	}
 	return result;
+};
+
+source_group_names = function(source) {
+	return group_names_from_profile(load_policy_source(source));
 };
 
 provider_display_names = function(policy) {
@@ -97,7 +100,8 @@ resources = function(policy) {
 	const region_options_by_id = {};
 	const source_groups = {};
 	const bundle = { kind: "bundle", ref: "bundle:base-v1" };
-	if (resolve_policy_source(bundle) != null && sha256(resolve_policy_source(bundle)) != null) {
+	const bundle_path = resolve_policy_source(bundle);
+	if (bundle_path != null && stat(bundle_path)?.type == "file") {
 		push(source_options, { kind: "bundle", ref: bundle.ref, display_name: "NetFleet 内置基础策略" });
 		source_groups[`bundle|${bundle.ref}`] = source_group_names(bundle);
 	}
@@ -107,9 +111,9 @@ resources = function(policy) {
 		const section = type(reference) == "string" && index(reference, prefix) == 0 ? substr(reference, length(prefix)) : null;
 		push(recovery_options, subscriptions[i]);
 		push(source_options, { kind: "profile", ref: reference, display_name: subscriptions[i].display_name });
-		source_groups[`profile|${reference}`] = source_group_names({ kind: "profile", ref: reference });
 		const path = resolve_profile(reference);
 		const profile = path == null ? null : read_yaml(path);
+		source_groups[`profile|${reference}`] = group_names_from_profile(profile);
 		const found = type(profile) == "object" ? discover_regions(profile) : [];
 		const region_ids = [];
 		for (let j = 0; j < length(found); j++) {
@@ -159,7 +163,7 @@ load_change = function(policy, action, envelope_path) {
 };
 
 snapshot_file = function(path, name, required) {
-	const exists = system(`test -f ${shell_quote(path)}`) == 0;
+	const exists = stat(path)?.type == "file";
 	if (!exists) return required ? null : { path: path, existed: false };
 	const digest = sha256(path);
 	const backup = `${WORK_DIR}/${name}`;
@@ -244,7 +248,7 @@ rollback = function(snapshot) {
 		for (let attempt = 0; attempt < 12; attempt++) {
 			readback = runtime_readback(COMPILED_PROFILE, snapshot.manifest);
 			if (readback.mihomo_running && readback.mihomo_config_valid && readback.state_available && readback.runtime_identity_ok) break;
-			if (attempt < 11) system("sleep 1");
+			if (attempt < 11) sleep(1000);
 		}
 		if (!readback?.mihomo_running || !readback.mihomo_config_valid || !readback.state_available || !readback.runtime_identity_ok)
 			return { ok: false, error: "rollback_owner_readback_failed", readback: readback };

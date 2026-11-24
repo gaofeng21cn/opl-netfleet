@@ -281,6 +281,50 @@ if (length(filter(computed_changes, item => item.scope == "provider" && item.id 
 	exit(1);
 }
 
+if (projection.automation.plugin_auto_update_enabled != false ||
+	projection.automation.plugin_auto_update_interval_seconds != 86400) {
+	print("plugin_auto_update_default_projection_failed\n");
+	exit(1);
+}
+const validate_policy = use("models.policy").validate;
+for (let valid_interval in [3600, 2592000]) {
+	const auto_req = json(sprintf("%J", request));
+	auto_req.automation.plugin_auto_update_enabled = true;
+	auto_req.automation.plugin_auto_update_interval_seconds = valid_interval;
+	const auto_res = apply(policy, auto_req, resources);
+	const auto_proj = project(auto_res.policy, resources);
+	const auto_changes = changes(policy, auto_res.policy, resources);
+	if (!auto_res.ok || !validate_policy(auto_res.policy).ok ||
+		auto_proj.automation.plugin_auto_update_enabled != true ||
+		auto_proj.automation.plugin_auto_update_interval_seconds != valid_interval ||
+		length(filter(auto_changes, item => item.field == "plugin_auto_update_enabled")) != 1 ||
+		length(filter(auto_changes, item => item.field == "plugin_auto_update_interval_seconds")) != 1) {
+		print("plugin_auto_update_apply_failed\n");
+		exit(1);
+	}
+}
+for (let bad in [
+	{ enabled: "yes", interval: 86400 },
+	{ enabled: true, interval: 3599 },
+	{ enabled: true, interval: 2592001 },
+	{ enabled: true, interval: "86400" }
+]) {
+	const bad_req = json(sprintf("%J", request));
+	bad_req.automation.plugin_auto_update_enabled = bad.enabled;
+	bad_req.automation.plugin_auto_update_interval_seconds = bad.interval;
+	if (validate_request(policy, bad_req, resources).ok || apply(policy, bad_req, resources).ok) {
+		print("invalid_plugin_auto_update_accepted\n");
+		exit(1);
+	}
+	const bad_pol = json(sprintf("%J", policy));
+	bad_pol.automation.plugin_auto_update_enabled = bad.enabled;
+	bad_pol.automation.plugin_auto_update_interval_seconds = bad.interval;
+	if (validate_policy(bad_pol).ok) {
+		print("invalid_policy_plugin_auto_update_accepted\n");
+		exit(1);
+	}
+}
+
 print("config_contract_ok\n");
 
 release_services();

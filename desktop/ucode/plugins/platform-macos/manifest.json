@@ -103,7 +103,11 @@
         "platform.storage": 1,
         "platform.paths": 1,
         "configuration.onboarding-model": 1,
-        "models.subscriptions": 1
+        "models.subscriptions": 1,
+        "status.control": 1,
+        "status.events": 1,
+        "configuration.editor": 1,
+        "events.output": 1
       }
     }
   },
@@ -121,6 +125,11 @@
     "desktop-sources": {
       "service": "desktop.control",
       "method": "command_sources",
+      "access": "read"
+    },
+    "desktop-snapshot": {
+      "service": "desktop.control",
+      "method": "command_snapshot",
       "access": "read"
     }
   },

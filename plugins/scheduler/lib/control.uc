@@ -32,9 +32,11 @@ runtime_controller_ready = function() {
 tick = function(previous) {
 	let unhealthy_since = previous?.unhealthy_since ?? null;
 	let next_selection_at = previous?.next_selection_at ?? null;
+	let next_plugin_auto_update_at = previous?.next_plugin_auto_update_at ?? null;
 	let was_runtime_ready = previous?.was_runtime_ready == true;
 	function result(delay) {
 		return { state: { unhealthy_since: unhealthy_since, next_selection_at: next_selection_at,
+			next_plugin_auto_update_at: next_plugin_auto_update_at,
 			was_runtime_ready: was_runtime_ready }, delay_ms: delay };
 	};
 	const settings_value = settings();
@@ -42,6 +44,7 @@ tick = function(previous) {
 	if (settings_value == null || settings_value.policy.main.enabled != true) {
 		unhealthy_since = null;
 		next_selection_at = null;
+		next_plugin_auto_update_at = null;
 		was_runtime_ready = false;
 		return result(30000);
 	}
@@ -82,6 +85,13 @@ tick = function(previous) {
 			run_owner("maintain", "scheduled");
 			next_selection_at = now + config.selection_interval_seconds;
 		}
+		try {
+			if (config.plugin_auto_update_enabled == true && (next_plugin_auto_update_at == null || now >= next_plugin_auto_update_at)) {
+				run_owner("components-auto-update", "scheduled");
+				const step = config.plugin_auto_update_interval_seconds < 3600 ? config.plugin_auto_update_interval_seconds : 3600;
+				next_plugin_auto_update_at = now + step;
+			}
+		} catch (error) { warn("NetFleet plugin auto-update scheduling failed\n"); }
 	} else {
 		if (unhealthy_since == null) unhealthy_since = now;
 		if (now - unhealthy_since >= config.runtime_grace_seconds) {

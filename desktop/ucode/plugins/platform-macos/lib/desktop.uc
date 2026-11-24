@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 const rpc = global.__netfleetDesktopOwner.rpc;
+const capture_response = global.__netfleetDesktopOwner.capture_response;
 return function(context) {
 	function command_tick(argv) {
 		let previous = {};
@@ -40,5 +41,25 @@ return function(context) {
 		const planned = input?.reconcile == true ? context.use('configuration.onboarding-model').reconcile_sources(input.policy, normalized.sources) : { ok: true };
 		return planned.ok ? { ok: true, result: { sources: normalized.sources, policy: planned.policy } } : planned;
 	}
-	return { command_tick, command_discover, command_sources };
+	function command_snapshot() {
+		const output = context.use('events.output');
+		function run_subcommand(fn) {
+			let captured;
+			const response = capture_response(() => { captured = output.capture(fn); });
+			if (response != null) return response;
+			if (captured?.ok == false) return captured;
+			return { ok: false, error: 'desktop_subcommand_no_response' };
+		}
+		const status_res = run_subcommand(() => context.use('status.control').command_status(['status']));
+		const events_res = status_res?.ok ? run_subcommand(() => context.use('status.events').command_events(['events'])) : null;
+		const config_res = run_subcommand(() => context.use('configuration.editor').command_config_get(['config-get']));
+		const status = status_res?.ok ? status_res.result : null;
+		const events = events_res?.ok ? events_res.result : null;
+		const error = !status_res?.ok ? (status_res?.error ?? 'status_failed') :
+			(events_res && !events_res.ok ? (events_res.error ?? 'events_failed') : null);
+		const config = config_res?.ok ? config_res.result : null;
+		const configError = config_res?.ok ? null : (config_res?.error ?? 'config_get_failed');
+		return { ok: true, result: { status, events, config, error, configError } };
+	}
+	return { command_tick, command_discover, command_sources, command_snapshot };
 };

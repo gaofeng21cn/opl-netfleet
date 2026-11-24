@@ -28,7 +28,7 @@ protected_probes_after_restart = function(policy) {
 		if (result.ok || attempt == 3) {
 			return result;
 		}
-		system("sleep 1");
+		sleep(1000);
 	}
 	return result;
 };

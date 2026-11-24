@@ -1,4 +1,4 @@
-import { popen } from "fs";
+import { popen, rename, unlink } from "fs";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
@@ -24,7 +24,11 @@ write_events = function(store) {
 	if (content == null || !mkdir(replace(EVENTS_PATH, /\/[^/]+$/, "")) || !write_text(temporary, content)) {
 		return false;
 	}
-	return system(`mv -f ${shell_quote(temporary)} ${shell_quote(EVENTS_PATH)}`) == 0;
+	if (!rename(temporary, EVENTS_PATH)) {
+		unlink(temporary);
+		return false;
+	}
+	return true;
 };
 
 core_netfleet_lines = function(group_names) {
