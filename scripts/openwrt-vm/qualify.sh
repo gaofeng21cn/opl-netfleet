@@ -376,7 +376,8 @@ rm "$work/root.ext4"
 boot_start=$(sgdisk -i 1 "$work/openwrt.img" | awk '/^First sector:/ { print $3 }')
 [ -n "$boot_start" ] || exit 1
 efi_disk="$work/openwrt.img@@$((boot_start * 512))"
-mcopy -o -i "$efi_disk" ::/efi/openwrt/grub.cfg "$work/grub.cfg"
+rm -f "$work/grub.cfg" "$work/grub-readback.cfg"
+mcopy -o -i "$efi_disk" ::/efi/openwrt/grub.cfg "$work/grub.cfg" </dev/null
 python3 - "$work/grub.cfg" <<'PY'
 from pathlib import Path
 import re
@@ -393,8 +394,8 @@ if lines == 0:
     raise SystemExit('OpenWrt EFI config has no kernel entry')
 path.write_text(text)
 PY
-mcopy -o -i "$efi_disk" "$work/grub.cfg" ::/efi/openwrt/grub.cfg
-mcopy -o -i "$efi_disk" ::/efi/openwrt/grub.cfg "$work/grub-readback.cfg"
+mcopy -o -i "$efi_disk" "$work/grub.cfg" ::/efi/openwrt/grub.cfg </dev/null
+mcopy -o -i "$efi_disk" ::/efi/openwrt/grub.cfg "$work/grub-readback.cfg" </dev/null
 cmp -s "$work/grub.cfg" "$work/grub-readback.cfg"
 image_elapsed_ms=$((image_elapsed_ms + $(now_ms) - image_started_ms))
 
