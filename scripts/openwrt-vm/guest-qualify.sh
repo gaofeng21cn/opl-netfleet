@@ -93,7 +93,14 @@ if [ "${1:-}" = "--print-arch" ]; then
 	echo aarch64
 	exit 0
 fi
-cp -a /tmp/netfleet-deploy-fixture/payload/. /
+(
+	cd /tmp/netfleet-deploy-fixture/payload
+	find . -type f | while IFS= read -r rel; do
+		rel=${rel#./}
+		mkdir -p "/$(dirname "$rel")"
+		cp -p "$rel" "/$rel"
+	done
+)
 EOF
 cat >"$bin/ubus" <<'EOF'
 #!/bin/sh
