@@ -205,15 +205,15 @@ try {
   assert.equal(typeof updates.result.checked_at, 'number');
   assert.equal(updates.result.panel.installed, active.dashboard.version);
   assert.ok(Array.isArray(updates.result.errors));
-  // 检查结论绑定安装身份：写一份属于别的版本的缓存，再次读取必须重新检查而不是复用。
+  // 检查结论绑定已安装的面板版本：写一份属于别的版本的缓存，再次读取必须重新检查而不是复用。
   const updateRecord = path.join(stateDir, 'updates.json');
   const stale = JSON.parse(await fs.readFile(updateRecord, 'utf8'));
-  stale.app = { ...(stale.app ?? {}), installed: '0.0.1' };
+  stale.panel = { ...(stale.panel ?? {}), installed: 'v0.0.1' };
   stale.checked_at = Math.floor(Date.now() / 1000);
   await fs.writeFile(updateRecord, JSON.stringify(stale));
   const rechecked = await api('update-check');
-  assert.equal(rechecked.result.app.installed, updates.result.app.installed);
-  evidence.checks.push('update_check_cache_is_bound_to_the_installed_version');
+  assert.equal(rechecked.result.panel.installed, updates.result.panel.installed);
+  evidence.checks.push('update_check_cache_is_bound_to_the_installed_panel_version');
   // 上游不可达（例如受限的 CI 网络）与"已是最新"都不得安装任何东西：
   // 只有通过校验的候选才允许替换面板副本。
   if (updates.result.panel.update_available === false) {
@@ -223,16 +223,11 @@ try {
     assert.equal((await state()).dashboard.version, active.dashboard.version);
   }
   evidence.checks.push('dashboard_update_requires_a_verified_candidate');
-  // 应用自更新只对分发构建开放：本地/开发构建必须拒绝，且不留下暂存目录。
-  assert.ok(['available', 'local-build', 'dirty-build', 'not-an-app-bundle', 'unsupported-platform']
-    .includes(updates.result.app?.self_update), JSON.stringify(updates.result.app));
-  if (updates.result.app?.self_update !== 'available') {
-    const refusedApp = await api('app-update-apply');
-    assert.equal(refusedApp.ok, false);
-    assert.equal(String(refusedApp.error), updates.result.app.self_update);
-    assert.equal(await fs.readdir(path.join(stateDir, 'update')).then(() => true, () => false), false);
-  }
-  evidence.checks.push('app_update_is_gated_on_a_distribution_build');
+  // macOS 应用本体更新由原生 Sparkle 2 在宿主层负责，Node 端不再提供自写替换动作。
+  const retiredAppUpdate = await api('app-update-apply');
+  assert.equal(retiredAppUpdate.ok, false);
+  assert.equal(String(retiredAppUpdate.error), 'unknown_action');
+  evidence.checks.push('hand_rolled_node_app_updater_retired');
   const selectable = active.status.capabilities.find(item => item.can_select_region && item.selectable_regions?.length);
   assert.ok(selectable, 'real selectable capability');
   const region = selectable.selectable_regions[0];

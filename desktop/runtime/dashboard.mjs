@@ -1,81 +1,131 @@
-import zlib from 'node:zlib';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { assert } from './io.mjs';
+import { assert, run } from './io.mjs';
 
 // The panel ships as a release ZIP and stays inside the application's own trust
 // boundary: every entry is a plain `dist/` path, links and encrypted rows are
 // rejected, and the extracted payload is bounded so a hostile asset cannot fill
-// the disk. Nothing here trusts the archive's own directory metadata.
+// the disk. Archive inspection and extraction delegate to system `unzip` /
+// `/usr/bin/ditto -xk` rather than hand-parsing raw ZIP binary structures.
 const MAX_ENTRIES = 2048;
 const MAX_ENTRY_BYTES = 16 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 128 * 1024 * 1024;
 const MAX_NAME = 240;
-const EOCD = 0x06054b50, CENTRAL = 0x02014b50, LOCAL = 0x04034b50;
+const ALLOWED_METHODS = new Set(['stor', 'defN', 'defX', 'defF', 'defS']);
+const ZIPINFO_ROW = /^([\-?dlcbps])([rwxstST-]{9})\s+\S+\s+\S+\s+(\d+)\s+([a-zA-Z][a-zA-Z0-9\-])\s+(\d+)\s+(\S+)\s+\d{8}\.\d{6}\s+(.+)$/;
 
-function endOfCentralDirectory(buffer) {
-  const from = Math.max(0, buffer.length - 65557);
-  for (let at = buffer.length - 22; at >= from; at--) if (buffer.readUInt32LE(at) === EOCD) return at;
-  throw new Error('dashboard_archive_invalid');
-}
-
-function payloadName(entry) {
-  const name = entry.name;
-  assert(name.length > 0 && name.length <= MAX_NAME && name.startsWith('dist/') && !name.includes('\\'),
+function payloadName(name) {
+  assert(typeof name === 'string' && name.length > 0 && name.length <= MAX_NAME && name.startsWith('dist/') && !name.includes('\\') && !name.includes('\0'),
     'dashboard_archive_invalid');
   const parts = name.split('/');
   assert(!parts.some(part => part === '..' || part === '.' || part === ''), 'dashboard_archive_invalid');
   return name.slice('dist/'.length);
 }
 
-/** Read a verified manifest of `dist/` files from a panel archive. */
-export function readPanelArchive(buffer) {
-  const eocd = endOfCentralDirectory(buffer);
-  const count = buffer.readUInt16LE(eocd + 10);
-  const size = buffer.readUInt32LE(eocd + 12);
-  let offset = buffer.readUInt32LE(eocd + 16);
-  assert(count > 0 && count <= MAX_ENTRIES && offset + size <= buffer.length, 'dashboard_archive_invalid');
+async function inspectArchiveFile(archivePath) {
+  const listing = await run('/usr/bin/unzip', ['-Z', '-T', '-l', archivePath], { timeout: 30000 });
+  assert(listing.code === 0, 'dashboard_archive_invalid');
+  const lines = listing.stdout.split(/\r?\n/).filter(line => line.length > 0);
+  // Skip zipinfo header ("Archive: ...", "Zip file size: ...") and summary footer ("N files, ...").
+  assert(lines.length >= 4 && lines[0].startsWith('Archive:') && lines[1].startsWith('Zip file size:'), 'dashboard_archive_invalid');
+  const bodyLines = lines.slice(2, -1);
+  assert(bodyLines.length > 0 && bodyLines.length <= MAX_ENTRIES, 'dashboard_archive_invalid');
   const entries = [];
   let total = 0;
-  for (let index = 0; index < count; index++) {
-    assert(offset + 46 <= buffer.length && buffer.readUInt32LE(offset) === CENTRAL, 'dashboard_archive_invalid');
-    const flags = buffer.readUInt16LE(offset + 8);
-    const method = buffer.readUInt16LE(offset + 10);
-    const compressed = buffer.readUInt32LE(offset + 20);
-    const uncompressed = buffer.readUInt32LE(offset + 24);
-    const nameLength = buffer.readUInt16LE(offset + 28);
-    const extraLength = buffer.readUInt16LE(offset + 30);
-    const commentLength = buffer.readUInt16LE(offset + 32);
-    const mode = buffer.readUInt32LE(offset + 38) >>> 16;
-    const header = buffer.readUInt32LE(offset + 42);
-    const name = buffer.subarray(offset + 46, offset + 46 + nameLength).toString('utf8');
-    offset += 46 + nameLength + extraLength + commentLength;
-    assert((flags & 0x1) === 0, 'dashboard_archive_invalid');
-    const kind = mode & 0o170000;
-    if (kind === 0o040000 || name.endsWith('/')) continue;
-    assert(kind === 0 || kind === 0o100000, 'dashboard_archive_invalid');
-    assert([0, 8].includes(method), 'dashboard_archive_invalid');
-    const relative = payloadName({ name });
-    total += uncompressed;
-    assert(uncompressed <= MAX_ENTRY_BYTES && total <= MAX_TOTAL_BYTES, 'dashboard_archive_invalid');
-    assert(header + 30 <= buffer.length && buffer.readUInt32LE(header) === LOCAL, 'dashboard_archive_invalid');
-    const localName = buffer.readUInt16LE(header + 26);
-    const localExtra = buffer.readUInt16LE(header + 28);
-    const start = header + 30 + localName + localExtra;
-    assert(start + compressed <= buffer.length, 'dashboard_archive_invalid');
-    entries.push({ relative, method, compressed: buffer.subarray(start, start + compressed), size: uncompressed });
+  for (const line of bodyLines) {
+    const match = ZIPINFO_ROW.exec(line);
+    assert(match, 'dashboard_archive_invalid');
+    const [, kind, , rawSize, flags, , method, name] = match;
+    // Uppercase first flag character ("T" or "B") marks an encrypted entry.
+    assert(flags[0] === flags[0].toLowerCase(), 'dashboard_archive_invalid');
+    if (kind === 'd' || name.endsWith('/')) {
+      assert(kind === 'd' || kind === '?' || kind === '-', 'dashboard_archive_invalid');
+      const trimmed = name.replace(/\/+$/, '');
+      assert(trimmed === 'dist' || trimmed.startsWith('dist/'), 'dashboard_archive_invalid');
+      assert(!trimmed.split('/').some(part => part === '..' || part === '.' || part === ''), 'dashboard_archive_invalid');
+      continue;
+    }
+    // Only regular files (or DOS entries without Unix type bits) are permitted; reject symlinks and special nodes.
+    assert(kind === '-' || kind === '?', 'dashboard_archive_invalid');
+    assert(ALLOWED_METHODS.has(method), 'dashboard_archive_invalid');
+    const size = Number(rawSize);
+    assert(Number.isSafeInteger(size) && size >= 0 && size <= MAX_ENTRY_BYTES, 'dashboard_archive_invalid');
+    total += size;
+    assert(total <= MAX_TOTAL_BYTES, 'dashboard_archive_invalid');
+    const relative = payloadName(name);
+    entries.push({ relative, size });
   }
+  assert(entries.length > 0 && entries.length <= MAX_ENTRIES, 'dashboard_archive_invalid');
   assert(entries.some(entry => entry.relative === 'index.html'), 'dashboard_archive_invalid');
   return entries;
 }
 
-/** Expand a verified archive into `{ relative, bytes }` rows. */
-export function expandPanelArchive(buffer) {
-  return readPanelArchive(buffer).map(entry => {
-    const bytes = entry.method === 0 ? entry.compressed : zlib.inflateRawSync(entry.compressed, { maxOutputLength: entry.size });
-    assert(bytes.length === entry.size, 'dashboard_archive_invalid');
-    return { relative: entry.relative, bytes };
+async function withArchiveTemp(buffer, action) {
+  assert(Buffer.isBuffer(buffer) && buffer.length > 0 && buffer.length <= MAX_TOTAL_BYTES, 'dashboard_archive_invalid');
+  const work = await fs.mkdtemp(path.join(os.tmpdir(), 'netfleet-panel-zip-'));
+  try {
+    await fs.chmod(work, 0o700);
+    const archivePath = path.join(work, 'panel.zip');
+    await fs.writeFile(archivePath, buffer, { mode: 0o600 });
+    return await action(work, archivePath);
+  } finally {
+    await fs.rm(work, { recursive: true, force: true });
+  }
+}
+
+/** Read a verified manifest of `dist/` files from a panel archive. */
+export async function readPanelArchive(buffer) {
+  return withArchiveTemp(buffer, (_work, archivePath) => inspectArchiveFile(archivePath));
+}
+
+/** Expand a verified archive into `{ relative, bytes }` rows via ditto/unzip. */
+export async function expandPanelArchive(buffer) {
+  return withArchiveTemp(buffer, async (work, archivePath) => {
+    const manifest = await inspectArchiveFile(archivePath);
+    const integrity = await run('/usr/bin/unzip', ['-tqq', archivePath], { timeout: 60000 });
+    assert(integrity.code === 0, 'dashboard_archive_invalid');
+    const expected = new Map(manifest.map(entry => [entry.relative, entry.size]));
+    const extracted = path.join(work, 'extracted');
+    await fs.mkdir(extracted, { mode: 0o700 });
+    const extractResult = process.platform === 'darwin'
+      ? await run('/usr/bin/ditto', ['-x', '-k', archivePath, extracted], { timeout: 60000 })
+      : await run('/usr/bin/unzip', ['-qq', '-n', archivePath, '-d', extracted], { timeout: 60000 });
+    assert(extractResult.code === 0, 'dashboard_archive_invalid');
+
+    const distRoot = path.join(extracted, 'dist');
+    const distInfo = await fs.lstat(distRoot).catch(() => null);
+    assert(distInfo && distInfo.isDirectory() && !distInfo.isSymbolicLink(), 'dashboard_archive_invalid');
+    const realDist = await fs.realpath(distRoot);
+
+    const rows = [];
+    let total = 0;
+    async function walk(directory) {
+      const entries = await fs.readdir(directory, { withFileTypes: true });
+      for (const entry of entries) {
+        const origin = path.join(directory, entry.name);
+        const info = await fs.lstat(origin);
+        assert(!info.isSymbolicLink(), 'dashboard_archive_invalid');
+        const resolved = await fs.realpath(origin);
+        assert(resolved === realDist || resolved.startsWith(`${realDist}${path.sep}`), 'dashboard_archive_invalid');
+        if (info.isDirectory()) {
+          await walk(origin);
+          continue;
+        }
+        assert(info.isFile(), 'dashboard_archive_invalid');
+        const relative = path.relative(distRoot, origin).split(path.sep).join('/');
+        assert(expected.has(relative), 'dashboard_archive_invalid');
+        const bytes = await fs.readFile(origin);
+        assert(bytes.length === expected.get(relative) && bytes.length <= MAX_ENTRY_BYTES, 'dashboard_archive_invalid');
+        total += bytes.length;
+        assert(rows.length < MAX_ENTRIES && total <= MAX_TOTAL_BYTES, 'dashboard_archive_invalid');
+        rows.push({ relative, bytes });
+      }
+    }
+    await walk(distRoot);
+    assert(rows.length === expected.size && rows.some(row => row.relative === 'index.html'), 'dashboard_archive_invalid');
+    return rows;
   });
 }
 
