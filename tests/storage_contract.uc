@@ -39,7 +39,7 @@ try {
 		"platform.runtime": { ROOT_DIR: workspace, RUN_DIR: `${workspace}/run` },
 		"platform.process": host.use("platform.process"), "platform.storage": storage
 	};
-	const profiles = loadfile(`${root}/plugins/mihomo/lib/profile-storage.uc`)()({ use: name => capabilities[name] });
+	const profiles = loadfile(`${runtime_root}/plugins/mihomo/lib/profile-storage.uc`)()({ use: name => capabilities[name] });
 	check(profiles.resolve_profile("file:../outside") == null && profiles.resolve_profile("subscription:../outside") == null,
 		"shared profile references reject traversal without loading OpenWrt");
 	check(storage.mkdir(`${workspace}/subscriptions`), "create isolated subscription cache");
@@ -54,7 +54,7 @@ try {
 		fs.readfile(link) == "foreign", "existing file survives link preparation");
 	if (system("command -v yq >/dev/null 2>&1") == 0) {
 		const cache_state = {};
-		const cached_storage = loadfile(`${root}/plugins/platform-storage/lib/storage.uc`)()({ state: cache_state, use: host.use });
+		const cached_storage = loadfile(`${runtime_root}/plugins/platform-storage/lib/storage.uc`)()({ state: cache_state, use: host.use });
 		const yaml_path = `${workspace}/cached.yaml`;
 		check(storage.write_text(yaml_path, "items:\n  - name: alpha\n"), "prepare YAML document");
 		const parsed = cached_storage.read_yaml(yaml_path, true);
