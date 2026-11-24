@@ -69,9 +69,10 @@ compile_result = function(policy, allow_active) {
 	}
 	// install_artifact runs pre-rename `mihomo -t`, atomic rename, digest
 	// readback, and post-symlink `mihomo -t` via PROFILE_ENTRY_PATH.
-	if (!install_artifact(result.profile, result.manifest)) {
+	const install_detail = {};
+	if (!install_artifact(result.profile, result.manifest, install_detail)) {
 		if (allow_active != true) remove_provider_links(provider_profiles);
-		return { ok: false, error: "staged_readback_failed", detail: null };
+		return { ok: false, error: install_detail.error ?? "staged_readback_failed", detail: null };
 	}
 	return { ok: true, result: {
 		state: "staged",

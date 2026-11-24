@@ -123,7 +123,7 @@ test_profile_object = function(profile) {
 	return result;
 };
 
-install_artifact = function(profile, manifest) {
+install_artifact = function(profile, manifest, detail) {
 	const profile_text_value = make_json(profile);
 	if (profile_text_value == null || type(manifest) != "object" || !mkdir(ARTIFACT_DIR)) {
 		return false;
@@ -150,10 +150,16 @@ install_artifact = function(profile, manifest) {
 		return false;
 	}
 	manifest.artifact_sha256 = artifact_digest;
-	if (!write_text(manifest_tmp, sprintf("%J", manifest)) ||
-		system(`mihomo -d ${shell_quote(RUN_DIR)} -f ${shell_quote(profile_tmp)} -t >/dev/null 2>&1`) != 0) {
+	if (!write_text(manifest_tmp, sprintf("%J", manifest))) {
 		fs.unlink(profile_tmp);
 		fs.unlink(manifest_tmp);
+		if (type(detail) == "object") detail.error = "staged_readback_failed";
+		return false;
+	}
+	if (system(`mihomo -d ${shell_quote(RUN_DIR)} -f ${shell_quote(profile_tmp)} -t >/dev/null 2>&1`) != 0) {
+		fs.unlink(profile_tmp);
+		fs.unlink(manifest_tmp);
+		if (type(detail) == "object") detail.error = "staged_profile_test_failed";
 		return false;
 	}
 	if (!fs.rename(profile_tmp, ARTIFACT_PATH) || !fs.rename(manifest_tmp, MANIFEST_PATH)) {
