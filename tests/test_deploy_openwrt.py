@@ -117,7 +117,113 @@ def platform_uci_fixture(profile: str) -> dict[str, str]:
 
 
 class DeployOpenWrtTests(unittest.TestCase):
+    def _make_host_package_release(
+        self,
+        directory: Path,
+        commit: str | None = None,
+        tree: str | None = None,
+        *,
+        package_format: str = "apk",
+    ) -> Path:
+        if commit is None:
+            commit = subprocess.check_output(["git", "rev-parse", "HEAD^{commit}"], cwd=ROOT, text=True).strip()
+        if tree is None:
+            tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True).strip()
+        release = directory / "release"
+        payload = directory / "payload"
+        release.mkdir(parents=True, exist_ok=True)
+        files = {
+            "usr/libexec/opl-netfleet/main.uc": "candidate-main\n",
+            "usr/libexec/opl-netfleet/supervisor.uc": "candidate-supervisor\n",
+            "usr/libexec/opl-netfleet/kernel/host.uc": "candidate-host\n",
+            "usr/libexec/rpcd/opl-netfleet": "candidate-rpcd\n",
+            "etc/init.d/opl-netfleet": "candidate-init\n",
+            "etc/opl-netfleet/policy.example.json": '{"schema_version":2}\n',
+            "www/luci-static/resources/netfleet/api.js": "candidate-api\n",
+            "www/luci-static/resources/netfleet/native.css": "candidate-style\n",
+            "www/luci-static/resources/view/netfleet/overview.js": "candidate-view\n",
+            "usr/share/luci/menu.d/luci-app-netfleet.json": "{}\n",
+            "usr/share/rpcd/acl.d/luci-app-netfleet.json": "{}\n",
+        }
+        for name, content in files.items():
+            path = payload / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+        with (release / "FILES.sha256").open("w") as stream:
+            for path in sorted(item for item in payload.rglob("*") if item.is_file()):
+                stream.write(f"{sha256(path)}  {path.relative_to(payload)}\n")
+        ext = package_format
+        package_files = {
+            "opl-netfleet": f"opl-netfleet_0.4.3-r1.{ext}",
+            "opl-netfleet-kernel": f"opl-netfleet-kernel_0.4.3-r1.{ext}",
+            "opl-netfleet-plugin-models": f"opl-netfleet-plugin-models_0.4.3-r1.{ext}",
+            "luci-app-netfleet": f"luci-app-netfleet_0.4.3-r1.{ext}",
+        }
+        for name in package_files.values():
+            (release / name).write_text(name + "\n")
+        runtime_lines = []
+        for line in (release / "FILES.sha256").read_text().splitlines():
+            rel = line.split(None, 1)[1]
+            if not rel.startswith("www/luci-static/resources/netfleet/") and not rel.startswith(
+                "www/luci-static/resources/view/netfleet/"
+            ) and rel not in {
+                "usr/share/luci/menu.d/luci-app-netfleet.json",
+                "usr/share/rpcd/acl.d/luci-app-netfleet.json",
+            }:
+                runtime_lines.append(line)
+        runtime_digest = hashlib.sha256(("\n".join(runtime_lines) + "\n").encode()).hexdigest()
+        manifest: dict = {
+            "schema": "opl-netfleet-package-manifest.v2",
+            "source_commit": commit,
+            "source_tree": tree,
+            "package_version": "0.4.3",
+            "package_release": "1",
+            "package_format": package_format,
+            "package_arch": "noarch" if package_format == "apk" else "all",
+            "build_target_arch": "aarch64_generic",
+            "policy_schema": 2,
+            "runtime_payload_sha256": runtime_digest,
+            "files_manifest": {"name": "FILES.sha256", "sha256": sha256(release / "FILES.sha256")},
+            "artifact_files": package_files,
+            "artifacts": [
+                {"package": package, "name": name, "sha256": sha256(release / name), "size": (release / name).stat().st_size}
+                for package, name in package_files.items()
+            ],
+        }
+        if package_format == "apk":
+            (release / "opl-netfleet-apk.pem").write_text("test-public-key\n")
+            (release / "packages.adb").write_bytes(b"test-feed-index\n")
+            manifest["apk_public_key"] = {
+                "name": "opl-netfleet-apk.pem",
+                "sha256": sha256(release / "opl-netfleet-apk.pem"),
+            }
+            manifest["feed_index"] = {
+                "name": "packages.adb",
+                "sha256": sha256(release / "packages.adb"),
+            }
+        (release / "manifest.json").write_text(json.dumps(manifest) + "\n")
+        return release
+
     def test_host_dry_run_accepts_an_ssh_alias(self):
+        with tempfile.TemporaryDirectory() as directory:
+            release = self._make_host_package_release(Path(directory))
+            result = subprocess.run(
+                [str(HOST), "openwrt-target", "--ref", "HEAD", "--packages", str(release), "--dry-run"],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        receipt = json.loads(result.stdout)
+        self.assertTrue(receipt["ok"])
+        self.assertEqual("openwrt-target", receipt["target"])
+        self.assertEqual("package", receipt["release_mode"])
+        self.assertEqual("apk", receipt["release_format"])
+        self.assertRegex(receipt["product_version"], r"^[0-9][0-9A-Za-z.+~-]*$")
+        self.assertIsInstance(receipt["prepare_elapsed_ms"], int)
+
+    def test_host_rejects_deploy_without_packages_or_release(self):
         result = subprocess.run(
             [str(HOST), "openwrt-target", "--ref", "HEAD", "--dry-run"],
             cwd=ROOT,
@@ -125,16 +231,15 @@ class DeployOpenWrtTests(unittest.TestCase):
             capture_output=True,
             check=False,
         )
-        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        receipt = json.loads(result.stdout)
-        self.assertTrue(receipt["ok"])
-        self.assertEqual("openwrt-target", receipt["target"])
-        self.assertRegex(receipt["product_version"], r"^[0-9][0-9A-Za-z.+~-]*$")
-        self.assertIsInstance(receipt["prepare_elapsed_ms"], int)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("--packages or --release is required", result.stderr)
 
     def test_host_dry_run_binds_a_private_instance_without_printing_secrets(self):
         with tempfile.TemporaryDirectory() as directory:
-            instance = Path(directory)
+            base = Path(directory)
+            release = self._make_host_package_release(base / "pkg")
+            instance = base / "instance"
+            instance.mkdir()
             (instance / "policy.json").write_text(json.dumps({
                 "schema_version": 2,
                 "private": "policy-secret",
@@ -153,7 +258,10 @@ class DeployOpenWrtTests(unittest.TestCase):
             (instance / "nikki-mixin.yaml").write_text("nikki-rules: []\n")
             (instance / "platform.json").write_text(json.dumps(platform_fixture()) + "\n")
             result = subprocess.run(
-                [str(HOST), "openwrt-target", "--ref", "HEAD", "--instance", str(instance), "--dry-run"],
+                [
+                    str(HOST), "openwrt-target", "--ref", "HEAD",
+                    "--packages", str(release), "--instance", str(instance), "--dry-run",
+                ],
                 cwd=ROOT,
                 text=True,
                 capture_output=True,
@@ -171,73 +279,8 @@ class DeployOpenWrtTests(unittest.TestCase):
         self.assertNotIn("secret.invalid", combined)
 
     def test_host_dry_run_accepts_a_verified_package_release(self):
-        commit = subprocess.check_output(["git", "rev-parse", "HEAD^{commit}"], cwd=ROOT, text=True).strip()
-        tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True).strip()
         with tempfile.TemporaryDirectory() as directory:
-            release = Path(directory)
-            payload = Path(directory) / "payload"
-            files = {
-                "usr/libexec/opl-netfleet/main.uc": "candidate-main\n",
-                "usr/libexec/opl-netfleet/supervisor.uc": "candidate-supervisor\n",
-                "usr/libexec/opl-netfleet/kernel/host.uc": "candidate-host\n",
-                "usr/libexec/rpcd/opl-netfleet": "candidate-rpcd\n",
-                "etc/init.d/opl-netfleet": "candidate-init\n",
-                "etc/opl-netfleet/policy.example.json": '{"schema_version":2}\n',
-                "www/luci-static/resources/netfleet/api.js": "candidate-api\n",
-                "www/luci-static/resources/netfleet/native.css": "candidate-style\n",
-                "www/luci-static/resources/view/netfleet/overview.js": "candidate-view\n",
-                "usr/share/luci/menu.d/luci-app-netfleet.json": "{}\n",
-                "usr/share/rpcd/acl.d/luci-app-netfleet.json": "{}\n",
-            }
-            for name, content in files.items():
-                path = payload / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(content)
-            with (release / "FILES.sha256").open("w") as stream:
-                for path in sorted(item for item in payload.rglob("*") if item.is_file()):
-                    stream.write(f"{sha256(path)}  {path.relative_to(payload)}\n")
-            package_files = {
-                "opl-netfleet": "opl-netfleet_0.4.3-r1.apk",
-                "opl-netfleet-kernel": "opl-netfleet-kernel_0.4.3-r1.apk",
-                "opl-netfleet-plugin-models": "opl-netfleet-plugin-models_0.4.3-r1.apk",
-                "luci-app-netfleet": "luci-app-netfleet_0.4.3-r1.apk",
-            }
-            for name in package_files.values():
-                (release / name).write_text(name + "\n")
-            (release / "opl-netfleet-apk.pem").write_text("test-public-key\n")
-            (release / "packages.adb").write_bytes(b"test-feed-index\n")
-            runtime_lines = []
-            for line in (release / "FILES.sha256").read_text().splitlines():
-                rel = line.split(None, 1)[1]
-                if not rel.startswith("www/luci-static/resources/netfleet/") and rel not in {
-                    "www/luci-static/resources/view/netfleet/overview.js",
-                    "www/luci-static/resources/view/netfleet/log.js",
-                    "usr/share/luci/menu.d/luci-app-netfleet.json",
-                    "usr/share/rpcd/acl.d/luci-app-netfleet.json",
-                }:
-                    runtime_lines.append(line)
-            runtime_digest = hashlib.sha256(("\n".join(runtime_lines) + "\n").encode()).hexdigest()
-            manifest = {
-                "schema": "opl-netfleet-package-manifest.v2",
-                "source_commit": commit,
-                "source_tree": tree,
-                "package_version": "0.4.3",
-                "package_release": "1",
-                "package_format": "apk",
-                "package_arch": "noarch",
-                "build_target_arch": "aarch64_generic",
-                "policy_schema": 2,
-                "runtime_payload_sha256": runtime_digest,
-                "files_manifest": {"name": "FILES.sha256", "sha256": sha256(release / "FILES.sha256")},
-                "artifact_files": package_files,
-                "artifacts": [
-                    {"package": package, "name": name, "sha256": sha256(release / name), "size": (release / name).stat().st_size}
-                    for package, name in package_files.items()
-                ],
-                "apk_public_key": {"name": "opl-netfleet-apk.pem", "sha256": sha256(release / "opl-netfleet-apk.pem")},
-                "feed_index": {"name": "packages.adb", "sha256": sha256(release / "packages.adb")},
-            }
-            (release / "manifest.json").write_text(json.dumps(manifest) + "\n")
+            release = self._make_host_package_release(Path(directory))
             result = subprocess.run(
                 [str(HOST), "openwrt-target", "--ref", "HEAD", "--packages", str(release), "--dry-run"],
                 cwd=ROOT, text=True, capture_output=True, check=False,
@@ -256,13 +299,17 @@ class DeployOpenWrtTests(unittest.TestCase):
             ["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True
         ).strip()
         with tempfile.TemporaryDirectory() as directory:
-            cache_root = Path(directory) / "cache"
-            receipt = Path(directory) / "qualification.json"
+            base = Path(directory)
+            release = self._make_host_package_release(base / "pkg", commit, tree)
+            cache_root = base / "cache"
+            receipt = base / "qualification.json"
             receipt.write_text(json.dumps({
-                "schema": "opl-netfleet-openwrt-vm-qualification.v1",
+                "schema": "opl-netfleet-openwrt-vm-qualification.v2",
                 "qualified": True,
+                "package_qualified": True,
                 "source_commit": commit,
                 "source_tree": tree,
+                "package": {"manifest_sha256": sha256(release / "manifest.json")},
                 "checks": {
                     "boot": True,
                     "ssh": True,
@@ -276,8 +323,8 @@ class DeployOpenWrtTests(unittest.TestCase):
             env["XDG_CACHE_HOME"] = str(cache_root)
             result = subprocess.run(
                 [
-                    str(HOST), "openwrt-target", "--ref", "HEAD", "--activate",
-                    "--qualification", str(receipt), "--dry-run",
+                    str(HOST), "openwrt-target", "--ref", "HEAD", "--packages", str(release),
+                    "--activate", "--qualification", str(receipt), "--dry-run",
                 ],
                 cwd=ROOT,
                 env=env,
@@ -306,7 +353,9 @@ class DeployOpenWrtTests(unittest.TestCase):
             ["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True
         ).strip()
         with tempfile.TemporaryDirectory() as directory:
-            cache_root = Path(directory)
+            base = Path(directory)
+            release = self._make_host_package_release(base / "pkg", commit, tree)
+            cache_root = base / "cache"
             receipt_dir = cache_root / "opl-netfleet" / "vm-qualifications"
             receipt_dir.mkdir(parents=True)
             receipt = receipt_dir / f"{commit}-{tree}.json"
@@ -327,7 +376,10 @@ class DeployOpenWrtTests(unittest.TestCase):
             env = os.environ.copy()
             env["XDG_CACHE_HOME"] = str(cache_root)
             result = subprocess.run(
-                [str(HOST), "openwrt-target", "--ref", "HEAD", "--activate", "--dry-run"],
+                [
+                    str(HOST), "openwrt-target", "--ref", "HEAD",
+                    "--packages", str(release), "--activate", "--dry-run",
+                ],
                 cwd=ROOT,
                 env=env,
                 text=True,
@@ -342,28 +394,91 @@ class DeployOpenWrtTests(unittest.TestCase):
 
     def test_host_presentation_only_skips_vm_qualification(self):
         self._make_instance_bundle()
-        result = subprocess.run(
-            [
-                str(HOST), "openwrt-target", "--ref", "HEAD",
-                "--instance", str(self.bundle), "--presentation-only", "--dry-run",
-            ],
-            cwd=ROOT,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            release = self._make_host_package_release(Path(directory))
+            result = subprocess.run(
+                [
+                    str(HOST), "openwrt-target", "--ref", "HEAD",
+                    "--packages", str(release),
+                    "--instance", str(self.bundle), "--presentation-only", "--dry-run",
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
         value = json.loads(result.stdout)
         self.assertEqual("presentation_only", value["mode"])
         self.assertFalse(value["activation_qualified"])
         self.assertEqual("none", value["qualification_source"])
 
+    def _load_deploy_module(self):
+        import importlib.util
+        import sys
+
+        spec = importlib.util.spec_from_file_location("deploy_openwrt", ROOT / "scripts" / "deploy_openwrt.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        return module
+
     def test_host_archives_exclude_extended_attributes(self):
-        self.assertEqual(2, HOST.read_text().count("tar --no-xattrs"))
+        module = self._load_deploy_module()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            bundle = base / "bundle"
+            bundle.mkdir()
+            (bundle / "bundle.json").write_text('{"ok":true}\n')
+            (bundle / "._appledouble").write_text("metadata\n")
+            archive_path = module.build_bundle_archive(bundle, base / "bundle.tar")
+            raw = archive_path.read_bytes()
+            self.assertNotIn(b"SCHILY.xattr", raw)
+            self.assertNotIn(b"LIBARCHIVE.xattr", raw)
+            with tarfile.open(archive_path, "r:") as archive:
+                names = archive.getnames()
+                self.assertEqual(["bundle.json"], names)
+                for member in archive.getmembers():
+                    self.assertEqual({}, member.pax_headers)
+                    self.assertEqual(0, member.uid)
+                    self.assertEqual(0, member.gid)
+
+    def test_host_pyinfra_orchestrates_bundle_upload_and_remote_gate(self):
+        module = self._load_deploy_module()
+        try:
+            import pyinfra  # noqa: F401
+        except ImportError:
+            self.skipTest("pyinfra not installed in bare python3 interpreter")
+
+        archive_path = module.build_bundle_archive(self.bundle, self.base / "pyinfra-bundle.tar")
+        remote_env = {
+            "PATH": f"{self.bin}:{os.environ['PATH']}",
+            "FAKE_STATE": str(self.state),
+            "FAKE_UCI_FILE": str(self.device / "etc/config/nikki"),
+            "FAKE_RULESET_SOURCE": str(self.state / "ruleset-source"),
+            "OPL_NETFLEET_DEPLOY_ROOT": str(self.device),
+            "OPL_NETFLEET_DEPLOY_TESTING": "1",
+            "FAKE_PACKAGE_CANDIDATE": str(self.base / "payload"),
+            "FAKE_APK_ARCH": "aarch64",
+        }
+        rc, stdout_text, stderr_text = module.deploy_with_pyinfra(
+            target="@local",
+            bundle_archive=archive_path,
+            remote_flags=["--preserve-state"],
+            remote_env=remote_env,
+        )
+        self.assertEqual(0, rc, stderr_text + stdout_text)
+        receipt = json.loads(stdout_text.strip().splitlines()[-1])
+        self.assertTrue(receipt["ok"])
+        self.assertEqual("installed", receipt["state"])
+        self.assertTrue(receipt["final_active"])
+        self.assertEqual("new-main\n", (self.device / "usr/libexec/opl-netfleet/main.uc").read_text())
 
     def test_host_rejects_stale_vm_qualification_before_ssh(self):
         with tempfile.TemporaryDirectory() as directory:
-            receipt = Path(directory) / "qualification.json"
+            base = Path(directory)
+            release = self._make_host_package_release(base / "pkg")
+            receipt = base / "qualification.json"
             receipt.write_text(json.dumps({
                 "schema": "opl-netfleet-openwrt-vm-qualification.v1",
                 "qualified": True,
@@ -373,8 +488,8 @@ class DeployOpenWrtTests(unittest.TestCase):
             }) + "\n")
             result = subprocess.run(
                 [
-                    str(HOST), "openwrt-target", "--ref", "HEAD", "--activate",
-                    "--qualification", str(receipt), "--dry-run",
+                    str(HOST), "openwrt-target", "--ref", "HEAD", "--packages", str(release),
+                    "--activate", "--qualification", str(receipt), "--dry-run",
                 ],
                 cwd=ROOT,
                 text=True,
@@ -761,6 +876,12 @@ class DeployOpenWrtTests(unittest.TestCase):
                 sys.exit(1)
             source = Path(os.environ["FAKE_PACKAGE_CANDIDATE"])
             root = Path(os.environ["OPL_NETFLEET_DEPLOY_ROOT"])
+            for owned_dir in (
+                "usr/libexec/opl-netfleet",
+                "www/luci-static/resources/netfleet",
+                "www/luci-static/resources/view/netfleet",
+            ):
+                shutil.rmtree(root / owned_dir, ignore_errors=True)
             for path in source.rglob("*"):
                 target = root / path.relative_to(source)
                 if path.is_dir():
@@ -771,6 +892,37 @@ class DeployOpenWrtTests(unittest.TestCase):
             package_names = [Path(arg).name for arg in sys.argv if arg.endswith(".apk") or arg.endswith(".ipk")]
             with (Path(os.environ["FAKE_STATE"]) / "package-actions").open("a") as stream:
                 stream.write(" ".join(package_names) + "\n")
+            """,
+        )
+        self._write_executable(
+            "opkg",
+            r"""
+            #!/usr/bin/env python3
+            import os
+            from pathlib import Path
+            import shutil
+            import sys
+
+            if "install" not in sys.argv:
+                sys.exit(1)
+            source = Path(os.environ["FAKE_PACKAGE_CANDIDATE"])
+            root = Path(os.environ["OPL_NETFLEET_DEPLOY_ROOT"])
+            for owned_dir in (
+                "usr/libexec/opl-netfleet",
+                "www/luci-static/resources/netfleet",
+                "www/luci-static/resources/view/netfleet",
+            ):
+                shutil.rmtree(root / owned_dir, ignore_errors=True)
+            for path in source.rglob("*"):
+                target = root / path.relative_to(source)
+                if path.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                elif path.is_file():
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(path, target)
+            package_names = [Path(arg).name for arg in sys.argv if arg.endswith(".ipk")]
+            with (Path(os.environ["FAKE_STATE"]) / "package-actions").open("a") as stream:
+                stream.write("opkg:" + " ".join(package_names) + "\n")
             """,
         )
         self._write_executable(
@@ -1074,9 +1226,6 @@ esac
             }:
                 runtime_lines.append(line)
         runtime_digest = hashlib.sha256(("\n".join(runtime_lines) + "\n").encode()).hexdigest()
-        with tarfile.open(self.bundle / "payload.tar", "w") as archive:
-            for path in sorted(payload.rglob("*")):
-                archive.add(path, arcname=path.relative_to(payload), recursive=False)
         shutil.copy2(REMOTE, self.bundle / "deploy-openwrt-remote.sh")
         (self.bundle / "rulesets.lock.json").write_text(ruleset_lock)
         manifest = {
@@ -1086,16 +1235,34 @@ esac
             "policy_schema": 2,
             "file_count": len(files),
             "runtime_payload_sha256": runtime_digest,
-            "release_mode": "source",
-            "release_format": "source",
+            "release_mode": "package",
+            "release_format": "apk",
             "instance": False,
             "activation_qualified": True,
             "qualification_sha256": "e" * 64,
             "rulesets_lock_sha256": sha256(self.bundle / "rulesets.lock.json"),
         }
         (self.bundle / "bundle.json").write_text(json.dumps(manifest) + "\n")
+        self._make_package_bundle()
+
+    def _bundle_checksum_names(self) -> list[str]:
+        manifest = json.loads((self.bundle / "bundle.json").read_text())
+        names = ["FILES.sha256", "bundle.json", "deploy-openwrt-remote.sh", "rulesets.lock.json"]
+        if manifest.get("release_mode") == "package":
+            pm = json.loads((self.bundle / "package-manifest.json").read_text())
+            names.append("package-manifest.json")
+            names.extend(pm["artifact_files"].values())
+            if pm.get("apk_public_key"):
+                names.append(pm["apk_public_key"]["name"])
+            if pm.get("feed_index"):
+                names.append(pm["feed_index"]["name"])
+        if manifest.get("instance"):
+            names.extend(["policy.json", "subscriptions.json", "nikki-mixin.yaml", "platform.json"])
+        return names
+
+    def _write_sha256sums(self):
         with (self.bundle / "SHA256SUMS").open("w") as stream:
-            for name in ("FILES.sha256", "bundle.json", "deploy-openwrt-remote.sh", "rulesets.lock.json", "payload.tar"):
+            for name in self._bundle_checksum_names():
                 stream.write(f"{sha256(self.bundle / name)}  {name}\n")
 
     def _change_bundle_identity(self):
@@ -1103,9 +1270,13 @@ esac
         manifest["source_commit"] = "c" * 40
         manifest["source_tree"] = "d" * 40
         (self.bundle / "bundle.json").write_text(json.dumps(manifest) + "\n")
-        with (self.bundle / "SHA256SUMS").open("w") as stream:
-            for name in ("FILES.sha256", "bundle.json", "deploy-openwrt-remote.sh", "rulesets.lock.json", "payload.tar"):
-                stream.write(f"{sha256(self.bundle / name)}  {name}\n")
+        if (self.bundle / "package-manifest.json").is_file():
+            pm = json.loads((self.bundle / "package-manifest.json").read_text())
+            pm["source_commit"] = "c" * 40
+            pm["source_tree"] = "d" * 40
+            pm["files_manifest"]["sha256"] = sha256(self.bundle / "FILES.sha256")
+            (self.bundle / "package-manifest.json").write_text(json.dumps(pm) + "\n")
+        self._write_sha256sums()
 
     def _change_presentation_payload(self):
         payload = self.base / "payload"
@@ -1118,9 +1289,6 @@ esac
         with (self.bundle / "FILES.sha256").open("w") as stream:
             for path in sorted(item for item in payload.rglob("*") if item.is_file()):
                 stream.write(f"{sha256(path)}  {path.relative_to(payload)}\n")
-        with tarfile.open(self.bundle / "payload.tar", "w") as archive:
-            for path in sorted(payload.rglob("*")):
-                archive.add(path, arcname=path.relative_to(payload), recursive=False)
         self._change_bundle_identity()
 
     def _make_instance_bundle(self):
@@ -1157,12 +1325,7 @@ esac
         manifest["nikki_mixin_sha256"] = sha256(mixin)
         manifest["platform_sha256"] = sha256(platform)
         (self.bundle / "bundle.json").write_text(json.dumps(manifest) + "\n")
-        with (self.bundle / "SHA256SUMS").open("w") as stream:
-            for name in (
-                "FILES.sha256", "bundle.json", "deploy-openwrt-remote.sh", "rulesets.lock.json", "payload.tar",
-                "policy.json", "subscriptions.json", "nikki-mixin.yaml", "platform.json",
-            ):
-                stream.write(f"{sha256(self.bundle / name)}  {name}\n")
+        self._write_sha256sums()
 
     def _make_bundle_policy_instance(self):
         self._make_instance_bundle()
@@ -1176,42 +1339,35 @@ esac
         with (self.bundle / "FILES.sha256").open("w") as stream:
             for path in sorted(item for item in (self.base / "payload").rglob("*") if item.is_file()):
                 stream.write(f"{sha256(path)}  {path.relative_to(self.base / 'payload')}\n")
-        with tarfile.open(self.bundle / "payload.tar", "w") as archive:
-            for path in sorted((self.base / "payload").rglob("*")):
-                archive.add(path, arcname=path.relative_to(self.base / "payload"), recursive=False)
         manifest = json.loads((self.bundle / "bundle.json").read_text())
         manifest["policy_sha256"] = sha256(policy)
         manifest["file_count"] = len((self.bundle / "FILES.sha256").read_text().splitlines())
         (self.bundle / "bundle.json").write_text(json.dumps(manifest) + "\n")
-        with (self.bundle / "SHA256SUMS").open("w") as stream:
-            for name in (
-                "FILES.sha256", "bundle.json", "deploy-openwrt-remote.sh", "rulesets.lock.json", "payload.tar",
-                "policy.json", "subscriptions.json", "nikki-mixin.yaml", "platform.json",
-            ):
-                stream.write(f"{sha256(self.bundle / name)}  {name}\n")
+        pm = json.loads((self.bundle / "package-manifest.json").read_text())
+        pm["files_manifest"]["sha256"] = sha256(self.bundle / "FILES.sha256")
+        (self.bundle / "package-manifest.json").write_text(json.dumps(pm) + "\n")
+        self._write_sha256sums()
 
-    def _make_package_bundle(self):
+    def _make_package_bundle(self, *, package_format: str = "apk"):
         payload = self.base / "payload"
+        ext = package_format
         package_files = {
-            "opl-netfleet": "opl-netfleet_0.4.3-r1.apk",
-            "opl-netfleet-kernel": "opl-netfleet-kernel_0.4.3-r1.apk",
-            "opl-netfleet-plugin-models": "opl-netfleet-plugin-models_0.4.3-r1.apk",
-            "luci-app-netfleet": "luci-app-netfleet_0.4.3-r1.apk",
+            "opl-netfleet": f"opl-netfleet_0.4.3-r1.{ext}",
+            "opl-netfleet-kernel": f"opl-netfleet-kernel_0.4.3-r1.{ext}",
+            "opl-netfleet-plugin-models": f"opl-netfleet-plugin-models_0.4.3-r1.{ext}",
+            "luci-app-netfleet": f"luci-app-netfleet_0.4.3-r1.{ext}",
         }
         for name in package_files.values():
             (self.bundle / name).write_text(name + "\n")
-        key = self.bundle / "opl-netfleet-apk.pem"
-        key.write_text("fixture-key\n")
-        (self.bundle / "packages.adb").write_bytes(b"fixture-feed-index\n")
         manifest = json.loads((self.bundle / "bundle.json").read_text())
-        package_manifest = {
+        package_manifest: dict = {
             "schema": "opl-netfleet-package-manifest.v2",
             "source_commit": manifest["source_commit"],
             "source_tree": manifest["source_tree"],
             "package_version": "0.4.3",
             "package_release": "1",
-            "package_format": "apk",
-            "package_arch": "noarch",
+            "package_format": package_format,
+            "package_arch": "noarch" if package_format == "apk" else "all",
             "build_target_arch": "aarch64_generic",
             "policy_schema": 2,
             "runtime_payload_sha256": manifest["runtime_payload_sha256"],
@@ -1221,18 +1377,21 @@ esac
                 {"package": name, "name": file, "sha256": sha256(self.bundle / file), "size": (self.bundle / file).stat().st_size}
                 for name, file in package_files.items()
             ],
-            "apk_public_key": {"name": key.name, "sha256": sha256(key)},
-            "feed_index": {"name": "packages.adb", "sha256": sha256(self.bundle / "packages.adb")},
         }
+        if package_format == "apk":
+            key = self.bundle / "opl-netfleet-apk.pem"
+            key.write_text("fixture-key\n")
+            (self.bundle / "packages.adb").write_bytes(b"fixture-feed-index\n")
+            package_manifest["apk_public_key"] = {"name": key.name, "sha256": sha256(key)}
+            package_manifest["feed_index"] = {"name": "packages.adb", "sha256": sha256(self.bundle / "packages.adb")}
         (self.bundle / "package-manifest.json").write_text(json.dumps(package_manifest) + "\n")
-        manifest.update({"schema": "opl-netfleet-deploy-bundle.v5", "release_mode": "package", "release_format": "apk"})
+        manifest.update({
+            "schema": "opl-netfleet-deploy-bundle.v5",
+            "release_mode": "package",
+            "release_format": package_format,
+        })
         (self.bundle / "bundle.json").write_text(json.dumps(manifest) + "\n")
-        with (self.bundle / "SHA256SUMS").open("w") as stream:
-            for name in (
-                "FILES.sha256", "bundle.json", "deploy-openwrt-remote.sh", "rulesets.lock.json",
-                "package-manifest.json", *package_files.values(), key.name, "packages.adb",
-            ):
-                stream.write(f"{sha256(self.bundle / name)}  {name}\n")
+        self._write_sha256sums()
         return payload
 
     def _make_fresh_device(self):
@@ -1325,6 +1484,15 @@ esac
         manifest = json.loads((self.bundle / "bundle.json").read_text())
         manifest.update(changes)
         (self.bundle / "bundle.json").write_text(json.dumps(manifest) + "\n")
+        if (self.bundle / "package-manifest.json").is_file() and (
+            "source_commit" in changes or "source_tree" in changes
+        ):
+            pm = json.loads((self.bundle / "package-manifest.json").read_text())
+            if "source_commit" in changes:
+                pm["source_commit"] = changes["source_commit"]
+            if "source_tree" in changes:
+                pm["source_tree"] = changes["source_tree"]
+            (self.bundle / "package-manifest.json").write_text(json.dumps(pm) + "\n")
         names = [line.split(None, 1)[1].strip() for line in (self.bundle / "SHA256SUMS").read_text().splitlines()]
         with (self.bundle / "SHA256SUMS").open("w") as stream:
             for name in names:
@@ -1339,103 +1507,36 @@ esac
     def _profile(self) -> str:
         return json.loads((self.device / "etc/config/nikki").read_text()).get("config.profile", "")
 
-    def _make_microkernel_upgrade(self):
-        payload = self.base / "payload"
-        system_path = "usr/share/opl-netfleet/system.json"
-        plugin_path = "usr/libexec/opl-netfleet/plugins"
-        installed = {
-            "usr/libexec/opl-netfleet/kernel/host.uc": "old-host\n",
-            system_path: json.dumps({
-                "enabled": {"models": True, "retired-feature": True},
-                "product_packages": ["opl-netfleet-plugin-models", "opl-netfleet-plugin-retired-feature"],
-            }) + "\n",
-            f"{plugin_path}/models/manifest.json": '{"id":"models","version":"1.0.0"}\n',
-            f"{plugin_path}/retired-feature/manifest.json": '{"id":"retired-feature","version":"1.0.0"}\n',
-            f"{plugin_path}/third-party/manifest.json": '{"id":"third-party","version":"2.0.0"}\n',
-            f"{plugin_path}/third-party/worker.uc": "third-party-code\n",
-            "www/luci-static/resources/netfleet/plugins/third-party/revision-1/resources/page.js": "export const version = 1;\n",
-            "www/luci-static/resources/netfleet/plugins/third-party/revision-1/resources/lib/helper.js": "export const label = 'helper';\n",
-            "etc/opl-netfleet/system.json": '{"enabled":{"third-party":true}}\n',
-            "var/lib/opl-netfleet/plugins/third-party/state.json": '{"value":42}\n',
-        }
-        candidate = {
-            "usr/libexec/rpcd/opl-netfleet.plugins": "#!/bin/sh\nexit 0\n",
-            system_path: json.dumps({
-                "enabled": {"models": True},
-                "product_packages": ["opl-netfleet-plugin-models"],
-            }) + "\n",
-            f"{plugin_path}/models/manifest.json": '{"id":"models","version":"1.1.0"}\n',
-        }
-        for root, files in ((self.device, installed), (payload, candidate)):
-            for relative, content in files.items():
-                path = root / relative
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(content)
-                if relative == "usr/libexec/rpcd/opl-netfleet.plugins":
-                    path.chmod(0o755)
-        paths = sorted(item for item in payload.rglob("*") if item.is_file())
-        lines = [f"{sha256(path)}  {path.relative_to(payload)}\n" for path in paths]
-        (self.bundle / "FILES.sha256").write_text("".join(lines))
-        runtime_lines = []
-        for path, line in zip(paths, lines):
-            relative = str(path.relative_to(payload))
-            if not relative.startswith((
-                "www/luci-static/resources/netfleet/",
-                "www/luci-static/resources/view/netfleet/",
-            )) and relative not in {
-                "usr/share/luci/menu.d/luci-app-netfleet.json",
-                "usr/share/rpcd/acl.d/luci-app-netfleet.json",
-            }:
-                runtime_lines.append(line)
-        with tarfile.open(self.bundle / "payload.tar", "w") as archive:
-            for path in sorted(payload.rglob("*")):
-                archive.add(path, arcname=path.relative_to(payload), recursive=False)
-        self._rewrite_bundle_manifest(
-            file_count=len(paths),
-            runtime_payload_sha256=hashlib.sha256("".join(runtime_lines).encode()).hexdigest(),
-        )
-        return installed
-
-    def test_source_upgrade_preserves_third_party_plugins_and_resumes_product_plugins(self):
-        installed = self._make_microkernel_upgrade()
-
+    def test_remote_rejects_legacy_source_overlay_bundle(self):
+        self._rewrite_bundle_manifest(release_mode="source", release_format="source")
         result = self._run()
-
-        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        self.assertTrue(json.loads(result.stdout)["installed_parity"])
-        plugins = self.device / "usr/libexec/opl-netfleet/plugins"
-        self.assertEqual("1.1.0", json.loads((plugins / "models/manifest.json").read_text())["version"])
-        self.assertFalse((plugins / "retired-feature").exists())
-        for relative, content in installed.items():
-            if "third-party" in relative or relative == "etc/opl-netfleet/system.json":
-                self.assertEqual(content, (self.device / relative).read_text(), relative)
-        actions = [json.loads(line) for line in (self.state / "plugin-actions.jsonl").read_text().splitlines()]
-        self.assertEqual([
-            {"action": "plugin-package-drain", "plugins": ["models", "retired-feature"], "owner": "old-main"},
-            {"action": "plugin-package-remove", "plugins": ["retired-feature"], "owner": "new-main"},
-            {"action": "plugin-package-resume", "plugins": ["models"], "owner": "new-main"},
-        ], actions)
-        self.assertEqual([], list((self.device / "var/run/opl-netfleet-plugin-maintenance").iterdir()))
-
-    def test_source_plugin_resume_failure_restores_old_plugins_and_third_party_state(self):
-        installed = self._make_microkernel_upgrade()
-
-        result = self._run(fail_action="plugin-package-resume")
-
         self.assertNotEqual(0, result.returncode)
         receipt = json.loads(result.stdout)
-        self.assertEqual("plugin_resume_unconfirmed", receipt["error"])
-        self.assertEqual("restored_previous_bytes_native_profile", receipt["rollback"])
-        self.assertEqual("subscription:base", self._profile())
+        self.assertEqual("package_release_required", receipt["error"])
         self.assertEqual("old-main\n", (self.device / "usr/libexec/opl-netfleet/main.uc").read_text())
-        for relative, content in installed.items():
-            self.assertEqual(content, (self.device / relative).read_text(), relative)
-        actions = [json.loads(line) for line in (self.state / "plugin-actions.jsonl").read_text().splitlines()]
+
+    def test_remote_rejects_payload_tar_in_checksum_manifest(self):
+        (self.bundle / "payload.tar").write_bytes(b"legacy-tar\n")
+        with (self.bundle / "SHA256SUMS").open("a") as stream:
+            stream.write(f"{sha256(self.bundle / 'payload.tar')}  payload.tar\n")
+        result = self._run()
+        self.assertNotEqual(0, result.returncode)
+        receipt = json.loads(result.stdout)
+        self.assertEqual("bundle_checksum_path_invalid", receipt["error"])
+        self.assertEqual("old-main\n", (self.device / "usr/libexec/opl-netfleet/main.uc").read_text())
+
+    def test_package_release_installs_through_opkg_for_ipk_bundles(self):
+        self._make_package_bundle(package_format="ipk")
+        result = self._run()
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
         self.assertEqual(
-            {"action": "plugin-package-resume", "plugins": ["models", "retired-feature"], "owner": "old-main"},
-            actions[-1],
+            ["opkg:opl-netfleet_0.4.3-r1.ipk opl-netfleet-kernel_0.4.3-r1.ipk opl-netfleet-plugin-models_0.4.3-r1.ipk luci-app-netfleet_0.4.3-r1.ipk"],
+            (self.state / "package-actions").read_text().splitlines(),
         )
-        self.assertEqual([], list((self.device / "var/run/opl-netfleet-plugin-maintenance").iterdir()))
+        self.assertEqual("new-main\n", (self.device / "usr/libexec/opl-netfleet/main.uc").read_text())
+        installed = json.loads((self.device / "etc/opl-netfleet/installed.json").read_text())
+        self.assertEqual("package", installed["release_mode"])
+        self.assertEqual("ipk", installed["release_format"])
 
     def test_fresh_device_instance_install_finishes_active(self):
         self._make_fresh_device()
@@ -1701,21 +1802,6 @@ esac
         self.assertEqual("activation_qualification_required", receipt["error"])
         self.assertEqual(profile_before, self._profile())
         self.assertEqual([], (self.state / "actions").read_text().splitlines())
-
-    def test_payload_archive_cannot_write_outside_owned_paths(self):
-        payload = self.base / "payload"
-        extra = payload / "var/run/netfleet-should-not-install"
-        extra.parent.mkdir(parents=True)
-        extra.write_text("forbidden\n")
-        with tarfile.open(self.bundle / "payload.tar", "w") as archive:
-            for path in sorted(payload.rglob("*")):
-                archive.add(path, arcname=path.relative_to(payload), recursive=False)
-        self._rewrite_bundle_manifest()
-
-        result = self._run()
-
-        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        self.assertFalse((self.device / "var/run/netfleet-should-not-install").exists())
 
     def test_instance_upgrade_reads_preflight_from_the_installed_owner(self):
         self._make_instance_bundle()

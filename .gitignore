@@ -1,5 +1,6 @@
 .DS_Store
 /.build/
+/.venv/
 dist/
 .netfleet-package-build/
 .codegraph/

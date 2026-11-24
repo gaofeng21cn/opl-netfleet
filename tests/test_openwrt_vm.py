@@ -363,6 +363,7 @@ ip() { [ "$NETFLEET_READY_TEST_FAILURE" != dns ]; }
             MIGRATION_GUEST,
             INSTALLER,
             ROOT / "scripts" / "deploy-openwrt.sh",
+            ROOT / "scripts" / "deploy_openwrt.py",
             ROOT / "scripts" / "deploy-openwrt-remote.sh",
             RECOVERY,
         ):
