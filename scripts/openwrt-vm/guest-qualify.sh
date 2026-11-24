@@ -87,6 +87,14 @@ cat >"$bin/ip" <<'EOF'
 #!/bin/sh
 echo 'default via 192.168.1.2 dev eth0'
 EOF
+cat >"$bin/apk" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = "--print-arch" ]; then
+	echo aarch64
+	exit 0
+fi
+cp -a /tmp/netfleet-deploy-fixture/payload/. /
+EOF
 cat >"$bin/ubus" <<'EOF'
 #!/bin/sh
 if [ "$1 $2 $3" = 'call session create' ]; then
@@ -230,10 +238,17 @@ chmod 0755 "$payload/usr/libexec/opl-netfleet/main.uc" "$payload/etc/init.d/opl-
 		path=${path#./}
 		printf '%s  %s\n' "$(sha256sum "$path" | awk '{print $1}')" "$path"
 	done >"$bundle/FILES.sha256"
-	tar -cf "$bundle/payload.tar" .
 )
 cp /tmp/deploy-openwrt-remote.sh "$bundle/deploy-openwrt-remote.sh"
 cp "$payload/etc/opl-netfleet/rulesets.lock.json" "$bundle/rulesets.lock.json"
+printf 'fixture-apk\n' >"$bundle/opl-netfleet_0.0.0-r1.apk"
+printf 'fixture-kernel-apk\n' >"$bundle/opl-netfleet-kernel_0.0.0-r1.apk"
+printf 'fixture-luci-apk\n' >"$bundle/luci-app-netfleet_0.0.0-r1.apk"
+printf 'fixture-key\n' >"$bundle/opl-netfleet-apk.pem"
+printf 'fixture-index\n' >"$bundle/packages.adb"
+cat >"$bundle/package-manifest.json" <<EOF
+{"schema":"opl-netfleet-package-manifest.v2","source_commit":"$source_commit","source_tree":"$source_tree","package_version":"0.0.0","package_release":"1","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","policy_schema":2,"files_manifest":{"name":"FILES.sha256","sha256":"$(sha256sum "$bundle/FILES.sha256" | awk '{print $1}')"},"artifact_files":{"opl-netfleet":"opl-netfleet_0.0.0-r1.apk","opl-netfleet-kernel":"opl-netfleet-kernel_0.0.0-r1.apk","luci-app-netfleet":"luci-app-netfleet_0.0.0-r1.apk"},"artifacts":[{"package":"opl-netfleet","name":"opl-netfleet_0.0.0-r1.apk","sha256":"$(sha256sum "$bundle/opl-netfleet_0.0.0-r1.apk" | awk '{print $1}')"},{"package":"opl-netfleet-kernel","name":"opl-netfleet-kernel_0.0.0-r1.apk","sha256":"$(sha256sum "$bundle/opl-netfleet-kernel_0.0.0-r1.apk" | awk '{print $1}')"},{"package":"luci-app-netfleet","name":"luci-app-netfleet_0.0.0-r1.apk","sha256":"$(sha256sum "$bundle/luci-app-netfleet_0.0.0-r1.apk" | awk '{print $1}')"}],"apk_public_key":{"name":"opl-netfleet-apk.pem","sha256":"$(sha256sum "$bundle/opl-netfleet-apk.pem" | awk '{print $1}')"},"feed_index":{"name":"packages.adb","sha256":"$(sha256sum "$bundle/packages.adb" | awk '{print $1}')"}}
+EOF
 cat >"$bundle/policy.json" <<'EOF'
 {"schema_version":2,"main":{"target":"openwrt-vm","enabled":true},"policy_source":{"kind":"profile","ref":"subscription:base"},"recovery_profile":{"ref":"subscription:base"}}
 EOF
@@ -250,13 +265,13 @@ mixin_sha=$(sha256sum "$bundle/nikki-mixin.yaml" | awk '{print $1}')
 platform_sha=$(sha256sum "$bundle/platform.json" | awk '{print $1}')
 rulesets_lock_sha=$(sha256sum "$bundle/rulesets.lock.json" | awk '{print $1}')
 file_count=$(wc -l <"$bundle/FILES.sha256" | tr -d ' ')
-printf '{"schema":"opl-netfleet-deploy-bundle.v5","source_commit":"%s","source_tree":"%s","policy_schema":2,"file_count":%s,"instance":true,"policy_sha256":"%s","subscriptions_sha256":"%s","nikki_mixin_sha256":"%s","platform_sha256":"%s","rulesets_lock_sha256":"%s","activation_qualified":true,"qualification_sha256":"%s"}\n' \
+printf '{"schema":"opl-netfleet-deploy-bundle.v5","source_commit":"%s","source_tree":"%s","policy_schema":2,"file_count":%s,"release_mode":"package","release_format":"apk","instance":true,"policy_sha256":"%s","subscriptions_sha256":"%s","nikki_mixin_sha256":"%s","platform_sha256":"%s","rulesets_lock_sha256":"%s","activation_qualified":true,"qualification_sha256":"%s"}\n' \
 	"$source_commit" "$source_tree" "$file_count" "$policy_sha" "$subscriptions_sha" "$mixin_sha" "$platform_sha" "$rulesets_lock_sha" \
 	"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" >"$bundle/bundle.json"
 (
 	cd "$bundle"
 	: >SHA256SUMS
-	for path in FILES.sha256 bundle.json deploy-openwrt-remote.sh rulesets.lock.json payload.tar policy.json subscriptions.json nikki-mixin.yaml platform.json; do
+	for path in FILES.sha256 bundle.json deploy-openwrt-remote.sh rulesets.lock.json package-manifest.json opl-netfleet_0.0.0-r1.apk opl-netfleet-kernel_0.0.0-r1.apk luci-app-netfleet_0.0.0-r1.apk opl-netfleet-apk.pem packages.adb policy.json subscriptions.json nikki-mixin.yaml platform.json; do
 		printf '%s  %s\n' "$(sha256sum "$path" | awk '{print $1}')" "$path" >>SHA256SUMS
 	done
 )

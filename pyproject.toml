@@ -1,0 +1,8 @@
+[project]
+name = "opl-netfleet-host"
+version = "0.9.26"
+description = "Host-side OpenWrt package deployment orchestrator for OPL NetFleet"
+requires-python = ">=3.12"
+dependencies = [
+    "pyinfra>=3.11.2,<4",
+]
