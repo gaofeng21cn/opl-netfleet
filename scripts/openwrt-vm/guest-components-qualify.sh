@@ -297,19 +297,19 @@ rpc_ready
 local_stage="$work/shared-install"
 mkdir -m 700 -p "$local_stage/old" "$local_stage/new"
 printf '%s\n' '{"schema":"opl-netfleet-plugin-install.v1","packages":[]}' >"$local_stage/request.json"
-# Let the real APK plan supply the backend's compatible dependency set.
+# Let the real APK batch plan supply the complete dependency closure for the
+# shared backend, models, UI and self-updating components cohort.
 stage=shared_plugin_dependency_plan
-primary=opl-netfleet-plugin-mihomo
-primary_current=$(package_version "$primary" current)
-primary_old=$(package_version "$primary" old)
-ubus -t 30 call opl-netfleet components_plugin_plan \
- "{\"request\":{\"name\":\"$primary\",\"action\":\"update\",\"before_version\":\"$primary_old\",\"version\":\"$primary_current\",\"confirm\":false}}" >"$work/shared-plan.json"
+shared_request=$(ucode -e 'import {readfile} from "fs";
+ const versions=json(readfile(ARGV[0])).package_versions;
+ const targets=["opl-netfleet-plugin-mihomo","opl-netfleet-plugin-models","opl-netfleet-plugin-product-ui","opl-netfleet-plugin-components"];
+ printf("%J",{request:{action:"update",confirm:false,items:map(targets,name=>({name,before_version:versions[name].old,version:versions[name].current}))}});' "$work/fixture.json")
+ubus -t 30 call opl-netfleet components_plugin_plan "$shared_request" >"$work/shared-plan.json"
 assert_json "$work/shared-plan.json" '@.ok' true
 shared_packages=$(ucode -e 'import {readfile} from "fs";
  const names=json(readfile(ARGV[0])).result.names;
- assert(index(names,"opl-netfleet-plugin-mihomo")>=0);
- for (let name in ["opl-netfleet-plugin-models","opl-netfleet-plugin-product-ui","opl-netfleet-plugin-components"])
-  if(index(names,name)<0)push(names,name);
+ for (let name in ["opl-netfleet-plugin-mihomo","opl-netfleet-plugin-models","opl-netfleet-plugin-product-ui","opl-netfleet-plugin-components"])
+  assert(index(names,name)>=0);
  print(join(" ",names));' "$work/shared-plan.json")
 # Also exercise self-updating components through its frozen transaction code.
 stage=shared_plugin_update
