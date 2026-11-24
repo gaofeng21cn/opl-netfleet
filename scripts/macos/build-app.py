@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Build the local macOS MVP app. No privileged installation or network takeover."""
 import argparse
+import base64
 import json
 import importlib.util
 import platform
 import plistlib
 from pathlib import Path
+import re
 import shutil
 import sys
 import subprocess
@@ -14,6 +16,7 @@ import tempfile
 from bootstrap import HERE, prepare, run, sha256, verify
 
 REPO = HERE.parents[1]
+EXPECTED_FEED_URL = "https://github.com/gaofeng21cn/opl-netfleet/releases/latest/download/appcast.xml"
 spec = importlib.util.spec_from_file_location("builtin_assets", HERE / "builtin-assets.py")
 builtin_assets = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builtin_assets)
@@ -53,6 +56,53 @@ def build_desktop_ui():
     return output
 
 
+def validate_sparkle_plist(info):
+    """Ensure Info.plist declares valid Sparkle 2 feed, Ed25519 key, and defaults."""
+    if info.get("SUFeedURL") != EXPECTED_FEED_URL:
+        raise RuntimeError(f"Unexpected SUFeedURL in Info.plist: {info.get('SUFeedURL')!r}")
+    if info.get("SUEnableAutomaticChecks") is not True:
+        raise RuntimeError("Info.plist must enable SUEnableAutomaticChecks")
+    if info.get("SUAutomaticallyUpdate") is not False:
+        raise RuntimeError("Info.plist must set SUAutomaticallyUpdate=false")
+    if not re.fullmatch(r"[1-9][0-9]*", str(info.get("CFBundleVersion", ""))):
+        raise RuntimeError(f"CFBundleVersion must be a positive integer, got {info.get('CFBundleVersion')!r}")
+    pub_key = info.get("SUPublicEDKey")
+    if not isinstance(pub_key, str) or len(base64.b64decode(pub_key, validate=True)) != 32:
+        raise RuntimeError("Info.plist must declare a valid 32-byte base64 SUPublicEDKey")
+
+
+def build_swift_host(package_dir):
+    """Build the SwiftPM desktop host linking Sparkle 2 and locate Sparkle.framework."""
+    run("swift", "build", "--package-path", package_dir, "-c", "release")
+    bin_dir = Path(
+        subprocess.check_output(
+            ["swift", "build", "--package-path", str(package_dir), "-c", "release", "--show-bin-path"],
+            text=True,
+        ).strip()
+    )
+    binary = bin_dir / "OPLNetFleet"
+    if not binary.is_file():
+        raise RuntimeError(f"SwiftPM build did not produce OPLNetFleet binary at {binary}")
+    artifacts = package_dir / ".build/artifacts"
+    sparkle_fw = artifacts / "sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+    if not sparkle_fw.is_dir():
+        matches = list(artifacts.glob("**/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"))
+        sparkle_fw = matches[0] if matches else None
+    if not sparkle_fw or not sparkle_fw.is_dir():
+        raise RuntimeError(f"Sparkle.framework not found under {artifacts}")
+    return binary, sparkle_fw
+
+
+def sign_sparkle_framework(sparkle_dest, signing):
+    """Sign Sparkle.framework components strictly inside-out, preserving Downloader.xpc entitlements."""
+    version_dir = sparkle_dest / "Versions/B"
+    run("codesign", *signing, version_dir / "XPCServices/Installer.xpc")
+    run("codesign", *signing, "--preserve-metadata=entitlements", version_dir / "XPCServices/Downloader.xpc")
+    run("codesign", *signing, version_dir / "Autoupdate")
+    run("codesign", *signing, version_dir / "Updater.app")
+    run("codesign", *signing, sparkle_dest)
+
+
 def source_identity(repo):
     def git(*args):
         return subprocess.check_output(["git", "-C", str(repo), *args], text=True).strip()
@@ -83,20 +133,27 @@ def verify_source_unchanged(repo, identity):
 def build(output, cache, require_clean=False, signing_identity=None):
     if output.suffix != ".app":
         raise RuntimeError("Output must have an .app extension")
-    for relative in ("desktop/app/main.swift", "desktop/app/Info.plist", "desktop/helper/NetworkHelper.swift",
-                     "desktop/runtime/server.mjs", "ui/desktop.html", "ui/vite.desktop.config.ts", "assets/branding/opl-netfleet-logo.png"):
+    for relative in ("desktop/app/Package.swift", "desktop/app/AppUpdater.swift", "desktop/app/main.swift",
+                     "desktop/app/Info.plist", "desktop/helper/NetworkHelper.swift",
+                     "desktop/runtime/server.mjs", "ui/desktop.html", "ui/vite.desktop.config.ts",
+                     "assets/branding/opl-netfleet-logo.png"):
         if not (REPO / relative).is_file():
             raise RuntimeError(f"Required desktop source missing: {relative}")
+    info = plistlib.loads((REPO / "desktop/app/Info.plist").read_bytes())
+    validate_sparkle_plist(info)
     identity = build_identity(REPO, require_clean, signing_identity)
     web = build_desktop_ui()
     runtime = prepare(cache)
+    host_binary, sparkle_fw_src = build_swift_host(REPO / "desktop/app")
     # A sibling staging directory preserves a previously built app on failure.
     output.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".netfleet-app-", dir=output.parent))
     app = staging / output.name
     contents = app / "Contents"
+    frameworks = contents / "Frameworks"
     resources = contents / "Resources"
     (contents / "MacOS").mkdir(parents=True)
+    frameworks.mkdir()
     resources.mkdir()
     try:
         build_icon(staging, resources)
@@ -137,8 +194,9 @@ def build(output, cache, require_clean=False, signing_identity=None):
             shutil.copy2(runtime / name, resources / name)
         shutil.copy2(REPO / "desktop/app/Info.plist", contents / "Info.plist")
         (resources / "build.json").write_text(json.dumps(identity, indent=2) + "\n")
-        run("swiftc", "-O", "-target", platform.machine() + "-apple-macosx13.0", "-framework", "AppKit", "-framework", "WebKit",
-            REPO / "desktop/app/main.swift", "-o", contents / "MacOS/OPL NetFleet")
+        run("ditto", host_binary, contents / "MacOS/OPL NetFleet")
+        sparkle_dest = frameworks / "Sparkle.framework"
+        run("ditto", sparkle_fw_src, sparkle_dest)
         run("swiftc", "-O", "-target", platform.machine() + "-apple-macosx13.0", "-framework", "SystemConfiguration",
             REPO / "desktop/helper/NetworkHelper.swift", "-o",
             resources / "runtime/bin/netfleet-network-helper")
@@ -150,7 +208,10 @@ def build(output, cache, require_clean=False, signing_identity=None):
         signing = ["--force", "--sign", signing_identity or "-"]
         if signing_identity:
             signing += ["--options", "runtime", "--timestamp"]
+        sign_sparkle_framework(sparkle_dest, signing)
         for path in sorted(app.rglob("*")):
+            if sparkle_dest in path.parents or path == sparkle_dest:
+                continue
             if path.is_file() and not path.is_symlink():
                 kind = subprocess.check_output(["file", "-b", str(path)], text=True)
                 if "Mach-O" in kind:
@@ -169,7 +230,7 @@ def build(output, cache, require_clean=False, signing_identity=None):
                    "signing": "developer-id" if signing_identity else "ad-hoc", "notarized": False,
                    "network_settings_changed": False,
                    "checks": ["react_typecheck", "desktop_production_build", "native_ucode_fs_socket", "ucode_popen_shell_argv", "mihomo_version", "node_version", "dashboard_assets_pinned",
-                              "yq_readonly_conversion", "portable_dynamic_libraries", "codesign_strict"]}
+                              "yq_readonly_conversion", "portable_dynamic_libraries", "sparkle_embedded_and_signed", "codesign_strict"]}
         previous = output.with_name(output.name + ".previous")
         if previous.exists():
             shutil.rmtree(previous)

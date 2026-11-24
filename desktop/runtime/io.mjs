@@ -70,3 +70,15 @@ export async function codeDigest(root, directory, files) {
   }
   return digest.digest('hex');
 }
+
+export async function componentState(bundled, installed) {
+  const fileDigest = async file => {
+    try { return crypto.createHash('sha256').update(await fs.readFile(file)).digest('hex'); }
+    catch { return null; }
+  };
+  const expected = await fileDigest(bundled);
+  if (!expected) return { state: 'unbundled' };
+  const actual = await fileDigest(installed);
+  if (!actual) return { state: 'missing', expected };
+  return { state: actual === expected ? 'match' : 'outdated', expected, installed: actual };
+}

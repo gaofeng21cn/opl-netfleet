@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import type { CoreSettingRow, DesktopSnapshot, UpdateStatus } from './types';
 import type { DesktopNetFleetClient } from './client';
 import type { RunAction } from './panels';
-import { installUpdateThroughHost } from './hostBridge';
+import { checkForUpdatesThroughHost } from './hostBridge';
 
 // 只读投影：值来自 Mac 平台交给核心的配置、特权 TUN 会话实际应用的覆写、
 // Profile 声明和运行中核心回读；页面不重新解释映射，也提交不了写入。
@@ -21,7 +21,6 @@ function UpdateSection({ snapshot, client, run, disabled }: {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmPanel, setConfirmPanel] = useState(false);
-  const [confirmApp, setConfirmApp] = useState(false);
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => {
@@ -31,36 +30,27 @@ function UpdateSection({ snapshot, client, run, disabled }: {
   }, [client]);
   const checkedAt = status ? new Date(status.checked_at * 1000).toLocaleString() : null;
   const panel = status?.panel;
-  const app = status?.app;
-  const check = () => void run('检查更新', async () => {
+  const check = () => void run('检查面板更新', async () => {
     setError(null);
     const value = await client.updateCheck(true);
     setStatus(value);
-    return { message: value.errors.length > 0 ? `部分来源检查失败：${value.errors.join('、')}` : '已完成更新检查。', ready: value.errors.length === 0 };
+    return { message: value.errors.length > 0 ? `面板检查失败：${value.errors.join('、')}` : '已完成面板更新检查。', ready: value.errors.length === 0 };
   });
   const install = () => void run('更新面板资源', async () => {
     const result = await client.updateDashboard();
     setStatus(await client.updateCheck());
     return { message: `面板已更新到 ${result.version}。`, ready: true };
   }).then(ok => { if (ok) setConfirmPanel(false); });
-  // 应用更新：先校验并暂存，再请宿主优雅退出，由替换进程完成重启。
-  const installApp = () => void run('准备应用更新', async () => {
-    const result = await client.updateApp();
-    if (!installUpdateThroughHost()) throw new Error('更新需要在应用内执行，请重新打开应用后重试。');
-    return { message: `已校验 ${result.version} 并暂存；应用退出后会自动替换并重新打开。`, ready: true };
-  }).then(ok => { if (ok) setConfirmApp(false); });
-  const selfUpdate = app?.self_update;
-  const canInstallApp = Boolean(app?.update_available && selfUpdate === 'available' && app?.candidate);
-  const selfUpdateNote: Record<string, string> = {
-    'local-build': '当前是本地构建（非分发渠道），不自我替换；升级请使用本地构建流程。',
-    'dirty-build': '当前构建包含未提交改动，不自我替换。',
-    'not-an-app-bundle': '当前运行位置不是应用包，不自我替换。',
-    'unsupported-platform': '当前平台不支持应用自更新。',
+  const checkAppUpdate = () => {
+    setError(null);
+    if (!checkForUpdatesThroughHost()) {
+      setError('请在已安装的 OPL NetFleet macOS 应用菜单中使用“检查更新…”。');
+    }
   };
   return <section className="nf-config-section">
     <div className="nf-config-section-heading">
       <h2>更新</h2>
-      <p>检查上游面板与已发布的 macOS 应用版本；安装始终需要确认，不自动替换任何文件。</p>
+      <p>检查上游面板与 macOS 应用更新；安装始终需要确认，不自动替换任何文件。</p>
     </div>
     {error && <p className="nf-inline-warning" role="alert">{error}</p>}
     <div className="nf-table-wrap nf-config-table"><table>
@@ -78,29 +68,17 @@ function UpdateSection({ snapshot, client, run, disabled }: {
         </tr>
         <tr>
           <td>macOS 应用</td>
-          <td>{app?.installed ?? snapshot.core.identity?.version ?? '未记录'}</td>
-          <td>{app?.available ?? (app?.error ? '检查失败' : '尚未检查')}</td>
-          <td>{app?.installation_unknown ? '当前安装未记录，无法比较'
-            : app?.update_available ? canInstallApp ? '有可用版本，可在此安装' : '有可用版本，需手动安装'
-            : app?.error ? '检查失败' : '已是最新'}</td>
+          <td>{snapshot.core.identity?.version ?? '未记录'}</td>
+          <td>由 Sparkle 2 签名 feed 管理</td>
+          <td>原生应用内更新</td>
           <td><div className="nf-desktop-inline">
-            {canInstallApp && <button type="button" className="nf-button-primary" disabled={disabled} onClick={() => setConfirmApp(true)}>安装更新</button>}
-            {app?.url && <a className="nf-inline-link" href={app.url} target="_blank" rel="noreferrer">{canInstallApp ? '查看 Release' : '打开 Release'}</a>}
+            <button type="button" className="nf-button-secondary" disabled={disabled} onClick={checkAppUpdate}>检查应用更新</button>
           </div></td>
         </tr>
       </tbody>
     </table></div>
     <p className="nf-management-note"><Info aria-hidden="true" />面板更新会校验上游资产的大小与 SHA-256 后才替换本机副本，正在运行的核心无需重启。
-      应用更新只对 Developer ID 签名并已公证的分发构建开放：候选来自带 sha256 摘要的正式 Release，
-新包还要通过 Apple 签名与公证验证，再由独立进程在应用退出后做单槽替换并重新打开；
-      失败会恢复旧版本。{selfUpdate && selfUpdate !== 'available' ? ` ${selfUpdateNote[selfUpdate] ?? ''}` : ''}{checkedAt ? ` 最近检查：${checkedAt}。` : ''}</p>
-    {confirmApp && <section className="nf-desktop-inline-note" role="alertdialog" aria-label="确认安装应用更新">
-      <span>将安装 {app?.available}（当前 {app?.installed ?? '未记录'}）。应用会先停止代理并撤销网络接管，退出后替换并重新打开；替换失败会恢复当前版本。</span>
-      <div className="nf-desktop-inline">
-        <button type="button" className="nf-button-secondary" onClick={() => setConfirmApp(false)}>取消</button>
-        <button type="button" className="nf-button-primary" disabled={disabled} onClick={installApp}>确认安装并重启</button>
-      </div>
-    </section>}
+      macOS 应用本体更新由原生 Sparkle 2 验证 Ed25519 签名与 Apple 公证，确认安装前会经由标准退出路径停止核心并撤销网络接管。{checkedAt ? ` 最近检查：${checkedAt}。` : ''}</p>
     {confirmPanel && <section className="nf-desktop-inline-note" role="alertdialog" aria-label="确认更新面板">
       <span>将从上游下载 {panel?.available} 并校验后替换本机面板副本（当前 {panel?.installed ?? '未记录'}）。</span>
       <div className="nf-desktop-inline">

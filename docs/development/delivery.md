@@ -144,13 +144,15 @@ Release 并下载公开资产校验。主线前进后仍使用已冻结并验收
 ## macOS DMG 公开分发
 
 macOS 使用同一产品 `vX.Y.Z` tag，版本对应应用 `Info.plist`。旧 `macos-v` Release
-保留原资产；新的合格 DMG 追加到同一产品 Release。
-应用自更新只依赖该 Release 里的 DMG 资产与 GitHub 计算的 `sha256:` 摘要，加上 Apple
-签名与公证作为来源证明，因此不需要额外的签名清单；没有摘要的 Release 只作为手动下载入口。
+保留原资产；新的合格 DMG、`OPL-NetFleet-macos-arm64.dmg.sha256` 与 Ed25519 签名的
+`appcast.xml` 追加到同一产品 Release（可经 `.github/workflows/macos-sparkle-release.yml`
+或本地 `scripts/macos/package-dmg.py` + `scripts/macos/generate-appcast.sh` 生成）。
+应用内自更新由 Sparkle 2 验证 `appcast.xml` 的 Ed25519 签名与 Apple 代码签名/公证，
+确认安装前经由宿主标准退出路径停止核心并撤销网络接管。
 按[签名与 DMG](macos.md#签名与-dmg)构建、公证并冻结 arm64 DMG，完成最终包的隔离
 macOS VM 验收后才发布。应用签名、两次公证、最终 DMG 摘要、源码身份和 VM 结果分别
 回读；发布后下载公开资产并核对相同摘要。内部验收日志与订阅数据不进入 Release。
 
 同一 tag 的 OpenWrt Feed 与 macOS DMG 各自核对自己的资产和摘要。追加已验收的
-DMG 保持既有 Feed 资产原字节，不创建独立版本。分发构建支持用户确认后的应用
-自更新，不执行后台静默替换，也不自动更新本地开发构建。
+DMG 与 `appcast.xml` 保持既有 Feed 资产原字节，不创建独立版本。分发构建支持用户确认后的
+Sparkle 2 原生自更新，不执行后台静默替换，也不自动更新本地开发构建。

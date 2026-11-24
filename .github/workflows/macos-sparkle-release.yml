@@ -1,0 +1,163 @@
+name: Release macOS Sparkle DMG
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Product release tag (for example v0.9.25)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: netfleet-macos-sparkle-release
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 60
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.0'
+
+      - name: Verify release tag and macOS bundle metadata
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          python3 - <<'PY'
+          import json, os, plistlib
+          from pathlib import Path
+          version = json.loads(Path('product-version.json').read_text())['version']
+          assert os.environ['RELEASE_TAG'] == 'v' + version
+          info = plistlib.loads(Path('desktop/app/Info.plist').read_bytes())
+          assert info['CFBundleShortVersionString'] == version
+          PY
+
+      - name: Prepare build dependencies
+        run: |
+          command -v cmake >/dev/null || brew install cmake
+          command -v pkg-config >/dev/null || brew install pkgconf
+
+      - name: Configure Apple Developer ID signing and notarization
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+          SIGNING_IDENTITY: "Developer ID Application: FENG GAO (SVVC4TA784)"
+        run: |
+          set -euo pipefail
+          : "${BUILD_CERTIFICATE_BASE64:?Missing BUILD_CERTIFICATE_BASE64 in release environment}"
+          : "${P12_PASSWORD:?Missing P12_PASSWORD in release environment}"
+          : "${APPLE_ID:?Missing APPLE_ID in release environment}"
+          : "${APPLE_ID_PASSWORD:?Missing APPLE_ID_PASSWORD in release environment}"
+          : "${TEAM_ID:?Missing TEAM_ID in release environment}"
+          keychain="$RUNNER_TEMP/netfleet-release.keychain-db"
+          password="$(openssl rand -hex 24)"
+          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security find-identity -v -p codesigning "$keychain" | grep -F "$SIGNING_IDENTITY"
+          xcrun notarytool store-credentials opl-netfleet-release \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_ID_PASSWORD" \
+            --team-id "$TEAM_ID" \
+            --keychain "$keychain"
+          echo "NETFLEET_NOTARY_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
+      - name: Build, notarize DMG, and generate Sparkle appcast.xml
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SIGNING_IDENTITY: "Developer ID Application: FENG GAO (SVVC4TA784)"
+          SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          : "${SPARKLE_ED25519_PRIVATE_KEY:?Missing SPARKLE_ED25519_PRIVATE_KEY in release environment}"
+          runtime="$(python3 scripts/macos/bootstrap.py)"
+          export PATH="$runtime/bin:$PATH"
+          export UCODE_LIB="$runtime/lib/ucode/*.so"
+          export NETFLEET_RUNTIME_ROOT="$runtime"
+
+          APP_PATH=".build/macos/OPL NetFleet.app"
+          DMG_PATH="dist/OPL-NetFleet-macos-arm64.dmg"
+          mkdir -p dist
+
+          python3 scripts/macos/build-app.py \
+            --require-clean-source \
+            --signing-identity "$SIGNING_IDENTITY" \
+            --output "$APP_PATH"
+          scripts/macos/verify-sparkle-contract.sh "$APP_PATH"
+
+          ditto -c -k --keepParent "$APP_PATH" ".build/macos/notarization.zip"
+          xcrun notarytool submit ".build/macos/notarization.zip" \
+            --keychain-profile opl-netfleet-release \
+            --keychain "$NETFLEET_NOTARY_KEYCHAIN" \
+            --wait
+          xcrun stapler staple "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+          spctl --assess --type execute --verbose=2 "$APP_PATH"
+
+          python3 scripts/macos/package-dmg.py \
+            --app "$APP_PATH" \
+            --output "$DMG_PATH" \
+            --signing-identity "$SIGNING_IDENTITY"
+          xcrun notarytool submit "$DMG_PATH" \
+            --keychain-profile opl-netfleet-release \
+            --keychain "$NETFLEET_NOTARY_KEYCHAIN" \
+            --wait
+          xcrun stapler staple "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG_PATH"
+
+          (cd dist && shasum -a 256 OPL-NetFleet-macos-arm64.dmg > OPL-NetFleet-macos-arm64.dmg.sha256)
+
+          OPL_NETFLEET_RELEASE_TAG="$RELEASE_TAG" \
+          OPL_NETFLEET_APP_PATH="$APP_PATH" \
+          OPL_NETFLEET_REQUIRE_SPARKLE_KEY_ENV=1 \
+            scripts/macos/generate-appcast.sh "$DMG_PATH" "dist/appcast.xml"
+
+      - name: Upload macOS DMG and appcast.xml to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" \
+            dist/OPL-NetFleet-macos-arm64.dmg \
+            dist/OPL-NetFleet-macos-arm64.dmg.sha256 \
+            dist/appcast.xml \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
+      - name: Remove temporary Apple credentials
+        if: always()
+        run: |
+          if [[ -n "${NETFLEET_NOTARY_KEYCHAIN:-}" ]]; then
+            security delete-keychain "$NETFLEET_NOTARY_KEYCHAIN" || true
+          fi

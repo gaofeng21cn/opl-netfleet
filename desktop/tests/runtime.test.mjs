@@ -3,12 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { projectProfile } from '../runtime/core.mjs';
 import { coreSettingRows } from '../runtime/settings.mjs';
 import { expandPanelArchive, installPanel, materializePanel, readPanelArchive } from '../runtime/dashboard.mjs';
-import { MAX_APP_IMAGE_BYTES, applicationBundle, componentState, latestRelease, newerVersion, parseVersion, releaseCandidate } from '../runtime/update.mjs';
-import { atomicJSON, privateDir, run } from '../runtime/io.mjs';
+import { atomicJSON, componentState, privateDir, run } from '../runtime/io.mjs';
 
 const state = { ports: { mixed: 19080, controller: 19090, dns: 19053 }, controllerSecret: 'local-owner-secret', network: { mode: 'explicit' } };
 
@@ -92,26 +91,31 @@ test('core settings project the applied platform values, not a second copy of th
   assert.equal(JSON.stringify(rows).includes('local-owner-secret'), false);
 });
 
-// A stored-entry ZIP keeps the fixture readable: the reader must validate the
-// directory, not trust the archive's own metadata.
-function storedZip(files, { mode = 0o100644, name } = {}) {
+// Build minimal valid ZIP fixtures with real CRC-32 and Unix mode attributes
+// so system unzip/ditto validation and extraction paths are exercised end-to-end.
+function buildZip(files, { mode = 0o100644, name, flags = 0, compress = false, badCrc = false } = {}) {
   const chunks = [], central = [];
   let offset = 0;
   for (const file of files) {
     const entry = Buffer.from(name ?? file.name);
-    const data = Buffer.from(file.data ?? '');
+    const raw = Buffer.from(file.data ?? '');
+    const payload = compress ? zlib.deflateRawSync(raw) : raw;
+    const method = compress ? 8 : 0;
+    const crc = badCrc ? ((zlib.crc32(raw) ^ 0xffffffff) >>> 0) : (zlib.crc32(raw) >>> 0);
     const local = Buffer.alloc(30);
-    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0, 6);
-    local.writeUInt32LE(0, 14); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(flags, 6);
+    local.writeUInt16LE(method, 8); local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(payload.length, 18); local.writeUInt32LE(raw.length, 22);
     local.writeUInt16LE(entry.length, 26); local.writeUInt16LE(0, 28);
-    chunks.push(local, entry, data);
+    chunks.push(local, entry, payload);
     const row = Buffer.alloc(46);
-    row.writeUInt32LE(0x02014b50, 0); row.writeUInt16LE(20, 4); row.writeUInt16LE(0, 6); row.writeUInt16LE(0, 8);
-    row.writeUInt16LE(0, 10); row.writeUInt32LE(0, 16); row.writeUInt32LE(data.length, 20);
-    row.writeUInt32LE(data.length, 24); row.writeUInt16LE(entry.length, 28);
-    row.writeUInt32LE((mode << 16) >>> 0, 38); row.writeUInt32LE(offset, 42);
+    row.writeUInt32LE(0x02014b50, 0); row.writeUInt16LE((3 << 8) | 20, 4); row.writeUInt16LE(20, 6);
+    row.writeUInt16LE(flags, 8); row.writeUInt16LE(method, 10); row.writeUInt32LE(crc, 16);
+    row.writeUInt32LE(payload.length, 20); row.writeUInt32LE(raw.length, 24);
+    row.writeUInt16LE(entry.length, 28); row.writeUInt32LE((mode << 16) >>> 0, 38);
+    row.writeUInt32LE(offset, 42);
     central.push(Buffer.concat([row, entry]));
-    offset += local.length + entry.length + data.length;
+    offset += local.length + entry.length + payload.length;
   }
   const directory = Buffer.concat(central);
   const eocd = Buffer.alloc(22);
@@ -120,28 +124,31 @@ function storedZip(files, { mode = 0o100644, name } = {}) {
   return Buffer.concat([...chunks, directory, eocd]);
 }
 
-test('a panel archive is expanded only when every entry is a plain dist path', () => {
-  const good = storedZip([{ name: 'dist/index.html', data: '<div id="app"></div>' }, { name: 'dist/assets/app.js', data: 'x' }]);
-  const rows = expandPanelArchive(good);
+test('a panel archive is expanded only when every entry is a plain dist path', async () => {
+  const good = buildZip([{ name: 'dist/index.html', data: '<div id="app"></div>' }, { name: 'dist/assets/app.js', data: 'x' }], { compress: true });
+  const rows = await expandPanelArchive(good);
   assert.deepEqual(rows.map(row => row.relative).sort(), ['assets/app.js', 'index.html']);
-  assert.equal(readPanelArchive(good).length, 2);
-  // Traversal, absolute paths, links, unknown compression and a missing entry
-  // point all fail before anything is written.
+  assert.equal((await readPanelArchive(good)).length, 2);
+  // Traversal, absolute paths, links, encryption, corrupted CRC, non-ZIP data,
+  // and missing index.html all fail before anything is written.
   for (const bad of [
-    storedZip([{ name: 'dist/index.html', data: 'x' }], { name: 'dist/../../escape.js' }),
-    storedZip([{ name: 'dist/index.html', data: 'x' }], { name: '/etc/passwd' }),
-    storedZip([{ name: 'dist/index.html', data: 'x' }], { mode: 0o120777 }),
-    storedZip([{ name: 'dist/assets/app.js', data: 'x' }]),
-  ]) assert.throws(() => expandPanelArchive(bad), /dashboard_archive_invalid/);
+    buildZip([{ name: 'dist/index.html', data: 'x' }], { name: 'dist/../../escape.js' }),
+    buildZip([{ name: 'dist/index.html', data: 'x' }], { name: '/etc/passwd' }),
+    buildZip([{ name: 'dist/index.html', data: 'x' }], { mode: 0o120777 }),
+    buildZip([{ name: 'dist/index.html', data: 'x' }], { flags: 0x1 }),
+    buildZip([{ name: 'dist/index.html', data: 'x' }], { badCrc: true }),
+    buildZip([{ name: 'dist/assets/app.js', data: 'x' }]),
+    Buffer.from('not-a-zip-archive'),
+  ]) await assert.rejects(() => expandPanelArchive(bad), /dashboard_archive_invalid/);
 });
 
 test('installing a panel replaces files in place and removes stale ones', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'netfleet-panel-test-'));
   try {
-    const first = expandPanelArchive(storedZip([{ name: 'dist/index.html', data: 'one' }, { name: 'dist/legacy.js', data: 'old' }]));
+    const first = await expandPanelArchive(buildZip([{ name: 'dist/index.html', data: 'one' }, { name: 'dist/legacy.js', data: 'old' }]));
     await installPanel(first, path.join(root, 'panel'));
     assert.equal(await fs.readFile(path.join(root, 'panel/index.html'), 'utf8'), 'one');
-    const second = expandPanelArchive(storedZip([{ name: 'dist/index.html', data: 'two' }]));
+    const second = await expandPanelArchive(buildZip([{ name: 'dist/index.html', data: 'two' }]));
     await installPanel(second, path.join(root, 'panel'));
     assert.equal(await fs.readFile(path.join(root, 'panel/index.html'), 'utf8'), 'two');
     assert.equal(await fs.readFile(path.join(root, 'panel/legacy.js'), 'utf8').catch(() => null), null);
@@ -153,7 +160,6 @@ test('installing a panel replaces files in place and removes stale ones', async 
 });
 
 test('the imported profile cannot choose the panel directory', () => {
-
   const imported = { proxies: [], rules: ['MATCH,DIRECT'], 'external-ui': '/Users/someone/panel',
     'external-ui-url': 'https://example.invalid/panel.zip', 'external-ui-name': 'foreign' };
   // Without pinned assets the core is left without a panel directory at all.
@@ -167,42 +173,6 @@ test('the imported profile cannot choose the panel directory', () => {
   assert.equal(pinned['external-ui-url'], undefined);
 });
 
-test('a macOS release is installable only with a DMG and its published digest', () => {
-  const asset = (name, digest, size = 1024) => ({ name, digest, size, browser_download_url: `https://github.com/gaofeng21cn/opl-netfleet/releases/download/macos-v0.1.7/${name}` });
-  const release = (tag, assets) => ({ tag_name: tag, draft: false, prerelease: false, html_url: `https://github.com/gaofeng21cn/opl-netfleet/releases/tag/${tag}`, assets });
-  const dmg = 'OPL-NetFleet-0.1.7-macos-arm64.dmg';
-  const good = release('macos-v0.1.7', [asset(dmg, `sha256:${'a'.repeat(64)}`), asset('SHA256SUMS', 'sha256:' + 'b'.repeat(64))]);
-  // 只有带 DMG 与 GitHub 摘要的正式 Release 才能作为候选。
-  assert.deepEqual(releaseCandidate(good), { version: '0.1.7', tag: 'macos-v0.1.7', url: asset(dmg, '').browser_download_url, name: dmg,
-    size_bytes: 1024, sha256: 'a'.repeat(64), page: good.html_url, published_at: null });
-  for (const broken of [
-    release('macos-v0.1.7', [asset('OPL-NetFleet-0.1.7-macos-arm64.zip', `sha256:${'a'.repeat(64)}`)]),
-    release('macos-v0.1.7', [{ ...asset(dmg, ''), digest: undefined }]),
-    release('macos-v0.1.7', [{ ...asset(dmg, `sha256:${'a'.repeat(64)}`), size: 0 }]),
-    { ...good, prerelease: true },
-    { ...good, draft: true },
-  ]) assert.equal(releaseCandidate(broken), null);
-  // 选带合格 DMG 的最高产品版本，保留旧 macos-v 安装的迁移读取。
-  assert.equal(latestRelease([
-    { tag_name: 'v0.9.0', draft: false, prerelease: false },
-    good,
-    { tag_name: 'macos-v0.2.0', draft: true, prerelease: false },
-    { tag_name: 'macos-v0.1.10', draft: false, prerelease: true },
-    { tag_name: 'macos-v0.1.8', draft: false, prerelease: false, assets: [] },
-    { ...good, tag_name: 'v0.9.1' },
-  ]).tag_name, 'v0.9.1');
-  assert.equal(latestRelease([]), null);
-});
-
-test('version comparison only accepts a strictly newer release', () => {
-  assert.deepEqual(parseVersion('v0.1.7'), [0, 1, 7]);
-  assert.equal(newerVersion('0.1.7', '0.1.6'), true);
-  assert.equal(newerVersion('0.2.0', '0.10.0'), false);
-  assert.equal(newerVersion('0.1.6', '0.1.6'), false);
-  assert.equal(newerVersion('0.1.6', null), true);
-  assert.equal(newerVersion('latest', '0.1.6'), false);
-});
-
 test('network components report their sync state against the bundled bytes', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'netfleet-component-test-'));
   try {
@@ -214,62 +184,4 @@ test('network components report their sync state against the bundled bytes', asy
     assert.equal((await componentState(path.join(root, 'bundled'), path.join(root, 'installed'))).state, 'outdated');
     assert.equal((await componentState(path.join(root, 'absent'), path.join(root, 'installed'))).state, 'unbundled');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
-});
-
-test('the update installer refuses unsigned or still-running replacements and restores the old app', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'netfleet-install-test-'));
-  const script = new URL('../runtime/update-install.sh', import.meta.url).pathname;
-  const prepare = async () => {
-    const work = await fs.mkdtemp(path.join(root, 'case-'));
-    const target = path.join(work, 'OPL NetFleet.app'), previous = path.join(work, '.previous.app');
-    const staged = path.join(work, 'staged.app'), receipt = path.join(work, 'receipt.json');
-    await fs.mkdir(target, { recursive: true }); await fs.writeFile(path.join(target, 'old'), 'old');
-    await fs.mkdir(staged, { recursive: true }); await fs.writeFile(path.join(staged, 'new'), 'new');
-    return { work, target, previous, staged, receipt };
-  };
-  try {
-    // 未签名的新包：脚本必须拒绝、留下失败回执并恢复旧应用。
-    const unsigned = await prepare();
-    const refused = await run('/bin/sh', [script, '999999', unsigned.staged, unsigned.target, unsigned.previous, unsigned.receipt, 'SVVC4TA784'], { timeout: 60000 });
-    assert.notEqual(refused.code, 0);
-    assert.equal(JSON.parse(await fs.readFile(unsigned.receipt, 'utf8')).state, 'failed');
-    assert.equal(await fs.readFile(path.join(unsigned.target, 'old'), 'utf8'), 'old');
-    assert.equal(await fs.readdir(unsigned.work).then(rows => rows.includes('staged.app')), true);
-    // 应用仍在运行：即使暂存包合法也绝不替换，旧应用内容保持不变。
-    const running = await prepare();
-    const blocked = await run('/bin/sh', [script, String(process.pid), running.staged, running.target, running.previous, running.receipt, 'SVVC4TA784'],
-      { timeout: 60000, env: { ...process.env, NETFLEET_UPDATE_WAIT_SECONDS: '1' } });
-    assert.notEqual(blocked.code, 0);
-    assert.match(JSON.parse(await fs.readFile(running.receipt, 'utf8')).detail, /应用未在等待时间内退出/);
-    assert.equal(await fs.readFile(path.join(running.target, 'old'), 'utf8'), 'old');
-  } finally { await fs.rm(root, { recursive: true, force: true }); }
-});
-
-test('the application bundle is resolved above Contents, never guessed', () => {
-  // 应用包结构：Resources 的父级是 Contents，包本体再上一层。
-  assert.equal(applicationBundle('/Applications/OPL NetFleet.app/Contents/Resources'), '/Applications/OPL NetFleet.app');
-  assert.equal(applicationBundle('/tmp/dist/OPL NetFleet.app/Contents/Resources'), '/tmp/dist/OPL NetFleet.app');
-  // 源码运行或其它布局没有这层结构：不得返回一个可被替换的目录。
-  assert.equal(applicationBundle('/Users/gaofeng/workspace/app/opl-netfleet'), null);
-  assert.equal(applicationBundle('/Applications/Somewhere/Resources'), null);
-  assert.equal(applicationBundle('/Resources'), null);
-});
-
-test('the application image limit fits a real disk image, not the panel budget', () => {
-  // 当前发布的 DMG 约 75 MB；上限必须留出余量，同时仍然有界。
-  const publishedDmg = 75063520;
-  assert.ok(MAX_APP_IMAGE_BYTES > publishedDmg * 2, `limit ${MAX_APP_IMAGE_BYTES} must exceed the published image with headroom`);
-  assert.ok(MAX_APP_IMAGE_BYTES <= 1024 ** 3, 'the limit must stay bounded');
-});
-
-test('a fixture feed may serve from loopback, a foreign one may not', () => {
-  const release = { tag_name: 'macos-v0.3.0', draft: false, prerelease: false,
-    assets: [{ name: 'OPL-NetFleet-0.3.0-macos-arm64.dmg', size: 1024, digest: `sha256:${'a'.repeat(64)}`,
-      browser_download_url: 'http://127.0.0.1:8788/OPL-NetFleet-0.3.0-macos-arm64.dmg' }] };
-  // 生产默认拒绝明文地址。
-  assert.equal(releaseCandidate(release), null);
-  // 显式测试开关允许本机回环，且只允许回环。
-  assert.equal(releaseCandidate(release, { allowLoopbackHttp: true }).version, '0.3.0');
-  const remote = { ...release, assets: [{ ...release.assets[0], browser_download_url: 'http://evil.example/OPL-NetFleet-0.3.0-macos-arm64.dmg' }] };
-  assert.equal(releaseCandidate(remote, { allowLoopbackHttp: true }), null);
 });

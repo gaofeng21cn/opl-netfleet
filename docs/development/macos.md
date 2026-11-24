@@ -90,20 +90,17 @@ NETFLEET_TEST_APP='/Applications/OPL NetFleet.app' \
 
 ## 发布与更新验收
 
-发布把 DMG 与 `SHA256SUMS` 作为同一 Release 的资产上传，命令见
-[双平台交付](delivery.md#macos-dmg-公开分发)。`--latest=false` 必须保留：OpenWrt 安装
-入口依赖 `/releases/latest`。发布后回读 Release 资产与 GitHub 计算的 `sha256:` 摘要，
-与本地产物比对；本应用的自更新就以该摘要和 Apple 签名、公证为信任锚。
+发布把已签名并公证的 `OPL-NetFleet-macos-arm64.dmg`、`.sha256` 以及由
+`scripts/macos/generate-appcast.sh` 生成并经 Ed25519 签名的 `appcast.xml` 作为同一
+Release 的资产上传，命令与工作流见[双平台交付](delivery.md#macos-dmg-公开分发)。
+发布后回读 Release 资产、GitHub 计算的 `sha256:` 摘要与 `appcast.xml` 中的
+`sparkle:version` / `sparkle:edSignature`。
 
-更新路径要在真实制品上验收，不能只用 fixture：装一个较早的分发构建到本机，让它的
-“核心与网络 → 更新”检查已发布版本、执行安装，确认应用在退出后被替换、重新打开，回执
-为 `installed`，且旧应用槽已清理。用 `NETFLEET_UPDATE_FEED` 指向本地 release 列表可以
-在离线环境中重复这条链路；清单不是信任锚，制品仍必须通过 GitHub 摘要、Developer ID、
-Team ID 与公证校验，因此替身源无法让客户端安装任何别的东西。
-
-受保护的路径同样要验收：应用仍在运行时不得替换正在使用的包；未签名、未公证、版本不符
-或 Team ID 不符的候选必须被拒绝并保留旧版本；失败后 `update-receipt.json` 记录
-`failed` 与原因。
+Sparkle 2 更新契约由 `scripts/macos/verify-sparkle-contract.sh` 在 macOS 检查中强制验证：
+校验 `Package.swift`、`Info.plist` 的 32 字节 `SUPublicEDKey`、`Sparkle.framework` 内外
+顺序严格签名、`@executable_path/../Frameworks` rpath，以及使用临时 Ed25519 密钥端到端生成
+`appcast.xml` 与错误私钥 fail-closed 拒绝。真实制品升级仍需在已签名并公证的旧版 DMG 上
+通过应用菜单“检查更新…”验收退出恢复网络、替换与重启。
 
 ## 使用
 

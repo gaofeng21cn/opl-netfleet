@@ -29,5 +29,15 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/gaofeng21cn/opl-netfleet/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>TB72TcLQICozoCF5UowgzMGpeeByACMOiiB0KL9HLbc=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>21600</integer>
 </dict>
 </plist>

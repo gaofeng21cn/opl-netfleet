@@ -29,6 +29,7 @@ if [ "$lane" = macos ]; then
   node desktop/tests/owner-crash.mjs
   bun desktop/tests/react-client.ts
   python3 scripts/macos/build-app.py
+  scripts/macos/verify-sparkle-contract.sh '.build/macos/OPL NetFleet.app'
   '.build/macos/OPL NetFleet.app/Contents/Resources/runtime/bin/netfleet-network-helper' --self-test
 fi
 printf 'Strict %s integration passed. OpenWrt deployment still requires exact-source QEMU qualification.\n' "$lane"

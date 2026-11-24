@@ -12,14 +12,11 @@ import { NetworkOwner } from './network.mjs';
 import { coreSettingRows } from './settings.mjs';
 import { miniappStatus, serveMiniappStatus } from './miniapp.mjs';
 import { expandPanelArchive, installPanel, materializePanel } from './dashboard.mjs';
-import { MAX_APP_IMAGE_BYTES, TEAM_ID, applicationBundle, componentState, latestRelease, releaseCandidate, sha256, verifyBundle, withMountedApp } from './update.mjs';
-import { privateDir, atomicJSON, readJSON, object, assert, run, requestBody, codeDigest } from './io.mjs';
+import { privateDir, atomicJSON, readJSON, object, assert, run, requestBody, codeDigest, componentState } from './io.mjs';
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // 应用包根目录：打包后指向 Contents/Resources，源码运行时指向仓库根。
 const appRoot = path.resolve(desktopRoot, '..');
-// 应用包目录：更新替换的目标就是它自己；源码运行没有包结构时为 null。
-const appBundle = applicationBundle(appRoot);
 const bundledWebRoot = path.join(desktopRoot, 'web');
 const webRoot = await fs.access(bundledWebRoot).then(() => bundledWebRoot, () => path.resolve(desktopRoot, '../ui/dist-desktop'));
 const sourceRoot = process.env.NETFLEET_SOURCE_ROOT ?? path.resolve(desktopRoot, '../openwrt/files/usr/libexec/opl-netfleet');
@@ -34,11 +31,6 @@ const dashboardMeta = dashboardRoot ? await readJSON(path.join(dashboardRoot, '.
 const UPDATE_RELEASE = 'https://api.github.com/repos/Zephyruso/zashboard/releases/latest';
 const UPDATE_ASSET = 'dist-cdn-fonts.zip';
 const UPDATE_ROOT = 'https://github.com/Zephyruso/zashboard/releases';
-// 发布源默认是 GitHub 的 Release 列表；测试可以用 NETFLEET_UPDATE_FEED 指向本地
-// 夹具。清单不是信任锚——制品仍必须通过 GitHub 摘要、Developer ID 与公证校验。
-const APP_RELEASES = process.env.NETFLEET_UPDATE_FEED ?? 'https://api.github.com/repos/gaofeng21cn/opl-netfleet/releases?per_page=20';
-// 只有测试夹具才允许本机回环地址；生产必须走 https 资产地址。
-const loopbackFeed = /^http:\/\/(127\.0\.0\.1|localhost):\d+\//.test(APP_RELEASES);
 const MAX_UPDATE_BYTES = 33554432;
 const packagedIdentity = await readJSON(path.join(appRoot, 'build.json')).catch(() => null);
 const runtimeRoot = process.env.NETFLEET_RUNTIME_ROOT ?? path.join(os.homedir(), '.cache/opl-netfleet/macos/runtime');
@@ -383,11 +375,11 @@ const newerVersion = (candidate, installed) => {
   return false;
 };
 
-// 检查上游面板与已发布的 macOS 应用版本。结果缓存 24 小时，只报告候选，
-// 不自动安装；安装始终由用户确认后的 dashboard-update 承担。
+// 检查上游 Zashboard 面板版本。结果缓存 24 小时，只报告候选，不自动安装；
+// macOS 应用本体更新由原生 Sparkle 2 在宿主层接管。
 async function refreshUpdateStatus() {
   const status = { schema: 'opl-netfleet-macos-updates.v1', checked_at: Math.floor(Date.now() / 1000),
-    panel: null, app: null, errors: [] };
+    panel: null, errors: [] };
   const panel = await readJSON(panelStatePath).catch(() => null);
   try {
     const body = JSON.parse((await fetchBounded(UPDATE_RELEASE, { maxBytes: 1048576 })).toString('utf8'));
@@ -402,38 +394,15 @@ async function refreshUpdateStatus() {
           url: asset.browser_download_url, size: asset.size, sha256: asset.digest.slice(7) }
       : { installed: panel?.version ?? null, available: null, update_available: false, error: 'update_release_invalid' };
   } catch (error) { status.errors.push(`panel:${error.message}`); status.panel = { installed: panel?.version ?? null, available: null, update_available: false, error: 'update_check_failed' }; }
-  try {
-    const releases = JSON.parse((await fetchBounded(APP_RELEASES, { maxBytes: 2097152 })).toString('utf8'));
-    const installed = packagedIdentity?.package_version ?? null;
-    const release = latestRelease(releases);
-    const candidate = releaseCandidate(release, { allowLoopbackHttp: loopbackFeed });
-    const available = candidate?.version ?? null;
-    // 候选必须带 GitHub 计算的 sha256 摘要；没有摘要的 Release 只作为手动下载入口。
-    status.app = { installed, available, update_available: Boolean(installed) && Boolean(available) && newerVersion(available, installed),
-      url: release?.html_url ?? null, published_at: release?.published_at ?? null, installation_unknown: installed === null,
-      self_update: selfUpdateState(), candidate,
-      ...(candidate ? {} : release ? { manifest_error: 'update_asset_digest_missing' } : {}) };
-  } catch (error) { status.errors.push(`app:${error.message}`); status.app = { installed: packagedIdentity?.package_version ?? null, available: null, update_available: false, installation_unknown: packagedIdentity == null, self_update: selfUpdateState(), error: 'update_check_failed' }; }
   await atomicJSON(updateStatePath, status);
   return status;
 }
 
-// 自更新只对分发渠道的 Developer ID 构建开放：本地与开发构建没有稳定 Team ID，
-// 替换它们会破坏本地交付的证据链。
-function selfUpdateState() {
-  if (process.platform !== 'darwin') return 'unsupported-platform';
-  if (packagedIdentity?.channel !== 'distribution') return 'local-build';
-  if (packagedIdentity?.working_tree_dirty !== false) return 'dirty-build';
-  if (!appBundle) return 'not-an-app-bundle';
-  return 'available';
-}
-
 async function updateStatus({ force = false } = {}) {
   const cached = await readJSON(updateStatePath).catch(() => null);
-  // 检查结论绑定当时的安装身份：应用被替换后旧结论立即失效，否则刚更新完的界面
-  // 会在缓存剩余时间里继续显示上一个版本的数字。
+  const panel = await readJSON(panelStatePath).catch(() => null);
   const fresh = cached && Math.floor(Date.now() / 1000) - Number(cached.checked_at ?? 0) < 86400
-    && (cached.app?.installed ?? null) === (packagedIdentity?.package_version ?? null);
+    && (cached.panel?.installed ?? null) === (panel?.version ?? null);
   if (!force && fresh) return cached;
   return refreshUpdateStatus();
 }
@@ -447,7 +416,7 @@ async function applyPanelUpdate() {
   const body = await fetchBounded(candidate.url, { accept: 'application/octet-stream', maxBytes: MAX_UPDATE_BYTES, timeout: 120000 });
   assert(body.length === candidate.size, 'dashboard_asset_mismatch');
   assert(crypto.createHash('sha256').update(body).digest('hex') === candidate.sha256, 'dashboard_asset_mismatch');
-  const rows = expandPanelArchive(body);
+  const rows = await expandPanelArchive(body);
   await installPanel(rows, panelRoot);
   const index = rows.find(row => row.relative === 'index.html');
   await atomicJSON(panelStatePath, { schema: 'opl-netfleet-macos-panel-state.v1', version: candidate.available,
@@ -459,50 +428,6 @@ async function applyPanelUpdate() {
   }
   return { ok: true, version: candidate.available, previous: candidate.installed,
     panel: await dashboardProjection(await core.status()) };
-}
-
-// 应用更新：按 GitHub 资产摘要校验下载内容，验证新包签名与公证后暂存，再把替换
-// 交给独立进程；替换发生在应用退出之后，这里不触碰正在运行的包。
-async function applyAppUpdate() {
-  assert(selfUpdateState() === 'available', selfUpdateState());
-  // 复用已缓存的检查结论：安装的安全性来自制品校验，不来自再取一次列表，
-  // 因此不为此额外消耗发布源的调用额度。
-  const status = await updateStatus();
-  const candidate = status.app?.candidate;
-  assert(candidate, status.app?.manifest_error ?? 'update_candidate_unavailable');
-  const image = await fetchBounded(candidate.url, { accept: 'application/octet-stream', maxBytes: MAX_APP_IMAGE_BYTES, timeout: 600000 });
-  assert(image.length === candidate.size_bytes, 'update_asset_mismatch');
-  assert(sha256(image) === candidate.sha256, 'update_asset_mismatch');
-  return stageAppUpdate(candidate, image);
-}
-
-async function stageAppUpdate(candidate, image) {
-  assert(Buffer.isBuffer(image) && image.length > 0, 'update_asset_unavailable');
-  const work = path.join(stateDir, 'update');
-  await fs.rm(work, { recursive: true, force: true });
-  await privateDir(work);
-  const imagePath = path.join(work, 'candidate.dmg');
-  await fs.writeFile(imagePath, image, { mode: 0o600 });
-  const staged = path.join(work, 'staged.app');
-  // 挂载镜像并验证其中的应用：Developer ID 授权、Team ID、Gatekeeper 评估、
-  // 已装订的公证票据，以及干净的分发构建身份；挂载总是会被卸载。
-  await withMountedApp(imagePath, work, async app => {
-    await verifyBundle(app, candidate.version);
-    const copied = await run('/usr/bin/ditto', [app, staged], { timeout: 300000 });
-    assert(copied.code === 0, 'update_stage_failed');
-  });
-  // 替换进程在应用退出后运行：它等待本应用的 PID 消失，再做单槽替换与重启。
-  const script = path.join(desktopRoot, 'runtime/update-install.sh');
-  const receipt = path.join(stateDir, 'update-receipt.json');
-  const previous = path.join(path.dirname(appBundle), '.OPL NetFleet.previous.app');
-  const child = spawn('/bin/sh', [script, String(process.ppid), staged, appBundle, previous, receipt, String(TEAM_ID)],
-    { detached: true, stdio: 'ignore', env });
-  child.unref();
-  await atomicJSON(path.join(stateDir, 'update-pending.json'), { schema: 'opl-netfleet-macos-update-pending.v1',
-    version: candidate.version, tag: candidate.tag, staged, target: appBundle, at: Math.floor(Date.now() / 1000) });
-  // 被替换的是正在运行的这个构建，所以"上一个版本"就是包内身份，不是检查缓存。
-  return { ok: true, version: candidate.version, previous: packagedIdentity?.package_version ?? null,
-    relaunch_required: true };
 }
 
 async function dashboardUrl() {
@@ -634,7 +559,6 @@ async function action(input) {
     // 只读的候选检查（缓存的 24 小时结果或一次有界查询），不安装任何东西。
     case 'update-check': return updateStatus({ force: input.force === true });
     case 'dashboard-update': return applyPanelUpdate();
-    case 'app-update-apply': return applyAppUpdate();
     case 'backup-export': {
       const profile = await readJSON(path.join(stateDir, 'backend/profiles/Original.json'));
       const caches = {};

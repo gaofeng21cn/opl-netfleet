@@ -40,18 +40,12 @@ export interface UpdateCandidate {
   size?: number;
   sha256?: string;
   published_at?: string | null;
-  installation_unknown?: boolean;
-  // 自更新能力与待安装候选：只有 'available' 且有候选才提供安装入口。
-  self_update?: 'available' | 'local-build' | 'dirty-build' | 'not-an-app-bundle' | 'unsupported-platform';
-  candidate?: { version: string; tag: string; name: string; size_bytes: number; sha256: string } | null;
-  manifest_error?: string;
   error?: string;
 }
 export interface UpdateStatus {
   schema: 'opl-netfleet-macos-updates.v1';
   checked_at: number;
   panel: UpdateCandidate | null;
-  app: UpdateCandidate | null;
   errors: string[];
 }
 export interface DesktopSnapshot {

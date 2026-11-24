@@ -18,6 +18,7 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private var startupBuffer = Data()
     private var stopping = false
     private var shutdownTimer: Timer?
+    private var updater: AppUpdater?
     // The page owns business state; the host only mirrors what it reports.
     private var pageState = PageState()
 
@@ -46,13 +47,14 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
            let icon = NSImage(contentsOf: iconURL) {
             NSApp.applicationIconImage = icon
         }
+        updater = AppUpdater()
         buildMenu()
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.add(self, name: "saveBackup")
         configuration.userContentController.add(self, name: "netfleetState")
         configuration.userContentController.add(self, name: "openDashboard")
-        configuration.userContentController.add(self, name: "installUpdate")
+        configuration.userContentController.add(self, name: "checkForUpdates")
         if let accent = hostAccentScript() {
             configuration.userContentController.addUserScript(WKUserScript(source: accent,
                 injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -105,6 +107,7 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "关于 OPL NetFleet", action: #selector(showAbout), keyEquivalent: "").target = self
+        appMenu.addItem(withTitle: "检查更新…", action: #selector(checkForUpdates(_:)), keyEquivalent: "").target = self
         appMenu.addItem(.separator())
         let servicesItem = NSMenuItem(title: "服务", action: nil, keyEquivalent: "")
         let servicesMenu = NSMenu(title: "服务")
@@ -178,6 +181,7 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         buildProxyItems(into: statusMenu)
         statusMenu.addItem(.separator())
         statusMenu.addItem(withTitle: "显示 OPL NetFleet", action: #selector(showWindow), keyEquivalent: "").target = self
+        statusMenu.addItem(withTitle: "检查更新…", action: #selector(checkForUpdates(_:)), keyEquivalent: "").target = self
         statusMenu.addItem(.separator())
         statusMenu.addItem(withTitle: "退出并恢复网络", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
     }
@@ -335,10 +339,15 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         send(command: "stop")
     }
 
+    @objc private func checkForUpdates(_ sender: Any?) {
+        updater?.checkForUpdates()
+    }
+
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(startProxy(_:)): return !pageState.running && pageState.configured && !pageState.busy
         case #selector(stopProxy(_:)): return pageState.running && !pageState.busy
+        case #selector(checkForUpdates(_:)): return updater?.canCheckForUpdates == true
         case #selector(pageMenuCommand(_:)):
             // Menu items are rebuilt from page state; validation keeps them
             // honest if the state changes while the menu is open.
@@ -521,10 +530,10 @@ final class NetFleetApp: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             showDashboard(message.body)
             return
         }
-        // 更新已由页面校验并暂存。退出仍走既有优雅退出路径：先停止核心、
-        // 撤销系统代理或 TUN，并只在清理成功后终止；随后替换进程再接管。
-        if message.name == "installUpdate" {
-            NSApp.terminate(nil)
+        // 应用更新由 Sparkle 2 原生接管；安装时 Sparkle 调用标准退出路径，
+        // 仍会经由 applicationShouldTerminate 停止核心并撤销系统代理或 TUN。
+        if message.name == "checkForUpdates" {
+            updater?.checkForUpdates()
             return
         }
         guard message.name == "saveBackup", message.frameInfo.isMainFrame,

@@ -75,6 +75,18 @@ class MacOSBuildIdentityTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Source identity changed"):
             builder.verify_source_unchanged(self.repo, identity)
 
+    def test_sparkle_plist_validation_enforces_feed_ed25519_key_and_manual_install(self):
+        checked_in = plistlib.loads((ROOT / "desktop/app/Info.plist").read_bytes())
+        builder.validate_sparkle_plist(checked_in)
+        with self.assertRaisesRegex(RuntimeError, "SUFeedURL"):
+            builder.validate_sparkle_plist({**checked_in, "SUFeedURL": "http://example.invalid/appcast.xml"})
+        with self.assertRaisesRegex(RuntimeError, "SUPublicEDKey"):
+            builder.validate_sparkle_plist({**checked_in, "SUPublicEDKey": "AAAA"})
+        with self.assertRaisesRegex(RuntimeError, "SUAutomaticallyUpdate"):
+            builder.validate_sparkle_plist({**checked_in, "SUAutomaticallyUpdate": True})
+        with self.assertRaisesRegex(RuntimeError, "CFBundleVersion"):
+            builder.validate_sparkle_plist({**checked_in, "CFBundleVersion": "0"})
+
 
 if __name__ == "__main__":
     unittest.main()
