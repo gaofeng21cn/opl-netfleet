@@ -68,6 +68,26 @@ def verified_bytecode(source_root, manifest):
     return result
 
 
+def _parse_mode(mode):
+    if mode is None or isinstance(mode, bool):
+        return None
+    return int(mode, 8) if isinstance(mode, str) else int(mode)
+
+
+def verify_plugin_modes(metadata):
+    for entry in metadata.get('paths', []):
+        directory = entry.get('name', '')
+        if directory != 'usr/libexec/opl-netfleet/plugins' and not directory.startswith('usr/libexec/opl-netfleet/plugins/'):
+            continue
+        mode = _parse_mode((entry.get('acl') or {}).get('mode'))
+        if mode is not None and (mode & 0o022):
+            raise ValueError(f'unsafe plugin directory mode: {directory}')
+        for file_entry in entry.get('files', []):
+            file_mode = _parse_mode((file_entry.get('acl') or {}).get('mode'))
+            if file_mode is not None and (file_mode & 0o022):
+                raise ValueError(f"unsafe plugin file mode: {directory}/{file_entry['name']}")
+
+
 def inspect_apk(apk, archive, compiled=None):
     def run(*args):
         return subprocess.run([str(apk), *map(str, args)], check=True, capture_output=True, text=True).stdout
@@ -82,6 +102,7 @@ def inspect_apk(apk, archive, compiled=None):
     for script in metadata.get('scripts', {}).values():
         if any(runtime_caller(line) for line in script.splitlines()):
             raise ValueError('package lifecycle invokes a non-native runtime')
+    verify_plugin_modes(metadata)
     with tempfile.TemporaryDirectory(prefix='netfleet-native-payload-') as temporary:
         run('--allow-untrusted', 'extract', '--destination', temporary, archive)
         files = inspect_payload(Path(temporary), compiled)

@@ -129,6 +129,8 @@ for name in .config private-key.pem public-key.pem; do
   [[ ! -e "$sdk/$name" ]] || cp -p "$sdk/$name" "$backup/$name"
 done
 git -C "$repo_dir" archive "$commit" LICENSE openwrt plugins scripts/install-netfleet.sh scripts/verify-native-runtime.py | tar -C "$work" -xf -
+# Strip group/other write bits that tar may apply from git archive modes when running as root.
+chmod -R go-w "$work/openwrt" "$work/plugins"
 version=$(awk -F':=' '/^PKG_VERSION[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/Makefile")
 release=$(awk -F':=' '/^PKG_RELEASE[[:space:]]*:=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$work/openwrt/Makefile")
 [[ -n "$version" ]] || die 'package version metadata is missing'

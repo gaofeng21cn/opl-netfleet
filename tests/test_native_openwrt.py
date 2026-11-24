@@ -165,6 +165,23 @@ class NativeRuntimeGate(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'link'):
                 gate.inspect_payload(root)
 
+    def test_verify_plugin_modes_rejects_group_or_other_writable_paths(self):
+        gate.verify_plugin_modes({'paths': [
+            {'name': 'usr/libexec/opl-netfleet/plugins', 'acl': {'mode': 0o755}, 'files': []},
+            {'name': 'usr/libexec/opl-netfleet/plugins/events', 'acl': {'mode': '755'},
+             'files': [{'name': 'manifest.json', 'acl': {'mode': 0o644}},
+                       {'name': 'control', 'acl': {'mode': '755'}}]},
+        ]})
+        with self.assertRaisesRegex(ValueError, 'unsafe plugin directory mode'):
+            gate.verify_plugin_modes({'paths': [
+                {'name': 'usr/libexec/opl-netfleet/plugins/events', 'acl': {'mode': 0o775}, 'files': []},
+            ]})
+        with self.assertRaisesRegex(ValueError, 'unsafe plugin file mode'):
+            gate.verify_plugin_modes({'paths': [
+                {'name': 'usr/libexec/opl-netfleet/plugins/events/lib', 'acl': {'mode': 0o755},
+                 'files': [{'name': 'model.uc', 'acl': {'mode': 0o664}}]},
+            ]})
+
 
 class FeedMetadataTests(unittest.TestCase):
     def test_preserves_full_apk_versions_and_architecture(self):
