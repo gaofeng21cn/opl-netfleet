@@ -42,7 +42,7 @@ check(failed.error == "selected_business_path_probe_failed" && failed.probe == "
  "business failure must stop before outer probe and remain distinct from latency success");
 print("path activation contracts passed\n");
 
-const policy_factory = loadfile(`${root}/plugins/mihomo/lib/interception-policy.uc`)()();
+const policy_factory = loadfile(`${plugins_root}/mihomo/lib/interception-policy.uc`)()();
 const starting = { backend: 'native-mihomo', ready: true, compatibility_ownership_guard: true,
  router_proxy: true, lan_proxy: true, custom_lan_access: true, listener_identity_ready: false };
 check(policy_factory.admission({rules: []}, starting) == 'engine_starting', 'unready engine must not masquerade as a LAN policy conflict');
