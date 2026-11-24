@@ -208,9 +208,7 @@ endef
 define Build/Compile
 	$(RM) -r $(PKG_BUILD_DIR)/compiled-plugins
 	$(INSTALL_DIR) $(PKG_BUILD_DIR)/compiled-plugins
-	for plugin in $(NETFLEET_SELECTED_PLUGINS); do \
-		$(CP) "$(NETFLEET_PLUGINS_SOURCE)/$$plugin" "$(PKG_BUILD_DIR)/compiled-plugins/" || exit 1; \
-	done
+	$(CP) $(patsubst %,"$(NETFLEET_PLUGINS_SOURCE)/%",$(NETFLEET_SELECTED_PLUGINS)) "$(PKG_BUILD_DIR)/compiled-plugins/"
 	python3 ./compile-plugins.py --root $(PKG_BUILD_DIR)/compiled-plugins --compiler $(STAGING_DIR_HOSTPKG)/bin/ucode --libraries $(STAGING_DIR_HOSTPKG)/lib/ucode $(if $(strip $(NETFLEET_SKIP_COMPILE_PLUGINS)),--exclude "$(subst $(NETFLEET_SPACE),$(comma),$(strip $(NETFLEET_SKIP_COMPILE_PLUGINS)))") >$(PKG_BUILD_DIR)/bytecode.json
 endef
 
