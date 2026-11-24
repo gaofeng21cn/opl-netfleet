@@ -3,7 +3,7 @@ import * as socket from "socket";
 function now_ms() {
 	const value = clock();
 	return value[0] * 1000 + int(value[1] / 1000000);
-}
+};
 
 function parse_target(target) {
 	if (type(target) == "object" && type(target.unix_path) == "string" && length(target.unix_path) > 0) {
@@ -21,17 +21,17 @@ function parse_target(target) {
 		return port > 0 && port < 65536 ? { kind: "tcp6", host: "::1", port, host_header: `[::1]:${port}` } : null;
 	}
 	return null;
-}
+};
 
 function is_in_progress(sock) {
 	const code = sock.error(true);
 	return code == 36 || code == 115 || match(lc(sock.error() ?? ""), /in progress/) != null;
-}
+};
 
 function is_retryable_io(sock) {
 	const code = sock.error(true);
 	return code == 4 || code == 11 || code == 35;
-}
+};
 
 function decode_chunked(raw) {
 	let pos = 0;
@@ -57,7 +57,7 @@ function decode_chunked(raw) {
 		if (substr(raw, pos, 2) != "\r\n") return { error: true };
 		pos += 2;
 	}
-}
+};
 
 function try_complete_response(raw, method, discard_body, eof, max_bytes) {
 	const boundary = index(raw, "\r\n\r\n");
@@ -108,7 +108,7 @@ function try_complete_response(raw, method, discard_body, eof, max_bytes) {
 		return { done: true, result: { ok: false, status: 0, body: null, transport_error: "response_too_large", transport_code: 63 } };
 	}
 	return eof ? { done: true, result: { ok: true, status, body: payload, transport_error: null, transport_code: 0 } } : { done: false };
-}
+};
 
 function build_request_bytes(parsed_target, spec) {
 	const method = spec?.method ?? "GET";
@@ -125,7 +125,7 @@ function build_request_bytes(parsed_target, spec) {
 	}
 	if (length(body) > 0 && !has_content_length) lines += `Content-Length: ${length(body)}\r\n`;
 	return `${lines}\r\n${body}`;
-}
+};
 
 export function request_all(specs, default_timeout_ms) {
 	if (type(specs) != "array" || length(specs) == 0) return [];
@@ -140,7 +140,7 @@ export function request_all(specs, default_timeout_ms) {
 		try { item.sock?.close(); } catch (error) {}
 		item.sock = null;
 		results[item.idx] = value;
-	}
+	};
 
 	try {
 		for (let i = 0; i < length(specs); i++) {
@@ -281,8 +281,8 @@ export function request_all(specs, default_timeout_ms) {
 		try { items[i].sock?.close(); } catch (close_error) {}
 	}
 	return results;
-}
+};
 
 export function request(target, spec) {
 	return request_all([{ ...(spec ?? {}), target }], spec?.timeout_ms)[0];
-}
+};
