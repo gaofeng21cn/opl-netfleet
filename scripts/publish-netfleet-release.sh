@@ -88,7 +88,11 @@ PY
 publication=$candidate
 publication_work=''
 readback=''
+draft_created=0
 cleanup() {
+  if [[ "$draft_created" == 1 ]]; then
+    gh release delete "$tag" --repo "$repo" --yes >/dev/null 2>&1 || true
+  fi
   [[ -z "$publication_work" ]] || rm -rf -- "$publication_work"
   [[ -z "$readback" ]] || rm -rf -- "$readback"
 }
@@ -134,13 +138,36 @@ else
   git -C "$repo_dir" push origin "refs/tags/$tag"
 fi
 
-gh release create "$tag" --repo "$repo" --verify-tag \
+gh release create "$tag" --repo "$repo" --verify-tag --draft \
   --title "NetFleet $tag" \
-  --notes "Versioned NetFleet OpenWrt packages qualified for installation and runtime behavior on ARM64 OpenWrt 25.12.5." \
-  "$publication"/*
+  --notes "Versioned NetFleet OpenWrt packages qualified for installation and runtime behavior on ARM64 OpenWrt 25.12.5."
+draft_created=1
+for asset in "$publication"/*; do
+  [[ -f "$asset" ]] || continue
+  uploaded=0
+  for attempt in 1 2 3 4; do
+    if gh release upload "$tag" --repo "$repo" --clobber "$asset"; then
+      uploaded=1
+      break
+    fi
+    sleep 3
+  done
+  [[ "$uploaded" == 1 ]] || die "failed to upload release asset: $(basename "$asset")"
+done
+gh release edit "$tag" --repo "$repo" --draft=false
+draft_created=0
 
 readback=$(mktemp -d "${TMPDIR:-/tmp}/netfleet-release-readback.XXXXXX")
-gh release download "$tag" --repo "$repo" --dir "$readback"
+downloaded=0
+for attempt in 1 2 3; do
+  rm -rf -- "$readback"/*
+  if gh release download "$tag" --repo "$repo" --dir "$readback"; then
+    downloaded=1
+    break
+  fi
+  sleep 3
+done
+[[ "$downloaded" == 1 ]] || die 'failed to download published release for readback'
 "$repo_dir/scripts/verify-netfleet-release.py" \
   --directory "$readback" --expected-directory "$publication" \
   --source-commit "$source_commit" --source-tree "$source_tree" >/dev/null
