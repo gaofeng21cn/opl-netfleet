@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import plistlib
 import re
 import shutil
 import subprocess
@@ -308,6 +309,15 @@ all:
             result = subprocess.run([str(PACKAGER), '--output', str(output)], text=True, capture_output=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(output.exists())
+
+    def test_product_version_matches_openwrt_and_macos_release_metadata(self):
+        product_version = json.loads((ROOT / 'product-version.json').read_text())['version']
+        openwrt_makefile = (ROOT / 'openwrt/Makefile').read_text()
+        openwrt_version = re.search(r'^PKG_VERSION:=(\S+)$', openwrt_makefile, re.M)
+        macos_info = plistlib.loads((ROOT / 'desktop/app/Info.plist').read_bytes())
+        self.assertIsNotNone(openwrt_version, 'OpenWrt product version is missing')
+        self.assertEqual(openwrt_version.group(1), product_version, 'OpenWrt product version')
+        self.assertEqual(macos_info['CFBundleShortVersionString'], product_version, 'macOS product version')
 
     def test_package_sources_are_versioned_and_do_not_embed_instance_inputs(self):
         runtime = (ROOT / 'openwrt/Makefile').read_text()
