@@ -19,8 +19,7 @@ PR 与 `main` 更新运行 `NetFleet 双平台检查`。检查结果只证明所
 先完成本地验证，再进入主线。正式交付从干净、已吸收的源码构建，记录精确 commit/tree，
 不要把可移动的 `main` 名称当作永久身份。主线继续前进不表示已安装版本同步更新。
 
-产品版本由 `product-version.json` 维护，`scripts/prepare-product-release.py`
-同步 OpenWrt 产品包与 macOS `desktop/app/Info.plist`；OpenWrt 插件继续独立版本化。各平台制品使用同一个产品 tag 和源码身份，
+产品版本由 `product-version.json` 维护，`scripts/prepare-product-release.py` 统一同步 `openwrt/Makefile`、macOS `desktop/app/Info.plist`（含 `CFBundleShortVersionString` 与单调递增的 `CFBundleVersion`）及 `docs/development/plugin-catalog.json`；OpenWrt 插件继续独立版本化。各平台制品使用同一个产品 tag 和源码身份，
 安装情况以目标实际产物为准。某个平台待验收时保留该状态，修复后验证原候选。
 
 统一每日产品任务检测交付变化并经 PR/CI 准备版本，`release.yml` 使用固定 SDK
@@ -100,7 +99,7 @@ python3 scripts/netfleet-delivery-preflight.py \
 2. 使用 `scripts/netfleet-package-build.sh` 本地构建，或手动运行
    `.github/workflows/netfleet-openwrt-candidate.yml`，输入源码 ref、SDK URL 及 SHA-256。
    工作流上传保留 7 天的候选，其中 `netfleet-output/` 保存默认软件包，`netfleet-optional/` 保存可选签名包及构建身份，`netfleet-vm-components/` 保存一次性升级与回滚测试包。可选来源由 `scripts/https-compat/release-source.json` 固定，不重建同版本不同字节；复用入口校验源码未变、下载摘要、签名及原生依赖。测试包在 SDK 宿主生成，并绑定候选清单、源码和文件摘要；ARM64 QEMU 通过 `NETFLEET_VM_COMPONENT_FIXTURES` 复用，无需 SDK。
-3. 按[软件包资格验证](validation.md)完成同源码、同候选资产的 ARM64 OpenWrt VM 验收。
+3. 按[软件包资格验证](validation.md)完成同源码、同候选资产的 ARM64 OpenWrt VM 验收；在本机执行 `scripts/openwrt-vm.sh` 与 `scripts/https-compat/qualify.py --composition --preflight` 时，须用 `env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY` 剥离宿主壳代理环境变量，防止 guest 就绪与直连检查继承宿主代理。
 4. 使用已有发布入口：
 
 ```sh
@@ -128,7 +127,7 @@ scripts/publish-netfleet-release.sh --tag vX.Y.Z \
 已经成立的完整基础资格。测试返回 `mutation_busy` 时仅重试明确未执行的调用，
 执行结果不明时先读事务，不重放。
 入口检查候选与资格回执绑定、版本与 tag 一致、候选已被最新远端主线包含，再创建不可变
-Release 并下载公开资产校验。主线前进后仍使用已冻结并验收的候选；候选自身变更才重新
+Release 并下载公开资产校验。本地执行 `scripts/publish-netfleet-release.sh --tag vX.Y.Z` 推送 tag `vX.Y.Z` 时会自动触发 `.github/workflows/release.yml`（托管 ARM64 runner 无 KVM、使用较慢的 TCG 模拟）；本地发布与公开资产校验通过后，应取消该冗余工作流运行以免重叠或超时。主线前进后仍使用已冻结并验收的候选；候选自身变更才重新
 构建和验收，不改旧回执。发布成功
 仍不等于设备已升级。实际推广按[部署操作](../operations/deployment.md)执行。
 
@@ -153,6 +152,8 @@ macOS 使用同一产品 `vX.Y.Z` tag，版本对应应用 `Info.plist`。旧 `m
 按[签名与 DMG](macos.md#签名与-dmg)构建、公证并冻结 arm64 DMG，完成最终包的隔离
 macOS VM 验收后才发布。应用签名、两次公证、最终 DMG 摘要、源码身份和 VM 结果分别
 回读；发布后下载公开资产并核对相同摘要。内部验收日志与订阅数据不进入 Release。
+
+`.github/workflows/macos-sparkle-release.yml` 通过手动 `workflow_dispatch` 传入 `release_tag=vX.Y.Z` 并在 GitHub Environment `release` 执行。`release` 环境使用标准 4 项 Apple 凭据（`APPLE_DEVELOPER_ID_P12_BASE64`、`APPLE_DEVELOPER_ID_P12_PASSWORD`、`APPLE_NOTARY_APPLE_ID`、`APPLE_NOTARY_PASSWORD`，其中公证密码必须是 Apple App-Specific Password 而非登录密码）及每应用独立的 `SPARKLE_ED25519_PRIVATE_KEY`（旧秘密名称仅作后备）；导出的 `.p12` 必须仅包含单个 `Developer ID Application` 身份与私钥。发布后需同步回读两个 Release：`vX.Y.Z` 保持 `Latest` 且 DMG、`.sha256` 与 `appcast.xml` 的公开 SHA-256 一致、原有 OpenWrt Feed 资产保持原字节；浮动 `macos-stable` 保持非 `Latest` 且其签名 `appcast.xml` 中的 enclosure URL、`sparkle:shortVersionString` 与 `sparkle:version` 指向 `vX.Y.Z`。
 
 同一 tag 的 OpenWrt Feed 与 macOS DMG 各自核对自己的资产和摘要。追加已验收的
 DMG 与 `appcast.xml` 保持既有 Feed 资产原字节，不创建独立版本；浮动 `macos-stable` 仅承载

@@ -49,6 +49,7 @@
 - 先运行覆盖改动的最小真实路径，再按当前真实技术栈和影响范围扩展门禁。没有对应生产实现时不保留空语言工具链或测试。
 - 会修改 OpenWrt 文件系统、服务、UCI 或数据面的部署候选必须先通过仓库 QEMU OpenWrt qualification；VM 只替代通用平台和回滚试错，真实 provider/DNS/TPROXY/硬件仍由可本地恢复的 canary 验收。未取得同 commit/tree receipt 的候选最多允许 bundle、validate、compile/staged，不得 activate。
 - source 测试只证明 source；设备安装、生效、网络恢复和业务可用性必须分别取得 target-local readback。
+- 正式双平台发布、签名/公证与更新通道规则归[双平台交付](docs/development/delivery.md)与[macOS 构建与验证](docs/development/macos.md)：产品版本统一修改 `product-version.json` 并经 `scripts/prepare-product-release.py` 同步 OpenWrt 包、macOS `Info.plist`（含单调递增 `CFBundleVersion`）与插件目录，不手工散改单端版本；OpenWrt 组件升级后若编译拓扑变化，须经正式 `disable` -> `enable` 重新编译生效并完成 target-local readback，不得直接修改运行配置。
 - Git 写任务使用独立 worktree；集成前 fresh fetch canonical `main`，按当前 SSOT 语义重放并保留其他 owner 的字节。共享 mutation 只在最终吸收阶段串行。
 
 - GitHub 上自己新建的对外文本用英文书写：commit subject/body、PR 标题与正文、Issue、comment、Release 正文与 Release Notes。产品名、代码标识、路径、命令与原始引用除外。他人写的 Issue、PR 或 comment，无论对方用什么语言，回复沿用对方的语言；历史中已有的非英文 commit 保持原样。

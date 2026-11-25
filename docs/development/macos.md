@@ -51,7 +51,7 @@ open '.build/macos/OPL NetFleet.app'
 ## 签名与 DMG
 
 公开分发需要 Developer ID Application 证书及已配置的 `notarytool` Keychain profile。
-凭据留在钥匙串，不能写入仓库或命令日志。先在已吸收的干净源码上构建：
+无论本地还是 CI（`macos-sparkle-release.yml`），导出的 `.p12` 都必须只包含单个 `Developer ID Application` 证书与私钥（不能整库导出全部身份），`xcrun notarytool` 也必须使用 Apple App-Specific Password 而非 Apple ID 登录密码。凭据留在钥匙串或受保护环境秘密中，不能写入仓库或命令日志。先在已吸收的干净源码上构建：
 
 ```sh
 python3 scripts/macos/build-app.py --require-clean-source \
@@ -97,6 +97,8 @@ Release 并刷新浮动 `macos-stable` Feed Release，命令与工作流见[双�
 `overlay-signature.json`，由桌面宿主 fail-closed 校验加载。
 发布后回读 Release 资产、GitHub 计算的 `sha256:` 摘要与 `appcast.xml` 中的
 `sparkle:version` / `sparkle:edSignature`。
+
+在本机下载安装已公证的 `vX.Y.Z` DMG 时，先校验 `shasum -a 256 -c`、`xcrun stapler validate` 与 `spctl --assess --type open --context context:primary-signature`，正常退出正在运行的应用后以单槽回退方式原子替换 `/Applications/OPL NetFleet.app`，再完整回读已安装应用的 `Info.plist`（`CFBundleShortVersionString`、`CFBundleVersion`、`SUFeedURL`）、`Contents/Resources/build.json`（`channel=distribution`、`source_commit`、`source_tree`）、`codesign --verify --deep --strict`、`xcrun stapler validate` 与 `spctl --assess --type execute`。
 
 Sparkle 2 更新契约由 `scripts/macos/verify-sparkle-contract.sh` 在 macOS 检查中强制验证：
 校验 `Package.swift`、`Info.plist` 的 32 字节 `SUPublicEDKey`、`Sparkle.framework` 内外
