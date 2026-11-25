@@ -13,6 +13,7 @@ import { coreSettingRows } from './settings.mjs';
 import { miniappStatus, serveMiniappStatus } from './miniapp.mjs';
 import { expandPanelArchive, installPanel, materializePanel } from './dashboard.mjs';
 import { privateDir, atomicJSON, readJSON, object, assert, run, requestBody, codeDigest, componentState } from './io.mjs';
+import { applySignedPluginOverlays, readPublicKeyFromPlist } from './plugin-overlay.mjs';
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // 应用包根目录：打包后指向 Contents/Resources，源码运行时指向仓库根。
@@ -52,6 +53,7 @@ const env = { ...cleanEnv, PATH: `${runtimeRoot}/bin:/usr/bin:/bin:/usr/sbin:/sb
 const statePath = path.join(stateDir, 'state.json');
 const codeRoot = path.join(stateDir, 'ucode');
 let state, core, network, queue = Promise.resolve(), readQueue = Promise.resolve(), scheduled = false, closing = false, lastError = null, tickState = null, authorizeNetwork = false;
+let pluginOverlays = { applied: [], rejected: [] };
 let businessSnapshot = { status: null, events: null, config: null, configError: null, error: null };
 let webServer, rpcServer, origin;
 let ownerLease;
@@ -487,7 +489,8 @@ async function snapshot({ deep = true } = {}) {
   return { runtime: { ...runtime, platform: 'macos', mode: actualMode, requestedMode: state.mode, networkMode: state.network.mode,
     ports: state.ports, configured: state.configured, lastError }, policy: await readJSON(path.join(stateDir, 'policy.json')),
     subscriptions, status, events, config, configError, network: networkState, error,
-    core: await coreProjection(runtime, networkState), dashboard: await dashboardProjection(runtime) };
+    core: await coreProjection(runtime, networkState), dashboard: await dashboardProjection(runtime),
+    plugin_overlays: pluginOverlays };
 }
 async function action(input) {
   assert(object(input) && typeof input.action === 'string', 'invalid_action');
@@ -693,6 +696,14 @@ async function main() {
     }
   }
   await fs.cp(path.join(desktopRoot, 'ucode'), codeRoot, { recursive: true, force: true });
+  const overlayPublicKey = process.env.NETFLEET_PLUGIN_PUBLIC_KEY
+    ?? await readPublicKeyFromPlist(path.resolve(appRoot, '../Info.plist'))
+    ?? await readPublicKeyFromPlist(path.join(desktopRoot, 'app/Info.plist'));
+  pluginOverlays = await applySignedPluginOverlays({
+    overlayRoot: path.join(stateDir, 'plugins'),
+    codeRoot,
+    publicKeyBase64: overlayPublicKey,
+  });
   await snapshot();
   webServer = http.createServer(async (request, response) => {
     try {

@@ -475,6 +475,7 @@ get = function() {
 	}
 	const dashboard = dashboard_resource();
 	return { supported: versions != null, backend: KIND, architecture: capture("apk --print-arch"),
+		capabilities: { batch_plugin_update: true },
 		feed: { configured: url != null, url: url, checked_at: cache?.checked_at, error: cache?.error }, components: rows,
 		plugin_packages: plugin_packages(versions, product, cache?.plugin_catalog),
 		auto_update: type(auto_update_summary) == "function" ? auto_update_summary() : null,
@@ -1254,6 +1255,25 @@ auto_update_policy = function() {
 reconcile_auto_update = function(raw, persist) {
 	const state = type(raw) == "object" ? { ...raw } : {};
 	let changed = false;
+	if (state.last_result == "checking" && match(state.last_check_tx_id ?? "", /^[a-f0-9]{32}$/)) {
+		const terminal = private_file(`${ROOT}/${state.last_check_tx_id}/journal.json`) ? read_json(`${ROOT}/${state.last_check_tx_id}/journal.json`) : null;
+		if (terminal?.phase == "complete") {
+			state.last_result = "checked";
+			state.last_error = null;
+			state.last_check_tx_id = null;
+			changed = true;
+		} else if (index(["rolled_back", "failed"], terminal?.phase) >= 0) {
+			const failures = (type(state.consecutive_failures) == "int" ? state.consecutive_failures : 0) + 1;
+			const finished_at = terminal.finished_at ?? int(time());
+			state.last_result = "check_failed";
+			state.last_error = terminal.error ?? terminal.failure_reason ?? "feed_check_failed";
+			state.last_check_tx_id = null;
+			state.last_check_at = finished_at;
+			state.consecutive_failures = failures;
+			state.backoff_until = finished_at + package_model.backoff_seconds(failures);
+			changed = true;
+		}
+	}
 	if (state.last_result == "started" && match(state.last_tx_id ?? "", /^[a-f0-9]{32}$/)) {
 		const terminal = private_file(`${ROOT}/${state.last_tx_id}/journal.json`) ? read_json(`${ROOT}/${state.last_tx_id}/journal.json`) : null;
 		if (terminal?.phase == "complete") {
@@ -1316,19 +1336,9 @@ auto_update = function(trigger) {
 		catalog = values != null ? plugin_catalog() : null;
 	}
 	if (values == null) {
-		const check_work = capture(`mktemp -d ${q(`${ROOT}/auto-check.XXXXXX`)}`);
-		if (check_work == null || !private_directory(check_work)) fail("update_stage_failed");
-		const success = apk_download("apk --timeout 90 update", check_work);
-		system(`rm -rf ${q(check_work)}`);
-		values = success ? available(url) : null;
-		catalog = values != null ? plugin_catalog() : {};
-		atomic_json(CACHE, { feed: url, checked_at: now, versions: values ?? {}, plugin_catalog: catalog, error: values == null ? "feed_check_failed" : null });
-	}
-	if (values == null) {
-		const failures = (type(state.consecutive_failures) == "int" ? state.consecutive_failures : 0) + 1;
-		atomic_json(AUTO_UPDATE, { ...state, last_check_at: now, last_result: "check_failed", last_error: "feed_check_failed",
-			consecutive_failures: failures, backoff_until: now + package_model.backoff_seconds(failures) });
-		fail("feed_check_failed");
+		const started = start("check");
+		atomic_json(AUTO_UPDATE, { ...state, last_result: "checking", last_check_tx_id: started.operation?.id ?? null, last_error: null });
+		return { started: true, phase: "checking", operation: started.operation };
 	}
 	const versions = installed();
 	if (versions == null) fail("package_manager_unavailable");

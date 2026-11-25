@@ -29,8 +29,8 @@ App 图标由仓库现有 logo 通过 AppKit 绘制与 `iconutil` 生成；侧�
 
 ## 本地交付
 
-产品版本在 `product-version.json` 维护，发布准备同步到 `desktop/app/Info.plist`，
-内部构建修订独立递增。先完成下文严格检查并把源码吸收到主线，再在干净源码上执行：
+产品版本在 `product-version.json` 维护，由 `scripts/prepare-product-release.py` 同步到
+`desktop/app/Info.plist` 并递增内部 `CFBundleVersion`。先完成下文严格检查并把源码吸收到主线，再在干净源码上执行：
 
 ```sh
 python3 scripts/macos/build-app.py --require-clean-source
@@ -91,8 +91,10 @@ NETFLEET_TEST_APP='/Applications/OPL NetFleet.app' \
 ## 发布与更新验收
 
 发布把已签名并公证的 `OPL-NetFleet-macos-arm64.dmg`、`.sha256` 以及由
-`scripts/macos/generate-appcast.sh` 生成并经 Ed25519 签名的 `appcast.xml` 作为同一
-Release 的资产上传，命令与工作流见[双平台交付](delivery.md#macos-dmg-公开分发)。
+`scripts/macos/generate-appcast.sh` 生成并经 Ed25519 签名的 `appcast.xml` 上传至 `vX.Y.Z`
+Release 并刷新浮动 `macos-stable` Feed Release，命令与工作流见[双平台交付](delivery.md#macos-dmg-公开分发)。
+业务服务插件覆盖目录可通过 `scripts/macos/sign-plugin-overlay.py` 使用同一 Ed25519 私钥签名为
+`overlay-signature.json`，由桌面宿主 fail-closed 校验加载。
 发布后回读 Release 资产、GitHub 计算的 `sha256:` 摘要与 `appcast.xml` 中的
 `sparkle:version` / `sparkle:edSignature`。
 

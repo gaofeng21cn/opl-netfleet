@@ -316,7 +316,8 @@ function pluginPackages(controller, snapshot) {
 		]);
 	});
 	const updatable = (snapshot.plugin_packages || []).filter(function(item) { return item.installed_version && item.update_available && item.available_version; });
-	const batchUpdate = updatable.length ? button('更新全部可升级插件 (' + updatable.length + ')', function() {
+	const batchSupported = snapshot.capabilities?.batch_plugin_update === true;
+	const batchUpdate = batchSupported && updatable.length ? button('更新全部可升级插件 (' + updatable.length + ')', function() {
 		const items = updatable.map(function(item) {
 			return { name: item.name, before_version: item.installed_version, version: item.available_version };
 		});
@@ -343,7 +344,7 @@ function pluginPackages(controller, snapshot) {
 	const autoUpdate = snapshot.auto_update;
 	const autoSummary = autoUpdate ? E('p', { 'class': 'netfleet-follow-note' },
 		'安全插件自动更新：' + (autoUpdate.enabled ? '已开启（每 ' + Math.round((autoUpdate.interval_seconds || 86400) / 3600) + ' 小时）' : '已关闭（可在“配置 → 自动运行”开启）') +
-		(autoUpdate.last_result ? ' · 最近状态：' + ({ updated: '已自动更新', up_to_date: '已是最新', started: '更新中', deferred: '存在需手动确认的底座更新', rolled_back: '已回退并退避', failed: '失败并退避', check_failed: '源检查失败' }[autoUpdate.last_result] || autoUpdate.last_result) : '') +
+		(autoUpdate.last_result ? ' · 最近状态：' + ({ checking: '检查更新源中', checked: '已检查更新源', updated: '已自动更新', up_to_date: '已是最新', started: '更新中', deferred: '存在需手动确认的底座更新', rolled_back: '已回退并退避', failed: '失败并退避', check_failed: '源检查失败' }[autoUpdate.last_result] || autoUpdate.last_result) : '') +
 		(autoUpdate.deferred_packages && autoUpdate.deferred_packages.length ? ' · 待手动确认：' + autoUpdate.deferred_packages.map(function(item) { return item.name + (item.version ? ' → ' + displayVersion(item.version) : ''); }).join('、') : '')
 	) : null;
 	return E('section', { 'class': 'netfleet-component-modules' }, [E('h3', {}, '安装与维护独立插件'),

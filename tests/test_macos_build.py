@@ -1,6 +1,8 @@
 """Exercise macOS source provenance without requiring platform build tools."""
 import importlib.util
+import json
 import plistlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -86,6 +88,16 @@ class MacOSBuildIdentityTests(unittest.TestCase):
             builder.validate_sparkle_plist({**checked_in, "SUAutomaticallyUpdate": True})
         with self.assertRaisesRegex(RuntimeError, "CFBundleVersion"):
             builder.validate_sparkle_plist({**checked_in, "CFBundleVersion": "0"})
+
+    def test_product_versions_stay_synchronized_across_platforms(self):
+        product_version = json.loads((ROOT / "product-version.json").read_text())["version"]
+        makefile_text = (ROOT / "openwrt/Makefile").read_text()
+        match = re.search(r"(?m)^PKG_VERSION:=(.+)$", makefile_text)
+        self.assertIsNotNone(match, "PKG_VERSION missing from openwrt/Makefile")
+        info = plistlib.loads((ROOT / "desktop/app/Info.plist").read_bytes())
+        self.assertEqual(match.group(1), product_version)
+        self.assertEqual(info["CFBundleShortVersionString"], product_version)
+        self.assertEqual(info["SUFeedURL"], "https://github.com/gaofeng21cn/opl-netfleet/releases/download/macos-stable/appcast.xml")
 
 
 if __name__ == "__main__":

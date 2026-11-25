@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 APP_PKG="$ROOT_DIR/desktop/app"
 INFO_PLIST="$APP_PKG/Info.plist"
-EXPECTED_FEED_URL="https://github.com/gaofeng21cn/opl-netfleet/releases/latest/download/appcast.xml"
+EXPECTED_FEED_URL="https://github.com/gaofeng21cn/opl-netfleet/releases/download/macos-stable/appcast.xml"
 
 # 1. SwiftPM host must link Sparkle 2 with framework rpath.
 grep -Fq 'https://github.com/sparkle-project/Sparkle' "$APP_PKG/Package.swift"

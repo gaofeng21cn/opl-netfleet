@@ -2552,6 +2552,7 @@ test('components page supports batch update preview and auto-update status summa
   ];
   owner.components = {
     supported: true,
+    capabilities: { batch_plugin_update: true },
     feed: { configured: true },
     components: [],
     extensions: [],
@@ -2586,6 +2587,20 @@ test('components page supports batch update preview and auto-update status summa
   assert.deepEqual(executedRequest.plan, plan);
   clearTimeout(owner.operationTimer);
   clearTimeout(owner.resultTimer);
+
+  // Without backend batch capability flag (e.g. v0.9.25 components), batch button stays hidden.
+  const legacyOwner = controller();
+  legacyOwner.componentsSection = 'plugins';
+  legacyOwner.components = {
+    supported: true,
+    feed: { configured: true },
+    components: [],
+    extensions: [],
+    plugin_packages: items,
+  };
+  const legacyRoot = managed.components(legacyOwner);
+  assert(!all(legacyRoot, node => node.tag === 'button' && text(node).includes('更新全部可升级插件')).length);
+  assert(all(legacyRoot, node => node.tag === 'button' && text(node) === '更新').length >= 2);
 });
 
 test('config page renders plugin auto-update controls and change labels', () => {

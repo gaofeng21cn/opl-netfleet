@@ -8,7 +8,7 @@ enum AppUpdateConfiguration {
     static let automaticChecksKey = "SUEnableAutomaticChecks"
     static let scheduledCheckIntervalKey = "SUScheduledCheckInterval"
     static let canonicalFeedURL =
-        "https://github.com/gaofeng21cn/opl-netfleet/releases/latest/download/appcast.xml"
+        "https://github.com/gaofeng21cn/opl-netfleet/releases/download/macos-stable/appcast.xml"
     static let scheduledCheckIntervalSeconds = 6 * 60 * 60
 
     static func canStartSparkle(

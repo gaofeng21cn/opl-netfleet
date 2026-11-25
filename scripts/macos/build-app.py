@@ -16,7 +16,7 @@ import tempfile
 from bootstrap import HERE, prepare, run, sha256, verify
 
 REPO = HERE.parents[1]
-EXPECTED_FEED_URL = "https://github.com/gaofeng21cn/opl-netfleet/releases/latest/download/appcast.xml"
+EXPECTED_FEED_URL = "https://github.com/gaofeng21cn/opl-netfleet/releases/download/macos-stable/appcast.xml"
 spec = importlib.util.spec_from_file_location("builtin_assets", HERE / "builtin-assets.py")
 builtin_assets = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builtin_assets)

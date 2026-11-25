@@ -159,7 +159,8 @@ UCode 没有版本开关，退回随包清单里的固定源码身份。应用�
 ### 应用自更新
 
 macOS 应用本体更新由嵌入的 **Sparkle 2** 在 AppKit 宿主层原生负责：应用内 `Info.plist`
-声明 `SUFeedURL`（指向公开 GitHub Release 的 `appcast.xml`）、32 字节 Ed25519 公钥
+声明 `SUFeedURL`（指向公开 GitHub Release 的浮动稳定通道 `releases/download/macos-stable/appcast.xml`，
+与 OpenWrt `releases/latest` 解耦；enclosure DMG 仍指向精确的 `vX.Y.Z` 资产）、32 字节 Ed25519 公钥
 `SUPublicEDKey`、`SUEnableAutomaticChecks = true` 与 `SUAutomaticallyUpdate = false`。
 Sparkle 2 自动定期检查更新并在应用菜单、菜单栏与“核心与网络 → 更新”中提供“检查更新…”
 入口，所有下载包均须同时通过 Ed25519 签名与 Apple 代码签名/公证验证，并由用户确认后安装。
@@ -171,6 +172,15 @@ Sparkle 2 自动定期检查更新并在应用菜单、菜单栏与“核心与�
 特权网络组件（helper 与 root 核心）是独立于应用包的副本：应用更新后它们可能落后于包内
 版本，“核心与网络”会按字节比较报告状态，需要时由用户重新授权安装，应用不在后台静默提升
 权限。
+
+### 签名插件覆盖
+
+桌面运行宿主将随包共享服务插件复制到私有代码目录后，对私有目录
+`Application Support/OPL NetFleet/plugins/<id>` 中的可选覆盖目录执行 fail-closed 的
+Ed25519 校验。校验复用应用内 `SUPublicEDKey` 验证 `overlay-signature.json`
+（`opl-netfleet-plugin-overlay.v1`）及其排序后的全量文件 SHA-256 清单：只允许替换随包已存在的纯业务/通用服务插件，拒绝
+`platform-macos`、未知插件 ID、符号链接、越权权限、目录穿越、未登记额外文件与同版本/降级覆写，
+通过后原子替换私有运行副本并在快照中通过只读 `plugin_overlays` 字段报告已应用与已拒绝列表。
 
 ## 本机接口
 

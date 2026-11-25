@@ -75,9 +75,11 @@ refresh_data_fallback = function(secret, entry, policy, provider_state, selected
 		// Refresh only the bound chain, from the inner selector to the outer guard.
 		const health = policy?.fail_open?.healthcheck;
 		const stages = [
-			{ group: selection_group(entry), probe: health?.path_probe_id },
-			{ group: entry?.proxy_path_name, probe: health?.guard_probe_id }
+			{ group: selection_group(entry), probe: health?.path_probe_id }
 		];
+		if (type(entry?.automatic_name) == "string") {
+			push(stages, { group: entry.automatic_name, probe: health?.guard_probe_id });
+		}
 		for (let stage in stages) {
 			let probe = null;
 			for (let candidate in policy?.fail_open?.probes ?? [])
@@ -91,6 +93,24 @@ refresh_data_fallback = function(secret, entry, policy, provider_state, selected
 	const state = proxies(secret);
 	if (state == null || state.proxies == null) {
 		return { ok: false, error: "mihomo_state_unavailable", round: round };
+	}
+	if (selected_group != null && type(entry?.automatic_name) == "string" && type(entry?.providers) == "object") {
+		let path_probe = null;
+		for (let candidate in policy?.fail_open?.probes ?? [])
+			if (candidate.id == policy?.fail_open?.healthcheck?.path_probe_id) path_probe = candidate;
+		if (path_probe != null) {
+			const ids = sorted_keys(entry.providers);
+			for (let i = 0; i < length(ids); i++) {
+				const g = entry.providers[ids[i]]?.group;
+				if (type(g) == "string" && (state.proxies[g]?.now == "REJECT" || state.proxies[g]?.alive != true)) {
+					measure_latency(secret, g, { latency: {
+						method: "mihomo_delay", url: path_probe.url,
+						expected_status: path_probe.head_expected_status ?? path_probe.expected_status,
+						timeout_ms: policy.fail_open.healthcheck.timeout_ms
+					} });
+				}
+			}
+		}
 	}
 	state.providers = provider_state ?? proxy_providers(secret, 1)?.providers ?? null;
 	const runtime = resolve_runtime(entry, state);

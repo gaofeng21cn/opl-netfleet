@@ -88,8 +88,7 @@ tick = function(previous) {
 		try {
 			if (config.plugin_auto_update_enabled == true && (next_plugin_auto_update_at == null || now >= next_plugin_auto_update_at)) {
 				run_owner("components-auto-update", "scheduled");
-				const step = config.plugin_auto_update_interval_seconds < 3600 ? config.plugin_auto_update_interval_seconds : 3600;
-				next_plugin_auto_update_at = now + step;
+				next_plugin_auto_update_at = now + 60;
 			}
 		} catch (error) { warn("NetFleet plugin auto-update scheduling failed\n"); }
 	} else {

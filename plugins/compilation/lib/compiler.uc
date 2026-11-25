@@ -1,6 +1,6 @@
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let clone, group_index, generated_name_conflicts, binding_capability, binding_kind, rewritten_member, rewrite_group_members, rule_target, rewrite_rule, rewrite_rule_list, capability_group_name, inject_routing_rules, legacy_closure, normalize_policy_group, entry_alias, standardize_profile, has, region_display_name, provider_display_name, provider_group_name, provider_tier_name, provider_source_name, region_group_name, region_aggregate_name, region_layer_name, preferred_group_name, proxy_path_group_name, automatic_group_name, direct_guard_group_name, provider_before, ordered_enabled_providers, automatic_capability, capability_generation_order, array_has, push_unique, capability_allows_region, protected_probe, mapping_filter, compile;
+let clone, group_index, generated_name_conflicts, binding_capability, binding_kind, rewritten_member, rewrite_group_members, rule_target, rewrite_rule, rewrite_rule_list, capability_group_name, inject_routing_rules, legacy_closure, normalize_policy_group, entry_alias, standardize_profile, has, region_display_name, provider_display_name, provider_group_name, provider_tier_name, provider_source_name, region_group_name, region_aggregate_name, region_layer_name, preferred_group_name, automatic_group_name, direct_guard_group_name, provider_before, ordered_enabled_providers, automatic_capability, capability_generation_order, array_has, push_unique, capability_allows_region, protected_probe, mapping_filter, compile;
 
 const ordered_capabilities = context.use("models.policy").ordered_capabilities;
 const ordered_regions = context.use("models.policy").ordered_regions;
@@ -307,10 +307,6 @@ preferred_group_name = function(capability_name) {
 	return `${capability_name} · 当前优选`;
 };
 
-proxy_path_group_name = function(capability_name) {
-	return `${capability_name} · 代理路径`;
-};
-
 automatic_group_name = function(capability_name) {
 	return `${capability_name} · 自动选优`;
 };
@@ -559,7 +555,6 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 		const leaf_tolerance = leaf_switch_margin(policy, capability);
 		const capability_name = capability_group_name(policy, capability);
 		const preferred_group = preferred_group_name(capability_name);
-		const proxy_path_group = proxy_path_group_name(capability_name);
 		const automatic_group = automatic ? automatic_group_name(capability_name) : null;
 		const provider_groups = [];
 		const provider_groups_by_role = { primary: [], reserve: [] };
@@ -683,6 +678,7 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 			const aggregate = region_aggregate_name(capability_name, region_display);
 			const aggregate_members = [];
 			const layer_names = {};
+			let layer_count = 0;
 			for (let layer_index = 0; layer_index < 2; layer_index++) {
 				const layer = layer_index == 0 ? "primary" : "reserve";
 				if (length(layers[layer]) == 0) continue;
@@ -705,7 +701,11 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 					hidden: true
 				});
 				layer_names[layer] = layer_name;
+				layer_count++;
 				push(aggregate_members, layer_name);
+				if (length(layers[layer]) > 1) {
+					for (let m = 0; m < length(layers[layer]); m++) push(aggregate_members, layers[layer][m]);
+				}
 			}
 			push(aggregate_members, direct_guard);
 			push(compiled_groups, {
@@ -717,7 +717,7 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 				"expected-status": path_probe.head_expected_status ?? path_probe.expected_status,
 				timeout: healthcheck.timeout_ms,
 				interval: healthcheck.interval_seconds,
-				"max-failed-times": healthcheck.max_failed_times * length(aggregate_members),
+				"max-failed-times": healthcheck.max_failed_times * (layer_count + 1),
 				lazy: true,
 				hidden: true
 			});
@@ -767,10 +767,13 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 				interval: healthcheck.interval_seconds,
 				"max-failed-times": healthcheck.max_failed_times,
 				tolerance: 0,
-				lazy: !automatic,
+				lazy: true,
 				hidden: true
 			});
 			push(proxy_members, tier_name);
+			if (length(members) > 1) {
+				for (let m = 0; m < length(members); m++) push(proxy_members, members[m]);
+			}
 			push(fail_open_stages, {
 				kind: "provider_tier",
 				role: role,
@@ -779,21 +782,10 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 			});
 		}
 		push(fail_open_stages, { kind: "direct", group: direct_guard, provider_ids: [] });
-		push(compiled_groups, {
-			name: proxy_path_group,
-			type: "fallback",
-			proxies: proxy_members,
-			"empty-fallback": "DIRECT",
-			url: path_probe.url,
-			"expected-status": path_probe.head_expected_status ?? path_probe.expected_status,
-			timeout: healthcheck.timeout_ms,
-			interval: healthcheck.interval_seconds,
-			"max-failed-times": healthcheck.max_failed_times,
-			lazy: !automatic,
-			hidden: true
-		});
-		const automatic_members = [proxy_path_group, direct_guard];
+		const automatic_members = [];
 		if (automatic) {
+			for (let i = 0; i < length(proxy_members); i++) push(automatic_members, proxy_members[i]);
+			push(automatic_members, direct_guard);
 			push(compiled_groups, {
 				name: automatic_group,
 				type: "fallback",
@@ -803,7 +795,7 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 				"expected-status": guard_probe.head_expected_status ?? guard_probe.expected_status,
 				timeout: healthcheck.timeout_ms,
 				interval: healthcheck.interval_seconds,
-				"max-failed-times": healthcheck.max_failed_times * (length(proxy_members) + 1),
+				"max-failed-times": healthcheck.max_failed_times,
 				lazy: true,
 				hidden: true
 			});
@@ -822,7 +814,6 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 			name: capability_name,
 			automatic_name: automatic_group,
 			selector_name: preferred_group,
-			proxy_path_name: proxy_path_group,
 			base_type: original.type,
 			base_group: base_group,
 			base_groups: base_groups,

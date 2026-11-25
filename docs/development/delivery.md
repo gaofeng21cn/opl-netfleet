@@ -19,8 +19,8 @@ PR 与 `main` 更新运行 `NetFleet 双平台检查`。检查结果只证明所
 先完成本地验证，再进入主线。正式交付从干净、已吸收的源码构建，记录精确 commit/tree，
 不要把可移动的 `main` 名称当作永久身份。主线继续前进不表示已安装版本同步更新。
 
-产品版本由 `product-version.json` 维护，版本准备同步 OpenWrt 产品包与 macOS
-应用；OpenWrt 插件继续独立版本化。各平台制品使用同一个产品 tag 和源码身份，
+产品版本由 `product-version.json` 维护，`scripts/prepare-product-release.py`
+同步 OpenWrt 产品包与 macOS `desktop/app/Info.plist`；OpenWrt 插件继续独立版本化。各平台制品使用同一个产品 tag 和源码身份，
 安装情况以目标实际产物为准。某个平台待验收时保留该状态，修复后验证原候选。
 
 统一每日产品任务检测交付变化并经 PR/CI 准备版本，`release.yml` 使用固定 SDK
@@ -145,8 +145,9 @@ Release 并下载公开资产校验。主线前进后仍使用已冻结并验收
 
 macOS 使用同一产品 `vX.Y.Z` tag，版本对应应用 `Info.plist`。旧 `macos-v` Release
 保留原资产；新的合格 DMG、`OPL-NetFleet-macos-arm64.dmg.sha256` 与 Ed25519 签名的
-`appcast.xml` 追加到同一产品 Release（可经 `.github/workflows/macos-sparkle-release.yml`
-或本地 `scripts/macos/package-dmg.py` + `scripts/macos/generate-appcast.sh` 生成）。
+`appcast.xml` 上传到同一产品 Release（可经 `.github/workflows/macos-sparkle-release.yml`
+或本地 `scripts/macos/package-dmg.py` + `scripts/macos/generate-appcast.sh` 生成），同时将
+`appcast.xml` 同步刷新到非 `latest` 的浮动 `macos-stable` Release，使 OpenWrt 独立发布不会打断 macOS Sparkle 更新源。
 应用内自更新由 Sparkle 2 验证 `appcast.xml` 的 Ed25519 签名与 Apple 代码签名/公证，
 确认安装前经由宿主标准退出路径停止核心并撤销网络接管。
 按[签名与 DMG](macos.md#签名与-dmg)构建、公证并冻结 arm64 DMG，完成最终包的隔离
@@ -154,5 +155,6 @@ macOS VM 验收后才发布。应用签名、两次公证、最终 DMG 摘要、
 回读；发布后下载公开资产并核对相同摘要。内部验收日志与订阅数据不进入 Release。
 
 同一 tag 的 OpenWrt Feed 与 macOS DMG 各自核对自己的资产和摘要。追加已验收的
-DMG 与 `appcast.xml` 保持既有 Feed 资产原字节，不创建独立版本。分发构建支持用户确认后的
+DMG 与 `appcast.xml` 保持既有 Feed 资产原字节，不创建独立版本；浮动 `macos-stable` 仅承载
+指向最新已签名 DMG 的 `appcast.xml`。分发构建支持用户确认后的
 Sparkle 2 原生自更新，不执行后台静默替换，也不自动更新本地开发构建。

@@ -68,7 +68,6 @@ expected_runtime_groups = function(manifest) {
 		add_runtime_group(result, seen, entry?.name);
 		add_runtime_group(result, seen, entry?.automatic_name);
 		add_runtime_group(result, seen, entry?.selector_name);
-		add_runtime_group(result, seen, entry?.proxy_path_name);
 		add_runtime_group(result, seen, entry?.direct_guard_name);
 		const user_members = entry?.user_members ?? [];
 		for (let j = 0; j < length(user_members); j++) add_runtime_group(result, seen, user_members[j]);

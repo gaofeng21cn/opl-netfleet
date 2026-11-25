@@ -474,6 +474,46 @@ class DeployOpenWrtTests(unittest.TestCase):
         self.assertTrue(receipt["final_active"])
         self.assertEqual("new-main\n", (self.device / "usr/libexec/opl-netfleet/main.uc").read_text())
 
+    def test_host_pyinfra_preserves_structured_failure_receipt(self):
+        module = self._load_deploy_module()
+        try:
+            import pyinfra  # noqa: F401
+        except ImportError:
+            self.skipTest("pyinfra not installed in bare python3 interpreter")
+
+        self._make_instance_bundle()
+        data = json.loads((self.device / "etc/config/nikki").read_text())
+        data["config.profile"] = "subscription:base"
+        (self.device / "etc/config/nikki").write_text(json.dumps(data, sort_keys=True) + "\n")
+        cache = self.device / "etc/nikki/subscriptions/base.yaml"
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text("proxies: []\nproxy-groups: []\nrules: []\n")
+        archive_path = module.build_bundle_archive(self.bundle, self.base / "pyinfra-fail-bundle.tar")
+        remote_env = {
+            "PATH": f"{self.bin}:{os.environ['PATH']}",
+            "FAKE_STATE": str(self.state),
+            "FAKE_UCI_FILE": str(self.device / "etc/config/nikki"),
+            "FAKE_RULESET_SOURCE": str(self.state / "ruleset-source"),
+            "OPL_NETFLEET_DEPLOY_ROOT": str(self.device),
+            "OPL_NETFLEET_DEPLOY_TESTING": "1",
+            "FAKE_PACKAGE_CANDIDATE": str(self.base / "payload"),
+            "FAKE_APK_ARCH": "aarch64",
+            "FAKE_FAIL_ACTION": "prepare-recovery",
+            "FAKE_DROP_UBUS_ON_FAILURE": "1",
+        }
+        rc, stdout_text, stderr_text = module.deploy_with_pyinfra(
+            target="@local",
+            bundle_archive=archive_path,
+            remote_flags=["--preserve-state", "--instance"],
+            remote_env=remote_env,
+        )
+        self.assertNotEqual(0, rc, stderr_text + stdout_text)
+        receipt = json.loads(stdout_text.strip().splitlines()[-1])
+        self.assertFalse(receipt["ok"])
+        self.assertEqual("recovery_profile_prepare_failed", receipt["error"])
+        self.assertEqual("original_native_profile_not_recoverable", receipt["rollback"])
+        self.assertEqual("needs_local_recovery", receipt["recovery"])
+
     def test_host_rejects_stale_vm_qualification_before_ssh(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)

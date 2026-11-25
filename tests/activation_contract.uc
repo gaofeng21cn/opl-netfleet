@@ -52,7 +52,7 @@ function test_activation_model() {
 		generated_groups: {
 			standard: {
 				name: "常规出口", automatic_name: "常规出口 · 自动选优",
-				selector_name: "常规出口 · 当前优选", proxy_path_name: "常规出口 · 代理路径",
+				selector_name: "常规出口 · 当前优选",
 				user_members: ["常规出口 · 自动选优", "常规出口 · 🇭🇰 香港", "DIRECT"],
 				direct_name: "DIRECT", direct_guard_name: "NetFleet · 直连护栏",
 				region_groups: [{ name: "常规出口 · 🇭🇰 香港", primary_name: "常规出口 · 🇭🇰 香港 · 主用" }],
@@ -258,7 +258,7 @@ function test_path_activation() {
 		"platform.credentials": { api_secret: () => "fixture" }
 	};
 	const paths = factory({ use: name => services[name] });
-	const entry = { name: "visible", selector_name: "preferred", proxy_path_name: "inner" };
+	const entry = { name: "visible", selector_name: "preferred", automatic_name: "auto" };
 	const policy = {
 		checks: { latency: { url: "https://speed.test/204", timeout_ms: 2000 } },
 		fail_open: {
@@ -271,7 +271,7 @@ function test_path_activation() {
 	const ready = paths.wait_for_preferred_runtime("fixture", entry, "candidate", policy, {}, false);
 	check(ready.preferred && !stale, "business URL health must revive the bound path");
 	check(length(calls) == 2 && calls[0].group == "preferred" &&
-		calls[1].group == "inner" && calls[0].timeout == 15000 && calls[0].expected == 404 && calls[1].expected == 200, "probe only the chosen chain in dependency order with health timeout");
+		calls[1].group == "auto" && calls[0].timeout == 15000 && calls[0].expected == 404 && calls[1].expected == 200, "probe only the chosen chain in dependency order with health timeout");
 	business_failed = true; stale = true; probe_count = 0;
 	const failed = paths.wait_for_preferred_runtime("fixture", entry, "candidate", policy, {}, false);
 	check(failed.error == "selected_business_path_probe_failed" && failed.probe == "path" && failed.method == "HEAD" && failed.expected_status == 404 && stale && length(calls) == 3,

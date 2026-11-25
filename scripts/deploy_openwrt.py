@@ -701,6 +701,7 @@ def deploy_with_pyinfra(
     try:
         from pyinfra.api import Config, Inventory, State
         from pyinfra.api.connect import connect_all, disconnect_all
+        from pyinfra.api.exceptions import PyinfraError
         from pyinfra.api.operation import add_op
         from pyinfra.api.operations import run_ops
         from pyinfra.operations import files, server
@@ -746,7 +747,11 @@ def deploy_with_pyinfra(
             name="execute-openwrt-atomic-switch-gate",
             commands=remote_cmd,
         )
-        run_ops(state)
+        try:
+            run_ops(state)
+        except PyinfraError as exc:
+            if op_results.get(host) is None and "No hosts remaining" not in str(exc):
+                raise
     finally:
         disconnect_all(state)
 

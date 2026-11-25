@@ -50,6 +50,7 @@ py_modules = [
     'tests.test_native_openwrt',
     'tests.test_openwrt_vm',
     'tests.test_backend_health',
+    'tests.test_fail_open_mihomo',
     'tests.test_https_dev',
     'tests.test_macos_build',
     'tests.test_plugin_sdk',

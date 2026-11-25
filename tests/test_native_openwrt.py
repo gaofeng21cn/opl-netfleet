@@ -262,6 +262,17 @@ class FeedReadbackTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'ASU feed metadata differs'):
                 verifier.verify(root, 'a' * 40, 'b' * 40)
 
+    def test_product_ui_pins_batch_backend_dependency_and_auto_update_is_async(self):
+        makefile = (ROOT / 'openwrt/Makefile').read_text()
+        self.assertIn('opl-netfleet-plugin-components (>=0.8.17)', makefile)
+        components_src = (ROOT / 'plugins/components/lib/control.uc').read_text()
+        self.assertIn('batch_plugin_update: true', components_src)
+        auto_start = components_src.index('auto_update = function(trigger)')
+        auto_end = components_src.index('command = function(argv)', auto_start)
+        auto_body = components_src[auto_start:auto_end]
+        self.assertIn('start("check")', auto_body)
+        self.assertNotIn('apk --timeout 90 update', auto_body)
+
 
 if __name__ == '__main__':
     unittest.main()

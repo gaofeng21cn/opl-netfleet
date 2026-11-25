@@ -52,7 +52,6 @@ const manifest = {
 				name: "常规出口",
 				automatic_name: "常规出口 · 自动选优",
 				selector_name: "常规出口 · 当前优选",
-				proxy_path_name: "常规出口 · 代理路径",
 				direct_guard_name: "NetFleet · 直连护栏",
 			base_group: "OUTBOUND",
 			mode: "automatic",
@@ -79,7 +78,6 @@ const manifest = {
 				name: "AI 出口",
 				automatic_name: "AI 出口 · 自动选优",
 				selector_name: "AI 出口 · 当前优选",
-				proxy_path_name: "AI 出口 · 代理路径",
 				direct_guard_name: "NetFleet · 直连护栏",
 			base_group: "AI-OUTBOUND",
 			base_groups: ["AI-OUTBOUND", "CLAUDE-OUTBOUND"],
@@ -107,8 +105,7 @@ const manifest = {
 const state = {
 	proxies: {
 		"常规出口": { alive: true, now: "常规出口 · 自动选优", all: ["常规出口 · 自动选优", "常规出口 · 🇯🇵 北方", "常规出口 · 南方", "DIRECT"] },
-		"常规出口 · 自动选优": { alive: true, now: "常规出口 · 代理路径", all: ["常规出口 · 代理路径", "NetFleet · 直连护栏"] },
-		"常规出口 · 代理路径": { alive: true, now: "常规出口 · 当前优选", all: ["常规出口 · 当前优选", "常规出口 · 主用机场", "常规出口 · 备用机场"] },
+		"常规出口 · 自动选优": { alive: true, now: "常规出口 · 当前优选", all: ["常规出口 · 当前优选", "常规出口 · 主用机场", "常规出口 · 备用机场", "NetFleet · 直连护栏"] },
 		"常规出口 · 主用机场": { alive: true, now: "常规出口 · Alpha", all: ["常规出口 · Alpha"] },
 		"常规出口 · 备用机场": { alive: true, now: "常规出口 · Beta", all: ["常规出口 · Beta"] },
 		"常规出口 · 当前优选": { alive: true, now: "常规出口 · 🇯🇵 北方 · Alpha" },
@@ -121,8 +118,7 @@ const state = {
 		"常规出口 · Alpha": { alive: true, now: "provider-only-alpha", all: ["provider-only-alpha"] },
 		"常规出口 · Beta": { alive: true, now: "provider-only-beta", all: ["provider-only-beta"] },
 		"AI 出口": { alive: true, now: "AI 出口 · 自动选优", all: ["AI 出口 · 自动选优", "AI 出口 · 🇯🇵 北方", "DIRECT"] },
-		"AI 出口 · 自动选优": { alive: true, now: "AI 出口 · 代理路径", all: ["AI 出口 · 代理路径", "NetFleet · 直连护栏"] },
-		"AI 出口 · 代理路径": { alive: true, now: "AI 出口 · 当前优选", all: ["AI 出口 · 当前优选", "AI 出口 · 主用机场"] },
+		"AI 出口 · 自动选优": { alive: true, now: "AI 出口 · 当前优选", all: ["AI 出口 · 当前优选", "AI 出口 · 主用机场", "NetFleet · 直连护栏"] },
 		"AI 出口 · 主用机场": { alive: true, now: "AI 出口 · Alpha", all: ["AI 出口 · Alpha"] },
 		"AI 出口 · 当前优选": { alive: true, now: "AI 出口 · 🇯🇵 北方 · Alpha" },
 		"AI 出口 · 🇯🇵 北方": { alive: true, now: "AI 出口 · 🇯🇵 北方 · 主用", all: ["AI 出口 · 🇯🇵 北方 · 主用", "NetFleet · 直连护栏"] },
@@ -371,7 +367,6 @@ if (find_by_id(unknown_member_result.regions, "north")?.node_count != null) {
 const lagging_ancestor_state = json(sprintf("%J", state));
 lagging_ancestor_state.proxies["常规出口"].alive = false;
 lagging_ancestor_state.proxies["常规出口 · 自动选优"].alive = false;
-lagging_ancestor_state.proxies["常规出口 · 代理路径"].alive = false;
 lagging_ancestor_state.proxies["常规出口 · 当前优选"].alive = false;
 const lagging_ancestor_result = build(policy, manifest, lagging_ancestor_state, evidence, {
 	active: true,
@@ -422,7 +417,7 @@ if (unavailable_terminal_result.capabilities[0].leaf != null ||
 }
 
 const fallback_state = json(sprintf("%J", state));
-fallback_state.proxies["常规出口 · 代理路径"].now = "常规出口 · 备用机场";
+fallback_state.proxies["常规出口 · 自动选优"].now = "常规出口 · 备用机场";
 const fallback_result = build(policy, manifest, fallback_state, evidence, {
 	active: true,
 	profile: "file:OPL-NetFleet.json",

@@ -154,6 +154,25 @@ jobs:
             dist/appcast.xml \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
+          if gh release view macos-stable --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit macos-stable \
+              --target "$GITHUB_SHA" \
+              --latest=false \
+              --prerelease=false \
+              --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create macos-stable \
+              --target "$GITHUB_SHA" \
+              --title "macOS Stable Feed" \
+              --notes "Floating Sparkle appcast channel for signed macOS releases." \
+              --latest=false \
+              --prerelease=false \
+              --repo "$GITHUB_REPOSITORY"
+          fi
+          gh release upload macos-stable \
+            dist/appcast.xml \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
 
       - name: Remove temporary Apple credentials
         if: always()

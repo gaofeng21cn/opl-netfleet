@@ -11,7 +11,7 @@
         "activation.control",
         "activation.mode"
       ],
-      "version": "0.7.7"
+      "version": "0.7.8"
     },
     {
       "api_version": 1,
@@ -24,7 +24,7 @@
         "compilation.compiler",
         "compilation.control"
       ],
-      "version": "0.7.8"
+      "version": "0.7.9"
     },
     {
       "api_version": 1,
@@ -39,7 +39,7 @@
       "services": [
         "components.control"
       ],
-      "version": "0.8.16"
+      "version": "0.8.17"
     },
     {
       "api_version": 1,
@@ -158,7 +158,7 @@
         "mihomo.readback",
         "mihomo.runtime"
       ],
-      "version": "0.9.14"
+      "version": "0.9.15"
     },
     {
       "api_version": 1,
@@ -180,7 +180,7 @@
         "models.subscription",
         "models.subscriptions"
       ],
-      "version": "0.7.18"
+      "version": "0.7.19"
     },
     {
       "api_version": 1,
@@ -270,7 +270,7 @@
         "opl-netfleet-plugin-subscriptions"
       ],
       "services": [],
-      "version": "0.10.21"
+      "version": "0.10.22"
     },
     {
       "api_version": 1,
@@ -307,7 +307,7 @@
       "services": [
         "scheduler.control"
       ],
-      "version": "0.7.9"
+      "version": "0.7.10"
     },
     {
       "api_version": 1,

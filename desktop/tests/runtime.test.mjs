@@ -1,13 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import zlib from 'node:zlib';
 import { projectProfile } from '../runtime/core.mjs';
 import { coreSettingRows } from '../runtime/settings.mjs';
 import { expandPanelArchive, installPanel, materializePanel, readPanelArchive } from '../runtime/dashboard.mjs';
+import { OVERLAY_SCHEMA, applySignedPluginOverlays, canonicalOverlayPayload } from '../runtime/plugin-overlay.mjs';
 import { atomicJSON, componentState, privateDir, run } from '../runtime/io.mjs';
+
+const execFileAsync = promisify(execFile);
 
 const state = { ports: { mixed: 19080, controller: 19090, dns: 19053 }, controllerSecret: 'local-owner-secret', network: { mode: 'explicit' } };
 
@@ -183,5 +189,202 @@ test('network components report their sync state against the bundled bytes', asy
     await fs.writeFile(path.join(root, 'installed'), 'older');
     assert.equal((await componentState(path.join(root, 'bundled'), path.join(root, 'installed'))).state, 'outdated');
     assert.equal((await componentState(path.join(root, 'absent'), path.join(root, 'installed'))).state, 'unbundled');
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('signed plugin overlay verifies Ed25519 signature, replaces bundled plugin atomically, and rejects tampered or disallowed overlays fail-closed', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'netfleet-overlay-test-'));
+  const ED25519_PKCS8_PREFIX_LEN = 16;
+  const ED25519_SPKI_PREFIX_LEN = 12;
+  const sha = value => crypto.createHash('sha256').update(value).digest('hex');
+
+  function makeEd25519Pair() {
+    const pair = crypto.generateKeyPairSync('ed25519');
+    const spki = pair.publicKey.export({ format: 'der', type: 'spki' });
+    const pkcs8 = pair.privateKey.export({ format: 'der', type: 'pkcs8' });
+    return {
+      privateKey: pair.privateKey,
+      privateSeedB64: pkcs8.subarray(ED25519_PKCS8_PREFIX_LEN).toString('base64'),
+      publicKeyB64: spki.subarray(ED25519_SPKI_PREFIX_LEN).toString('base64'),
+    };
+  }
+
+  async function seedBundled(codeRoot, id = 'events', version = '0.7.0') {
+    const pluginDir = path.join(codeRoot, 'plugins', id);
+    await fs.mkdir(path.join(pluginDir, 'lib'), { recursive: true, mode: 0o700 });
+    await fs.writeFile(path.join(pluginDir, 'manifest.json'), JSON.stringify({
+      schema: 'opl-netfleet-service-plugin.v1', id, version, api_version: 1,
+    }));
+    await fs.writeFile(path.join(pluginDir, 'lib/control.uc'), 'bundled-impl');
+  }
+
+  async function writeOverlay(overlayRoot, id, files, signerKey, { version = '0.7.1', envelopePatch = {} } = {}) {
+    const dir = path.join(overlayRoot, id);
+    await fs.rm(dir, { recursive: true, force: true });
+    await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+    const entries = [];
+    for (const [rel, body] of Object.entries(files).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+      const dest = path.join(dir, rel);
+      await fs.mkdir(path.dirname(dest), { recursive: true, mode: 0o700 });
+      await fs.writeFile(dest, body, { mode: 0o600 });
+      entries.push({ path: rel, sha256: sha(body) });
+    }
+    const baseEnvelope = {
+      schema: OVERLAY_SCHEMA,
+      id,
+      version,
+      files: entries,
+    };
+    const merged = { ...baseEnvelope, ...envelopePatch };
+    const signature = crypto.sign(null, Buffer.from(canonicalOverlayPayload(merged), 'utf8'), signerKey).toString('base64');
+    await fs.writeFile(path.join(dir, 'overlay-signature.json'), JSON.stringify({ ...merged, signature }, null, 2), { mode: 0o600 });
+    return dir;
+  }
+
+  try {
+    const keys = makeEd25519Pair();
+    const otherKeys = makeEd25519Pair();
+
+    // 1. Valid signed newer overlay via applySignedPluginOverlays
+    const codeRoot = path.join(root, 'case1-code');
+    const overlayRoot = path.join(root, 'case1-overlay');
+    await fs.mkdir(overlayRoot, { mode: 0o700 });
+    await seedBundled(codeRoot, 'events', '0.7.0');
+    await writeOverlay(overlayRoot, 'events', {
+      'lib/control.uc': 'overlay-impl-v2',
+      'manifest.json': JSON.stringify({ schema: 'opl-netfleet-service-plugin.v1', id: 'events', version: '0.7.1', api_version: 1 }),
+    }, keys.privateKey, { version: '0.7.1' });
+    const okResult = await applySignedPluginOverlays({ overlayRoot, codeRoot, publicKeyBase64: keys.publicKeyB64 });
+    assert.deepEqual(okResult, { applied: [{ id: 'events', version: '0.7.1', bundled_version: '0.7.0' }], rejected: [] });
+    assert.equal(await fs.readFile(path.join(codeRoot, 'plugins/events/lib/control.uc'), 'utf8'), 'overlay-impl-v2');
+
+    // 2. Negative cases must fail closed and leave bundled plugin untouched
+    const negCases = [
+      {
+        name: 'tampered file bytes',
+        reason: 'file_digest_mismatch',
+        setup: async (cRoot, oRoot) => {
+          const dir = await writeOverlay(oRoot, 'events', {
+            'lib/control.uc': 'overlay-impl-v2',
+            'manifest.json': JSON.stringify({ schema: 'opl-netfleet-service-plugin.v1', id: 'events', version: '0.7.1', api_version: 1 }),
+          }, keys.privateKey);
+          await fs.writeFile(path.join(dir, 'lib/control.uc'), 'tampered-bytes', { mode: 0o600 });
+        },
+      },
+      {
+        name: 'bad signature',
+        reason: 'signature_verification_failed',
+        setup: async (cRoot, oRoot) => {
+          const dir = await writeOverlay(oRoot, 'events', {
+            'manifest.json': JSON.stringify({ schema: 'opl-netfleet-service-plugin.v1', id: 'events', version: '0.7.1', api_version: 1 }),
+          }, keys.privateKey);
+          const env = JSON.parse(await fs.readFile(path.join(dir, 'overlay-signature.json'), 'utf8'));
+          env.signature = Buffer.alloc(64, 7).toString('base64');
+          await fs.writeFile(path.join(dir, 'overlay-signature.json'), JSON.stringify(env), { mode: 0o600 });
+        },
+      },
+      {
+        name: 'wrong public key',
+        reason: 'signature_verification_failed',
+        setup: async (cRoot, oRoot) => {
+          await writeOverlay(oRoot, 'events', {
+            'manifest.json': JSON.stringify({ schema: 'opl-netfleet-service-plugin.v1', id: 'events', version: '0.7.1', api_version: 1 }),
+          }, otherKeys.privateKey);
+        },
+      },
+      {
+        name: 'unlisted extra file',
+        reason: 'unlisted_overlay_file',
+        setup: async (cRoot, oRoot) => {
+          const dir = await writeOverlay(oRoot, 'events', {
+            'manifest.json': JSON.stringify({ schema: 'opl-netfleet-service-plugin.v1', id: 'events', version: '0.7.1', api_version: 1 }),
+          }, keys.privateKey);
+          await fs.mkdir(path.join(dir, 'lib'), { recursive: true, mode: 0o700 });
+          await fs.writeFile(path.join(dir, 'lib/extra.uc'), 'sneaky', { mode: 0o600 });
+        },
+      },
+      {
+        name: 'symlink inside overlay',
+        reason: 'symlink_disallowed',
+        setup: async (cRoot, oRoot) => {
+          const dir = await writeOverlay(oRoot, 'events', {
+            'manifest.json': JSON.stringify({ schema: 'opl-netfleet-service-plugin.v1', id: 'events', version: '0.7.1', api_version: 1 }),
+          }, keys.privateKey);
+          await fs.symlink('/etc/hosts', path.join(dir, 'lib-link'));
+        },
+      },
+      {
+        name: 'path traversal in envelope',
+        reason: 'invalid_signature_envelope',
+        setup: async (cRoot, oRoot) => {
+          await writeOverlay(oRoot, 'events', {
+            'manifest.json': JSON.stringify({ schema: 'opl-netfleet-service-plugin.v1', id: 'events', version: '0.7.1', api_version: 1 }),
+          }, keys.privateKey, { envelopePatch: { files: [{ path: '../escape.uc', sha256: sha('x') }] } });
+        },
+      },
+      {
+        name: 'unknown plugin id',
+        id: 'unknown-plugin',
+        reason: 'unknown_plugin_id',
+        setup: async (cRoot, oRoot) => {
+          await writeOverlay(oRoot, 'unknown-plugin', {
+            'manifest.json': JSON.stringify({ schema: 'opl-netfleet-service-plugin.v1', id: 'unknown-plugin', version: '0.7.1', api_version: 1 }),
+          }, keys.privateKey);
+        },
+      },
+      {
+        name: 'platform-macos disallowed',
+        id: 'platform-macos',
+        reason: 'platform_plugin_disallowed',
+        setup: async (cRoot, oRoot) => {
+          await seedBundled(cRoot, 'platform-macos', '0.7.0');
+          await writeOverlay(oRoot, 'platform-macos', {
+            'manifest.json': JSON.stringify({ schema: 'opl-netfleet-service-plugin.v1', id: 'platform-macos', version: '0.7.1', api_version: 1 }),
+          }, keys.privateKey);
+        },
+      },
+      {
+        name: 'downgrade or equal version rejected',
+        reason: 'downgrade_rejected',
+        setup: async (cRoot, oRoot) => {
+          await writeOverlay(oRoot, 'events', {
+            'lib/control.uc': 'downgrade',
+            'manifest.json': JSON.stringify({ schema: 'opl-netfleet-service-plugin.v1', id: 'events', version: '0.7.0', api_version: 1 }),
+          }, keys.privateKey, { version: '0.7.0' });
+        },
+      },
+    ];
+
+    for (let i = 0; i < negCases.length; i++) {
+      const testCase = negCases[i];
+      const cRoot = path.join(root, `neg-code-${i}`);
+      const oRoot = path.join(root, `neg-overlay-${i}`);
+      await fs.mkdir(oRoot, { mode: 0o700 });
+      await seedBundled(cRoot, 'events', '0.7.0');
+      await testCase.setup(cRoot, oRoot);
+      const outcome = await applySignedPluginOverlays({ overlayRoot: oRoot, codeRoot: cRoot, publicKeyBase64: keys.publicKeyB64 });
+      assert.deepEqual(outcome.applied, [], `${testCase.name}: must not apply`);
+      assert.deepEqual(outcome.rejected, [{ id: testCase.id ?? 'events', reason: testCase.reason }], testCase.name);
+      assert.equal(await fs.readFile(path.join(cRoot, 'plugins/events/lib/control.uc'), 'utf8'), 'bundled-impl', testCase.name);
+    }
+
+    // 3. End-to-end test with scripts/macos/sign-plugin-overlay.py
+    const pyCode = path.join(root, 'py-code');
+    const pyOverlay = path.join(root, 'py-overlay');
+    const pySrc = path.join(root, 'py-src');
+    await seedBundled(pyCode, 'events', '0.7.0');
+    await fs.mkdir(path.join(pySrc, 'lib'), { recursive: true });
+    await fs.writeFile(path.join(pySrc, 'manifest.json'), JSON.stringify({
+      schema: 'opl-netfleet-service-plugin.v1', id: 'events', version: '0.7.2', api_version: 1,
+    }));
+    await fs.writeFile(path.join(pySrc, 'lib/control.uc'), 'signed-by-python-cli');
+    await execFileAsync('python3', [
+      path.resolve('scripts/macos/sign-plugin-overlay.py'),
+      '--plugin-dir', pySrc,
+      '--output-dir', path.join(pyOverlay, 'events'),
+    ], { env: { ...process.env, SPARKLE_ED25519_PRIVATE_KEY: keys.privateSeedB64 } });
+    const pyResult = await applySignedPluginOverlays({ overlayRoot: pyOverlay, codeRoot: pyCode, publicKeyBase64: keys.publicKeyB64 });
+    assert.deepEqual(pyResult, { applied: [{ id: 'events', version: '0.7.2', bundled_version: '0.7.0' }], rejected: [] });
+    assert.equal(await fs.readFile(path.join(pyCode, 'plugins/events/lib/control.uc'), 'utf8'), 'signed-by-python-cli');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

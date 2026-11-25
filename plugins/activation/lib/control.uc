@@ -21,6 +21,7 @@ const running = context.use("mihomo.backend").running;
 const test_profile = context.use("mihomo.controller").test_profile;
 const proxies = context.use("mihomo.controller").proxies;
 const controller_ready = context.use("mihomo.controller").controller_ready;
+const controller_select = context.use("mihomo.controller").select;
 const measure_providers = context.use("mihomo.latency").measure_providers;
 const capture_previous_choice = context.use("mihomo.paths").capture_previous_choice;
 const wait_for_group_member = context.use("mihomo.paths").wait_for_group_member;
@@ -187,6 +188,11 @@ enable_action = function(policy, evidence, quiet, report, replacing_active) {
 				initial_choice: first_choice,
 				user_choice: user_choice
 			});
+		}
+		if (entry.mode == "automatic" && type(entry.selector_name) == "string") {
+			const remembered = evidence?.capabilities?.[capability]?.selected_group;
+			if (type(remembered) == "string" && length(filter(entry.candidate_groups ?? [], item => item.group == remembered)) > 0)
+				controller_select(secret, entry.selector_name, remembered);
 		}
 		selections[capability] = {
 			mode: entry.mode,

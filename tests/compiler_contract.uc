@@ -270,14 +270,15 @@ if (!result.ok || sprintf("%J", result.profile?.dns) != sprintf("%J", profile.dn
 		groups["常规出口"]?.proxies?.[1] != "常规出口 · 🇯🇵 日本" ||
 		groups["常规出口"]?.proxies?.[3] != "DIRECT" ||
 		length(groups["常规出口"]?.proxies ?? []) != 4 ||
-		groups["常规出口 · 自动选优"]?.proxies?.[0] != "常规出口 · 代理路径" ||
-		groups["常规出口 · 自动选优"]?.proxies?.[1] != "NetFleet · 直连护栏" ||
+		groups["常规出口 · 代理路径"] != null ||
+		groups["AI 出口 · 代理路径"] != null ||
+		groups["常规出口 · 自动选优"]?.proxies?.[0] != "常规出口 · 当前优选" ||
+		groups["常规出口 · 自动选优"]?.proxies?.[1] != "常规出口 · 主用机场" ||
+		groups["常规出口 · 自动选优"]?.proxies?.[2] != "常规出口 · 备用机场" ||
+		groups["常规出口 · 自动选优"]?.proxies?.[3] != "NetFleet · 直连护栏" ||
+		length(groups["常规出口 · 自动选优"]?.proxies ?? []) != 4 ||
 		groups["常规出口 · 自动选优"]?.url != "https://guard.example.invalid" ||
 		groups["常规出口 · 自动选优"]?.["expected-status"] != 204 ||
-		groups["常规出口 · 代理路径"]?.proxies?.[0] != "常规出口 · 当前优选" ||
-		groups["常规出口 · 代理路径"]?.proxies?.[1] != "常规出口 · 主用机场" ||
-		groups["常规出口 · 代理路径"]?.proxies?.[2] != "常规出口 · 备用机场" ||
-		length(groups["常规出口 · 代理路径"]?.proxies ?? []) != 3 ||
 		groups["常规出口 · 主用机场"]?.proxies?.[0] != "常规出口 · Alpha机场" ||
 		groups["常规出口 · 备用机场"]?.proxies?.[0] != "常规出口 · Backup机场" ||
 		length(result.manifest.generated_groups.standard.fail_open_stages ?? []) != 4 ||
@@ -285,15 +286,16 @@ if (!result.ok || sprintf("%J", result.profile?.dns) != sprintf("%J", profile.dn
 		result.manifest.generated_groups.standard.fail_open_stages?.[2]?.role != "reserve" ||
 		result.manifest.generated_groups.standard.fail_open_stages?.[3]?.group != "NetFleet · 直连护栏" ||
 		result.manifest.generated_groups.standard.direct_guard_name != "NetFleet · 直连护栏" ||
-		groups["常规出口 · 代理路径"]?.url != "https://path.example.invalid" ||
 		groups["常规出口 · Alpha机场"]?.url != "https://path.example.invalid" ||
 		groups["常规出口 · 🇯🇵 日本 · Alpha机场"]?.url != "https://www.gstatic.com/generate_204" ||
 	groups["常规出口 · 🇯🇵 日本"]?.proxies?.[0] != "常规出口 · 🇯🇵 日本 · 主用" ||
 		groups["常规出口 · 🇯🇵 日本"]?.proxies?.[1] != "常规出口 · 🇯🇵 日本 · 备用" ||
 		groups["常规出口 · 🇯🇵 日本"]?.proxies?.[2] != "NetFleet · 直连护栏" ||
-		groups["AI 出口 · 代理路径"]?.proxies?.[1] != "AI 出口 · 主用机场" ||
-		groups["AI 出口 · 代理路径"]?.proxies?.[2] != "AI 出口 · 备用机场" ||
-		length(groups["AI 出口 · 代理路径"]?.proxies ?? []) != 3 ||
+		groups["AI 出口 · 自动选优"]?.proxies?.[0] != "AI 出口 · 当前优选" ||
+		groups["AI 出口 · 自动选优"]?.proxies?.[1] != "AI 出口 · 主用机场" ||
+		groups["AI 出口 · 自动选优"]?.proxies?.[2] != "AI 出口 · 备用机场" ||
+		groups["AI 出口 · 自动选优"]?.proxies?.[3] != "NetFleet · 直连护栏" ||
+		length(groups["AI 出口 · 自动选优"]?.proxies ?? []) != 4 ||
 		groups["AI 出口"]?.proxies?.[0] != "AI 出口 · 自动选优" ||
 		groups["AI 出口"]?.proxies?.[1] != "常规出口 · 🇯🇵 日本" ||
 		groups["AI 出口"]?.proxies?.[2] != "DIRECT" ||
@@ -315,13 +317,13 @@ if (!result.ok || sprintf("%J", result.profile?.dns) != sprintf("%J", profile.dn
 	groups["常规出口 · 🇯🇵 日本 · 主用"]?.lazy != true ||
 	groups["常规出口 · 🇯🇵 日本"]?.["max-failed-times"] != 6 ||
 	groups["常规出口 · 主用机场"]?.interval != 300 ||
-	groups["常规出口 · 主用机场"]?.lazy != false ||
+	groups["常规出口 · 主用机场"]?.lazy != true ||
 	groups["AI 出口 · 主用机场"]?.interval != 300 ||
-	groups["AI 出口 · 主用机场"]?.lazy != false ||
-	groups["常规出口 · 代理路径"]?.lazy != false ||
-	groups["AI 出口 · 代理路径"]?.lazy != false ||
-	groups["常规出口 · 自动选优"]?.["max-failed-times"] != 8 ||
-	groups["AI 出口 · 自动选优"]?.["max-failed-times"] != 8 ||
+	groups["AI 出口 · 主用机场"]?.lazy != true ||
+	groups["常规出口 · 自动选优"]?.lazy != true ||
+	groups["AI 出口 · 自动选优"]?.lazy != true ||
+	groups["常规出口 · 自动选优"]?.["max-failed-times"] != 2 ||
+	groups["AI 出口 · 自动选优"]?.["max-failed-times"] != 2 ||
 	("cache" in result.manifest.generated_groups.standard.providers.alpha)) {
 	print("multi_capability_compiler_failed\n");
 	exit(1);
@@ -622,13 +624,15 @@ if (primary_only_groups["常规出口 · 🇯🇵 日本 · Alpha机场"]?.inter
 	primary_only_groups["常规出口 · 🇯🇵 日本 · 主用"]?.lazy != true ||
 	primary_only_groups["常规出口 · 🇯🇵 日本"]?.["max-failed-times"] != 4 ||
 	primary_only_groups["常规出口 · 主用机场"]?.interval != 30 ||
-	primary_only_groups["常规出口 · 主用机场"]?.lazy != false ||
+	primary_only_groups["常规出口 · 主用机场"]?.lazy != true ||
 	primary_only_groups["AI 出口 · 主用机场"]?.interval != 30 ||
-	primary_only_groups["AI 出口 · 主用机场"]?.lazy != false ||
-	primary_only_groups["常规出口 · 代理路径"]?.lazy != false ||
-	primary_only_groups["AI 出口 · 代理路径"]?.lazy != false ||
-	primary_only_groups["常规出口 · 自动选优"]?.["max-failed-times"] != 6 ||
-	primary_only_groups["AI 出口 · 自动选优"]?.["max-failed-times"] != 6) {
+	primary_only_groups["AI 出口 · 主用机场"]?.lazy != true ||
+	primary_only_groups["常规出口 · 代理路径"] != null ||
+	primary_only_groups["AI 出口 · 代理路径"] != null ||
+	primary_only_groups["常规出口 · 自动选优"]?.lazy != true ||
+	primary_only_groups["AI 出口 · 自动选优"]?.lazy != true ||
+	primary_only_groups["常规出口 · 自动选优"]?.["max-failed-times"] != 2 ||
+	primary_only_groups["AI 出口 · 自动选优"]?.["max-failed-times"] != 2) {
 	die("primary-only fail-open timing mismatch");
 }
 
@@ -648,10 +652,35 @@ const manual_groups = {};
 for (let group in manual_result.profile["proxy-groups"]) manual_groups[group.name] = group;
 if (manual_groups["常规出口 · Alpha机场"]?.lazy != true ||
 	manual_groups["常规出口 · 主用机场"]?.lazy != true ||
-	manual_groups["常规出口 · 代理路径"]?.lazy != true ||
+	manual_groups["常规出口 · 代理路径"] != null ||
+	manual_groups["常规出口 · 自动选优"] != null ||
 	manual_groups["常规出口 · Alpha机场"]?.interval != 300 ||
 	manual_groups["常规出口 · 主用机场"]?.interval != 300) {
 	die("manual capability must keep standby groups lazy");
+}
+
+const multi_primary_policy = json(sprintf("%J", policy));
+multi_primary_policy.providers.alpha2 = { section: "alpha2", enabled: true, role: "primary" };
+multi_primary_policy.provider_regions.alpha2 = [{ region: "near", filter: "near" }];
+const multi_primary_providers = json(sprintf("%J", providers));
+multi_primary_providers.alpha2 = { path: "/tmp/alpha2.yaml", runtime_path: "/tmp/alpha2.yaml", display_name: "Alpha2机场", profile: { proxies: [{ name: "near-2" }] } };
+const mp_result = compile(profile, multi_primary_policy, "source", "recovery", "policy", multi_primary_providers);
+if (!mp_result.ok) die("multi-primary compilation failed");
+const mp_groups = {};
+for (let group in mp_result.profile["proxy-groups"]) mp_groups[group.name] = group;
+const mp_auto_members = mp_groups["AI 出口 · 自动选优"]?.proxies ?? [];
+if (mp_auto_members[0] != "AI 出口 · 当前优选" ||
+	mp_auto_members[1] != "AI 出口 · 主用机场" ||
+	mp_auto_members[2] != "AI 出口 · Alpha机场" ||
+	mp_auto_members[3] != "AI 出口 · Alpha2机场" ||
+	mp_auto_members[4] != "AI 出口 · 备用机场" ||
+	mp_auto_members[5] != "NetFleet · 直连护栏" ||
+	mp_groups["AI 出口 · 自动选优"]?.["max-failed-times"] != 2 ||
+	mp_groups["常规出口 · 🇯🇵 日本"]?.proxies?.[0] != "常规出口 · 🇯🇵 日本 · 主用" ||
+	mp_groups["常规出口 · 🇯🇵 日本"]?.proxies?.[1] != "常规出口 · 🇯🇵 日本 · Alpha机场" ||
+	mp_groups["常规出口 · 🇯🇵 日本"]?.proxies?.[2] != "常规出口 · 🇯🇵 日本 · Alpha2机场" ||
+	mp_groups["常规出口 · 🇯🇵 日本"]?.["max-failed-times"] != 6) {
+	die("multi-primary tier fallback ordering mismatch");
 }
 
 print("multi_capability_compiler_ok\n");
