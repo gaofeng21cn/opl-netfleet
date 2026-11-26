@@ -5,7 +5,7 @@
 
 ## 事件记录
 
-`/var/lib/opl-netfleet/events.json` 最多保存 1024 条 owner 事件；OpenWrt 的 `/var` 位于临时文件系统，不能承诺重启后保留。它不是 operation history 或选择输入。它记录 one-shot owner 已实际完成的 enable、select、disable 和 subscription refresh；refresh 事件只保存执行时间、聚合结果、机场总数/变化数/失败数、是否重载、调用来源，以及每个稳定 section 的 `result`/`digest`，不保存 URL、token、节点、cache 内容或完整配置。写入失败不改变数据面结果。调用来源只允许 owner 已知的 `luci|cli|deployer|supervisor`，未知入口如实记录 `unknown`，不能据进程或时间猜测。Mihomo 自主 health-check/fallback 继续写所选后端管理的 core log，NetFleet 日志页按需只读展示其中与 NetFleet 业务组或 `NETFLEET-` 相关的最近行；维护诊断按需读取 Mihomo 和核心服务最近的脱敏日志。两种日志展示都受设备日志缓冲与清理策略约束，不为捕捉每次叶子变化增加常驻监听器。
+`/var/lib/opl-netfleet/events.json` 最多保存 1024 条 owner 事件；OpenWrt 的 `/var` 位于临时文件系统，不能承诺重启后保留。它不是 operation history 或选择输入。它记录已完成的 enable、select、disable、subscription refresh，以及命令行和运行模式切换中已结束的 enable 失败。失败摘要在后续自动恢复时继续保留。refresh 事件保存执行时间、聚合结果、机场总数/变化数/失败数、是否重载、调用来源，以及每个稳定 section 的 `result`/`digest`。enable 失败只保存静态 error ID，以及可选阶段、能力、选择组/叶子、`data_path`、探针 ID、组、方法及可用的预期和实际 HTTP 状态、运行路径摘要和恢复结果；不保存 URL、token、节点配置、cache 内容、完整配置或核心原始日志。写入失败不改变数据面结果。调用来源只允许 owner 已知的 `luci|cli|deployer|supervisor`，无法确认时记录 `unknown`，不能据进程或时间猜测。Mihomo 自主 health-check/fallback 继续写所选后端管理的 core log，NetFleet 日志页按需只读展示其中与 NetFleet 业务组或 `NETFLEET-` 相关的最近行；维护诊断按需读取 Mihomo 和核心服务最近的脱敏日志。两种日志展示都受设备日志缓冲与清理策略约束，不为捕捉每次叶子变化增加常驻监听器。
 
 ## 存储与采样
 

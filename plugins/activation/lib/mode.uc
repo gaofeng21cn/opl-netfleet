@@ -11,6 +11,7 @@ return function(context) {
 	const recovery = context.use("recovery.control");
 	const recovery_state = context.use("recovery.state");
 	const output = context.use("events.output");
+	const record_enable_failure = context.use("events.record").record_enable_failure;
 	const operation = context.use("events.operation");
 	function get() {
 		const current = profile.current_profile(), running = backend.running();
@@ -121,6 +122,12 @@ return function(context) {
 			const result = { ...actual, recovery: recovered,
 				detail: { cause: attempt.detail, recovery_error: recovery_attempt.ok ? null : recovery_attempt.error } };
 			operation.finish(false, attempt.error, result);
+			if (request.mode == "netfleet" && type(record_enable_failure) == "function")
+				record_enable_failure(attempt.error, attempt.detail, null, {
+					ok: recovered != "failed",
+					mode: recovered,
+					reason: recovery_attempt.ok ? null : recovery_attempt.error
+				});
 			return { ok: false, error: attempt.error, result };
 		}
 	};

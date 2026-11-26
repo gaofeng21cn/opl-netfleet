@@ -2448,7 +2448,7 @@ test('native luci uses display cache then revalidates once', async () => {
   page.currentView = 'events';
   page.redraw();
   const eventPageText = nodeText(findNode(root, node => node.attrs.class === 'netfleet-page-content'));
-  assert(eventPageText.includes('选路事件') && !eventPageText.includes('Mihomo 原始日志') && !eventPageText.includes('当前活动连接'));
+  assert(eventPageText.includes('操作与选路事件') && !eventPageText.includes('Mihomo 原始日志') && !eventPageText.includes('当前活动连接'));
   page.diagnosticSection = 'core'; page.redraw();
   const diagnosticMetrics = findNode(findNode(root, node => node.attrs.class === 'netfleet-page-content'), node => node.tag === 'div' && String(node.attrs.class || '') === 'netfleet-metrics');
   assert(diagnosticMetrics && diagnosticMetrics.children.length === 4);

@@ -1034,12 +1034,17 @@ function displayEventName(events, kind, id) {
 
 function latestDecision(events) {
 	return events.reduce(function(latest, event) {
-		return ['enable', 'select', 'disable'].indexOf(event.action) >= 0 &&
+		return ['enable', 'select', 'disable'].indexOf(event.action) >= 0 && !isFailedEvent(event) &&
 			(!latest || Number(event.at) >= Number(latest.at)) ? event : latest;
 	}, null);
 }
 
+function isFailedEvent(event) {
+	return event.action === 'enable' && event.ok === false;
+}
+
 function eventResult(events, event) {
+	if (isFailedEvent(event)) return '操作失败';
 	if (event.action === 'refresh') {
 		if (event.reason === 'rollback_restored') return '更新未生效，已恢复更新前状态';
 		return finite(event.changed_count) && finite(event.failed_count)
@@ -1057,6 +1062,47 @@ function eventDelay(event) {
 }
 
 function eventReason(status, event) {
+	if (isFailedEvent(event)) {
+		const failure = event.failure_detail || {};
+		const error = event.error || failure.stage || event.reason || 'operation_failed';
+		const errorNames = {
+			preferred_path_unavailable: '首选路径不可用',
+			protected_probe_failed: '保护探针未通过',
+			selected_business_path_probe_failed: '选中路径的业务探针未通过',
+			rollback_failed: '回滚失败',
+			owner_readback_failed: '运行状态回读失败'
+		};
+		const parts = [ (errorNames[error] || '操作失败') + '（' + error + '）' ];
+		if (failure.stage && failure.stage !== error) parts.push('失败阶段 ' + failure.stage);
+		if (failure.selected_group) parts.push('候选组 ' + failure.selected_group);
+		if (failure.leaf) parts.push('候选节点 ' + failure.leaf);
+		if (failure.probe) {
+			const probe = [ failure.probe, failure.probe_group, failure.method ].filter(Boolean).join(' / ');
+			const expected = failure.expected_status == null ? '' : '，预期 ' + failure.expected_status;
+			const actual = failure.actual_status === 0 ? '，未收到 HTTP 响应' :
+				failure.actual_status == null ? '' : '，返回 ' + failure.actual_status;
+			parts.push('探针 ' + probe + expected + actual);
+		}
+		const runtime = failure.runtime;
+		if (runtime) {
+			const path = (runtime.path || []).filter(Boolean).join(' → ');
+			const state = [
+				runtime.data_path && 'data_path=' + runtime.data_path,
+				path && '路径 ' + path,
+				runtime.alive === false && '路径未验证为可用'
+			].filter(Boolean).join('，');
+			if (state) parts.push('运行态 ' + state);
+		} else if (failure.data_path) {
+			parts.push('data_path=' + failure.data_path);
+		}
+		if (failure.recovery && failure.recovery.ok === true) {
+			const recoveryLabels = { direct: '已恢复网络直通', passthrough: '已恢复网络直通', native: '已恢复原生配置', native_profile: '已恢复原生配置', unchanged: '运行模式未变更' };
+			parts.push(recoveryLabels[failure.recovery.mode] || '恢复已确认');
+		}
+		else if (failure.recovery && failure.recovery.ok === false)
+			parts.push('恢复未完成' + (failure.recovery.reason ? '（' + failure.recovery.reason + '）' : ''));
+		return parts.join('；');
+	}
 	if (event.reason === 'followed_capability_region') {
 		const capability = byId(status.capabilities, event.capability);
 		const parent = byId(status.capabilities, capability && capability.prefer_region_from);
@@ -1082,23 +1128,25 @@ function eventsPage(status, events, connections, connectionsLoading, connections
 	const pageCount = Math.max(1, Math.ceil(orderedEvents.length / EVENTS_PAGE_SIZE));
 	const currentPage = Math.min(Math.max(0, requestedPage || 0), pageCount - 1);
 	const eventRows = orderedEvents.slice(currentPage * EVENTS_PAGE_SIZE, (currentPage + 1) * EVENTS_PAGE_SIZE).map(function(event) {
-		const action = event.action === 'select'
+		const action = isFailedEvent(event)
+			? '启用失败'
+			: event.action === 'select'
 			? (event.trigger === 'scheduled' ? '定期选优' : event.trigger === 'refresh' ? '订阅更新后选优' : '手动选优')
 				: ({ enable: '启用', refresh: '更新订阅', disable: '关闭' })[event.action] || text(event.action, '未提供');
-		const initiator = ({ luci: 'LuCI', cli: '命令行', deployer: '部署流程', supervisor: '后台选优' })[event.initiator] || text(event.initiator, '未提供');
+		const initiator = ({ luci: 'LuCI', cli: '命令行', deployer: '部署流程', supervisor: '后台调度', unknown: '未提供' })[event.initiator] || text(event.initiator, '未提供');
 		const result = eventResult(events, event);
 		return E('tr', {}, [
 			E('td', {}, finite(event.at) ? new Date(Number(event.at) * 1000).toLocaleString() : '未提供'),
 			E('td', {}, action), E('td', {}, initiator),
 			E('td', {}, displayEventName(events, 'capabilities', event.capability)),
 			E('td', {}, result), E('td', {}, eventDelay(event)),
-			E('td', {}, eventReason(status, event))
+			E('td', { 'class': 'nf-col-wide' }, eventReason(status, event))
 		]);
 	});
 	const diagnostics = [
 		[ '设备控制接口', status.runtime.controller_available ? '可读取' : '不可用' ],
 		[ '事件存储', events.store_valid === false ? '异常' : '有效' ],
-		[ '决策事件', String((events.events || []).length) + ' 条' ],
+		[ '操作与选路事件', String((events.events || []).length) + ' 条' ],
 		[ '当前连接', connectionsLoading ? '正在读取' : connectionsError ? '读取失败' : connections.count == null ? '尚未读取' : String((connections.connections || []).length) + ' 条' ]
 	];
 	const logRetention = events.core_lines_persistent === false ? '临时窗口' : '设备保留';
@@ -1134,7 +1182,7 @@ function eventsPage(status, events, connections, connectionsLoading, connections
 		' ',
 		E('button', nextAttrs, '下一页')
 	]);
-	const eventContent = [ simpleTable([ '时间', '操作', '来源', '出口', '结果', '延迟', '原因' ], eventRows, '暂无决策事件') ];
+	const eventContent = [ simpleTable([ '时间', '操作', '来源', '出口', '结果', '延迟', '原因' ], eventRows, '暂无操作或选路事件', 'netfleet-data-table netfleet-event-table') ];
 	if (orderedEvents.length > EVENTS_PAGE_SIZE)
 		eventContent.push(pagination);
 	const connectionContent = E('details', { 'class': 'netfleet-connection-details' }, [
@@ -1143,7 +1191,7 @@ function eventsPage(status, events, connections, connectionsLoading, connections
 		simpleTable([ '目标', '端口', '网络', '命中规则 / 规则集', '实际链路' ], connectionRows, connectionsLoading ? '正在读取当前活动连接…' : '当前没有活动连接', 'netfleet-connection-table')
 	]);
 	return [
-		section('选路事件', '只展示设备已确认完成的事件。', eventContent),
+		section('操作与选路事件', null, eventContent),
 		section('诊断状态', null, [
 			metricGrid(diagnostics),
 			E('div', { 'class': 'netfleet-diagnostic-note' }, [

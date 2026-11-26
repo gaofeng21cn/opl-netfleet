@@ -791,6 +791,12 @@
 	white-space: nowrap;
 }
 
+.netfleet-native .netfleet-event-table table.table td.nf-col-wide {
+	max-width: 420px;
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
 .netfleet-native .netfleet-provider-table table.table td > small {
 	display: block;
 	margin-top: 3px;

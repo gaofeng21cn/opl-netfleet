@@ -301,7 +301,7 @@ const productController = {
 				self.eventPage = page; self.redraw();
 			});
 			this.eventSections = sections;
-			const tabs = E('nav', { 'class': 'netfleet-subtabs', 'aria-label': '诊断分类' }, [['events', '选路记录'], ['website', '网站诊断'], ['core', '核心与日志']].map(function(item) {
+			const tabs = E('nav', { 'class': 'netfleet-subtabs', 'aria-label': '诊断分类' }, [['events', '操作与选路'], ['website', '网站诊断'], ['core', '核心与日志']].map(function(item) {
 				return E('button', { 'type': 'button', 'aria-current': self.diagnosticSection === item[0] ? 'page' : null, 'click': function() {
 					if (self.diagnosticSection === item[0]) return;
 					self.diagnosticSection = item[0];

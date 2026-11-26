@@ -299,6 +299,30 @@ export interface DecisionEvent {
   reason?: string;
   changed_count?: number;
   failed_count?: number;
+  ok?: boolean;
+  error?: string | null;
+  failure_detail?: {
+    stage?: string | null;
+    selected_group?: string | null;
+    leaf?: string | null;
+    data_path?: string | null;
+    probe?: string | null;
+    probe_group?: string | null;
+    method?: string | null;
+    expected_status?: number | null;
+    actual_status?: number | null;
+    runtime?: {
+      user_mode?: string | null;
+      data_path?: string | null;
+      selected_group?: string | null;
+      leaf?: string | null;
+      alive?: boolean | null;
+      preferred_group?: string | null;
+      preferred_leaf?: string | null;
+      path?: string[] | null;
+    } | null;
+    recovery?: { ok?: boolean; mode?: string | null; reason?: string | null } | null;
+  } | null;
 }
 
 export interface EventsSnapshot {

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { fixtureScenarios } from '../data/fixtures';
 import { OverviewDigest } from '../components/OverviewDigest';
 import { EventsView } from '../views/EventsView';
-import { eventDelay, eventResult, latestDecision } from './format';
+import { eventDelay, eventReason, eventResult, latestDecision } from './format';
 import type { DecisionEvent, EventsSnapshot } from '../types';
 
 const nativeSource = readFileSync(new URL('../../../plugins/product-ui/resources/product-views.js', import.meta.url), 'utf8');
@@ -15,10 +15,20 @@ const native = new Function('baseclass', 'E', nativeSource)(
 const status = fixtureScenarios.healthy.status;
 const route: DecisionEvent = { at: 100, action: 'select', trigger: 'refresh', capability: 'standard', region_id: 'japan', provider_id: 'alpha', delay_ms: 10, reason: 'current_region_fastest' };
 const refresh: DecisionEvent = { at: 101, action: 'refresh', reason: 'updated', changed_count: 3, failed_count: 0 };
-const snapshot: EventsSnapshot = { ...fixtureScenarios.healthy.events, events: [route, refresh] };
+const failedEnable: DecisionEvent = {
+  at: 102, action: 'enable', capability: 'standard', reason: 'preferred_path_unavailable', ok: false,
+  error: 'preferred_path_unavailable',
+  failure_detail: {
+    stage: 'preferred_path_unavailable', selected_group: 'JP', leaf: 'JP-Tokyo-02', data_path: 'unknown',
+    probe: 'path', probe_group: 'AUTO-PREFERRED', method: 'HEAD', expected_status: 204, actual_status: 0,
+    runtime: { data_path: 'unknown', alive: false, path: ['OUTBOUND', 'AUTO-PREFERRED', 'DIRECT'] },
+    recovery: { ok: true, mode: 'native_profile' },
+  },
+};
+const snapshot: EventsSnapshot = { ...fixtureScenarios.healthy.events, events: [route, failedEnable, refresh] };
 
 describe.each([
-  ['React', { latestDecision, eventResult, eventDelay }],
+  ['React', { latestDecision, eventResult, eventDelay, eventReason }],
   ['LuCI', native],
 ] as const)('%s 事件语义', (_name, surface) => {
   it('订阅摘要不覆盖最近选路，同秒按最后写入取值', () => {
@@ -27,6 +37,7 @@ describe.each([
     expect(surface.latestDecision([route, second, refresh])).toEqual(second);
     expect(surface.latestDecision([refresh])).toBeNull();
     expect(surface.latestDecision([])).toBeNull();
+    expect(surface.latestDecision([route, failedEnable])).toEqual(route);
   });
   it('更新缺少路由和延迟不是恢复原生或测量失败', () => {
     expect(surface.eventResult(snapshot, refresh)).toBe('更新 3 个机场，失败 0 个');
@@ -43,6 +54,14 @@ describe.each([
     expect(surface.eventDelay(restored)).toBe('不适用');
     expect(surface.eventResult(snapshot, { ...restored, reason: 'native_restore_failed_passthrough' })).toBe('已恢复网络直通');
   });
+
+  it('失败事件保留阶段诊断但不覆盖最近成功决策', () => {
+    expect(surface.eventResult(snapshot, failedEnable)).toBe('操作失败');
+    expect(surface.eventReason(status, failedEnable)).toContain('首选路径不可用（preferred_path_unavailable）');
+    expect(surface.eventReason(status, failedEnable)).toContain('探针 path / AUTO-PREFERRED / HEAD，预期 204，未收到 HTTP 响应');
+    expect(surface.eventReason(status, failedEnable)).toContain('路径 OUTBOUND → AUTO-PREFERRED → DIRECT，路径未验证为可用');
+    expect(surface.eventReason(status, failedEnable)).toContain('已恢复原生配置');
+  });
 });
 
 it('React 与 LuCI 的概览及事件真实渲染使用事件类型', () => {
@@ -55,6 +74,7 @@ it('React 与 LuCI 的概览及事件真实渲染使用事件类型', () => {
     expect(output).toContain('当前地区仍为最快');
     expect(output).not.toContain('订阅更新完成并重载');
     expect(output).not.toContain('Nikki 原生配置');
+    expect(output).not.toContain('首选路径不可用');
   }
   const eventPages = [
     renderToStaticMarkup(<EventsView status={status} snapshot={snapshot} connections={{ connections: [], count: 0, truncated: false }} connectionsLoading={false} />),
@@ -65,5 +85,7 @@ it('React 与 LuCI 的概览及事件真实渲染使用事件类型', () => {
     expect(output).toContain('订阅更新后选优');
     expect(output).toContain('不适用');
     expect(output).not.toContain('Nikki 原生配置');
+    expect(output).toContain('启用失败');
+    expect(output).toContain('首选路径不可用（preferred_path_unavailable）');
   }
 });

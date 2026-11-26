@@ -6,6 +6,7 @@ let ok, fail;
 let capture_failure = null;
 
 const finish = context.use("events.operation").finish;
+const record_enable_failure = context.use("events.record").record_enable_failure;
 
 ok = function(action, data) {
 	if (action == "refresh" || action == "subscriptions-refresh" || action == "select") {
@@ -17,6 +18,8 @@ ok = function(action, data) {
 
 fail = function(action, error, detail) {
 	if (capture_failure != null) capture_failure({ ok: false, action, error, detail: detail ?? null });
+	if (action == "enable" && index(["enable", "resume"], context.argv?.[0]) >= 0)
+		record_enable_failure(error, detail, context.argv[1]);
 	finish(false, error, detail);
 	print({ ok: false, action: action, error: error, detail: detail ?? null });
 	exit(1);

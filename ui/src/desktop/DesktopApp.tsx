@@ -183,8 +183,8 @@ export function DesktopApp({ client }: { client: DesktopNetFleetClient }) {
       {view === 'regions' && (status ? <RegionTable snapshot={status} full onChooseRegion={region => setSelection({ region })} blockedReason={selectionBlocked} /> : <p className="nf-empty">添加订阅并完成准备后，这里显示已识别地区。</p>)}
       <div hidden={view !== 'config'}><DesktopConfiguration snapshot={snapshot} disabled={blocked} client={client} run={run} onManageSubscriptions={() => { navigate('providers'); setShowSubscriptions(true); }} /></div>
       <div hidden={view !== 'events'}>
-        <nav className="nf-subtabs" aria-label="诊断分类">{([['events', '选路记录'], ['connections', '当前连接'], ['logs', '核心日志']] as const).map(([id, label]) => <button type="button" key={id} aria-current={diagnostic === id ? 'page' : undefined} onClick={() => setDiagnostic(id)}>{label}</button>)}</nav>
-        <div hidden={diagnostic !== 'events'}>{status ? <EventsView sections={['events']} snapshot={snapshot.events || { events: [] }} status={status} connections={{ connections: [], count: 0, truncated: false }} connectionsLoading={false} stale={!connected} /> : <p className="nf-empty">暂无选路记录，启用后会记录实际结果。</p>}</div>
+        <nav className="nf-subtabs" aria-label="诊断分类">{([['events', '操作与选路'], ['connections', '当前连接'], ['logs', '核心日志']] as const).map(([id, label]) => <button type="button" key={id} aria-current={diagnostic === id ? 'page' : undefined} onClick={() => setDiagnostic(id)}>{label}</button>)}</nav>
+        <div hidden={diagnostic !== 'events'}>{status ? <EventsView sections={['events']} snapshot={snapshot.events || { events: [] }} status={status} connections={{ connections: [], count: 0, truncated: false }} connectionsLoading={false} stale={!connected} /> : <p className="nf-empty">暂无操作或选路记录。</p>}</div>
         <div hidden={diagnostic !== 'connections'}><DesktopTools section="connections" snapshot={snapshot} disabled={blocked} client={client} run={run} /></div>
         <div hidden={diagnostic !== 'logs'}><DesktopTools section="logs" snapshot={snapshot} disabled={blocked} client={client} run={run} /></div>
       </div>

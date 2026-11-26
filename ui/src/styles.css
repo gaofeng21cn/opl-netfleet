@@ -253,6 +253,7 @@
 .nf-table-wrap tr:last-child td { border-bottom: 0; }
 .nf-table-wrap tbody tr:hover { background: #f8f9fa; }
 .nf-table-wrap tr.is-selected { background: var(--nf-accent-soft); }
+.nf-event-table td.nf-col-wide { white-space: normal; overflow-wrap: anywhere; }
 .nf-table-name { font-weight: 650; }
 .nf-table-wrap td small { margin-left: 8px; color: var(--nf-accent); font-size: 9px; }
 .nf-provider-table td > small { display: block; margin: 3px 0 0; color: var(--nf-muted); font-size: 10px; }

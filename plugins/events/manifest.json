@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "events",
   "label": "Events and operations",
-  "version": "0.7.9",
+  "version": "0.7.10",
   "api_version": 1,
   "package": "opl-netfleet-plugin-events",
   "services": {
@@ -33,7 +33,8 @@
       "version": 1,
       "module": "lib/output.uc",
       "requires": {
-        "events.operation": 1
+        "events.operation": 1,
+        "events.record": 1
       }
     },
     "events.record": {

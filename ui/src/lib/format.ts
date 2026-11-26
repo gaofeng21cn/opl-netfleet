@@ -173,12 +173,17 @@ export const displayEventName = (
   return kind === 'regions' ? regionalDisplayName(value) : value;
 };
 
+export function isFailedEvent(event: DecisionEvent): boolean {
+  return event.action === 'enable' && event.ok === false;
+}
+
 export function latestDecision(events: DecisionEvent[]): DecisionEvent | null {
   return events.reduce<DecisionEvent | null>((latest, event) =>
-    ['enable', 'select', 'disable'].includes(event.action) && (!latest || event.at >= latest.at) ? event : latest, null);
+    ['enable', 'select', 'disable'].includes(event.action) && !isFailedEvent(event) && (!latest || event.at >= latest.at) ? event : latest, null);
 }
 
 export function eventResult(snapshot: EventsSnapshot, event: DecisionEvent): string {
+  if (isFailedEvent(event)) return '操作失败';
   if (event.action === 'refresh') {
     if (event.reason === 'rollback_restored') return '更新未生效，已恢复更新前状态';
     return event.changed_count != null && event.failed_count != null
@@ -196,6 +201,49 @@ export const eventDelay = (event: DecisionEvent): string =>
   event.action === 'refresh' || event.action === 'disable' ? '不适用' : delay(event.delay_ms, '未记录');
 
 export function eventReason(status: StatusSnapshot, event: DecisionEvent): string {
+  if (isFailedEvent(event)) {
+    const failure = event.failure_detail;
+    const error = event.error || failure?.stage || event.reason || 'operation_failed';
+    const errorNames: Record<string, string> = {
+      preferred_path_unavailable: '首选路径不可用',
+      protected_probe_failed: '保护探针未通过',
+      selected_business_path_probe_failed: '选中路径的业务探针未通过',
+      rollback_failed: '回滚失败',
+      owner_readback_failed: '运行状态回读失败',
+    };
+    const parts = [`${errorNames[error] || '操作失败'}（${error}）`];
+    if (failure?.stage && failure.stage !== error) parts.push(`失败阶段 ${failure.stage}`);
+    if (failure?.selected_group) parts.push(`候选组 ${failure.selected_group}`);
+    if (failure?.leaf) parts.push(`候选节点 ${failure.leaf}`);
+    if (failure?.probe) {
+      const probe = [failure.probe, failure.probe_group, failure.method]
+        .filter(Boolean).join(' / ');
+      const expected = failure.expected_status == null ? '' : `，预期 ${failure.expected_status}`;
+      const actual = failure.actual_status === 0 ? '，未收到 HTTP 响应' :
+        failure.actual_status == null ? '' : `，返回 ${failure.actual_status}`;
+      parts.push(`探针 ${probe}${expected}${actual}`);
+    }
+    const runtime = failure?.runtime;
+    if (runtime) {
+      const path = runtime.path?.filter(Boolean).join(' → ');
+      const state = [
+        runtime.data_path && `data_path=${runtime.data_path}`,
+        path && `路径 ${path}`,
+        runtime.alive === false && '路径未验证为可用',
+      ]
+        .filter(Boolean).join('，');
+      if (state) parts.push(`运行态 ${state}`);
+    } else if (failure?.data_path) {
+      parts.push(`data_path=${failure.data_path}`);
+    }
+    if (failure?.recovery?.ok === true) {
+      const recoveryLabels: Record<string, string> = { direct: '已恢复网络直通', passthrough: '已恢复网络直通', native: '已恢复原生配置', native_profile: '已恢复原生配置', unchanged: '运行模式未变更' };
+      parts.push(recoveryLabels[failure.recovery.mode || ''] || '恢复已确认');
+    } else if (failure?.recovery?.ok === false) {
+      parts.push(`恢复未完成${failure.recovery.reason ? `（${failure.recovery.reason}）` : ''}`);
+    }
+    return parts.join('；');
+  }
   if (event.reason === 'followed_capability_region') {
     const capability = status.capabilities.find((item) => item.id === event.capability);
     const parent = status.capabilities.find((item) => item.id === capability?.prefer_region_from);

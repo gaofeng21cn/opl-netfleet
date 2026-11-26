@@ -98,7 +98,7 @@ function test_operating_mode() {
 	const operation = operation_factory(operation_context);
 	let phases = [], finished = 0;
 	const output = loadfile(root + "events/lib/output.uc")()({ use: () => ({ finish: () => { finished++; } }) });
-	let state, writes, starts, stops, compilation_error, activation_error, restore_error, cleanup_error, compatibility_error, policy;
+	let state, writes, starts, stops, compilation_error, activation_error, restore_error, cleanup_error, compatibility_error, policy, enable_failures;
 	function check(value, message) { if (!value) die(message); }
 	function reset(mode) {
 		state = { profile: mode == "netfleet" ? "file:OPL-NetFleet.json" : "subscription:original",
@@ -106,6 +106,7 @@ function test_operating_mode() {
 			supervisor: { installed: true, enabled: mode == "netfleet", running: mode == "netfleet" },
 			compatibility: { installed: false, enabled: false, running: false } };
 		writes = 0; starts = 0; stops = 0; phases = [];
+		enable_failures = [];
 		compilation_error = false; activation_error = false; restore_error = false; cleanup_error = false; compatibility_error = false;
 		policy = { recovery_profile: { ref: "subscription:recovery" } };
 	}
@@ -113,6 +114,7 @@ function test_operating_mode() {
 		"models.activation": model,
 		"events.output": output,
 		"events.operation": { ...operation, update: (phase, details) => { push(phases, phase); return operation.update(phase, details); } },
+		"events.record": { record_enable_failure: (...args) => { push(enable_failures, args); return true; } },
 		"platform.profile": {
 			current_profile: () => state.profile, backend_enabled: () => state.enabled,
 			set_backend_enabled: value => { writes++; state.enabled = value; return true; }
@@ -187,6 +189,9 @@ function test_operating_mode() {
 		const failed = mode.set({ mode: "netfleet", expected_mode: "mihomo" });
 		check(!failed.ok && failed.error == "fixture_activation_failure" && failed.result.mode == "mihomo" && finished == 0,
 			"nested CLI failure returns to mode owner for native recovery without exiting or printing");
+		check(length(enable_failures) == 1 && enable_failures[0][0] == "fixture_activation_failure" &&
+			enable_failures[0][1].stage == "switched" && enable_failures[0][3].ok == true &&
+			enable_failures[0][3].mode == "native", "failed mode activation records its stage after confirmed native recovery");
 		const persisted_failure = operation_factory(operation_context).get("mode");
 		check(persisted_failure.state == "failed" && persisted_failure.recovery == "native" &&
 			persisted_failure.actual_mode == "mihomo" && persisted_failure.requested_mode == "netfleet" &&

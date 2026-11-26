@@ -37,10 +37,82 @@ function test_events_model() {
 	if (!validate(store).ok || length(store.events) != EVENT_LIMIT || store.events[0].at != 10 ||
 		!validate(refreshed).ok || refreshed.events[length(refreshed.events) - 1].action != "refresh" ||
 		validate({ schema_version: 1, events: [{ at: 1, action: "unknown", reason: "x" }] }).ok ||
-		validate({ schema_version: 1, events: [{ at: 1, action: "disable", reason: "x", initiator: "guess" }] }).ok) {
+		validate({ schema_version: 1, events: [{ at: 1, action: "disable", reason: "x", initiator: "guess" }] }).ok ||
+		!validate({ schema_version: 1, events: [{ at: 1, action: "enable", reason: "preferred_path_unavailable", ok: false,
+			error: "preferred_path_unavailable", failure_detail: { stage: "preferred_path_unavailable", runtime: { path: ["OUTBOUND", "DIRECT"] } } }] }).ok ||
+		validate({ schema_version: 1, events: [{ at: 1, action: "enable", reason: "preferred_path_unavailable", ok: false,
+			error: "preferred_path_unavailable", failure_detail: { runtime: { path: ["https://private.invalid/?token=secret"] } } }] }).ok ||
+		!validate({ schema_version: 1, events: [{ at: 1, action: "enable", reason: "legacy_event" }] }).ok) {
 		print("events_contract_failed\n");
 		exit(1);
 	}
+}
+
+function test_failure_event_recording() {
+	const plugins_root = replace(sourcepath(), /[^/]+$/, "../plugins");
+	const model = loadfile(`${plugins_root}/events/lib/model.uc`)()({});
+	const factory = loadfile(`${plugins_root}/events/lib/record.uc`)();
+	let store = { schema_version: 1, events: [] };
+	const record = factory({ use: name => name == "events.model" ? model : {
+		read_events: () => store,
+		write_events: value => { store = value; return true; }
+	} });
+	const written = record.record_enable_failure("preferred_path_unavailable", {
+		capability: "standard",
+		selected_group: "candidate-jp",
+		activation: {
+			error: "preferred_path_unavailable",
+			probe: "path",
+			group: "AUTO-PREFERRED",
+			method: "HEAD",
+			expected_status: 204,
+			choice: "candidate-jp",
+			leaf: "JP-Tokyo-02",
+			data_path: "unknown",
+			probe_url: "https://probe.invalid/?token=private",
+			runtime: {
+				user_mode: "automatic",
+				data_path: "unknown",
+				selected_group: "DIRECT",
+				leaf: "DIRECT",
+				alive: true,
+				preferred_group: "candidate-jp",
+				preferred_leaf: "JP-Tokyo-02",
+				path: ["OUTBOUND", "AUTO-PREFERRED", "DIRECT"],
+				private_config: "do not persist"
+			}
+		},
+		recovery: { ok: true, mode: "native_profile", reason: "preferred_path_unavailable", profile: "/private/profile.json" }
+	}, "luci");
+	const event = store.events[0];
+	const serialized = sprintf("%J", event);
+	if (!written || event == null || event.ok != false || event.error != "preferred_path_unavailable" ||
+		event.initiator != "luci" || event.failure_detail?.probe != "path" ||
+		event.failure_detail?.runtime?.path[1] != "AUTO-PREFERRED" ||
+		event.failure_detail?.recovery?.ok != true ||
+		index(serialized, "https://") >= 0 || index(serialized, "token=private") >= 0 ||
+		index(serialized, "do not persist") >= 0 || index(serialized, "/private/profile.json") >= 0) {
+		print("failure_event_recording_failed\n");
+		exit(1);
+	}
+	assert(record.record_enable_failure("rollback_failed", {
+		details: { activation: { error: "protected_probe_failed", probes: {
+			probe: "guard", expected_status: "204", actual_status: "503"
+		} } },
+		recovery: { ok: false, reason: "cleanup_failed" }
+	}, "supervisor"));
+	const rollback = store.events[1];
+	assert(rollback.initiator == "supervisor" && rollback.failure_detail.stage == "protected_probe_failed" &&
+		rollback.failure_detail.expected_status == 204 && rollback.failure_detail.actual_status == 503 &&
+		rollback.failure_detail.recovery.ok == false, "retain the nested failure and rollback outcome");
+	const long_name = join("", map([0,1,2,3,4,5,6,7,8], _ => "东京首尔新加坡"));
+	assert(record.record_enable_failure("protected_probe_failed", {
+		activation: { choice: long_name, leaf: "?token=private", probes: { probe: "guard", actual_status: "000" } }
+	}, null));
+	const no_response = store.events[2];
+	assert(no_response.initiator == "unknown" && no_response.failure_detail.actual_status == 0 &&
+		no_response.failure_detail.selected_group == substr(long_name, 0, 159) && no_response.failure_detail.leaf == null,
+		"preserve UTF-8 and a missing HTTP response without retaining credentials");
 }
 
 function test_events_read() {
@@ -65,6 +137,7 @@ function test_events_read() {
 
 try {
 	test_events_model();
+	test_failure_event_recording();
 	test_events_read();
 } catch (error) {
 	release_services();
