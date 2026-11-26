@@ -173,18 +173,6 @@ jobs:
           OPL_NETFLEET_REQUIRE_SPARKLE_KEY_ENV=1 \
             scripts/macos/generate-appcast.sh "$DMG_PATH" "dist/appcast.xml"
 
-      - name: Seal the notarized candidate for VM qualification
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: netfleet-macos-${{ inputs.release_tag }}
-          path: |
-            source/dist/OPL-NetFleet-macos-arm64.dmg
-            source/dist/OPL-NetFleet-macos-arm64.dmg.sha256
-            source/dist/appcast.xml
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 7
-
       - name: Upload the small clean-VM test inputs
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -192,6 +180,7 @@ jobs:
           path: ${{ runner.temp }}/netfleet-macos-vm-inputs.tar.gz
           if-no-files-found: error
           compression-level: 0
+          overwrite: true
           retention-days: 7
 
       - name: Report the frozen identity and qualification handoff
@@ -210,6 +199,18 @@ jobs:
             echo
             echo 'Download the sealed candidate and the small test input archive from this run when a clean macOS VM is ready. The qualification needs no SDK or npm installation.'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Seal the notarized candidate for VM qualification
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: netfleet-macos-${{ inputs.release_tag }}
+          path: |
+            source/dist/OPL-NetFleet-macos-arm64.dmg
+            source/dist/OPL-NetFleet-macos-arm64.dmg.sha256
+            source/dist/appcast.xml
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
 
       - name: Remove temporary Apple credentials
         if: always()
