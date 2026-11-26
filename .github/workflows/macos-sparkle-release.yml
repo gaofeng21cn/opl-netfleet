@@ -1,10 +1,14 @@
-name: Release macOS Sparkle DMG
+name: Build macOS Sparkle DMG Candidate
 
 on:
   workflow_dispatch:
     inputs:
       release_tag:
         description: Product release tag (for example v0.9.25)
+        required: true
+        type: string
+      source_sha:
+        description: Full source commit SHA already on main
         required: true
         type: string
 
@@ -17,14 +21,13 @@ concurrency:
 
 jobs:
   build:
+    if: github.ref == 'refs/heads/main'
     runs-on: macos-15
     timeout-minutes: 60
     environment: release
     defaults:
       run:
         working-directory: source
-    outputs:
-      source: ${{ steps.preflight.outputs.source }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -33,7 +36,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: ${{ inputs.source_sha }}
           path: source
           fetch-depth: 0
           persist-credentials: false
@@ -46,14 +49,16 @@ jobs:
         with:
           bun-version: '1.4.0'
 
-      - name: Verify release tag and preflight public channels
-        id: preflight
+      - name: Verify candidate source and preflight public channels
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_SOURCE: ${{ inputs.source_sha }}
         run: |
           set -euo pipefail
           test "$(uname -m)" = arm64
+          test "$(git rev-parse HEAD)" = "$RELEASE_SOURCE"
+          git merge-base --is-ancestor "$RELEASE_SOURCE" refs/remotes/origin/main
           python3 - <<'PY'
           import json, os
           from pathlib import Path
@@ -62,7 +67,9 @@ jobs:
           PY
           python3 ../release-tools/scripts/macos/publish-sparkle-release.py \
             --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" --preflight desktop/app/Info.plist
-          printf 'source=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$RELEASE_SOURCE"
+          fi
 
       - name: Prepare build dependencies
         run: |
@@ -150,11 +157,12 @@ jobs:
           (cd dist && shasum -a 256 OPL-NetFleet-macos-arm64.dmg > OPL-NetFleet-macos-arm64.dmg.sha256)
 
           OPL_NETFLEET_RELEASE_TAG="$RELEASE_TAG" \
+          OPL_NETFLEET_REPOSITORY="$GITHUB_REPOSITORY" \
           OPL_NETFLEET_APP_PATH="$APP_PATH" \
           OPL_NETFLEET_REQUIRE_SPARKLE_KEY_ENV=1 \
             scripts/macos/generate-appcast.sh "$DMG_PATH" "dist/appcast.xml"
 
-      - name: Preserve sealed macOS artifacts for an exact-byte retry
+      - name: Seal the notarized candidate for VM qualification
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: netfleet-macos-${{ inputs.release_tag }}
@@ -171,27 +179,3 @@ jobs:
           if [[ -n "${NETFLEET_NOTARY_KEYCHAIN:-}" ]]; then
             security delete-keychain "$NETFLEET_NOTARY_KEYCHAIN" || true
           fi
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.workflow_sha }}
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          name: netfleet-macos-${{ inputs.release_tag }}
-          path: dist
-      - name: Publish versioned macOS assets and advance the stable appcast
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-          RELEASE_SOURCE: ${{ needs.build.outputs.source }}
-        run: |
-          python3 scripts/macos/publish-sparkle-release.py \
-            --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" --source "$RELEASE_SOURCE" --artifacts dist

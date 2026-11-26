@@ -73,8 +73,9 @@ spctl --assess --type open --context context:primary-signature --verbose=2 '.bui
 未完成。staple 改变 DMG 字节，最终验收另记录最终 SHA-256，不能沿用打包阶段摘要。
 
 冻结最终包后，在隔离的 arm64 macOS VM 内从 DMG 安装。保持 Gatekeeper 启用，以下载
-隔离属性验证首次启动；同时回读 app 签名、staple、包内源码身份与最终 DMG 摘要。
-VM 不安装开发工具，以包内 Node 运行资格脚本：
+隔离属性验证首次启动，同时回读 app 签名、staple、包内源码身份与最终 DMG 摘要。
+VM 无需开发工具。取候选对应源码的两份资格脚本及其依赖 `desktop/runtime/io.mjs`，保留相对目录结构，
+然后以包内 Node 运行：
 
 ```sh
 NETFLEET_TEST_APP='/Applications/OPL NetFleet.app' \
@@ -87,6 +88,10 @@ NETFLEET_TEST_APP='/Applications/OPL NetFleet.app' \
 资格脚本外另验收原生首次启动、订阅录入、六页关键交互、管理员授权、系统代理与 TUN
 实际转发，以及停止、退出、核心和 owner 崩溃后的网络恢复；还需覆盖旧版升级保留配置
 和退出后卸载。源代码或旧安装通过不能替代最终 DMG 的验收。
+
+上述检查均通过后，在私有回执中记录 `vm_qualified: true`、VM 中计算的最终 `dmg_sha256`，
+以及从本次安装的应用 `Contents/Resources/build.json` 读取的完整 `build` 对象。回执的三个字段按 JSON 格式保存，
+发布入口用它核对本次产物和源码身份。资格日志和订阅留在验收环境。
 
 ## 发布与更新验收
 

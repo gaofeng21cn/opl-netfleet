@@ -143,30 +143,39 @@ Release 并下载公开资产校验。本地执行 `scripts/publish-netfleet-rel
 ## macOS DMG 公开分发
 
 macOS 使用同一产品 `vX.Y.Z` tag，版本对应应用 `Info.plist`。旧 `macos-v` Release
-保留原资产；新的合格 DMG、`OPL-NetFleet-macos-arm64.dmg.sha256` 与 Ed25519 签名的
-`appcast.xml` 上传到同一产品 Release（可经 `.github/workflows/macos-sparkle-release.yml`
-或本地 `scripts/macos/package-dmg.py` + `scripts/macos/generate-appcast.sh` 生成），同时将
-`appcast.xml` 同步刷新到非 `latest` 的浮动 `macos-stable` Release，使 OpenWrt 独立发布不会打断 macOS Sparkle 更新源。
+保留原资产。发布入口将通过验收的 DMG、`OPL-NetFleet-macos-arm64.dmg.sha256` 和 Ed25519 签名的
+`appcast.xml` 追加到同一产品 Release，并将 `appcast.xml` 同步到非 `latest` 的浮动
+`macos-stable` Release，使 OpenWrt 独立发布不会打断 macOS Sparkle 更新源。
 应用内自更新由 Sparkle 2 验证 `appcast.xml` 的 Ed25519 签名与 Apple 代码签名/公证，
 确认安装前经由宿主标准退出路径停止核心并撤销网络接管。
 按[签名与 DMG](macos.md#签名与-dmg)构建、公证并冻结 arm64 DMG，完成最终包的隔离
 macOS VM 验收后才发布。应用签名、两次公证、最终 DMG 摘要、源码身份和 VM 结果分别
 回读；发布后下载公开资产并核对相同摘要。内部验收日志与订阅数据不进入 Release。
 
-手动运行 `.github/workflows/macos-sparkle-release.yml` 时传入 `release_tag=vX.Y.Z`。
-构建作业在 GitHub Environment `release` 使用 Apple Developer ID 的单身份 `.p12`、对应密码、
+从远端 `main` 手动运行 `.github/workflows/macos-sparkle-release.yml`，传入预定的
+`release_tag=vX.Y.Z` 和已进入 `main` 的完整 `source_sha`。可在创建 tag 和 Release 前生成候选，
+与 OpenWrt 包资格验证并行。
+工作流在 GitHub Environment `release` 使用 Apple Developer ID 的单身份 `.p12`、对应密码、
 公证账号与 App-Specific Password，以及应用的 `SPARKLE_ED25519_PRIVATE_KEY`。
-凭据名称见[签名与 DMG](macos.md#签名与-dmg)和工作流。
+构建前检查当前 `macos-stable` 及已有的目标 tag 和 Release。tag 指向其他源码或已有版本化 macOS 资产时停止构建。
+成功后工作流封存候选产物供隔离 VM 验收。凭据名称见[签名与 DMG](macos.md#签名与-dmg)和工作流。
 
-构建前检查目标 Release 和当前 `macos-stable`，遇到已存在的版本化 macOS 资产即停止构建。
-构建作业封存已签名公证的产物，发布作业再校验 tag 指向的源码和各资产的 SHA-256，仅追加缺失的
-DMG、`.sha256` 与 `appcast.xml`。发布中断时可重跑失败的发布作业，继续使用同一份封存产物。
-同名远端资产仅在摘要和大小都一致时接受。
+发布负责人从该次成功的 run 下载候选到空目录，按[隔离 VM 验收](macos.md#签名与-dmg)生成私有回执。
+产品 tag 与公开 Release 建立后，在本机串行执行发布。发布中断时用同一目录与回执重试。
+
+```sh
+gh run download <run-id> --repo gaofeng21cn/opl-netfleet --name netfleet-macos-vX.Y.Z --dir <candidate-dir>
+python3 scripts/macos/publish-sparkle-release.py --repo gaofeng21cn/opl-netfleet --tag vX.Y.Z \
+  --artifacts <candidate-dir> --qualification <vm-receipt.json>
+```
+
+发布脚本核对验收回执、DMG 摘要、应用构建号和 tag 所指的源码 commit/tree，再追加缺失的 DMG、
+`.sha256` 与 `appcast.xml`。同名远端资产仅在摘要和大小都一致时接受。
 
 浮动 `macos-stable` 在版本化资产均已回读后更新。推进要求 `sparkle:version`
 （`CFBundleVersion`）严格递增且 `sparkle:shortVersionString` 不回退，同一份 appcast
-允许幂等重跑。工作流先上传并验证候选 appcast，再切换资产名。两次改名之间公开更新地址可能
-短暂不可用，工作流保留上一份 appcast 并在切换失败后恢复。进程中断时，重跑发布作业会用
+允许幂等重跑。发布脚本先上传并验证候选 appcast，再切换资产名。两次改名之间公开更新地址可能
+短暂不可用，发布脚本保留上一份 appcast 并在切换失败后恢复。进程中断时，重试会用
 保留下来的 appcast 核对版本并继续切换。发布后读回两个 Release，核对版本化资产的公开摘要、
 原 OpenWrt Feed 资产与 `macos-stable` 的 enclosure URL、产品版本和构建号。
 

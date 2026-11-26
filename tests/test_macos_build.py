@@ -109,6 +109,7 @@ class MacOSBuildIdentityTests(unittest.TestCase):
 class MacOSReleaseTests(unittest.TestCase):
     repo = "example/project"
     source = "a" * 40
+    tree = "b" * 40
 
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -117,6 +118,18 @@ class MacOSReleaseTests(unittest.TestCase):
         self.tag = "v1.10.0"
         self.bundle = b"Sealed DMG"
         self.xml = self.appcast("1.10.0", 23)
+        self.qualification = {
+            "vm_qualified": True,
+            "dmg_sha256": hashlib.sha256(self.bundle).hexdigest(),
+            "build": {
+                "source_commit": self.source,
+                "source_tree": self.tree,
+                "channel": "distribution",
+                "working_tree_dirty": False,
+                "package_version": "1.10.0",
+                "package_release": "23",
+            },
+        }
         (self.directory / release.DMG).write_bytes(self.bundle)
         (self.directory / release.APPCAST).write_bytes(self.xml)
         (self.directory / (release.DMG + ".sha256")).write_text(
@@ -214,11 +227,33 @@ class MacOSReleaseTests(unittest.TestCase):
             self.mutations.append((method, name))
             return result()
         if args[1].endswith(f"/commits/{self.tag}"):
-            return result(response=(self.source + "\n").encode())
+            return result(response=f"{self.source}\n{self.tree}\n".encode())
         raise AssertionError(args)
 
     def publish(self):
-        release.publish(self.repo, self.tag, self.source, self.directory)
+        release.publish(self.repo, self.tag, self.directory, self.qualification)
+
+    def test_candidate_preflight_allows_a_release_that_has_not_been_created(self):
+        info = self.directory / "Info.plist"
+        info.write_bytes(plistlib.dumps({"CFBundleShortVersionString": "1.10.0", "CFBundleVersion": "23"}))
+        del self.releases[self.tag]
+        with patch.object(sys, "argv", ["publish", "--repo", self.repo, "--tag", self.tag, "--preflight", str(info)]):
+            release.main()
+        self.assertEqual(self.mutations, [])
+
+    def test_publication_requires_qualification_for_exact_dmg_and_source(self):
+        qualification = self.qualification
+        for changes, expected in [
+            ({"vm_qualified": False}, "qualification receipt is required"),
+            ({"dmg_sha256": "0" * 64}, "does not match the sealed DMG bytes"),
+            ({"build": {**qualification["build"], "package_release": "24"}}, "metadata does not match"),
+            ({"build": {**qualification["build"], "source_tree": "c" * 40}}, "source commit and tree"),
+        ]:
+            with self.subTest(changes=changes):
+                self.qualification = {**qualification, **changes}
+                with self.assertRaisesRegex(release.ReleaseError, expected):
+                    self.publish()
+                self.assertEqual(self.mutations, [])
 
     def test_partial_publish_retains_versioned_assets_and_reconciles_unknown_upload(self):
         self.put_asset(self.tag, release.DMG, self.bundle)

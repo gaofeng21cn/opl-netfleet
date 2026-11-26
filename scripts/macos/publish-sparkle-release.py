@@ -200,22 +200,42 @@ def promote(repo, source, appcast, candidate, xml):
         remove_previous(repo, assets[PREVIOUS])
 
 
-def publish(repo, tag, source, directory):
+def verify_qualification(receipt, bundle_hash, candidate):
+    build = receipt.get("build")
+    if receipt.get("vm_qualified") is not True or not isinstance(build, dict):
+        raise ReleaseError("An isolated macOS VM qualification receipt is required")
+    if receipt.get("dmg_sha256") != bundle_hash:
+        raise ReleaseError("VM qualification does not match the sealed DMG bytes")
+    if (
+        build.get("channel") != "distribution"
+        or build.get("working_tree_dirty") is not False
+        or stable_version(build.get("package_version"), build.get("package_release")) != candidate
+    ):
+        raise ReleaseError("Qualified app metadata does not match the sealed distribution candidate")
+    identity = [build.get("source_commit"), build.get("source_tree")]
+    if not all(isinstance(value, str) and re.fullmatch(r"[a-f0-9]{40}", value) for value in identity):
+        raise ReleaseError("Qualified app source commit and tree are required")
+    return identity
+
+
+def publish(repo, tag, directory, qualification):
     paths = {name: directory / name for name in VERSION_ASSETS}
     bundle = paths[DMG].read_bytes()
     xml = paths[APPCAST].read_bytes()
     candidate, length = appcast_version(xml, repo)
     if candidate[0] != stable_version(tag[1:], "1")[0] or length != len(bundle):
         raise ReleaseError("Sealed appcast does not match the selected release DMG")
-    if paths[DMG + ".sha256"].read_text().split() != [hashlib.sha256(bundle).hexdigest(), DMG]:
+    bundle_hash = hashlib.sha256(bundle).hexdigest()
+    if paths[DMG + ".sha256"].read_text().split() != [bundle_hash, DMG]:
         raise ReleaseError("Sealed DMG does not match its checksum")
+    source = verify_qualification(qualification, bundle_hash, candidate)
     identities = {name: (digest(data), len(data)) for name, data in (
         (DMG, bundle), (APPCAST, xml), (DMG + ".sha256", paths[DMG + ".sha256"].read_bytes()),
     )}
 
-    tag_commit = gh("api", f"repos/{repo}/commits/{tag}", "--jq", ".sha")
-    if tag_commit.returncode or tag_commit.stdout.strip() != source.encode():
-        raise ReleaseError("Release tag no longer matches the sealed macOS build")
+    tag_identity = gh("api", f"repos/{repo}/commits/{tag}", "--jq", "[.sha, .commit.tree.sha] | .[]")
+    if tag_identity.returncode or tag_identity.stdout.decode().split() != source:
+        raise ReleaseError("Release tag no longer matches the qualified macOS source commit and tree")
     assets = release_assets(repo, tag)
     check_stable(repo, candidate, xml)
     for name in VERSION_ASSETS:
@@ -227,7 +247,7 @@ def publish(repo, tag, source, directory):
     final = release_assets(repo, tag)
     if any(name not in final or not same_asset(final[name], identities[name]) for name in VERSION_ASSETS):
         raise ReleaseError("Published macOS asset readback differs from the sealed artifacts")
-    promote(repo, source, paths[APPCAST], candidate, xml)
+    promote(repo, source[0], paths[APPCAST], candidate, xml)
     print(f"Verified macOS release assets and public Sparkle feed for {tag}")
 
 
@@ -235,7 +255,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True)
     parser.add_argument("--tag", required=True)
-    parser.add_argument("--source")
+    parser.add_argument("--qualification", type=Path, metavar="VM_RECEIPT")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--preflight", type=Path, metavar="INFO_PLIST")
     group.add_argument("--artifacts", type=Path, metavar="DIRECTORY")
@@ -249,13 +269,17 @@ def main():
             candidate = stable_version(metadata.get("CFBundleShortVersionString"), metadata.get("CFBundleVersion"))
             if candidate[0] != target_version:
                 raise ReleaseError("Application product version does not match the release tag")
-            if set(VERSION_ASSETS) & release_assets(args.repo, args.tag).keys():
-                raise ReleaseError("Versioned macOS assets already exist. Retry the failed publish job with its sealed artifacts.")
+            published = release_assets(args.repo, args.tag, optional=True)
+            if published is not None and set(VERSION_ASSETS) & published.keys():
+                raise ReleaseError("Versioned macOS assets already exist. Retry publication with the same qualified artifacts.")
             check_stable(args.repo, candidate)
         else:
-            if not args.source or not re.fullmatch(r"[a-f0-9]{40}", args.source):
-                raise ReleaseError("Sealed macOS build needs a release source commit")
-            publish(args.repo, args.tag, args.source, args.artifacts)
+            if args.qualification is None:
+                raise ReleaseError("--artifacts requires a macOS VM --qualification receipt")
+            qualification = json.loads(args.qualification.read_text())
+            if not isinstance(qualification, dict):
+                raise ReleaseError("Invalid macOS VM qualification receipt")
+            publish(args.repo, args.tag, args.artifacts, qualification)
     except (OSError, TypeError, ValueError, ReleaseError) as error:
         parser.exit(1, f"{error}\n")
 
