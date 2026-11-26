@@ -17,6 +17,7 @@ Options:
   --test-ref <ref>  Use revised VM tests with identical product source
   --packages <dir>  Also install and qualify the exact APK candidate directory
   --diagnostic <lane>  Run native, setup, migration, runtime, package, or compatibility diagnostics
+  --release-lane <lane>  Run one isolated release lane (native, setup, migration, or package)
   --core-package <dir>  Qualify a same-binary core architecture variant against --base-qualification
   --compat-package <dir>  Signed optional APK candidate; requires --packages
   --base-qualification <file>  Reuse an unchanged qualified base for HTTPS diagnostics
@@ -37,6 +38,7 @@ source_ref=origin/main
 output=""
 packages=""
 diagnostic=all
+release_lane=""
 compat_package=""
 core_package=""
 plugin_packages=""
@@ -68,6 +70,12 @@ while (($#)); do
 			(($# >= 2)) || die "--diagnostic requires a lane"
 			diagnostic=$2
 			case "$diagnostic" in native|setup|migration|runtime|package|compatibility) ;; *) die "unknown diagnostic lane: $diagnostic" ;; esac
+			shift 2
+			;;
+		--release-lane)
+			(($# >= 2)) || die "--release-lane requires a lane"
+			release_lane=$2
+			case "$release_lane" in native|setup|migration|package) ;; *) die "unknown release lane: $release_lane" ;; esac
 			shift 2
 			;;
 		--core-package)
@@ -106,6 +114,13 @@ done
 [[ -z "$plugin_packages" || "$diagnostic" == all || "$diagnostic" == native ]] || die "plugin packages require the full suite or native diagnostic lane"
 [[ "$diagnostic" != package || -n "$packages" ]] || die "package diagnostic requires --packages"
 [[ "$diagnostic" == all || "$diagnostic" == package || "$diagnostic" == setup || "$diagnostic" == compatibility || -z "$packages" ]] || die "this diagnostic does not accept --packages"
+if [[ -n "$release_lane" ]]; then
+	[[ "$diagnostic" == all && -z "$test_ref$plugin_packages" ]] ||
+		die 'release lanes require the candidate source and cannot be combined with diagnostics or plugin tests'
+	[[ -n "$packages" && -n "${NETFLEET_VM_COMPONENT_FIXTURES:-}" ]] ||
+		die 'release lanes require the signed candidate and its sealed component fixtures'
+	diagnostic=$release_lane
+fi
 [[ "$source_ref" != -* ]] || die "source ref cannot begin with '-'"
 case "$(uname -s):$(uname -m)" in
   Darwin:arm64) qemu_accelerator=hvf; qemu_cpu=host ;;
@@ -211,6 +226,7 @@ fi
 
 package_archive=""
 package_manifest_sha=""
+release_fixture_sha=""
 base_identity=""
 device_identity=""
 if [[ -n "$packages" ]]; then
@@ -266,9 +282,16 @@ if (
 ):
     raise SystemExit("openwrt-vm: package candidate must be a noarch APK set built for aarch64_generic")
 PY
-	package_archive=$work_dir/package-candidate.tar
-	tar -cf "$package_archive" -C "$packages" .
 	package_manifest_sha=$(shasum -a 256 "$packages/manifest.json" | awk '{print $1}')
+	if [[ -n "$release_lane" ]]; then
+		python3 "$source_dir/scripts/openwrt-vm/component-fixtures.py" \
+			"$packages" "$NETFLEET_VM_COMPONENT_FIXTURES" --verify-existing
+		release_fixture_sha=$(shasum -a 256 "$NETFLEET_VM_COMPONENT_FIXTURES/fixture.json" | awk '{print $1}')
+	fi
+	if [[ "$release_lane" != native && "$release_lane" != migration ]]; then
+		package_archive=$work_dir/package-candidate.tar
+		tar -cf "$package_archive" -C "$packages" .
+	fi
 fi
 
 rm -f -- "$output_dir/$output_name"
@@ -285,6 +308,7 @@ NETFLEET_QEMU_VERSION=$qemu_version \
 NETFLEET_QEMU_ACCELERATOR=$qemu_accelerator \
 NETFLEET_QEMU_CPU=$qemu_cpu \
 	NETFLEET_VM_LANE=$diagnostic \
+	NETFLEET_VM_RELEASE_FIXTURE_SHA256="$release_fixture_sha" \
 	NETFLEET_COMPAT_PACKAGE="$compat_package" \
 	NETFLEET_COMPAT_BASE_IDENTITY="$base_identity" \
 	NETFLEET_COMPAT_DEVICE_IDENTITY="$device_identity" \
@@ -295,14 +319,20 @@ NETFLEET_QEMU_CPU=$qemu_cpu \
 	sh "$source_dir/scripts/openwrt-vm/qualify.sh"
 
 [[ -f "$output_dir/$output_name" ]] || die "qualification receipt was not produced"
-python3 - "$output_dir/$output_name" "$source_commit" "$source_tree" "$diagnostic" <<'PY'
+python3 - "$output_dir/$output_name" "$source_commit" "$source_tree" "$diagnostic" "$release_lane" <<'PY'
 import json
 from pathlib import Path
 import sys
 
 receipt = json.loads(Path(sys.argv[1]).read_text())
-passed = (receipt.get("diagnostic_passed") is True and receipt.get("qualified") is False
-          if sys.argv[4] != "all" else receipt.get("qualified") is True)
+if sys.argv[5]:
+    passed = (receipt.get("schema") == "opl-netfleet-openwrt-vm-release-lane.v1"
+              and receipt.get("release_lane") == sys.argv[5]
+              and receipt.get("qualified") is False)
+elif sys.argv[4] != "all":
+    passed = receipt.get("diagnostic_passed") is True and receipt.get("qualified") is False
+else:
+    passed = receipt.get("qualified") is True
 if not (
     passed
     and receipt.get("source_commit") == sys.argv[2]

@@ -1,5 +1,6 @@
 from pathlib import Path
 import ast
+import hashlib
 import http.client
 import http.server
 import importlib.util
@@ -231,6 +232,72 @@ ip() { [ "$NETFLEET_READY_TEST_FAILURE" != dns ]; }
                     self.assertTrue(parsed['diagnostic_passed'])
                 else:
                     self.assertFalse(receipt.exists())
+
+    def test_parallel_receipt_requires_release_lanes_bound_to_one_candidate(self):
+        program = RUNNER.read_text().rsplit("<<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
+        groups = {
+            'native': ('native',),
+            'setup': ('setup',),
+            'migration': ('management', 'runtime', 'migration'),
+            'package': ('package-management', 'package-runtime', 'package'),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            identity = {'source_commit': 'a' * 40, 'source_tree': 'b' * 40}
+            manifest = work / 'manifest.json'
+            fixture = work / 'fixture.json'
+            manifest.write_text(json.dumps(identity))
+            fixture.write_text('{}')
+            manifest_sha = hashlib.sha256(manifest.read_bytes()).hexdigest()
+            fixture_sha = hashlib.sha256(fixture.read_bytes()).hexdigest()
+            lane_receipts = []
+            for offset, (lane, guests) in enumerate(groups.items()):
+                for guest in guests:
+                    value = {'ok': True, **identity, 'checks': {'real_path': True}}
+                    if guest == 'package':
+                        value['manifest_sha256'] = manifest_sha
+                    (work / f'{guest}-result.json').write_text(json.dumps(value))
+                    (work / f'{guest}-ms').write_text('9')
+                receipt = work / f'{lane}.json'
+                lane_receipts.append(receipt)
+                args = [str(receipt), *identity.values(), '25.12.5', 'e' * 64, str(work), 'f' * 64,
+                        '1' * 64, 'aarch64', 'aarch64', '8.2.2', '1', '1', '1', '1', '50',
+                        lane, manifest_sha, str(1000 + offset)]
+                env = {**os.environ, 'NETFLEET_QEMU_ACCELERATOR': 'tcg',
+                       'NETFLEET_VM_RELEASE_FIXTURE_SHA256': fixture_sha}
+                result = subprocess.run(['python3', '-c', program, *args], text=True, capture_output=True, env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse(json.loads(receipt.read_text())['qualified'])
+
+            output = work / 'qualification.json'
+            command = ['python3', str(RUNNER.with_name('release-receipt.py')), '--commit', identity['source_commit'],
+                       '--tree', identity['source_tree'], '--candidate-manifest', str(manifest),
+                       '--fixture-manifest', str(fixture), '--output', str(output), '--lane-receipts']
+            result = subprocess.run([*command, *lane_receipts], text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            parsed = json.loads(output.read_text())
+            self.assertTrue(parsed['qualified'] and parsed['package_qualified'])
+            self.assertEqual(set(parsed['lanes']), {guest for guests in groups.values() for guest in guests})
+            self.assertEqual(parsed['package']['manifest_sha256'], manifest_sha)
+            self.assertEqual(parsed['platform']['accelerator'], 'tcg')
+            self.assertEqual(parsed['qualification_metrics']['total_ms'], 53)
+
+            output.unlink()
+            setup = lane_receipts[1]
+            valid_setup = json.loads(setup.read_text())
+            for key, value in (
+                ('schema', 'opl-netfleet-openwrt-vm-diagnostic.v1'),
+                ('source_tree', 'c' * 40),
+                ('candidate_manifest_sha256', 'd' * 64),
+                ('component_fixtures_sha256', 'e' * 64),
+                ('lanes', {}),
+                ('release_lane', 'native'),
+            ):
+                with self.subTest(key=key):
+                    setup.write_text(json.dumps({**valid_setup, key: value}))
+                    result = subprocess.run([*command, *lane_receipts], text=True, capture_output=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(output.exists())
 
     def test_vm_keeps_real_management_runtime_and_recovery_gates(self):
         runtime_source = RUNTIME_GUEST.read_text()

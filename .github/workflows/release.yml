@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       source: ${{ steps.source.outputs.source }}
+      tree: ${{ steps.source.outputs.tree }}
       sdk_url: ${{ steps.source.outputs.sdk_url }}
       sdk_sha256: ${{ steps.source.outputs.sdk_sha256 }}
     steps:
@@ -27,7 +28,7 @@ jobs:
           git merge-base --is-ancestor HEAD origin/main
           test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag
           python3 - <<'PY'
-          import json, os, plistlib, re
+          import json, os, plistlib, re, subprocess
           from pathlib import Path
           version = json.loads(Path('product-version.json').read_text())['version']
           assert os.environ['GITHUB_REF_NAME'] == 'v' + version
@@ -35,7 +36,8 @@ jobs:
           assert plistlib.loads(Path('desktop/app/Info.plist').read_bytes())['CFBundleShortVersionString'] == version
           sdk = json.loads(Path('scripts/openwrt-sdk.json').read_text())
           with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
-              stream.write('source=' + os.environ['GITHUB_SHA'] + '\n')
+              stream.write('source=' + subprocess.check_output(['git', 'rev-parse', 'HEAD^{commit}'], text=True))
+              stream.write('tree=' + subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True))
               stream.write('sdk_url=' + sdk['url'] + '\n')
               stream.write('sdk_sha256=' + sdk['sha256'] + '\n')
           PY
@@ -48,35 +50,84 @@ jobs:
       sdk_sha256: ${{ needs.identity.outputs.sdk_sha256 }}
     secrets:
       NETFLEET_APK_PRIVATE_KEY: ${{ secrets.NETFLEET_APK_PRIVATE_KEY }}
-  qualify:
+  qualify-base:
+    name: OpenWrt base qualification / ${{ matrix.lane }}
     needs: [identity, candidate]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [native, setup, migration, package]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.identity.outputs.source }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: ${{ needs.candidate.outputs.candidate_name }}
+          path: ${{ runner.temp }}/candidate
+      - name: Verify the candidate and component fixtures before booting QEMU
+        env:
+          SOURCE: ${{ needs.identity.outputs.source }}
+        run: |
+          python3 scripts/netfleet-delivery-preflight.py --ref "$SOURCE" --require-clean \
+            --candidate "$RUNNER_TEMP/candidate/netfleet-output" \
+            --fixture "$RUNNER_TEMP/candidate/netfleet-vm-components"
+      - name: Prepare the isolated ARM64 QEMU host
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-utils qemu-efi-aarch64 gdisk e2fsprogs mtools
+      - name: Run the ${{ matrix.lane }} lane on a clean guest
+        env:
+          SOURCE: ${{ needs.identity.outputs.source }}
+          LANE: ${{ matrix.lane }}
+          NETFLEET_VM_COMPONENT_FIXTURES: ${{ runner.temp }}/candidate/netfleet-vm-components
+        run: |
+          mkdir -p "$RUNNER_TEMP/qualification"
+          scripts/openwrt-vm.sh --ref "$SOURCE" --release-lane "$LANE" \
+            --packages "$RUNNER_TEMP/candidate/netfleet-output" \
+            --output "$RUNNER_TEMP/qualification/$LANE.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: netfleet-openwrt-lane-${{ matrix.lane }}
+          path: ${{ runner.temp }}/qualification/${{ matrix.lane }}.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+  qualify-optional:
+    name: OpenWrt optional composition qualification
+    needs: [identity, candidate, qualify-base]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+          ref: ${{ needs.identity.outputs.source }}
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          name: netfleet-openwrt-candidate-${{ needs.identity.outputs.source }}
+          name: ${{ needs.candidate.outputs.candidate_name }}
           path: ${{ runner.temp }}/candidate
-      - name: Prepare the isolated ARM64 QEMU host
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-utils qemu-efi-aarch64 gdisk e2fsprogs mtools
-      - name: Qualify the exact candidate bytes
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          pattern: netfleet-openwrt-lane-*
+          path: ${{ runner.temp }}/lanes
+          merge-multiple: true
+      - name: Validate the four base receipts against the sealed candidate
+        shell: bash
         env:
           SOURCE: ${{ needs.identity.outputs.source }}
-          NETFLEET_VM_COMPONENT_FIXTURES: ${{ runner.temp }}/candidate/netfleet-vm-components
+          SOURCE_TREE: ${{ needs.identity.outputs.tree }}
         run: |
           mkdir -p "$RUNNER_TEMP/qualification"
-          scripts/openwrt-vm.sh --ref "$SOURCE" --packages "$RUNNER_TEMP/candidate/netfleet-output" \
-            --output "$RUNNER_TEMP/qualification/receipt.json"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
-        with:
-          name: netfleet-release-qualification-${{ needs.identity.outputs.source }}
-          path: ${{ runner.temp }}/qualification/receipt.json
-          if-no-files-found: warn
+          python3 scripts/openwrt-vm/release-receipt.py --commit "$SOURCE" --tree "$SOURCE_TREE" \
+            --candidate-manifest "$RUNNER_TEMP/candidate/netfleet-output/manifest.json" \
+            --fixture-manifest "$RUNNER_TEMP/candidate/netfleet-vm-components/fixture.json" \
+            --lane-receipts "$RUNNER_TEMP/lanes/"*.json \
+            --output "$RUNNER_TEMP/qualification/receipt.json" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Prepare the isolated ARM64 QEMU host
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-utils qemu-efi-aarch64 gdisk e2fsprogs mtools
       - name: Qualify the exact complete installation composition
         run: |
           python3 scripts/https-compat/qualify.py --composition --preflight \
@@ -85,15 +136,18 @@ jobs:
             --candidate "$RUNNER_TEMP/candidate/netfleet-optional" \
             --output "$RUNNER_TEMP/qualification/optional.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
         with:
-          name: netfleet-optional-qualification-${{ needs.identity.outputs.source }}
+          name: netfleet-release-qualification-${{ needs.identity.outputs.source }}
           path: |
+            ${{ runner.temp }}/qualification/receipt.json
             ${{ runner.temp }}/qualification/optional.json
             ${{ runner.temp }}/qualification/optional.diagnostic.json
-          if-no-files-found: warn
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
   publish:
-    needs: [identity, qualify]
+    name: Publish the qualified OpenWrt Feed
+    needs: [identity, candidate, qualify-optional]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -104,7 +158,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          name: netfleet-openwrt-candidate-${{ needs.identity.outputs.source }}
+          name: ${{ needs.candidate.outputs.candidate_name }}
           path: ${{ runner.temp }}/candidate
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
@@ -112,14 +166,14 @@ jobs:
           path: ${{ runner.temp }}/qualification
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          name: netfleet-optional-qualification-${{ needs.identity.outputs.source }}
-          path: ${{ runner.temp }}/qualification
-      - name: Publish the VM-qualified complete Feed
+          name: ${{ needs.candidate.outputs.publish_tools_name }}
+          path: ${{ runner.temp }}/publish-tools
+      - name: Publish and verify the public OpenWrt Feed
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir "$RUNNER_TEMP/apk-tools"
-          tar -xzf "$RUNNER_TEMP/candidate/netfleet-apk-tools.tar.gz" -C "$RUNNER_TEMP/apk-tools"
+          tar -xzf "$RUNNER_TEMP/publish-tools/netfleet-apk-tools.tar.gz" -C "$RUNNER_TEMP/apk-tools"
           scripts/publish-netfleet-release.sh --tag "$GITHUB_REF_NAME" \
             --candidate "$RUNNER_TEMP/candidate/netfleet-output" \
             --qualification "$RUNNER_TEMP/qualification/receipt.json" \

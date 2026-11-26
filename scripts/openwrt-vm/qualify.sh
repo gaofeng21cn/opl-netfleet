@@ -24,6 +24,7 @@ qemu_version=${NETFLEET_QEMU_VERSION:?}
 package_archive=${NETFLEET_PACKAGE_ARCHIVE:-}
 package_manifest_sha=${NETFLEET_PACKAGE_MANIFEST_SHA256:-}
 lane_mode=${NETFLEET_VM_LANE:-all}
+release_fixture_sha=${NETFLEET_VM_RELEASE_FIXTURE_SHA256:-}
 package_mirror=${NETFLEET_VM_PACKAGE_MIRROR:-}
 if [ -n "$package_mirror" ]; then
 	python3 - "$package_mirror" <<'PY'
@@ -35,8 +36,15 @@ PY
 fi
 case "$lane_mode" in all|native|setup|migration|runtime|package|compatibility) ;; *) echo 'Unknown VM lane' >&2; exit 1 ;; esac
 [ "$lane_mode" != package ] || [ -n "$package_archive" ] || { echo 'Package lane requires candidate' >&2; exit 1; }
-if { [ -z "$package_archive" ] && [ -n "$package_manifest_sha" ]; } ||
-	{ [ -n "$package_archive" ] && [ -z "$package_manifest_sha" ]; }; then
+if [ -n "$release_fixture_sha" ]; then
+	case "$lane_mode" in
+		native|migration) [ -z "$package_archive" ] ;;
+		setup|package) [ -n "$package_archive" ] ;;
+		*) echo 'Unsupported release lane' >&2; exit 1 ;;
+	esac
+fi
+if { [ -z "$package_archive$release_fixture_sha" ] && [ -n "$package_manifest_sha" ]; } ||
+	{ [ -n "$package_archive$release_fixture_sha" ] && [ -z "$package_manifest_sha" ]; }; then
 	echo "Package archive and manifest identity must be provided together" >&2
 	exit 1
 fi
@@ -68,6 +76,9 @@ mirror_pid=
 qemu_pid=
 now_ms() {
 	python3 -c 'import time; print(time.time_ns() // 1000000)'
+}
+progress() {
+	printf '[%s] OpenWrt %s | %s\n' "$(date -u +%H:%M:%S)" "$lane_mode" "$*" >&2
 }
 sha256_file() {
 	if command -v sha256sum >/dev/null 2>&1; then
@@ -120,6 +131,7 @@ finish() {
 trap finish EXIT INT TERM
 
 mkdir -p "$work" "$cache"
+progress 'Preparing pinned image, runtime assets and fixtures'
 if [ -z "$package_mirror" ]; then
 	python3 "$workspace/scripts/openwrt-vm/official-package-mirror.py" "$work/official-packages" "$mirror_port" "$version" \
 		>"$work/official-package-mirror.log" 2>&1 &
@@ -340,6 +352,7 @@ if [ -n "$qemu_pid" ]; then
 fi
 rm -f "$serial_socket"
 stage=qemu_boot
+progress 'Booting a clean guest'
 image_started_ms=$(now_ms)
 set +e
 gzip -dc "$cached" >"$work/openwrt.img"
@@ -365,7 +378,11 @@ root_size=256M
 disk_size=512M
 # Core update qualification keeps archives, an extracted core and rollback bytes.
 # Its explicit disk-fill fixture still verifies rejection before stopping the core.
-case "$lane_mode" in all|setup|compatibility) root_size=512M; disk_size=768M ;; esac
+if [ -n "$release_fixture_sha" ] || [ "$lane_mode" = all ] ||
+	[ "$lane_mode" = setup ] || [ "$lane_mode" = compatibility ]; then
+	root_size=512M
+	disk_size=768M
+fi
 resize2fs "$work/root.ext4" "$root_size"
 qemu-img resize -f raw "$work/openwrt.img" "$disk_size" >/dev/null
 sgdisk -e -a 1 -d 2 -n "2:$root_start:+$root_size" -u "2:$root_uuid" -t 2:8300 "$work/openwrt.img" >/dev/null
@@ -555,6 +572,7 @@ run_guest() {
 	guest_kind=$2
 	stage=${result_name}_guest
 	guest_started_ms=$(now_ms)
+	progress "Running $result_name"
 	guest_script=guest-${guest_kind}-qualify.sh
 	guest_arguments="'$probe_port'"
 	case "$guest_kind" in
@@ -586,6 +604,7 @@ run_guest() {
 	ssh $ssh_common root@127.0.0.1 \
 		'test "$(readlink /var)" = tmp && ubus call system board >/dev/null && test -S /var/run/ubus/ubus.sock'
 	wait_for_probe
+	progress "Finished $result_name ($(cat "$work/$result_name-ms") ms)"
 }
 
 if [ "$lane_mode" = all ] || [ "$lane_mode" = native ]; then
@@ -635,11 +654,12 @@ if [ -n "$package_archive" ] && { [ "$lane_mode" = all ] || [ "$lane_mode" = pac
 fi
 
 stage=receipt
+progress 'Validating guest results and writing the receipt'
 total_elapsed_ms=$(($(now_ms) - total_started_ms))
 python3 - "$receipt" "$source_commit" "$source_tree" "$version" "$image_sha" \
 	"$work" "$mihomo_sha" "$yq_sha" "$runner_arch" "$guest_arch" "$qemu_version" \
 	"$assets_elapsed_ms" "$image_elapsed_ms" "$boot_elapsed_ms" "$transfer_elapsed_ms" \
-	"$total_elapsed_ms" "$lane_mode" "$package_manifest_sha" <<'PY'
+	"$total_elapsed_ms" "$lane_mode" "$package_manifest_sha" "$total_started_ms" <<'PY'
 import json
 from pathlib import Path
 import os
@@ -723,7 +743,12 @@ if "package" in lanes:
     value["schema"] = "opl-netfleet-openwrt-vm-qualification.v2"
     value["package_qualified"] = mode == "all"
     value["package"] = lanes["package"]
-if mode != "all":
+fixture_sha = os.environ.get("NETFLEET_VM_RELEASE_FIXTURE_SHA256")
+if fixture_sha:
+    value.update(schema="opl-netfleet-openwrt-vm-release-lane.v1", release_lane=mode,
+                 candidate_manifest_sha256=package_sha, component_fixtures_sha256=fixture_sha,
+                 started_at_ms=int(sys.argv[19]))
+elif mode != "all":
     value.update(schema="opl-netfleet-openwrt-vm-diagnostic.v1", diagnostic_passed=True,
                  diagnostic_lane=mode)
 if os.environ.get('NETFLEET_COMPAT_BASE_IDENTITY'):

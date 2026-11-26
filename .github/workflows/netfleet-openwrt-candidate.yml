@@ -2,6 +2,11 @@ name: NetFleet OpenWrt 候选包构建
 
 on:
   workflow_call:
+    outputs:
+      candidate_name:
+        value: ${{ jobs.build.outputs.candidate_name }}
+      publish_tools_name:
+        value: ${{ jobs.build.outputs.publish_tools_name }}
     inputs:
       source_ref:
         required: true
@@ -41,6 +46,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    outputs:
+      candidate_name: ${{ steps.identity.outputs.candidate_name }}
+      publish_tools_name: ${{ steps.identity.outputs.publish_tools_name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,6 +56,7 @@ jobs:
           fetch-depth: 0
 
       - name: Resolve checked-out source identity
+        id: identity
         run: |
           set -euo pipefail
           test -z "$(git status --porcelain)"
@@ -55,6 +64,8 @@ jobs:
           source_tree=$(git rev-parse 'HEAD^{tree}')
           printf 'NETFLEET_SOURCE_COMMIT=%s\n' "$source_commit" >> "$GITHUB_ENV"
           printf 'NETFLEET_SOURCE_TREE=%s\n' "$source_tree" >> "$GITHUB_ENV"
+          printf 'candidate_name=netfleet-openwrt-candidate-%s-%s\n' "$source_commit" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          printf 'publish_tools_name=netfleet-openwrt-publish-tools-%s-%s\n' "$source_commit" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
 
       - name: Restore pinned OpenWrt SDK archive
         uses: actions/cache@v4
@@ -128,12 +139,20 @@ jobs:
       - name: Upload candidate for ARM64 VM qualification
         uses: actions/upload-artifact@v4
         with:
-          name: netfleet-openwrt-candidate-${{ env.NETFLEET_SOURCE_COMMIT }}
+          name: ${{ steps.identity.outputs.candidate_name }}
           path: |
             ${{ runner.temp }}/netfleet-output
             ${{ runner.temp }}/netfleet-vm-components
             ${{ runner.temp }}/netfleet-optional
-            ${{ runner.temp }}/netfleet-apk-tools.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload Linux package verification tools for publication
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.identity.outputs.publish_tools_name }}
+          path: ${{ runner.temp }}/netfleet-apk-tools.tar.gz
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
