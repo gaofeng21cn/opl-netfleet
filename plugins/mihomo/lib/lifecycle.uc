@@ -40,11 +40,11 @@ external_unchanged = function(before) {
 	return state.mihomo_running && state.mihomo_config_valid && state.state_available && state.runtime_identity_ok;
 };
 
-resume_failed = function(error) {
+resume_failed = function(error, detail) {
 	system(`/etc/init.d/${runtime.SERVICE} stop >/dev/null 2>&1`);
 	const cleanup = backend.stop();
 	return failure(cleanup.ok && observer_stopped() ? error : "handoff_rollback_cleanup_failed",
-		{ cause: error, cleanup: cleanup, saved: saved_state() });
+		{ cause: error, cleanup: cleanup, saved: saved_state(), ...(detail == null ? {} : { detail }) });
 };
 
 drain = function(params) {
@@ -105,8 +105,11 @@ resume = function(saved) {
 		if (!ready) return resume_failed("handoff_owner_readback_failed");
 		if (before.active == true) {
 			const policy = load_policy();
-			if (policy == null || !paths.restore_runtime_selections(credentials.api_secret(), manifest, before.selections, policy))
-				return resume_failed("handoff_selection_restore_failed");
+			const detail = {};
+			if (policy == null)
+				return resume_failed("handoff_selection_restore_failed", { error: "policy_unreadable" });
+			if (!paths.restore_runtime_selections(credentials.api_secret(), manifest, before.selections, policy, detail, true))
+				return resume_failed("handoff_selection_restore_failed", detail);
 		}
 	} else if (backend.cleanup_state()?.ok != true || !observer_stopped()) {
 		return failure("handoff_stopped_owner_changed");

@@ -68,11 +68,11 @@ find_probe = function(policy, probe_id) {
 	return null;
 };
 
-refresh_data_fallback = function(secret, entry, policy, provider_state, selected_group) {
+refresh_data_fallback = function(secret, entry, policy, provider_state, selected_group, restoring) {
 	// Verify the chosen path before warming standalone standby groups.
-	const round = selected_group == null ? measure_latency(secret, entry.name, policy.checks) : null;
+	const round = selected_group == null || restoring == true ? measure_latency(secret, entry.name, policy.checks) : null;
 	const reset_detail = {};
-	if (selected_group != null && !unfix_proxy(secret, selected_group, reset_detail))
+	if (selected_group != null && restoring != true && !unfix_proxy(secret, selected_group, reset_detail))
 		return { ok: false, error: "candidate_group_reset_failed", detail: reset_detail, round: null, runtime: null };
 	const health = policy?.fail_open?.healthcheck;
 	const path_probe = find_probe(policy, health?.path_probe_id);
@@ -99,9 +99,10 @@ refresh_data_fallback = function(secret, entry, policy, provider_state, selected
 		for (let stage in stages) {
 			const probe = stage.probe;
 			const expected_status = probe?.head_expected_status ?? probe?.expected_status;
-			if (probe == null || !test_group_path(secret, stage.group, { latency: {
+			const healthy = probe != null && test_group_path(secret, stage.group, { latency: {
 				url: probe.url, expected_status: expected_status, timeout_ms: health.timeout_ms
-			} })) return { ok: false, error: "selected_business_path_probe_failed", probe: stage.probe_id, group: stage.group,
+			} });
+			if (!healthy && restoring != true) return { ok: false, error: "selected_business_path_probe_failed", probe: stage.probe_id, group: stage.group,
 				method: "HEAD", expected_status: expected_status, round: round, runtime: null };
 		}
 	}
@@ -424,7 +425,7 @@ wait_for_candidate_provider_leaves = function(secret, entry, timeout_seconds, ur
 	return { state: state, provider_state: provider_state };
 };
 
-restore_runtime_selections = function(secret, manifest, before_groups, policy, detail) {
+restore_runtime_selections = function(secret, manifest, before_groups, policy, detail, after_restart) {
 	const names = keys(before_groups ?? {});
 	for (let i = 0; i < length(names); i++) {
 		const capability = names[i];
@@ -450,9 +451,13 @@ restore_runtime_selections = function(secret, manifest, before_groups, policy, d
 			}
 			return false;
 		}
-		refresh_data_fallback(secret, entry, policy);
+		// Preserve saved manual choices and permit a healthy standby when the saved preferred path is down.
+		if (after_restart == true && previous.visible == entry.automatic_name)
+			refresh_data_fallback(secret, entry, policy, null, preferred, true);
+		else
+			refresh_data_fallback(secret, entry, policy);
 	}
-	const probes = protected_probes(policy);
+	const probes = after_restart == true ? protected_probes_after_restart(policy) : protected_probes(policy);
 	if (detail != null && !probes.ok) {
 		detail.error = probes.error;
 		detail.probes = probes;

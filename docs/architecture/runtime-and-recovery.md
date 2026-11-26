@@ -188,6 +188,7 @@ Mihomo 仍运行时，代理组自行沿该链路选择，`DIRECT` 是明确的�
 | 安装/compile/staged 校验失败或平台上游不可用 | 当前后端 Profile、网络接入和服务完全不变 |
 | enable、owner readback 或 protected probe 失败 | active guard 先切 DIRECT 建立即时安全护栏，再恢复 Recovery Profile owner/runtime；runtime 失败才调用所选后端 stop/cleanup。保护探针失败单独报告，绝不重新启用失败的 NetFleet Profile |
 | 手动 select 后 protected probe 失败 | 恢复原 selector；selector 回退失败则先切 active guard 到 DIRECT，再恢复 Recovery Profile，原生 runtime 失败才进入后端 passthrough |
+| 软件包生命周期重启 Mihomo | 恢复原 preferred 与可见 selector。原为自动选优时尽力预热其 path 与 guard 健康状态，再用有界的启动保护探针确认恢复。健康的备用路径可以通过最终验证 |
 | 单节点或同地区单 provider 失败 | connection refused 立即、其他错误按 `max_failed_times`/timeout 窗口触发原生 health-check；当前叶子失活后下一次选路换叶子，健康叶子只有替代项严格快超过 `leaf_switch_margin_ms` 才换 |
 | 当前地区仍可用但替代地区 proxy-path delay 优势小于 `selection.region_switch_margin_ms`（默认 150） | 保持当前地区 |
 | 当前地区无合格叶子，或替代地区 proxy-path delay 至少快该门槛 | 选择最快合格地区 |

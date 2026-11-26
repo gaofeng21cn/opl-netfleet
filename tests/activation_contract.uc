@@ -355,6 +355,34 @@ function test_path_activation() {
 		restored_choices[0].choice == 'new label' && saved.selections.standard.preferred == 'old label', 'restore renamed candidate by stable identity and preserve rollback snapshot');
 	check(!restoration_paths.restore_runtime_selections('fixture', { generated_groups: { standard: { ...entry, candidate_groups: [] } } }, saved.selections, policy), 'missing candidate identity cannot select a different provider');
 
+	const cold_calls = [];
+	let recovery_probes = { ok: true }, unfixed = false;
+	services['mihomo.controller'].test_group_path = (secret, group, checks) => {
+		push(cold_calls, [group, checks.latency.url]);
+		return group != 'preferred';
+	};
+	services['mihomo.controller'].unfix = () => { unfixed = true; return true; };
+	services['mihomo.controller'].protected_probes = () => die('cold restoration must use the bounded startup probe');
+	services['mihomo.probes'].protected_probes_after_restart = () => recovery_probes;
+	const cold_paths = factory({ use: name => services[name] });
+	const cold_manifest = { generated_groups: { standard: { ...renamed_entry, automatic_name: 'automatic' } } };
+	check(cold_paths.restore_runtime_selections('fixture', cold_manifest, saved.selections, policy, {}, true) && !unfixed,
+		'cold restoration accepts a healthy standby without resetting the saved selection');
+	check(cold_calls[0][0] == 'preferred' && cold_calls[0][1] == 'https://business.test/path' &&
+		cold_calls[1][0] == 'preferred' && cold_calls[1][1] == 'https://business.test/guard' &&
+		cold_calls[2][0] == 'automatic' && cold_calls[2][1] == 'https://business.test/guard',
+		'a failed preferred HEAD does not block warming the automatic guard');
+	const warm_count = length(cold_calls);
+	selection_state.visible.all = ['manual-region'];
+	const manual = { standard: { ...saved.selections.standard, visible: 'manual-region' } };
+	check(cold_paths.restore_runtime_selections('fixture', cold_manifest, manual, policy, {}, true) &&
+		length(cold_calls) == warm_count && restored_choices[length(restored_choices) - 1].choice == 'manual-region',
+		'cold restoration keeps the original manual route');
+	recovery_probes = { ok: false, error: 'protected_probe_failed' };
+	const failure = {};
+	check(!cold_paths.restore_runtime_selections('fixture', cold_manifest, manual, policy, failure, true) &&
+		failure.error == 'protected_probe_failed', 'failed startup protection still requires lifecycle cleanup');
+
 	for (let mode in ['off', 'strict', 'always', null]) {
 		const profile = { rules: ['PROCESS-NAME,haproxy,REJECT', 'MATCH,DIRECT'] };
 		if (mode != null) profile['find-process-mode'] = mode;
