@@ -243,7 +243,7 @@ function plugin_packages(versions, product, catalog) {
 		update_available: newer(catalog?.[name]?.version, versions?.[name]), dependencies: catalog?.[name]?.depends ?? []
 	}));
 }
-function plugin_plan(request, work, preview) {
+function plugin_plan(request, work, preview, simulation_budget) {
 	if (type(request) != "object") fail("invalid_plugin_package_request");
 	const versions = installed();
 	if (versions == null) fail("package_manager_unavailable");
@@ -257,7 +257,8 @@ function plugin_plan(request, work, preview) {
 				fail("plugin_package_protected");
 			push(specs, q(`${item.name}=${item.version}`));
 		}
-		const output = capture(`LC_ALL=C apk --timeout 10 --cache-max-age 1440 --simulate add ${join(" ", specs)}`);
+		const limit = simulation_budget == null ? "" : `timeout ${simulation_budget} `;
+		const output = capture(`LC_ALL=C ${limit}apk --timeout 10 --cache-max-age 1440 --simulate add ${join(" ", specs)}`);
 		if (output == null) fail("plugin_dependencies_unavailable");
 		const plan = package_model.validate(package_model.changes(output), preview ? { ...request, confirm: true } : request, versions, product_packages(), owned, KIND == "native-mihomo");
 		if (!preview && sprintf("%J", request.plan) != sprintf("%J", plan)) fail("candidate_changed");
@@ -1343,28 +1344,29 @@ auto_update = function(trigger) {
 	const versions = installed();
 	if (versions == null) fail("package_manager_unavailable");
 	const rows = plugin_packages(versions, product_packages(), catalog);
-	const choice = package_model.select_auto_update(rows, versions, values, context.inventory(versions), retained_packages(), KIND == "native-mihomo", newer);
-	const deferred = [...choice.deferred];
-	if (!length(choice.items)) {
+	let choice;
+	const deadline = time() + 10;
+	try {
+		choice = package_model.plan_auto_update(rows, versions, values, context.inventory(versions), retained_packages(), KIND == "native-mihomo", newer,
+			items => {
+				const remaining = deadline - time();
+				if (remaining <= 0) fail("plugin_plan_timeout");
+				return plugin_plan({ action: "update", items, confirm: true }, null, true, remaining);
+			});
+	} catch (error) {
+		const code = error_code(error);
+		const failures = (type(state.consecutive_failures) == "int" ? state.consecutive_failures : 0) + 1;
+		atomic_json(AUTO_UPDATE, { ...state, last_check_at: now, last_result: "plan_failed", last_error: code,
+			consecutive_failures: failures, backoff_until: now + package_model.backoff_seconds(failures) });
+		fail(code);
+	}
+	const plan = choice.plan, deferred = choice.deferred;
+	if (plan == null) {
 		atomic_json(AUTO_UPDATE, { ...state, last_check_at: now, last_result: length(deferred) ? "deferred" : "up_to_date",
 			last_error: null, deferred_packages: deferred });
 		return { updated: false, deferred_packages: deferred };
 	}
 	const req = { action: "update", items: choice.items, confirm: true };
-	let plan;
-	try { plan = plugin_plan(req, null, true); }
-	catch (error) {
-		const code = error_code(error);
-		if (code == "plugin_dependency_change_required") {
-			for (let item in choice.items) push(deferred, { name: item.name, version: item.version, reason: "manual_maintenance_required" });
-			atomic_json(AUTO_UPDATE, { ...state, last_check_at: now, last_result: "deferred", last_error: null, deferred_packages: deferred });
-			return { updated: false, deferred_packages: deferred };
-		}
-		const failures = (type(state.consecutive_failures) == "int" ? state.consecutive_failures : 0) + 1;
-		atomic_json(AUTO_UPDATE, { ...state, last_check_at: now, last_result: "plan_failed", last_error: code,
-			consecutive_failures: failures, backoff_until: now + package_model.backoff_seconds(failures), deferred_packages: deferred });
-		fail(code);
-	}
 	const sig = sprintf("%J", plan.candidates);
 	if (state.last_failed_signature == sig && type(state.backoff_until) == "int" && now < state.backoff_until) {
 		atomic_json(AUTO_UPDATE, { ...state, last_check_at: now, deferred_packages: deferred });

@@ -103,7 +103,7 @@ export function backoff_seconds(failures) {
 	return delay > 86400 ? 86400 : delay;
 };
 
-export function select_auto_update(rows, versions, candidates, inventory, retained, native_backend, is_newer) {
+export function plan_auto_update(rows, versions, candidates, inventory, retained, native_backend, is_newer, simulate) {
 	const deferred = [];
 	const cmp = is_newer ?? ((a, b) => a != null && b != null && a != b);
 	for (let base in ['opl-netfleet-kernel', ...(native_backend ? ['mihomo-meta'] : [])]) {
@@ -130,7 +130,33 @@ export function select_auto_update(rows, versions, candidates, inventory, retain
 			push(wave1, entry);
 		}
 	}
-	const items = length(wave1) > 0 ? wave1 : wave2;
-	const wave = length(wave1) > 0 ? 'plugins' : length(wave2) > 0 ? 'retained' : null;
-	return { wave, items, deferred };
+	function try_plan(items, wave) {
+		let plan;
+		try { plan = simulate(items); }
+		catch (error) {
+			if (error.message != 'plugin_dependency_change_required') die(error.message);
+			return null;
+		}
+		for (let name in plan.names) {
+			const inside_retained = index(retained_list, name) >= 0;
+			if (wave == 'retained' ? !inside_retained : inside_retained || lifecycle_pkgs[name]) return null;
+		}
+		return plan;
+	}
+	for (let wave, items in { plugins: wave1, retained: wave2 }) {
+		if (!length(items)) continue;
+		const full_plan = try_plan(items, wave);
+		if (full_plan != null) return { wave, items, plan: full_plan, deferred };
+		const safe = [], individual_plans = [];
+		for (let item in items) {
+			const plan = length(items) > 1 ? try_plan([item], wave) : null;
+			if (plan == null) push(deferred, { name: item.name, version: item.version, reason: 'manual_maintenance_required' });
+			else { push(safe, item); push(individual_plans, plan); }
+		}
+		if (!length(safe)) continue;
+		const combined = length(safe) > 1 && length(safe) < length(items) ? try_plan(safe, wave) : null;
+		if (combined != null) return { wave, items: safe, plan: combined, deferred };
+		return { wave, items: [safe[0]], plan: individual_plans[0], deferred };
+	}
+	return { deferred };
 };

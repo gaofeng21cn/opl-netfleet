@@ -1,6 +1,6 @@
 #!/usr/bin/ucode
 import * as fs from 'fs';
-import { changes, validate, backoff_seconds, select_auto_update } from '../plugins/components/lib/packages.uc';
+import { changes, validate, backoff_seconds, plan_auto_update } from '../plugins/components/lib/packages.uc';
 import { manifest, composition } from '../plugins/components/lib/retained.uc';
 
 function test_component_packages() {
@@ -92,15 +92,47 @@ function test_component_packages() {
 		{ name: 'luci-app-netfleet', installed_version: '0.9.0', available_version: '0.9.1', update_available: true },
 		{ name: 'opl-netfleet-plugin-mihomo', installed_version: '0.9.0', available_version: '0.9.1', update_available: true },
 	];
-	const w1 = select_auto_update(rows, versions, candidates, inv, ['opl-netfleet-plugin-mihomo'], true);
+	const simulate = items => ({ names: map(items, item => item.name) });
+	const w1 = plan_auto_update(rows, versions, candidates, inv, [backend], true, null, simulate);
 	check(w1.wave == 'plugins' && length(w1.items) == 2 && length(w1.deferred) == 2 && w1.deferred[0].name == 'opl-netfleet-kernel' && w1.deferred[1].name == 'mihomo-meta',
 		'wave 1 groups zero-downtime plugins and defers core/kernel');
-	const w2 = select_auto_update([rows[2]], versions, candidates, inv, ['opl-netfleet-plugin-mihomo'], true);
+	const w2 = plan_auto_update([rows[2]], versions, candidates, inv, [backend], true, null, simulate);
 	check(w2.wave == 'retained' && length(w2.items) == 1 && w2.items[0].name == 'opl-netfleet-plugin-mihomo',
 		'wave 2 upgrades retained native packages when wave 1 is clear');
-	const wNonNative = select_auto_update([rows[2]], versions, candidates, inv, ['opl-netfleet-plugin-mihomo'], false);
+	const wNonNative = plan_auto_update([rows[2]], versions, candidates, inv, [backend], false, null, simulate);
 	check(wNonNative.wave == null && length(wNonNative.deferred) == 2 && wNonNative.deferred[1].name == 'opl-netfleet-plugin-mihomo',
 		'non-native backend defers lifecycle plugins for manual maintenance');
+
+	const compiler = 'opl-netfleet-plugin-compilation', ui = 'opl-netfleet-plugin-product-ui';
+	const before = { [compiler]: '0.7.9-r1', [backend]: '0.9.15-r1', [ui]: '0.10.22-r1' };
+	const after = { [compiler]: '0.7.10-r1', [backend]: '0.9.16-r1', [ui]: '0.10.23-r1' };
+	function update_plan(current, native, extra_backend_dependency) {
+		const rows = map(keys(after), name => ({ name, installed_version: current[name],
+			available_version: after[name], update_available: current[name] != after[name] }));
+		function solve(items) {
+			const names = map(items, item => item.name);
+			if (index(names, compiler) >= 0 && current[backend] != after[backend]) unshift(names, backend);
+			if (extra_backend_dependency && index(names, backend) >= 0 && index(names, ui) < 0) push(names, ui);
+			const simulated = map(names, (name, i) => `(${i + 1}/${length(names)}) Upgrading ${name} (${current[name]} -> ${after[name]})`);
+			return validate(changes(join('\n', simulated)), { action: 'update', items, confirm: true }, current, [], {}, native);
+		}
+		return plan_auto_update(rows, current, after, inv, [backend], native, null, solve);
+	}
+	const safe = update_plan(before, true);
+	check(safe.wave == 'plugins' && join(',', safe.plan.names) == ui && safe.deferred[0].name == compiler,
+		'compiler requiring a new Mihomo leaves an independent plugin eligible');
+	const retained_after_safe = update_plan({ ...before, [ui]: after[ui] }, true);
+	check(retained_after_safe.wave == 'retained' && join(',', retained_after_safe.plan.names) == backend && retained_after_safe.deferred[0].name == compiler,
+		'a blocked compiler does not starve the native retained Mihomo wave');
+	const compiler_after_retained = update_plan({ ...before, [ui]: after[ui], [backend]: after[backend] }, true);
+	check(compiler_after_retained.wave == 'plugins' && join(',', compiler_after_retained.plan.names) == compiler && !length(compiler_after_retained.deferred),
+		'compiler becomes eligible after native retained Mihomo update');
+	const nikki = update_plan({ ...before, [ui]: after[ui] }, false);
+	check(nikki.plan == null && length(nikki.deferred) == 2, 'non-native Mihomo dependencies remain deferred');
+	const unsafe_retained = update_plan({ ...before, [ui]: after[ui] }, true, true);
+	check(unsafe_retained.plan == null && length(unsafe_retained.deferred) == 2, 'retained closure excludes other service plugins');
+	rejects(() => plan_auto_update(rows, versions, candidates, inv, [backend], true, null, () => die('plugin_dependencies_unavailable')),
+		'plugin_dependencies_unavailable');
 	print('component_packages_contract_ok\n');
 }
 
