@@ -71,6 +71,17 @@ jobs:
             test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$RELEASE_SOURCE"
           fi
 
+      - name: Freeze the clean-VM test inputs from the candidate source
+        run: |
+          set -euo pipefail
+          git archive --format=tar.gz --output="$RUNNER_TEMP/netfleet-macos-vm-inputs.tar.gz" HEAD \
+            desktop/tests/qualification.mjs desktop/tests/owner-crash.mjs desktop/runtime/io.mjs
+          mkdir "$RUNNER_TEMP/netfleet-vm-inputs"
+          tar -xzf "$RUNNER_TEMP/netfleet-macos-vm-inputs.tar.gz" -C "$RUNNER_TEMP/netfleet-vm-inputs"
+          bun build --target=node --outdir "$RUNNER_TEMP/netfleet-vm-check" \
+            "$RUNNER_TEMP/netfleet-vm-inputs/desktop/tests/qualification.mjs" \
+            "$RUNNER_TEMP/netfleet-vm-inputs/desktop/tests/owner-crash.mjs"
+
       - name: Prepare build dependencies
         run: |
           command -v cmake >/dev/null || brew install cmake
@@ -172,6 +183,33 @@ jobs:
             source/dist/appcast.xml
           if-no-files-found: error
           compression-level: 0
+          retention-days: 7
+
+      - name: Upload the small clean-VM test inputs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: netfleet-macos-vm-inputs-${{ inputs.release_tag }}
+          path: ${{ runner.temp }}/netfleet-macos-vm-inputs.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Report the frozen identity and qualification handoff
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          {
+            echo '### Signed macOS candidate'
+            echo
+            echo 'Built, signed, and notarized on a GitHub-hosted macOS ARM64 runner.'
+            echo
+            printf -- '- Tag: `%s`\n' "$RELEASE_TAG"
+            printf -- '- Source commit: `%s`\n' "$(git rev-parse HEAD)"
+            printf -- '- Source tree: `%s`\n' "$(git rev-parse 'HEAD^{tree}')"
+            printf -- '- DMG SHA-256: `%s`\n' "$(cut -d ' ' -f 1 dist/OPL-NetFleet-macos-arm64.dmg.sha256)"
+            echo
+            echo 'Download the sealed candidate and the small test input archive from this run when a clean macOS VM is ready. The qualification needs no SDK or npm installation.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Remove temporary Apple credentials
         if: always()

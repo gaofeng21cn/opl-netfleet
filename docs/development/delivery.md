@@ -22,10 +22,8 @@ PR 与 `main` 更新运行 `NetFleet 双平台检查`。检查结果只证明所
 产品版本由 `product-version.json` 维护，`scripts/prepare-product-release.py` 统一同步 `openwrt/Makefile`、macOS `desktop/app/Info.plist`（含 `CFBundleShortVersionString` 与单调递增的 `CFBundleVersion`）及 `docs/development/plugin-catalog.json`；OpenWrt 插件继续独立版本化。各平台制品使用同一个产品 tag 和源码身份，
 安装情况以目标实际产物为准。某个平台待验收时保留该状态，修复后验证原候选。
 
-统一每日产品任务检测交付变化并经 PR/CI 准备版本，`release.yml` 使用固定 SDK
-构建签名候选，在 ARM64 Linux QEMU 中运行完整包资格，再调用既有 Feed 发布器。
-`scripts/openwrt-sdk.json` 固定 SDK URL 与 SHA-256；构建、资格与发布绑定同一源码
-及候选摘要。设备安装与可选引擎组合仍按各自的推广和验收入口执行。
+统一每日产品任务检测交付变化并经 PR/CI 准备版本。正式产品 tag 触发 OpenWrt 云端发布，
+macOS 随同一个产品版本按需启动。设备安装按[有限插件组合更新](../operations/canary-promotion.md#有限插件组合更新)执行。
 
 ## OpenWrt 公开发布
 
@@ -95,12 +93,32 @@ python3 scripts/netfleet-delivery-preflight.py \
 墙钟耗时与各阶段耗时，不能把并行子任务相加冒充端到端时长；历史耗时缺少阶段回执时只报告
 已知部分，不用估算补齐。
 
-1. 选定干净主线源码，更新实际变更的软件包版本，先完成源码、载荷同步、UI 和受影响故障路径检查，再冻结候选。未变更的插件不递增版本；不要在检查尚未完成时同时启动多批构建。
-2. 使用 `scripts/netfleet-package-build.sh` 本地构建，或手动运行
-   `.github/workflows/netfleet-openwrt-candidate.yml`，输入源码 ref、SDK URL 及 SHA-256。
-   工作流上传保留 7 天的候选，其中 `netfleet-output/` 保存默认软件包，`netfleet-optional/` 保存可选签名包及构建身份，`netfleet-vm-components/` 保存一次性升级与回滚测试包。可选来源由 `scripts/https-compat/release-source.json` 固定，不重建同版本不同字节；复用入口校验源码未变、下载摘要、签名及原生依赖。测试包在 SDK 宿主生成，并绑定候选清单、源码和文件摘要；ARM64 QEMU 通过 `NETFLEET_VM_COMPONENT_FIXTURES` 复用，无需 SDK。
-3. 按[软件包资格验证](validation.md)完成同源码、同候选资产的 ARM64 OpenWrt VM 验收；在本机执行 `scripts/openwrt-vm.sh` 与 `scripts/https-compat/qualify.py --composition --preflight` 时，须用 `env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY` 剥离宿主壳代理环境变量，防止 guest 就绪与直连检查继承宿主代理。
-4. 使用已有发布入口：
+#### 常规正式发布
+
+源码检查通过后，为已进入主线的候选提交推送对应版本的 annotated tag，触发 `.github/workflows/release.yml`。
+
+| Actions 阶段 | 运行位置 | 验证内容及输出 |
+| --- | --- | --- |
+| 锁定源码与构建候选 | GitHub 托管 Ubuntu x64 | 核对 tag、产品版本和主线归属。用固定 SDK 构建一套签名 APK，准备一次性更新夹具，封存候选和摘要。 |
+| 并行运行四组基础资格 | 四个 GitHub 托管 Ubuntu ARM64 job | 独立启动干净 OpenWrt VM，分别验证原生运行、首次设置及组件事务、管理与运行及迁移、签名 APK 安装与运行。ARM64 Linux 有 KVM 时使用 KVM，否则使用 TCG。各组记录阶段耗时和结果。 |
+| 汇总并验收可选组合 | GitHub 托管 Ubuntu ARM64 | 核对四组回执绑定本次源码、候选清单和夹具，再验证默认包加 HTTPS 兼容模块及设备身份插件的完整组合。 |
+| 发布与公开回读 | GitHub 托管 Ubuntu x64 | 发布同一套签名 APK 和两个 Feed，随后从公开地址下载并核对源码身份、文件集合和摘要。 |
+
+先看 Actions 的 job 名称定位当前验收内容，再看对应阶段日志和回执。候选与回执仍在保留期内时，
+用 **Re-run failed jobs** 续跑失败阶段和下游任务，复用同一运行中的成功候选与回执。
+APK 和夹具按原字节免二次压缩上传。`netfleet-output/` 保存默认包，`netfleet-optional/` 保存可选签名包及构建身份，
+`netfleet-vm-components/` 保存与候选绑定的升级和回滚夹具。可选来源由 `scripts/https-compat/release-source.json` 固定，
+复用时检查摘要、签名和依赖调用链。`scripts/openwrt-sdk.json` 固定构建所用 SDK 的 URL 和 SHA-256。
+发布器所需 x64 APK 工具由发布 job 单独下载。
+
+#### 定向诊断和本地验收
+
+开发时可手动运行 `.github/workflows/netfleet-openwrt-candidate.yml`，输入源码 ref、SDK URL 及 SHA-256，或用
+`scripts/netfleet-package-build.sh` 在已准备的 SDK 上构建。需要定向复现时，按[隔离 OpenWrt](validation.md#隔离-openwrt)选择对应诊断，
+复用同一候选和夹具。本机运行 QEMU 和可选资格命令时，用
+`env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY` 清除宿主壳代理环境变量。
+
+使用已通过完整验收的本地候选进行容灾发布时，复用已经建立的 tag，先停止该 tag 的云端发布运行并确认终止，再调用同一发布器。
 
 ```sh
 scripts/publish-netfleet-release.sh --tag vX.Y.Z \
@@ -127,7 +145,7 @@ scripts/publish-netfleet-release.sh --tag vX.Y.Z \
 已经成立的完整基础资格。测试返回 `mutation_busy` 时仅重试明确未执行的调用，
 执行结果不明时先读事务，不重放。
 入口检查候选与资格回执绑定、版本与 tag 一致、候选已被最新远端主线包含，再创建不可变
-Release 并下载公开资产校验。本地执行 `scripts/publish-netfleet-release.sh --tag vX.Y.Z` 推送 tag `vX.Y.Z` 时会自动触发 `.github/workflows/release.yml`（托管 ARM64 runner 无 KVM、使用较慢的 TCG 模拟）；本地发布与公开资产校验通过后，应取消该冗余工作流运行以免重叠或超时。主线前进后仍使用已冻结并验收的候选；候选自身变更才重新
+Release 并下载公开资产校验。主线前进后仍使用已冻结并验收的候选。候选自身变更时重新
 构建和验收，不改旧回执。发布成功
 仍不等于设备已升级。实际推广按[部署操作](../operations/deployment.md)执行。
 
@@ -158,15 +176,25 @@ macOS VM 验收后才发布。应用签名、两次公证、最终 DMG 摘要、
 工作流在 GitHub Environment `release` 使用 Apple Developer ID 的单身份 `.p12`、对应密码、
 公证账号与 App-Specific Password，以及应用的 `SPARKLE_ED25519_PRIVATE_KEY`。
 构建前检查当前 `macos-stable` 及已有的目标 tag 和 Release。tag 指向其他源码或已有版本化 macOS 资产时停止构建。
-成功后工作流封存候选产物供隔离 VM 验收。凭据名称见[签名与 DMG](macos.md#签名与-dmg)和工作流。
+托管 macOS ARM64 runner 完成构建、签名、公证与候选封存。其中 DMG 和 VM 测试输入归档
+各上传一次，免二次压缩。Actions 摘要列出候选版本、源码和最终 DMG 摘要。凭据见[签名与 DMG](macos.md#签名与-dmg)。
 
-发布负责人从该次成功的 run 下载候选到空目录，按[隔离 VM 验收](macos.md#签名与-dmg)生成私有回执。
-产品 tag 与公开 Release 建立后，在本机串行执行发布。发布中断时用同一目录与回执重试。
+有可用的隔离 Apple Silicon macOS VM 时，从该次成功的 run 下载候选与测试输入，按[签名与 DMG](macos.md#签名与-dmg)
+完成测试并关闭 VM。当前由维护者在具备 Tart 的机器上按需执行该阶段。只有这一阶段需要占用 VM。
+构建缓存、候选封存及发布均由托管 runner 处理。详细验收记录留在执行机器。
+
+产品 tag 与公开 Release 建立后，从 `main` 派发 `macos-sparkle-publish.yml`，传候选 run ID 和最小资格回执。
+托管 Ubuntu runner 从该 run 取原制品，校验后发布和回读。发布中断时复用同一 run ID 和回执。
 
 ```sh
-gh run download <run-id> --repo gaofeng21cn/opl-netfleet --name netfleet-macos-vX.Y.Z --dir <candidate-dir>
-python3 scripts/macos/publish-sparkle-release.py --repo gaofeng21cn/opl-netfleet --tag vX.Y.Z \
-  --artifacts <candidate-dir> --qualification <vm-receipt.json>
+gh run download "$candidate_run_id" --repo gaofeng21cn/opl-netfleet \
+  --name "netfleet-macos-$release_tag" --dir "$candidate_dir"
+gh run download "$candidate_run_id" --repo gaofeng21cn/opl-netfleet \
+  --name "netfleet-macos-vm-inputs-$release_tag" --dir "$vm_input_dir"
+tar -xzf "$vm_input_dir/netfleet-macos-vm-inputs.tar.gz" -C "$vm_input_dir"
+gh workflow run macos-sparkle-publish.yml --repo gaofeng21cn/opl-netfleet --ref main \
+  -f release_tag="$release_tag" -f candidate_run_id="$candidate_run_id" \
+  -f qualification_json="$(jq -c '{vm_qualified,dmg_sha256,build:(.build|{channel,working_tree_dirty,package_version,package_release,source_commit,source_tree})}' "$vm_receipt")"
 ```
 
 发布脚本核对验收回执、DMG 摘要、应用构建号和 tag 所指的源码 commit/tree，再追加缺失的 DMG、
