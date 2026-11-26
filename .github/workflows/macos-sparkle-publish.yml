@@ -1,0 +1,83 @@
+name: Publish Qualified macOS Sparkle DMG
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing product Release tag (for example v0.9.29)
+        required: true
+        type: string
+      candidate_run_id:
+        description: Successful macOS candidate workflow run ID
+        required: true
+        type: string
+      qualification_json:
+        description: Minimal VM qualification JSON with only the documented release fields
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: netfleet-macos-sparkle-publish
+  cancel-in-progress: false
+
+jobs:
+  admit:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      candidate: ${{ steps.verify.outputs.candidate }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Verify candidate run and qualification input
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          QUALIFICATION_JSON: ${{ inputs.qualification_json }}
+        run: |
+          set -euo pipefail
+          candidate=$(printf '%s' "$QUALIFICATION_JSON" | python3 scripts/macos/publish-sparkle-release.py \
+            --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" --qualification /dev/stdin \
+            --admit-candidate-run "$CANDIDATE_RUN_ID")
+          printf 'candidate=%s\n' "$candidate" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: admit
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Fetch the dispatch workflow source anonymously
+        env:
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          git init -q
+          git fetch --depth=1 "https://github.com/${GITHUB_REPOSITORY}.git" "$WORKFLOW_SHA"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$WORKFLOW_SHA"
+      - name: Publish the exact qualified candidate and verify public assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          QUALIFICATION_JSON: ${{ inputs.qualification_json }}
+          CANDIDATE_IDENTITY: ${{ needs.admit.outputs.candidate }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$QUALIFICATION_JSON" | python3 scripts/macos/publish-sparkle-release.py \
+            --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" --qualification /dev/stdin \
+            --publish-candidate-run "$CANDIDATE_RUN_ID" --candidate-identity "$CANDIDATE_IDENTITY"

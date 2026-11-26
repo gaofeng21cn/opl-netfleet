@@ -7,10 +7,12 @@ import json
 from pathlib import Path
 import plistlib
 import re
+import shutil
 import subprocess
 from tempfile import TemporaryDirectory
 from urllib.request import urlopen
 import xml.etree.ElementTree as ET
+from zipfile import BadZipFile, ZipFile
 
 
 DMG = "OPL-NetFleet-macos-arm64.dmg"
@@ -20,6 +22,7 @@ STABLE = "macos-stable"
 PREVIOUS = "appcast.previous.xml"
 SPARKLE = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
 MAX_APPCAST_BYTES = 262144
+CANDIDATE_WORKFLOW = ".github/workflows/macos-sparkle-release.yml"
 
 
 class ReleaseError(RuntimeError):
@@ -87,6 +90,17 @@ def digest(data):
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
+def stream_identity(source, expected_size=None):
+    sha256 = hashlib.sha256()
+    size = 0
+    while chunk := source.read(1024 * 1024):
+        size += len(chunk)
+        if expected_size is not None and size > expected_size:
+            raise ReleaseError("Downloaded asset exceeded its expected size")
+        sha256.update(chunk)
+    return "sha256:" + sha256.hexdigest(), size
+
+
 def same_asset(asset, identity):
     return asset.get("state") == "uploaded" and (asset.get("digest"), asset.get("size")) == identity
 
@@ -101,15 +115,15 @@ def download_appcast(repo, asset):
     return response.stdout
 
 
-def verify_public_appcast(repo, xml):
-    url = f"https://github.com/{repo}/releases/download/{STABLE}/{APPCAST}"
+def verify_public_asset(repo, tag, name, identity):
+    url = f"https://github.com/{repo}/releases/download/{tag}/{name}"
     try:
         with urlopen(url, timeout=20) as response:
-            public_xml = response.read(MAX_APPCAST_BYTES + 1)
+            actual = stream_identity(response, identity[1])
     except OSError as error:
-        raise ReleaseError("Cannot read the public Sparkle feed URL") from error
-    if public_xml != xml:
-        raise ReleaseError("Public Sparkle feed URL serves a different appcast")
+        raise ReleaseError(f"Cannot read public release asset {tag}/{name}") from error
+    if actual != identity:
+        raise ReleaseError(f"Public release asset {tag}/{name} differs from the sealed asset")
 
 
 def check_stable(repo, candidate, candidate_xml=None):
@@ -195,7 +209,7 @@ def promote(repo, source, appcast, candidate, xml):
     assets = release_assets(repo, STABLE)
     if APPCAST not in assets or download_appcast(repo, assets[APPCAST]) != xml:
         raise ReleaseError("Stable appcast readback differs from the sealed appcast")
-    verify_public_appcast(repo, xml)
+    verify_public_asset(repo, STABLE, APPCAST, identity)
     if PREVIOUS in assets:
         remove_previous(repo, assets[PREVIOUS])
 
@@ -216,6 +230,97 @@ def verify_qualification(receipt, bundle_hash, candidate):
     if not all(isinstance(value, str) and re.fullmatch(r"[a-f0-9]{40}", value) for value in identity):
         raise ReleaseError("Qualified app source commit and tree are required")
     return identity
+
+
+def read_workflow_qualification(path, tag):
+    receipt = json.loads(path.read_text())
+    if (
+        not isinstance(receipt, dict)
+        or receipt.keys() != {"vm_qualified", "dmg_sha256", "build"}
+        or not isinstance(receipt["build"], dict)
+        or receipt["build"].keys() != {
+            "channel", "working_tree_dirty", "package_version", "package_release", "source_commit", "source_tree",
+        }
+        or not isinstance(receipt["dmg_sha256"], str)
+        or not re.fullmatch(r"[a-f0-9]{64}", receipt["dmg_sha256"])
+    ):
+        raise ReleaseError("Expected a minimal macOS VM qualification receipt")
+    candidate = stable_version(tag[1:], receipt["build"]["package_release"])
+    verify_qualification(receipt, receipt["dmg_sha256"], candidate)
+    return receipt
+
+
+def github_json(endpoint):
+    response = gh("api", endpoint)
+    if response.returncode:
+        raise ReleaseError("Cannot read GitHub Actions candidate metadata")
+    data = json.loads(response.stdout)
+    if not isinstance(data, dict):
+        raise ReleaseError("Invalid GitHub Actions candidate metadata")
+    return data
+
+
+def candidate_artifact(repo, tag, run_id):
+    if not re.fullmatch(r"[1-9][0-9]*", run_id):
+        raise ReleaseError("Candidate run ID must be a positive integer")
+    prefix = f"repos/{repo}/actions"
+    workflow = github_json(f"{prefix}/workflows/{Path(CANDIDATE_WORKFLOW).name}")
+    run = github_json(f"{prefix}/runs/{run_id}")
+    if (
+        run.get("id") != int(run_id)
+        or run.get("workflow_id") != workflow.get("id")
+        or workflow.get("path") != CANDIDATE_WORKFLOW
+        or run.get("path") != CANDIDATE_WORKFLOW
+        or run.get("event") != "workflow_dispatch"
+        or run.get("head_branch") != "main"
+        or run.get("status") != "completed"
+        or run.get("conclusion") != "success"
+        or run.get("repository", {}).get("full_name") != repo
+        or run.get("head_repository", {}).get("full_name") != repo
+    ):
+        raise ReleaseError("Expected a successful main-branch NetFleet macOS candidate run")
+    name = f"netfleet-macos-{tag}"
+    listing = github_json(f"{prefix}/runs/{run_id}/artifacts?name={name}")
+    artifacts = listing.get("artifacts", [])
+    if listing.get("total_count") != 1 or len(artifacts) != 1:
+        raise ReleaseError("Expected exactly one macOS release artifact in the candidate run")
+    asset = artifacts[0]
+    owner = asset.get("workflow_run", {})
+    if (
+        asset.get("name") != name
+        or asset.get("expired") is not False
+        or type(asset.get("id")) is not int
+        or asset["id"] <= 0
+        or type(asset.get("size_in_bytes")) is not int
+        or asset["size_in_bytes"] <= 0
+        or not re.fullmatch(r"sha256:[a-f0-9]{64}", asset.get("digest") or "")
+        or owner.get("id") != run["id"]
+        or owner.get("head_sha") != run.get("head_sha")
+        or owner.get("repository_id") != run["repository"].get("id")
+        or owner.get("head_repository_id") != run["head_repository"].get("id")
+    ):
+        raise ReleaseError("GitHub Actions artifact does not match the trusted candidate run")
+    return {key: asset[key] for key in ("id", "digest", "size_in_bytes")}
+
+
+def download_candidate(repo, asset, directory):
+    archive = directory / "candidate.zip"
+    endpoint = f"repos/{repo}/actions/artifacts/{asset['id']}/zip"
+    try:
+        with archive.open("wb") as output:
+            result = subprocess.run(["gh", "api", endpoint], stdout=output, timeout=240)
+    except subprocess.TimeoutExpired as error:
+        raise ReleaseError("Candidate artifact download timed out") from error
+    with archive.open("rb") as source:
+        actual = stream_identity(source, asset["size_in_bytes"])
+    if result.returncode or actual != (asset["digest"], asset["size_in_bytes"]):
+        raise ReleaseError("Downloaded candidate archive does not match the GitHub Actions digest")
+    with ZipFile(archive) as zipped:
+        if sorted(zipped.namelist()) != sorted(VERSION_ASSETS):
+            raise ReleaseError("Candidate archive must contain exactly the three macOS release assets")
+        for name in VERSION_ASSETS:
+            with zipped.open(name) as source, (directory / name).open("xb") as output:
+                shutil.copyfileobj(source, output)
 
 
 def publish(repo, tag, directory, qualification):
@@ -247,6 +352,8 @@ def publish(repo, tag, directory, qualification):
     final = release_assets(repo, tag)
     if any(name not in final or not same_asset(final[name], identities[name]) for name in VERSION_ASSETS):
         raise ReleaseError("Published macOS asset readback differs from the sealed artifacts")
+    for name, identity in identities.items():
+        verify_public_asset(repo, tag, name, identity)
     promote(repo, source[0], paths[APPCAST], candidate, xml)
     print(f"Verified macOS release assets and public Sparkle feed for {tag}")
 
@@ -259,6 +366,9 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--preflight", type=Path, metavar="INFO_PLIST")
     group.add_argument("--artifacts", type=Path, metavar="DIRECTORY")
+    group.add_argument("--admit-candidate-run", metavar="RUN_ID")
+    group.add_argument("--publish-candidate-run", metavar="RUN_ID")
+    parser.add_argument("--candidate-identity", metavar="JSON")
     args = parser.parse_args()
     try:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repo) or not args.tag.startswith("v"):
@@ -273,6 +383,21 @@ def main():
             if published is not None and set(VERSION_ASSETS) & published.keys():
                 raise ReleaseError("Versioned macOS assets already exist. Retry publication with the same qualified artifacts.")
             check_stable(args.repo, candidate)
+        elif args.admit_candidate_run or args.publish_candidate_run:
+            if args.qualification is None:
+                raise ReleaseError("GitHub Actions candidate requires a macOS VM --qualification receipt")
+            qualification = read_workflow_qualification(args.qualification, args.tag)
+            run_id = args.admit_candidate_run or args.publish_candidate_run
+            asset = candidate_artifact(args.repo, args.tag, run_id)
+            if args.admit_candidate_run:
+                print(json.dumps(asset, separators=(",", ":")))
+            else:
+                if not args.candidate_identity or asset != json.loads(args.candidate_identity):
+                    raise ReleaseError("Candidate artifact changed since workflow admission")
+                with TemporaryDirectory(prefix="netfleet-macos-publish-") as directory:
+                    directory = Path(directory)
+                    download_candidate(args.repo, asset, directory)
+                    publish(args.repo, args.tag, directory, qualification)
         else:
             if args.qualification is None:
                 raise ReleaseError("--artifacts requires a macOS VM --qualification receipt")
@@ -280,7 +405,7 @@ def main():
             if not isinstance(qualification, dict):
                 raise ReleaseError("Invalid macOS VM qualification receipt")
             publish(args.repo, args.tag, args.artifacts, qualification)
-    except (OSError, TypeError, ValueError, ReleaseError) as error:
+    except (OSError, TypeError, ValueError, BadZipFile, ReleaseError) as error:
         parser.exit(1, f"{error}\n")
 
 

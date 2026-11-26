@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from pathlib import Path
+from zipfile import ZipFile
 
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "scripts/macos"))
@@ -141,6 +142,7 @@ class MacOSReleaseTests(unittest.TestCase):
         self.fail_publish_rename = False
         self.stable_error = None
         self.lost_upload_response = None
+        self.public_overrides = {}
         transport = patch.object(release, "gh", side_effect=self.gh)
         transport.start()
         self.addCleanup(transport.stop)
@@ -152,8 +154,10 @@ class MacOSReleaseTests(unittest.TestCase):
         self.put_asset(release.STABLE, release.APPCAST, self.old_appcast)
 
     def public_download(self, url, **_):
-        self.assertEqual(url, f"https://github.com/{self.repo}/releases/download/{release.STABLE}/{release.APPCAST}")
-        return BytesIO(self.releases[release.STABLE][release.APPCAST][1])
+        prefix = f"https://github.com/{self.repo}/releases/download/"
+        self.assertTrue(url.startswith(prefix))
+        tag, name = url.removeprefix(prefix).split("/")
+        return BytesIO(self.public_overrides.get((tag, name), self.releases[tag][name][1]))
 
     def appcast(self, version, build):
         namespace = release.SPARKLE[1:-1]
@@ -267,6 +271,87 @@ class MacOSReleaseTests(unittest.TestCase):
         self.mutations.clear()
         self.publish()
         self.assertEqual(self.mutations, [])
+
+    def test_public_bytes_must_match_before_advancing_stable(self):
+        self.public_overrides[self.tag, release.DMG] = b"x" * len(self.bundle)
+        with self.assertRaisesRegex(release.ReleaseError, "Public release asset .* differs"):
+            self.publish()
+        self.assertEqual(self.releases[release.STABLE][release.APPCAST][1], self.old_appcast)
+        self.assertEqual({name for kind, _, name in self.mutations if kind == "upload"}, set(release.VERSION_ASSETS))
+        self.public_overrides.clear()
+        self.publish()
+        self.assertEqual(self.releases[release.STABLE][release.APPCAST][1], self.xml)
+
+    def test_workflow_qualification_rejects_private_or_nonpassing_fields(self):
+        path = self.directory / "qualification.json"
+        path.write_text(json.dumps(self.qualification))
+        self.assertEqual(release.read_workflow_qualification(path, self.tag), self.qualification)
+        for change in ({"diagnostics": "private"}, {"vm_qualified": False}, {"dmg_sha256": "bad"}):
+            path.write_text(json.dumps({**self.qualification, **change}))
+            with self.assertRaises(release.ReleaseError):
+                release.read_workflow_qualification(path, self.tag)
+
+    def test_candidate_requires_unique_artifact_owned_by_successful_main_run(self):
+        run_id, repository_id, workflow_id = 123, 456, 789
+        path = release.CANDIDATE_WORKFLOW
+        workflow = {"id": workflow_id, "path": path}
+        repository = {"id": repository_id, "full_name": self.repo}
+        run = {
+            "id": run_id, "workflow_id": workflow_id, "path": path, "event": "workflow_dispatch",
+            "head_branch": "main", "head_sha": self.source, "status": "completed", "conclusion": "success",
+            "repository": repository, "head_repository": repository,
+        }
+        artifact = {
+            "id": 12, "name": f"netfleet-macos-{self.tag}", "expired": False, "digest": "sha256:" + "a" * 64,
+            "size_in_bytes": 200,
+            "workflow_run": {
+                "id": run_id, "head_sha": self.source,
+                "head_repository_id": repository_id, "repository_id": repository_id,
+            },
+        }
+        listing = {"total_count": 1, "artifacts": [artifact]}
+        with patch.object(release, "github_json", side_effect=[workflow, run, listing]):
+            identity = release.candidate_artifact(self.repo, self.tag, str(run_id))
+            self.assertEqual(identity, {"id": 12, "digest": artifact["digest"], "size_in_bytes": 200})
+        for change in ({"head_branch": "other"}, {"conclusion": "failure"}, {"event": "pull_request"}):
+            with patch.object(release, "github_json", side_effect=[workflow, {**run, **change}]):
+                with self.assertRaisesRegex(release.ReleaseError, "successful main-branch"):
+                    release.candidate_artifact(self.repo, self.tag, str(run_id))
+        with patch.object(release, "github_json", side_effect=[workflow, run, {**listing, "total_count": 2}]):
+            with self.assertRaisesRegex(release.ReleaseError, "exactly one"):
+                release.candidate_artifact(self.repo, self.tag, str(run_id))
+        invalid_owner = {**artifact["workflow_run"], "id": 321}
+        with patch.object(release, "github_json", side_effect=[workflow, run, {
+            **listing, "artifacts": [{**artifact, "workflow_run": invalid_owner}],
+        }]):
+            with self.assertRaisesRegex(release.ReleaseError, "does not match the trusted"):
+                release.candidate_artifact(self.repo, self.tag, str(run_id))
+
+    def test_candidate_download_checks_digest_and_exact_zip_members(self):
+        archive = BytesIO()
+
+        def download(args, *, stdout, timeout):
+            self.assertEqual(args, ["gh", "api", f"repos/{self.repo}/actions/artifacts/12/zip"])
+            stdout.write(archive.getvalue())
+            return subprocess.CompletedProcess(args, 0)
+
+        for members in [release.VERSION_ASSETS, (*release.VERSION_ASSETS, "../unexpected")]:
+            with self.subTest(members=members), tempfile.TemporaryDirectory() as destination:
+                archive = BytesIO()
+                with ZipFile(archive, "w") as zipped:
+                    for name in members:
+                        zipped.writestr(name, name.encode())
+                identity = {"id": 12, "digest": release.digest(archive.getvalue()), "size_in_bytes": len(archive.getvalue())}
+                directory = Path(destination)
+                with patch.object(release.subprocess, "run", side_effect=download):
+                    with self.assertRaisesRegex(release.ReleaseError, "archive does not match"):
+                        release.download_candidate(self.repo, {**identity, "digest": "bad"}, directory)
+                    if members == release.VERSION_ASSETS:
+                        release.download_candidate(self.repo, identity, directory)
+                        self.assertEqual((directory / release.DMG).read_bytes(), release.DMG.encode())
+                    else:
+                        with self.assertRaisesRegex(release.ReleaseError, "exactly the three"):
+                            release.download_candidate(self.repo, identity, directory)
 
     def test_conflicting_asset_or_stable_rollback_stops_before_writes(self):
         self.put_asset(self.tag, release.DMG, b"Earlier published bytes")
