@@ -676,15 +676,9 @@ async function main() {
   await core.reconcileStartup();
   await installBuiltin(builtinRoot, stateDir);
   await saveState({});
-  rpcServer = http.createServer(async (request, response) => {
-    if (await serveMiniappStatus(request, response, async () => miniappStatus({
-      runtime: await core.status(), network: await network.status(), state,
-    }))) return;
-    try { assert(request.method === 'POST' && request.url === '/rpc' && request.headers.authorization === `Bearer ${rpcToken}`, 'unauthorized');
-      respond(response, 200, await rpc(await requestBody(request))); }
-    catch (error) { respond(response, 400, { ok: false, error: error.message }); }
-  });
-  await new Promise((resolve, reject) => { rpcServer.once('error', reject); rpcServer.listen(socketPath, resolve); }); await fs.chmod(socketPath, 0o600);
+  await privateDir(codeRoot);
+  // The running copy may contain files unique to an overlay from an earlier boot.
+  await fs.rm(codeRoot, { recursive: true });
   await privateDir(codeRoot);
   await fs.cp(sourceRoot, codeRoot, { recursive: true, force: true });
   if (!process.env.NETFLEET_SOURCE_ROOT) {
@@ -696,14 +690,35 @@ async function main() {
     }
   }
   await fs.cp(path.join(desktopRoot, 'ucode'), codeRoot, { recursive: true, force: true });
-  const overlayPublicKey = process.env.NETFLEET_PLUGIN_PUBLIC_KEY
-    ?? await readPublicKeyFromPlist(path.resolve(appRoot, '../Info.plist'))
-    ?? await readPublicKeyFromPlist(path.join(desktopRoot, 'app/Info.plist'));
+  const overlayPublicKey = packagedIdentity
+    ? await readPublicKeyFromPlist(path.resolve(appRoot, '../Info.plist'))
+    : process.env.NETFLEET_PLUGIN_PUBLIC_KEY ?? await readPublicKeyFromPlist(path.join(desktopRoot, 'app/Info.plist'));
+  let overlaysReady = false;
+  rpcServer = http.createServer(async (request, response) => {
+    if (overlaysReady && await serveMiniappStatus(request, response, async () => miniappStatus({
+      runtime: await core.status(), network: await network.status(), state,
+    }))) return;
+    try {
+      assert(request.method === 'POST' && request.url === '/rpc' && request.headers.authorization === `Bearer ${rpcToken}`, 'unauthorized');
+      const input = await requestBody(request);
+      assert(overlaysReady || input.method === 'code.digest', 'desktop_owner_starting');
+      respond(response, 200, await rpc(input));
+    } catch (error) { respond(response, 400, { ok: false, error: error.message }); }
+  });
+  await new Promise((resolve, reject) => { rpcServer.once('error', reject); rpcServer.listen(socketPath, resolve); }); await fs.chmod(socketPath, 0o600);
   pluginOverlays = await applySignedPluginOverlays({
     overlayRoot: path.join(stateDir, 'plugins'),
     codeRoot,
     publicKeyBase64: overlayPublicKey,
+    validateOverlay: async (stagingRoot, id) => {
+      const verifier = path.join(codeRoot, 'verify-overlay.uc');
+      const result = await run(path.join(runtimeRoot, 'bin/ucode'),
+        ['-L', `${runtimeRoot}/lib/ucode/*.so`, verifier, stagingRoot, id], { env, timeout: 30000 });
+      if (result.code !== 0) return { ok: false, error: 'overlay_compatibility_check_failed' };
+      return JSON.parse(result.stdout);
+    },
   });
+  overlaysReady = true;
   await snapshot();
   webServer = http.createServer(async (request, response) => {
     try {
@@ -750,4 +765,10 @@ async function main() {
     catch { if (!closing) serialized(shutdown).catch(() => { lastError = 'orphan_cleanup_failed'; }); }
   }, 2000).unref();
 }
-main().catch(error => { console.error(JSON.stringify({ ok: false, error: error.message })); process.exitCode = 1; });
+main().catch(async error => {
+  closing = true;
+  if (rpcServer?.listening) await new Promise(resolve => { rpcServer.close(resolve); rpcServer.closeAllConnections(); });
+  ownerLease?.kill();
+  console.error(JSON.stringify({ ok: false, error: error.message }));
+  process.exitCode = 1;
+});

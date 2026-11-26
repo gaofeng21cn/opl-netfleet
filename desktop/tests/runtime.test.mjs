@@ -192,7 +192,7 @@ test('network components report their sync state against the bundled bytes', asy
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
-test('signed plugin overlay verifies Ed25519 signature, replaces bundled plugin atomically, and rejects tampered or disallowed overlays fail-closed', async () => {
+test('signed plugin overlay verifies Ed25519 signature, replaces bundled plugin atomically, and rejects tampered or disallowed overlays fail-closed', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'netfleet-overlay-test-'));
   const ED25519_PKCS8_PREFIX_LEN = 16;
   const ED25519_SPKI_PREFIX_LEN = 12;
@@ -208,6 +208,8 @@ test('signed plugin overlay verifies Ed25519 signature, replaces bundled plugin 
       publicKeyB64: spki.subarray(ED25519_SPKI_PREFIX_LEN).toString('base64'),
     };
   }
+
+  const acceptOverlay = async () => ({ ok: true });
 
   async function seedBundled(codeRoot, id = 'events', version = '0.7.0') {
     const pluginDir = path.join(codeRoot, 'plugins', id);
@@ -254,9 +256,41 @@ test('signed plugin overlay verifies Ed25519 signature, replaces bundled plugin 
       'lib/control.uc': 'overlay-impl-v2',
       'manifest.json': JSON.stringify({ schema: 'opl-netfleet-service-plugin.v1', id: 'events', version: '0.7.1', api_version: 1 }),
     }, keys.privateKey, { version: '0.7.1' });
-    const okResult = await applySignedPluginOverlays({ overlayRoot, codeRoot, publicKeyBase64: keys.publicKeyB64 });
+    const okResult = await applySignedPluginOverlays({ overlayRoot, codeRoot, publicKeyBase64: keys.publicKeyB64, validateOverlay: acceptOverlay });
     assert.deepEqual(okResult, { applied: [{ id: 'events', version: '0.7.1', bundled_version: '0.7.0' }], rejected: [] });
     assert.equal(await fs.readFile(path.join(codeRoot, 'plugins/events/lib/control.uc'), 'utf8'), 'overlay-impl-v2');
+
+    const refusedRoot = path.join(root, 'refused-code');
+    await seedBundled(refusedRoot);
+    const refused = await applySignedPluginOverlays({
+      overlayRoot, codeRoot: refusedRoot, publicKeyBase64: keys.publicKeyB64,
+      validateOverlay: async (stagingRoot, id) => {
+        assert.equal(id, 'events');
+        assert.equal(await fs.readFile(path.join(stagingRoot, 'plugins/events/lib/control.uc'), 'utf8'), 'overlay-impl-v2');
+        assert.equal(await fs.readFile(path.join(refusedRoot, 'plugins/events/lib/control.uc'), 'utf8'), 'bundled-impl');
+        return { ok: false, error: 'plugin_api_incompatible' };
+      },
+    });
+    assert.deepEqual(refused, { applied: [], rejected: [{ id: 'events', reason: 'plugin_api_incompatible' }] });
+    assert.equal(await fs.readFile(path.join(refusedRoot, 'plugins/events/lib/control.uc'), 'utf8'), 'bundled-impl');
+    assert.deepEqual(await fs.readdir(refusedRoot), ['plugins']);
+
+    const brokenRoot = path.join(root, 'broken-code');
+    await seedBundled(brokenRoot);
+    const activePlugin = path.join(brokenRoot, 'plugins/events');
+    const rename = fs.rename;
+    const failingRename = t.mock.method(fs, 'rename', async (source, destination) => {
+      if (destination === activePlugin) throw new Error('destination unavailable');
+      return rename(source, destination);
+    });
+    try {
+      await assert.rejects(applySignedPluginOverlays({
+        overlayRoot, codeRoot: brokenRoot, publicKeyBase64: keys.publicKeyB64, validateOverlay: acceptOverlay,
+      }), { message: 'overlay_restore_failed' });
+    } finally { failingRename.mock.restore(); }
+    const backup = (await fs.readdir(brokenRoot)).find(entry => entry.startsWith('.overlay-'));
+    assert.ok(backup);
+    assert.equal(await fs.readFile(path.join(brokenRoot, backup, 'previous/lib/control.uc'), 'utf8'), 'bundled-impl');
 
     // 2. Negative cases must fail closed and leave bundled plugin untouched
     const negCases = [
@@ -362,7 +396,7 @@ test('signed plugin overlay verifies Ed25519 signature, replaces bundled plugin 
       await fs.mkdir(oRoot, { mode: 0o700 });
       await seedBundled(cRoot, 'events', '0.7.0');
       await testCase.setup(cRoot, oRoot);
-      const outcome = await applySignedPluginOverlays({ overlayRoot: oRoot, codeRoot: cRoot, publicKeyBase64: keys.publicKeyB64 });
+      const outcome = await applySignedPluginOverlays({ overlayRoot: oRoot, codeRoot: cRoot, publicKeyBase64: keys.publicKeyB64, validateOverlay: acceptOverlay });
       assert.deepEqual(outcome.applied, [], `${testCase.name}: must not apply`);
       assert.deepEqual(outcome.rejected, [{ id: testCase.id ?? 'events', reason: testCase.reason }], testCase.name);
       assert.equal(await fs.readFile(path.join(cRoot, 'plugins/events/lib/control.uc'), 'utf8'), 'bundled-impl', testCase.name);
@@ -383,7 +417,7 @@ test('signed plugin overlay verifies Ed25519 signature, replaces bundled plugin 
       '--plugin-dir', pySrc,
       '--output-dir', path.join(pyOverlay, 'events'),
     ], { env: { ...process.env, SPARKLE_ED25519_PRIVATE_KEY: keys.privateSeedB64 } });
-    const pyResult = await applySignedPluginOverlays({ overlayRoot: pyOverlay, codeRoot: pyCode, publicKeyBase64: keys.publicKeyB64 });
+    const pyResult = await applySignedPluginOverlays({ overlayRoot: pyOverlay, codeRoot: pyCode, publicKeyBase64: keys.publicKeyB64, validateOverlay: acceptOverlay });
     assert.deepEqual(pyResult, { applied: [{ id: 'events', version: '0.7.2', bundled_version: '0.7.0' }], rejected: [] });
     assert.equal(await fs.readFile(path.join(pyCode, 'plugins/events/lib/control.uc'), 'utf8'), 'signed-by-python-cli');
   } finally { await fs.rm(root, { recursive: true, force: true }); }

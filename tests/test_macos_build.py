@@ -1,5 +1,7 @@
-"""Exercise macOS source provenance without requiring platform build tools."""
+"""Exercise macOS source provenance and release behavior without publication."""
+import hashlib
 import importlib.util
+from io import BytesIO
 import json
 import plistlib
 import re
@@ -7,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
@@ -14,6 +17,9 @@ sys.path.insert(0, str(ROOT / "scripts/macos"))
 spec = importlib.util.spec_from_file_location("macos_builder", ROOT / "scripts/macos/build-app.py")
 builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
+spec = importlib.util.spec_from_file_location("macos_release", ROOT / "scripts/macos/publish-sparkle-release.py")
+release = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(release)
 
 
 class MacOSBuildIdentityTests(unittest.TestCase):
@@ -98,6 +104,166 @@ class MacOSBuildIdentityTests(unittest.TestCase):
         self.assertEqual(match.group(1), product_version)
         self.assertEqual(info["CFBundleShortVersionString"], product_version)
         self.assertEqual(info["SUFeedURL"], "https://github.com/gaofeng21cn/opl-netfleet/releases/download/macos-stable/appcast.xml")
+
+
+class MacOSReleaseTests(unittest.TestCase):
+    repo = "example/project"
+    source = "a" * 40
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.directory = Path(temp.name)
+        self.tag = "v1.10.0"
+        self.bundle = b"Sealed DMG"
+        self.xml = self.appcast("1.10.0", 23)
+        (self.directory / release.DMG).write_bytes(self.bundle)
+        (self.directory / release.APPCAST).write_bytes(self.xml)
+        (self.directory / (release.DMG + ".sha256")).write_text(
+            f"{hashlib.sha256(self.bundle).hexdigest()}  {release.DMG}\n"
+        )
+        self.releases = {self.tag: {}, release.STABLE: {}}
+        self.mutations = []
+        self.next_id = 1
+        self.fail_publish_rename = False
+        self.stable_error = None
+        self.lost_upload_response = None
+        transport = patch.object(release, "gh", side_effect=self.gh)
+        transport.start()
+        self.addCleanup(transport.stop)
+        public_download = patch.object(release, "urlopen", side_effect=self.public_download)
+        public_download.start()
+        self.addCleanup(public_download.stop)
+        self.put_asset(self.tag, "openwrt.apk", b"OpenWrt")
+        self.old_appcast = self.appcast("1.9.0", 22)
+        self.put_asset(release.STABLE, release.APPCAST, self.old_appcast)
+
+    def public_download(self, url, **_):
+        self.assertEqual(url, f"https://github.com/{self.repo}/releases/download/{release.STABLE}/{release.APPCAST}")
+        return BytesIO(self.releases[release.STABLE][release.APPCAST][1])
+
+    def appcast(self, version, build):
+        namespace = release.SPARKLE[1:-1]
+        url = f"https://github.com/{self.repo}/releases/download/v{version}/{release.DMG}"
+        signature = "A" * 86 + "=="
+        return (
+            f'<rss xmlns:sparkle="{namespace}"><channel><item>'
+            f"<sparkle:version>{build}</sparkle:version>"
+            f"<sparkle:shortVersionString>{version}</sparkle:shortVersionString>"
+            f'<enclosure url="{url}" length="{len(self.bundle)}" sparkle:edSignature="{signature}"/>'
+            "</item></channel></rss>"
+        ).encode()
+
+    def put_asset(self, tag, name, data):
+        self.releases[tag][name] = (self.next_id, data)
+        self.next_id += 1
+
+    def gh(self, *args, **_):
+        def result(code=0, response=b""):
+            return subprocess.CompletedProcess(args, code, stdout=response, stderr=b"")
+
+        if args[:2] == ("release", "upload"):
+            tag, filename = args[2:4]
+            path = Path(filename)
+            if path.name in self.releases[tag]:
+                return result(1)
+            self.mutations.append(("upload", tag, path.name))
+            self.put_asset(tag, path.name, path.read_bytes())
+            return result(1 if path.name == self.lost_upload_response else 0)
+        if args[:2] == ("release", "create"):
+            tag, filename = args[2:4]
+            self.mutations.append(("create", tag))
+            self.releases[tag] = {}
+            path = Path(filename)
+            self.put_asset(tag, path.name, path.read_bytes())
+            return result()
+        if args[1] == "--include":
+            tag = args[2].rsplit("/", 1)[1]
+            if tag == release.STABLE and self.stable_error:
+                return result(1, f"HTTP/2.0 {self.stable_error}\n\r\n".encode())
+            if tag not in self.releases:
+                return result(1, b"HTTP/2.0 404 Not Found\n\r\n")
+            assets = [
+                {"id": ident, "name": name, "size": len(data), "digest": release.digest(data), "state": "uploaded"}
+                for name, (ident, data) in self.releases[tag].items()
+            ]
+            return result(response=b"HTTP/2.0 200 OK\n\r\n" + json.dumps({
+                "tag_name": tag, "draft": False, "prerelease": False, "assets": assets,
+            }).encode())
+        if args[1] == "--header":
+            asset_id = int(args[3].rsplit("/", 1)[1])
+            for assets in self.releases.values():
+                for ident, data in assets.values():
+                    if ident == asset_id:
+                        return result(response=data)
+            return result(1)
+        if args[1] == "--method":
+            method, endpoint = args[2:4]
+            asset_id = int(endpoint.rsplit("/", 1)[1])
+            stable = self.releases[release.STABLE]
+            name = next(name for name, (ident, _) in stable.items() if ident == asset_id)
+            if method == "DELETE":
+                del stable[name]
+            elif method == "PATCH":
+                target = args[5].split("=", 1)[1]
+                if target in stable or self.fail_publish_rename and name.startswith("appcast-") and target == release.APPCAST:
+                    return result(1)
+                stable[target] = stable.pop(name)
+            else:
+                raise AssertionError(args)
+            self.mutations.append((method, name))
+            return result()
+        if args[1].endswith(f"/commits/{self.tag}"):
+            return result(response=(self.source + "\n").encode())
+        raise AssertionError(args)
+
+    def publish(self):
+        release.publish(self.repo, self.tag, self.source, self.directory)
+
+    def test_partial_publish_retains_versioned_assets_and_reconciles_unknown_upload(self):
+        self.put_asset(self.tag, release.DMG, self.bundle)
+        before = self.releases[self.tag].copy()
+        self.lost_upload_response = release.DMG + ".sha256"
+        self.publish()
+        for name, asset in before.items():
+            self.assertEqual(self.releases[self.tag][name], asset)
+        self.assertEqual(self.releases[release.STABLE][release.APPCAST][1], self.xml)
+        self.assertEqual(set(self.releases[release.STABLE]), {release.APPCAST})
+        self.mutations.clear()
+        self.publish()
+        self.assertEqual(self.mutations, [])
+
+    def test_conflicting_asset_or_stable_rollback_stops_before_writes(self):
+        self.put_asset(self.tag, release.DMG, b"Earlier published bytes")
+        with self.assertRaisesRegex(release.ReleaseError, "Refusing to replace"):
+            self.publish()
+        del self.releases[self.tag][release.DMG]
+        for short, build in [("1.11.0", 22), ("1.9.0", 23), ("1.9.0", 24)]:
+            with self.subTest(short=short, build=build):
+                self.put_asset(release.STABLE, release.APPCAST, self.appcast(short, build))
+                with self.assertRaisesRegex(release.ReleaseError, "roll back"):
+                    self.publish()
+        self.assertEqual(self.mutations, [])
+
+    def test_stable_transport_failure_differs_from_first_publication(self):
+        self.stable_error = 503
+        with self.assertRaisesRegex(release.ReleaseError, "Cannot read GitHub Release macos-stable"):
+            self.publish()
+        self.assertEqual(self.mutations, [])
+        self.stable_error = None
+        del self.releases[release.STABLE]
+        self.publish()
+        self.assertIn(("create", release.STABLE), self.mutations)
+        self.assertEqual(self.releases[release.STABLE][release.APPCAST][1], self.xml)
+
+    def test_failed_stable_swap_restores_previous_appcast_and_allows_retry(self):
+        self.fail_publish_rename = True
+        with self.assertRaisesRegex(release.ReleaseError, "stable appcast rename"):
+            self.publish()
+        self.assertEqual(self.releases[release.STABLE][release.APPCAST][1], self.old_appcast)
+        self.fail_publish_rename = False
+        self.publish()
+        self.assertEqual(self.releases[release.STABLE][release.APPCAST][1], self.xml)
 
 
 if __name__ == "__main__":

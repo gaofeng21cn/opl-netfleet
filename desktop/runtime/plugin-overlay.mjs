@@ -18,6 +18,10 @@ class OverlayRejectError extends Error {
   }
 }
 
+class OverlayRestoreError extends Error {
+  constructor(cause) { super('overlay_restore_failed', { cause }); }
+}
+
 function parseSemver(version) {
   if (typeof version !== 'string') return null;
   const match = SEMVER_RE.exec(version);
@@ -172,41 +176,37 @@ async function collectOverlayFiles(rootDir, currentRel = '', collected = new Map
   return collected;
 }
 
-async function stageVerifiedPlugin(targetDir, verifiedFiles) {
-  const parentDir = path.dirname(targetDir);
-  const pluginId = path.basename(targetDir);
-  const nonce = crypto.randomBytes(6).toString('hex');
-  const stagingDir = path.join(parentDir, `.overlay-${pluginId}-${nonce}`);
-  const backupDir = path.join(parentDir, `.prev-${pluginId}-${nonce}`);
-  await fs.mkdir(stagingDir, { mode: 0o700 });
-  let movedOld = false;
+async function stageVerifiedPlugin(codeRoot, id, verifiedFiles, validateOverlay) {
+  const stagingRoot = await fs.mkdtemp(path.join(codeRoot, '.overlay-'));
+  const stagingDir = path.join(stagingRoot, 'plugins', id);
+  const targetDir = path.join(codeRoot, 'plugins', id);
+  const backupDir = path.join(stagingRoot, 'previous');
+  let preserveBackup = false;
   try {
     for (const [rel, bytes] of verifiedFiles) {
       const dest = path.join(stagingDir, rel);
       await fs.mkdir(path.dirname(dest), { recursive: true, mode: 0o700 });
       await fs.writeFile(dest, bytes, { mode: 0o600 });
     }
-    const exists = await fs.lstat(targetDir).then(() => true, error => {
-      if (error.code === 'ENOENT') return false;
-      throw error;
-    });
-    if (exists) {
-      await fs.rename(targetDir, backupDir);
-      movedOld = true;
+    const result = await validateOverlay(stagingRoot, id);
+    if (result?.ok !== true) throw new OverlayRejectError(result?.error ?? 'overlay_compatibility_check_failed');
+
+    await fs.rename(targetDir, backupDir);
+    try {
+      await fs.rename(stagingDir, targetDir);
+    } catch {
+      preserveBackup = true;
+      try { await fs.rename(backupDir, targetDir); }
+      catch (error) { throw new OverlayRestoreError(error); }
+      preserveBackup = false;
+      throw new OverlayRejectError('install_failed');
     }
-    await fs.rename(stagingDir, targetDir);
-    if (movedOld) await fs.rm(backupDir, { recursive: true, force: true });
-  } catch {
-    if (movedOld) {
-      const restoredNeeded = await fs.lstat(targetDir).then(() => false, () => true);
-      if (restoredNeeded) await fs.rename(backupDir, targetDir).catch(() => {});
-    }
-    await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => {});
-    throw new OverlayRejectError('install_failed');
+  } finally {
+    if (!preserveBackup) await fs.rm(stagingRoot, { recursive: true, force: true }).catch(() => {});
   }
 }
 
-export async function applySignedPluginOverlays({ overlayRoot, codeRoot, publicKeyBase64 }) {
+export async function applySignedPluginOverlays({ overlayRoot, codeRoot, publicKeyBase64, validateOverlay }) {
   let rootStat;
   try {
     rootStat = await fs.lstat(overlayRoot);
@@ -291,9 +291,11 @@ export async function applySignedPluginOverlays({ overlayRoot, codeRoot, publicK
         throw new OverlayRejectError('downgrade_rejected');
       }
 
-      await stageVerifiedPlugin(targetPluginDir, verifiedFiles);
+      if (typeof validateOverlay !== 'function') throw new OverlayRejectError('overlay_compatibility_check_unavailable');
+      await stageVerifiedPlugin(codeRoot, id, verifiedFiles, validateOverlay);
       applied.push({ id, version: overlayManifest.version, bundled_version: bundledManifest.version });
     } catch (error) {
+      if (error instanceof OverlayRestoreError) throw error;
       rejected.push({ id, reason: error instanceof OverlayRejectError ? error.reason : 'overlay_verification_failed' });
     }
   }

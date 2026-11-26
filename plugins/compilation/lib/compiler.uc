@@ -552,6 +552,7 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 		const original = groups[base_index];
 
 		const automatic = automatic_capability(policy, capability);
+		const automatic_probe = automatic ? guard_probe : path_probe;
 		const leaf_tolerance = leaf_switch_margin(policy, capability);
 		const capability_name = capability_group_name(policy, capability);
 		const preferred_group = preferred_group_name(capability_name);
@@ -640,8 +641,8 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 				use: [source.source_name],
 				filter: join("`", authorized_filters),
 				"empty-fallback": "REJECT",
-				url: path_probe.url,
-				"expected-status": path_probe.head_expected_status ?? path_probe.expected_status,
+				url: automatic_probe.url,
+				"expected-status": automatic_probe.head_expected_status ?? automatic_probe.expected_status,
 				timeout: healthcheck.timeout_ms,
 				interval: healthcheck.interval_seconds,
 				"max-failed-times": healthcheck.max_failed_times,
@@ -761,8 +762,8 @@ compile = function(profile, policy, policy_source_digest, recovery_profile_diges
 				type: "url-test",
 				proxies: members,
 				"empty-fallback": "DIRECT",
-				url: path_probe.url,
-				"expected-status": path_probe.head_expected_status ?? path_probe.expected_status,
+				url: automatic_probe.url,
+				"expected-status": automatic_probe.head_expected_status ?? automatic_probe.expected_status,
 				timeout: healthcheck.timeout_ms,
 				interval: healthcheck.interval_seconds,
 				"max-failed-times": healthcheck.max_failed_times,

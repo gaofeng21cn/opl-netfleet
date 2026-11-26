@@ -175,12 +175,16 @@ Sparkle 2 自动定期检查更新并在应用菜单、菜单栏与“核心与�
 
 ### 签名插件覆盖
 
-桌面运行宿主将随包共享服务插件复制到私有代码目录后，对私有目录
-`Application Support/OPL NetFleet/plugins/<id>` 中的可选覆盖目录执行 fail-closed 的
-Ed25519 校验。校验复用应用内 `SUPublicEDKey` 验证 `overlay-signature.json`
-（`opl-netfleet-plugin-overlay.v1`）及其排序后的全量文件 SHA-256 清单：只允许替换随包已存在的纯业务/通用服务插件，拒绝
-`platform-macos`、未知插件 ID、符号链接、越权权限、目录穿越、未登记额外文件与同版本/降级覆写，
-通过后原子替换私有运行副本并在快照中通过只读 `plugin_overlays` 字段报告已应用与已拒绝列表。
+桌面运行宿主取得独占锁后，从随包代码重建私有运行副本，再处理私有目录
+`Application Support/OPL NetFleet/plugins/<id>` 中的可选插件覆盖。打包应用使用包内
+`SUPublicEDKey` 验证 `overlay-signature.json`（`opl-netfleet-plugin-overlay.v1`）及排序后的
+全量文件 SHA-256 清单。覆盖只接受随包已存在且版本更高的服务插件，拒绝 `platform-macos`、
+未知插件 ID、符号链接、越权权限、目录穿越和未登记的额外文件。
+
+候选先写入私有临时目录，由当前 UCode 内核校验 API 版本、manifest 描述符和模块文件，再按
+`system.json` 的服务绑定验证候选组合的命令和依赖图。检查通过后提交替换，拒绝时保留随包插件。
+若替换失败且无法恢复原插件目录，宿主终止启动，下次启动从随包代码重建运行副本。
+快照的只读 `plugin_overlays` 字段报告已应用和已拒绝列表。
 
 ## 本机接口
 

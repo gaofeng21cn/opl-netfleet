@@ -136,14 +136,14 @@ function configModule(management) {
   )(baseclass, ui, management, E, { render: () => null });
 }
 
-function modesModule(api, selectionRunner) {
+function modesModule(api, selectionRunner, config) {
   const source = fs.readFileSync(path.join(RESOURCES, 'product-pages.js'), 'utf8');
   const exports = source.slice(0, source.lastIndexOf('return baseclass.extend({')) +
     'return { progress: managed, regions: regionsPage, controls: operatingModeControls, controller: productController, summary: statusSummary, health: pathHealthLabel, region: currentRegion, mode: modeName };';
   const managed = loadModule('managed.js', { operationGet: async () => ({}), ...api });
   if (selectionRunner) managed.runSelection = selectionRunner;
   const views = new Function('baseclass', 'ui', 'managed', 'E', fs.readFileSync(path.join(RESOURCES, 'product-views.js'), 'utf8'))(baseclass, ui, managed, E);
-  return new Function('baseclass', 'ui', 'netfleet', 'E', 'managed', 'productViews', exports)(baseclass, ui, api, E, managed, views);
+  return new Function('baseclass', 'ui', 'netfleet', 'E', 'managed', 'productViews', 'netfleetConfig', exports)(baseclass, ui, api, E, managed, views, config);
 }
 
 function networkState() {
@@ -2603,7 +2603,7 @@ test('components page supports batch update preview and auto-update status summa
   assert(all(legacyRoot, node => node.tag === 'button' && text(node) === '更新').length >= 2);
 });
 
-test('config page renders plugin auto-update controls and change labels', () => {
+test('config page follows the current backend projection for plugin auto-update', async () => {
   const config = configModule({});
   const deviceConfig = {
     revision: 'a'.repeat(64), active: true, pending_apply: false,
@@ -2631,6 +2631,9 @@ test('config page renders plugin auto-update controls and change labels', () => 
     status: { providers: [], regions: [], runtime: {} },
     busy: false, liveDataReady: true, redraw() {}, showConfigWizard() {}, discardConfig() {}, previewConfigChanges() {}, saveConfig() {}, confirmConfigApply() {},
   };
+  const oldConfig = clone(deviceConfig);
+  delete oldConfig.automation.plugin_auto_update_enabled;
+  delete oldConfig.automation.plugin_auto_update_interval_seconds;
   let root = config.render(owner);
   assert(text(root).includes('定期自动更新安全插件'));
   assert(text(root).includes('插件自动更新周期'));
@@ -2648,6 +2651,28 @@ test('config page renders plugin auto-update controls and change labels', () => 
   assert.equal(enabledSelect.disabled, false);
   enabledSelect.attrs.change({ target: { value: '21600' } });
   assert.equal(owner.configDraft.automation.plugin_auto_update_interval_seconds, 21600);
+  assert.equal(config.request(owner.configDraft).automation.plugin_auto_update_interval_seconds, 21600);
   assert(config.changeText({ scope: 'automation', field: 'plugin_auto_update_enabled', before: false, after: true }, owner).includes('自动更新安全插件'));
   assert(config.changeText({ scope: 'automation', field: 'plugin_auto_update_interval_seconds', before: 86400, after: 21600 }, owner).includes('插件自动更新周期'));
+
+  let fresh = oldConfig;
+  const { controller } = modesModule({ configGet: async () => fresh }, null, config);
+  owner.configDraft.automation.selection_interval_seconds = 3600;
+  const legacyRequest = await controller.currentConfigRequest.call(owner);
+  assert.deepEqual(legacyRequest.automation, { ...oldConfig.automation, selection_interval_seconds: 3600 });
+  assert.equal(owner.configDraft.automation.plugin_auto_update_enabled, true);
+  root = config.render(owner);
+  assert(!text(root).includes('定期自动更新安全插件'));
+  assert(!text(root).includes('插件自动更新周期'));
+  assert(text(root).includes('选优周期'));
+  assert(config.dirty(owner));
+  owner.configDraft.automation.selection_interval_seconds = oldConfig.automation.selection_interval_seconds;
+  assert(!config.dirty(owner));
+
+  owner.configDraft = clone(oldConfig);
+  fresh = clone(deviceConfig);
+  fresh.automation.plugin_auto_update_enabled = true;
+  const upgradedRequest = await controller.currentConfigRequest.call(owner);
+  assert.deepEqual(upgradedRequest.automation, fresh.automation);
+  assert(!config.dirty(owner));
 });

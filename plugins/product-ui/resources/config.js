@@ -367,8 +367,20 @@ function capabilityAddControls(controller, groups, groupOwner) {
 	]);
 }
 
+function pluginAutoUpdate(config, projection) {
+	const current = projection.automation;
+	if (typeof current?.plugin_auto_update_enabled !== 'boolean' ||
+		!Number.isInteger(current.plugin_auto_update_interval_seconds))
+		return null;
+	return {
+		plugin_auto_update_enabled: config.automation.plugin_auto_update_enabled ?? current.plugin_auto_update_enabled,
+		plugin_auto_update_interval_seconds: config.automation.plugin_auto_update_interval_seconds ?? current.plugin_auto_update_interval_seconds
+	};
+}
+
 function automation(controller) {
 	const value = controller.configDraft.automation;
+	const pluginUpdate = pluginAutoUpdate(controller.configDraft, controller.config);
 	const rules = controller.status.rule_refresh;
 	const ruleNote = !rules ? null : rules.last_ok === false ? "最近更新失败，保留旧数据：" + (rules.last_error || "未确认") : rules.last_success_at ? "最近成功：" + new Date(rules.last_success_at * 1000).toLocaleString() + (rules.next_run_at ? "；下次：" + new Date(rules.next_run_at * 1000).toLocaleString() : "") : "尚未完成首次更新。";
 	return E('section', {}, [
@@ -397,14 +409,14 @@ function automation(controller) {
                 [ [ 86400, '每天' ], [ 604800, '每周' ], [ 2592000, '每 30 天' ] ], function(event) {
                     update(controller, function(next) { next.automation.rule_refresh_interval_seconds = Number(event.target.value); });
                 }, !value.rule_refresh_enabled)) : null,
-            fieldRow('定期自动更新安全插件', '仅自动更新无需内核或核心停机的插件与界面；失败自动回退，核心升级仍需手动确认。', checkbox(value.plugin_auto_update_enabled === true,
-                value.plugin_auto_update_enabled ? '已开启' : '已关闭', function(event) {
+            pluginUpdate ? fieldRow('定期自动更新安全插件', '仅自动更新无需内核或核心停机的插件与界面；失败自动回退，核心升级仍需手动确认。', checkbox(pluginUpdate.plugin_auto_update_enabled,
+                pluginUpdate.plugin_auto_update_enabled ? '已开启' : '已关闭', function(event) {
                     update(controller, function(next) { next.automation.plugin_auto_update_enabled = event.target.checked; });
-                })),
-            fieldRow('插件自动更新周期', '在网络健康且无在途更新时检查已信任软件源并按安全波次更新。', select(value.plugin_auto_update_interval_seconds || 86400,
+                })) : null,
+            pluginUpdate ? fieldRow('插件自动更新周期', '在网络健康且无在途更新时检查已信任软件源并按安全波次更新。', select(pluginUpdate.plugin_auto_update_interval_seconds,
                 [ [ 21600, '6 小时' ], [ 43200, '12 小时' ], [ 86400, '24 小时' ], [ 604800, '7 天' ] ], function(event) {
                     update(controller, function(next) { next.automation.plugin_auto_update_interval_seconds = Number(event.target.value); });
-                }, !value.plugin_auto_update_enabled))
+                }, !pluginUpdate.plugin_auto_update_enabled)) : null
 		])
 	]);
 }
@@ -510,13 +522,21 @@ function content(controller) {
 	})[controller.configSection](controller);
 }
 
-function request(config) {
+function request(config, projection = config) {
 	const providers = {};
 	(config.providers || []).forEach(function(item) { providers[item.id] = { section: item.section, enabled: item.enabled, role: item.role, billing: item.billing, region_ids: (item.region_ids || []).slice() }; });
 	const regions = {};
 	(config.regions || []).forEach(function(item) { regions[item.id] = { display_name: item.display_name, mode: item.mode }; });
 	const capabilities = {};
 	(config.capabilities || []).forEach(function(item) { capabilities[item.id] = { display_name: item.display_name, enabled: item.enabled, mode: item.mode, region_ids: item.region_ids.slice(), prefer_region_from: item.prefer_region_from || null, entry_group: item.entry_group || null, policy_groups: (item.policy_groups || []).slice() }; });
+	const automation = clone(config.automation);
+	const pluginUpdate = pluginAutoUpdate(config, projection);
+	if (pluginUpdate) {
+		Object.assign(automation, pluginUpdate);
+	} else {
+		delete automation.plugin_auto_update_enabled;
+		delete automation.plugin_auto_update_interval_seconds;
+	}
 	return {
 		revision: config.revision,
 		policy_source: { kind: config.policy_source.kind, ref: config.policy_source.ref },
@@ -525,7 +545,7 @@ function request(config) {
 		regions: regions,
 		capabilities: capabilities,
 		routing_rules: clone(config.routing_rules || []),
-		automation: clone(config.automation),
+		automation: automation,
 		safety: clone(config.safety)
 	};
 }
@@ -569,7 +589,7 @@ function syncSubscriptions(controller) {
 }
 
 function dirty(controller) {
-	return JSON.stringify(request(controller.configDraft)) !== JSON.stringify(request(controller.config));
+	return JSON.stringify(request(controller.configDraft, controller.config)) !== JSON.stringify(request(controller.config));
 }
 
 function render(controller) {

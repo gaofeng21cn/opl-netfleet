@@ -548,13 +548,14 @@ const productController = {
 	currentConfigRequest: function() {
 		const self = this;
 		return netfleet.configGet().then(function(fresh) {
-			if (!self.config || fresh.revision !== self.config.revision) {
-				self.config = fresh;
+			const previous = self.config;
+			self.config = fresh;
+			if (!previous || fresh.revision !== previous.revision) {
 				self.configDraft = clone(fresh);
 				self.redraw();
 				throw new Error('设备配置已经变化，已重新读取；请检查后再操作。');
 			}
-			return netfleetConfig.request(self.configDraft);
+			return netfleetConfig.request(self.configDraft, fresh);
 		});
 	},
 

@@ -264,7 +264,19 @@ class FeedReadbackTests(unittest.TestCase):
 
     def test_product_ui_pins_batch_backend_dependency_and_auto_update_is_async(self):
         makefile = (ROOT / 'openwrt/Makefile').read_text()
-        self.assertIn('opl-netfleet-plugin-components (>=0.8.17)', makefile)
+        template = makefile.split('define Package/opl-netfleet-plugin-$(1)\n', 1)[1].split('\nendef', 1)[0]
+        fixture = f'''comma:=,
+define plugin
+{template}
+endef
+$(eval $(call plugin,product-ui))
+all:
+\t@printf '%s\\n' '$(EXTRA_DEPENDS)'
+'''
+        dependencies = subprocess.check_output(['make', '-s', '-f', '-'], input=fixture, text=True)
+        dependencies = [value.strip() for value in dependencies.split(',')]
+        self.assertIn('opl-netfleet-plugin-components (>=0.8.17)', dependencies)
+        self.assertIn('opl-netfleet-plugin-configuration (>=0.7.10)', dependencies)
         components_src = (ROOT / 'plugins/components/lib/control.uc').read_text()
         self.assertIn('batch_plugin_update: true', components_src)
         auto_start = components_src.index('auto_update = function(trigger)')

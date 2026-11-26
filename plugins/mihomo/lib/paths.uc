@@ -2,7 +2,7 @@
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let wait_for_group_member, selection_group, provider_source_for_group, candidate_leaf_wait_seconds, refresh_data_fallback, wait_for_preferred_runtime, capture_previous_choice, activate_preferred_choice, region_for_choice, activate_manual_choice, activate_direct_fallback, activate_all_direct_fallbacks, candidate_group_names, reset_candidate_groups, candidate_provider_leaves_ready, wait_for_candidate_provider_leaves, restore_runtime_selections, capture_runtime_selections;
+let wait_for_group_member, selection_group, provider_source_for_group, candidate_leaf_wait_seconds, find_probe, refresh_data_fallback, wait_for_preferred_runtime, capture_previous_choice, activate_preferred_choice, region_for_choice, activate_manual_choice, activate_direct_fallback, activate_all_direct_fallbacks, candidate_group_names, reset_candidate_groups, candidate_provider_leaves_ready, wait_for_candidate_provider_leaves, restore_runtime_selections, capture_runtime_selections;
 
 const proxies = context.use("mihomo.controller").proxies;
 const proxy_providers = context.use("mihomo.controller").proxy_providers;
@@ -61,55 +61,88 @@ candidate_leaf_wait_seconds = function(policy) {
 	return seconds > 30 ? 30 : seconds;
 };
 
+find_probe = function(policy, probe_id) {
+	if (type(probe_id) != "string") return null;
+	for (let candidate in policy?.fail_open?.probes ?? [])
+		if (candidate.id == probe_id) return candidate;
+	return null;
+};
+
 refresh_data_fallback = function(secret, entry, policy, provider_state, selected_group) {
-	// Confirm only the chosen path. Traversing all visible branches can overwrite
-	// its healthy wrapper with a failed lazy fallback during initial convergence.
+	// Verify the chosen path before warming standalone standby groups.
 	const round = selected_group == null ? measure_latency(secret, entry.name, policy.checks) : null;
 	const reset_detail = {};
 	if (selected_group != null && !unfix_proxy(secret, selected_group, reset_detail))
 		return { ok: false, error: "candidate_group_reset_failed", detail: reset_detail, round: null, runtime: null };
+	const health = policy?.fail_open?.healthcheck;
+	const path_probe = find_probe(policy, health?.path_probe_id);
+	const guard_probe = find_probe(policy, health?.guard_probe_id);
 	if (selected_group != null) {
 		// The selected leaf already has this round's speed evidence. Do not remeasure it.
 		// Mihomo caches health independently for each URL. A latency test on the
 		// candidate cannot revive a selector or wrapper failed by a business URL.
-		// Refresh only the bound chain, from the inner selector to the outer guard.
-		const health = policy?.fail_open?.healthcheck;
+		// Refresh the bound chain, ensuring preferred selector holds health for both
+		// path_probe and (when distinct) guard_probe before testing the automatic fallback.
+		const preferred = selection_group(entry);
 		const stages = [
-			{ group: selection_group(entry), probe: health?.path_probe_id }
+			{ group: preferred, probe_id: health?.path_probe_id, probe: path_probe }
 		];
 		if (type(entry?.automatic_name) == "string") {
-			push(stages, { group: entry.automatic_name, probe: health?.guard_probe_id });
+			const path_expected = path_probe?.head_expected_status ?? path_probe?.expected_status;
+			const guard_expected = guard_probe?.head_expected_status ?? guard_probe?.expected_status;
+			if (guard_probe == null || path_probe == null ||
+				guard_probe.url != path_probe.url || guard_expected != path_expected) {
+				push(stages, { group: preferred, probe_id: health?.guard_probe_id, probe: guard_probe });
+			}
+			push(stages, { group: entry.automatic_name, probe_id: health?.guard_probe_id, probe: guard_probe });
 		}
 		for (let stage in stages) {
-			let probe = null;
-			for (let candidate in policy?.fail_open?.probes ?? [])
-				if (candidate.id == stage.probe) probe = candidate;
+			const probe = stage.probe;
+			const expected_status = probe?.head_expected_status ?? probe?.expected_status;
 			if (probe == null || !test_group_path(secret, stage.group, { latency: {
-				url: probe.url, expected_status: probe.head_expected_status ?? probe.expected_status, timeout_ms: health.timeout_ms
-			} })) return { ok: false, error: "selected_business_path_probe_failed", probe: stage.probe, group: stage.group,
-				method: "HEAD", expected_status: probe?.head_expected_status ?? probe?.expected_status, round: round, runtime: null };
+				url: probe.url, expected_status: expected_status, timeout_ms: health.timeout_ms
+			} })) return { ok: false, error: "selected_business_path_probe_failed", probe: stage.probe_id, group: stage.group,
+				method: "HEAD", expected_status: expected_status, round: round, runtime: null };
 		}
 	}
-	const state = proxies(secret);
+	let state = proxies(secret);
 	if (state == null || state.proxies == null) {
 		return { ok: false, error: "mihomo_state_unavailable", round: round };
 	}
-	if (selected_group != null && type(entry?.automatic_name) == "string" && type(entry?.providers) == "object") {
-		let path_probe = null;
-		for (let candidate in policy?.fail_open?.probes ?? [])
-			if (candidate.id == policy?.fail_open?.healthcheck?.path_probe_id) path_probe = candidate;
-		if (path_probe != null) {
+	if (selected_group != null && type(entry?.automatic_name) == "string" && guard_probe != null) {
+		let warmed = false;
+		const guard_expected = guard_probe.head_expected_status ?? guard_probe.expected_status;
+		const guard_checks = { latency: {
+			method: "mihomo_delay", url: guard_probe.url,
+			expected_status: guard_expected,
+			timeout_ms: health.timeout_ms
+		} };
+		if (type(entry?.providers) == "object") {
 			const ids = sorted_keys(entry.providers);
 			for (let i = 0; i < length(ids); i++) {
 				const g = entry.providers[ids[i]]?.group;
-				if (type(g) == "string" && (state.proxies[g]?.now == "REJECT" || state.proxies[g]?.alive != true)) {
-					measure_latency(secret, g, { latency: {
-						method: "mihomo_delay", url: path_probe.url,
-						expected_status: path_probe.head_expected_status ?? path_probe.expected_status,
-						timeout_ms: policy.fail_open.healthcheck.timeout_ms
-					} });
+				if (type(g) != "string") continue;
+				const group_state = state.proxies[g];
+				const guard_alive = group_state?.extra?.[guard_probe.url]?.alive == true;
+				if (group_state?.now == null || group_state.now == "REJECT") {
+					measure_latency(secret, g, guard_checks);
+				} else if (guard_alive) {
+					continue;
 				}
+				test_group_path(secret, g, guard_checks);
+				warmed = true;
 			}
+		}
+		for (let stage in entry?.fail_open_stages ?? []) {
+			if (stage?.kind != "provider_tier" || type(stage?.group) != "string") continue;
+			if (state.proxies[stage.group]?.extra?.[guard_probe.url]?.alive != true) {
+				test_group_path(secret, stage.group, guard_checks);
+				warmed = true;
+			}
+		}
+		if (warmed) {
+			state = proxies(secret);
+			if (state?.proxies == null) return { ok: false, error: "mihomo_state_unavailable", round: round };
 		}
 	}
 	state.providers = provider_state ?? proxy_providers(secret, 1)?.providers ?? null;
@@ -257,7 +290,7 @@ activate_manual_choice = function(secret, entry, choice, policy, verify_probes) 
 	// Testing only the outer fallback can retain its uninitialized DIRECT path.
 	const region = filter(entry?.region_groups ?? [], item => item.name == choice)[0];
 	const health = policy?.fail_open?.healthcheck;
-	const probe = filter(policy?.fail_open?.probes ?? [], item => item.id == health?.path_probe_id)[0];
+	const probe = find_probe(policy, health?.path_probe_id);
 	for (let layer in [region?.primary_name, region?.reserve_name]) {
 		if (layer == null) continue;
 		measure_latency(secret, layer, policy.checks);

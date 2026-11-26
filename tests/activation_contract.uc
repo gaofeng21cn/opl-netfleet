@@ -234,22 +234,32 @@ function test_path_activation() {
 	const plugins_root = fs.realpath(replace(sourcepath(), /[^/]+$/, "../plugins"));
 	const factory = loadfile(`${plugins_root}/mihomo/lib/paths.uc`)();
 	const calls = [];
-	let business_failed = false, stale = true, probe_count = 0;
+	const warm_measures = [];
+	let path_failed = false, guard_failed_on_preferred = false, stale = true, preferred_path_ok = false, preferred_guard_ok = false;
 	const services = {
 		"mihomo.controller": {
 			proxies: () => ({ proxies: {} }), proxy_providers: () => ({ providers: {} }),
 			unfix: group => true, select: () => true, protected_probes: () => ({ ok: true }),
 			test_group_path: (secret, group, checks) => {
 				push(calls, { group, url: checks.latency.url, timeout: checks.latency.timeout_ms, expected: checks.latency.expected_status });
-				if (checks.latency.url == "https://business.test/path") {
-					if (business_failed) return false;
-					probe_count++;
+				if (group == "preferred" && checks.latency.url == "https://business.test/path") {
+					if (path_failed) return false;
+					preferred_path_ok = true;
+					return true;
 				}
-				if (checks.latency.url == "https://business.test/guard" && probe_count == 1) stale = false;
+				if (group == "preferred" && checks.latency.url == "https://business.test/guard") {
+					if (guard_failed_on_preferred) return false;
+					preferred_guard_ok = true;
+					return true;
+				}
+				if (group == "auto" && checks.latency.url == "https://business.test/guard") {
+					if (preferred_path_ok && preferred_guard_ok) stale = false;
+					return true;
+				}
 				return true;
 			}
 		},
-		"mihomo.latency": { measure: () => ({ status: "ok", results: {} }) },
+		"mihomo.latency": { measure: (secret, group, checks) => { push(warm_measures, { group, url: checks.latency.url, expected: checks.latency.expected_status }); return { status: "ok", results: {} }; } },
 		"mihomo.probes": { protected_probes_after_restart: () => ({ ok: true }) },
 		"models.activation": { preferred_runtime_ready: r => r.data_path == "preferred" },
 		"models.ordering": { sorted_keys: keys }, "models.policy": { automation: () => ({ startup_grace_seconds: 1 }) },
@@ -258,7 +268,11 @@ function test_path_activation() {
 		"platform.credentials": { api_secret: () => "fixture" }
 	};
 	const paths = factory({ use: name => services[name] });
-	const entry = { name: "visible", selector_name: "preferred", automatic_name: "auto" };
+	const entry = {
+		name: "visible", selector_name: "preferred", automatic_name: "auto",
+		providers: { alpha: { group: "alpha-group" } },
+		fail_open_stages: [{ kind: "provider_tier", role: "primary", group: "primary-tier" }]
+	};
 	const policy = {
 		checks: { latency: { url: "https://speed.test/204", timeout_ms: 2000 } },
 		fail_open: {
@@ -270,12 +284,33 @@ function test_path_activation() {
 	function check(value, reason) { if (!value) die(reason); }
 	const ready = paths.wait_for_preferred_runtime("fixture", entry, "candidate", policy, {}, false);
 	check(ready.preferred && !stale, "business URL health must revive the bound path");
-	check(length(calls) == 2 && calls[0].group == "preferred" &&
-		calls[1].group == "auto" && calls[0].timeout == 15000 && calls[0].expected == 404 && calls[1].expected == 200, "probe only the chosen chain in dependency order with health timeout");
-	business_failed = true; stale = true; probe_count = 0;
-	const failed = paths.wait_for_preferred_runtime("fixture", entry, "candidate", policy, {}, false);
-	check(failed.error == "selected_business_path_probe_failed" && failed.probe == "path" && failed.method == "HEAD" && failed.expected_status == 404 && stale && length(calls) == 3,
-		"business failure must stop before outer probe and remain distinct from latency success");
+	check(length(calls) == 5 && calls[0].group == "preferred" && calls[0].url == "https://business.test/path" && calls[0].expected == 404 &&
+		calls[1].group == "preferred" && calls[1].url == "https://business.test/guard" && calls[1].expected == 200 &&
+		calls[2].group == "auto" && calls[2].url == "https://business.test/guard" && calls[2].expected == 200 &&
+		calls[3].group == "alpha-group" && calls[3].url == "https://business.test/guard" && calls[3].expected == 200 &&
+		calls[4].group == "primary-tier" && calls[4].url == "https://business.test/guard" && calls[4].expected == 200 &&
+		calls[0].timeout == 15000 && warm_measures[0].url == "https://business.test/guard",
+		"distinct guard probe must refresh preferred selector and standby pools with guard URL before auto fallback");
+	path_failed = true; guard_failed_on_preferred = false; stale = true; preferred_path_ok = false; preferred_guard_ok = false;
+	const failed_path = paths.wait_for_preferred_runtime("fixture", entry, "candidate", policy, {}, false);
+	check(failed_path.error == "selected_business_path_probe_failed" && failed_path.probe == "path" && failed_path.group == "preferred" &&
+		failed_path.method == "HEAD" && failed_path.expected_status == 404 && stale && length(calls) == 6,
+		"path probe failure must stop before guard probe and remain distinct from latency success");
+	path_failed = false; guard_failed_on_preferred = true; stale = true; preferred_path_ok = false; preferred_guard_ok = false;
+	const failed_guard = paths.wait_for_preferred_runtime("fixture", entry, "candidate", policy, {}, false);
+	check(failed_guard.error == "selected_business_path_probe_failed" && failed_guard.probe == "guard" && failed_guard.group == "preferred" &&
+		failed_guard.method == "HEAD" && failed_guard.expected_status == 200 && stale && length(calls) == 8,
+		"preferred guard probe failure must stop before testing automatic fallback");
+	guard_failed_on_preferred = false; stale = false; preferred_path_ok = false; preferred_guard_ok = false;
+	const shared_policy = json(sprintf("%J", policy));
+	shared_policy.fail_open.healthcheck.guard_probe_id = "path";
+	const before_shared = length(calls);
+	const shared_ready = paths.wait_for_preferred_runtime("fixture", entry, "candidate", shared_policy, {}, false);
+	check(shared_ready.preferred && length(calls) - before_shared == 4 &&
+		calls[before_shared].group == "preferred" && calls[before_shared + 1].group == "auto" &&
+		calls[before_shared + 2].group == "alpha-group" && calls[before_shared + 3].group == "primary-tier",
+		"shared path/guard probe must not re-probe preferred selector twice");
+	splice(calls, 0, length(calls));
 	print("path activation contracts passed\n");
 
 	const policy_factory = loadfile(`${plugins_root}/mihomo/lib/interception-policy.uc`)()();
@@ -290,11 +325,14 @@ function test_path_activation() {
 	check(policy_factory.admission({ rules: [] }, starting) == null, 'ready equivalent gateway admitted');
 
 	let measures = 0, selected_leaf = 'leaf';
-	services['mihomo.latency'].measure = () => { measures++; return { status: 'ok' }; };
+	services['mihomo.latency'].measure = (secret, group, checks) => {
+		if (checks.latency.url == policy.checks.latency.url) measures++;
+		return { status: 'ok' };
+	};
 	services['mihomo.controller'].proxies = () => ({ proxies: { preferred: { all: ['candidate'] }, visible: { all: ['automatic'] } } });
 	services['models.selector'].provider_group_leaf = () => selected_leaf;
 	services['models.activation'].preferred_runtime_ready = r => r.data_path == 'preferred';
-	business_failed = false; stale = false;
+	path_failed = false; guard_failed_on_preferred = false; stale = false;
 	const activation_paths = factory({ use: name => services[name] });
 	const automatic_entry = { ...entry, automatic_name: 'automatic' };
 	const activated = activation_paths.activate_preferred_choice('fixture', automatic_entry, 'candidate', policy, false, false, { group: 'candidate', candidate_id: 'leaf' });

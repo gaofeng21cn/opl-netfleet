@@ -16,16 +16,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  macos:
+  build:
     runs-on: macos-15
     timeout-minutes: 60
     environment: release
-    permissions:
-      contents: write
+    defaults:
+      run:
+        working-directory: source
+    outputs:
+      source: ${{ steps.preflight.outputs.source }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.workflow_sha }}
+          path: release-tools
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
           ref: ${{ inputs.release_tag }}
+          path: source
           fetch-depth: 0
           persist-credentials: false
 
@@ -37,20 +46,23 @@ jobs:
         with:
           bun-version: '1.4.0'
 
-      - name: Verify release tag and macOS bundle metadata
+      - name: Verify release tag and preflight public channels
+        id: preflight
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           test "$(uname -m)" = arm64
           python3 - <<'PY'
-          import json, os, plistlib
+          import json, os
           from pathlib import Path
           version = json.loads(Path('product-version.json').read_text())['version']
           assert os.environ['RELEASE_TAG'] == 'v' + version
-          info = plistlib.loads(Path('desktop/app/Info.plist').read_bytes())
-          assert info['CFBundleShortVersionString'] == version
           PY
+          python3 ../release-tools/scripts/macos/publish-sparkle-release.py \
+            --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" --preflight desktop/app/Info.plist
+          printf 'source=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Prepare build dependencies
         run: |
@@ -142,37 +154,16 @@ jobs:
           OPL_NETFLEET_REQUIRE_SPARKLE_KEY_ENV=1 \
             scripts/macos/generate-appcast.sh "$DMG_PATH" "dist/appcast.xml"
 
-      - name: Upload macOS DMG and appcast.xml to GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-        run: |
-          set -euo pipefail
-          gh release upload "$RELEASE_TAG" \
-            dist/OPL-NetFleet-macos-arm64.dmg \
-            dist/OPL-NetFleet-macos-arm64.dmg.sha256 \
-            dist/appcast.xml \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
-          if gh release view macos-stable --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit macos-stable \
-              --target "$GITHUB_SHA" \
-              --latest=false \
-              --prerelease=false \
-              --repo "$GITHUB_REPOSITORY"
-          else
-            gh release create macos-stable \
-              --target "$GITHUB_SHA" \
-              --title "macOS Stable Feed" \
-              --notes "Floating Sparkle appcast channel for signed macOS releases." \
-              --latest=false \
-              --prerelease=false \
-              --repo "$GITHUB_REPOSITORY"
-          fi
-          gh release upload macos-stable \
-            dist/appcast.xml \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
+      - name: Preserve sealed macOS artifacts for an exact-byte retry
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: netfleet-macos-${{ inputs.release_tag }}
+          path: |
+            source/dist/OPL-NetFleet-macos-arm64.dmg
+            source/dist/OPL-NetFleet-macos-arm64.dmg.sha256
+            source/dist/appcast.xml
+          if-no-files-found: error
+          compression-level: 0
 
       - name: Remove temporary Apple credentials
         if: always()
@@ -180,3 +171,27 @@ jobs:
           if [[ -n "${NETFLEET_NOTARY_KEYCHAIN:-}" ]]; then
             security delete-keychain "$NETFLEET_NOTARY_KEYCHAIN" || true
           fi
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: netfleet-macos-${{ inputs.release_tag }}
+          path: dist
+      - name: Publish versioned macOS assets and advance the stable appcast
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_SOURCE: ${{ needs.build.outputs.source }}
+        run: |
+          python3 scripts/macos/publish-sparkle-release.py \
+            --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" --source "$RELEASE_SOURCE" --artifacts dist

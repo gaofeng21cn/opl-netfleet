@@ -153,7 +153,22 @@ macOS 使用同一产品 `vX.Y.Z` tag，版本对应应用 `Info.plist`。旧 `m
 macOS VM 验收后才发布。应用签名、两次公证、最终 DMG 摘要、源码身份和 VM 结果分别
 回读；发布后下载公开资产并核对相同摘要。内部验收日志与订阅数据不进入 Release。
 
-`.github/workflows/macos-sparkle-release.yml` 通过手动 `workflow_dispatch` 传入 `release_tag=vX.Y.Z` 并在 GitHub Environment `release` 执行。`release` 环境使用标准 4 项 Apple 凭据（`APPLE_DEVELOPER_ID_P12_BASE64`、`APPLE_DEVELOPER_ID_P12_PASSWORD`、`APPLE_NOTARY_APPLE_ID`、`APPLE_NOTARY_PASSWORD`，其中公证密码必须是 Apple App-Specific Password 而非登录密码）及每应用独立的 `SPARKLE_ED25519_PRIVATE_KEY`（旧秘密名称仅作后备）；导出的 `.p12` 必须仅包含单个 `Developer ID Application` 身份与私钥。发布后需同步回读两个 Release：`vX.Y.Z` 保持 `Latest` 且 DMG、`.sha256` 与 `appcast.xml` 的公开 SHA-256 一致、原有 OpenWrt Feed 资产保持原字节；浮动 `macos-stable` 保持非 `Latest` 且其签名 `appcast.xml` 中的 enclosure URL、`sparkle:shortVersionString` 与 `sparkle:version` 指向 `vX.Y.Z`。
+手动运行 `.github/workflows/macos-sparkle-release.yml` 时传入 `release_tag=vX.Y.Z`。
+构建作业在 GitHub Environment `release` 使用 Apple Developer ID 的单身份 `.p12`、对应密码、
+公证账号与 App-Specific Password，以及应用的 `SPARKLE_ED25519_PRIVATE_KEY`。
+凭据名称见[签名与 DMG](macos.md#签名与-dmg)和工作流。
+
+构建前检查目标 Release 和当前 `macos-stable`，遇到已存在的版本化 macOS 资产即停止构建。
+构建作业封存已签名公证的产物，发布作业再校验 tag 指向的源码和各资产的 SHA-256，仅追加缺失的
+DMG、`.sha256` 与 `appcast.xml`。发布中断时可重跑失败的发布作业，继续使用同一份封存产物。
+同名远端资产仅在摘要和大小都一致时接受。
+
+浮动 `macos-stable` 在版本化资产均已回读后更新。推进要求 `sparkle:version`
+（`CFBundleVersion`）严格递增且 `sparkle:shortVersionString` 不回退，同一份 appcast
+允许幂等重跑。工作流先上传并验证候选 appcast，再切换资产名。两次改名之间公开更新地址可能
+短暂不可用，工作流保留上一份 appcast 并在切换失败后恢复。进程中断时，重跑发布作业会用
+保留下来的 appcast 核对版本并继续切换。发布后读回两个 Release，核对版本化资产的公开摘要、
+原 OpenWrt Feed 资产与 `macos-stable` 的 enclosure URL、产品版本和构建号。
 
 同一 tag 的 OpenWrt Feed 与 macOS DMG 各自核对自己的资产和摘要。追加已验收的
 DMG 与 `appcast.xml` 保持既有 Feed 资产原字节，不创建独立版本；浮动 `macos-stable` 仅承载

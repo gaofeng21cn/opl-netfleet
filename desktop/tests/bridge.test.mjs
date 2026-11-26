@@ -5,8 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { codeDigest, run } from '../runtime/io.mjs';
+import { canonicalOverlayPayload, OVERLAY_SCHEMA } from '../runtime/plugin-overlay.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const runtime = process.env.NETFLEET_RUNTIME_ROOT;
@@ -71,4 +75,78 @@ test('code digest preserves the canonical ordered double hash and bounds paths',
   await assert.rejects(codeDigest(directory, os.tmpdir(), [path.join(directory, 'a.txt')]), /outside_root/);
   await fs.symlink(path.join(directory, 'a.txt'), path.join(directory, 'link'));
   await assert.rejects(codeDigest(directory, directory, [path.join(directory, 'link')]), /outside_root/);
+});
+
+test('desktop startup retains bundled plugins when a signed overlay fails kernel validation', async t => {
+  const state = await fs.mkdtemp(path.join(os.tmpdir(), 'nf-overlay-startup-'));
+  t.after(() => fs.rm(state, { recursive: true, force: true }));
+  const keys = crypto.generateKeyPairSync('ed25519');
+  const pub = keys.publicKey.export({ format: 'der', type: 'spki' }).subarray(-32).toString('base64');
+  const version = '99.0.0';
+  const events = path.join(repo, 'plugins/events');
+  const bundled = JSON.parse(await fs.readFile(path.join(events, 'manifest.json'), 'utf8'));
+
+  async function writeOverlay(updateManifest) {
+    const directory = path.join(state, 'plugins/events');
+    await fs.rm(directory, { recursive: true, force: true });
+    await fs.cp(events, directory, { recursive: true });
+    const manifest = { ...structuredClone(bundled), version };
+    updateManifest(manifest);
+    await fs.writeFile(path.join(directory, 'manifest.json'), JSON.stringify(manifest));
+    await fs.writeFile(path.join(directory, 'overlay-version.txt'), version);
+    const entries = await fs.readdir(directory, { recursive: true, withFileTypes: true });
+    const files = await Promise.all(entries.filter(entry => entry.isFile())
+      .map(async entry => {
+        const file = path.join(entry.parentPath, entry.name);
+        return { path: path.relative(directory, file), sha256: crypto.createHash('sha256').update(await fs.readFile(file)).digest('hex') };
+      }));
+    files.sort((a, b) => (a.path < b.path ? -1 : 1));
+    const envelope = { schema: OVERLAY_SCHEMA, id: 'events', version, files };
+    const signature = crypto.sign(null, Buffer.from(canonicalOverlayPayload(envelope)), keys.privateKey).toString('base64');
+    await fs.writeFile(path.join(directory, 'overlay-signature.json'), JSON.stringify({ ...envelope, signature }));
+  }
+
+  async function snapshot() {
+    const server = spawn(process.execPath, [path.join(repo, 'desktop/runtime/server.mjs'), '--state', state], {
+      env: { ...process.env, NETFLEET_PLUGIN_PUBLIC_KEY: pub }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const closed = once(server, 'close');
+    const lines = createInterface({ input: server.stdout });
+    let stderr = '';
+    server.stderr.on('data', bytes => { stderr += bytes.toString(); });
+    try {
+      const [line] = await Promise.race([
+        once(lines, 'line', { signal: AbortSignal.timeout(45000) }),
+        closed.then(([code]) => { throw new Error(`desktop runtime exited (${code}): ${stderr}`); }),
+      ]);
+      const startup = new URL(JSON.parse(line).url);
+      const response = await fetch(`${startup.origin}/api/state`, {
+        headers: { Authorization: `Bearer ${startup.searchParams.get('token')}` }, signal: AbortSignal.timeout(10000),
+      });
+      assert.equal(response.status, 200);
+      return (await response.json()).result;
+    } finally {
+      lines.close();
+      server.kill();
+      await closed;
+    }
+  }
+
+  await writeOverlay(() => {});
+  const active = path.join(state, 'ucode/plugins/events');
+  assert.deepEqual((await snapshot()).plugin_overlays, {
+    applied: [{ id: 'events', version, bundled_version: bundled.version }], rejected: [],
+  });
+  assert.equal(await fs.readFile(path.join(active, 'overlay-version.txt'), 'utf8'), version);
+
+  for (const [reason, updateManifest] of [
+    ['plugin_api_incompatible', manifest => { manifest.api_version = 2; }],
+    ['plugin_module_missing', manifest => { manifest.services['events.model'].module = 'lib/unavailable.uc'; }],
+    ['plugin_service_unbound:events.extra', manifest => { manifest.services['events.model'].requires['events.extra'] = 1; }],
+  ]) {
+    await writeOverlay(updateManifest);
+    assert.deepEqual((await snapshot()).plugin_overlays, { applied: [], rejected: [{ id: 'events', reason }] });
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(active, 'manifest.json'), 'utf8')), bundled);
+    await assert.rejects(fs.access(path.join(active, 'overlay-version.txt')), { code: 'ENOENT' });
+  }
 });

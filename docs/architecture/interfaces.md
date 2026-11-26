@@ -139,6 +139,8 @@ rules-refresh 是由现有 scheduler 调用、宿主串行的内部写命令。�
 
 `policy.automation` 包含可选字段 `plugin_auto_update_enabled`（默认 `false`）与
 `plugin_auto_update_interval_seconds`（默认 `86400`，允许 `3600–2592000`）。
+LuCI 在 `config-get` 的 `automation` 同时返回布尔开关和整数周期时显示这两项设置。
+校验、保存和应用均以提交前重新读取的投影为准。缺少任一字段或类型不符时，请求省略这两项设置。
 `components-get` 的 `plugin_packages` 同时包含 `opl-netfleet-plugin-*`、受管配套运行包与
 `luci-app-netfleet`，并投影 `auto_update` 状态（`enabled`、`interval_seconds`、`last_check_at`、
 `last_attempt_at`、`last_result`、`last_error`、`last_updated_packages`、`deferred_packages`、
