@@ -147,6 +147,8 @@ const builtin_profile = json(fs.readfile(replace(sourcepath(), /[^/]+$/, "../ope
 const builtin = model.draft_builtin(base_input(), builtin_profile);
 assert(builtin.ready && builtin.policy.policy_source.ref == "bundle:base-v1");
 assert(builtin.policy.bindings["AI 出口"].capability == "ai-compatible");
+assert(builtin.policy.bindings["谷歌服务"].capability == "ai-compatible");
+assert(builtin.policy.bindings.YouTube.capability == "standard");
 assert(builtin.policy.capabilities["ai-compatible"].excluded_regions[0] == "hong_kong");
 assert(use("models.policy").validate(builtin.policy).ok);
 const builtin_one = model.draft_builtin(one_provider, builtin_profile);

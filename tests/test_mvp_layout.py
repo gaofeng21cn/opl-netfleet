@@ -348,8 +348,12 @@ class MvpLayoutTests(unittest.TestCase):
                 for name, provider in baseline["rule-providers"].items()
             )
         )
-        group_names = {group["name"] for group in baseline["proxy-groups"]}
-        self.assertTrue(set(policy["bindings"]).issubset(group_names))
+        groups = {group["name"]: group for group in baseline["proxy-groups"]}
+        self.assertTrue(set(policy["bindings"]).issubset(groups))
+
+        for group, exit_group in {"YouTube": "海外加速", "谷歌服务": "AI 出口"}.items():
+            self.assertEqual(exit_group, groups[group]["proxies"][0])
+            self.assertEqual(policy["bindings"][exit_group]["capability"], policy["bindings"][group]["capability"])
 
         game_defaults = {
             "Steam": "DIRECT",
@@ -357,7 +361,6 @@ class MvpLayoutTests(unittest.TestCase):
             "PlayStation": "DIRECT",
             "Nintendo Switch": "海外加速",
         }
-        groups = {group["name"]: group for group in baseline["proxy-groups"]}
         for name, default in game_defaults.items():
             self.assertEqual(default, groups[name]["proxies"][0])
             self.assertTrue(any(rule.endswith(f",{name}") for rule in baseline["rules"]))

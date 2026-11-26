@@ -62,7 +62,7 @@
       "kind": "policy"
     },
     "谷歌服务": {
-      "capability": "standard",
+      "capability": "ai-compatible",
       "kind": "policy"
     },
     "国内媒体": {

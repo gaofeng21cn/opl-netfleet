@@ -34,7 +34,7 @@
     {"name": "Nintendo Switch", "type": "select", "proxies": ["海外加速", "DIRECT"]},
     {"name": "微软服务", "type": "select", "proxies": ["海外加速", "DIRECT"]},
     {"name": "苹果服务", "type": "select", "proxies": ["DIRECT", "海外加速"]},
-    {"name": "谷歌服务", "type": "select", "proxies": ["海外加速", "DIRECT"]},
+    {"name": "谷歌服务", "type": "select", "proxies": ["AI 出口", "DIRECT"]},
     {"name": "国内媒体", "type": "select", "proxies": ["DIRECT", "海外加速"]}
   ],
   "rules": [

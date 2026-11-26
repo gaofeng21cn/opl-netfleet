@@ -199,9 +199,13 @@ derive = function(input, require_runtime, builtin) {
 apply_builtin = function(policy, profile) {
 	policy.policy_source = { kind: "bundle", ref: "bundle:base-v1" };
 	policy.bindings = {};
-	for (let group in profile["proxy-groups"])
-		policy.bindings[group.name] = { capability: group.name == "AI 出口" ? "ai-compatible" : "standard",
-			kind: group.name == "海外加速" || group.name == "AI 出口" ? "entry" : "policy" };
+	for (let group in profile["proxy-groups"]) {
+		const uses_ai = group.name == "AI 出口" || index(group.proxies ?? [], "AI 出口") >= 0;
+		policy.bindings[group.name] = {
+			capability: uses_ai ? "ai-compatible" : "standard",
+			kind: group.name == "海外加速" || group.name == "AI 出口" ? "entry" : "policy"
+		};
+	}
 	policy.capabilities = {
 		standard: { display_name: "海外加速", display_order: 10, enabled: true, mode: "automatic" },
 		"ai-compatible": { display_name: "AI 出口", display_order: 20, enabled: true, mode: "automatic",
