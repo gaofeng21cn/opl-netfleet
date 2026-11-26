@@ -25,7 +25,7 @@ def read_json(path):
     return json.loads(path.read_text())
 
 
-def combine(receipt_paths, commit, tree, candidate_manifest, fixture_manifest):
+def combine(receipt_paths, commit, tree, candidate_manifest, fixture_manifest, harness=None):
     candidate = read_json(candidate_manifest)
     identity = {"source_commit": commit, "source_tree": tree}
     manifest_sha = sha256(candidate_manifest)
@@ -53,7 +53,8 @@ def combine(receipt_paths, commit, tree, candidate_manifest, fixture_manifest):
                 or source != identity
                 or any(receipt.get(key) != value for key, value in identity.items())
                 or receipt.get("candidate_manifest_sha256") != manifest_sha
-                or receipt.get("component_fixtures_sha256") != fixture_sha):
+                or receipt.get("component_fixtures_sha256") != fixture_sha
+                or receipt.get("release_harness") != harness):
             raise ValueError(f"release lane identity mismatch: {lane}")
 
         lanes = receipt["lanes"]
@@ -112,7 +113,7 @@ def combine(receipt_paths, commit, tree, candidate_manifest, fixture_manifest):
         **{f"{name}.{key}": passed for name, result in guest_results.items()
            for key, passed in result["checks"].items()},
     }
-    return {
+    receipt = {
         "schema": "opl-netfleet-openwrt-vm-qualification.v2",
         "qualified": True,
         "package_qualified": True,
@@ -133,19 +134,27 @@ def combine(receipt_paths, commit, tree, candidate_manifest, fixture_manifest):
         "component_fixtures_sha256": fixture_sha,
         "release_lane_receipts": evidence,
     }
+    if harness is not None:
+        receipt["release_harness"] = harness
+    return receipt
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--tree", required=True)
+    parser.add_argument("--harness-commit")
+    parser.add_argument("--harness-tree")
     parser.add_argument("--candidate-manifest", required=True, type=Path)
     parser.add_argument("--fixture-manifest", required=True, type=Path)
     parser.add_argument("--lane-receipts", nargs=4, required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
+    if bool(args.harness_commit) != bool(args.harness_tree):
+        parser.error("supply both the harness commit and tree")
+    harness = {"source_commit": args.harness_commit, "source_tree": args.harness_tree} if args.harness_commit else None
     result = combine(args.lane_receipts, args.commit, args.tree, args.candidate_manifest,
-                     args.fixture_manifest)
+                     args.fixture_manifest, harness)
     temporary = args.output.with_suffix(".tmp")
     temporary.write_text(json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n")
     temporary.replace(args.output)

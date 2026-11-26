@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  printf '%s\n' 'Usage: scripts/publish-netfleet-release.sh --tag <tag> --candidate <dir> --qualification <receipt.json> [--compat-candidate <dir> --compat-qualification <receipt.json> --apk <apk>] [--repo <owner/name>]'
+  printf '%s\n' 'Usage: scripts/publish-netfleet-release.sh --tag <tag> --candidate <dir> --qualification <receipt.json> [--compat-candidate <dir> --compat-qualification <receipt.json> --apk <apk>] [--repo <owner/name>] [--require-existing-tag <tag-object>]'
 }
 
 die() {
@@ -17,6 +17,7 @@ repo=''
 compat_candidate=''
 compat_qualification=''
 apk_tool=''
+expected_tag_object=''
 while (($#)); do
   case "$1" in
     --tag) (($# >= 2)) || die '--tag requires a value'; tag=$2; shift 2;;
@@ -26,6 +27,11 @@ while (($#)); do
     --compat-candidate) (($# >= 2)) || die '--compat-candidate requires a directory'; compat_candidate=$2; shift 2;;
     --compat-qualification) (($# >= 2)) || die '--compat-qualification requires a receipt'; compat_qualification=$2; shift 2;;
     --apk) (($# >= 2)) || die '--apk requires an executable'; apk_tool=$2; shift 2;;
+    --require-existing-tag)
+      (($# >= 2)) && [[ "$2" =~ ^[0-9a-f]{40}$ ]] || die '--require-existing-tag requires a Git tag object ID'
+      expected_tag_object=$2
+      shift 2
+      ;;
     -h|--help) usage; exit 0;;
     *) die "unknown option: $1";;
   esac
@@ -129,8 +135,15 @@ release_state=$(gh release view "$tag" --repo "$repo" --json tagName 2>/dev/null
 [[ -z "$release_state" ]] || die "release already exists and is immutable: $tag"
 
 remote_tag=$(git -C "$repo_dir" ls-remote --refs origin "refs/tags/$tag" | awk 'NR == 1 { print $1 }')
+[[ -z "$expected_tag_object" || "$remote_tag" == "$expected_tag_object" ]] ||
+  die 'required annotated release tag is missing or has changed'
 if [[ -n "$remote_tag" ]]; then
   git -C "$repo_dir" fetch --quiet origin "refs/tags/$tag"
+  if [[ -n "$expected_tag_object" ]]; then
+    [[ "$(git -C "$repo_dir" rev-parse FETCH_HEAD)" == "$expected_tag_object" &&
+       "$(git -C "$repo_dir" cat-file -t FETCH_HEAD)" == tag ]] ||
+      die 'required annotated release tag is missing or has changed'
+  fi
   [[ "$(git -C "$repo_dir" rev-parse 'FETCH_HEAD^{commit}')" == "$source_commit" ]] || die 'release tag points to another commit'
 else
   if git -C "$repo_dir" rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then

@@ -18,6 +18,7 @@ Options:
   --packages <dir>  Also install and qualify the exact APK candidate directory
   --diagnostic <lane>  Run native, setup, migration, runtime, package, or compatibility diagnostics
   --release-lane <lane>  Run one isolated release lane (native, setup, migration, or package)
+  --release-harness <commit>  Use the named runner orchestrator for an existing release candidate
   --core-package <dir>  Qualify a same-binary core architecture variant against --base-qualification
   --compat-package <dir>  Signed optional APK candidate; requires --packages
   --base-qualification <file>  Reuse an unchanged qualified base for HTTPS diagnostics
@@ -39,6 +40,7 @@ output=""
 packages=""
 diagnostic=all
 release_lane=""
+release_harness=""
 compat_package=""
 core_package=""
 plugin_packages=""
@@ -76,6 +78,11 @@ while (($#)); do
 			(($# >= 2)) || die "--release-lane requires a lane"
 			release_lane=$2
 			case "$release_lane" in native|setup|migration|package) ;; *) die "unknown release lane: $release_lane" ;; esac
+			shift 2
+			;;
+		--release-harness)
+			(($# >= 2)) || die "--release-harness requires a commit"
+			release_harness=$2
 			shift 2
 			;;
 		--core-package)
@@ -120,6 +127,8 @@ if [[ -n "$release_lane" ]]; then
 	[[ -n "$packages" && -n "${NETFLEET_VM_COMPONENT_FIXTURES:-}" ]] ||
 		die 'release lanes require the signed candidate and its sealed component fixtures'
 	diagnostic=$release_lane
+elif [[ -n "$release_harness" ]]; then
+	die '--release-harness requires --release-lane'
 fi
 [[ "$source_ref" != -* ]] || die "source ref cannot begin with '-'"
 case "$(uname -s):$(uname -m)" in
@@ -202,6 +211,19 @@ git -c tar.umask=0022 -C "$repo_dir" archive "$source_commit" \
 # A complete archive avoids SIGPIPE under pipefail on macOS.
 tar -C "$source_dir" -xf "$work_dir/source.tar"
 rm "$work_dir/source.tar"
+
+release_harness_identity=""
+if [[ -n "$release_harness" ]]; then
+	[[ "$release_harness" =~ ^[0-9a-f]{40}$ ]] ||
+		die 'release harness must use the exact Git commit'
+	git -C "$repo_dir" merge-base --is-ancestor "$source_commit" "$release_harness" ||
+		die 'release harness must descend from the candidate source'
+	release_harness_tree=$(git -C "$repo_dir" rev-parse "$release_harness^{tree}")
+	git -C "$repo_dir" show "$release_harness:scripts/openwrt-vm/qualify.sh" \
+		>"$source_dir/scripts/openwrt-vm/qualify.sh"
+	release_harness_identity=$(python3 -c 'import json,sys;print(json.dumps(dict(source_commit=sys.argv[1],source_tree=sys.argv[2])))' \
+		"$release_harness" "$release_harness_tree")
+fi
 
 test_identity=""
 if [[ -n "$test_ref" ]]; then
@@ -309,6 +331,7 @@ NETFLEET_QEMU_ACCELERATOR=$qemu_accelerator \
 NETFLEET_QEMU_CPU=$qemu_cpu \
 	NETFLEET_VM_LANE=$diagnostic \
 	NETFLEET_VM_RELEASE_FIXTURE_SHA256="$release_fixture_sha" \
+	NETFLEET_VM_RELEASE_HARNESS_IDENTITY="$release_harness_identity" \
 	NETFLEET_COMPAT_PACKAGE="$compat_package" \
 	NETFLEET_COMPAT_BASE_IDENTITY="$base_identity" \
 	NETFLEET_COMPAT_DEVICE_IDENTITY="$device_identity" \

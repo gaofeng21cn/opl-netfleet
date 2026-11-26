@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from unittest import mock
 from pathlib import Path
+from urllib.error import HTTPError
 
 ROOT = Path(__file__).parents[1]
 PACKAGER = ROOT / 'scripts/netfleet-package-build.sh'
@@ -853,6 +854,44 @@ all:
         self.assertEqual(2, source.count('verify-netfleet-release.py'))
 
 class PublisherSourceAdmissionTests(unittest.TestCase):
+    def test_recovery_requires_same_repository_run_successful_build_and_exact_artifact(self):
+        spec = importlib.util.spec_from_file_location(
+            "recover_candidate", ROOT / "scripts/openwrt-vm/recover-candidate.py")
+        recovery = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(recovery)
+        repo, tag, source = "example/test", "v0.4.5", "a" * 40
+        run_id, artifact_id, digest = "10", "20", "sha256:" + "b" * 64
+        repository = {"id": 30, "full_name": repo}
+        run = {"id": 10, "path": ".github/workflows/release.yml", "event": "push",
+               "head_branch": tag, "head_sha": source, "repository": repository, "head_repository": repository}
+        jobs = {"jobs": [{"name": "candidate / build", "status": "completed", "conclusion": "success"}]}
+        artifact = {"id": 20, "expired": False, "name": f"netfleet-openwrt-candidate-{source}", "digest": digest,
+                    "workflow_run": {"id": 10, "head_branch": tag, "head_sha": source,
+                                     "repository_id": 30, "head_repository_id": 30}}
+        for failure in (None, "release", "fork", "failed-build", "digest", "artifact-run"):
+            with self.subTest(failure=failure):
+                def request(path):
+                    if "/releases/tags/" in path:
+                        if failure == "release":
+                            return {"id": 40}
+                        raise HTTPError(path, 404, "missing", None, None)
+                    if "/jobs?" in path:
+                        return {"jobs": []} if failure == "failed-build" else jobs
+                    if "/actions/runs/" in path:
+                        return {**run, "head_repository": {}} if failure == "fork" else run
+                    if failure == "digest":
+                        return {**artifact, "digest": "sha256:" + "c" * 64}
+                    if failure == "artifact-run":
+                        return {**artifact, "workflow_run": {**artifact["workflow_run"], "id": 11}}
+                    return artifact
+
+                args = (repo, tag, source, run_id, artifact_id, digest, request)
+                if failure:
+                    with self.assertRaises(ValueError):
+                        recovery.verify_candidate(*args)
+                else:
+                    recovery.verify_candidate(*args)
+
     def test_frozen_main_candidate_survives_main_advance_but_unmerged_source_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

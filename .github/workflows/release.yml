@@ -2,8 +2,27 @@ name: Release NetFleet
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing annotated product tag
+        required: true
+        type: string
+      candidate_run:
+        description: Original tag-triggered release run ID
+        required: true
+        type: string
+      candidate_artifact:
+        description: Original signed candidate artifact ID
+        required: true
+        type: string
+      candidate_digest:
+        description: Original candidate artifact SHA-256 in sha256:<hex> form
+        required: true
+        type: string
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: netfleet-stable-release
   cancel-in-progress: false
@@ -11,10 +30,15 @@ jobs:
   identity:
     runs-on: ubuntu-latest
     outputs:
+      tag: ${{ steps.source.outputs.tag }}
+      tag_object: ${{ steps.source.outputs.tag_object }}
       source: ${{ steps.source.outputs.source }}
       tree: ${{ steps.source.outputs.tree }}
       sdk_url: ${{ steps.source.outputs.sdk_url }}
       sdk_sha256: ${{ steps.source.outputs.sdk_sha256 }}
+      recovery: ${{ steps.source.outputs.recovery }}
+      harness: ${{ steps.source.outputs.harness }}
+      harness_tree: ${{ steps.source.outputs.harness_tree }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -22,16 +46,44 @@ jobs:
           persist-credentials: false
       - name: Bind the product source and SDK
         id: source
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run }}
+          CANDIDATE_ARTIFACT: ${{ inputs.candidate_artifact }}
+          CANDIDATE_DIGEST: ${{ inputs.candidate_digest }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git fetch origin main --quiet
           git merge-base --is-ancestor HEAD origin/main
-          test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          recovery=false
+          tag_object=
+          harness=
+          harness_tree=
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            test "$GITHUB_REF" = refs/heads/main
+            recovery=true
+            harness=$(git rev-parse HEAD)
+            harness_tree=$(git rev-parse 'HEAD^{tree}')
+            git fetch --quiet origin "refs/tags/$RELEASE_TAG"
+            test "$(git cat-file -t FETCH_HEAD)" = tag
+            tag_object=$(git rev-parse FETCH_HEAD)
+            source=$(git rev-parse 'FETCH_HEAD^{commit}')
+            git merge-base --is-ancestor "$source" "$harness"
+            python3 scripts/openwrt-vm/recover-candidate.py --tag "$RELEASE_TAG" --source "$source" \
+              --run-id "$CANDIDATE_RUN" --artifact-id "$CANDIDATE_ARTIFACT" --digest "$CANDIDATE_DIGEST"
+            git checkout --detach "$source"
+          else
+            test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = tag
+          fi
+          printf 'tag=%s\ntag_object=%s\nrecovery=%s\nharness=%s\nharness_tree=%s\n' \
+            "$RELEASE_TAG" "$tag_object" "$recovery" "$harness" "$harness_tree" >> "$GITHUB_OUTPUT"
           python3 - <<'PY'
           import json, os, plistlib, re, subprocess
           from pathlib import Path
           version = json.loads(Path('product-version.json').read_text())['version']
-          assert os.environ['GITHUB_REF_NAME'] == 'v' + version
+          assert os.environ['RELEASE_TAG'] == 'v' + version
           assert re.search(r'^PKG_VERSION:=' + re.escape(version) + r'$', Path('openwrt/Makefile').read_text(), re.M)
           assert plistlib.loads(Path('desktop/app/Info.plist').read_bytes())['CFBundleShortVersionString'] == version
           sdk = json.loads(Path('scripts/openwrt-sdk.json').read_text())
@@ -43,6 +95,7 @@ jobs:
           PY
   candidate:
     needs: identity
+    if: needs.identity.outputs.recovery == 'false'
     uses: ./.github/workflows/netfleet-openwrt-candidate.yml
     with:
       source_ref: ${{ needs.identity.outputs.source }}
@@ -53,6 +106,7 @@ jobs:
   qualify-base:
     name: OpenWrt base qualification / ${{ matrix.lane }}
     needs: [identity, candidate]
+    if: ${{ !cancelled() && needs.identity.result == 'success' && (needs.candidate.result == 'success' || needs.identity.outputs.recovery == 'true') }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     strategy:
@@ -62,11 +116,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ needs.identity.outputs.source }}
+          ref: ${{ needs.identity.outputs.harness || needs.identity.outputs.source }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: ${{ needs.candidate.outputs.candidate_name }}
+          artifact-ids: ${{ inputs.candidate_artifact }}
+          run-id: ${{ inputs.candidate_run || github.run_id }}
+          github-token: ${{ needs.identity.outputs.recovery == 'true' && github.token || '' }}
+          digest-mismatch: error
           path: ${{ runner.temp }}/candidate
       - name: Verify the candidate and component fixtures before booting QEMU
         env:
@@ -81,10 +140,13 @@ jobs:
         env:
           SOURCE: ${{ needs.identity.outputs.source }}
           LANE: ${{ matrix.lane }}
+          HARNESS: ${{ needs.identity.outputs.harness }}
           NETFLEET_VM_COMPONENT_FIXTURES: ${{ runner.temp }}/candidate/netfleet-vm-components
         run: |
           mkdir -p "$RUNNER_TEMP/qualification"
-          scripts/openwrt-vm.sh --ref "$SOURCE" --release-lane "$LANE" \
+          args=()
+          if [[ -n "$HARNESS" ]]; then args+=(--release-harness "$HARNESS"); fi
+          scripts/openwrt-vm.sh --ref "$SOURCE" --release-lane "$LANE" "${args[@]}" \
             --packages "$RUNNER_TEMP/candidate/netfleet-output" \
             --output "$RUNNER_TEMP/qualification/$LANE.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -97,17 +159,22 @@ jobs:
   qualify-optional:
     name: OpenWrt optional composition qualification
     needs: [identity, candidate, qualify-base]
+    if: ${{ !cancelled() && needs.qualify-base.result == 'success' }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-          ref: ${{ needs.identity.outputs.source }}
+          ref: ${{ needs.identity.outputs.harness || needs.identity.outputs.source }}
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: ${{ needs.candidate.outputs.candidate_name }}
+          artifact-ids: ${{ inputs.candidate_artifact }}
+          run-id: ${{ inputs.candidate_run || github.run_id }}
+          github-token: ${{ needs.identity.outputs.recovery == 'true' && github.token || '' }}
+          digest-mismatch: error
           path: ${{ runner.temp }}/candidate
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
@@ -119,9 +186,14 @@ jobs:
         env:
           SOURCE: ${{ needs.identity.outputs.source }}
           SOURCE_TREE: ${{ needs.identity.outputs.tree }}
+          HARNESS: ${{ needs.identity.outputs.harness }}
+          HARNESS_TREE: ${{ needs.identity.outputs.harness_tree }}
         run: |
           mkdir -p "$RUNNER_TEMP/qualification"
+          args=()
+          if [[ -n "$HARNESS" ]]; then args+=(--harness-commit "$HARNESS" --harness-tree "$HARNESS_TREE"); fi
           python3 scripts/openwrt-vm/release-receipt.py --commit "$SOURCE" --tree "$SOURCE_TREE" \
+            "${args[@]}" \
             --candidate-manifest "$RUNNER_TEMP/candidate/netfleet-output/manifest.json" \
             --fixture-manifest "$RUNNER_TEMP/candidate/netfleet-vm-components/fixture.json" \
             --lane-receipts "$RUNNER_TEMP/lanes/"*.json \
@@ -129,7 +201,10 @@ jobs:
       - name: Prepare the isolated ARM64 QEMU host
         run: sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-utils qemu-efi-aarch64 gdisk e2fsprogs mtools
       - name: Qualify the exact complete installation composition
+        env:
+          SOURCE: ${{ needs.identity.outputs.source }}
         run: |
+          git checkout --detach "$SOURCE"
           python3 scripts/https-compat/qualify.py --composition --preflight \
             --packages "$RUNNER_TEMP/candidate/netfleet-output" \
             --base-qualification "$RUNNER_TEMP/qualification/receipt.json" \
@@ -148,33 +223,52 @@ jobs:
   publish:
     name: Publish the qualified OpenWrt Feed
     needs: [identity, candidate, qualify-optional]
+    if: ${{ !cancelled() && needs.qualify-optional.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+          ref: ${{ needs.identity.outputs.source }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: ${{ needs.candidate.outputs.candidate_name }}
+          artifact-ids: ${{ inputs.candidate_artifact }}
+          run-id: ${{ inputs.candidate_run || github.run_id }}
+          github-token: ${{ needs.identity.outputs.recovery == 'true' && github.token || '' }}
+          digest-mismatch: error
           path: ${{ runner.temp }}/candidate
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: netfleet-release-qualification-${{ needs.identity.outputs.source }}
           path: ${{ runner.temp }}/qualification
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: needs.identity.outputs.recovery == 'false'
         with:
           name: ${{ needs.candidate.outputs.publish_tools_name }}
           path: ${{ runner.temp }}/publish-tools
       - name: Publish and verify the public OpenWrt Feed
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.identity.outputs.tag }}
+          TAG_OBJECT: ${{ needs.identity.outputs.tag_object }}
+          HARNESS: ${{ needs.identity.outputs.harness }}
+          RECOVERY: ${{ needs.identity.outputs.recovery }}
         run: |
           mkdir "$RUNNER_TEMP/apk-tools"
-          tar -xzf "$RUNNER_TEMP/publish-tools/netfleet-apk-tools.tar.gz" -C "$RUNNER_TEMP/apk-tools"
-          scripts/publish-netfleet-release.sh --tag "$GITHUB_REF_NAME" \
+          tools="$RUNNER_TEMP/publish-tools/netfleet-apk-tools.tar.gz"
+          args=()
+          if [[ "$RECOVERY" == true ]]; then
+            tools="$RUNNER_TEMP/candidate/netfleet-apk-tools.tar.gz"
+            git show "$HARNESS:scripts/publish-netfleet-release.sh" > scripts/publish-netfleet-release.sh
+            args+=(--require-existing-tag "$TAG_OBJECT")
+          fi
+          tar -xzf "$tools" -C "$RUNNER_TEMP/apk-tools"
+          scripts/publish-netfleet-release.sh --tag "$RELEASE_TAG" "${args[@]}" \
             --candidate "$RUNNER_TEMP/candidate/netfleet-output" \
             --qualification "$RUNNER_TEMP/qualification/receipt.json" \
             --compat-candidate "$RUNNER_TEMP/candidate/netfleet-optional" \

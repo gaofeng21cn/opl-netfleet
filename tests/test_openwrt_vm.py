@@ -251,6 +251,7 @@ ip() { [ "$NETFLEET_READY_TEST_FAILURE" != dns ]; }
             manifest_sha = hashlib.sha256(manifest.read_bytes()).hexdigest()
             fixture_sha = hashlib.sha256(fixture.read_bytes()).hexdigest()
             lane_receipts = []
+            harness = {'source_commit': '2' * 40, 'source_tree': '3' * 40}
             for offset, (lane, guests) in enumerate(groups.items()):
                 for guest in guests:
                     value = {'ok': True, **identity, 'checks': {'real_path': True}}
@@ -264,7 +265,8 @@ ip() { [ "$NETFLEET_READY_TEST_FAILURE" != dns ]; }
                         '1' * 64, 'aarch64', 'aarch64', '8.2.2', '1', '1', '1', '1', '50',
                         lane, manifest_sha, str(1000 + offset)]
                 env = {**os.environ, 'NETFLEET_QEMU_ACCELERATOR': 'tcg',
-                       'NETFLEET_VM_RELEASE_FIXTURE_SHA256': fixture_sha}
+                       'NETFLEET_VM_RELEASE_FIXTURE_SHA256': fixture_sha,
+                       'NETFLEET_VM_RELEASE_HARNESS_IDENTITY': json.dumps(harness)}
                 result = subprocess.run(['python3', '-c', program, *args], text=True, capture_output=True, env=env)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertFalse(json.loads(receipt.read_text())['qualified'])
@@ -272,7 +274,9 @@ ip() { [ "$NETFLEET_READY_TEST_FAILURE" != dns ]; }
             output = work / 'qualification.json'
             command = ['python3', str(RUNNER.with_name('release-receipt.py')), '--commit', identity['source_commit'],
                        '--tree', identity['source_tree'], '--candidate-manifest', str(manifest),
-                       '--fixture-manifest', str(fixture), '--output', str(output), '--lane-receipts']
+                       '--fixture-manifest', str(fixture), '--output', str(output),
+                       '--harness-commit', harness['source_commit'], '--harness-tree', harness['source_tree'],
+                       '--lane-receipts']
             result = subprocess.run([*command, *lane_receipts], text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             parsed = json.loads(output.read_text())
@@ -280,6 +284,7 @@ ip() { [ "$NETFLEET_READY_TEST_FAILURE" != dns ]; }
             self.assertEqual(set(parsed['lanes']), {guest for guests in groups.values() for guest in guests})
             self.assertEqual(parsed['package']['manifest_sha256'], manifest_sha)
             self.assertEqual(parsed['platform']['accelerator'], 'tcg')
+            self.assertEqual(parsed['release_harness'], harness)
             self.assertEqual(parsed['qualification_metrics']['total_ms'], 53)
 
             output.unlink()
@@ -290,6 +295,7 @@ ip() { [ "$NETFLEET_READY_TEST_FAILURE" != dns ]; }
                 ('source_tree', 'c' * 40),
                 ('candidate_manifest_sha256', 'd' * 64),
                 ('component_fixtures_sha256', 'e' * 64),
+                ('release_harness', {**harness, 'source_tree': '4' * 40}),
                 ('lanes', {}),
                 ('release_lane', 'native'),
             ):

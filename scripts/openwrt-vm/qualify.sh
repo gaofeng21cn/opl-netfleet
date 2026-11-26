@@ -748,6 +748,8 @@ if fixture_sha:
     value.update(schema="opl-netfleet-openwrt-vm-release-lane.v1", release_lane=mode,
                  candidate_manifest_sha256=package_sha, component_fixtures_sha256=fixture_sha,
                  started_at_ms=int(sys.argv[19]))
+    if os.environ.get("NETFLEET_VM_RELEASE_HARNESS_IDENTITY"):
+        value["release_harness"] = json.loads(os.environ["NETFLEET_VM_RELEASE_HARNESS_IDENTITY"])
 elif mode != "all":
     value.update(schema="opl-netfleet-openwrt-vm-diagnostic.v1", diagnostic_passed=True,
                  diagnostic_lane=mode)
