@@ -132,7 +132,7 @@ if [ "$pkg_mgr" = opkg ]; then
 	set -- opl-netfleet luci-app-netfleet
 	if opkg list-installed mihomo-meta 2>/dev/null | grep -Eq '^mihomo-meta '; then
 		set -- "$@" mihomo-meta
-	elif [ ! -e /usr/bin/mihomo ] || { [ -L /usr/bin/mihomo ] && [ "$(readlink /usr/bin/mihomo 2>/dev/null || true)" = /usr/libexec/mihomo ]; }; then
+	elif [ ! -e /etc/init.d/nikki ] && { { ! command -v mihomo >/dev/null 2>&1 && [ ! -e /usr/bin/mihomo ]; } || { [ -L /usr/bin/mihomo ] && [ "$(readlink /usr/bin/mihomo 2>/dev/null || true)" = /usr/libexec/mihomo ]; }; }; then
 		set -- "$@" mihomo-meta
 	fi
 

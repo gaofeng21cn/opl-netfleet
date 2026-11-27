@@ -127,9 +127,11 @@ for attempt in $(seq 1 15); do
 	sleep 1
 done
 
+ubus -t 20 call opl-netfleet native_setup_get '{}' >"$work/rpc-setup.json"
+assert_json "$work/rpc-setup.json" '@.ok' true
+assert_json "$work/rpc-setup.json" '@.result.ready' true
 ubus -t 20 call opl-netfleet status '{}' >"$work/rpc-status.json"
-assert_json "$work/rpc-status.json" '@.ok' true
-assert_json "$work/rpc-status.json" '@.result.build.source_commit' "$source_commit"
+assert_json "$work/rpc-status.json" '@.error' policy_unreadable
 ubus -t 20 call opl-netfleet.plugins plugins_list '{}' >"$work/rpc-plugins.json"
 assert_json "$work/rpc-plugins.json" '@.ok' true
 ucode -e '
@@ -261,7 +263,9 @@ chmod 0600 "$work/onboarding-request.json"
 run_main onboarding-apply "$work/onboarding-request.json" >"$work/onboarding-apply-result.json"
 assert_json "$work/onboarding-apply-result.json" '@.ok' true
 assert_json "$work/onboarding-apply-result.json" '@.result.state' active
-run_main status >"$work/status-active.json"
+ubus -t 20 call opl-netfleet status '{}' >"$work/status-active.json"
+assert_json "$work/status-active.json" '@.ok' true
+assert_json "$work/status-active.json" '@.result.build.source_commit' "$source_commit"
 assert_json "$work/status-active.json" '@.result.runtime.mihomo_running' true
 run_main probe >"$work/probe-active.json"
 assert_json "$work/probe-active.json" '@.ok' true
