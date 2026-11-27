@@ -24,7 +24,7 @@
         "compilation.compiler",
         "compilation.control"
       ],
-      "version": "0.7.10"
+      "version": "0.7.11"
     },
     {
       "api_version": 1,
@@ -158,7 +158,7 @@
         "mihomo.readback",
         "mihomo.runtime"
       ],
-      "version": "0.9.17"
+      "version": "0.9.18"
     },
     {
       "api_version": 1,
@@ -295,7 +295,7 @@
       "services": [
         "refresh.control"
       ],
-      "version": "0.7.7"
+      "version": "0.7.8"
     },
     {
       "api_version": 1,
@@ -353,7 +353,7 @@
       "api_version": 1,
       "id": "site-sync",
       "label": "Cloud site sync",
-      "optional": true,
+      "optional": false,
       "package": "opl-netfleet-plugin-site-sync",
       "package_dependencies": [
         "ca-bundle",

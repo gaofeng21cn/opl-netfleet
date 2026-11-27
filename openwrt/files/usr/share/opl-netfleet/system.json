@@ -98,7 +98,7 @@
     "selection": true,
     "selection-algorithm": true,
     "setup": true,
-    "site-sync": false,
+    "site-sync": true,
     "status": true,
     "subscriptions": true
   },
@@ -128,6 +128,7 @@
     "opl-netfleet-plugin-selection",
     "opl-netfleet-plugin-selection-algorithm",
     "opl-netfleet-plugin-setup",
+    "opl-netfleet-plugin-site-sync",
     "opl-netfleet-plugin-status",
     "opl-netfleet-plugin-subscriptions"
   ],

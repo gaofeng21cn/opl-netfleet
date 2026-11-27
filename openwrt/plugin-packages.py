@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent
 PLUGIN_ROOT = ROOT / "plugins" if (ROOT / "plugins").is_dir() else ROOT.parent / "plugins"
 ID = re.compile(r"[a-z][a-z0-9-]*")
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
-OPTIONAL_PLUGINS = frozenset({"https-compat", "site-sync"})
+OPTIONAL_PLUGINS = frozenset({"https-compat"})
 PACKAGE = re.compile(r"[a-z0-9][a-z0-9+_.-]*")
 
 

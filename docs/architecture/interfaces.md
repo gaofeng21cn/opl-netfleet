@@ -154,4 +154,4 @@ LuCI 在 `config-get` 的 `automation` 同时返回布尔开关和整数周期�
 
 `opl-netfleet-cloud` 提供可选的独立 Web 管理面。管理请求用 Gateway 核验身份后建立短期 Cookie 会话，数据按稳定 owner ID 分区；支持通过设备端一次性 Gateway 账密登录配对（`POST /api/v1/agent/enroll`），按稳定 `device_id` 幂等签发单站点 `device_token`（服务端仅保存哈希，路由器不落盘保存用户密码），并支持设备自主解绑（`POST /api/v1/agent/unenroll`）与云端站点改名（`PUT /api/v1/sites/:id`）。设备通过 HTTPS 上报固定字段的聚合心跳，并按自身 Token 读取显式授权的订阅子集。订阅 URL 密文存储，管理端只返回指纹。
 
-`site-sync` 由设备 supervisor 按 60 秒调度独立进程（同时提供 `site-sync-enroll` / `site-sync-disconnect` 与原生 LuCI「云端站点同步」插件页）。云端请求在设备网络变更锁之外运行。订阅写入服从设备 owner 的配置 revision 和网络变更锁，支持显式 `sections` 映射或 `auto_sections` 自动生成合法 UCI 节名，通过订阅写入、下载校验与编译事务更新本地来源。失败或空分发保留已生效配置。站点专属网络、DNS、业务规则和恢复配置由设备持有。
+`site-sync` 默认随平台安装并开启（未配对云端前保持静默空闲、不发起外联），由设备 supervisor 按 60 秒调度独立进程（同时提供 `site-sync-enroll` / `site-sync-disconnect` 与原生 LuCI「云端站点同步」插件页）。云端请求在设备网络变更锁之外运行。订阅写入服从设备 owner 的配置 revision 和网络变更锁，支持显式 `sections` 映射或 `auto_sections` 自动生成合法 UCI 节名，通过订阅写入、下载校验与编译事务更新本地来源。失败或空分发保留已生效配置。站点专属网络、DNS、业务规则和恢复配置由设备持有。
