@@ -22,8 +22,9 @@ PR 与 `main` 更新运行 `NetFleet 双平台检查`。检查结果只证明所
 产品版本由 `product-version.json` 维护，`scripts/prepare-product-release.py` 统一同步 `openwrt/Makefile`、macOS `desktop/app/Info.plist`（含 `CFBundleShortVersionString` 与单调递增的 `CFBundleVersion`）及 `docs/development/plugin-catalog.json`；OpenWrt 插件继续独立版本化。各平台制品使用同一个产品 tag 和源码身份，
 安装情况以目标实际产物为准。某个平台待验收时保留该状态，修复后验证原候选。
 
-统一每日产品任务检测交付变化并经 PR/CI 准备版本。正式产品 tag 触发 OpenWrt 云端发布，
-macOS 随同一个产品版本按需启动。设备安装按[有限插件组合更新](../operations/canary-promotion.md#有限插件组合更新)执行。
+统一每日产品任务检测交付变化并经 PR/CI 准备版本。正式产品 tag 同时触发 OpenWrt 云端发布
+和 macOS 签名候选构建。macOS 完成净机验证后，由维护者推进 Sparkle 更新源。
+设备安装按[有限插件组合更新](../operations/canary-promotion.md#有限插件组合更新)执行。
 
 ## OpenWrt 公开发布
 
