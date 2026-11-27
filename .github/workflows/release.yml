@@ -40,6 +40,7 @@ jobs:
       recovery: ${{ steps.source.outputs.recovery }}
       harness: ${{ steps.source.outputs.harness }}
       harness_tree: ${{ steps.source.outputs.harness_tree }}
+      publish_tools_name: ${{ steps.source.outputs.publish_tools_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -250,9 +251,12 @@ jobs:
           name: netfleet-release-qualification-${{ needs.identity.outputs.source }}
           path: ${{ runner.temp }}/qualification
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        if: needs.identity.outputs.recovery == 'false'
+        if: needs.identity.outputs.recovery == 'false' || needs.identity.outputs.publish_tools_name != ''
         with:
-          name: ${{ needs.candidate.outputs.publish_tools_name }}
+          name: ${{ needs.identity.outputs.publish_tools_name || needs.candidate.outputs.publish_tools_name }}
+          run-id: ${{ inputs.candidate_run || github.run_id }}
+          github-token: ${{ needs.identity.outputs.recovery == 'true' && github.token || '' }}
+          digest-mismatch: error
           path: ${{ runner.temp }}/publish-tools
       - name: Publish and verify the public OpenWrt Feed
         env:
@@ -266,7 +270,7 @@ jobs:
           tools="$RUNNER_TEMP/publish-tools/netfleet-apk-tools.tar.gz"
           args=()
           if [[ "$RECOVERY" == true ]]; then
-            tools="$RUNNER_TEMP/candidate/netfleet-apk-tools.tar.gz"
+            if [[ ! -f "$tools" ]]; then tools="$RUNNER_TEMP/candidate/netfleet-apk-tools.tar.gz"; fi
             git show "$HARNESS:scripts/publish-netfleet-release.sh" > scripts/publish-netfleet-release.sh
             args+=(--require-existing-tag "$TAG_OBJECT")
           fi

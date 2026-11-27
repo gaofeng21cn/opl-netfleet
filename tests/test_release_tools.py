@@ -868,7 +868,8 @@ class PublisherSourceAdmissionTests(unittest.TestCase):
         artifact = {"id": 20, "expired": False, "name": f"netfleet-openwrt-candidate-{source}", "digest": digest,
                     "workflow_run": {"id": 10, "head_branch": tag, "head_sha": source,
                                      "repository_id": 30, "head_repository_id": 30}}
-        for failure in (None, "release", "fork", "failed-build", "digest", "artifact-run"):
+        tools_name = f"netfleet-openwrt-publish-tools-{source}-1"
+        for failure in (None, "release", "fork", "failed-build", "digest", "artifact-run", "missing-tools"):
             with self.subTest(failure=failure):
                 def request(path):
                     if "/releases/tags/" in path:
@@ -877,20 +878,23 @@ class PublisherSourceAdmissionTests(unittest.TestCase):
                         raise HTTPError(path, 404, "missing", None, None)
                     if "/jobs?" in path:
                         return {"jobs": []} if failure == "failed-build" else jobs
+                    if path.endswith(f"/artifacts?name={tools_name}"):
+                        tools = {"name": tools_name, "expired": False, "digest": "sha256:" + "d" * 64}
+                        return {"artifacts": [] if failure == "missing-tools" else [tools]}
                     if "/actions/runs/" in path:
                         return {**run, "head_repository": {}} if failure == "fork" else run
                     if failure == "digest":
                         return {**artifact, "digest": "sha256:" + "c" * 64}
                     if failure == "artifact-run":
                         return {**artifact, "workflow_run": {**artifact["workflow_run"], "id": 11}}
-                    return artifact
+                    return {**artifact, "name": artifact["name"] + "-1"}
 
                 args = (repo, tag, source, run_id, artifact_id, digest, request)
                 if failure:
                     with self.assertRaises(ValueError):
                         recovery.verify_candidate(*args)
                 else:
-                    recovery.verify_candidate(*args)
+                    self.assertEqual(recovery.verify_candidate(*args), tools_name)
 
     def test_frozen_main_candidate_survives_main_advance_but_unmerged_source_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
