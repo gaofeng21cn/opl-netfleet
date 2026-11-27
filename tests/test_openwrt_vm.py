@@ -346,7 +346,7 @@ ip() { [ "$NETFLEET_READY_TEST_FAILURE" != dns ]; }
         self.assertIn('dnat to "192.168.1.2:$probe_port"', runtime_source)
         self.assertIn('"www.gstatic.com":"192.168.1.2"', runtime_source)
         self.assertNotIn("socat TCP-LISTEN:443", runtime_source)
-        self.assertIn("flock -n /var/lock/opl-netfleet-deploy.lock true", runtime_source)
+        self.assertIn("flock -w 60 /var/lock/opl-netfleet-deploy.lock true", runtime_source)
         self.assertIn("prepare-recovery subscription:base", runtime_source)
         self.assertIn('"value": "private.example.invalid", "capability": "standard"', runtime_source)
         self.assertIn('qualification_temporary=$qualification.tmp', runtime_source)

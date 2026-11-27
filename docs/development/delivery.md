@@ -22,8 +22,9 @@ PR 与 `main` 更新运行 `NetFleet 双平台检查`。检查结果只证明所
 产品版本由 `product-version.json` 维护，`scripts/prepare-product-release.py` 统一同步 `openwrt/Makefile`、macOS `desktop/app/Info.plist`（含 `CFBundleShortVersionString` 与单调递增的 `CFBundleVersion`）及 `docs/development/plugin-catalog.json`；OpenWrt 插件继续独立版本化。各平台制品使用同一个产品 tag 和源码身份，
 安装情况以目标实际产物为准。某个平台待验收时保留该状态，修复后验证原候选。
 
-统一每日产品任务检测交付变化并经 PR/CI 准备版本。正式产品 tag 触发 OpenWrt 云端发布，
-macOS 随同一个产品版本按需启动。设备安装按[有限插件组合更新](../operations/canary-promotion.md#有限插件组合更新)执行。
+统一每日产品任务检测交付变化并经 PR/CI 准备版本。正式产品 tag 同时触发 OpenWrt 云端发布
+和 macOS 签名候选构建。macOS 完成净机验证后，由维护者推进 Sparkle 更新源。
+设备安装按[有限插件组合更新](../operations/canary-promotion.md#有限插件组合更新)执行。
 
 ## OpenWrt 公开发布
 
@@ -170,9 +171,10 @@ macOS 使用同一产品 `vX.Y.Z` tag，版本对应应用 `Info.plist`。旧 `m
 macOS VM 验收后才发布。应用签名、两次公证、最终 DMG 摘要、源码身份和 VM 结果分别
 回读；发布后下载公开资产并核对相同摘要。内部验收日志与订阅数据不进入 Release。
 
-从远端 `main` 手动运行 `.github/workflows/macos-sparkle-release.yml`，传入预定的
-`release_tag=vX.Y.Z` 和已进入 `main` 的完整 `source_sha`。可在创建 tag 和 Release 前生成候选，
-与 OpenWrt 包资格验证并行。
+每日产品发布创建 `vX.Y.Z` tag 后自动启动 `.github/workflows/macos-sparkle-release.yml`，
+与 OpenWrt 包资格验证并行。构建绑定同一 annotated tag 指向的 `main` 源码。
+已有 tag 补建候选或需要提前验证时，从远端 `main` 手动运行同一工作流，传入
+`release_tag=vX.Y.Z` 和已进入 `main` 的完整 `source_sha`。
 工作流在 GitHub Environment `release` 使用 Apple Developer ID 的单身份 `.p12`、对应密码、
 公证账号与 App-Specific Password，以及应用的 `SPARKLE_ED25519_PRIVATE_KEY`。
 构建前检查当前 `macos-stable` 及已有的目标 tag 和 Release。tag 指向其他源码或已有版本化 macOS 资产时停止构建。
@@ -183,7 +185,7 @@ macOS VM 验收后才发布。应用签名、两次公证、最终 DMG 摘要、
 完成测试并关闭 VM。当前由维护者在具备 Tart 的机器上按需执行该阶段。只有这一阶段需要占用 VM。
 构建缓存、候选封存及发布均由托管 runner 处理。详细验收记录留在执行机器。
 
-产品 tag 与公开 Release 建立后，从 `main` 派发 `macos-sparkle-publish.yml`，传候选 run ID 和最小资格回执。
+产品 tag、公开 Release 和 VM 回执齐备后，从 `main` 派发 `macos-sparkle-publish.yml`，传候选 run ID 和最小资格回执。
 托管 Ubuntu runner 从该 run 取原制品，校验后发布和回读。发布中断时复用同一 run ID 和回执。
 
 ```sh

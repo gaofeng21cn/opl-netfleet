@@ -271,14 +271,24 @@ def candidate_artifact(repo, tag, run_id):
         or run.get("workflow_id") != workflow.get("id")
         or workflow.get("path") != CANDIDATE_WORKFLOW
         or run.get("path") != CANDIDATE_WORKFLOW
-        or run.get("event") != "workflow_dispatch"
-        or run.get("head_branch") != "main"
+        or not re.fullmatch(r"[a-f0-9]{40}", run.get("head_sha") or "")
         or run.get("status") != "completed"
         or run.get("conclusion") != "success"
         or run.get("repository", {}).get("full_name") != repo
         or run.get("head_repository", {}).get("full_name") != repo
     ):
-        raise ReleaseError("Expected a successful main-branch NetFleet macOS candidate run")
+        raise ReleaseError("Expected a successful NetFleet macOS candidate run")
+    if run.get("event") == "workflow_dispatch":
+        if run.get("head_branch") != "main":
+            raise ReleaseError("Manually dispatched macOS candidate must run from main")
+    elif run.get("event") == "push":
+        if run.get("head_branch") != tag:
+            raise ReleaseError("Automatically dispatched macOS candidate must run from the product tag")
+        tagged_source = github_json(f"repos/{repo}/commits/{tag}").get("sha")
+        if tagged_source != run.get("head_sha"):
+            raise ReleaseError("Product tag does not match the automatic macOS candidate source")
+    else:
+        raise ReleaseError("Expected a tag-triggered or manually dispatched macOS candidate run")
     name = f"netfleet-macos-{tag}"
     listing = github_json(f"{prefix}/runs/{run_id}/artifacts?name={name}")
     artifacts = listing.get("artifacts", [])

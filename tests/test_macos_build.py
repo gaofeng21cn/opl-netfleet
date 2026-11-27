@@ -291,7 +291,7 @@ class MacOSReleaseTests(unittest.TestCase):
             with self.assertRaises(release.ReleaseError):
                 release.read_workflow_qualification(path, self.tag)
 
-    def test_candidate_requires_unique_artifact_owned_by_successful_main_run(self):
+    def test_candidate_requires_unique_artifact_owned_by_successful_release_run(self):
         run_id, repository_id, workflow_id = 123, 456, 789
         path = release.CANDIDATE_WORKFLOW
         workflow = {"id": workflow_id, "path": path}
@@ -315,7 +315,7 @@ class MacOSReleaseTests(unittest.TestCase):
             self.assertEqual(identity, {"id": 12, "digest": artifact["digest"], "size_in_bytes": 200})
         for change in ({"head_branch": "other"}, {"conclusion": "failure"}, {"event": "pull_request"}):
             with patch.object(release, "github_json", side_effect=[workflow, {**run, **change}]):
-                with self.assertRaisesRegex(release.ReleaseError, "successful main-branch"):
+                with self.assertRaises(release.ReleaseError):
                     release.candidate_artifact(self.repo, self.tag, str(run_id))
         with patch.object(release, "github_json", side_effect=[workflow, run, {**listing, "total_count": 2}]):
             with self.assertRaisesRegex(release.ReleaseError, "exactly one"):
@@ -325,6 +325,36 @@ class MacOSReleaseTests(unittest.TestCase):
             **listing, "artifacts": [{**artifact, "workflow_run": invalid_owner}],
         }]):
             with self.assertRaisesRegex(release.ReleaseError, "does not match the trusted"):
+                release.candidate_artifact(self.repo, self.tag, str(run_id))
+
+    def test_automatic_candidate_must_be_the_tagged_source(self):
+        run_id, repository_id, workflow_id = 123, 456, 789
+        workflow = {"id": workflow_id, "path": release.CANDIDATE_WORKFLOW}
+        repository = {"id": repository_id, "full_name": self.repo}
+        run = {
+            "id": run_id, "workflow_id": workflow_id, "path": release.CANDIDATE_WORKFLOW,
+            "event": "push", "head_branch": self.tag, "head_sha": self.source,
+            "status": "completed", "conclusion": "success",
+            "repository": repository, "head_repository": repository,
+        }
+        artifact = {
+            "id": 12, "name": f"netfleet-macos-{self.tag}", "expired": False,
+            "digest": "sha256:" + "a" * 64, "size_in_bytes": 200,
+            "workflow_run": {
+                "id": run_id, "head_sha": self.source,
+                "head_repository_id": repository_id, "repository_id": repository_id,
+            },
+        }
+        listing = {"total_count": 1, "artifacts": [artifact]}
+        with patch.object(release, "github_json", side_effect=[workflow, run, {"sha": self.source}, listing]) as api:
+            identity = release.candidate_artifact(self.repo, self.tag, str(run_id))
+        self.assertEqual(api.call_args_list[2].args, (f"repos/{self.repo}/commits/{self.tag}",))
+        self.assertEqual(identity["id"], 12)
+        with patch.object(release, "github_json", side_effect=[workflow, {**run, "head_branch": "v1.0.0"}]):
+            with self.assertRaisesRegex(release.ReleaseError, "run from the product tag"):
+                release.candidate_artifact(self.repo, self.tag, str(run_id))
+        with patch.object(release, "github_json", side_effect=[workflow, run, {"sha": "d" * 40}]):
+            with self.assertRaisesRegex(release.ReleaseError, "tag does not match"):
                 release.candidate_artifact(self.repo, self.tag, str(run_id))
 
     def test_candidate_download_checks_digest_and_exact_zip_members(self):
