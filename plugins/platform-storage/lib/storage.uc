@@ -1,7 +1,9 @@
-import { popen, writefile, readfile, stat, lstat, mkdtemp, unlink, rmdir, rename, mkdir as fs_mkdir } from "fs";
+import { popen, writefile, readfile, stat, lstat, open, unlink, rmdir, rename, mkdir as fs_mkdir } from "fs";
+import * as fs from "fs";
 
 return function(context) {
 	const shell_quote = context.use("platform.process").shell_quote;
+	const mkdtemp = context.use("platform.process").mkdtemp ?? ((t) => fs.mkdtemp(t));
 	const state = context.state ?? {};
 	state.yaml_cache ??= [];
 	let native_sha256 = null;
@@ -118,5 +120,5 @@ return function(context) {
 		}
 		return true;
 	}
-	return { read_yaml, read_json, sha256, file_mtime, sha256_text, write_text, mkdir, write_json_atomic };
+	return { read_yaml, read_json, sha256, file_mtime, sha256_text, write_text, mkdir, write_json_atomic, mkdtemp };
 };

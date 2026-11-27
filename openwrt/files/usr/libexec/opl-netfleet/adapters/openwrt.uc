@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { shell_quote as q, read_json, trusted, write_private } from '../kernel/io.uc';
+import { shell_quote as q, read_json, trusted, write_private, mkdtemp } from '../kernel/io.uc';
 
 const OWNER = 0;
 const PATHS = {
@@ -79,7 +79,7 @@ function inspect_digest(directory, files) {
 	return sha256(identities);
 };
 function invoke_process(entry, action, envelope, limit) {
-	const work = fs.mkdtemp('/tmp/opl-netfleet-plugin.XXXXXX');
+	const work = mkdtemp('/tmp/opl-netfleet-plugin.XXXXXX');
 	if (work == null) return failure('plugin_request_unavailable');
 	const request = `${work}/request.json`, status_path = `${work}/exit`;
 	let result;

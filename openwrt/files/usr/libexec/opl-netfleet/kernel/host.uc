@@ -239,10 +239,7 @@ function describe(plugins_dir, id, owner, asset_scope) {
 		const manifest = read_json(path), error = descriptor_error(manifest, id);
 		if (error != null) return failure(error);
 		return { ok: true, manifest, directory, plugins_dir, asset_scope, process: manifest.schema == 'opl-netfleet-plugin.v1', described: true };
-	} catch (error) {
-		if (index(error?.message ?? '', ' ') >= 0) warn(sprintf('host describe runtime error: %s (%J)\n', error.message, error.stacktrace?.[0]));
-		return failure(error.message);
-	}
+	} catch (error) { return failure(error.message); }
 };
 function describe_any(resolved_root, id, options) {
 	const roots = [`${resolved_root}/plugins`, ...(options.extra_plugin_roots ?? options.adapter?.extra_plugin_roots ?? [])];
@@ -279,10 +276,7 @@ function inspect(plugins_dir, id, owner, adapter, cached, asset_scope) {
 		}
 		if (type(digest) != 'string' || !match(digest, /^[a-f0-9]{64}$/)) return failure('plugin_identity_unreadable');
 		return { ok: true, manifest: manifest, directory: directory, plugins_dir, asset_scope, entry: `${directory}/control`, revision: digest, process: process };
-	} catch (error) {
-		if (index(error?.message ?? '', ' ') >= 0) warn(sprintf('host inspect runtime error: %s (%J)\n', error.message, error.stacktrace?.[0]));
-		return failure(error.message ?? 'plugin_inspection_failed');
-	}
+	} catch (error) { return failure(error.message ?? 'plugin_inspection_failed'); }
 };
 
 create = function(root, options) {

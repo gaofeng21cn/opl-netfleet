@@ -256,8 +256,8 @@ direct_probe
 stage=fail_open_disable_and_remove
 run_main disable >"$work/disable-result.json"
 assert_json "$work/disable-result.json" '@.ok' true
-/etc/init.d/opl-netfleet stop
-/etc/init.d/opl-netfleet-core stop
+! /etc/init.d/opl-netfleet running >/dev/null 2>&1 || /etc/init.d/opl-netfleet stop
+! /etc/init.d/opl-netfleet-core running >/dev/null 2>&1 || /etc/init.d/opl-netfleet-core stop
 for attempt in $(seq 1 10); do
 	ucode "$main" native-gateway-status >"$work/stopped-result.json"
 	[ "$(jsonfilter -i "$work/stopped-result.json" -e '@.result.core_running')" != false ] || break
