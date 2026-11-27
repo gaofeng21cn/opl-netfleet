@@ -1,4 +1,5 @@
 name: Publish Qualified macOS Sparkle DMG
+run-name: macOS stable ${{ inputs.release_tag }} · candidate ${{ inputs.candidate_run_id }}
 
 on:
   workflow_dispatch:

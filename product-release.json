@@ -6,6 +6,16 @@
   "trigger": "tag",
   "tag_prefix": "v",
   "publisher_workflow": "release.yml",
+  "observed_publishers": [
+    {
+      "lane": "macos-candidate",
+      "workflow": "macos-sparkle-release.yml"
+    },
+    {
+      "lane": "macos-stable",
+      "workflow": "macos-sparkle-publish.yml"
+    }
+  ],
   "channel": {
     "kind": "github_release"
   },
@@ -32,7 +42,9 @@
     "sdk",
     "product-version.json",
     ".github/workflows/release.yml",
-    ".github/workflows/netfleet-openwrt-candidate.yml"
+    ".github/workflows/netfleet-openwrt-candidate.yml",
+    ".github/workflows/macos-sparkle-release.yml",
+    ".github/workflows/macos-sparkle-publish.yml"
   ],
   "prepare": [
     [

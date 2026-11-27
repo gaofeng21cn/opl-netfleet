@@ -1,6 +1,9 @@
 name: Build macOS Sparkle DMG Candidate
+run-name: macOS candidate ${{ inputs.release_tag || github.ref_name }} · ${{ inputs.source_sha || github.sha }}
 
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       release_tag:
@@ -21,7 +24,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: macos-15
     timeout-minutes: 60
     environment: release
@@ -36,7 +39,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.source_sha }}
+          ref: ${{ inputs.source_sha || github.sha }}
           path: source
           fetch-depth: 0
           persist-credentials: false
@@ -52,8 +55,8 @@ jobs:
       - name: Verify candidate source and preflight public channels
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-          RELEASE_SOURCE: ${{ inputs.source_sha }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_SOURCE: ${{ inputs.source_sha || github.sha }}
         run: |
           set -euo pipefail
           test "$(uname -m)" = arm64
@@ -67,8 +70,12 @@ jobs:
           PY
           python3 ../release-tools/scripts/macos/publish-sparkle-release.py \
             --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" --preflight desktop/app/Info.plist
-          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
-            test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$RELEASE_SOURCE"
+          tag_ref="refs/tags/$RELEASE_TAG"
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            test "$(git cat-file -t "$tag_ref")" = tag
+          fi
+          if git show-ref --verify --quiet "$tag_ref"; then
+            test "$(git rev-parse "$tag_ref^{commit}")" = "$RELEASE_SOURCE"
           fi
 
       - name: Freeze the clean-VM test inputs from the candidate source
@@ -123,7 +130,7 @@ jobs:
 
       - name: Build, notarize DMG, and generate Sparkle appcast.xml
         env:
-          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
           SIGNING_IDENTITY: "Developer ID Application: FENG GAO (SVVC4TA784)"
           SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
         run: |
@@ -176,7 +183,7 @@ jobs:
       - name: Upload the small clean-VM test inputs
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: netfleet-macos-vm-inputs-${{ inputs.release_tag }}
+          name: netfleet-macos-vm-inputs-${{ inputs.release_tag || github.ref_name }}
           path: ${{ runner.temp }}/netfleet-macos-vm-inputs.tar.gz
           if-no-files-found: error
           compression-level: 0
@@ -185,17 +192,17 @@ jobs:
 
       - name: Report the frozen identity and qualification handoff
         env:
-          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           {
             echo '### Signed macOS candidate'
             echo
             echo 'Built, signed, and notarized on a GitHub-hosted macOS ARM64 runner.'
             echo
-            printf -- '- Tag: `%s`\n' "$RELEASE_TAG"
-            printf -- '- Source commit: `%s`\n' "$(git rev-parse HEAD)"
-            printf -- '- Source tree: `%s`\n' "$(git rev-parse 'HEAD^{tree}')"
-            printf -- '- DMG SHA-256: `%s`\n' "$(cut -d ' ' -f 1 dist/OPL-NetFleet-macos-arm64.dmg.sha256)"
+            printf -- "- Tag: \`%s\`\n" "$RELEASE_TAG"
+            printf -- "- Source commit: \`%s\`\n" "$(git rev-parse HEAD)"
+            printf -- "- Source tree: \`%s\`\n" "$(git rev-parse 'HEAD^{tree}')"
+            printf -- "- DMG SHA-256: \`%s\`\n" "$(cut -d ' ' -f 1 dist/OPL-NetFleet-macos-arm64.dmg.sha256)"
             echo
             echo 'Download the sealed candidate and the small test input archive from this run when a clean macOS VM is ready. The qualification needs no SDK or npm installation.'
           } >> "$GITHUB_STEP_SUMMARY"
@@ -203,7 +210,7 @@ jobs:
       - name: Seal the notarized candidate for VM qualification
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: netfleet-macos-${{ inputs.release_tag }}
+          name: netfleet-macos-${{ inputs.release_tag || github.ref_name }}
           path: |
             source/dist/OPL-NetFleet-macos-arm64.dmg
             source/dist/OPL-NetFleet-macos-arm64.dmg.sha256
