@@ -111,7 +111,10 @@ python3 scripts/netfleet-delivery-preflight.py \
 tag 运行 ID、签名候选 artifact ID 和摘要。基础及可选组合验收使用同一主线提交的 VM runner
 与客体验收脚本，回执记录该提交，产品源码、签名包和封存夹具仍绑定原候选。
 首次设置验收为已进入回滚的组件事务预留独立的有界观察窗口，直到读到同一事务的终态。
+组件验收只在 RPC 明确返回启动前的 `mutation_busy` 时重试请求。LAN 故障验收在取得部署锁后注入故障，
+持锁覆盖完整观察窗口。
 坏包用例还会核对预期失败原因、旧包版本、配置和代理连通性。
+仅修改客体验收脚本时，每日发布不生成新产品版本。已有候选可使用上述入口复验。
 APK 和夹具按原字节免二次压缩上传。`netfleet-output/` 保存默认包，`netfleet-optional/` 保存可选签名包及构建身份，
 `netfleet-vm-components/` 保存与候选绑定的升级和回滚夹具。可选来源由 `scripts/https-compat/release-source.json` 固定，
 复用时检查摘要、签名和依赖调用链。`scripts/openwrt-sdk.json` 固定构建所用 SDK 的 URL 和 SHA-256。

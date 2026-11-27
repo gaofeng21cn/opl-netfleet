@@ -53,6 +53,9 @@ guest_on_failure() {
 		"$work"/mihomo.log "$work"/supervisor.log "$work"/*.stderr "$work"/*.txt; do
 		[ ! -f "$log" ] || { echo "--- $log" >&2; cat "$log" >&2; }
 	done
+	for file in "$work"/ingress_reenable.json "$work"/ingress-status.json; do
+		[ ! -f "$file" ] || { echo "--- $file" >&2; cat "$file" >&2; }
+	done
 }
 guest_cleanup() { cleanup; }
 guest_setup_trap
@@ -882,21 +885,23 @@ ucode "$main" status >"$work/native-status.json"
 [ "$(jsonfilter -i "$work/native-status.json" -e '@.ok')" = true ]
 [ "$(jsonfilter -i "$work/native-status.json" -e '@.result.active')" = false ]
 
-stage=supervisor_lan_ingress_passthrough
+stage=ingress_compile
 run_timed ingress_compile run_locked /var/lock/opl-netfleet-deploy.lock ucode "$main" compile
+stage=ingress_reenable
 run_timed ingress_reenable run_locked /var/lock/opl-netfleet-deploy.lock ucode "$main" enable vm
+stage=ingress_enable_identity_readback
 [ "$(jsonfilter -i "$work/ingress_reenable.json" -e '@.result.readback.runtime_identity_ok')" = true ]
-flock /var/lock/opl-netfleet-deploy.lock sh -c 'printf ready >"$1"; sleep 38' sh "$work/recovery-lock-held" &
-recovery_lock_pid=$!
-for attempt in $(seq 1 5); do
-	[ ! -s "$work/recovery-lock-held" ] || break
-	sleep 1
-done
-[ -s "$work/recovery-lock-held" ]
-uci set nikki.mixin.allow_lan=0
-uci commit nikki
-if flock -n /var/lock/opl-netfleet-deploy.lock true; then exit 1; fi
-wait "$recovery_lock_pid"
+stage=ingress_recovery_lock
+# Wait for any in-flight supervisor tick, then inject the fault while owning
+# the lock for the entire observation window.
+(
+	exec 9>"$lock"
+	flock -w 60 9
+	uci set nikki.mixin.allow_lan=0
+	uci commit nikki
+	sleep 38
+)
+stage=supervisor_lan_ingress_passthrough
 # Health sampling starts after mutation admission, followed by the configured
 # grace period, another poll and owner cleanup. The held-lock time is separate.
 runtime_grace=$(jsonfilter -i "$work/native-status.json" -e '@.result.selection.automation.runtime_grace_seconds')

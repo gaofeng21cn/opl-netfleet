@@ -90,14 +90,22 @@ request() {
 	method=$1
 	version=${2:-}
 	component=${3:-netfleet}
-	if [ "$method" = components_check ]; then
-		ubus -t 20 call opl-netfleet "$method" '{}' >"$work/start-result.json"
-	else
-		ubus -t 20 call opl-netfleet "$method" "{\"component\":\"$component\",\"version\":\"$version\"}" >"$work/start-result.json"
+	payload='{}'
+	if [ "$method" != components_check ]; then
+		payload="{\"component\":\"$component\",\"version\":\"$version\"}"
 	fi
-	assert_json "$work/start-result.json" '@.ok' true
+	# The RPC rejects a held deployment lock before starting the request.
+	# Only that explicit response is safe to retry. Keep transport failures fatal.
+	deadline=$(($(operation_uptime) + 60))
+	while :; do
+		ubus -t 20 call opl-netfleet "$method" "$payload" >"$work/start-result.json" || return 1
+		if ! assert_json "$work/start-result.json" '@.error' mutation_busy; then break; fi
+		[ "$(operation_uptime)" -lt "$deadline" ] || return 1
+		sleep 1
+	done
+	assert_json "$work/start-result.json" '@.ok' true || return 1
 	id=$(jsonfilter -i "$work/start-result.json" -e '@.result.operation.id')
-	[ -n "$id" ]
+	[ -n "$id" ] || return 1
 	wait_operation "$id"
 }
 rpc_ready() {
