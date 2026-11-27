@@ -23,7 +23,9 @@ guest_check_receipt() {
 }
 guest_on_failure() {
 	echo "OpenWrt 24.10 opkg qualification failed at stage: $stage" >&2
-	for file in "$work"/*.log "$work"/*-result.json /etc/opkg/customfeeds.conf /etc/opkg/distfeeds.conf; do
+	ls -la /usr/share/opl-netfleet /www/luci-static/resources/netfleet/bundle/plugins/product-ui >&2 || true
+	readlink /usr/share/opl-netfleet/current >&2 || true
+	for file in "$work"/*.json "$work"/*.log /etc/opkg/customfeeds.conf /etc/opkg/distfeeds.conf; do
 		[ ! -f "$file" ] || { echo "--- $file" >&2; tail -80 "$file" >&2; }
 	done
 	opkg status opl-netfleet luci-app-netfleet mihomo-meta >&2 || true
@@ -99,6 +101,7 @@ opkg list-installed | grep -Eq '^mihomo-meta - '
 [ "$(readlink /usr/bin/mihomo)" = /usr/libexec/mihomo ]
 
 stage=bundle_layout_and_rpc_readback
+set -x
 expected_ver=$(jsonfilter -i "$candidate/manifest.json" -e '@.package_version')
 [ "$(readlink /usr/share/opl-netfleet/current)" = "releases/$expected_ver" ]
 assert_json /usr/share/opl-netfleet/shell.json '@.shell_version' "$expected_ver"
@@ -138,6 +141,7 @@ ucode -e '
 	}
 	for (let dep in r.dependencies) if (!dep.available) exit(1);
 ' "$work/components-get.json"
+set +x
 
 stage=real_upstream_and_client
 cp "$(readlink -f /usr/bin/mihomo)" "$work/bin/nf-setup-proxy"
