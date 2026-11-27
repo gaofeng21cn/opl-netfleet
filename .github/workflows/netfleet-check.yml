@@ -53,7 +53,6 @@ jobs:
           test "$(uname -m)" = arm64
           command -v cmake >/dev/null || brew install cmake
           command -v pkg-config >/dev/null || brew install pkgconf
-          [ -x /opt/homebrew/opt/openssl@3/bin/openssl ] || brew install openssl@3
       - name: 执行严格平台检查
         run: |
           runtime="$(python3 scripts/macos/bootstrap.py)"

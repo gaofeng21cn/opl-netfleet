@@ -1,53 +1,168 @@
 #!/usr/bin/env python3
-"""Deterministic OpenWrt Ed25519 usign key/signature helpers backed by OpenSSL."""
+"""Deterministic OpenWrt Ed25519 usign key/signature helpers (pure-Python RFC 8032)."""
 
 from __future__ import annotations
 
 import argparse
 import base64
-import functools
 import hashlib
 import os
 from pathlib import Path
-import shutil
-import subprocess
 import sys
 import tempfile
 
 
 ED25519_SPKI_PREFIX = bytes.fromhex("302a300506032b6570032100")
+ED25519_PKCS8_PREFIX = bytes.fromhex("302e020100300506032b657004220420")
+ED25519_PKCS8_V2_PREFIX = bytes.fromhex("3053020101300506032b657004220420")
+
+_P = 2**255 - 19
+_L = 2**252 + 27742317777372353535851937790883648493
+_D = (-121665 * pow(121666, _P - 2, _P)) % _P
+_I = pow(2, (_P - 1) // 4, _P)
+_BX = 15112221349535400772501151409588531511454012693041857206046113283949847762202
+_BY = (4 * pow(5, _P - 2, _P)) % _P
+_BASE_POINT = (_BX, _BY, 1, (_BX * _BY) % _P)
+_IDENTITY_POINT = (0, 1, 1, 0)
 
 
-@functools.lru_cache(maxsize=1)
-def resolve_openssl() -> str:
-    """Prefer OpenSSL 3 (supports Ed25519 `-rawin`) over macOS Apple LibreSSL."""
-    candidates: list[str] = []
-    for item in (
-        os.environ.get("NETFLEET_OPENSSL"),
-        shutil.which("openssl"),
-        "/opt/homebrew/opt/openssl@3/bin/openssl",
-        "/usr/local/opt/openssl@3/bin/openssl",
-        "/opt/homebrew/bin/openssl",
-        "/usr/local/bin/openssl",
-    ):
-        if item and item not in candidates:
-            candidates.append(item)
-    for candidate in candidates:
-        try:
-            probe = subprocess.run([candidate, "version"], capture_output=True, text=True, check=False)
-        except OSError:
+def _point_add(
+    p1: tuple[int, int, int, int],
+    p2: tuple[int, int, int, int],
+) -> tuple[int, int, int, int]:
+    x1, y1, z1, t1 = p1
+    x2, y2, z2, t2 = p2
+    a = ((y1 - x1) * (y2 - x2)) % _P
+    b = ((y1 + x1) * (y2 + x2)) % _P
+    c = (t1 * 2 * _D * t2) % _P
+    d = (z1 * 2 * z2) % _P
+    e = (b - a) % _P
+    f = (d - c) % _P
+    g = (d + c) % _P
+    h = (b + a) % _P
+    return ((e * f) % _P, (g * h) % _P, (f * g) % _P, (e * h) % _P)
+
+
+def _point_mul(scalar: int, pt: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    acc = _IDENTITY_POINT
+    cur = pt
+    while scalar > 0:
+        if scalar & 1:
+            acc = _point_add(acc, cur)
+        cur = _point_add(cur, cur)
+        scalar >>= 1
+    return acc
+
+
+def _point_equal(p1: tuple[int, int, int, int], p2: tuple[int, int, int, int]) -> bool:
+    x1, y1, z1, _ = p1
+    x2, y2, z2, _ = p2
+    return (x1 * z2 - x2 * z1) % _P == 0 and (y1 * z2 - y2 * z1) % _P == 0
+
+
+def _point_encode(pt: tuple[int, int, int, int]) -> bytes:
+    x, y, z, _ = pt
+    zinv = pow(z, _P - 2, _P)
+    x = (x * zinv) % _P
+    y = (y * zinv) % _P
+    encoded = bytearray(y.to_bytes(32, "little"))
+    if x & 1:
+        encoded[31] |= 0x80
+    return bytes(encoded)
+
+
+def _point_decode(raw: bytes) -> tuple[int, int, int, int] | None:
+    if len(raw) != 32:
+        return None
+    buf = bytearray(raw)
+    sign = (buf[31] >> 7) & 1
+    buf[31] &= 0x7F
+    y = int.from_bytes(buf, "little")
+    if y >= _P:
+        return None
+    y2 = (y * y) % _P
+    u = (y2 - 1) % _P
+    v = (_D * y2 + 1) % _P
+    v3 = pow(v, 3, _P)
+    v7 = (v3 * v3 % _P * v) % _P
+    x = (u * v3 % _P * pow((u * v7) % _P, (_P - 5) // 8, _P)) % _P
+    vx2 = (v * x * x) % _P
+    if vx2 != u:
+        if vx2 != (-u) % _P:
+            return None
+        x = (x * _I) % _P
+    if x == 0 and sign:
+        return None
+    if (x & 1) != sign:
+        x = _P - x
+    return (x, y, 1, (x * y) % _P)
+
+
+def _secret_expand(seed: bytes) -> tuple[int, bytes]:
+    if len(seed) != 32:
+        raise ValueError("Ed25519 seed must be 32 bytes")
+    digest = hashlib.sha512(seed).digest()
+    scalar_bytes = bytearray(digest[:32])
+    scalar_bytes[0] &= 248
+    scalar_bytes[31] &= 127
+    scalar_bytes[31] |= 64
+    return int.from_bytes(scalar_bytes, "little"), digest[32:]
+
+
+def ed25519_public_key(seed: bytes) -> bytes:
+    """Derive the 32-byte Ed25519 public key from a 32-byte seed (RFC 8032)."""
+    scalar, _ = _secret_expand(seed)
+    return _point_encode(_point_mul(scalar, _BASE_POINT))
+
+
+def ed25519_sign(seed: bytes, message: bytes) -> bytes:
+    """Compute a 64-byte RFC 8032 Ed25519 signature."""
+    scalar, prefix = _secret_expand(seed)
+    pub = _point_encode(_point_mul(scalar, _BASE_POINT))
+    r = int.from_bytes(hashlib.sha512(prefix + message).digest(), "little") % _L
+    r_bytes = _point_encode(_point_mul(r, _BASE_POINT))
+    k = int.from_bytes(hashlib.sha512(r_bytes + pub + message).digest(), "little") % _L
+    s = (r + k * scalar) % _L
+    return r_bytes + s.to_bytes(32, "little")
+
+
+def ed25519_verify(pub: bytes, message: bytes, sig: bytes) -> bool:
+    """Verify a 64-byte RFC 8032 Ed25519 signature."""
+    if len(pub) != 32 or len(sig) != 64:
+        return False
+    a_pt = _point_decode(pub)
+    r_pt = _point_decode(sig[:32])
+    s = int.from_bytes(sig[32:], "little")
+    if a_pt is None or r_pt is None or not (0 <= s < _L):
+        return False
+    k = int.from_bytes(hashlib.sha512(sig[:32] + pub + message).digest(), "little") % _L
+    lhs = _point_mul(s, _BASE_POINT)
+    rhs = _point_add(r_pt, _point_mul(k, a_pt))
+    return _point_equal(lhs, rhs)
+
+
+def _read_private_seed(pem_path: Path) -> bytes:
+    lines = Path(pem_path).read_text(encoding="utf-8").splitlines()
+    body: list[str] = []
+    in_key = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "-----BEGIN PRIVATE KEY-----":
+            in_key = True
             continue
-        if probe.returncode == 0 and probe.stdout.strip().startswith("OpenSSL "):
-            return candidate
-    return shutil.which("openssl") or "openssl"
-
-
-def _run_openssl(args: list[str]) -> bytes:
-    proc = subprocess.run([resolve_openssl(), *args], capture_output=True)
-    if proc.returncode != 0:
-        err = proc.stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(f"openssl {' '.join(args[:2])} failed: {err}")
-    return proc.stdout
+        if stripped == "-----END PRIVATE KEY-----":
+            break
+        if in_key and stripped:
+            body.append(stripped)
+    if not body:
+        raise ValueError(f"missing PKCS#8 PRIVATE KEY block in {pem_path}")
+    der = base64.b64decode("".join(body), validate=True)
+    if len(der) == len(ED25519_PKCS8_PREFIX) + 32 and der.startswith(ED25519_PKCS8_PREFIX):
+        return der[len(ED25519_PKCS8_PREFIX) :]
+    if len(der) >= len(ED25519_PKCS8_V2_PREFIX) + 32 and der.startswith(ED25519_PKCS8_V2_PREFIX):
+        start = len(ED25519_PKCS8_V2_PREFIX)
+        return der[start : start + 32]
+    raise ValueError("private key is not a standard PKCS#8 Ed25519 key")
 
 
 def generate_private_key(pem_path: Path) -> Path:
@@ -56,11 +171,14 @@ def generate_private_key(pem_path: Path) -> Path:
     pem_path.parent.mkdir(parents=True, exist_ok=True)
     if pem_path.exists():
         return pem_path
+    seed = os.urandom(32)
+    b64 = base64.b64encode(ED25519_PKCS8_PREFIX + seed).decode("ascii")
+    pem_text = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(b64[i : i + 64] for i in range(0, len(b64), 64)) + "\n-----END PRIVATE KEY-----\n"
     with tempfile.NamedTemporaryFile(dir=pem_path.parent, prefix=".ed25519-", delete=False) as tmp:
         tmp_path = Path(tmp.name)
     try:
         tmp_path.chmod(0o600)
-        _run_openssl(["genpkey", "-algorithm", "ED25519", "-out", str(tmp_path)])
+        tmp_path.write_text(pem_text, encoding="utf-8")
         tmp_path.chmod(0o600)
         tmp_path.replace(pem_path)
     finally:
@@ -70,12 +188,7 @@ def generate_private_key(pem_path: Path) -> Path:
 
 def raw_public_key_from_private(pem_path: Path) -> bytes:
     """Extract the 32-byte raw Ed25519 public key from a private PEM."""
-    der = _run_openssl(["pkey", "-in", str(pem_path), "-pubout", "-outform", "DER"])
-    if len(der) < 32 or not der[:-32].endswith(ED25519_SPKI_PREFIX[:-32]) and len(der) != len(ED25519_SPKI_PREFIX) + 32:
-        # Standard Ed25519 SubjectPublicKeyInfo is 44 bytes (12-byte header + 32-byte key).
-        if len(der) != len(ED25519_SPKI_PREFIX) + 32 or not der.startswith(ED25519_SPKI_PREFIX):
-            raise ValueError("private key is not an Ed25519 key")
-    return der[-32:]
+    return ed25519_public_key(_read_private_seed(Path(pem_path)))
 
 
 def key_fingerprint(raw_pub: bytes) -> bytes:
@@ -116,12 +229,11 @@ def write_usign_pubkey(pem_path: Path, output_path: Path, comment: str | None = 
 def sign_file(pem_path: Path, message_path: Path, sig_path: Path, comment: str | None = None) -> Path:
     """Sign message_path with pem_path and write an OpenWrt usign .sig file."""
     pem_path, message_path, sig_path = Path(pem_path), Path(message_path), Path(sig_path)
-    raw_pub = raw_public_key_from_private(pem_path)
+    seed = _read_private_seed(pem_path)
+    raw_pub = ed25519_public_key(seed)
     keynum = key_fingerprint(raw_pub)
     keyid = keynum.hex()
-    raw_sig = _run_openssl(["pkeyutl", "-sign", "-inkey", str(pem_path), "-rawin", "-in", str(message_path)])
-    if len(raw_sig) != 64:
-        raise ValueError("unexpected Ed25519 signature length")
+    raw_sig = ed25519_sign(seed, message_path.read_bytes())
     label = comment or f"signed by opl-netfleet {keyid}"
     payload = base64.b64encode(b"Ed" + keynum + raw_sig).decode("ascii")
     sig_path.parent.mkdir(parents=True, exist_ok=True)
@@ -131,30 +243,16 @@ def sign_file(pem_path: Path, message_path: Path, sig_path: Path, comment: str |
 
 
 def verify_file(pub_path: Path, message_path: Path, sig_path: Path) -> bool:
-    """Verify an OpenWrt usign signature against message_path using OpenSSL."""
+    """Verify an OpenWrt usign signature against message_path."""
     try:
         pub_keynum, raw_pub = parse_usign_blob(Path(pub_path).read_text(encoding="utf-8"), 42)
         sig_keynum, raw_sig = parse_usign_blob(Path(sig_path).read_text(encoding="utf-8"), 74)
+        message = Path(message_path).read_bytes()
     except (OSError, ValueError):
         return False
     if pub_keynum != sig_keynum:
         return False
-    spki_der = ED25519_SPKI_PREFIX + raw_pub
-    with tempfile.TemporaryDirectory(prefix="netfleet-usign-verify-") as tmp:
-        tmp_dir = Path(tmp)
-        pub_der = tmp_dir / "pub.der"
-        sig_bin = tmp_dir / "sig.bin"
-        pub_der.write_bytes(spki_der)
-        sig_bin.write_bytes(raw_sig)
-        proc = subprocess.run(
-            [
-                resolve_openssl(), "pkeyutl", "-verify",
-                "-pubin", "-keyform", "DER", "-inkey", str(pub_der),
-                "-rawin", "-in", str(message_path), "-sigfile", str(sig_bin),
-            ],
-            capture_output=True,
-        )
-        return proc.returncode == 0
+    return ed25519_verify(raw_pub, message, raw_sig)
 
 
 def main() -> int:
