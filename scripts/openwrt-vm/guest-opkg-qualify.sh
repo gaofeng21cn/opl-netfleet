@@ -133,6 +133,23 @@ assert_json "$work/rpc-setup.json" '@.result.backend' nikki-mihomo
 ubus -t 20 call opl-netfleet status '{}' >"$work/rpc-status.json"
 assert_json "$work/rpc-status.json" '@.error' policy_unreadable
 ubus -t 20 call opl-netfleet.plugins plugins_list '{}' >"$work/rpc-plugins.json"
+if [ "$(jsonfilter -i "$work/rpc-plugins.json" -e '@.ok' 2>/dev/null || true)" != true ]; then
+	ucode -e '
+		import * as digest from "digest";
+		import { create } from "/usr/share/opl-netfleet/current/runtime/kernel/host.uc";
+		import { create as adapter } from "/usr/share/opl-netfleet/current/runtime/adapters/openwrt.uc";
+		printf("DIGEST_EXPORTS: %J\n", keys(digest));
+		const r = "/usr/share/opl-netfleet/current/runtime";
+		try {
+			const h = create(r, { adapter: adapter(r), allow_maintenance: true });
+			h.inventory(null);
+			h.release();
+		} catch (e) {
+			printf("STACK: %s\n%J\n", e.message, e.stacktrace);
+		}
+	' >"$work/plugins-stack.log" 2>&1 || true
+	exit 1
+fi
 assert_json "$work/rpc-plugins.json" '@.ok' true
 ucode -e '
 	import { readfile } from "fs";
