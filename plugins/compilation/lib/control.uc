@@ -12,6 +12,7 @@ const ok = context.use("events.output").ok;
 const resolve_profile = context.use("mihomo.backend").resolve_profile;
 const prepare_provider_links = context.use("mihomo.backend").prepare_provider_links;
 const remove_provider_links = context.use("mihomo.backend").remove_provider_links;
+const test_profile_object = context.use("mihomo.backend").test_profile_object;
 const install_artifact = context.use("mihomo.backend").install_artifact;
 const ARTIFACT_PATH = context.use("mihomo.backend").ARTIFACT_PATH;
 const MANIFEST_PATH = context.use("mihomo.backend").MANIFEST_PATH;
@@ -31,7 +32,7 @@ const manifest_provider_profiles = context.use("subscriptions.facts").manifest_p
 const require_provider_profiles = context.use("subscriptions.facts").require_provider_profiles;
 const load_provider_profile_result = context.use("subscriptions.providers").load;
 
-compile_result = function(policy, allow_active) {
+compile_result = function(policy, allow_active, validate_only) {
 	if (system("printf '{}' | yq -M -p yaml -o json >/dev/null 2>&1") != 0)
 		return { ok: false, error: "yaml_reader_unavailable" };
 	const current = current_profile();
@@ -60,6 +61,8 @@ compile_result = function(policy, allow_active) {
 	if (!result.ok) {
 		return { ok: false, error: "compile_rejected", detail: result.errors };
 	}
+	if (validate_only)
+		return test_profile_object(result.profile) ? { ok: true } : { ok: false, error: "staged_profile_test_failed" };
 	if (!prepare_provider_links(provider_profiles)) {
 		// A partially prepared SAFE_PATH must not survive a failed compile.  The
 		// active Nikki profile is untouched, but stale links would contaminate a

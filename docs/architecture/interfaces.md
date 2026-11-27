@@ -149,3 +149,9 @@ LuCI 在 `config-get` 的 `automation` 同时返回布尔开关和整数周期�
 `{ action: "update", items: [{ name, before_version, version }], confirm, plan }`。
 `components-auto-update` 是由 `scheduler` 在网络健康期调用的内部写命令，安全边界见
 [软件包合同](packaging.md#更新与恢复)。
+
+## 跨站点控制面
+
+`opl-netfleet-cloud` 提供可选的独立 Web 管理面。管理请求用 Gateway 核验身份后建立短期 Cookie 会话，数据按稳定 owner ID 分区。每站点单独签发设备 Token，服务端仅保存哈希。设备通过 HTTPS 上报固定字段的聚合心跳，并按自身 Token 读取显式授权的订阅子集。订阅 URL 密文存储，管理端只返回指纹。
+
+`site-sync` 由设备 supervisor 按 60 秒调度独立进程。云端请求在设备网络变更锁之外运行。订阅写入服从设备 owner 的配置 revision 和网络变更锁，通过订阅写入、下载校验与编译事务更新本地显式映射的来源。失败或空分发保留已生效配置。站点专属网络、DNS、业务规则和恢复配置由设备持有。

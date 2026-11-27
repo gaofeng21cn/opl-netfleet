@@ -1,5 +1,7 @@
 
 
+import * as fs from "fs";
+
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
 let prepare_refresh_snapshot, restore_refresh_entry, restore_refresh_files, cleanup_refresh_snapshot, wait_active_runtime, run_refresh_selection, reload_refresh_profile, rollback_refresh, fail_refresh, refresh_action, command_refresh, command_subscriptions_refresh;
@@ -62,7 +64,11 @@ const read_yaml = context.use("platform.storage").read_yaml;
 const POLICY_PATH = context.use("platform.paths").POLICY_PATH;
 const restore_profile = context.use("recovery.control").restore_profile;
 const restore_recovery_with_probes = context.use("recovery.control").restore_recovery_with_probes;
-const subscription_update = context.use("subscriptions.store").update_result;
+const subscription_store = context.use("subscriptions.store");
+const subscription_update = subscription_store.update_result;
+const write_private = context.use("platform.files").write_private;
+const private_file = context.use("platform.files").private_file;
+const capture_output = context.use("events.output").capture;
 const load_provider_profiles = context.use('subscriptions.providers').load;
 const project_subscription_dns = context.use('models.subscription').project_dns;
 
@@ -80,9 +86,9 @@ function subscription_dns_current(policy) {
 
 const run_owner_result = context.use("platform.process").run_owner_result;
 const REFRESH_DIR = context.use("platform.paths").REFRESH_DIR;
-prepare_refresh_snapshot = function(policy, active, sections) {
+prepare_refresh_snapshot = function(policy, active, sections, strict) {
 	if (system(`rm -rf ${shell_quote(REFRESH_DIR)}`) != 0 ||
-		system(`mkdir -p ${shell_quote(`${REFRESH_DIR}/subscriptions`)}`) != 0) {
+		system(`umask 077; mkdir -p ${shell_quote(`${REFRESH_DIR}/subscriptions`)}`) != 0) {
 		return { ok: false, error: "snapshot_directory_failed" };
 	}
 	const entries = [];
@@ -99,7 +105,12 @@ prepare_refresh_snapshot = function(policy, active, sections) {
 		const path = resolve_profile(`subscription:${sections[i]}`);
 		const backup = `${REFRESH_DIR}/subscriptions/${sections[i]}.yaml`;
 		const digest = path == null ? null : sha256(path);
-		if (path == null || digest == null ||
+		const absent = path != null && fs.lstat(path) == null;
+		if (strict && absent) {
+			push(entries, { section: sections[i], path: path, absent: true });
+			continue;
+		}
+		if (path == null || digest == null || (strict && !private_file(path)) ||
 			system(`cp -p ${shell_quote(path)} ${shell_quote(backup)}`) != 0 || sha256(backup) != digest) {
 			return { ok: false, error: "subscription_snapshot_failed", section: sections[i] };
 		}
@@ -121,6 +132,7 @@ prepare_refresh_snapshot = function(policy, active, sections) {
 };
 
 restore_refresh_entry = function(entry) {
+	if (entry.absent) return fs.lstat(entry.path) == null || fs.unlink(entry.path);
 	return system(`cp -p ${shell_quote(entry.backup)} ${shell_quote(entry.path)}`) == 0 &&
 		sha256(entry.path) == entry.digest;
 };
@@ -238,9 +250,10 @@ fail_refresh = function(snapshot, policy, selections, requested, error, detail) 
 	fail("refresh", error, { detail: detail, rollback: rollback, events_recorded: events_recorded });
 };
 
-refresh_action = function(policy, section, initiator) {
+refresh_action = function(policy, section, initiator, sources) {
+	const strict = sources != null;
 	read_history();
-	full_refresh = section == null;
+	full_refresh = section == null && !strict;
 	operation_begin("subscription", "preparing");
 	const requested = initiator ?? ARGV[1] ?? "cli";
 	const config = automation_config(policy);
@@ -248,9 +261,9 @@ refresh_action = function(policy, section, initiator) {
 		ok("refresh", { state: "disabled" });
 		return;
 	}
-	let sections = section != null ? [section] : BACKEND_KIND == "native-mihomo" ?
+	let sections = strict ? map(sources, source => source.id) : section != null ? [section] : BACKEND_KIND == "native-mihomo" ?
 		referenced_subscription_sections(policy, current_profile()) : enabled_subscription_sections(policy);
-	if (requested == "scheduled" && section == null && length(sections) > 0 && type(due_subscription_sections) == "function") {
+	if (requested == "scheduled" && !strict && section == null && length(sections) > 0 && type(due_subscription_sections) == "function") {
 		sections = due_subscription_sections(sections, read_history(), config.subscription_refresh_interval_seconds, int(time()));
 		if (length(sections) == 0) {
 			ok("refresh", { state: "not_due", provider_count: 0 });
@@ -263,6 +276,7 @@ refresh_action = function(policy, section, initiator) {
 		return;
 	}
 	if (!upstream_ready()) {
+		if (strict) return { ok: false, error: "upstream_unavailable" };
 		const result = { ok: false, reason: "upstream_unavailable", provider_count: length(sections),
 			changed_count: 0, failed_count: length(sections), reloaded: false,
 			subscriptions: unavailable_results(sections) };
@@ -279,6 +293,7 @@ refresh_action = function(policy, section, initiator) {
 			capture_runtime_selections(manifest);
 		const baseline = protected_probes(policy);
 		if (runtime == null || !runtime.runtime_identity_ok || !captured.ok || !baseline.ok) {
+			if (strict) return { ok: false, error: "active_precondition_failed" };
 			const result = { ok: false, reason: "active_precondition_failed", provider_count: length(sections),
 				changed_count: 0, failed_count: 0, reloaded: false,
 				subscriptions: unavailable_results(sections) };
@@ -288,12 +303,33 @@ refresh_action = function(policy, section, initiator) {
 		}
 		selections = captured.selections;
 	}
-	const snapshot = prepare_refresh_snapshot(policy, active, sections);
+	const snapshot = prepare_refresh_snapshot(policy, active, sections, strict);
 	if (!snapshot.ok) {
 		cleanup_refresh_snapshot();
 		record_refresh({ ok: false, reason: snapshot.error, provider_count: length(sections),
 			failed_count: length(sections), subscriptions: unavailable_results(sections) }, requested);
 		fail("refresh", snapshot.error, { section: snapshot.section ?? null });
+	}
+	function reject_before_reload(error) {
+		const restored = restore_refresh_files(snapshot);
+		if (restored) cleanup_refresh_snapshot();
+		context.use("events.operation").finish(false, error, null);
+		return { ok: false, error: restored ? error : "rollback_failed" };
+	}
+	if (strict) {
+		const staged = capture_output(() => {
+			const request = `${REFRESH_DIR}/set.json`;
+			for (let source in sources) {
+				const current = subscription_store.get();
+				if (!current.ok || !write_private(request, sprintf("%J", { request: {
+					revision: current.result.revision, source: source
+				} }))) return false;
+				if (!subscription_store.set(request).ok) return false;
+			}
+			fs.unlink(request);
+			return true;
+		});
+		if (!staged.ok || staged.result != true) return reject_before_reload("subscription_set_failed");
 	}
 	const outcomes = [];
 	for (let i = 0; i < length(snapshot.entries); i++) {
@@ -301,6 +337,7 @@ refresh_action = function(policy, section, initiator) {
 		const subject = subscription_display_name(entry.section);
 		operation_update("downloading", { completed: i, subject: subject });
 		const updated = update_subscription(entry.section);
+		if (strict && !updated) return reject_before_reload("subscription_download_failed");
 		operation_update("validating", { completed: i, subject: subject });
 		const digest = updated ? sha256(entry.path) : null;
 		const outcome = evaluate_entry({
@@ -310,6 +347,7 @@ refresh_action = function(policy, section, initiator) {
 			digest: digest,
 			parsed: digest == null ? null : read_yaml(entry.path)
 		});
+		if (strict && outcome.restore) return reject_before_reload("subscription_validation_failed");
 		if (outcome.restore && !restore_refresh_entry(entry)) {
 			push(outcomes, outcome);
 			const failed = summarize_refresh(outcomes);
@@ -326,7 +364,12 @@ refresh_action = function(policy, section, initiator) {
 	const summary = summarize_refresh(outcomes);
 	const subscriptions = public_subscription_results(outcomes);
 	const dns_changed = active && summary.failed_count == 0 && !subscription_dns_current(policy);
-	if (summary.changed_count == 0 && !dns_changed) {
+	if (strict && !active) {
+		operation_update("compiling");
+		const checked = compile_result(policy, false, true);
+		if (!checked.ok) return reject_before_reload("subscription_compile_failed");
+	}
+	if (summary.changed_count == 0 && !dns_changed && !(strict && active)) {
 		const result = {
 			ok: summary.ok,
 			reason: summary.cache_reason,
@@ -338,6 +381,7 @@ refresh_action = function(policy, section, initiator) {
 		};
 		cleanup_refresh_snapshot();
 		result.events_recorded = record_refresh(result, requested);
+		if (strict) { context.use("events.operation").finish(result.ok, null, result); return result; }
 		ok("refresh", { state: result.reason, result: result });
 		return;
 	}
@@ -360,6 +404,7 @@ refresh_action = function(policy, section, initiator) {
 		};
 		cleanup_refresh_snapshot();
 		result.events_recorded = record_refresh(result, requested);
+		if (strict) { context.use("events.operation").finish(result.ok, null, result); return result; }
 		ok("refresh", { state: result.reason, result: result, readback: reloaded?.readback ?? null,
 			protected_probes: reloaded?.protected_probes ?? null });
 		return;
@@ -414,6 +459,7 @@ refresh_action = function(policy, section, initiator) {
 	};
 	cleanup_refresh_snapshot();
 	result.events_recorded = record_refresh(result, requested);
+	if (strict) { context.use("events.operation").finish(result.ok, null, result); return result; }
 	ok("refresh", { state: result.reason, result: result, readback: final_readback,
 		protected_probes: final_probes });
 };
@@ -441,5 +487,20 @@ command_subscriptions_refresh = function(argv) {
 	}
 };
 
-return { prepare_refresh_snapshot, restore_refresh_entry, restore_refresh_files, cleanup_refresh_snapshot, wait_active_runtime, run_refresh_selection, reload_refresh_profile, rollback_refresh, fail_refresh, refresh_action, command_refresh, command_subscriptions_refresh };
+function sync_sources(sources) {
+	if (BACKEND_KIND != "native-mihomo" || type(sources) != "array" || !length(sources) || length(sources) > 16)
+		return { ok: false, error: "invalid_subscription_batch" };
+	const seen = {};
+	for (let source in sources) {
+		if (type(source?.id) != "string" || !match(source.id, /^[A-Za-z0-9_]+$/) || seen[source.id])
+			return { ok: false, error: "invalid_subscription_batch" };
+		seen[source.id] = true;
+	}
+	const policy = load_policy();
+	if (policy == null) return { ok: false, error: "policy_unreadable" };
+	const attempt = capture_output(() => refresh_action(policy, null, "supervisor", sources));
+	return attempt.ok ? attempt.result : { ok: false, error: attempt.error };
+}
+
+return { sync_sources, prepare_refresh_snapshot, restore_refresh_entry, restore_refresh_files, cleanup_refresh_snapshot, wait_active_runtime, run_refresh_selection, reload_refresh_profile, rollback_refresh, fail_refresh, refresh_action, command_refresh, command_subscriptions_refresh };
 };

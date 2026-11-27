@@ -351,6 +351,21 @@
     },
     {
       "api_version": 1,
+      "id": "site-sync",
+      "label": "Cloud site sync",
+      "optional": true,
+      "package": "opl-netfleet-plugin-site-sync",
+      "package_dependencies": [
+        "ca-bundle",
+        "curl"
+      ],
+      "services": [
+        "site-sync.control"
+      ],
+      "version": "0.1.0"
+    },
+    {
+      "api_version": 1,
       "id": "status",
       "label": "Status and connections",
       "optional": false,

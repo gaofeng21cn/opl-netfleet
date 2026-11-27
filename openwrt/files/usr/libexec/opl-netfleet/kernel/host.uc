@@ -859,7 +859,16 @@ export function tick(root, states, options) {
 			}
 		}
 	} catch (error) { warn(`NetFleet scheduler: ${error.message}\n`); }
-	try { guarded(() => host?.release(), () => lock?.close()); }
+	lock?.close();
+	try {
+		if (host?.system.enabled["site-sync"] == true) {
+			const command = host.command("site-sync-heartbeat");
+			states[command.id] = states[command.id] ?? {};
+			host.call(command.service, "schedule", states[command.id]);
+			delay = min(delay, 5000);
+		}
+	} catch (error) { warn("NetFleet site sync scheduling failed\n"); }
+	try { host?.release(); }
 	catch (error) { warn(`NetFleet cleanup: ${error.message}\n`); }
 	return delay;
 };

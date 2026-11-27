@@ -30,7 +30,9 @@
     "mihomo.paths": "mihomo",
     "mihomo.policy-source": "mihomo",
     "mihomo.probes": "mihomo",
+    "mihomo.profile-storage": "mihomo",
     "mihomo.readback": "mihomo",
+    "mihomo.runtime": "mihomo",
     "models.activation": "models",
     "models.evidence": "models",
     "models.extensions": "models",
@@ -66,14 +68,13 @@
     "setup.migration-model": "setup",
     "setup.native": "setup",
     "setup.native-model": "setup",
+    "site-sync.control": "site-sync",
     "status.connections": "status",
     "status.control": "status",
     "status.events": "status",
     "subscriptions.facts": "subscriptions",
     "subscriptions.providers": "subscriptions",
-    "subscriptions.store": "subscriptions",
-    "mihomo.profile-storage": "mihomo",
-    "mihomo.runtime": "mihomo"
+    "subscriptions.store": "subscriptions"
   },
   "enabled": {
     "activation": true,
@@ -97,6 +98,7 @@
     "selection": true,
     "selection-algorithm": true,
     "setup": true,
+    "site-sync": false,
     "status": true,
     "subscriptions": true
   },

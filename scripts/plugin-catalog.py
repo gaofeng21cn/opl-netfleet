@@ -23,7 +23,7 @@ def catalog(root):
             "api_version": manifest["api_version"],
             "services": sorted(manifest.get("services", {})),
             "package_dependencies": sorted(manifest.get("package_dependencies", [])),
-            "optional": manifest["id"] == "https-compat",
+            "optional": manifest["id"] in {"https-compat", "site-sync"},
         })
     if not rows:
         raise ValueError("no service plugins found")

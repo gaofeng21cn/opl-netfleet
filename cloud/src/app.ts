@@ -1,0 +1,505 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+import type { Identity, Subscription, Store } from "./contracts.js";
+import {
+  OplGatewayIdentityProvider,
+  type IdentityProvider,
+} from "./identity.js";
+import { open, randomToken, readKey, seal, sha256 } from "./crypto.js";
+import {
+  only,
+  record,
+  siteId,
+  sourceId,
+  snapshot,
+  validHeartbeat,
+} from "./heartbeat.js";
+
+const bearerToken = (value: string | null) =>
+  value?.match(/^Bearer ([^\s,]+)$/i)?.[1];
+const validName = (value: unknown): value is string =>
+  typeof value === "string" &&
+  !!value.trim() &&
+  value.length <= 120 &&
+  !/[\x00-\x1f\x7f]/.test(value);
+const timeout = Number(
+  process.env.OPL_NETFLEET_CLOUD_HEARTBEAT_TIMEOUT_MS ?? 180000,
+);
+
+function validSourceUrl(value: string) {
+  if (
+    value.length > 2048 ||
+    /[\s\x00-\x1f]/.test(value) ||
+    !value.startsWith("https://")
+  )
+    return false;
+  try {
+    const url = new URL(value);
+    return !!url.hostname && !url.username && !url.password && !url.hash;
+  } catch {
+    return false;
+  }
+}
+
+const unauthorized = { status: 401, body: { error: "unauthorized" } };
+
+const asObject = (value: unknown): Record<string, unknown> | null =>
+  record(value) ? value : null;
+export class CloudApp {
+  constructor(
+    private readonly store: Store,
+    private readonly identity: IdentityProvider = new OplGatewayIdentityProvider(
+      process.env.OPL_NETFLEET_CLOUD_GATEWAY_ORIGIN,
+      (process.env.OPL_NETFLEET_CLOUD_ADMIN_EMAILS ?? "")
+        .split(",")
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ) {}
+  private owner(identity: Identity) {
+    return sha256(identity.subject);
+  }
+  private sessionKey() {
+    return readKey(process.env.OPL_NETFLEET_CLOUD_SESSION_KEY_FILE);
+  }
+  session(identity: Identity) {
+    const payload = Buffer.from(
+      JSON.stringify({ identity, exp: Date.now() + 3600000 }),
+    ).toString("base64url");
+    const mac = createHmac("sha256", this.sessionKey())
+      .update(payload)
+      .digest("base64url");
+    return `${payload}.${mac}`;
+  }
+  async human(headers: Headers) {
+    const authorization = headers.get("authorization");
+    const bearer = bearerToken(authorization);
+    if (authorization && !bearer) return null;
+    if (bearer) {
+      const identity = await this.identity.authenticate(bearer);
+      return identity ? { identity, owner: this.owner(identity) } : null;
+    }
+    const cookie = headers
+      .get("cookie")
+      ?.split(";")
+      .map((value) => value.trim())
+      .find((value) => value.startsWith("opl_netfleet_session="))
+      ?.split("=")[1];
+    if (!cookie) return null;
+    try {
+      const [payload, mac] = cookie.split(".");
+      const expected = createHmac("sha256", this.sessionKey())
+        .update(payload)
+        .digest();
+      const actual = Buffer.from(mac, "base64url");
+      if (
+        actual.length !== expected.length ||
+        !timingSafeEqual(actual, expected)
+      )
+        return null;
+      const session = JSON.parse(
+        Buffer.from(payload, "base64url").toString(),
+      ) as { identity: Identity; exp: number };
+      return session.exp > Date.now()
+        ? { identity: session.identity, owner: this.owner(session.identity) }
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  async device(headers: Headers) {
+    const token = bearerToken(headers.get("authorization"));
+    if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
+    const catalog = await this.store.catalog();
+    return (
+      Object.values(catalog.sites).find(
+        (site) => site.token_hash === sha256(token),
+      ) ?? null
+    );
+  }
+  async login(body: unknown) {
+    const token = asObject(body)?.token;
+    const identity =
+      typeof token === "string"
+        ? await this.identity.authenticate(token)
+        : null;
+    return identity ? this.session(identity) : null;
+  }
+  async heartbeat(headers: Headers, body: unknown) {
+    const site = await this.device(headers);
+    if (!site) return { status: 401, body: { error: "unauthorized" } };
+    if (!validHeartbeat(body) || body.site_id !== site.id)
+      return { status: 400, body: { error: "invalid_heartbeat" } };
+    const result = await this.store.heartbeat(site.id, (catalog, old) => {
+      const current = catalog.sites[site.id];
+      if (!current || current.token_hash !== site.token_hash)
+        return { result: null };
+      const now = Date.now();
+      return {
+        result: {
+          ok: true,
+          desired_revision: current.revision,
+          server_time: new Date(now).toISOString(),
+        },
+        snapshot: snapshot(old, body, now),
+      };
+    });
+    return result
+      ? { status: 200, body: result }
+      : { status: 401, body: { error: "unauthorized" } };
+  }
+  async subscriptions(headers: Headers) {
+    const site = await this.device(headers);
+    if (!site) return { status: 401, body: { error: "unauthorized" } };
+    const catalog = await this.store.catalog();
+    const key = readKey(process.env.OPL_NETFLEET_CLOUD_MASTER_KEY_FILE);
+    const current = catalog.sites[site.id];
+    if (!current || current.token_hash !== site.token_hash)
+      return { status: 401, body: { error: "unauthorized" } };
+    const rows = current.grants
+      .map((id) => catalog.subscriptions[id])
+      .filter((item) => item?.owner === current.owner)
+      .map((subscription) => ({
+        id: subscription.id,
+        name: subscription.name,
+        url: open(
+          subscription.envelope,
+          key,
+          `subscription:${subscription.id}`,
+        ),
+      }));
+    return {
+      status: 200,
+      body: { revision: current.revision, subscriptions: rows },
+    };
+  }
+  async watchdog(headers: Headers) {
+    const provided = bearerToken(headers.get("authorization"));
+    const path = process.env.OPL_NETFLEET_CLOUD_WATCHDOG_SECRET_FILE;
+    if (
+      !provided ||
+      !path ||
+      !timingSafeEqual(
+        Buffer.from(sha256(provided), "hex"),
+        Buffer.from(sha256(readKey(path).toString("base64url")), "hex"),
+      )
+    )
+      return { status: 401, body: { error: "unauthorized" } };
+    const catalog = await this.store.catalog();
+    const ids = Object.keys(catalog.sites);
+    const snapshots = await this.store.snapshots(ids);
+    const cutoff = Date.now() - timeout;
+    const sites = ids
+      .map((id, index) => {
+        const seen = snapshots[index]?.last_seen_at ?? null;
+        return {
+          site_id: id,
+          last_seen_at: seen,
+          overdue: !seen || Date.parse(seen) < cutoff,
+          recovering: snapshots[index]?.latest.recovery === true,
+        };
+      })
+      .filter((site) => site.overdue || site.recovering);
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        overdue_count: sites.filter((site) => site.overdue).length,
+        sites,
+      },
+    };
+  }
+  async overview(headers: Headers) {
+    const auth = await this.human(headers);
+    if (!auth) return { status: 401, body: { error: "unauthorized" } };
+    const catalog = await this.store.catalog();
+    const ids = Object.values(catalog.sites)
+      .filter((site) => site.owner === auth.owner)
+      .map((site) => site.id);
+    const snapshots = await this.store.snapshots(ids);
+    return {
+      status: 200,
+      body: {
+        sites: ids.map((id, index) => {
+          const site = catalog.sites[id];
+          const snapshot = snapshots[index];
+          return {
+            id,
+            name: site.name,
+            revision: site.revision,
+            grants: site.grants,
+            token_active: !!site.token_hash,
+            online:
+              !!snapshot &&
+              Date.now() - Date.parse(snapshot.last_seen_at) < timeout,
+            snapshot,
+          };
+        }),
+      },
+    };
+  }
+  async createSite(headers: Headers, body: unknown) {
+    const auth = await this.human(headers);
+    const input = asObject(body);
+    if (!auth) return { status: 401, body: { error: "unauthorized" } };
+    if (
+      !input ||
+      !only(input, ["id", "name"]) ||
+      !siteId(input.id) ||
+      !validName(input.name)
+    )
+      return { status: 400, body: { error: "invalid_site" } };
+    try {
+      await this.store.change((catalog) => {
+        if (Object.hasOwn(catalog.sites, input.id as string))
+          throw new Error("site_exists");
+        if (Object.keys(catalog.sites).length >= 64)
+          throw new Error("site_limit");
+        catalog.sites[input.id as string] = {
+          id: input.id as string,
+          name: input.name as string,
+          owner: auth.owner,
+          revision: 0,
+          grants: [],
+        };
+        return { result: true, write: true };
+      });
+      return { status: 201, body: { id: input.id } };
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !["site_exists", "site_limit"].includes(error.message)
+      )
+        throw error;
+      return { status: 409, body: { error: error.message } };
+    }
+  }
+  async rotateToken(headers: Headers, id: string) {
+    const auth = await this.human(headers);
+    if (!auth) return { status: 401, body: { error: "unauthorized" } };
+    const plain = randomToken();
+    try {
+      await this.store.change((catalog) => {
+        const site = catalog.sites[id];
+        if (!site || site.owner !== auth.owner)
+          throw new Error("site_not_found");
+        site.token_hash = sha256(plain);
+        return { result: true, write: true };
+      });
+      return { status: 200, body: { id, device_token: plain } };
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "site_not_found")
+        throw error;
+      return { status: 404, body: { error: "site_not_found" } };
+    }
+  }
+  async revokeToken(headers: Headers, id: string) {
+    const auth = await this.human(headers);
+    if (!auth) return { status: 401, body: { error: "unauthorized" } };
+    try {
+      await this.store.change((catalog) => {
+        const site = catalog.sites[id];
+        if (!site || site.owner !== auth.owner)
+          throw new Error("site_not_found");
+        delete site.token_hash;
+        return { result: true, write: true };
+      });
+      return { status: 200, body: { ok: true } };
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "site_not_found")
+        throw error;
+      return { status: 404, body: { error: "site_not_found" } };
+    }
+  }
+  async deleteSite(headers: Headers, id: string) {
+    const auth = await this.human(headers);
+    if (!auth) return { status: 401, body: { error: "unauthorized" } };
+    try {
+      await this.store.change((catalog) => {
+        const site = catalog.sites[id];
+        if (!site || site.owner !== auth.owner)
+          throw new Error("site_not_found");
+        delete catalog.sites[id];
+        return { result: true, write: true, removeSnapshot: id };
+      });
+      return { status: 200, body: { ok: true } };
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "site_not_found")
+        throw error;
+      return { status: 404, body: { error: "site_not_found" } };
+    }
+  }
+  async listSubscriptions(headers: Headers) {
+    const auth = await this.human(headers);
+    if (!auth) return { status: 401, body: { error: "unauthorized" } };
+    const catalog = await this.store.catalog();
+    return {
+      status: 200,
+      body: {
+        subscriptions: Object.values(catalog.subscriptions)
+          .filter((item) => item.owner === auth.owner)
+          .map(({ id, name, fingerprint }) => ({ id, name, fingerprint })),
+      },
+    };
+  }
+  async createSubscription(headers: Headers, body: unknown) {
+    const auth = await this.human(headers);
+    const input = asObject(body);
+    if (!auth) return { status: 401, body: { error: "unauthorized" } };
+    if (
+      !input ||
+      !only(input, ["id", "name", "url"]) ||
+      typeof input.id !== "string" ||
+      !sourceId(input.id) ||
+      !validName(input.name) ||
+      typeof input.url !== "string" ||
+      !validSourceUrl(input.url)
+    )
+      return { status: 400, body: { error: "invalid_subscription" } };
+    const key = readKey(process.env.OPL_NETFLEET_CLOUD_MASTER_KEY_FILE);
+    const subscription: Subscription = {
+      id: input.id,
+      name: input.name.trim(),
+      owner: auth.owner,
+      fingerprint: sha256(input.url).slice(0, 12),
+      envelope: seal(input.url, key, `subscription:${input.id}`),
+    };
+    try {
+      await this.store.change((catalog) => {
+        if (Object.hasOwn(catalog.subscriptions, subscription.id))
+          throw new Error("subscription_exists");
+        if (Object.keys(catalog.subscriptions).length >= 64)
+          throw new Error("subscription_limit");
+        catalog.subscriptions[subscription.id] = subscription;
+        return { result: true, write: true };
+      });
+      return {
+        status: 201,
+        body: {
+          id: subscription.id,
+          name: subscription.name,
+          fingerprint: subscription.fingerprint,
+        },
+      };
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !["subscription_exists", "subscription_limit"].includes(error.message)
+      )
+        throw error;
+      return { status: 409, body: { error: error.message } };
+    }
+  }
+  async deleteSubscription(headers: Headers, id: string) {
+    const auth = await this.human(headers);
+    if (!auth) return { status: 401, body: { error: "unauthorized" } };
+    try {
+      await this.store.change((catalog) => {
+        const subscription = catalog.subscriptions[id];
+        if (!subscription || subscription.owner !== auth.owner)
+          throw new Error("subscription_not_found");
+        delete catalog.subscriptions[id];
+        Object.values(catalog.sites)
+          .filter(
+            (site) => site.owner === auth.owner && site.grants.includes(id),
+          )
+          .forEach((site) => {
+            site.grants = site.grants.filter((grant) => grant !== id);
+            site.revision += 1;
+          });
+        return { result: true, write: true };
+      });
+      return { status: 200, body: { ok: true } };
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        error.message !== "subscription_not_found"
+      )
+        throw error;
+      return { status: 404, body: { error: "subscription_not_found" } };
+    }
+  }
+  async updateSubscription(headers: Headers, id: string, body: unknown) {
+    const auth = await this.human(headers);
+    if (!auth) return unauthorized;
+    if (
+      !record(body) ||
+      !only(body, ["name", "url"]) ||
+      !validName(body.name) ||
+      (body.url !== undefined &&
+        body.url !== "" &&
+        (typeof body.url !== "string" || !validSourceUrl(body.url)))
+    ) {
+      return { status: 400, body: { error: "invalid_subscription" } };
+    }
+    const name = body.name.trim();
+    const url = typeof body.url === "string" ? body.url : "";
+    const updated = await this.store.change((catalog) => {
+      const item = catalog.subscriptions[id];
+      if (item?.owner !== auth.owner) return { result: null };
+      item.name = name;
+      if (url && item.fingerprint !== sha256(url).slice(0, 12)) {
+        item.fingerprint = sha256(url).slice(0, 12);
+        item.envelope = seal(
+          url,
+          readKey(process.env.OPL_NETFLEET_CLOUD_MASTER_KEY_FILE),
+          `subscription:${id}`,
+        );
+        for (const site of Object.values(catalog.sites)) {
+          if (site.owner === auth.owner && site.grants.includes(id))
+            site.revision++;
+        }
+      }
+      return {
+        result: { id, name, fingerprint: item.fingerprint },
+        write: true,
+      };
+    });
+    return updated
+      ? { status: 200, body: updated }
+      : { status: 404, body: { error: "subscription_not_found" } };
+  }
+  async grants(headers: Headers, id: string, body: unknown) {
+    const auth = await this.human(headers);
+    const input = asObject(body);
+    if (!auth) return { status: 401, body: { error: "unauthorized" } };
+    if (
+      !input ||
+      !only(input, ["subscription_ids"]) ||
+      !Array.isArray(input.subscription_ids) ||
+      input.subscription_ids.length > 16 ||
+      !input.subscription_ids.every(sourceId)
+    )
+      return { status: 400, body: { error: "invalid_grants" } };
+    try {
+      const revision = await this.store.change((catalog) => {
+        const site = catalog.sites[id];
+        if (!site || site.owner !== auth.owner)
+          throw new Error("site_not_found");
+        const wanted = input.subscription_ids as string[];
+        if (
+          wanted.some(
+            (item) => catalog.subscriptions[item]?.owner !== auth.owner,
+          )
+        )
+          throw new Error("subscription_not_found");
+        const grants = [...new Set(wanted)].sort();
+        if (grants.join(",") === [...site.grants].sort().join(","))
+          return { result: site.revision };
+        site.grants = grants;
+        site.revision += 1;
+        return { result: site.revision, write: true };
+      });
+      return { status: 200, body: { ok: true, desired_revision: revision } };
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !["site_not_found", "subscription_not_found"].includes(error.message)
+      )
+        throw error;
+      return {
+        status: error.message === "subscription_not_found" ? 400 : 404,
+        body: { error: error.message },
+      };
+    }
+  }
+}
