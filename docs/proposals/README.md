@@ -5,3 +5,7 @@
 
 方案实现后，应把已经成立的当前合同吸收到 `docs/architecture/`，保留仍有未来决策价值的理由
 到 `docs/decisions/`，然后删除对应 proposal。被拒绝的方案仅在能够防止高概率重复错误时保留。
+
+## 提案列表
+
+- [`opl-netfleet-cloud.md`](opl-netfleet-cloud.md)：跨多站点集中性能监视与加密机场订阅子集下发的云端控制面（`opl-netfleet-cloud`）及设备同步插件方案。
