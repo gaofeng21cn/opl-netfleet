@@ -8,6 +8,7 @@ export type AuthUser = {
 export type Site = {
   id: string;
   name: string;
+  device_id?: string;
   revision: number;
   grants: string[];
   token_active: boolean;

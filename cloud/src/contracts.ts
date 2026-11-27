@@ -41,6 +41,7 @@ export type Site = {
   owner: string;
   revision: number;
   grants: string[];
+  device_id?: string;
   token_hash?: string;
 };
 export type Subscription = {

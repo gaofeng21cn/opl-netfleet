@@ -6,6 +6,12 @@ export function counter(value) {
 	return type(value) == "int" && value >= 0 && value <= 9007199254740991;
 }
 
+export function default_site_name(hostname) {
+	if (type(hostname) != "string") return "OpenWrt";
+	const cleaned = replace(trim(hostname), /[[:cntrl:]]/, "");
+	return length(cleaned) > 0 && length(cleaned) <= 120 ? cleaned : "OpenWrt";
+}
+
 export function project(site, applied, status, totals, previous, now, digest, event) {
 	const mode = status.operating_mode;
 	const traffic = {};
@@ -51,13 +57,16 @@ export function project(site, applied, status, totals, previous, now, digest, ev
 	return body;
 }
 
-export function selected_sources(result, revision, sections) {
+export function selected_sources(result, revision, sections, auto_sections) {
 	if (result?.revision != revision || type(result.subscriptions) != "array" ||
 		!length(result.subscriptions) || length(result.subscriptions) > 16) return null;
 	const sources = [], mapped = {};
 	for (let item in result.subscriptions) {
 		if (type(item?.id) != "string" || !match(item.id, /^[a-z][a-z0-9_-]{1,47}$/)) return null;
-		const id = sections[item.id];
+		let id = type(sections) == "object" ? sections[item.id] : null;
+		if (id == null && auto_sections == true) {
+			id = replace(item.id, /-/g, "_");
+		}
 		const url = item.url;
 		if (type(id) != "string" || !match(id, /^[A-Za-z0-9_]+$/) || exists(mapped, id) ||
 			type(item.name) != "string" || !length(trim(item.name)) || length(item.name) > 120 ||

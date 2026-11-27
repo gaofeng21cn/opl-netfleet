@@ -143,16 +143,16 @@ export function ConfirmDialog({
   );
 }
 
-export function AddSiteDialog({
+export function ConnectDeviceDialog({
   open,
   busy,
   onClose,
-  onCreate,
+  onManualCreate,
 }: {
   open: boolean;
   busy: boolean;
   onClose: () => void;
-  onCreate: (payload: {
+  onManualCreate: (payload: {
     id: string;
     name: string;
     issueToken: boolean;
@@ -160,17 +160,39 @@ export function AddSiteDialog({
 }) {
   const [issueToken, setIssueToken] = useState(true);
   const [localError, setLocalError] = useState("");
+  const [copiedPart, setCopiedPart] = useState<"origin" | "cli" | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+
+  const origin = window.location.origin;
+  const cliCommand = useMemo(
+    () =>
+      [
+        "printf 'OPL Gateway 邮箱: '; read -r E; printf '密码: '; stty -echo; read -r P; stty echo; echo",
+        `printf '{"origin":"%s","email":"%s","password":"%s"}\\n' "${origin}" "$E" "$P" | ucode /usr/libexec/opl-netfleet/main.uc site-sync-enroll`,
+      ].join("\n"),
+    [origin],
+  );
 
   useEffect(() => {
     if (!open) {
       setLocalError("");
       setIssueToken(true);
+      setCopiedPart(null);
       formRef.current?.reset();
     }
   }, [open]);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function copy(kind: "origin" | "cli", value: string) {
+    void navigator.clipboard
+      .writeText(value)
+      .then(() => {
+        setCopiedPart(kind);
+        window.setTimeout(() => setCopiedPart(null), 2000);
+      })
+      .catch(() => {});
+  }
+
+  async function submitManual(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLocalError("");
     const data = new FormData(event.currentTarget);
@@ -184,54 +206,208 @@ export function AddSiteDialog({
       setLocalError("请填写站点显示名称。");
       return;
     }
-    const ok = await onCreate({ id, name, issueToken });
+    const ok = await onManualCreate({ id, name, issueToken });
     if (ok) onClose();
   }
 
   return (
     <ModalDialog
       open={open}
-      title="新增纳管站点"
-      labelledBy="add-site-title"
+      title="接入新设备"
+      labelledBy="connect-device-title"
       onClose={onClose}
-      className="modal-md"
+      className="modal-lg"
     >
-      <form ref={formRef} className="modal-body form-stack" onSubmit={submit}>
-        <div className="field-group">
-          <label htmlFor="new-site-id">站点 ID（不可修改）</label>
-          <input
-            id="new-site-id"
-            name="id"
-            required
-            minLength={2}
-            maxLength={48}
-            pattern="[a-z][a-z0-9\-]{1,47}"
-            placeholder="edge-tokyo-01"
-            autoComplete="off"
-          />
-          <p className="field-hint">
-            用于路由器设备配置和 API 路由匹配（规则 <code>[a-z][a-z0-9-]</code>）。
-          </p>
+      <div className="modal-body form-stack">
+        <div className="callout is-info">
+          <span>
+            无需预先在云端创建站点。在 OpenWrt 路由器端使用您的{" "}
+            <strong>OPL Gateway 账号与密码</strong>{" "}
+            登录配对后，站点将自动注册、认领并立即出现在当前面板；路由器不落盘保存账号密码。
+          </span>
         </div>
+
+        <ol className="connect-steps">
+          <li className="connect-step">
+            <span className="connect-step-num" aria-hidden="true">
+              1
+            </span>
+            <div className="connect-step-body">
+              <strong>在 LuCI 界面一键登录配对（推荐）</strong>
+              <p className="muted">
+                打开设备 LuCI 中的「服务 → OPL NetFleet → 云端站点同步」，填入下方云端服务地址，并使用当前{" "}
+                OPL Gateway 邮箱与密码登录即可。
+              </p>
+              <div className="origin-copy-bar">
+                <code className="origin-copy-url">{origin}</code>
+                <button
+                  type="button"
+                  className="btn secondary btn-sm"
+                  onClick={() => copy("origin", origin)}
+                >
+                  {copiedPart === "origin" ? <IconCheck /> : <IconCopy />}
+                  <span>{copiedPart === "origin" ? "已复制" : "复制地址"}</span>
+                </button>
+              </div>
+            </div>
+          </li>
+          <li className="connect-step">
+            <span className="connect-step-num" aria-hidden="true">
+              2
+            </span>
+            <div className="connect-step-body">
+              <strong>或通过 OpenWrt SSH 终端交互配对</strong>
+              <p className="muted">
+                命令会通过隐藏输入读取密码并经标准输入一次性交换设备 Token，避免凭据进入进程列表或 Shell 历史：
+              </p>
+              <div className="terminal-panel">
+                <div className="terminal-bar">
+                  <span className="mono-xs">OpenWrt 终端命令（site-sync-enroll）</span>
+                  <button
+                    type="button"
+                    className="btn-inline"
+                    onClick={() => copy("cli", cliCommand)}
+                  >
+                    {copiedPart === "cli" ? <IconCheck /> : <IconCopy />}
+                    <span>{copiedPart === "cli" ? "已复制" : "复制命令"}</span>
+                  </button>
+                </div>
+                <pre className="terminal-code">
+                  <code>{cliCommand}</code>
+                </pre>
+              </div>
+            </div>
+          </li>
+        </ol>
+
+        <details className="advanced-box">
+          <summary>高级选项：手动预注册站点与签发一次性 Token</summary>
+          <form ref={formRef} className="advanced-body form-stack" onSubmit={submitManual}>
+            <div className="field-group">
+              <label htmlFor="new-site-id">站点 ID（不可修改）</label>
+              <input
+                id="new-site-id"
+                name="id"
+                required
+                minLength={2}
+                maxLength={48}
+                pattern="[a-z][a-z0-9\-]{1,47}"
+                placeholder="edge-tokyo-01"
+                autoComplete="off"
+              />
+              <p className="field-hint">
+                仅用于离线预配置场景（规则 <code>[a-z][a-z0-9-]</code>）。
+              </p>
+            </div>
+            <div className="field-group">
+              <label htmlFor="new-site-name">站点显示名称</label>
+              <input
+                id="new-site-name"
+                name="name"
+                required
+                maxLength={120}
+                placeholder="例如：主节点网关"
+                autoComplete="off"
+              />
+            </div>
+            <label className="checkbox-inline">
+              <input
+                type="checkbox"
+                checked={issueToken}
+                onChange={(event) => setIssueToken(event.target.checked)}
+              />
+              <span>创建后立即签发一次性设备 Token</span>
+            </label>
+            {localError && (
+              <p className="inline-error" role="alert">
+                {localError}
+              </p>
+            )}
+            <div className="modal-actions">
+              <button type="submit" className="btn secondary" disabled={busy}>
+                {busy ? "创建中…" : "手动创建站点"}
+              </button>
+            </div>
+          </form>
+        </details>
+
+        <footer className="modal-actions">
+          <button type="button" className="btn primary" onClick={onClose}>
+            完成
+          </button>
+        </footer>
+      </div>
+    </ModalDialog>
+  );
+}
+
+export function RenameSiteDialog({
+  open,
+  site,
+  busy,
+  onClose,
+  onRename,
+}: {
+  open: boolean;
+  site: Site | null;
+  busy: boolean;
+  onClose: () => void;
+  onRename: (id: string, name: string) => Promise<boolean>;
+}) {
+  const [name, setName] = useState("");
+  const [localError, setLocalError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open && site) {
+      setName(site.name);
+      setLocalError("");
+    }
+  }, [open, site]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!site) return;
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setLocalError("请填写站点显示名称。");
+      return;
+    }
+    if (trimmed.length > 120) {
+      setLocalError("站点显示名称长度不能超过 120 个字符。");
+      return;
+    }
+    const ok = await onRename(site.id, trimmed);
+    if (ok) onClose();
+  }
+
+  return (
+    <ModalDialog
+      open={open && !!site}
+      title={site ? `重命名站点 · ${site.id}` : "重命名站点"}
+      labelledBy="rename-site-title"
+      initialFocusRef={inputRef}
+      onClose={onClose}
+      className="modal-sm"
+    >
+      <form className="modal-body form-stack" onSubmit={submit}>
         <div className="field-group">
-          <label htmlFor="new-site-name">站点显示名称</label>
+          <label htmlFor="rename-site-name">站点显示名称</label>
           <input
-            id="new-site-name"
+            ref={inputRef}
+            id="rename-site-name"
             name="name"
             required
             maxLength={120}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
             placeholder="例如：主节点网关"
             autoComplete="off"
           />
+          <p className="field-hint">
+            不会影响设备 ID（<code>{site?.id ?? ""}</code>）或已签发的设备凭据。
+          </p>
         </div>
-        <label className="checkbox-inline">
-          <input
-            type="checkbox"
-            checked={issueToken}
-            onChange={(event) => setIssueToken(event.target.checked)}
-          />
-          <span>创建后立即签发一次性设备 Token</span>
-        </label>
         {localError && (
           <p className="inline-error" role="alert">
             {localError}
@@ -247,7 +423,7 @@ export function AddSiteDialog({
             取消
           </button>
           <button type="submit" className="btn primary" disabled={busy}>
-            {busy ? "创建中…" : "创建站点"}
+            {busy ? "保存中…" : "保存名称"}
           </button>
         </footer>
       </form>
@@ -523,7 +699,7 @@ export function CommandPaletteDialog({
   onNavigateOverview,
   onNavigateSite,
   onNavigateSubscriptions,
-  onAddSite,
+  onConnectDevice,
   onAddSubscription,
   onCycleTheme,
   onRefresh,
@@ -536,7 +712,7 @@ export function CommandPaletteDialog({
   onNavigateOverview: () => void;
   onNavigateSite: (id: string) => void;
   onNavigateSubscriptions: () => void;
-  onAddSite: () => void;
+  onConnectDevice: () => void;
   onAddSubscription: () => void;
   onCycleTheme: () => void;
   onRefresh: () => void;
@@ -584,11 +760,11 @@ export function CommandPaletteDialog({
         run: onNavigateSubscriptions,
       })),
       {
-        id: "act-add-site",
+        id: "act-connect-device",
         group: "快捷操作",
-        title: "新增纳管站点",
-        meta: "注册新网关节点并签发一次性设备 Token",
-        run: onAddSite,
+        title: "接入新设备",
+        meta: "通过设备端 OPL Gateway 账密自动注册并配对站点",
+        run: onConnectDevice,
       },
       {
         id: "act-add-sub",
@@ -628,7 +804,7 @@ export function CommandPaletteDialog({
     onNavigateOverview,
     onNavigateSite,
     onNavigateSubscriptions,
-    onAddSite,
+    onConnectDevice,
     onAddSubscription,
     onCycleTheme,
     onRefresh,

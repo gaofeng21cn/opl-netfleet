@@ -155,6 +155,138 @@ test("CloudApp password login issues session cookie accepted by /me and /sites",
   }
 });
 
+test("agent auto-enrollment creates, idempotently re-pairs by device_id, renames, and unenrolls sites", async () => {
+  const store = new MemoryStore();
+  const provider = {
+    authenticate: async () => null,
+    authenticatePassword: async (email: string, password: string) => {
+      if (password !== "gw-pass") return null;
+      return { subject: `sub:${email}`, email, role: "owner" as const };
+    },
+  };
+  const app = new CloudApp(store, provider);
+  const directory = mkdtempSync(path.join(os.tmpdir(), "netfleet-enroll-"));
+  const masterPath = path.join(directory, "master");
+  const sessionPath = path.join(directory, "session");
+  writeFileSync(masterPath, Buffer.alloc(32, 5));
+  writeFileSync(sessionPath, Buffer.alloc(32, 6));
+  process.env.OPL_NETFLEET_CLOUD_MASTER_KEY_FILE = masterPath;
+  process.env.OPL_NETFLEET_CLOUD_SESSION_KEY_FILE = sessionPath;
+
+  try {
+    assert.equal(
+      (await app.enroll({ email: "owner@example.invalid", password: "wrong", name: "Home Router" })).status,
+      401,
+    );
+
+    const created = await app.enroll({
+      email: "owner@example.invalid",
+      password: "gw-pass",
+      name: "家用主路由",
+      device_id: "router-device-00112233",
+    });
+    assert.equal(created.status, 200);
+    const createdBody = created.body as {
+      ok: boolean;
+      site_id: string;
+      name: string;
+      revision: number;
+      device_token: string;
+      enrolled: string;
+    };
+    assert.equal(createdBody.ok, true);
+    assert.equal(createdBody.enrolled, "created");
+    assert.match(createdBody.site_id, /^site-[a-f0-9]{8}$/);
+    assert.equal(createdBody.name, "家用主路由");
+    assert.match(createdBody.device_token, /^[A-Za-z0-9_-]{43}$/);
+
+    const login = await app.login({ email: "owner@example.invalid", password: "gw-pass" });
+    assert.ok(login);
+    const ownerCookie = new Headers({ cookie: `opl_netfleet_session=${login.session}` });
+
+    assert.equal(
+      (
+        await app.createSubscription(ownerCookie, {
+          id: "sub-alpha",
+          name: "Sub Alpha",
+          url: "https://sub.example.invalid/alpha",
+        })
+      ).status,
+      201,
+    );
+    assert.equal(
+      (
+        await app.grants(ownerCookie, createdBody.site_id, {
+          subscription_ids: ["sub-alpha"],
+        })
+      ).status,
+      200,
+    );
+
+    const repaired = await app.enroll({
+      email: "owner@example.invalid",
+      password: "gw-pass",
+      name: "Home Router Pro",
+      device_id: "router-device-00112233",
+    });
+    assert.equal(repaired.status, 200);
+    const repairedBody = repaired.body as typeof createdBody;
+    assert.equal(repairedBody.enrolled, "repaired");
+    assert.equal(repairedBody.site_id, createdBody.site_id);
+    assert.equal(repairedBody.revision, 1);
+    assert.notEqual(repairedBody.device_token, createdBody.device_token);
+
+    // Old device token invalidated, new one works for heartbeat & subscriptions
+    assert.equal(
+      (await app.subscriptions(new Headers({ authorization: `Bearer ${createdBody.device_token}` }))).status,
+      401,
+    );
+    const newDeviceAuth = new Headers({ authorization: `Bearer ${repairedBody.device_token}` });
+    assert.equal((await app.subscriptions(newDeviceAuth)).status, 200);
+    assert.equal(
+      (
+        await app.heartbeat(newDeviceAuth, {
+          site_id: createdBody.site_id,
+          applied_revision: 1,
+          mode: "netfleet",
+          capabilities: [],
+          traffic: { upload_bytes: 100, download_bytes: 200 },
+        })
+      ).status,
+      200,
+    );
+
+    // Human owner can rename site cleanly
+    assert.equal(
+      (await app.renameSite(ownerCookie, createdBody.site_id, { name: "Gateway Alpha Edge" })).status,
+      200,
+    );
+    const overview = (await app.overview(ownerCookie)).body as { sites: { id: string; name: string }[] };
+    assert.equal(overview.sites.find((s) => s.id === createdBody.site_id)?.name, "Gateway Alpha Edge");
+
+    // Other account cannot hijack existing site_id
+    assert.equal(
+      (
+        await app.enroll({
+          email: "other@example.invalid",
+          password: "gw-pass",
+          site_id: createdBody.site_id,
+          device_id: "other-device-99998888",
+        })
+      ).status,
+      409,
+    );
+
+    // Unenroll revokes token immediately
+    assert.equal((await app.unenroll(newDeviceAuth)).status, 200);
+    assert.equal((await app.subscriptions(newDeviceAuth)).status, 401);
+  } finally {
+    delete process.env.OPL_NETFLEET_CLOUD_MASTER_KEY_FILE;
+    delete process.env.OPL_NETFLEET_CLOUD_SESSION_KEY_FILE;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("SQLite store preserves catalog and bounded site snapshots", async () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "netfleet-cloud-test-"));
   const store = new SqliteStore(path.join(directory, "store.sqlite"));

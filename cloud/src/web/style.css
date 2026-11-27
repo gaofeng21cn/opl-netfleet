@@ -751,6 +751,8 @@ kbd,
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
   cursor: pointer;
 }
 
@@ -1736,6 +1738,7 @@ input:user-valid {
   padding: 8px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
@@ -1917,6 +1920,120 @@ dialog::backdrop {
 
 .drawer-backdrop {
   display: none;
+}
+
+/* Auto-pairing Steps & Collapsible Advanced Box */
+.connect-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+
+.connect-step {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+
+.connect-step-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--border-strong);
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.connect-step-body {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.connect-step-body > strong {
+  font-size: 13.5px;
+}
+
+.connect-step-body > p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.origin-copy-bar {
+  margin-top: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+
+.origin-copy-url {
+  font-size: 12.5px;
+  color: var(--ink-primary);
+  overflow-wrap: anywhere;
+}
+
+.advanced-box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.advanced-box > summary {
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--ink-secondary);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.advanced-box > summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-box > summary::after {
+  content: "▸";
+  font-size: 12px;
+  color: var(--ink-muted);
+  transition: transform 0.15s ease;
+}
+
+.advanced-box[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+.advanced-box > summary:hover {
+  color: var(--ink-primary);
+}
+
+.advanced-body {
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--border);
 }
 
 @media (max-width: 960px) {

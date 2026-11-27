@@ -94,6 +94,10 @@ async function route(request: IncomingMessage, response: ServerResponse) {
     let result;
     if (method === "GET" && path === "/api/v1/auth/me")
       result = await app.me(headers);
+    else if (method === "POST" && path === "/api/v1/agent/enroll")
+      result = await app.enroll(await body(request));
+    else if (method === "POST" && path === "/api/v1/agent/unenroll")
+      result = await app.unenroll(headers);
     else if (method === "POST" && path === "/api/v1/agent/heartbeat")
       result = await app.heartbeat(headers, await body(request));
     else if (method === "GET" && path === "/api/v1/agent/subscriptions")
@@ -110,6 +114,8 @@ async function route(request: IncomingMessage, response: ServerResponse) {
       result = await app.revokeToken(headers, site[1]);
     else if (site?.[2] === "grants" && method === "PUT")
       result = await app.grants(headers, site[1], await body(request));
+    else if (site && !site[2] && method === "PUT")
+      result = await app.renameSite(headers, site[1], await body(request));
     else if (site && !site[2] && method === "DELETE")
       result = await app.deleteSite(headers, site[1]);
     else if (method === "GET" && path === "/api/v1/subscriptions")

@@ -21,9 +21,37 @@ const validName = (value: unknown): value is string =>
   !!value.trim() &&
   value.length <= 120 &&
   !/[\x00-\x1f\x7f]/.test(value);
+const validDeviceId = (value: unknown): value is string =>
+  typeof value === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(value);
 const timeout = Number(
   process.env.OPL_NETFLEET_CLOUD_HEARTBEAT_TIMEOUT_MS ?? 180000,
 );
+
+function deriveSiteId(
+  name: string,
+  deviceId: string | undefined,
+  sites: Record<string, { id: string }>,
+): string {
+  let base = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 36)
+    .replace(/-+$/, "");
+  if (!/^[a-z][a-z0-9-]{1,35}$/.test(base)) {
+    const seed = deviceId
+      ? sha256(deviceId).slice(0, 8)
+      : sha256(randomToken()).slice(0, 8);
+    base = `site-${seed}`;
+  }
+  if (!Object.hasOwn(sites, base)) return base;
+  for (let i = 1; i <= 64; i += 1) {
+    const candidate = `${base.slice(0, 40)}-${i}`;
+    if (!Object.hasOwn(sites, candidate)) return candidate;
+  }
+  return `site-${sha256(randomToken()).slice(0, 10)}`;
+}
 
 function validSourceUrl(value: string) {
   if (
@@ -160,6 +188,129 @@ export class CloudApp {
         }
       : unauthorized;
   }
+  async enroll(body: unknown) {
+    const input = asObject(body);
+    if (
+      !input ||
+      !only(input, ["email", "password", "name", "site_id", "device_id"]) ||
+      typeof input.email !== "string" ||
+      !input.email.trim() ||
+      input.email.length > 254 ||
+      typeof input.password !== "string" ||
+      !input.password ||
+      input.password.length > 512
+    ) {
+      return { status: 400, body: { error: "invalid_enroll_request" } };
+    }
+    const hasName = input.name !== undefined && input.name !== "";
+    if (hasName && !validName(input.name)) {
+      return { status: 400, body: { error: "invalid_site" } };
+    }
+    const requestedSiteId =
+      input.site_id === undefined || input.site_id === ""
+        ? undefined
+        : input.site_id;
+    if (requestedSiteId !== undefined && !siteId(requestedSiteId)) {
+      return { status: 400, body: { error: "invalid_site" } };
+    }
+    const deviceId =
+      input.device_id === undefined || input.device_id === ""
+        ? undefined
+        : input.device_id;
+    if (deviceId !== undefined && !validDeviceId(deviceId)) {
+      return { status: 400, body: { error: "invalid_device_id" } };
+    }
+    const identity = this.identity.authenticatePassword
+      ? await this.identity.authenticatePassword(input.email, input.password)
+      : null;
+    if (!identity) return unauthorized;
+    const owner = this.owner(identity);
+    const plain = randomToken();
+    const tokenHash = sha256(plain);
+    const customName = hasName ? (input.name as string).trim() : undefined;
+    try {
+      const enrolled = await this.store.change((catalog) => {
+        const byDevice = deviceId
+          ? Object.values(catalog.sites).find(
+              (site) => site.owner === owner && site.device_id === deviceId,
+            )
+          : undefined;
+        let existing = byDevice;
+        if (!existing && requestedSiteId) {
+          if (Object.hasOwn(catalog.sites, requestedSiteId)) {
+            const candidate = catalog.sites[requestedSiteId];
+            if (candidate.owner !== owner) throw new Error("site_exists");
+            existing = candidate;
+          }
+        }
+        if (existing) {
+          existing.token_hash = tokenHash;
+          if (customName) existing.name = customName;
+          if (deviceId) existing.device_id = deviceId;
+          return {
+            result: {
+              ok: true,
+              site_id: existing.id,
+              name: existing.name,
+              revision: existing.revision,
+              device_token: plain,
+              enrolled: "repaired",
+            },
+            write: true,
+          };
+        }
+        if (Object.keys(catalog.sites).length >= 64) {
+          throw new Error("site_limit");
+        }
+        const displayName = customName || requestedSiteId || "Managed Gateway";
+        const id =
+          requestedSiteId ?? deriveSiteId(displayName, deviceId, catalog.sites);
+        catalog.sites[id] = {
+          id,
+          name: displayName,
+          owner,
+          revision: 0,
+          grants: [],
+          token_hash: tokenHash,
+          ...(deviceId ? { device_id: deviceId } : {}),
+        };
+        return {
+          result: {
+            ok: true,
+            site_id: id,
+            name: displayName,
+            revision: 0,
+            device_token: plain,
+            enrolled: "created",
+          },
+          write: true,
+        };
+      });
+      return { status: 200, body: enrolled };
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !["site_exists", "site_limit"].includes(error.message)
+      )
+        throw error;
+      return { status: 409, body: { error: error.message } };
+    }
+  }
+  async unenroll(headers: Headers) {
+    const site = await this.device(headers);
+    if (!site) return unauthorized;
+    const removed = await this.store.change((catalog) => {
+      const current = catalog.sites[site.id];
+      if (!current || current.token_hash !== site.token_hash) {
+        return { result: false };
+      }
+      delete current.token_hash;
+      return { result: true, write: true };
+    });
+    return removed
+      ? { status: 200, body: { ok: true, site_id: site.id } }
+      : unauthorized;
+  }
   async heartbeat(headers: Headers, body: unknown) {
     const site = await this.device(headers);
     if (!site) return { status: 401, body: { error: "unauthorized" } };
@@ -261,6 +412,7 @@ export class CloudApp {
           return {
             id,
             name: site.name,
+            ...(site.device_id ? { device_id: site.device_id } : {}),
             revision: site.revision,
             grants: site.grants,
             token_active: !!site.token_hash,
@@ -345,6 +497,24 @@ export class CloudApp {
         throw error;
       return { status: 404, body: { error: "site_not_found" } };
     }
+  }
+  async renameSite(headers: Headers, id: string, body: unknown) {
+    const auth = await this.human(headers);
+    if (!auth) return unauthorized;
+    const input = asObject(body);
+    if (!input || !only(input, ["name"]) || !validName(input.name)) {
+      return { status: 400, body: { error: "invalid_site" } };
+    }
+    const name = input.name.trim();
+    const updated = await this.store.change((catalog) => {
+      const site = catalog.sites[id];
+      if (!site || site.owner !== auth.owner) return { result: null };
+      site.name = name;
+      return { result: { ok: true, id, name }, write: true };
+    });
+    return updated
+      ? { status: 200, body: updated }
+      : { status: 404, body: { error: "site_not_found" } };
   }
   async deleteSite(headers: Headers, id: string) {
     const auth = await this.human(headers);

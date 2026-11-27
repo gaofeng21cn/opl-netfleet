@@ -24,9 +24,10 @@ import {
   IconSun,
 } from "./charts.js";
 import {
-  AddSiteDialog,
   CommandPaletteDialog,
   ConfirmDialog,
+  ConnectDeviceDialog,
+  RenameSiteDialog,
   SubscriptionDialog,
   TokenRevealDialog,
 } from "./dialogs.js";
@@ -84,7 +85,8 @@ export function App() {
     return saved === "light" || saved === "dark" || saved === "system" ? saved : "system";
   });
 
-  const [addSiteOpen, setAddSiteOpen] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [renameSiteTarget, setRenameSiteTarget] = useState<Site | null>(null);
   const [subDialog, setSubDialog] = useState<{ open: boolean; source: Source | null }>({
     open: false,
     source: null,
@@ -100,7 +102,12 @@ export function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   const modalOpen =
-    addSiteOpen || subDialog.open || !!issuedToken || !!confirmState || paletteOpen;
+    connectOpen ||
+    !!renameSiteTarget ||
+    subDialog.open ||
+    !!issuedToken ||
+    !!confirmState ||
+    paletteOpen;
 
   useEffect(() => {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
@@ -143,6 +150,8 @@ export function App() {
     setSources([]);
     setIssuedToken(null);
     setConfirmState(null);
+    setConnectOpen(false);
+    setRenameSiteTarget(null);
   }, []);
 
   const report = useCallback(
@@ -293,6 +302,16 @@ export function App() {
     }
     navigate({ page: "site", siteId: payload.id });
     return true;
+  }
+
+  async function handleRenameSite(id: string, name: string): Promise<boolean> {
+    const updated = await mutate<{ ok: true; id: string; name: string }>(
+      `/sites/${id}`,
+      "PUT",
+      { name },
+      `站点名称已更新为「${name}」。`,
+    );
+    return !!updated;
   }
 
   async function handleSaveSubscription(payload: {
@@ -626,7 +645,7 @@ export function App() {
               sites={sites}
               sources={sources}
               onOpenSite={(siteId) => navigate({ page: "site", siteId })}
-              onAddSite={() => setAddSiteOpen(true)}
+              onConnectDevice={() => setConnectOpen(true)}
               onOpenSubscriptions={() => navigate({ page: "subscriptions" })}
             />
           )}
@@ -637,6 +656,7 @@ export function App() {
               sources={sources}
               busy={busy}
               onBack={() => navigate({ page: "overview" })}
+              onRenameSite={(target) => setRenameSiteTarget(target)}
               onSaveGrants={async (siteId, subscription_ids) =>
                 !!(await mutate(
                   `/sites/${siteId}/grants`,
@@ -704,11 +724,18 @@ export function App() {
         </div>
       )}
 
-      <AddSiteDialog
-        open={addSiteOpen}
+      <ConnectDeviceDialog
+        open={connectOpen}
         busy={busy}
-        onClose={() => setAddSiteOpen(false)}
-        onCreate={handleCreateSite}
+        onClose={() => setConnectOpen(false)}
+        onManualCreate={handleCreateSite}
+      />
+      <RenameSiteDialog
+        open={!!renameSiteTarget}
+        site={renameSiteTarget}
+        busy={busy}
+        onClose={() => setRenameSiteTarget(null)}
+        onRename={handleRenameSite}
       />
       <SubscriptionDialog
         open={subDialog.open}
@@ -737,7 +764,7 @@ export function App() {
         onNavigateOverview={() => navigate({ page: "overview" })}
         onNavigateSite={(siteId) => navigate({ page: "site", siteId })}
         onNavigateSubscriptions={() => navigate({ page: "subscriptions" })}
-        onAddSite={() => setAddSiteOpen(true)}
+        onConnectDevice={() => setConnectOpen(true)}
         onAddSubscription={() => setSubDialog({ open: true, source: null })}
         onCycleTheme={cycleTheme}
         onRefresh={() => void load().catch(report)}

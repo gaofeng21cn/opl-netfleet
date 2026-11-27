@@ -132,13 +132,13 @@ export function OverviewView({
   sites,
   sources,
   onOpenSite,
-  onAddSite,
+  onConnectDevice,
   onOpenSubscriptions,
 }: {
   sites: Site[];
   sources: Source[];
   onOpenSite: (id: string) => void;
-  onAddSite: () => void;
+  onConnectDevice: () => void;
   onOpenSubscriptions: () => void;
 }) {
   const [filter, setFilter] = useState<SiteFilter>("all");
@@ -228,9 +228,9 @@ export function OverviewView({
           <button type="button" className="btn secondary" onClick={onOpenSubscriptions}>
             管理订阅池（{sources.length}）
           </button>
-          <button type="button" className="btn primary" onClick={onAddSite}>
+          <button type="button" className="btn primary" onClick={onConnectDevice}>
             <IconPlus />
-            <span>新增站点</span>
+            <span>接入新设备</span>
           </button>
         </div>
       </div>
@@ -366,13 +366,13 @@ export function OverviewView({
 
         {sites.length === 0 ? (
           <div className="empty-state">
-            <h3>暂未添加任何站点</h3>
+            <h3>暂无已配对站点</h3>
             <p className="muted">
-              注册第一台 OpenWrt 或网关路由器后，即可在这里集中查看出口延迟、吞吐曲线并按最小权限下发订阅。
+              在 OpenWrt 路由器 LuCI「云端站点同步」页或终端中使用 OPL Gateway 账号密码登录后，设备将自动完成注册配对并开始上报出口延迟、吞吐曲线与配置状态。
             </p>
-            <button type="button" className="btn primary" onClick={onAddSite}>
+            <button type="button" className="btn primary" onClick={onConnectDevice}>
               <IconPlus />
-              <span>新增第一个站点</span>
+              <span>接入第一台设备</span>
             </button>
           </div>
         ) : filteredSites.length === 0 ? (
@@ -606,6 +606,7 @@ export function SiteDetailView({
   sources,
   busy,
   onBack,
+  onRenameSite,
   onSaveGrants,
   onRotateToken,
   onRevokeToken,
@@ -616,6 +617,7 @@ export function SiteDetailView({
   sources: Source[];
   busy: boolean;
   onBack: () => void;
+  onRenameSite: (site: Site) => void;
   onSaveGrants: (siteId: string, grants: string[]) => Promise<boolean>;
   onRotateToken: (site: Site) => void;
   onRevokeToken: (site: Site) => void;
@@ -700,6 +702,15 @@ export function SiteDetailView({
         <div className="header-actions">
           <button type="button" className="btn secondary" onClick={onBack}>
             返回总览
+          </button>
+          <button
+            type="button"
+            className="btn secondary"
+            disabled={busy}
+            onClick={() => onRenameSite(site)}
+          >
+            <IconEdit />
+            <span>重命名</span>
           </button>
           <button
             type="button"
@@ -1024,10 +1035,15 @@ export function SiteDetailView({
             <div className="detail-stack">
               <div className="subpanel-head">
                 <div>
-                  <h3>设备认证与同步插件配置</h3>
+                  <h3>设备认证与自动配对状态</h3>
                   <p className="muted">
-                    每台路由器使用独立的 43 位 Bearer Token，服务端仅保存其 SHA-256 哈希。轮转后旧设备凭据立即失效。
+                    推荐在 OpenWrt 端「云端站点同步」插件或 SSH 终端用 OPL Gateway 账号密码自动配对及续期；服务端仅保存 43 位 Bearer Token 的单向 SHA-256 哈希，轮转后旧凭据立即失效。
                   </p>
+                  {site.device_id && (
+                    <p className="muted mono-xs">
+                      已绑定设备标识：<code>{site.device_id}</code>（重装或二次登录将自动识别并更新当前站点）
+                    </p>
+                  )}
                 </div>
                 <div className="header-actions">
                   <button
@@ -1054,19 +1070,26 @@ export function SiteDetailView({
                 </div>
               </div>
 
-              <div className="terminal-panel">
-                <div className="terminal-bar">
-                  <span className="mono-xs">
-                    目标设备配置文件：/etc/opl-netfleet/site-sync/config.json（权限 0600）
-                  </span>
-                  <span className="mono-xs">
-                    {site.token_active ? "Token 已生效" : "尚未签发"}
-                  </span>
+              <details className="advanced-box">
+                <summary>
+                  高级选项：手动写入 /etc/opl-netfleet/site-sync/config.json 示例
+                </summary>
+                <div className="advanced-body">
+                  <div className="terminal-panel">
+                    <div className="terminal-bar">
+                      <span className="mono-xs">
+                        目标设备配置文件：/etc/opl-netfleet/site-sync/config.json（权限 0600）
+                      </span>
+                      <span className="mono-xs">
+                        {site.token_active ? "Token 已生效" : "尚未签发"}
+                      </span>
+                    </div>
+                    <pre className="terminal-code">
+                      <code>{configExample}</code>
+                    </pre>
+                  </div>
                 </div>
-                <pre className="terminal-code">
-                  <code>{configExample}</code>
-                </pre>
-              </div>
+              </details>
 
               <div className="callout is-info">
                 <span>
