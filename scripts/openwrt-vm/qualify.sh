@@ -516,13 +516,13 @@ if [ -n "$package_mirror" ]; then
 fi
 stage=transfer
 transfer_started_ms=$(now_ms)
-tar -cf - -C "$workspace/scripts" deploy-openwrt-remote.sh update-openwrt-plugins-remote.sh observe-openwrt.uc \
+tar --format=ustar -cf "$work/guest-inputs.tar" -C "$workspace/scripts" deploy-openwrt-remote.sh update-openwrt-plugins-remote.sh observe-openwrt.uc \
 	-C "$workspace/scripts/openwrt-vm" guest-common.sh guest-qualify.sh guest-runtime-qualify.sh guest-package-qualify.sh \
 	guest-native-qualify.sh guest-setup-qualify.sh guest-migration-qualify.sh guest-components-qualify.sh \
 	guest-compatibility-native-qualify.sh \
 	guest-maintenance-qualify.sh guest-network-management-qualify.sh guest-rules-dashboard-qualify.sh guest-transfer-qualify.sh \
-	-C "$work" runtime-source.tar local-probe.crt "$mihomo_name" "$yq_name" |
-ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf -'
+	-C "$work" runtime-source.tar local-probe.crt "$mihomo_name" "$yq_name"
+ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf -' <"$work/guest-inputs.tar"
 expected_transfer=$(printf '%s\n' \
 	"$(sha256_file "$workspace/scripts/deploy-openwrt-remote.sh")" \
 	"$(sha256_file "$workspace/scripts/update-openwrt-plugins-remote.sh")" \
