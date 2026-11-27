@@ -6,6 +6,7 @@
   "trigger": "tag",
   "tag_prefix": "v",
   "publisher_workflow": "release.yml",
+  "publisher_title_from_tag": "OpenWrt release {tag}",
   "primary_lane": "openwrt",
   "observed_publishers": [
     {

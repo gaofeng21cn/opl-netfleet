@@ -107,6 +107,9 @@ python3 scripts/netfleet-delivery-preflight.py \
 
 先看 Actions 的 job 名称定位当前验收内容，再看对应阶段日志和回执。候选与回执仍在保留期内时，
 用 **Re-run failed jobs** 续跑失败阶段和下游任务，复用同一运行中的成功候选与回执。
+如果验收脚本已修复并合入主线，从 `main` 手动触发 `Release NetFleet`，填写原产品 tag、
+tag 运行 ID、签名候选 artifact ID 和摘要。基础及可选组合验收使用同一主线提交的 VM runner
+与客体验收脚本，回执记录该提交，产品源码、签名包和封存夹具仍绑定原候选。
 首次设置验收为已进入回滚的组件事务预留独立的有界观察窗口，直到读到同一事务的终态。
 坏包用例还会核对预期失败原因、旧包版本、配置和代理连通性。
 APK 和夹具按原字节免二次压缩上传。`netfleet-output/` 保存默认包，`netfleet-optional/` 保存可选签名包及构建身份，

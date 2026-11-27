@@ -52,12 +52,24 @@ def verify_candidate(repo, tag, source, run_id, artifact_id, digest, request=api
     artifact = request(f"{base}/actions/artifacts/{artifact_id}")
     upstream = artifact.get("workflow_run", {})
     repository_id = run["repository"]["id"]
+    candidate_name = re.fullmatch(rf"netfleet-openwrt-candidate-{source}(?:-([1-9][0-9]*))?",
+                                  artifact.get("name", ""))
     if (str(artifact.get("id")) != artifact_id or artifact.get("expired") is not False
-            or artifact.get("name") != f"netfleet-openwrt-candidate-{source}" or artifact.get("digest") != digest
+            or not candidate_name or artifact.get("digest") != digest
             or str(upstream.get("id")) != run_id or upstream.get("head_branch") != tag
             or upstream.get("head_sha") != source or upstream.get("head_repository_id") != repository_id
             or upstream.get("repository_id") != repository_id):
         raise ValueError("artifact must be the original unexpired candidate and match its expected digest")
+    attempt = candidate_name.group(1)
+    if not attempt:
+        return ""
+    tools_name = f"netfleet-openwrt-publish-tools-{source}-{attempt}"
+    tools = request(f"{run_path}/artifacts?name={tools_name}")["artifacts"]
+    if (len(tools) != 1 or tools[0].get("expired") is not False
+            or tools[0].get("name") != tools_name
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", tools[0].get("digest", ""))):
+        raise ValueError("candidate build's publication tools are missing or expired")
+    return tools_name
 
 
 def main():
@@ -68,8 +80,11 @@ def main():
     parser.add_argument("--artifact-id", required=True)
     parser.add_argument("--digest", required=True)
     args = parser.parse_args()
-    verify_candidate(os.environ["GITHUB_REPOSITORY"], args.tag, args.source,
-                     args.run_id, args.artifact_id, args.digest)
+    tools_name = verify_candidate(os.environ["GITHUB_REPOSITORY"], args.tag, args.source,
+                                  args.run_id, args.artifact_id, args.digest)
+    if "GITHUB_OUTPUT" in os.environ:
+        with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
+            stream.write(f"publish_tools_name={tools_name}\n")
     print(f"Verified {args.tag} candidate artifact {args.artifact_id} from run {args.run_id} ({args.digest})")
 
 

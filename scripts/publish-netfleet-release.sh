@@ -170,9 +170,11 @@ upload_resp="$upload_work/response.json"
   [[ -n "$token" ]] || exit 1
   printf 'header = "Authorization: Bearer %s"\n' "$token" > "$curl_auth"
 ) || die 'cannot resolve GitHub auth token'
+readback_patterns=()
 for asset in "$publication"/*; do
   [[ -f "$asset" ]] || continue
   asset_name=$(basename "$asset")
+  readback_patterns+=(--pattern "$asset_name")
   asset_size=$(wc -c < "$asset" | tr -d '[:space:]')
   encoded_name=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$asset_name")
   uploaded=0
@@ -238,7 +240,7 @@ readback=$(mktemp -d "${TMPDIR:-/tmp}/netfleet-release-readback.XXXXXX")
 downloaded=0
 for attempt in 1 2 3; do
   rm -rf -- "$readback"/*
-  if GODEBUG=http2client=0 gh release download "$tag" --repo "$repo" --dir "$readback"; then
+  if GODEBUG=http2client=0 gh release download "$tag" --repo "$repo" --dir "$readback" "${readback_patterns[@]}"; then
     downloaded=1
     break
   fi
