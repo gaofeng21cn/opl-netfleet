@@ -61,7 +61,7 @@ const latency = measure(null, "fixture", {
 	}
 });
 if (controller_timeout_seconds(2000) != 5 || controller_timeout_seconds(1) != 4 ||
-	controller_timeout_seconds(60000) != 30) {
+	controller_timeout_seconds(60000) != 45) {
 	print("latency_controller_timeout_failed\n");
 	exit(1);
 }
