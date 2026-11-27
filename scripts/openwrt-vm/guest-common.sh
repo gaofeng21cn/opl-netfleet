@@ -9,6 +9,11 @@ gateway=${gateway:-$main}
 lock=${lock:-/var/lock/opl-netfleet-deploy.lock}
 stage=${stage:-precondition}
 
+guest_stage() {
+	stage=$1
+	printf 'OpenWrt guest %s | %s\n' "${0##*/}" "$stage" >&2
+}
+
 assert_json() { [ "$(jsonfilter -i "$1" -e "$2")" = "$3" ]; }
 digest() { sha256sum "$1" | awk '{print $1}'; }
 

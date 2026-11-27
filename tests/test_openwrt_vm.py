@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import re
+import select
 import subprocess
 import tempfile
 import threading
@@ -29,6 +30,50 @@ RECOVERY = ROOT / "scripts" / "recover-openwrt-local.sh"
 
 
 class OpenWrtVmTests(unittest.TestCase):
+    def test_guest_stage_reaches_runner_before_receipt(self):
+        source = RUNNER.read_text()
+        start = source.index('run_guest() {')
+        run_guest = source[start:source.index('\nif [ "$lane_mode"', start)]
+        program = '''. "$1"
+work=$2
+ssh_common=
+source_commit=fixture-commit
+source_tree=fixture-tree
+probe_port=443
+package_archive=
+unset NETFLEET_CORE_PACKAGE
+now_ms() { echo 0; }
+progress() { :; }
+wait_for_probe() { :; }
+ssh() {
+    case "$*" in
+        *guest-setup-qualify.sh*)
+            guest_stage component_update_transactions
+            read -r proceed
+            printf '%s\\n' '{"ok":true}'
+            ;;
+    esac
+}
+''' + run_guest + '\nrun_guest setup setup\n'
+        with tempfile.TemporaryDirectory() as directory:
+            common = RUNNER.with_name('guest-common.sh')
+            with subprocess.Popen(['sh', '-c', program, SETUP_GUEST.name, str(common), directory],
+                                  stdin=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
+                try:
+                    self.assertTrue(select.select([process.stderr], [], [], 3)[0],
+                                    'guest stage was buffered until SSH completed')
+                    self.assertEqual(process.stderr.readline().strip(),
+                                     'OpenWrt guest guest-setup-qualify.sh | component_update_transactions')
+                    result = Path(directory, 'setup-result.json')
+                    self.assertEqual(result.read_text(), '')
+                    _, stderr = process.communicate(input='continue\n', timeout=3)
+                    self.assertEqual(process.returncode, 0, stderr)
+                    self.assertEqual(json.loads(result.read_text()), {'ok': True})
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                        process.communicate()
+
     def test_component_rollback_wait_is_bounded_and_uses_exact_operation(self):
         source = COMPONENTS_GUEST.read_text()
         wait = source[source.index('wait_operation() {'):source.index('\nrequest() {')]
