@@ -863,9 +863,14 @@ for attempt in $(seq 1 60); do
 done
 [ "$recovered" = true ]
 
-stage=direct_and_disable
+stage=reenable_after_supervisor_recovery
 run_timed reenable run_locked /var/lock/opl-netfleet-deploy.lock ucode "$main" enable vm
-flock -n /var/lock/opl-netfleet-deploy.lock true
+# The supervisor claims this lock for every tick. Wait for its legitimate
+# in-flight observation to finish before checking the transaction boundary.
+stage=reenable_lock_readback
+flock -w 60 /var/lock/opl-netfleet-deploy.lock true
+
+stage=direct_and_disable
 run_timed select_direct run_locked /var/lock/opl-netfleet-deploy.lock ucode "$main" select standard DIRECT vm
 [ "$(jsonfilter -i "$work/select_direct.json" -e '@.result.selected')" = DIRECT ]
 [ "$(jsonfilter -i "$work/select_direct.json" -e '@.result.selected_leaf')" = DIRECT ]
