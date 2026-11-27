@@ -133,14 +133,6 @@ assert_json "$work/rpc-setup.json" '@.result.backend' nikki-mihomo
 ubus -t 20 call opl-netfleet status '{}' >"$work/rpc-status.json"
 assert_json "$work/rpc-status.json" '@.error' policy_unreadable
 ubus -t 20 call opl-netfleet.plugins plugins_list '{}' >"$work/rpc-plugins.json"
-if [ "$(jsonfilter -i "$work/rpc-plugins.json" -e '@.ok' 2>/dev/null || true)" != true ]; then
-	{
-		sed -i "s/catch (error) { result = failure(error.message/catch (error) { warn(sprintf('HOST_EXEC_STACK: %s\\\\n%J\\\\n', error.message, error.stacktrace)); result = failure(error.message/" \
-			/usr/share/opl-netfleet/current/runtime/kernel/host.uc
-		ucode "$main" plugins-list || true
-	} >"$work/plugins-stack.log" 2>&1 || true
-	exit 1
-fi
 assert_json "$work/rpc-plugins.json" '@.ok' true
 ucode -e '
 	import { readfile } from "fs";

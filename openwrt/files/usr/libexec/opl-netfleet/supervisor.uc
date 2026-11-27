@@ -27,7 +27,7 @@ while (true) {
 		if (ready) delay = loadstring(sprintf('import { tick } from %J; import { create } from %J; return (root, states) => tick(root, states, { adapter: create(root) });',
 			`${root}/kernel/host.uc`, `${root}/adapters/openwrt.uc`))()(root, states);
 	} catch (error) { warn(`NetFleet supervisor: ${error.message}\n`); }
-	lease?.close();
+	if (lease != null) lease.close();
 	// Reclaim cycles from hot-loaded factories and closed scopes after each tick.
 	// Only the explicitly retained scheduler state survives between iterations.
 	gc();

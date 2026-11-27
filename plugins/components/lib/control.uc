@@ -72,12 +72,12 @@ function network_enter() {
 	}
 	fail('mutation_busy');
 }
-function network_leave() { network_guard?.close(); network_guard = null; }
+function network_leave() { if (network_guard != null) network_guard.close(); network_guard = null; }
 function worker_enter() {
 	const path = `${ROOT}/worker.lock`;
 	if (!directory(ROOT) || fs.lstat(path) != null && !private_file(path)) fail('unsafe_update_directory');
 	const lock = fs.open(path, 'ae', 0600);
-	if (lock == null || !lock.lock('xn')) { lock?.close(); fail('mutation_busy'); }
+	if (lock == null || !lock.lock('xn')) { if (lock != null) lock.close(); fail('mutation_busy'); }
 	return lock;
 }
 capture = function(command) {
@@ -371,7 +371,7 @@ function cancel_update(id) {
 	if (!private_directory(work)) fail("unsafe_update_directory");
 	if (fs.lstat(`${work}/control.lock`) != null && !private_file(`${work}/control.lock`)) fail("unsafe_update_directory");
 	const lock = fs.open(`${work}/control.lock`, "ae", 0600);
-	if (lock == null || !lock.lock("xn")) { lock?.close(); fail("update_transition_busy"); }
+	if (lock == null || !lock.lock("xn")) { if (lock != null) lock.close(); fail("update_transition_busy"); }
 	let result;
 	try {
 		const state = read_json(`${work}/journal.json`);
@@ -1144,7 +1144,7 @@ upgrade = function(request, work, candidates) {
 		prepare_resources(work, names, versions, candidates);
 		if (fs.lstat(`${work}/control.lock`) != null && !private_file(`${work}/control.lock`)) fail("unsafe_update_directory");
 		const lock = fs.open(`${work}/control.lock`, "ae", 0600);
-		if (lock == null || !lock.lock("x")) { lock?.close(); fail("update_transition_busy"); }
+		if (lock == null || !lock.lock("x")) { if (lock != null) lock.close(); fail("update_transition_busy"); }
 		try {
 			cancellation(work);
 			journal(work, { ...read_json(`${work}/journal.json`), phase: "installing", write_started: true });
@@ -1520,7 +1520,7 @@ try {
 	response = { ok: false, error: reason };
 }
 network_leave();
-worker_lock?.close();
+if (worker_lock != null) worker_lock.close();
 printf("%J\n", response);
 exit(response.ok ? 0 : 1);
 };

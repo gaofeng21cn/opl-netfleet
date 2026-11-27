@@ -57,8 +57,8 @@ source_path = function(ref) {
 process_state = function() {
 	const bus = connect(null, 5);
 	let data;
-	try { data = bus?.call("service", "list", { name: SERVICE }); } catch (error) {}
-	bus?.disconnect();
+	try { data = bus != null ? bus.call("service", "list", { name: SERVICE }) : null; } catch (error) {}
+	if (bus != null) bus.disconnect();
 	const instance = data?.[SERVICE]?.instances?.core;
 	const pid = instance?.pid;
 	const actual = pid ? fs.readfile(`/proc/${pid}/cmdline`) : null;

@@ -205,14 +205,14 @@ function system_management(action, argv, root, options) {
 		} catch (error) { reason = error.message; }
 		if (reason != null) {
 			let restored = true;
-			try { resources?.quiesce(); } catch (error) { restored = false; }
+			try { if (resources != null) resources.quiesce(); } catch (error) { restored = false; }
 			if (restored) restored = !changed || (original == null ? fs.unlink(options.override_path) : atomic_text(options.override_path, original));
-			if (restored) try { resources?.resume(host.all_system); } catch (error) { restored = false; }
-			resources?.close();
+			if (restored) try { if (resources != null) resources.resume(host.all_system); } catch (error) { restored = false; }
+			if (resources != null) resources.close();
 			return { ok: false, error: restored ? 'plugin_system_apply_rolled_back' : 'plugin_system_recovery_required', result: { reason, restored } };
 		}
 		return { ok: true, result: { ...report, applied: true } };
-	}, () => guarded(() => host?.release(), () => { if (applying) fs.unlink(`${options.maintenance_root}/.coordinator`); lock.close(); }));
+	}, () => guarded(() => (host != null ? host.release() : null), () => { if (applying) fs.unlink(`${options.maintenance_root}/.coordinator`); lock.close(); }));
 };
 
 function plugin_files(directory, owner, relative, files, identities) {
@@ -349,7 +349,7 @@ create = function(root, options) {
 			const path = `${lock_root}/${id}.lock`;
 			if (fs.lstat(path) != null && !trusted(path, 'file', owner)) raise('plugin_code_lock_unsafe');
 			const lease = fs.open(path, 'ae', 0600);
-			if (lease == null || !lease.lock('sn')) { lease?.close(); raise(`plugin_code_busy:${id}`); }
+			if (lease == null || !lease.lock('sn')) { if (lease != null) lease.close(); raise(`plugin_code_busy:${id}`); }
 			leases[id] = lease;
 			if (blocked(id)) raise(`plugin_package_maintenance:${id}`);
 			const current = inspect(found[id]?.plugins_dir ?? primary_dir, id, owner, adapter, false, found[id]?.asset_scope ?? 'external');
@@ -472,7 +472,7 @@ create = function(root, options) {
 function file_lock(path, options, writing) {
 	if (fs.lstat(path) != null && !trusted(path, 'file', options.trusted_owner)) return null;
 	const lock = fs.open(path, 'ae', 0600);
-	if (lock == null || !lock.lock(writing ? 'xn' : 'sn')) { lock?.close(); return null; }
+	if (lock == null || !lock.lock(writing ? 'xn' : 'sn')) { if (lock != null) lock.close(); return null; }
 	return lock;
 };
 data_lock = function(options, writing) {
@@ -506,7 +506,7 @@ resource_pause = function(host, targets, excluded) {
 					if (hook == null || !current.call(hook.service, hook.method, null)?.ok) raise('plugin_drain_unconfirmed');
 				}
 			} catch (error) { push(errors, error.message); }
-			try { current?.release(); } catch (error) { push(errors, error.message); }
+			try { if (current != null) current.release(); } catch (error) { push(errors, error.message); }
 		}
 		if (length(errors)) raise(join('; ', errors));
 		splice(attempted, 0, length(attempted));
@@ -530,7 +530,7 @@ resource_pause = function(host, targets, excluded) {
 					if (hook == null || !current.call(hook.service, hook.method, record.state)?.ok) raise('plugin_resume_unconfirmed');
 				}
 			} catch (error) { push(errors, `${record.id}:${error.message}`); }
-			try { current?.release(); } catch (error) { push(errors, error.message); }
+			try { if (current != null) current.release(); } catch (error) { push(errors, error.message); }
 		}
 		for (let scope in scopes) try { scope.release(); } catch (error) { push(errors, error.message); }
 		if (length(errors)) raise(join('; ', errors));
@@ -630,7 +630,7 @@ function package_operation(action, id, root, options) {
 			const lease_path = `${lock_root}/${id}.lock`;
 			if (fs.lstat(lease_path) != null && !trusted(lease_path, 'file', options.trusted_owner)) return failure('plugin_code_lock_unsafe');
 			const lease = fs.open(lease_path, 'ae', 0600);
-			if (lease == null || !lease.lock('xn')) { lease?.close(); return failure('plugin_calls_draining'); }
+			if (lease == null || !lease.lock('xn')) { if (lease != null) lease.close(); return failure('plugin_calls_draining'); }
 			const ok = atomic_json(marker, { phase: 'drained', revision: item?.revision ?? 'absent' });
 			lease.close();
 			return ok ? { ok: true, result: { id: id, loaded: false, state: 'replacing' } } : failure('plugin_package_marker_failed');
@@ -800,7 +800,7 @@ function management(action, argv, root, options) {
 		if (input == null) input = read_json(path)?.request;
 		if (type(input) != 'object' || !valid_id(input.id) || type(input.action) != 'string' ||
 			(input.instance != null && !valid_id(input.instance)) || (input.params != null && type(input.params) != 'object')) return failure('plugin_request_invalid');
-		host?.release();
+		if (host != null) host.release();
 		host = create(root, { ...options, instance: input.instance ?? 'default', lazy_inspection: action == 'plugin-read' });
 		const item = action == 'plugin-read' ? host.inspect(input.id) : host.found[input.id];
 		if (local != (item?.manifest?.actions?.[input.action]?.lock == 'plugin')) return failure('plugin_revision_changed');
@@ -837,7 +837,7 @@ function management(action, argv, root, options) {
 		}
 		host.acquire({ [input.id]: true });
 		return process_dispatch(input, item, adapter);
-	}, () => guarded(() => host?.release(), () => { if (!local && action != 'plugin-read') fs.unlink(`${base}/.coordinator`); lock.close(); }));
+	}, () => guarded(() => (host != null ? host.release() : null), () => { if (!local && action != 'plugin-read') fs.unlink(`${base}/.coordinator`); lock.close(); }));
 };
 
 export function execute(argv, root, options) {
@@ -854,7 +854,7 @@ export function execute(argv, root, options) {
 			else result = host.call(command.service, command.method, argv);
 		}
 	} catch (error) { result = failure(error.message ?? 'plugin_execution_failed'); }
-	try { host?.release(); } catch (error) { result = failure(error.message); }
+	try { if (host != null) host.release(); } catch (error) { result = failure(error.message); }
 	return result;
 };
 
@@ -881,7 +881,7 @@ export function tick(root, states, options) {
 			}
 		}
 	} catch (error) { warn(`NetFleet scheduler: ${error.message}\n`); }
-	try { guarded(() => host?.release(), () => lock?.close()); }
+	try { guarded(() => (host != null ? host.release() : null), () => (lock != null ? lock.close() : null)); }
 	catch (error) { warn(`NetFleet cleanup: ${error.message}\n`); }
 	return delay;
 };

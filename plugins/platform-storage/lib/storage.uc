@@ -32,10 +32,10 @@ return function(context) {
 			try {
 				if (writefile(input, source) == length(source)) {
 					process = popen(`yq -M -p yaml -o json ${shell_quote(input)}${quiet ? " 2>/dev/null" : ""}`);
-					encoded = process?.read("all");
+					encoded = process != null ? process.read("all") : null;
 				}
 			} catch (error) {}
-			status = process?.close();
+			status = process != null ? process.close() : null;
 			unlink(input); rmdir(directory);
 			if (status != 0 || encoded == null) return null;
 			let value;

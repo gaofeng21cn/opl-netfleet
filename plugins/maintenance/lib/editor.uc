@@ -404,17 +404,17 @@ backup_restore = function(path) {
 			if (!uci.commit("netfleet") || !fs.chmod(CONFIG, 0600)) die("backup_profile_restore_failed");
 		}
 		if (!resume(before, work, false)) die("backup_runtime_verification_failed");
-		resources?.resume(composition.system);
+		if (resources != null) resources.resume(composition.system);
 	} catch (error) {
 		const code = trim(split(`${error}`, "\n")[0]);
 		reason = match(code, /^[a-z][a-z0-9_]+$/) ? code : "backup_restore_failed";
 	}
 	if (reason == null) { clean_work(work); return { ok: true, result: { state: "restored", revision: revision(), runtime_preserved: true } }; }
 	let restored = true;
-	try { resources?.quiesce(); } catch (error) { restored = false; }
+	try { if (resources != null) resources.quiesce(); } catch (error) { restored = false; }
 	if (restored) restored = !changed || restore_snapshot(before, work);
-	if (restored) try { resources?.resume(); } catch (error) { restored = false; }
-	resources?.close();
+	if (restored) try { if (resources != null) resources.resume(); } catch (error) { restored = false; }
+	if (resources != null) resources.close();
 	if (restored) clean_work(work);
 	return failure(reason, { rollback: { ok: restored }, recovery: restored ? "restored" : "failed" });
 };

@@ -282,7 +282,7 @@ frontend ${name}_http
     }
     let probe_session=null,probe_identity=null;
     function close_probe() {
-        probe_session?.close();probe_session=null;probe_identity=null;
+        if (probe_session != null) probe_session.close();probe_session=null;probe_identity=null;
     }
     function probe_pair(uid,gid,engine_identity) {
         const failure={ok:false,reason:'local_conversion_failed'};

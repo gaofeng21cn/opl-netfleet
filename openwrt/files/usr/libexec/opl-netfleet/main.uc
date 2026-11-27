@@ -13,7 +13,7 @@ if (invoked == '/usr/libexec/opl-netfleet') {
 		(file != null && (file.type != 'file' || file.uid != 0 || (file.mode & 022)))) die('plugin_kernel_lock_unsafe');
 	lease = fs.open(path, 'ae', 0600);
 	if (lease == null || !lease.lock('sn') || fs.lstat('/var/run/opl-netfleet-plugin-maintenance/.kernel') != null) {
-		lease?.close(); printf('%J\n', { ok: false, error: 'plugin_kernel_maintenance' }); exit(1);
+		if (lease != null) lease.close(); printf('%J\n', { ok: false, error: 'plugin_kernel_maintenance' }); exit(1);
 	}
 	const bundle = '/usr/share/opl-netfleet/current/runtime';
 	if (fs.lstat(`${bundle}/kernel/host.uc`) != null) {
@@ -22,7 +22,7 @@ if (invoked == '/usr/libexec/opl-netfleet') {
 		const host_stat = target != null ? fs.lstat(`${target}/kernel/host.uc`) : null;
 		if (dir_stat?.type != 'directory' || dir_stat.uid != 0 || (dir_stat.mode & 022) ||
 			host_stat?.type != 'file' || host_stat.uid != 0 || (host_stat.mode & 022)) {
-			lease?.close(); printf('%J\n', { ok: false, error: 'plugin_kernel_unsafe' }); exit(1);
+			if (lease != null) lease.close(); printf('%J\n', { ok: false, error: 'plugin_kernel_unsafe' }); exit(1);
 		}
 		root = target;
 	}
@@ -32,5 +32,5 @@ try {
 	loadstring(sprintf('import { run } from %J; import { create } from %J; return (argv, root) => run(argv, root, { adapter: create(root) });',
 		`${root}/kernel/host.uc`, `${root}/adapters/openwrt.uc`))()(ARGV, root);
 }
-catch (error) { lease?.close(); printf('%J\n', { ok: false, error: error.message }); exit(1); }
-lease?.close();
+catch (error) { if (lease != null) lease.close(); printf('%J\n', { ok: false, error: error.message }); exit(1); }
+if (lease != null) lease.close();

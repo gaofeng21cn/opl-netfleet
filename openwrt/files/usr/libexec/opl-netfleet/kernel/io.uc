@@ -36,9 +36,9 @@ export function mkdtemp(template) {
 			suffix += substr(alphabet, v % 62, 1);
 		}
 		const candidate = prefix + suffix;
-		if (fs.mkdir(candidate, 0700)) { rng?.close(); return candidate; }
+		if (fs.mkdir(candidate, 0700)) { if (rng != null) rng.close(); return candidate; }
 	}
-	rng?.close();
+	if (rng != null) rng.close();
 	return null;
 };
 export function atomic_text(path, text) {
