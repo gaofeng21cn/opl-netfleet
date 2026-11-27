@@ -1374,34 +1374,6 @@ class IncrementalPackagingTests(unittest.TestCase):
             self.assertNotEqual(res1.returncode, 0)
             self.assertIn('--core-only', res1.stderr)
 
-    def test_compile_plugins_only_and_exclude_filters(self):
-        spec = importlib.util.spec_from_file_location('compile_plugins', ROOT / 'openwrt/compile-plugins.py')
-        mod = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(mod)
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            for pid in ('alpha', 'beta'):
-                pdir = root / pid
-                (pdir / 'lib').mkdir(parents=True)
-                (pdir / 'manifest.json').write_text(json.dumps({
-                    'id': pid,
-                    'services': {f'{pid}.s': {'module': 'lib/s.uc'}},
-                }))
-                (pdir / 'lib/s.uc').write_text(f'return {{ id: "{pid}" }};\n')
-            fake_ucode = root / 'ucode'
-            fake_ucode.write_text('#!' + sys.executable + '\nimport pathlib, sys\n'
-                                  'out = sys.argv[sys.argv.index("-o") + 1]\n'
-                                  'pathlib.Path(out).write_bytes(b"\\x1bucbfake")\n')
-            fake_ucode.chmod(0o755)
-            rows = mod.compile_plugins(root, fake_ucode, root, only=['alpha'])
-            self.assertEqual([r['plugin'] for r in rows], ['alpha'])
-            self.assertEqual((root / 'beta/lib/s.uc').read_text(), 'return { id: "beta" };\n')
-            rows_ex = mod.compile_plugins(root, fake_ucode, root, exclude=['beta'])
-            self.assertEqual([r['plugin'] for r in rows_ex], ['alpha'])
-            with self.assertRaisesRegex(ValueError, 'missing'):
-                mod.compile_plugins(root, fake_ucode, root, only=['missing'])
-
     def test_feed_build_merge_feed_overlays_by_package_name(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

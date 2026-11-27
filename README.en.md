@@ -112,7 +112,7 @@ and styles share a resource directory bound to the same code revision.
 
 | Feature plugin | Purpose | Delivery and runtime behavior |
 | --- | --- | --- |
-| **Default network functions** | Subscriptions, compilation, selection, activation, recovery, configuration, and scheduling | `opl-netfleet` composes the default product; each feature plugin has its own package |
+| **Default network functions** | Subscriptions, compilation, selection, activation, recovery, configuration, and scheduling | Delivered together with the thin system shell `opl-netfleet` via a signed pure-source Release Bundle, with atomic symlink switching and instant rollback |
 | **Product interface** | Overview, exits, providers, regions, configuration, components, and diagnostics | `product-ui` contributes seven pages; the LuCI shell handles discovery, navigation, and page lifecycle |
 | **HTTPS compatibility** | HTTP/1.1-to-HTTP/2 compatibility for selected devices and destinations | A management plugin connects the optional converter package; explicit onboarding after device trust in a private CA, with bypass to the original route on failure |
 | **Zashboard** | Live Mihomo connections, traffic, rule matches, and proxy groups | A separate Dashboard plugin manages the entry and resources; dashboard assets can be updated without restarting Mihomo |
@@ -167,9 +167,9 @@ The target device should have:
 - for native setup: a package containing native-backend support, working upstream DNS, and a valid subscription, without another proxy core occupying the network;
 - for Nikki mode: a working Nikki installation, an independently usable native profile, and at least one valid subscription cache.
 
-On OpenWrt 25.12, use the one-time installer to add the signed feed and install
-the default product and LuCI. The package manager resolves the microkernel and
-feature-plugin dependencies:
+On OpenWrt 25.12+ (`apk`) or OpenWrt 24.10 / iStoreOS (`opkg`), use the unified
+installer to add the signed verification key and feed, and install the thin
+system shell, LuCI, and signed Release Bundle (plus `mihomo-meta` when needed):
 
 ```sh
 uclient-fetch -q -O /tmp/install-netfleet.sh https://github.com/gaofeng21cn/opl-netfleet/releases/latest/download/install-netfleet.sh && sh /tmp/install-netfleet.sh
@@ -205,38 +205,9 @@ normal package upgrade and never establishes permanent dual writes.
 ## Upgrading
 
 The LuCI **Components and Updates** page shows installed versions, the running
-Mihomo version, and key dependencies, with an explicit feed check. NetFleet
-updates the microkernel, feature plugins, and LuCI together using the default
-product inventory; third-party plugins can be maintained independently.
-The **Feature plugins** section discovers standalone plugins from trusted feeds.
-Install, update, and uninstall actions first show the actual package plan, then
-run in the background with progress. Uninstall requires a disabled, unreferenced
-plugin and preserves private configuration. The HTTPS engine retains its dedicated
-update entry in the HTTPS plugin.
-Updating Mihomo under the native backend
-requires separate confirmation and validates the current configuration first;
-failures restore the previous packages and runtime. Unattended and system-wide
-upgrades are not enabled by default.
+Mihomo version, and key dependencies, with an explicit feed check. Default product scripts, plugins, and frontend assets update atomically via a single signed pure-source Release Bundle on both `apk` and `opkg` devices: the updater verifies `min_shell_version` and full microkernel service composition before swapping the `current` symlink, with instant rollback and startup crash recovery to `previous`. Third-party extension plugins (`/etc/opl-netfleet/extensions/`) and native binary packages (Mihomo, HTTPS engine) remain managed independently by the system package manager, preserving existing policies and subscription caches.
 
-The separate Zashboard section checks and updates official static resources
-without restarting Mihomo or changing its connection credentials. Installed
-versions come from valid installation records or local asset inspection and are
-shown as unknown when unidentifiable. Available versions appear after an explicit
-check. Package, core, and dashboard
-updates require separate confirmation and are not silently bundled together.
-
-Use the component page to update the complete product. Individual feature
-plugins can also be updated directly from the configured feed, for example:
-
-```sh
-apk update && apk upgrade opl-netfleet-plugin-selection-algorithm
-```
-
-Upgrades retain policy, subscription caches, and system service bindings. Package
-hooks drain and resume around code replacement. Review versions and runtime
-state on the component and status pages after upgrading; new configurations
-still require explicit application. See the [development and installation
-guide](docs/development/plugins.md) for plugin installation, upgrades, and removal.
+Upgrades retain policy, subscription caches, and system service bindings. Lifecycle coordination handles drain and resume around replacement. Review versions and runtime state on the component and status pages after upgrading; new configurations still require explicit application. See the [development and installation guide](docs/development/plugins.md) for plugin installation, upgrades, and removal.
 
 ## Everyday Use
 

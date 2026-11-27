@@ -156,7 +156,7 @@ fi
 
 gh release create "$tag" --repo "$repo" --verify-tag --draft \
   --title "NetFleet $tag" \
-  --notes "Versioned NetFleet OpenWrt packages qualified for installation and runtime behavior on ARM64 OpenWrt 25.12.5."
+  --notes "Versioned NetFleet OpenWrt thin-shell APK/IPK packages and signed pure-source Release Bundle qualified for ARM64 OpenWrt 25.12 (apk) and 24.10 (opkg)."
 draft_created=1
 release_id=$(gh release view "$tag" --repo "$repo" --json databaseId --jq .databaseId)
 [[ "$release_id" =~ ^[0-9]+$ ]] || die 'cannot resolve draft release id'

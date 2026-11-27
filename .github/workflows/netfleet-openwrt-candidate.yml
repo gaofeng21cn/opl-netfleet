@@ -20,6 +20,8 @@ on:
     secrets:
       NETFLEET_APK_PRIVATE_KEY:
         required: false
+      NETFLEET_BUNDLE_SIGN_KEY:
+        required: false
   workflow_dispatch:
     inputs:
       source_ref:
@@ -100,15 +102,22 @@ jobs:
       - name: Build signed package set
         env:
           NETFLEET_APK_PRIVATE_KEY: ${{ secrets.NETFLEET_APK_PRIVATE_KEY }}
+          NETFLEET_BUNDLE_SIGN_KEY: ${{ secrets.NETFLEET_BUNDLE_SIGN_KEY }}
         run: |
           set -euo pipefail
           key="$RUNNER_TEMP/netfleet-apk-private.pem"
+          bundle_key="$RUNNER_TEMP/netfleet-bundle-sign-key.pem"
           if [ -n "$NETFLEET_APK_PRIVATE_KEY" ]; then
             umask 077
             printf '%s\n' "$NETFLEET_APK_PRIVATE_KEY" > "$key"
           fi
+          if [ -n "$NETFLEET_BUNDLE_SIGN_KEY" ]; then
+            umask 077
+            printf '%s\n' "$NETFLEET_BUNDLE_SIGN_KEY" > "$bundle_key"
+          fi
           args=(--sdk "$NETFLEET_SDK" --ref "$NETFLEET_SOURCE_COMMIT" --output "$RUNNER_TEMP/netfleet-output")
           if [ -s "$key" ]; then args+=(--apk-private-key "$key"); fi
+          if [ -s "$bundle_key" ]; then args+=(--bundle-sign-key "$bundle_key"); fi
           scripts/netfleet-package-build.sh "${args[@]}"
 
       - name: Verify built package identity

@@ -105,6 +105,7 @@ jobs:
       sdk_sha256: ${{ needs.identity.outputs.sdk_sha256 }}
     secrets:
       NETFLEET_APK_PRIVATE_KEY: ${{ secrets.NETFLEET_APK_PRIVATE_KEY }}
+      NETFLEET_BUNDLE_SIGN_KEY: ${{ secrets.NETFLEET_BUNDLE_SIGN_KEY }}
   qualify-base:
     name: OpenWrt base qualification / ${{ matrix.lane }}
     needs: [identity, candidate]
