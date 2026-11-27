@@ -203,6 +203,55 @@ ip() { [ "$NETFLEET_READY_TEST_FAILURE" != dns ]; }
         self.assertNotEqual(0, retired.returncode)
         self.assertIn("unknown argument", retired.stderr)
 
+    def test_release_recovery_uses_current_guest_tests_with_frozen_product_inputs(self):
+        wrapper = WRAPPER.read_text()
+        start = wrapper.index('release_harness_identity=""')
+        recovery = wrapper[start:wrapper.index('\ntest_identity=""', start)]
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            repo = work / 'repo'
+            repo.mkdir()
+
+            def git(*args):
+                return subprocess.check_output(['git', '-C', str(repo), *args], text=True).strip()
+
+            def write(name, content):
+                path = repo / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+
+            git('init', '--quiet')
+            git('config', 'user.name', 'Qualification Test')
+            git('config', 'user.email', 'qualification@example.test')
+            runner = 'scripts/openwrt-vm/qualify.sh'
+            guest = 'scripts/openwrt-vm/guest-runtime-qualify.sh'
+            retired = 'scripts/openwrt-vm/guest-retired.sh'
+            inputs = ('openwrt/Makefile', 'scripts/deploy-openwrt-remote.sh',
+                      'scripts/openwrt-vm/component-fixtures.py')
+            for name in (runner, guest, retired, *inputs):
+                write(name, 'frozen\n')
+            git('add', '.')
+            git('commit', '--quiet', '-m', 'Freeze product candidate')
+            source = git('rev-parse', 'HEAD')
+            staging = work / 'candidate'
+            subprocess.run(['git', 'clone', '--quiet', str(repo), str(staging)], check=True)
+            for name in (runner, guest, *inputs):
+                write(name, 'updated\n')
+            git('rm', '--quiet', retired)
+            git('commit', '--quiet', '-am', 'Update qualification and product independently')
+            harness = git('rev-parse', 'HEAD')
+            result = subprocess.run(['bash', '-ec', 'die() { echo "$1" >&2; exit 1; }\n' + recovery],
+                                    env={**os.environ, 'release_harness': harness, 'source_commit': source,
+                                         'repo_dir': str(repo), 'source_dir': str(staging),
+                                         'work_dir': str(work), 'diagnostic': 'setup'},
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for name in (runner, guest):
+                self.assertEqual((staging / name).read_text(), 'updated\n')
+            for name in inputs:
+                self.assertEqual((staging / name).read_text(), 'frozen\n')
+            self.assertFalse((staging / retired).exists())
+
     def test_default_schedule_uses_clean_native_setup_migration_and_package_vms(self):
         source = RUNNER.read_text()
         schedule = source.split('if [ "$lane_mode" = all ] || [ "$lane_mode" = native ]; then', 1)[1].split('\nstage=receipt', 1)[0]

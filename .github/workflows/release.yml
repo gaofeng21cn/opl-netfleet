@@ -1,4 +1,5 @@
 name: Release NetFleet
+run-name: OpenWrt release ${{ inputs.release_tag || github.ref_name }}
 on:
   push:
     tags: ['v*']
@@ -202,10 +203,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-utils qemu-efi-aarch64 gdisk e2fsprogs mtools
       - name: Qualify the exact complete installation composition
         env:
-          SOURCE: ${{ needs.identity.outputs.source }}
+          HARNESS: ${{ needs.identity.outputs.harness }}
         run: |
-          git checkout --detach "$SOURCE"
+          args=()
+          if [[ -n "$HARNESS" ]]; then args+=(--release-harness "$HARNESS"); fi
           python3 scripts/https-compat/qualify.py --composition --preflight \
+            "${args[@]}" \
             --packages "$RUNNER_TEMP/candidate/netfleet-output" \
             --base-qualification "$RUNNER_TEMP/qualification/receipt.json" \
             --candidate "$RUNNER_TEMP/candidate/netfleet-optional" \

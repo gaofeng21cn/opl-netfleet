@@ -18,7 +18,7 @@ Options:
   --packages <dir>  Also install and qualify the exact APK candidate directory
   --diagnostic <lane>  Run native, setup, migration, runtime, package, or compatibility diagnostics
   --release-lane <lane>  Run one isolated release lane (native, setup, migration, or package)
-  --release-harness <commit>  Use the named runner orchestrator for an existing release candidate
+  --release-harness <commit>  Use the named VM runner and guest tests for release recovery
   --core-package <dir>  Qualify a same-binary core architecture variant against --base-qualification
   --compat-package <dir>  Signed optional APK candidate; requires --packages
   --base-qualification <file>  Reuse an unchanged qualified base for HTTPS diagnostics
@@ -127,8 +127,8 @@ if [[ -n "$release_lane" ]]; then
 	[[ -n "$packages" && -n "${NETFLEET_VM_COMPONENT_FIXTURES:-}" ]] ||
 		die 'release lanes require the signed candidate and its sealed component fixtures'
 	diagnostic=$release_lane
-elif [[ -n "$release_harness" ]]; then
-	die '--release-harness requires --release-lane'
+elif [[ -n "$release_harness" && ( "$diagnostic" != compatibility || -z "$base_qualification" || -n "$test_ref" ) ]]; then
+	die '--release-harness requires a release lane or its exact compatibility composition'
 fi
 [[ "$source_ref" != -* ]] || die "source ref cannot begin with '-'"
 case "$(uname -s):$(uname -m)" in
@@ -219,10 +219,26 @@ if [[ -n "$release_harness" ]]; then
 	git -C "$repo_dir" merge-base --is-ancestor "$source_commit" "$release_harness" ||
 		die 'release harness must descend from the candidate source'
 	release_harness_tree=$(git -C "$repo_dir" rev-parse "$release_harness^{tree}")
-	git -C "$repo_dir" show "$release_harness:scripts/openwrt-vm/qualify.sh" \
-		>"$source_dir/scripts/openwrt-vm/qualify.sh"
+	# Replace only the runner and guest test scripts. Keep the archived device
+	# runtime, deploy helpers, candidate and sealed fixtures on their original refs.
+	rm -f -- "$source_dir/scripts/openwrt-vm/qualify.sh" "$source_dir/scripts/openwrt-vm/"guest-*.sh
+	git -c tar.umask=0022 -C "$repo_dir" archive "$release_harness" \
+		scripts/openwrt-vm/qualify.sh 'scripts/openwrt-vm/guest-*.sh' >"$work_dir/harness.tar"
+	tar -C "$source_dir" -xf "$work_dir/harness.tar"
+	rm "$work_dir/harness.tar"
 	release_harness_identity=$(python3 -c 'import json,sys;print(json.dumps(dict(source_commit=sys.argv[1],source_tree=sys.argv[2])))' \
 		"$release_harness" "$release_harness_tree")
+	if [[ "$diagnostic" == compatibility ]]; then
+		python3 - "$base_qualification" "$release_harness_identity" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+receipt = json.loads(Path(sys.argv[1]).read_text())
+if receipt.get('release_harness') != json.loads(sys.argv[2]):
+    raise SystemExit('openwrt-vm: release harness does not match the base qualification')
+PY
+	fi
 fi
 
 test_identity=""
@@ -342,7 +358,7 @@ NETFLEET_QEMU_CPU=$qemu_cpu \
 	sh "$source_dir/scripts/openwrt-vm/qualify.sh"
 
 [[ -f "$output_dir/$output_name" ]] || die "qualification receipt was not produced"
-python3 - "$output_dir/$output_name" "$source_commit" "$source_tree" "$diagnostic" "$release_lane" <<'PY'
+python3 - "$output_dir/$output_name" "$source_commit" "$source_tree" "$diagnostic" "$release_lane" "$release_harness_identity" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -360,6 +376,7 @@ if not (
     passed
     and receipt.get("source_commit") == sys.argv[2]
     and receipt.get("source_tree") == sys.argv[3]
+    and receipt.get("release_harness") == json.loads(sys.argv[6] or "null")
 ):
     raise SystemExit("openwrt-vm: runner returned an invalid receipt")
 print(json.dumps(receipt, ensure_ascii=False, separators=(",", ":")))

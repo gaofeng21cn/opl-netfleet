@@ -116,6 +116,7 @@ def main():
     p.add_argument('--candidate', required=True, type=Path)
     p.add_argument('--previous', type=Path)
     p.add_argument('--test-ref', help='committed test tools; installed base runtime must remain unchanged')
+    p.add_argument('--release-harness', help='exact recovery harness from the base qualification')
     p.add_argument('--composition', action='store_true',
                    help='qualify unchanged optional APKs against the exact new qualified base')
     p.add_argument('--output', required=True, type=Path)
@@ -125,6 +126,8 @@ def main():
     p.add_argument('--preflight', action='store_true', help='run cheap source, candidate and fixture checks before QEMU')
     p.add_argument('--validate-only', action='store_true')
     a = p.parse_args()
+    if a.release_harness and (not a.composition or a.test_ref):
+        p.error('--release-harness requires --composition and cannot be combined with --test-ref')
     current = artifact(a.candidate, 'compat-manifest.json')
     identity = artifact(a.candidate, 'device-identity-manifest.json')
     if a.composition:
@@ -195,6 +198,8 @@ def main():
         command = ['bash',str(ROOT/'scripts/openwrt-vm.sh'),'--ref',execution_commit,
                    '--packages',str(a.packages.resolve()),'--base-qualification',str(a.base_qualification.resolve()),
                    '--diagnostic','compatibility','--compat-package',str(stage),'--output',str(diagnostic)]
+        if a.release_harness:
+            command.extend(['--release-harness', a.release_harness])
         if a.benchmark: command.append('--benchmark')
         subprocess.run(command,check=True)
         proof=json.loads(diagnostic.read_text())
