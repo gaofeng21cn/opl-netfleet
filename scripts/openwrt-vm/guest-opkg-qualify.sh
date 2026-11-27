@@ -101,7 +101,6 @@ opkg list-installed | grep -Eq '^mihomo-meta - '
 [ "$(readlink /usr/bin/mihomo)" = /usr/libexec/mihomo ]
 
 stage=bundle_layout_and_rpc_readback
-set -x
 expected_ver=$(jsonfilter -i "$candidate/manifest.json" -e '@.package_version')
 [ "$(readlink /usr/share/opl-netfleet/current)" = "releases/$expected_ver" ]
 assert_json /usr/share/opl-netfleet/shell.json '@.shell_version' "$expected_ver"
@@ -114,6 +113,19 @@ assert_json /usr/share/opl-netfleet/build.json '@.delivery' release-bundle
 ! /etc/init.d/opl-netfleet running
 ! /etc/init.d/opl-netfleet-core enabled
 ! /etc/init.d/opl-netfleet-core running
+
+for attempt in $(seq 1 15); do
+	if ubus -v list opl-netfleet >/dev/null 2>&1 && ubus -v list opl-netfleet.plugins >/dev/null 2>&1; then
+		break
+	fi
+	[ "$attempt" -lt 15 ] || {
+		/usr/libexec/rpcd/opl-netfleet list >&2 || true
+		/usr/libexec/rpcd/opl-netfleet.plugins list >&2 || true
+		ubus list >&2 || true
+		exit 1
+	}
+	sleep 1
+done
 
 ubus -t 20 call opl-netfleet status '{}' >"$work/rpc-status.json"
 assert_json "$work/rpc-status.json" '@.ok' true
@@ -141,7 +153,6 @@ ucode -e '
 	}
 	for (let dep in r.dependencies) if (!dep.available) exit(1);
 ' "$work/components-get.json"
-set +x
 
 stage=real_upstream_and_client
 cp "$(readlink -f /usr/bin/mihomo)" "$work/bin/nf-setup-proxy"
