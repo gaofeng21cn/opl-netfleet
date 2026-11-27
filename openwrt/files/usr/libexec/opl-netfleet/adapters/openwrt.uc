@@ -103,8 +103,24 @@ function invoke_process(entry, action, envelope, limit) {
 };
 
 export function create(root) {
-	const adjacent = `${root ?? PATHS.installed_root}/../../share/opl-netfleet/system.json`;
-	return { paths: { ...PATHS, default_system: fs.lstat(adjacent) != null ? adjacent : PATHS.default_system }, trusted_owner: OWNER,
+	const current_bundle = fs.realpath('/usr/share/opl-netfleet/current/runtime');
+	const installed_root = current_bundle ?? fs.realpath(PATHS.installed_root) ?? PATHS.installed_root;
+	const adjacent_bundle = root != null ? `${root}/../share/system.json` : null;
+	const adjacent_legacy = root != null ? `${root}/../../share/opl-netfleet/system.json` : null;
+	const default_system = adjacent_bundle != null && fs.lstat(adjacent_bundle) != null ? adjacent_bundle :
+		adjacent_legacy != null && fs.lstat(adjacent_legacy) != null ? adjacent_legacy : PATHS.default_system;
+	const resolved_root = root != null ? (fs.realpath(root) ?? root) : null;
+	const primary_plugins = resolved_root != null ? fs.realpath(`${resolved_root}/plugins`) : null;
+	const extra_plugin_roots = [];
+	if (resolved_root != null && resolved_root == installed_root) {
+		for (let candidate in ['/usr/libexec/opl-netfleet/plugins', '/etc/opl-netfleet/extensions']) {
+			const real = fs.realpath(candidate);
+			if (fs.lstat(candidate)?.type == 'directory' && real != null && real != primary_plugins)
+				push(extra_plugin_roots, candidate);
+		}
+	}
+	return { paths: { ...PATHS, installed_root: installed_root, default_system: default_system },
+		extra_plugin_roots: extra_plugin_roots, trusted_owner: OWNER,
 		private_file: private_file, network_lock: network_lock, process_identity: process_identity,
 		coordinator_parent: coordinator_parent, package_available: package_available,
 		inspect_digest: inspect_digest, invoke_process: invoke_process };

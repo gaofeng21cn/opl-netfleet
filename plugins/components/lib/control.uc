@@ -93,8 +93,41 @@ error_code = function(error) {
 	const code = trim(split(`${error}`, "\n")[0]);
 	return match(code, /^[a-z][a-z0-9_]+$/) ? code : "component_operation_failed";
 };
+function package_manager() {
+	if (capture("command -v apk") != null) return "apk";
+	if (capture("command -v opkg") != null) return "opkg";
+	return null;
+};
+function opkg_installed() {
+	const raw = capture("opkg status");
+	if (raw == null || !length(raw)) return null;
+	const result = {};
+	for (let stanza in split(raw, "\n\n")) {
+		const name = match(stanza, /(^|\n)Package:[[:space:]]*([^\n]+)/)?.[2];
+		const status = match(stanza, /(^|\n)Status:[[:space:]]*([^\n]+)/)?.[2];
+		const version = match(stanza, /(^|\n)Version:[[:space:]]*([^\n]+)/)?.[2];
+		if (name != null && status != null && index(status, "installed") >= 0 && version_valid(version))
+			result[trim(name)] = trim(version);
+	}
+	return length(result) ? result : null;
+};
+function opkg_arch() {
+	return capture("opkg print-architecture | awk '$1 == \"arch\" && $2 != \"all\" && $2 != \"noarch\" { arch = $2 } END { if (arch) print arch; else print \"all\" }'") ?? "all";
+};
+function opkg_feed() {
+	const meta = fs.lstat(paths.RELEASE_FEED_PATH) != null && private_file(paths.RELEASE_FEED_PATH)
+		? read_json(paths.RELEASE_FEED_PATH) : null;
+	if (match(meta?.url ?? "", /^https?:\/\/[^[:space:]@]+$/)) return meta.url;
+	for (let line in split(fs.readfile(paths.OPKG_FEEDS_PATH ?? "/etc/opkg/customfeeds.conf") ?? "", "\n")) {
+		const matched = match(trim(line), /^src(?:\/gz)?[[:space:]]+opl_netfleet[[:space:]]+(https?:\/\/[^[:space:]@]+)$/);
+		if (matched != null) return matched[1];
+	}
+	return null;
+};
 version_valid = function(value) { return type(value) == "string" && length(value) < 80 && match(value, /^[A-Za-z0-9][A-Za-z0-9._+~:-]*$/); };
 product_packages = function() {
+	if (capture("command -v opkg") != null && capture("command -v apk") == null || fs.lstat(paths.SHELL_META_PATH) != null)
+		return [PACKAGES[0], PACKAGES[1]];
 	const declared = context.system?.product_packages;
 	if (type(declared) != "array" || !length(declared)) fail("product_package_manifest_missing");
 	const result = [PACKAGES[0], PACKAGES[1]];
@@ -106,6 +139,8 @@ product_packages = function() {
 	return result;
 };
 installed = function() {
+	const mgr = package_manager();
+	if (mgr == "opkg") return opkg_installed();
 	const rows = parsed("apk --no-network query --from installed --format json --fields name,version '*'");
 	if (type(rows) != "array" || !length(rows)) return null;
 	const result = {};
@@ -244,6 +279,7 @@ function plugin_packages(versions, product, catalog) {
 	}));
 }
 function plugin_plan(request, work, preview, simulation_budget) {
+	if (package_manager() == "opkg") fail("package_manager_unsupported");
 	if (type(request) != "object") fail("invalid_plugin_package_request");
 	const versions = installed();
 	if (versions == null) fail("package_manager_unavailable");
@@ -452,7 +488,33 @@ function prepare_resources(work, names, versions, candidates) {
 	}
 }
 get = function() {
+	const mgr = capture("command -v apk") != null ? "apk" : capture("command -v opkg") != null ? "opkg" : null;
 	const versions = installed();
+	const running = controller_version(api_secret(), 2);
+	const binary = capture("mihomo -v");
+	const binary_version = match(binary ?? "", /^Mihomo[[:space:]]+([^[:space:]]+)/)?.[1] ?? null;
+	if (mgr == "opkg") {
+		const url = opkg_feed();
+		const product = product_packages();
+		const missing = filter(product, name => versions != null && versions[name] == null);
+		const rows = [];
+		for (let item in [["netfleet", "NetFleet", PACKAGES[0]], ["luci", "LuCI 接入组件", PACKAGES[1]], ["mihomo", "Mihomo", PACKAGES[2]]]) {
+			const current = versions?.[item[2]] ?? null;
+			push(rows, { id: item[0], label: item[1], installed_version: current ?? (item[0] == "mihomo" ? binary_version : null),
+				running_version: item[0] == "mihomo" ? running : null, available_version: null,
+				update_available: false, managed: false,
+				reason: item[0] == "mihomo" && KIND != "native-mihomo" ? "core_managed_externally" : current == null && item[0] != "mihomo" ? "package_not_installed" : "opkg_read_only" });
+		}
+		const dashboard = dashboard_resource();
+		return { supported: false, unsupported_reason: "opkg_read_only", package_manager: "opkg",
+			backend: KIND, architecture: opkg_arch(),
+			capabilities: { batch_plugin_update: false },
+			feed: { configured: url != null, url: url, checked_at: null, error: null }, components: rows,
+			plugin_packages: [], auto_update: null,
+			dashboard: dashboard, extensions: context.inventory(versions),
+			product: { packages: map(product, name => ({ name, installed_version: versions?.[name], available_version: null })), missing, updates: [] },
+			dependencies: map(DEPENDENCIES, name => ({ id: name, label: name, installed_version: versions?.[name], available: versions != null && (versions[name] != null || adapter.package_available(name)) })) };
+	}
 	const url = feed();
 	const checked = private_file(CACHE) ? read_json(CACHE) : null;
 	const cache = checked?.feed == url ? checked : null;
@@ -460,9 +522,6 @@ get = function() {
 	const product = product_packages();
 	const missing = filter(product, name => versions != null && versions[name] == null);
 	const updates = filter(product, name => newer(candidates[name], versions?.[name]));
-	const running = controller_version(api_secret(), 2);
-	const binary = capture("mihomo -v");
-	const binary_version = match(binary ?? "", /^Mihomo[[:space:]]+([^[:space:]]+)/)?.[1] ?? null;
 	const rows = [];
 	for (let item in [["netfleet", "NetFleet", PACKAGES[0]], ["luci", "LuCI 接入组件", PACKAGES[1]], ["mihomo", "Mihomo", PACKAGES[2]]]) {
 		const current = versions?.[item[2]] ?? null;
@@ -475,7 +534,7 @@ get = function() {
 			reason: !managed ? (item[0] == "mihomo" ? "core_managed_externally" : "package_not_installed") : null });
 	}
 	const dashboard = dashboard_resource();
-	return { supported: versions != null, backend: KIND, architecture: capture("apk --print-arch"),
+	return { supported: versions != null, package_manager: mgr, backend: KIND, architecture: capture("apk --print-arch"),
 		capabilities: { batch_plugin_update: true },
 		feed: { configured: url != null, url: url, checked_at: cache?.checked_at, error: cache?.error }, components: rows,
 		plugin_packages: plugin_packages(versions, product, cache?.plugin_catalog),
@@ -513,6 +572,7 @@ local_stage = function(path) {
 	return { names, candidates, packages: value.packages };
 };
 start = function(action, component, version) {
+	if (package_manager() == "opkg") fail("package_manager_unsupported");
 	if (!directory(ROOT)) fail("unsafe_update_directory");
 	if (fs.lstat(PENDING) != null) fail("previous_update_incomplete");
 	if (update_process()?.running == true) fail("mutation_busy");
@@ -1160,6 +1220,7 @@ recovery_stop = function(work) {
 	return false;
 };
 function start_recovery() {
+	if (package_manager() == "opkg") fail("package_manager_unsupported");
 	if (fs.lstat(PENDING) == null) return { recovered: false };
 	const id = private_file(PENDING) ? read_json(PENDING)?.id : null;
 	if (!match(id ?? '', /^[a-f0-9]{32}$/) || !private_directory(`${ROOT}/${id}/code`)) fail('update_recovery_state_invalid');
@@ -1342,6 +1403,7 @@ auto_update_summary = function() {
 	};
 };
 auto_update = function(trigger) {
+	if (package_manager() == "opkg") return { skipped: true, reason: "opkg_read_only" };
 	const cfg = auto_update_policy();
 	if (!cfg.enabled) return { skipped: true, reason: "disabled" };
 	if (!directory(ROOT)) fail("unsafe_update_directory");

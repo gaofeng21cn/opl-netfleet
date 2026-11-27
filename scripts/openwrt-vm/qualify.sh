@@ -6,6 +6,16 @@ umask 077
 version=25.12.5
 image_name="openwrt-${version}-armsr-armv8-generic-ext4-combined-efi.img.gz"
 image_sha=d7dcf013547e8be28006d83ce2c2232cd065755b803f4a5ee6b2e22391cfbc76
+image_24_10_sha=2768fa41c53923ff7405ba776e6ea8f11a879a4186582cfceee291a66b98f963
+case "${NETFLEET_OPENWRT_VERSION:-25.12.5}" in
+	25.12.5) ;;
+	24.10.2)
+		version=24.10.2
+		image_name="openwrt-${version}-armsr-armv8-generic-ext4-combined-efi.img.gz"
+		image_sha=$image_24_10_sha
+		;;
+	*) echo "Unsupported OpenWrt VM version: ${NETFLEET_OPENWRT_VERSION}" >&2; exit 1 ;;
+esac
 image_url="https://downloads.openwrt.org/releases/${version}/targets/armsr/armv8/${image_name}"
 core_lock=${NETFLEET_WORKSPACE:?}/openwrt/mihomo-meta/source.json
 mihomo_name=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["filename"])' "$core_lock")
@@ -34,8 +44,8 @@ if not match or not 1 <= int(match[1]) <= 65535:
     raise SystemExit('VM package mirror must be a port on the isolated guest host alias')
 PY
 fi
-case "$lane_mode" in all|native|setup|migration|runtime|package|compatibility) ;; *) echo 'Unknown VM lane' >&2; exit 1 ;; esac
-[ "$lane_mode" != package ] || [ -n "$package_archive" ] || { echo 'Package lane requires candidate' >&2; exit 1; }
+case "$lane_mode" in all|native|setup|migration|runtime|package|compatibility|opkg) ;; *) echo 'Unknown VM lane' >&2; exit 1 ;; esac
+[ "$lane_mode" != package ] && [ "$lane_mode" != opkg ] || [ -n "$package_archive" ] || { echo 'Package lane requires candidate' >&2; exit 1; }
 if [ -n "$release_fixture_sha" ]; then
 	case "$lane_mode" in
 		native|migration) [ -z "$package_archive" ] ;;
@@ -379,7 +389,7 @@ disk_size=512M
 # Core update qualification keeps archives, an extracted core and rollback bytes.
 # Its explicit disk-fill fixture still verifies rejection before stopping the core.
 if [ -n "$release_fixture_sha" ] || [ "$lane_mode" = all ] ||
-	[ "$lane_mode" = setup ] || [ "$lane_mode" = compatibility ]; then
+	[ "$lane_mode" = setup ] || [ "$lane_mode" = compatibility ] || [ "$lane_mode" = opkg ]; then
 	root_size=512M
 	disk_size=768M
 fi
@@ -511,15 +521,18 @@ boot_elapsed_ms=$((boot_elapsed_ms + $(now_ms) - boot_started_ms))
 runner_arch=$(uname -m)
 guest_arch=$(ssh $ssh_common root@127.0.0.1 uname -m)
 if [ -n "$package_mirror" ]; then
-	# Only the disposable guest's upstream package transport changes; APK still verifies signatures.
-	ssh $ssh_common root@127.0.0.1 "sed -i 's|https://downloads.openwrt.org|$package_mirror|g' /etc/apk/repositories.d/distfeeds.list"
+	# Only the disposable guest's upstream package transport changes; APK/OPKG still verify signatures.
+	ssh $ssh_common root@127.0.0.1 "
+		[ ! -f /etc/apk/repositories.d/distfeeds.list ] || sed -i 's|https://downloads.openwrt.org|$package_mirror|g' /etc/apk/repositories.d/distfeeds.list
+		[ ! -f /etc/opkg/distfeeds.conf ] || sed -i 's|https://downloads.openwrt.org|$package_mirror|g' /etc/opkg/distfeeds.conf
+	"
 fi
 stage=transfer
 transfer_started_ms=$(now_ms)
 tar --format=ustar -cf "$work/guest-inputs.tar" -C "$workspace/scripts" deploy-openwrt-remote.sh update-openwrt-plugins-remote.sh observe-openwrt.uc \
 	-C "$workspace/scripts/openwrt-vm" guest-common.sh guest-qualify.sh guest-runtime-qualify.sh guest-package-qualify.sh \
 	guest-native-qualify.sh guest-setup-qualify.sh guest-migration-qualify.sh guest-components-qualify.sh \
-	guest-compatibility-native-qualify.sh \
+	guest-compatibility-native-qualify.sh guest-opkg-qualify.sh \
 	guest-maintenance-qualify.sh guest-network-management-qualify.sh guest-rules-dashboard-qualify.sh guest-transfer-qualify.sh \
 	-C "$work" runtime-source.tar local-probe.crt "$mihomo_name" "$yq_name"
 ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf -' <"$work/guest-inputs.tar"
@@ -536,6 +549,7 @@ expected_transfer=$(printf '%s\n' \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-migration-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-components-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-compatibility-native-qualify.sh")" \
+	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-opkg-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-maintenance-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-network-management-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-rules-dashboard-qualify.sh")" \
@@ -545,7 +559,7 @@ expected_transfer=$(printf '%s\n' \
 	"$(sha256_file "$work/$mihomo_name")" \
 	"$(sha256_file "$work/$yq_name")")
 actual_transfer=$(ssh $ssh_common root@127.0.0.1 \
-	"sha256sum /tmp/deploy-openwrt-remote.sh /tmp/update-openwrt-plugins-remote.sh /tmp/observe-openwrt.uc /tmp/guest-common.sh /tmp/guest-qualify.sh /tmp/guest-runtime-qualify.sh /tmp/guest-package-qualify.sh /tmp/guest-native-qualify.sh /tmp/guest-setup-qualify.sh /tmp/guest-migration-qualify.sh /tmp/guest-components-qualify.sh /tmp/guest-compatibility-native-qualify.sh /tmp/guest-maintenance-qualify.sh /tmp/guest-network-management-qualify.sh /tmp/guest-rules-dashboard-qualify.sh /tmp/guest-transfer-qualify.sh /tmp/runtime-source.tar /tmp/local-probe.crt /tmp/$mihomo_name /tmp/$yq_name | awk '{print \$1}'")
+	"sha256sum /tmp/deploy-openwrt-remote.sh /tmp/update-openwrt-plugins-remote.sh /tmp/observe-openwrt.uc /tmp/guest-common.sh /tmp/guest-qualify.sh /tmp/guest-runtime-qualify.sh /tmp/guest-package-qualify.sh /tmp/guest-native-qualify.sh /tmp/guest-setup-qualify.sh /tmp/guest-migration-qualify.sh /tmp/guest-components-qualify.sh /tmp/guest-compatibility-native-qualify.sh /tmp/guest-opkg-qualify.sh /tmp/guest-maintenance-qualify.sh /tmp/guest-network-management-qualify.sh /tmp/guest-rules-dashboard-qualify.sh /tmp/guest-transfer-qualify.sh /tmp/runtime-source.tar /tmp/local-probe.crt /tmp/$mihomo_name /tmp/$yq_name | awk '{print \$1}'")
 [ "$actual_transfer" = "$expected_transfer" ] || {
 	echo "OpenWrt qualification source transfer mismatch" >&2
 	exit 1
@@ -577,7 +591,7 @@ run_guest() {
 	guest_arguments="'$probe_port'"
 	case "$guest_kind" in
 		management) guest_script=guest-qualify.sh; guest_arguments= ;;
-		package) guest_arguments="'$package_manifest_sha' '$probe_port' '$feed_url'" ;;
+		package|opkg) guest_arguments="'$package_manifest_sha' '$probe_port' '$feed_url'" ;;
 		compatibility) guest_script=guest-compatibility-native-qualify.sh; guest_arguments="'$feed_url' '$probe_port'" ;;
 		native|setup|migration)
 			ssh $ssh_common root@127.0.0.1 "touch /tmp/netfleet-${guest_kind}-vm-authorized" ;;
@@ -652,6 +666,10 @@ if [ -n "$package_archive" ] && { [ "$lane_mode" = all ] || [ "$lane_mode" = pac
 	run_guest package-runtime runtime
 	run_guest package package
 fi
+if [ -n "$package_archive" ] && [ "$lane_mode" = opkg ]; then
+	boot_clean_vm
+	run_guest opkg opkg
+fi
 
 stage=receipt
 progress 'Validating guest results and writing the receipt'
@@ -675,6 +693,7 @@ required = {
     "migration": {"management", "runtime", "migration"},
     "package": {"package-management", "package-runtime", "package"},
     "compatibility": {"compatibility"},
+    "opkg": {"opkg"},
 }[mode]
 if package_sha and mode == "all":
     required |= {"package-management", "package-runtime", "package"}
@@ -691,7 +710,7 @@ for name in sorted(required):
             and isinstance(checks, dict) and checks
             and all(item is True for item in checks.values())):
         raise SystemExit(f"OpenWrt {name} qualification returned an invalid receipt")
-    if name == "package" and result.get("manifest_sha256") != package_sha:
+    if name in ("package", "opkg") and result.get("manifest_sha256") != package_sha:
         raise SystemExit("OpenWrt package qualification manifest mismatch")
     lanes[name] = result
 runtime = lanes.get("runtime", lanes.get("package-runtime", {}))

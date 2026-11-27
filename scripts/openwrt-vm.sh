@@ -15,8 +15,9 @@ Individual diagnostic lanes cannot authorize deployment. No real devices are con
 Options:
   --ref <git-ref>   Source ref to qualify (default: origin/main)
   --test-ref <ref>  Use revised VM tests with identical product source
-  --packages <dir>  Also install and qualify the exact APK candidate directory
-  --diagnostic <lane>  Run native, setup, migration, runtime, package, or compatibility diagnostics
+  --packages <dir>  Also install and qualify the exact APK or IPK candidate directory
+  --openwrt-version <ver>  Official OpenWrt VM image version (25.12.5 or 24.10.2; default 25.12.5)
+  --diagnostic <lane>  Run native, setup, migration, runtime, package, compatibility, or opkg diagnostics
   --release-lane <lane>  Run one isolated release lane (native, setup, migration, or package)
   --release-harness <commit>  Use the named VM runner and guest tests for release recovery
   --core-package <dir>  Qualify a same-binary core architecture variant against --base-qualification
@@ -36,6 +37,7 @@ die() {
 
 test_ref=""
 source_ref=origin/main
+openwrt_version=${NETFLEET_OPENWRT_VERSION:-25.12.5}
 output=""
 packages=""
 diagnostic=all
@@ -68,10 +70,16 @@ while (($#)); do
 			packages=$2
 			shift 2
 			;;
+		--openwrt-version)
+			(($# >= 2)) || die "--openwrt-version requires a version"
+			openwrt_version=$2
+			case "$openwrt_version" in 25.12.5|24.10.2) ;; *) die "unsupported openwrt version: $openwrt_version" ;; esac
+			shift 2
+			;;
 		--diagnostic)
 			(($# >= 2)) || die "--diagnostic requires a lane"
 			diagnostic=$2
-			case "$diagnostic" in native|setup|migration|runtime|package|compatibility) ;; *) die "unknown diagnostic lane: $diagnostic" ;; esac
+			case "$diagnostic" in native|setup|migration|runtime|package|compatibility|opkg) ;; *) die "unknown diagnostic lane: $diagnostic" ;; esac
 			shift 2
 			;;
 		--release-lane)
@@ -120,7 +128,8 @@ done
 [[ -z "$compat_package" || "$diagnostic" == compatibility && -n "$packages" ]] || die "--compat-package requires compatibility diagnostic and --packages"
 [[ -z "$plugin_packages" || "$diagnostic" == all || "$diagnostic" == native ]] || die "plugin packages require the full suite or native diagnostic lane"
 [[ "$diagnostic" != package || -n "$packages" ]] || die "package diagnostic requires --packages"
-[[ "$diagnostic" == all || "$diagnostic" == package || "$diagnostic" == setup || "$diagnostic" == compatibility || -z "$packages" ]] || die "this diagnostic does not accept --packages"
+[[ "$diagnostic" != opkg || -n "$packages" ]] || die "opkg diagnostic requires --packages"
+[[ "$diagnostic" == all || "$diagnostic" == package || "$diagnostic" == setup || "$diagnostic" == compatibility || "$diagnostic" == opkg || -z "$packages" ]] || die "this diagnostic does not accept --packages"
 if [[ -n "$release_lane" ]]; then
 	[[ "$diagnostic" == all && -z "$test_ref$plugin_packages" ]] ||
 		die 'release lanes require the candidate source and cannot be combined with diagnostics or plugin tests'
@@ -307,9 +316,29 @@ print(json.dumps(identity))
 PY
 )
 	fi
-	"$source_dir/scripts/verify-netfleet-release.py" \
-		--directory "$packages" --source-commit "$package_commit" --source-tree "$package_tree" >/dev/null
-	python3 - "$packages/manifest.json" <<'PY'
+	if [[ "$diagnostic" == opkg ]]; then
+		python3 - "$packages" "$repo_dir/scripts/netfleet_usign.py" "$package_commit" "$package_tree" <<'PY'
+import importlib.util, json, sys
+from pathlib import Path
+pkg_dir = Path(sys.argv[1])
+manifest = json.loads((pkg_dir / "manifest.json").read_text())
+if (manifest.get("package_format") != "ipk" or manifest.get("package_arch") != "all"
+        or manifest.get("build_target_arch") != "aarch64_generic"
+        or manifest.get("source_commit") != sys.argv[3]
+        or manifest.get("source_tree") != sys.argv[4]):
+    raise SystemExit("openwrt-vm: ipk candidate metadata mismatch")
+spec = importlib.util.spec_from_file_location("netfleet_usign", sys.argv[2])
+usign = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(usign)
+if not usign.verify_file(pkg_dir / "opl-netfleet-usign.pub", pkg_dir / "Packages", pkg_dir / "Packages.sig"):
+    raise SystemExit("openwrt-vm: invalid opkg index signature")
+if not usign.verify_file(pkg_dir / "opl-netfleet-bundle.pub", pkg_dir / "release-manifest.json", pkg_dir / "release-manifest.json.sig"):
+    raise SystemExit("openwrt-vm: invalid release bundle signature")
+PY
+	else
+		"$source_dir/scripts/verify-netfleet-release.py" \
+			--directory "$packages" --source-commit "$package_commit" --source-tree "$package_tree" >/dev/null
+		python3 - "$packages/manifest.json" <<'PY'
 import json, sys
 from pathlib import Path
 manifest = json.loads(Path(sys.argv[1]).read_text())
@@ -320,6 +349,7 @@ if (
 ):
     raise SystemExit("openwrt-vm: package candidate must be a noarch APK set built for aarch64_generic")
 PY
+	fi
 	package_manifest_sha=$(shasum -a 256 "$packages/manifest.json" | awk '{print $1}')
 	if [[ -n "$release_lane" ]]; then
 		python3 "$source_dir/scripts/openwrt-vm/component-fixtures.py" \
@@ -334,6 +364,7 @@ fi
 
 rm -f -- "$output_dir/$output_name"
 cache_root=${XDG_CACHE_HOME:-$HOME/.cache}
+NETFLEET_OPENWRT_VERSION=$openwrt_version \
 NETFLEET_CORE_PACKAGE="$core_package" \
 NETFLEET_TEST_IDENTITY="$test_identity" \
 NETFLEET_SOURCE_COMMIT=$source_commit \

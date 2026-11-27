@@ -465,7 +465,7 @@ function componentsPage(controller) {
 				E('span', {}, resultTime(time, recordedCheck ? '检查于' : '收到结果') || '检查时间未记录')
 			], Boolean(dashboardError)));
 	}
-	const sourceStates = [ E('span', {}, !snapshot.supported ? '软件包：当前安装方式不支持包管理' :
+	const sourceStates = [ E('span', {}, !snapshot.supported ? (snapshot.package_manager === 'opkg' ? '软件包：当前设备通过 opkg 管理系统包，此处只读展示版本（请通过 opkg 或终端更新）' : '软件包：当前安装方式不支持包管理') :
 		!feed.configured ? '软件包：未配置更新源' : '软件包：' + (feed.error ? '上次检查失败 · ' : '') + (resultTime(feed.checked_at, '检查于') || (feed.error ? '检查时间未记录' : '尚未检查更新'))) ];
 	if (dashboard) sourceStates.push(E('span', {}, !dashboard.managed ? errorLabel(dashboard.reason || 'dashboard_managed_externally') :
 		'面板：' + (controller.componentsChecking ? '正在检查更新…' : controller.dashboardBusy ? '正在更新资源…' :
@@ -523,7 +523,7 @@ function componentsPage(controller) {
 		if (managementRequired(plugin)) state.push(E('small', {}, '不可禁用：管理界面必需'));
 		moduleRows.push(E('tr', {}, [ E('td', {}, [ E('strong', {}, pluginLabel(plugin)), E('small', { 'class': 'netfleet-plugin-id' }, plugin.id),
 			plugin.instance && plugin.instance !== 'default' ? E('small', {}, '实例：' + plugin.instance) : '' ]),
-			E('td', {}, [E('span', { 'class': 'netfleet-plugin-kind' }, product ? product.packages.some(function(item) { return item.name === plugin.package; }) ? '默认产品能力' : '独立安装的插件' : plugin.runtime === 'service' ? '服务插件' : '进程插件'), E('small', {}, pluginPurpose(plugin))]),
+			E('td', {}, [E('span', { 'class': 'netfleet-plugin-kind' }, plugin.asset_scope === 'bundle' ? '默认产品能力' : product ? product.packages.some(function(item) { return item.name === plugin.package; }) ? '默认产品能力' : '独立安装的插件' : plugin.runtime === 'service' ? '服务插件' : '进程插件'), E('small', {}, pluginPurpose(plugin))]),
 			E('td', {}, [E('strong', {}, displayVersion(rawVersion)), E('details', {}, [E('summary', {}, '版本详情'), E('small', {}, rawVersion || '未记录'), E('small', {}, plugin.package || '')])]),
 			E('td', { 'class': 'netfleet-component-actions' }, config.length ? config : E('small', {}, '无需单独配置')),
 			E('td', { 'class': 'netfleet-component-actions' }, state) ]));
@@ -569,7 +569,7 @@ function componentsPage(controller) {
 		E('div', { 'class': 'netfleet-component-table netfleet-plugin-table' }, E('table', { 'class': 'table' }, [
 			E('thead', {}, E('tr', {}, ['插件', '分类与用途', '版本', '配置', '运行管理'].map(function(label) { return E('th', {}, label); }))), E('tbody', {}, moduleRows.length ? moduleRows : [E('tr', {}, E('td', { 'colspan': 5 }, '当前没有可管理的功能插件'))])
 		])),
-		pluginPackages(controller, snapshot),
+		snapshot.supported || snapshot.plugin_packages && snapshot.plugin_packages.length ? pluginPackages(controller, snapshot) : E('p', { 'class': 'netfleet-follow-note' }, '当前安装方式通过单一产品包交付默认功能插件，请使用系统软件包管理维护。'),
 		E('details', { 'class': 'netfleet-component-details' }, [E('summary', {}, '高级：服务组合与实例'),
 			E('p', {}, '调整插件启停、服务提供者和实例配置。应用前会校验依赖并展示影响。'),
 			button('编辑服务组合', function() { return compositionDialog(controller); }, active)])
@@ -584,7 +584,7 @@ function componentsPage(controller) {
 		dashboard && dashboard.release_url && dashboard.release_url.startsWith('https://github.com/') ? [ E('dt', {}, '面板发行说明'), E('dd', {}, E('a', { 'href': dashboard.release_url, 'target': '_blank', 'rel': 'noopener' }, 'Zashboard 发行说明 ↗')) ] : ''
 	)) ]));
 	const missing = (snapshot.dependencies || []).filter(function(item) { return !item.available; });
-	if (section === 'software' && snapshot.supported && (snapshot.dependencies || []).length) content.push(E('details', { 'open': missing.length ? true : null, 'class': 'netfleet-component-details' }, [ E('summary', { 'class': missing.length ? 'is-warning' : '' }, missing.length ? '缺少 ' + missing.length + ' 项运行依赖' : '运行依赖正常'),
+	if (section === 'software' && (snapshot.supported || snapshot.package_manager === 'opkg') && (snapshot.dependencies || []).length) content.push(E('details', { 'open': missing.length ? true : null, 'class': 'netfleet-component-details' }, [ E('summary', { 'class': missing.length ? 'is-warning' : '' }, missing.length ? '缺少 ' + missing.length + ' 项运行依赖' : '运行依赖正常'),
 		missing.length ? E('p', {}, '请通过 OpenWrt 软件包管理安装缺少的依赖。') : '',
 		E('ul', { 'class': 'netfleet-dependencies' }, (snapshot.dependencies || []).map(function(item) { return E('li', {}, [E('strong', {}, item.label), E('span', { 'class': item.available ? '' : 'is-warning' }, item.available ? item.installed_version || '已安装' : '缺少')]); }))
 	]));

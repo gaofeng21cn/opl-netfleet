@@ -9,14 +9,24 @@ die() {
 
 [ "${NETFLEET_INSTALL_TESTING:-0}" = 1 ] || [ "$(id -u)" = 0 ] ||
 	die 'must run as root on OpenWrt'
-command -v apk >/dev/null 2>&1 || die 'OpenWrt APK package manager is required'
+
+pkg_mgr=
+if command -v apk >/dev/null 2>&1; then
+	pkg_mgr=apk
+elif command -v opkg >/dev/null 2>&1; then
+	pkg_mgr=opkg
+else
+	die 'OpenWrt APK or OPKG package manager is required'
+fi
 
 command -v uci >/dev/null 2>&1 || die 'OpenWrt UCI is required'
 command -v jsonfilter >/dev/null 2>&1 || die 'OpenWrt jsonfilter is required'
 
-# Layout migrations need their own rollback qualification, including optional packages.
-if apk info -e opl-netfleet >/dev/null 2>&1 && ! apk info -e opl-netfleet-kernel >/dev/null 2>&1; then
-	die 'legacy monolith migration requires a qualified package transaction; installed packages were not changed'
+if [ "$pkg_mgr" = apk ]; then
+	# Layout migrations need their own rollback qualification, including optional packages.
+	if apk info -e opl-netfleet >/dev/null 2>&1 && ! apk info -e opl-netfleet-kernel >/dev/null 2>&1; then
+		die 'legacy monolith migration requires a qualified package transaction; installed packages were not changed'
+	fi
 fi
 
 feed_base=${NETFLEET_FEED_BASE:-https://github.com/gaofeng21cn/opl-netfleet/releases/latest/download}
@@ -41,9 +51,13 @@ case "$compat_feed" in
 esac
 case "$compat_feed" in *[[:space:]]*) die 'compatibility feed URL must not contain whitespace' ;; esac
 
+if [ "$pkg_mgr" = opkg ] && [ "$install_profile" = full ]; then
+	die 'full compatibility engine profile is only available on apk targets'
+fi
+
 load_https=0
-if [ "$install_profile" = full ] && ! apk info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1; then
- load_https=1
+if [ "$pkg_mgr" = apk ] && [ "$install_profile" = full ] && ! apk info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1; then
+	load_https=1
 fi
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/netfleet-install.XXXXXX")
@@ -65,6 +79,81 @@ fetch() {
 		die 'uclient-fetch, wget, or curl is required'
 	fi
 }
+
+if [ "$pkg_mgr" = opkg ]; then
+	command -v usign >/dev/null 2>&1 || die 'OpenWrt usign is required for opkg signature verification'
+	command -v gzip >/dev/null 2>&1 || die 'gzip is required for opkg feed verification'
+
+	opkg_key_name=opl-netfleet-usign.pub
+	fetch "$feed_base/$opkg_key_name" "$work/$opkg_key_name"
+	[ -s "$work/$opkg_key_name" ] || die 'downloaded usign public key is empty'
+	grep -Fq -- 'untrusted comment:' "$work/$opkg_key_name" || die 'downloaded usign public key is invalid'
+	key_id=$(usign -F -p "$work/$opkg_key_name" 2>/dev/null || true)
+	case "$key_id" in
+		''|*[!0-9a-f]*) die 'invalid usign key fingerprint' ;;
+	esac
+	[ "${#key_id}" -eq 16 ] || die 'invalid usign key fingerprint length'
+
+	fetch "$feed_base/Packages.gz" "$work/Packages.gz"
+	fetch "$feed_base/Packages.sig" "$work/Packages.sig"
+	gzip -dc "$work/Packages.gz" >"$work/Packages" || die 'downloaded Packages.gz is corrupted'
+	usign -V -p "$work/$opkg_key_name" -x "$work/Packages.sig" -m "$work/Packages" >/dev/null 2>&1 ||
+		die 'opkg feed index signature verification failed'
+
+	opkg_keys_dir=${NETFLEET_OPKG_KEYS_DIR:-/etc/opkg/keys}
+	opkg_feeds_file=${NETFLEET_OPKG_CUSTOMFEEDS_FILE:-/etc/opkg/customfeeds.conf}
+	release_feed_file=${NETFLEET_RELEASE_FEED_FILE:-/etc/opl-netfleet/release-feed.json}
+	mkdir -p "$opkg_keys_dir" "$(dirname "$opkg_feeds_file")" "$(dirname "$release_feed_file")"
+
+	cp "$work/$opkg_key_name" "$opkg_keys_dir/.$key_id.$$"
+	chmod 0644 "$opkg_keys_dir/.$key_id.$$"
+	mv -f "$opkg_keys_dir/.$key_id.$$" "$opkg_keys_dir/$key_id"
+
+	feeds_staged="$opkg_feeds_file.$$"
+	if [ -f "$opkg_feeds_file" ]; then
+		grep -Ev '^[[:space:]]*src(/gz)?[[:space:]]+opl_netfleet([[:space:]]|$)' "$opkg_feeds_file" >"$feeds_staged" || true
+	else
+		: >"$feeds_staged"
+	fi
+	printf 'src/gz opl_netfleet %s\n' "$feed_base" >>"$feeds_staged"
+	chmod 0644 "$feeds_staged"
+	mv -f "$feeds_staged" "$opkg_feeds_file"
+
+	printf '{"schema":"opl-netfleet-release-feed.v1","url":"%s"}\n' "$feed_base" >"$release_feed_file.$$"
+	chmod 0600 "$release_feed_file.$$"
+	mv -f "$release_feed_file.$$" "$release_feed_file"
+
+	for index_attempt in 1 2 3; do
+		if opkg update; then break; fi
+		[ "$index_attempt" -lt 3 ] || die 'opkg package indexes unavailable; packages were not changed'
+		sleep "$((index_attempt * 2))"
+	done
+
+	set -- opl-netfleet luci-app-netfleet
+	if opkg list-installed mihomo-meta 2>/dev/null | grep -Eq '^mihomo-meta '; then
+		set -- "$@" mihomo-meta
+	elif [ ! -e /usr/bin/mihomo ] || { [ -L /usr/bin/mihomo ] && [ "$(readlink /usr/bin/mihomo 2>/dev/null || true)" = /usr/libexec/mihomo ]; }; then
+		set -- "$@" mihomo-meta
+	fi
+
+	to_install=
+	to_upgrade=
+	for pkg in "$@"; do
+		if opkg list-installed "$pkg" 2>/dev/null | grep -Eq "^${pkg} "; then
+			to_upgrade="$to_upgrade $pkg"
+		else
+			to_install="$to_install $pkg"
+		fi
+	done
+	if [ -n "$to_install" ]; then
+		opkg install $to_install
+	fi
+	if [ -n "$to_upgrade" ]; then
+		opkg upgrade $to_upgrade
+	fi
+	printf 'NetFleet packages installed from %s; open LuCI to review and confirm first takeover.\n' "$feed_base"
+	exit 0
+fi
 
 # OpenWrt APK invokes wget through PATH. Keep the reliable curl transport local
 # to this installer; APK still authenticates all indexes and package contents.

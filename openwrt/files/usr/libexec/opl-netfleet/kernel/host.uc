@@ -230,19 +230,31 @@ function plugin_files(directory, owner, relative, files, identities) {
 		}
 	}
 };
-function describe(root, id, owner) {
-	const directory = `${root}/plugins/${id}`, path = `${directory}/manifest.json`;
+function describe(plugins_dir, id, owner, asset_scope) {
+	const directory = `${plugins_dir}/${id}`, path = `${directory}/manifest.json`;
 	if (fs.lstat(directory) == null) return failure('plugin_not_installed');
 	try {
-		if (!trusted(`${root}/plugins`, 'directory', owner) || !trusted(directory, 'directory', owner) ||
+		if (!trusted(plugins_dir, 'directory', owner) || !trusted(directory, 'directory', owner) ||
 			!trusted(path, 'file', owner) || fs.lstat(path).size > 16384) return failure('plugin_files_unsafe');
 		const manifest = read_json(path), error = descriptor_error(manifest, id);
 		if (error != null) return failure(error);
-		return { ok: true, manifest, directory, process: manifest.schema == 'opl-netfleet-plugin.v1', described: true };
-	} catch (error) { return failure(error.message); }
+		return { ok: true, manifest, directory, plugins_dir, asset_scope, process: manifest.schema == 'opl-netfleet-plugin.v1', described: true };
+	} catch (error) {
+		if (index(error?.message ?? '', ' ') >= 0) warn(sprintf('host describe runtime error: %s (%J)\n', error.message, error.stacktrace?.[0]));
+		return failure(error.message);
+	}
 };
-function inspect(root, id, owner, adapter, cached) {
-	const description = describe(root, id, owner);
+function describe_any(resolved_root, id, options) {
+	const roots = [`${resolved_root}/plugins`, ...(options.extra_plugin_roots ?? options.adapter?.extra_plugin_roots ?? [])];
+	const primary_scope = fs.lstat(`${resolved_root}/../release-manifest.json`) != null ? 'bundle' : 'external';
+	for (let dir in roots) {
+		if (type(dir) != 'string' || fs.lstat(`${dir}/${id}`) == null) continue;
+		return describe(dir, id, options.trusted_owner, dir == `${resolved_root}/plugins` ? primary_scope : 'external');
+	}
+	return failure('plugin_not_installed');
+};
+function inspect(plugins_dir, id, owner, adapter, cached, asset_scope) {
+	const description = describe(plugins_dir, id, owner, asset_scope);
 	if (!description.ok) return description;
 	const directory = description.directory, manifest = description.manifest;
 	try {
@@ -252,22 +264,25 @@ function inspect(root, id, owner, adapter, cached) {
 		if (process && (!trusted(`${directory}/control`, 'file', owner) || !(fs.lstat(`${directory}/control`).mode & 0111))) return failure('plugin_files_unsafe');
 		for (let name, service in manifest.services ?? {}) if (index(files, `${directory}/${service.module}`) < 0) return failure('plugin_module_missing');
 		for (let page in manifest.ui ?? []) if (index(files, `${directory}/${page.module}`) < 0) return failure('plugin_ui_module_missing');
-		const cache_root = cached && root == adapter.paths.installed_root ? adapter.paths.inspection_cache : null;
+		const cache_root = cached && (plugins_dir == `${adapter.paths.installed_root}/plugins` || fs.realpath(plugins_dir) == fs.realpath(`${adapter.paths.installed_root}/plugins`)) ? adapter.paths.inspection_cache : null;
 		const cache_path = cache_root == null ? null : `${cache_root}/${id}.json`;
 		const signature = sprintf('%J', identities), now = time();
 		let record = null;
 		if (cache_path != null && trusted(cache_root, 'directory', owner) && trusted(cache_path, 'file', owner) &&
 			!(fs.lstat(cache_path).mode & 077) && fs.lstat(cache_path).size <= 131072) record = read_json(cache_path);
-		let digest = record?.signature == signature && record?.root == root && type(record?.checked_at) == 'int' &&
+		let digest = record?.signature == signature && record?.root == plugins_dir && type(record?.checked_at) == 'int' &&
 			now >= record.checked_at && now - record.checked_at < 5 ? record.revision : null;
 		if (type(digest) != 'string' || !match(digest, /^[a-f0-9]{64}$/)) {
 			digest = adapter.inspect_digest(directory, files);
 			if (cache_path != null && type(digest) == 'string' && match(digest, /^[a-f0-9]{64}$/) && mkdir_private(cache_root, owner))
-				atomic_json(cache_path, { root, signature, revision: digest, checked_at: now });
+				atomic_json(cache_path, { root: plugins_dir, signature, revision: digest, checked_at: now });
 		}
 		if (type(digest) != 'string' || !match(digest, /^[a-f0-9]{64}$/)) return failure('plugin_identity_unreadable');
-		return { ok: true, manifest: manifest, directory: directory, entry: `${directory}/control`, revision: digest, process: process };
-	} catch (error) { return failure(error.message ?? 'plugin_inspection_failed'); }
+		return { ok: true, manifest: manifest, directory: directory, plugins_dir, asset_scope, entry: `${directory}/control`, revision: digest, process: process };
+	} catch (error) {
+		if (index(error?.message ?? '', ' ') >= 0) warn(sprintf('host inspect runtime error: %s (%J)\n', error.message, error.stacktrace?.[0]));
+		return failure(error.message ?? 'plugin_inspection_failed');
+	}
 };
 
 create = function(root, options) {
@@ -287,10 +302,22 @@ create = function(root, options) {
 	const delegated = adapter.coordinator_parent(`${maintenance_root}/.coordinator`);
 	let closed = false;
 	let inventory;
+	const bundle_mode = fs.lstat(`${root}/../release-manifest.json`) != null;
+	const primary_dir = `${root}/plugins`;
+	const plugin_roots = [{ dir: primary_dir, scope: bundle_mode ? 'bundle' : 'external' }];
+	for (let extra_dir in (options.extra_plugin_roots ?? adapter.extra_plugin_roots ?? []))
+		if (type(extra_dir) == 'string' && fs.lstat(extra_dir)?.type == 'directory')
+			push(plugin_roots, { dir: extra_dir, scope: 'external' });
 	if (options.inspected == null)
-		for (let id in sort(fs.lsdir(`${root}/plugins`) ?? [])) if (valid_id(id)) found[id] = options.lazy_inspection ? describe(root, id, owner) : inspect(root, id, owner, adapter, options.code_locks != false);
+		for (let root_entry in plugin_roots)
+			for (let id in sort(fs.lsdir(root_entry.dir) ?? []))
+				if (valid_id(id) && found[id] == null)
+					found[id] = options.lazy_inspection
+						? describe(root_entry.dir, id, owner, root_entry.scope)
+						: inspect(root_entry.dir, id, owner, adapter, options.code_locks != false, root_entry.scope);
 	function inspected(id) {
-		if (found[id]?.described) found[id] = inspect(root, id, owner, adapter, options.code_locks != false);
+		if (found[id]?.described)
+			found[id] = inspect(found[id].plugins_dir ?? primary_dir, id, owner, adapter, options.code_locks != false, found[id].asset_scope ?? 'external');
 		return found[id];
 	};
 	function inspect_all() { for (let id in keys(found)) inspected(id); };
@@ -331,7 +358,7 @@ create = function(root, options) {
 			if (lease == null || !lease.lock('sn')) { lease?.close(); raise(`plugin_code_busy:${id}`); }
 			leases[id] = lease;
 			if (blocked(id)) raise(`plugin_package_maintenance:${id}`);
-			const current = inspect(root, id, owner, adapter);
+			const current = inspect(found[id]?.plugins_dir ?? primary_dir, id, owner, adapter, false, found[id]?.asset_scope ?? 'external');
 			if (!current.ok || current.revision != found[id].revision) raise(`plugin_code_changed:${id}`);
 		}
 	};
@@ -407,6 +434,7 @@ create = function(root, options) {
 				for (let name, definition in manifest.services) if (system.bindings[name] == id) graph(name, definition.version, {}, {}, {});
 			} catch (error) { reason = error.message; }
 			push(rows, { ...manifest, kind: 'plugin', runtime: item.process ? 'process' : 'service', revision: item.revision,
+				asset_scope: item.asset_scope ?? 'external',
 				ui: filter(manifest.ui ?? [], page => instance_id == 'default' || page.scope != 'host'),
 				dependencies: dependencies, installed_version: versions?.[manifest.package] ?? null,
 				state: reason == null ? 'available' : 'unavailable', reason: reason,
@@ -757,7 +785,7 @@ function management(action, argv, root, options) {
 		const instance_id = input.instance ?? 'default';
 		if (instance_id != 'default' && system_profile(resolved_root, options).instances?.[instance_id] == null)
 			raise('plugin_instance_unknown');
-		const precheck = describe(resolved_root, input.id, options.trusted_owner);
+		const precheck = describe_any(resolved_root, input.id, options);
 		local = precheck?.manifest?.actions?.[input.action]?.lock == 'plugin';
 	}
 	const lock = local ? private_action_lock(options, input.id, action != 'plugin-read') : adapter.network_lock(options.network_lock, action != 'plugin-read');

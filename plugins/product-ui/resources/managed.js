@@ -20,6 +20,8 @@ function errorLabel(code) {
   installed_version_changed: '安装状态已变化，请重新读取后确认',
   invalid_plugin_package_request: '插件安装请求无效，请重新读取后操作',
   package_plan_unreadable: '无法确认软件包变更计划，未开始安装',
+  opkg_read_only: '当前设备由 opkg 管理，页面暂提供版本与依赖只读状态',
+  package_manager_unsupported: '当前包管理模式不支持页面直接更新',
 		update_cancelled: '已取消更新，尚未替换软件包',
 		update_deferred: '现有连接尚未结束，已延后更新并保留旧版；空闲时可重新更新',
 		update_prepare_failed: '无法安全准备更新，尚未替换软件包',
