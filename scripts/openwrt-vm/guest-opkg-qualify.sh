@@ -129,7 +129,7 @@ done
 
 ubus -t 20 call opl-netfleet native_setup_get '{}' >"$work/rpc-setup.json"
 assert_json "$work/rpc-setup.json" '@.ok' true
-assert_json "$work/rpc-setup.json" '@.result.ready' true
+assert_json "$work/rpc-setup.json" '@.result.backend' nikki-mihomo
 ubus -t 20 call opl-netfleet status '{}' >"$work/rpc-status.json"
 assert_json "$work/rpc-status.json" '@.error' policy_unreadable
 ubus -t 20 call opl-netfleet.plugins plugins_list '{}' >"$work/rpc-plugins.json"
