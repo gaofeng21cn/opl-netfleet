@@ -212,7 +212,7 @@ export function ThroughputSparkline({
   const recent = points.slice(-24);
   const series = recent.map((point) => point.download_bps ?? point.upload_bps ?? 0);
   if (series.length < 2) {
-    return <span className="muted mono-xs">No samples</span>;
+    return <span className="muted mono-xs">暂无采样</span>;
   }
   const width = 112;
   const height = 26;
@@ -262,8 +262,8 @@ export function PulseStrip({
       role="img"
       aria-label={
         slice.length
-          ? `${slice.length} telemetry windows (${online ? "online" : "offline"})`
-          : "No heartbeat history"
+          ? `${slice.length} 个心跳采样窗口（${online ? "在线" : "离线"}）`
+          : "暂无心跳历史"
       }
     >
       {Array.from({ length: slots }, (_, index) => {
@@ -289,8 +289,8 @@ export function PulseStrip({
             {point && (
               <title>
                 {`${formatShortTime(point.at)} · ${
-                  point.rtt_ms != null ? `${point.rtt_ms} ms` : "no RTT"
-                } · Down ${formatBps(point.download_bps)}`}
+                  point.rtt_ms != null ? `${point.rtt_ms} ms` : "无 RTT"
+                } · 下行 ${formatBps(point.download_bps)}`}
               </title>
             )}
           </rect>
@@ -310,9 +310,7 @@ export function ThroughputAreaChart({ points }: { points: Trend[] }) {
   if (recent.length < 2 || !hasAny) {
     return (
       <div className="chart-empty">
-        <p className="muted">
-          At least two rate intervals are needed to plot throughput history.
-        </p>
+        <p className="muted">至少需要 2 个速率采样窗口才能绘制吞吐趋势。</p>
       </div>
     );
   }
@@ -347,22 +345,22 @@ export function ThroughputAreaChart({ points }: { points: Trend[] }) {
         <div className="chart-legend">
           <span className="legend-item">
             <span className="legend-swatch is-primary" aria-hidden="true" />
-            Download <strong>{formatBps(latest.download_bps)}</strong>
-            <span className="muted">peak {formatBps(peakDown)}</span>
+            下行 <strong>{formatBps(latest.download_bps)}</strong>
+            <span className="muted">峰值 {formatBps(peakDown)}</span>
           </span>
           <span className="legend-item">
             <span className="legend-swatch is-secondary" aria-hidden="true" />
-            Upload <strong>{formatBps(latest.upload_bps)}</strong>
-            <span className="muted">peak {formatBps(peakUp)}</span>
+            上行 <strong>{formatBps(latest.upload_bps)}</strong>
+            <span className="muted">峰值 {formatBps(peakUp)}</span>
           </span>
         </div>
-        <span className="muted mono-xs">Max scale {formatBps(maxRate)}</span>
+        <span className="muted mono-xs">量程上限 {formatBps(maxRate)}</span>
       </div>
       <svg
         className="telemetry-svg"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label="Upload and download throughput telemetry"
+        aria-label="上下行吞吐趋势图"
       >
         {[0, 0.25, 0.5, 0.75, 1].map((step) => {
           const y = Number((padY + plotH * step).toFixed(1));
@@ -383,7 +381,7 @@ export function ThroughputAreaChart({ points }: { points: Trend[] }) {
       </svg>
       <div className="chart-axis mono-xs muted">
         <span>{formatShortTime(recent[0].at)}</span>
-        <span>{recent.length} windows (10m)</span>
+        <span>{recent.length} 个窗口（10 分钟粒度）</span>
         <span>{formatShortTime(latest.at)}</span>
       </div>
     </div>
@@ -395,7 +393,7 @@ export function RttBarChart({ points }: { points: Trend[] }) {
   if (!recent.length) {
     return (
       <div className="chart-empty">
-        <p className="muted">No RTT telemetry recorded in recent windows.</p>
+        <p className="muted">近期采样窗口内暂无出口 RTT 测量数据。</p>
       </div>
     );
   }
@@ -418,22 +416,22 @@ export function RttBarChart({ points }: { points: Trend[] }) {
       <div className="chart-meta-row">
         <div className="chart-legend">
           <span className="legend-item">
-            Latest <strong>{latestRtt} ms</strong>
+            最新 <strong>{latestRtt} ms</strong>
           </span>
           <span className="legend-item">
-            Avg <strong>{avgRtt} ms</strong>
+            均值 <strong>{avgRtt} ms</strong>
           </span>
           <span className="legend-item">
-            Peak <strong>{Math.max(...values)} ms</strong>
+            峰值 <strong>{Math.max(...values)} ms</strong>
           </span>
         </div>
-        <span className="muted mono-xs">Scale 0–{maxRtt} ms</span>
+        <span className="muted mono-xs">量程 0–{maxRtt} ms</span>
       </div>
       <svg
         className="telemetry-svg"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label="Measured exit RTT over time"
+        aria-label="出口 RTT 延迟柱状图"
       >
         {[0, 0.5, 1].map((step) => {
           const y = Number((padY + plotH * step).toFixed(1));
@@ -471,7 +469,7 @@ export function RttBarChart({ points }: { points: Trend[] }) {
       </svg>
       <div className="chart-axis mono-xs muted">
         <span>{formatShortTime(recent[0].at)}</span>
-        <span>{recent.length} RTT windows</span>
+        <span>{recent.length} 个延迟窗口</span>
         <span>{formatShortTime(recent[recent.length - 1].at)}</span>
       </div>
     </div>
@@ -495,7 +493,7 @@ export function QuotaProgressSvg({
       viewBox="0 0 200 8"
       preserveAspectRatio="none"
       role="img"
-      aria-label={`${Math.round(ratio * 100)}% quota remaining`}
+      aria-label={`剩余配额 ${Math.round(ratio * 100)}%`}
     >
       <rect className="quota-track" x="0" y="0" width="200" height="8" rx="4" />
       <rect

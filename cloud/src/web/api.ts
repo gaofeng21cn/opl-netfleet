@@ -1,5 +1,10 @@
 import type { Snapshot, Trend } from "../contracts.js";
 
+export type AuthUser = {
+  email: string;
+  role: "owner" | "admin";
+};
+
 export type Site = {
   id: string;
   name: string;
@@ -23,18 +28,18 @@ export type ViewMode = "table" | "cards";
 export type SiteHealth = "online" | "attention" | "offline";
 
 const ERROR_MESSAGES: Record<string, string> = {
-  unauthorized: "Authentication failed or session expired. Sign in with an authorized Gateway Access Token.",
-  origin_forbidden: "Cross-site state-changing requests are blocked by same-origin policy.",
-  invalid_site: "Site ID must match ^[a-z][a-z0-9-]{1,47}$ and display name must be 1–120 printable characters.",
-  site_exists: "A site with that identifier already exists.",
-  site_limit: "Maximum configured site capacity (64) has been reached.",
-  site_not_found: "Site was not found or belongs to another owner.",
-  invalid_subscription: "Provide a lowercase source ID, printable name, and HTTPS subscription URL.",
-  subscription_exists: "A subscription with that identifier already exists.",
-  subscription_limit: "Maximum configured subscription pool capacity (64) has been reached.",
-  subscription_not_found: "Subscription source was not found or has already been removed.",
-  invalid_grants: "Grant selection must reference valid subscription IDs (up to 16 per site).",
-  service_unavailable: "Cloud control plane temporarily unavailable. Retry in a few seconds.",
+  unauthorized: "账号、密码校验未通过，或当前用户不在管理员白名单内，或会话已过期。",
+  origin_forbidden: "同源策略已拦截跨站状态修改请求。",
+  invalid_site: "站点 ID 须符合 ^[a-z][a-z0-9-]{1,47}$，显示名称须为 1–120 个可打印字符。",
+  site_exists: "该站点 ID 已存在。",
+  site_limit: "已达到单实例最大纳管站点数量限制（64）。",
+  site_not_found: "未找到该站点，或当前账号无权操作。",
+  invalid_subscription: "请填写规范的小写订阅 ID、名称与 HTTPS 订阅链接。",
+  subscription_exists: "该订阅 ID 已存在。",
+  subscription_limit: "已达到最大订阅池数量限制（64）。",
+  subscription_not_found: "未找到该订阅源，或已被移除。",
+  invalid_grants: "授权列表须为有效订阅 ID（单站点最多 16 条）。",
+  service_unavailable: "云端控制面暂时不可用，请稍后重试。",
 };
 
 export class ApiError extends Error {
@@ -43,7 +48,7 @@ export class ApiError extends Error {
   constructor(readonly status: number, code?: string) {
     super(
       (code && ERROR_MESSAGES[code]) ||
-        `Request failed with HTTP ${status}${code ? ` (${code})` : ""}.`,
+        `请求失败（HTTP ${status}${code ? ` · ${code}` : ""}）。`,
     );
     this.code = code;
   }
@@ -97,17 +102,17 @@ export function formatBps(value: number | undefined): string {
 }
 
 export function formatRelativeTime(iso: string | undefined): string {
-  if (!iso) return "Never";
+  if (!iso) return "从未上报";
   const parsed = Date.parse(iso);
-  if (!Number.isFinite(parsed)) return "Unknown";
+  if (!Number.isFinite(parsed)) return "未知";
   const diffSec = Math.max(0, Math.round((Date.now() - parsed) / 1000));
-  if (diffSec < 10) return "just now";
-  if (diffSec < 60) return `${diffSec}s ago`;
+  if (diffSec < 10) return "刚刚";
+  if (diffSec < 60) return `${diffSec} 秒前`;
   const diffMin = Math.round(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffMin < 60) return `${diffMin} 分钟前`;
   const diffHr = Math.round(diffMin / 60);
-  if (diffHr < 48) return `${diffHr}h ago`;
-  return `${Math.round(diffHr / 24)}d ago`;
+  if (diffHr < 48) return `${diffHr} 小时前`;
+  return `${Math.round(diffHr / 24)} 天前`;
 }
 
 export function formatShortTime(iso: string | undefined): string {
@@ -119,6 +124,38 @@ export function formatShortTime(iso: string | undefined): string {
     minute: "2-digit",
     hour12: false,
   });
+}
+
+export function formatMode(mode: string | undefined): string {
+  switch (mode) {
+    case "netfleet":
+      return "NetFleet 原生";
+    case "mihomo":
+      return "Mihomo";
+    case "openwrt":
+      return "OpenWrt";
+    case "unknown":
+      return "未知模式";
+    default:
+      return mode ?? "未上报";
+  }
+}
+
+export function formatEvent(event: string | undefined): string {
+  switch (event) {
+    case "updated":
+      return "订阅已更新";
+    case "unchanged":
+      return "订阅无变化";
+    case "failed":
+      return "同步失败";
+    case "recovering":
+      return "故障恢复中";
+    case "restored":
+      return "已恢复";
+    default:
+      return event ?? "";
+  }
 }
 
 export function siteMedianRtt(site: Site): number | null {
@@ -141,20 +178,20 @@ export function classifySite(site: Site): {
 } {
   const reasons: string[] = [];
   if (!site.snapshot) {
-    reasons.push("Awaiting first heartbeat");
+    reasons.push("等待首次心跳");
   } else if (!site.online) {
-    reasons.push("Heartbeat overdue");
+    reasons.push("心跳已超时");
   }
   if (site.snapshot?.latest.recovery) {
-    reasons.push("Recovery mode active");
+    reasons.push("处于恢复模式");
   }
   if (site.snapshot && site.snapshot.latest.applied_revision !== site.revision) {
     reasons.push(
-      `Revision lag (${site.snapshot.latest.applied_revision}/${site.revision})`,
+      `待同步 (${site.snapshot.latest.applied_revision}/${site.revision})`,
     );
   }
   if (site.snapshot?.latest.event === "failed") {
-    reasons.push("Last sync event failed");
+    reasons.push("最近同步失败");
   }
 
   if (!site.online) {
@@ -163,17 +200,17 @@ export function classifySite(site: Site): {
   if (reasons.length > 0) {
     return { health: "attention", reasons };
   }
-  return { health: "online", reasons: ["Healthy"] };
+  return { health: "online", reasons: ["运行正常"] };
 }
 
 export function siteHealthLabel(health: SiteHealth): string {
   switch (health) {
     case "online":
-      return "Online";
+      return "在线";
     case "attention":
-      return "Attention";
+      return "需关注";
     case "offline":
-      return "Offline";
+      return "离线";
   }
 }
 

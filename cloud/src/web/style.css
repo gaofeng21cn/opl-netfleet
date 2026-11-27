@@ -555,7 +555,21 @@ kbd,
   gap: 6px;
   cursor: pointer;
   font-size: 12.5px;
-  text-transform: capitalize;
+}
+
+.user-badge {
+  height: 32px;
+  max-width: 190px;
+  padding: 0 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--ink-secondary);
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .theme-btn:hover {

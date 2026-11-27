@@ -72,9 +72,14 @@ async function route(request: IncomingMessage, response: ServerResponse) {
       "set-cookie": `opl_netfleet_session=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${secure ? "; Secure" : ""}`,
     });
     if (method === "POST" && path === "/api/v1/auth/login") {
-      const session = await app.login(await body(request));
-      return session
-        ? json(response, 200, { ok: true }, cookie(session, 3600))
+      const login = await app.login(await body(request));
+      return login
+        ? json(
+            response,
+            200,
+            { ok: true, user: login.user },
+            cookie(login.session, 3600),
+          )
         : json(response, 401, { error: "unauthorized" });
     }
     if (method === "POST" && path === "/api/v1/auth/logout")
@@ -87,7 +92,9 @@ async function route(request: IncomingMessage, response: ServerResponse) {
       /^\/api\/v1\/subscriptions\/([a-z][a-z0-9_-]{1,47})$/,
     );
     let result;
-    if (method === "POST" && path === "/api/v1/agent/heartbeat")
+    if (method === "GET" && path === "/api/v1/auth/me")
+      result = await app.me(headers);
+    else if (method === "POST" && path === "/api/v1/agent/heartbeat")
       result = await app.heartbeat(headers, await body(request));
     else if (method === "GET" && path === "/api/v1/agent/subscriptions")
       result = await app.subscriptions(headers);

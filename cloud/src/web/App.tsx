@@ -4,6 +4,7 @@ import {
   ApiError,
   classifySite,
   isRevisionSynced,
+  type AuthUser,
   type Site,
   type Source,
   type ThemeMode,
@@ -38,6 +39,12 @@ type Route =
 
 const THEME_STORAGE_KEY = "opl-netfleet-cloud-theme";
 
+const THEME_LABELS: Record<ThemeMode, string> = {
+  system: "跟随系统",
+  light: "浅色",
+  dark: "深色",
+};
+
 function parseHashRoute(): Route {
   const hash = window.location.hash.replace(/^#\/?/, "");
   if (hash === "subscriptions") return { page: "subscriptions" };
@@ -61,6 +68,7 @@ function hashForRoute(route: Route): string {
 
 export function App() {
   const [auth, setAuth] = useState<"loading" | "signed-out" | "signed-in">("loading");
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [sites, setSites] = useState<Site[]>([]);
   const [sources, setSources] = useState<Source[]>([]);
   const [route, setRoute] = useState<Route>(() => parseHashRoute());
@@ -130,6 +138,7 @@ export function App() {
 
   const signedOut = useCallback(() => {
     setAuth("signed-out");
+    setUser(null);
     setSites([]);
     setSources([]);
     setIssuedToken(null);
@@ -142,7 +151,7 @@ export function App() {
         signedOut();
         setError(cause.message);
       } else {
-        setError(cause instanceof Error ? cause.message : "Request failed.");
+        setError(cause instanceof Error ? cause.message : "请求失败。");
         setAuth((prev) => (prev === "loading" ? "signed-out" : prev));
       }
     },
@@ -150,10 +159,12 @@ export function App() {
   );
 
   const load = useCallback(async () => {
-    const [siteRes, subRes] = await Promise.all([
+    const [meRes, siteRes, subRes] = await Promise.all([
+      api<AuthUser>("/auth/me"),
       api<{ sites: Site[] }>("/sites"),
       api<{ subscriptions: Source[] }>("/subscriptions"),
     ]);
+    setUser(meRes);
     setSites(siteRes.sites);
     setSources(subRes.subscriptions);
     setAuth("signed-in");
@@ -218,11 +229,11 @@ export function App() {
     }
   }
 
-  async function handleLogin(token: string) {
+  async function handleLogin(email: string, password: string) {
     setBusy(true);
     setError("");
     try {
-      await api("/auth/login", "POST", { token });
+      await api("/auth/login", "POST", { email, password });
       await load();
     } catch (cause) {
       report(cause);
@@ -270,7 +281,7 @@ export function App() {
       "/sites",
       "POST",
       { id: payload.id, name: payload.name },
-      `Site "${payload.id}" created.`,
+      `站点「${payload.id}」已创建。`,
     );
     if (!created) return false;
     if (payload.issueToken) {
@@ -296,7 +307,7 @@ export function App() {
         `/subscriptions/${subDialog.source.id}`,
         "PUT",
         body,
-        `Updated subscription "${subDialog.source.id}".`,
+        `已更新订阅「${subDialog.source.id}」。`,
       );
       return !!updated;
     }
@@ -304,7 +315,7 @@ export function App() {
       "/subscriptions",
       "POST",
       payload,
-      `Encrypted and added "${payload.id}".`,
+      `已加密添加订阅「${payload.id}」。`,
     );
     return !!created;
   }
@@ -320,10 +331,10 @@ export function App() {
       return;
     }
     setConfirmState({
-      title: `Rotate Device Token · ${site.id}`,
+      title: `轮转设备 Token · ${site.id}`,
       message:
-        "Rotating issues a new one-time credential and immediately invalidates the active token on this router. Continue?",
-      confirmLabel: "Rotate Token",
+        "轮转后将生成新的一次性设备凭据，路由器当前使用的旧 Token 会立即失效。确定继续？",
+      confirmLabel: "确认轮转",
       danger: true,
       action: async () => {
         const issued = await mutate<{ id: string; device_token: string }>(
@@ -338,13 +349,18 @@ export function App() {
 
   function requestRevokeToken(site: Site) {
     setConfirmState({
-      title: `Revoke Device Token · ${site.id}`,
+      title: `吊销设备 Token · ${site.id}`,
       message:
-        "This router will immediately lose permission to report heartbeats or pull subscriptions until a new token is provisioned.",
-      confirmLabel: "Revoke Token",
+        "吊销后该路由器将立即无法上报心跳或拉取订阅更新，直到重新签发并写入新 Token。",
+      confirmLabel: "确认吊销",
       danger: true,
       action: async () => {
-        await mutate(`/sites/${site.id}/token`, "DELETE", undefined, `Revoked token for ${site.id}.`);
+        await mutate(
+          `/sites/${site.id}/token`,
+          "DELETE",
+          undefined,
+          `已吊销站点 ${site.id} 的设备 Token。`,
+        );
         setConfirmState(null);
       },
     });
@@ -352,12 +368,17 @@ export function App() {
 
   function requestDeleteSite(site: Site) {
     setConfirmState({
-      title: `Delete Site · ${site.name}`,
-      message: `Deleting "${site.id}" removes its device token, authorization grants, and stored telemetry snapshot permanently.`,
-      confirmLabel: "Delete Site",
+      title: `删除站点 · ${site.name}`,
+      message: `删除「${site.id}」将永久清除其设备凭据、订阅授权与历史遥测快照，确定继续？`,
+      confirmLabel: "删除站点",
       danger: true,
       action: async () => {
-        const ok = await mutate(`/sites/${site.id}`, "DELETE", undefined, `Deleted site ${site.id}.`);
+        const ok = await mutate(
+          `/sites/${site.id}`,
+          "DELETE",
+          undefined,
+          `已删除站点 ${site.id}。`,
+        );
         setConfirmState(null);
         if (ok && route.page === "site" && route.siteId === site.id) {
           navigate({ page: "overview" });
@@ -368,16 +389,16 @@ export function App() {
 
   function requestDeleteSubscription(source: Source) {
     setConfirmState({
-      title: `Delete Subscription · ${source.name}`,
-      message: `Removing "${source.id}" revokes it from every site's authorization list and bumps their desired revision.`,
-      confirmLabel: "Delete Subscription",
+      title: `删除订阅 · ${source.name}`,
+      message: `删除「${source.id}」会从所有已授权站点移除该订阅，并递增对应站点的期望配置版本号。`,
+      confirmLabel: "确认删除",
       danger: true,
       action: async () => {
         await mutate(
           `/subscriptions/${source.id}`,
           "DELETE",
           undefined,
-          `Removed subscription ${source.id}.`,
+          `已移除订阅 ${source.id}。`,
         );
         setConfirmState(null);
       },
@@ -389,7 +410,7 @@ export function App() {
       <main className="login-shell">
         <div className="loading-state" role="status">
           <IconRefresh spinning />
-          <span>Checking control plane session…</span>
+          <span>正在检查登录会话…</span>
         </div>
       </main>
     );
@@ -412,7 +433,7 @@ export function App() {
         <button
           type="button"
           className="drawer-backdrop"
-          aria-label="Close navigation menu"
+          aria-label="关闭导航菜单"
           onClick={() => setMobileNavOpen(false)}
         />
       )}
@@ -429,7 +450,7 @@ export function App() {
           </button>
         </div>
 
-        <nav className="sidebar-nav" aria-label="Primary">
+        <nav className="sidebar-nav" aria-label="主导航">
           <button
             type="button"
             className={route.page === "overview" ? "nav-item is-active" : "nav-item"}
@@ -437,7 +458,7 @@ export function App() {
             onClick={() => navigate({ page: "overview" })}
           >
             <IconOverview />
-            <span className="nav-label">Overview</span>
+            <span className="nav-label">站点总览</span>
           </button>
           <button
             type="button"
@@ -448,14 +469,14 @@ export function App() {
             onClick={() => navigate({ page: "subscriptions" })}
           >
             <IconSubscriptions />
-            <span className="nav-label">Subscriptions</span>
+            <span className="nav-label">订阅与授权</span>
             <span className="count-badge tabular">{sources.length}</span>
           </button>
 
           <div className="nav-section">
             <div className="nav-section-head">
               <IconSites />
-              <span>Managed Sites</span>
+              <span>纳管站点</span>
               <span className="count-badge tabular">{sites.length}</span>
             </div>
             <div className="nav-site-list">
@@ -482,7 +503,7 @@ export function App() {
                 );
               })}
               {sites.length === 0 && (
-                <span className="nav-empty muted">No sites added</span>
+                <span className="nav-empty muted">暂无站点</span>
               )}
             </div>
           </div>
@@ -496,7 +517,7 @@ export function App() {
           >
             <IconChevronRight />
             <span className="nav-label">
-              {sidebarCollapsed ? "Expand" : "Collapse sidebar"}
+              {sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
             </span>
           </button>
         </div>
@@ -508,25 +529,25 @@ export function App() {
             <button
               type="button"
               className="icon-btn mobile-menu-btn"
-              aria-label="Open navigation menu"
+              aria-label="打开导航菜单"
               onClick={() => setMobileNavOpen(true)}
             >
               <IconMenu />
             </button>
-            <nav className="breadcrumbs" aria-label="Breadcrumb">
+            <nav className="breadcrumbs" aria-label="页面路径">
               <button
                 type="button"
                 className="crumb-btn"
                 onClick={() => navigate({ page: "overview" })}
               >
-                Fleet
+                多站点
               </button>
               <IconChevronRight />
               <span className="crumb-current">
                 {route.page === "overview"
-                  ? "Overview"
+                  ? "总览"
                   : route.page === "subscriptions"
-                    ? "Subscriptions"
+                    ? "订阅与授权"
                     : activeSite?.name ?? route.siteId}
               </span>
             </nav>
@@ -539,14 +560,14 @@ export function App() {
               onClick={() => setPaletteOpen(true)}
             >
               <IconSearch />
-              <span className="search-trigger-label">Search…</span>
+              <span className="search-trigger-label">快速搜索…</span>
               <kbd className="kbd-pill">⌘K</kbd>
             </button>
             <button
               type="button"
               className="icon-btn"
-              aria-label="Refresh fleet data"
-              title={lastUpdated ? `Last synced ${lastUpdated}` : "Refresh"}
+              aria-label="刷新全网遥测"
+              title={lastUpdated ? `最近更新：${lastUpdated}` : "刷新数据"}
               disabled={busy}
               onClick={() => void load().catch(report)}
             >
@@ -556,8 +577,8 @@ export function App() {
               type="button"
               className="theme-btn"
               onClick={cycleTheme}
-              aria-label={`Switch theme (current: ${theme})`}
-              title={`Theme: ${theme}`}
+              aria-label={`切换主题（当前：${THEME_LABELS[theme]}）`}
+              title={`外观主题：${THEME_LABELS[theme]}`}
             >
               {theme === "light" ? (
                 <IconSun />
@@ -566,16 +587,22 @@ export function App() {
               ) : (
                 <IconMonitor />
               )}
-              <span className="theme-label">{theme}</span>
+              <span className="theme-label">{THEME_LABELS[theme]}</span>
             </button>
+            {user?.email && (
+              <span className="user-badge hide-xs mono-xs" title={user.email}>
+                {user.email}
+              </span>
+            )}
             <button
               type="button"
               className="btn secondary btn-sm"
               disabled={busy}
+              aria-label="退出登录"
               onClick={() => void handleLogout()}
             >
               <IconSignOut />
-              <span className="hide-xs">Sign out</span>
+              <span className="hide-xs">退出登录</span>
             </button>
           </div>
         </header>
@@ -589,7 +616,7 @@ export function App() {
                 className="btn-inline-link"
                 onClick={() => setError("")}
               >
-                Dismiss
+                关闭
               </button>
             </div>
           )}
@@ -615,7 +642,7 @@ export function App() {
                   `/sites/${siteId}/grants`,
                   "PUT",
                   { subscription_ids },
-                  `Updated authorization grants for ${siteId}.`,
+                  `已更新站点 ${siteId} 的订阅授权子集。`,
                 ))
               }
               onRotateToken={requestRotateToken}
@@ -642,7 +669,7 @@ export function App() {
                   `/sites/${siteId}/grants`,
                   "PUT",
                   { subscription_ids },
-                  `Saved subscription grants for ${siteId}.`,
+                  `已保存站点 ${siteId} 的订阅授权配置。`,
                 ))
               }
               onOpenSite={(siteId) => navigate({ page: "site", siteId })}
@@ -661,12 +688,12 @@ export function App() {
               aria-hidden="true"
             />
             <span>
-              {onlineSites}/{sites.length} online · {syncedSites} rev synced ·{" "}
-              {sources.length} encrypted subscriptions
+              {onlineSites}/{sites.length} 在线 · {syncedSites} 已同步 ·{" "}
+              {sources.length} 条加密订阅
             </span>
           </div>
           <div className="statusbar-right mono-xs muted">
-            {lastUpdated ? `Synced ${lastUpdated}` : "Polling 30s"}
+            {lastUpdated ? `更新于 ${lastUpdated}` : "每 30 秒自动刷新"}
           </div>
         </footer>
       </div>

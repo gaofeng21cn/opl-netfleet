@@ -75,6 +75,86 @@ test("Gateway identity checks active status and the normalized allow-list", asyn
   assert.equal(await inactive.authenticate("opaque"), null);
 });
 
+test("Gateway password login verifies allow-list before login, fetches identity, and logs out upstream refresh session", async () => {
+  const calls: string[] = [];
+  const provider = new OplGatewayIdentityProvider(
+    "https://gateway.example.invalid",
+    ["operator@example.invalid"],
+    async (input, init) => {
+      const url = typeof input === "string" ? input : input.url;
+      calls.push(`${init?.method ?? "GET"}:${new URL(url).pathname}`);
+      if (url.endsWith("/api/v1/auth/login")) {
+        const parsed = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        if (parsed.email === "operator@example.invalid" && parsed.password === "secret-pass") {
+          return new Response(
+            JSON.stringify({ code: 0, data: { access_token: "gw-access", refresh_token: "gw-refresh" } }),
+          );
+        }
+        return new Response(JSON.stringify({ code: 401 }), { status: 401 });
+      }
+      if (url.endsWith("/api/v1/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            code: 0,
+            data: { id: 9, email: "operator@example.invalid", status: "active", role: "owner" },
+          }),
+        );
+      }
+      if (url.endsWith("/api/v1/auth/logout")) {
+        return new Response(JSON.stringify({ code: 0 }));
+      }
+      return new Response("not found", { status: 404 });
+    },
+  );
+
+  assert.equal(await provider.authenticatePassword("blocked@example.invalid", "secret-pass"), null);
+  assert.deepEqual(calls, []);
+
+  assert.equal(await provider.authenticatePassword("operator@example.invalid", "wrong"), null);
+  assert.deepEqual(calls, ["POST:/api/v1/auth/login"]);
+  calls.length = 0;
+
+  assert.deepEqual(await provider.authenticatePassword(" OPERATOR@example.invalid ", "secret-pass"), {
+    subject: "9",
+    email: "operator@example.invalid",
+    role: "owner",
+  });
+  assert.deepEqual(calls, [
+    "POST:/api/v1/auth/login",
+    "GET:/api/v1/auth/me",
+    "POST:/api/v1/auth/logout",
+  ]);
+});
+
+test("CloudApp password login issues session cookie accepted by /me and /sites", async () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "netfleet-cloud-auth-"));
+  const sessionPath = path.join(directory, "session-key");
+  writeFileSync(sessionPath, Buffer.alloc(32, 4));
+  process.env.OPL_NETFLEET_CLOUD_SESSION_KEY_FILE = sessionPath;
+  const app = new CloudApp(new MemoryStore(), {
+    authenticate: async () => null,
+    authenticatePassword: async (email, password) =>
+      email === "operator@example.invalid" && password === "demo-pass"
+        ? { subject: "operator-1", email, role: "admin" }
+        : null,
+  });
+  try {
+    assert.equal(await app.login({ email: "operator@example.invalid", password: "bad" }), null);
+    const login = await app.login({ email: "operator@example.invalid", password: "demo-pass" });
+    assert.ok(login);
+    assert.deepEqual(login.user, { email: "operator@example.invalid", role: "admin" });
+    const cookieHeader = new Headers({ cookie: `opl_netfleet_session=${login.session}` });
+    assert.deepEqual(await app.me(cookieHeader), {
+      status: 200,
+      body: { email: "operator@example.invalid", role: "admin" },
+    });
+    assert.equal((await app.overview(cookieHeader)).status, 200);
+  } finally {
+    delete process.env.OPL_NETFLEET_CLOUD_SESSION_KEY_FILE;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("SQLite store preserves catalog and bounded site snapshots", async () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "netfleet-cloud-test-"));
   const store = new SqliteStore(path.join(directory, "store.sqlite"));

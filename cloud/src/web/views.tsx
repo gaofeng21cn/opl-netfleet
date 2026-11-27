@@ -10,6 +10,8 @@ import {
   classifySite,
   formatBps,
   formatBytes,
+  formatEvent,
+  formatMode,
   formatRelativeTime,
   isRevisionSynced,
   rttTier,
@@ -46,17 +48,19 @@ export function LoginView({
 }: {
   busy: boolean;
   error: string;
-  onLogin: (token: string) => Promise<void>;
+  onLogin: (email: string, password: string) => Promise<void>;
 }) {
-  const [showToken, setShowToken] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = event.currentTarget;
-    const raw = String(new FormData(form).get("token") ?? "").trim();
-    if (!raw) return;
-    form.reset();
-    await onLogin(raw);
+    const trimmed = email.trim();
+    if (!trimmed || !password) return;
+    const submittedPassword = password;
+    setPassword("");
+    await onLogin(trimmed, submittedPassword);
   }
 
   return (
@@ -66,32 +70,48 @@ export function LoginView({
           <BrandMark />
           <div className="login-heading">
             <h1 id="login-title">OPL NetFleet Cloud</h1>
-            <p className="muted">Multi-site gateway telemetry and encrypted subscription control plane</p>
+            <p className="muted">多站点网关性能监视与加密订阅同步控制面</p>
           </div>
         </div>
         <form className="form-stack" onSubmit={submit}>
           <div className="field-group">
-            <label htmlFor="gateway-token">Gateway Access Token</label>
+            <label htmlFor="gateway-email">OPL Gateway 账号（邮箱）</label>
+            <input
+              id="gateway-email"
+              name="email"
+              type="email"
+              autoComplete="username"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="name@example.com"
+            />
+          </div>
+          <div className="field-group">
+            <label htmlFor="gateway-password">密码</label>
             <div className="input-with-action">
               <input
-                id="gateway-token"
-                name="token"
-                type={showToken ? "text" : "password"}
-                autoComplete="off"
+                id="gateway-password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
                 required
-                placeholder="Paste authorized Gateway Bearer token"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="输入 OPL Gateway 登录密码"
               />
               <button
                 type="button"
                 className="icon-btn"
-                aria-label={showToken ? "Hide access token" : "Reveal access token"}
-                onClick={() => setShowToken((prev) => !prev)}
+                aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                onClick={() => setShowPassword((prev) => !prev)}
               >
-                <IconEye open={showToken} />
+                <IconEye open={showPassword} />
               </button>
             </div>
             <p className="field-hint">
-              Verified upstream against OPL Gateway <code>/api/v1/auth/me</code> and bound to a short-lived <code>HttpOnly; SameSite=Lax</code> cookie.
+              通过 OPL Gateway 校验身份与管理员白名单；登录成功后仅签发短期{" "}
+              <code>HttpOnly; SameSite=Lax</code> 会话 Cookie，服务端不保留登录密码。
             </p>
           </div>
           {error && (
@@ -100,7 +120,7 @@ export function LoginView({
             </p>
           )}
           <button type="submit" className="btn primary btn-full" disabled={busy}>
-            {busy ? "Verifying session…" : "Sign in"}
+            {busy ? "正在验证身份…" : "登录"}
           </button>
         </form>
       </section>
@@ -199,51 +219,51 @@ export function OverviewView({
     <div className="page-stack">
       <div className="page-header">
         <div>
-          <h1>Fleet Overview</h1>
+          <h1>多站点运行总览</h1>
           <p className="muted">
-            Live multi-site gateway status, egress latency, throughput, and desired config revision alignment.
+            集中监视全部网关在线状态、选中出口与 RTT 延迟、实时上下行速率及订阅配置版本。
           </p>
         </div>
         <div className="header-actions">
           <button type="button" className="btn secondary" onClick={onOpenSubscriptions}>
-            Manage Subscriptions ({sources.length})
+            管理订阅池（{sources.length}）
           </button>
           <button type="button" className="btn primary" onClick={onAddSite}>
             <IconPlus />
-            <span>Add Site</span>
+            <span>新增站点</span>
           </button>
         </div>
       </div>
 
-      <section className="kpi-strip" aria-label="Fleet telemetry summary">
+      <section className="kpi-strip" aria-label="全网站点汇总指标">
         <div className="kpi-cell">
-          <span className="kpi-label">SITES ONLINE</span>
+          <span className="kpi-label">在线站点</span>
           <strong className="kpi-value tabular">
             {stats.onlineCount} / {sites.length}
           </strong>
           <span className="kpi-sub muted tabular">
-            {stats.syncedCount} synced · {stats.offlineCount} offline
+            {stats.syncedCount} 已同步 · {stats.offlineCount} 离线
           </span>
         </div>
         <div className="kpi-cell">
-          <span className="kpi-label">LIVE THROUGHPUT</span>
+          <span className="kpi-label">实时总吞吐</span>
           <strong className="kpi-value tabular">↓ {formatBps(stats.totalDownBps)}</strong>
-          <span className="kpi-sub muted tabular">↑ {formatBps(stats.totalUpBps)} upload</span>
+          <span className="kpi-sub muted tabular">↑ {formatBps(stats.totalUpBps)} 上行</span>
         </div>
         <div className="kpi-cell">
-          <span className="kpi-label">MEDIAN EXIT RTT</span>
+          <span className="kpi-label">出口中位延迟</span>
           <strong className="kpi-value tabular">
-            {stats.medianRtt != null ? `${stats.medianRtt} ms` : "No RTT"}
+            {stats.medianRtt != null ? `${stats.medianRtt} ms` : "暂无 RTT"}
           </strong>
           <span className="kpi-sub muted tabular">
-            {stats.activeExits} reported capabilities
+            {stats.activeExits} 个已上报出口能力
           </span>
         </div>
         <div className="kpi-cell">
-          <span className="kpi-label">POOL &amp; ALERTS</span>
-          <strong className="kpi-value tabular">{sources.length} sources</strong>
+          <span className="kpi-label">订阅池与告警</span>
+          <strong className="kpi-value tabular">{sources.length} 条订阅</strong>
           <span className="kpi-sub muted tabular">
-            {stats.attentionCount} requiring attention
+            {stats.attentionCount} 个站点需关注
           </span>
         </div>
       </section>
@@ -253,10 +273,10 @@ export function OverviewView({
           <div className="attention-head">
             <div className="attention-title">
               <IconAlert />
-              <h2 id="attention-heading">Needs Attention</h2>
+              <h2 id="attention-heading">需要关注</h2>
             </div>
             <span className="mono-xs muted tabular">
-              {stats.attentionSites.length} site{stats.attentionSites.length === 1 ? "" : "s"}
+              共 {stats.attentionSites.length} 个站点
             </span>
           </div>
           <ul className="attention-list">
@@ -278,7 +298,7 @@ export function OverviewView({
                   className="btn-inline-link"
                   onClick={() => onOpenSite(site.id)}
                 >
-                  Inspect
+                  查看详情
                 </button>
               </li>
             ))}
@@ -289,11 +309,11 @@ export function OverviewView({
       <section className="panel" aria-labelledby="sites-directory-heading">
         <div className="panel-toolbar">
           <div className="panel-title-group">
-            <h2 id="sites-directory-heading">Sites</h2>
+            <h2 id="sites-directory-heading">站点列表</h2>
             <span className="count-badge tabular">{filteredSites.length}</span>
           </div>
           <div className="toolbar-controls">
-            <div className="filter-pills" role="group" aria-label="Filter sites by status">
+            <div className="filter-pills" role="group" aria-label="按站点状态筛选">
               {(["all", "online", "attention", "offline"] as SiteFilter[]).map((key) => (
                 <button
                   key={key}
@@ -302,43 +322,43 @@ export function OverviewView({
                   aria-pressed={filter === key}
                   onClick={() => setFilter(key)}
                 >
-                  {key === "all" ? "All" : siteHealthLabel(key)}
+                  {key === "all" ? "全部" : siteHealthLabel(key)}
                 </button>
               ))}
             </div>
             <div className="search-input-wrap">
               <IconSearch />
               <label htmlFor="site-filter-search" className="sr-only">
-                Filter sites
+                筛选站点
               </label>
               <input
                 id="site-filter-search"
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Filter sites, regions, exits…"
+                placeholder="筛选站点、地区或出口能力…"
               />
             </div>
-            <div className="view-switch" role="group" aria-label="Layout mode">
+            <div className="view-switch" role="group" aria-label="视图切换">
               <button
                 type="button"
                 className={viewMode === "table" ? "switch-btn is-active" : "switch-btn"}
                 aria-pressed={viewMode === "table"}
                 onClick={() => setViewMode("table")}
-                title="Table view"
+                title="表格视图"
               >
                 <IconTable />
-                <span>Table</span>
+                <span>表格</span>
               </button>
               <button
                 type="button"
                 className={viewMode === "cards" ? "switch-btn is-active" : "switch-btn"}
                 aria-pressed={viewMode === "cards"}
                 onClick={() => setViewMode("cards")}
-                title="Card view"
+                title="卡片视图"
               >
                 <IconGrid />
-                <span>Cards</span>
+                <span>卡片</span>
               </button>
             </div>
           </div>
@@ -346,19 +366,19 @@ export function OverviewView({
 
         {sites.length === 0 ? (
           <div className="empty-state">
-            <h3>No sites registered yet</h3>
+            <h3>暂未添加任何站点</h3>
             <p className="muted">
-              Register your first OpenWrt or gateway router to monitor exit latency, throughput, and push isolated encrypted subscriptions.
+              注册第一台 OpenWrt 或网关路由器后，即可在这里集中查看出口延迟、吞吐曲线并按最小权限下发订阅。
             </p>
             <button type="button" className="btn primary" onClick={onAddSite}>
               <IconPlus />
-              <span>Add first site</span>
+              <span>新增第一个站点</span>
             </button>
           </div>
         ) : filteredSites.length === 0 ? (
           <div className="empty-state">
-            <h3>No sites match your filter</h3>
-            <p className="muted">Clear the active status pill or search query to inspect all sites.</p>
+            <h3>没有符合条件的站点</h3>
+            <p className="muted">请清空筛选关键词或切换状态过滤标签以查看全部站点。</p>
             <button
               type="button"
               className="btn secondary"
@@ -367,7 +387,7 @@ export function OverviewView({
                 setSearch("");
               }}
             >
-              Reset filters
+              重置筛选
             </button>
           </div>
         ) : viewMode === "table" ? (
@@ -380,15 +400,15 @@ export function OverviewView({
             <table className="data-table">
               <thead>
                 <tr>
-                  <th scope="col">Site</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Active Exits</th>
-                  <th scope="col">Latency</th>
-                  <th scope="col">Rate &amp; Trend</th>
-                  <th scope="col">Revision</th>
-                  <th scope="col">Grants</th>
+                  <th scope="col">站点</th>
+                  <th scope="col">状态</th>
+                  <th scope="col">当前出口</th>
+                  <th scope="col">延迟</th>
+                  <th scope="col">速率与趋势</th>
+                  <th scope="col">配置版本</th>
+                  <th scope="col">授权订阅</th>
                   <th scope="col" className="col-right">
-                    Action
+                    操作
                   </th>
                 </tr>
               </thead>
@@ -411,18 +431,18 @@ export function OverviewView({
                           <span className="mono-xs muted">{site.id}</span>
                         </button>
                       </th>
-                      <td data-label="Status">
+                      <td data-label="状态">
                         <span className={`status-pill is-${health}`}>
                           <span className={`status-dot is-${health}`} aria-hidden="true" />
                           <span>{siteHealthLabel(health)}</span>
                         </span>
                         <div className="cell-sub muted mono-xs">
                           {site.snapshot
-                            ? `${latest?.mode ?? "unknown"} · ${formatRelativeTime(site.snapshot.last_seen_at)}`
-                            : "No heartbeat"}
+                            ? `${formatMode(latest?.mode)} · ${formatRelativeTime(site.snapshot.last_seen_at)}`
+                            : "尚未上报"}
                         </div>
                       </td>
-                      <td data-label="Active Exits">
+                      <td data-label="当前出口">
                         {latest?.capabilities.length ? (
                           <div className="exit-chip-list">
                             {latest.capabilities.slice(0, 2).map((cap) => (
@@ -441,14 +461,14 @@ export function OverviewView({
                           <span className="muted">—</span>
                         )}
                       </td>
-                      <td data-label="Latency">
+                      <td data-label="延迟">
                         {median != null ? (
                           <span className={`rtt-pill is-${tier} tabular`}>{median} ms</span>
                         ) : (
                           <span className="muted tabular">—</span>
                         )}
                       </td>
-                      <td data-label="Rate & Trend">
+                      <td data-label="速率与趋势">
                         <div className="rate-spark-cell">
                           <div className="tabular mono-xs rate-lines">
                             <div>↓ {formatBps(latest?.traffic.download_bps)}</div>
@@ -456,11 +476,11 @@ export function OverviewView({
                           </div>
                           <ThroughputSparkline
                             points={site.snapshot?.trend ?? []}
-                            label={`${site.name} throughput sparkline`}
+                            label={`${site.name} 吞吐趋势图`}
                           />
                         </div>
                       </td>
-                      <td data-label="Revision">
+                      <td data-label="配置版本">
                         <span
                           className={
                             synced
@@ -471,21 +491,19 @@ export function OverviewView({
                           {latest?.applied_revision ?? "—"} / {site.revision}
                         </span>
                       </td>
-                      <td data-label="Grants">
-                        <span className="tabular">
-                          {site.grants.length} sub{site.grants.length === 1 ? "" : "s"}
-                        </span>
+                      <td data-label="授权订阅">
+                        <span className="tabular">{site.grants.length} 条订阅</span>
                         <div className="cell-sub muted mono-xs">
-                          {site.token_active ? "Token active" : "No token"}
+                          {site.token_active ? "已配对 Token" : "未签发 Token"}
                         </div>
                       </td>
-                      <td data-label="Action" className="col-right">
+                      <td data-label="操作" className="col-right">
                         <button
                           type="button"
                           className="btn secondary btn-sm"
                           onClick={() => onOpenSite(site.id)}
                         >
-                          Details
+                          详情
                         </button>
                       </td>
                     </tr>
@@ -536,39 +554,39 @@ export function OverviewView({
 
                   <dl className="site-card-metrics tabular">
                     <div>
-                      <dt>Throughput</dt>
+                      <dt>实时速率</dt>
                       <dd>
                         ↓ {formatBps(latest?.traffic.download_bps)} · ↑{" "}
                         {formatBps(latest?.traffic.upload_bps)}
                       </dd>
                     </div>
                     <div>
-                      <dt>Median RTT</dt>
+                      <dt>出口中位延迟</dt>
                       <dd>{median != null ? `${median} ms` : "—"}</dd>
                     </div>
                     <div>
-                      <dt>Mode</dt>
-                      <dd>{latest?.mode ?? "unreported"}</dd>
+                      <dt>运行模式</dt>
+                      <dd>{formatMode(latest?.mode)}</dd>
                     </div>
                     <div>
-                      <dt>Revision</dt>
+                      <dt>配置版本</dt>
                       <dd>
                         {latest?.applied_revision ?? "—"} / {site.revision}{" "}
-                        {synced ? "· Synced" : "· Pending"}
+                        {synced ? "· 已同步" : "· 待同步"}
                       </dd>
                     </div>
                   </dl>
 
                   <footer className="site-card-foot">
                     <span className="mono-xs muted">
-                      {reasons[0]} · {site.grants.length} granted
+                      {reasons[0]} · 已授权 {site.grants.length} 条
                     </span>
                     <button
                       type="button"
                       className="btn secondary btn-sm"
                       onClick={() => onOpenSite(site.id)}
                     >
-                      Inspect
+                      查看详情
                     </button>
                   </footer>
                 </article>
@@ -622,9 +640,9 @@ export function SiteDetailView({
   const grantsDirty = normalizedDraft.join(",") !== normalizedSaved.join(",");
 
   const tabs: { id: SiteTab; label: string; count?: number }[] = [
-    { id: "telemetry", label: "Telemetry" },
-    { id: "subscriptions", label: "Subscriptions", count: site.grants.length },
-    { id: "pairing", label: "Pairing & Agent" },
+    { id: "telemetry", label: "运行遥测" },
+    { id: "subscriptions", label: "订阅授权", count: site.grants.length },
+    { id: "pairing", label: "设备配对" },
   ];
 
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, idx: number) {
@@ -653,7 +671,7 @@ export function SiteDetailView({
       enabled: true,
       origin: window.location.origin,
       site_id: site.id,
-      token: "<paste-43-char-device-token>",
+      token: "<请填入 43 位一次性设备 Token>",
       sections: Object.fromEntries(
         (site.grants.length ? site.grants : ["provider-a"]).map((id) => [
           id,
@@ -676,13 +694,12 @@ export function SiteDetailView({
             <span className={`status-pill is-${health}`}>{siteHealthLabel(health)}</span>
           </div>
           <p className="muted">
-            {reasons.join(" · ")} · Token{" "}
-            {site.token_active ? "provisioned" : "not provisioned"}
+            {reasons.join(" · ")} · 设备凭据：{site.token_active ? "已配置" : "未签发"}
           </p>
         </div>
         <div className="header-actions">
           <button type="button" className="btn secondary" onClick={onBack}>
-            Back to Overview
+            返回总览
           </button>
           <button
             type="button"
@@ -691,7 +708,7 @@ export function SiteDetailView({
             onClick={() => onRotateToken(site)}
           >
             <IconKey />
-            <span>{site.token_active ? "Rotate Token" : "Issue Token"}</span>
+            <span>{site.token_active ? "轮转 Token" : "签发 Token"}</span>
           </button>
           {site.token_active && (
             <button
@@ -700,7 +717,7 @@ export function SiteDetailView({
               disabled={busy}
               onClick={() => onRevokeToken(site)}
             >
-              Revoke Token
+              吊销 Token
             </button>
           )}
           <button
@@ -710,53 +727,53 @@ export function SiteDetailView({
             onClick={() => onDeleteSite(site)}
           >
             <IconTrash />
-            <span>Delete</span>
+            <span>删除站点</span>
           </button>
         </div>
       </div>
 
-      <section className="kpi-strip is-compact" aria-label="Site live counters">
+      <section className="kpi-strip is-compact" aria-label="站点实时运行指标">
         <div className="kpi-cell">
-          <span className="kpi-label">LAST HEARTBEAT</span>
+          <span className="kpi-label">最后心跳</span>
           <strong className="kpi-value-sm tabular">
             {formatRelativeTime(site.snapshot?.last_seen_at)}
           </strong>
           <span className="kpi-sub muted mono-xs">
-            Mode: {latest?.mode ?? "—"}
+            模式：{formatMode(latest?.mode)}
           </span>
         </div>
         <div className="kpi-cell">
-          <span className="kpi-label">CONFIG REVISION</span>
+          <span className="kpi-label">配置版本</span>
           <strong className="kpi-value-sm tabular">
             {latest?.applied_revision ?? "—"} / {site.revision}
           </strong>
           <span className="kpi-sub muted">
-            {synced ? "Applied matches desired" : "Pending next agent pull"}
+            {synced ? "设备版本与云端一致" : "等待设备下个心跳拉取"}
           </span>
         </div>
         <div className="kpi-cell">
-          <span className="kpi-label">LIVE RATE</span>
+          <span className="kpi-label">实时速率</span>
           <strong className="kpi-value-sm tabular">
             ↓ {formatBps(latest?.traffic.download_bps)}
           </strong>
           <span className="kpi-sub muted tabular">
-            ↑ {formatBps(latest?.traffic.upload_bps)}
+            ↑ {formatBps(latest?.traffic.upload_bps)} 上行
           </span>
         </div>
         <div className="kpi-cell">
-          <span className="kpi-label">TOTAL VOLUME</span>
+          <span className="kpi-label">累计流量</span>
           <strong className="kpi-value-sm tabular">
             ↓ {formatBytes(latest?.traffic.download_bytes)}
           </strong>
           <span className="kpi-sub muted tabular">
             ↑ {formatBytes(latest?.traffic.upload_bytes)}
-            {latest?.event ? ` · ${latest.event}` : ""}
+            {latest?.event ? ` · ${formatEvent(latest.event)}` : ""}
           </span>
         </div>
       </section>
 
       <section className="panel">
-        <div className="tabs-header" role="tablist" aria-label="Site details sections">
+        <div className="tabs-header" role="tablist" aria-label="站点详情分类">
           {tabs.map((item, idx) => {
             const active = tab === item.id;
             return (
@@ -796,19 +813,19 @@ export function SiteDetailView({
               <div className="chart-grid">
                 <div className="subpanel">
                   <div className="subpanel-head">
-                    <h3>Throughput History</h3>
-                    <span className="mono-xs muted">24h window</span>
+                    <h3>吞吐速率趋势</h3>
+                    <span className="mono-xs muted">近 24 小时</span>
                   </div>
                   <ThroughputAreaChart points={trend} />
                 </div>
                 <div className="subpanel">
                   <div className="subpanel-head">
-                    <h3>Exit Latency &amp; Pulse</h3>
-                    <span className="mono-xs muted">Measured RTT</span>
+                    <h3>出口延迟与心跳连续性</h3>
+                    <span className="mono-xs muted">实测 RTT</span>
                   </div>
                   <RttBarChart points={trend} />
                   <div className="pulse-footer">
-                    <span className="mono-xs muted">Window Continuity</span>
+                    <span className="mono-xs muted">心跳时间窗</span>
                     <PulseStrip points={trend} online={site.online} slots={40} />
                   </div>
                 </div>
@@ -817,7 +834,7 @@ export function SiteDetailView({
               <div className="detail-split">
                 <div className="subpanel">
                   <div className="subpanel-head">
-                    <h3 id="exits-table-heading">Active Capabilities &amp; Exits</h3>
+                    <h3 id="exits-table-heading">活跃出口与策略能力</h3>
                     <span className="count-badge tabular">
                       {latest?.capabilities.length ?? 0}
                     </span>
@@ -832,12 +849,12 @@ export function SiteDetailView({
                       <table className="data-table is-compact">
                         <thead>
                           <tr>
-                            <th scope="col">Capability</th>
-                            <th scope="col">Provider</th>
-                            <th scope="col">Region</th>
-                            <th scope="col">Node Hash</th>
+                            <th scope="col">能力标识</th>
+                            <th scope="col">机场来源</th>
+                            <th scope="col">地区</th>
+                            <th scope="col">节点脱敏指纹</th>
                             <th scope="col" className="col-right">
-                              RTT
+                              实测延迟
                             </th>
                           </tr>
                         </thead>
@@ -849,18 +866,18 @@ export function SiteDetailView({
                                 <th scope="row" className="sticky-col">
                                   <strong>{cap.id}</strong>
                                 </th>
-                                <td data-label="Provider">
+                                <td data-label="机场来源">
                                   {cap.provider ?? <span className="muted">—</span>}
                                 </td>
-                                <td data-label="Region">
+                                <td data-label="地区">
                                   {cap.region ?? <span className="muted">—</span>}
                                 </td>
-                                <td data-label="Node Hash">
+                                <td data-label="节点脱敏指纹">
                                   <code className="mono-xs">
                                     {cap.node ?? "—"}
                                   </code>
                                 </td>
-                                <td data-label="RTT" className="col-right">
+                                <td data-label="实测延迟" className="col-right">
                                   {cap.rtt_ms != null ? (
                                     <span className={`rtt-pill is-${tier} tabular`}>
                                       {cap.rtt_ms} ms
@@ -876,15 +893,13 @@ export function SiteDetailView({
                       </table>
                     </div>
                   ) : (
-                    <p className="muted-copy">
-                      No active capability exits reported in the latest heartbeat.
-                    </p>
+                    <p className="muted-copy">最近一次心跳暂未上报启用的出口能力。</p>
                   )}
                 </div>
 
                 <div className="subpanel">
                   <div className="subpanel-head">
-                    <h3>Provider Quotas</h3>
+                    <h3>机场订阅剩余流量</h3>
                     <span className="count-badge tabular">
                       {latest?.quotas?.length ?? 0}
                     </span>
@@ -896,7 +911,7 @@ export function SiteDetailView({
                           <div className="quota-row-top">
                             <strong>{quota.provider}</strong>
                             <span className="mono-xs tabular">
-                              {formatBytes(quota.remaining_bytes)} remaining /{" "}
+                              剩余 {formatBytes(quota.remaining_bytes)} /{" "}
                               {formatBytes(quota.total_bytes)}
                             </span>
                           </div>
@@ -906,17 +921,13 @@ export function SiteDetailView({
                               total={quota.total_bytes}
                             />
                           ) : (
-                            <span className="mono-xs muted">
-                              Provider did not return quota ceiling
-                            </span>
+                            <span className="mono-xs muted">该订阅未返回总量配额</span>
                           )}
                         </li>
                       ))}
                     </ul>
                   ) : (
-                    <p className="muted-copy">
-                      No provider quota telemetry reported by this gateway yet.
-                    </p>
+                    <p className="muted-copy">该网关暂未上报机场剩余流量数据。</p>
                   )}
                 </div>
               </div>
@@ -935,9 +946,9 @@ export function SiteDetailView({
             <div className="detail-stack">
               <div className="subpanel-head">
                 <div>
-                  <h3>Authorized Subscription Subset</h3>
+                  <h3>获准下发订阅子集</h3>
                   <p className="muted">
-                    Only checked sources are decrypted and returned when this site calls <code>/api/v1/agent/subscriptions</code>. Saving increments desired revision.
+                    仅勾选的订阅源会在该站点请求 <code>/api/v1/agent/subscriptions</code> 时解密返回；保存后自动递增期望版本号。
                   </p>
                 </div>
                 <div className="header-actions nowrap-actions">
@@ -947,7 +958,7 @@ export function SiteDetailView({
                     disabled={busy || !grantsDirty}
                     onClick={() => setDraftGrants(site.grants)}
                   >
-                    Reset
+                    重置
                   </button>
                   <button
                     type="button"
@@ -956,7 +967,7 @@ export function SiteDetailView({
                     onClick={() => void onSaveGrants(site.id, normalizedDraft)}
                   >
                     <IconCheck />
-                    <span>{busy ? "Saving…" : "Save Grants"}</span>
+                    <span>{busy ? "保存中…" : "保存授权"}</span>
                   </button>
                 </div>
               </div>
@@ -985,16 +996,16 @@ export function SiteDetailView({
                 </div>
               ) : (
                 <div className="empty-state">
-                  <h3>No encrypted subscriptions in pool</h3>
+                  <h3>订阅池暂无订阅源</h3>
                   <p className="muted">
-                    Add HTTPS subscription URLs in the Subscriptions view first, then authorize individual sites here.
+                    请先前往「订阅与授权」页面添加 HTTPS 加密订阅源，再在此为站点勾选分配子集。
                   </p>
                   <button
                     type="button"
                     className="btn primary"
                     onClick={onOpenSubscriptions}
                   >
-                    Go to Subscriptions Pool
+                    前往订阅池
                   </button>
                 </div>
               )}
@@ -1013,9 +1024,9 @@ export function SiteDetailView({
             <div className="detail-stack">
               <div className="subpanel-head">
                 <div>
-                  <h3>Device Authentication &amp; Agent Config</h3>
+                  <h3>设备认证与同步插件配置</h3>
                   <p className="muted">
-                    Each router uses an independent 43-character Bearer token stored as SHA-256 on the server. Rotating invalidates the previous router credential immediately.
+                    每台路由器使用独立的 43 位 Bearer Token，服务端仅保存其 SHA-256 哈希。轮转后旧设备凭据立即失效。
                   </p>
                 </div>
                 <div className="header-actions">
@@ -1027,7 +1038,7 @@ export function SiteDetailView({
                   >
                     <IconKey />
                     <span>
-                      {site.token_active ? "Rotate Device Token" : "Issue Device Token"}
+                      {site.token_active ? "轮转设备 Token" : "签发设备 Token"}
                     </span>
                   </button>
                   {site.token_active && (
@@ -1037,7 +1048,7 @@ export function SiteDetailView({
                       disabled={busy}
                       onClick={() => onRevokeToken(site)}
                     >
-                      Revoke Token
+                      吊销 Token
                     </button>
                   )}
                 </div>
@@ -1046,10 +1057,10 @@ export function SiteDetailView({
               <div className="terminal-panel">
                 <div className="terminal-bar">
                   <span className="mono-xs">
-                    TARGET FILE: /etc/opl-netfleet/site-sync/config.json (0600)
+                    目标设备配置文件：/etc/opl-netfleet/site-sync/config.json（权限 0600）
                   </span>
                   <span className="mono-xs">
-                    {site.token_active ? "TOKEN ACTIVE" : "NOT PROVISIONED"}
+                    {site.token_active ? "Token 已生效" : "尚未签发"}
                   </span>
                 </div>
                 <pre className="terminal-code">
@@ -1059,7 +1070,8 @@ export function SiteDetailView({
 
               <div className="callout is-info">
                 <span>
-                  <strong>Fail-Open Safety Boundary:</strong> If Cloud Run is unreachable, returns non-200, or local compilation fails, <code>opl-netfleet-plugin-site-sync</code> preserves existing local subscriptions and active policy without disrupting LAN connectivity.
+                  <strong>Fail-Open 安全边界：</strong> 当云端不可达、返回非 200 或本地订阅编译校验失败时，
+                  <code>opl-netfleet-plugin-site-sync</code> 会严格保留设备既有本地订阅与运行配置，绝不中断局域网网络。
                 </span>
               </div>
             </div>
@@ -1131,15 +1143,15 @@ export function SubscriptionsView({
     <div className="page-stack">
       <div className="page-header">
         <div>
-          <h1>Subscriptions &amp; Grant Matrix</h1>
+          <h1>订阅池与站点授权</h1>
           <p className="muted">
-            Upstream HTTPS URLs are encrypted with AES-256-GCM at rest. Assign exact per-site subsets to isolate semi-trusted locations.
+            上游 HTTPS 订阅链接静态经 AES-256-GCM 加密保管；通过授权矩阵按站点最小权限精准下发子集。
           </p>
         </div>
         <div className="header-actions">
           <button type="button" className="btn primary" onClick={onAddSubscription}>
             <IconPlus />
-            <span>Add Subscription</span>
+            <span>添加订阅</span>
           </button>
         </div>
       </div>
@@ -1147,11 +1159,11 @@ export function SubscriptionsView({
       <section className="panel" aria-labelledby="pool-heading">
         <div className="panel-toolbar">
           <div className="panel-title-group">
-            <h2 id="pool-heading">Encrypted Subscription Pool</h2>
+            <h2 id="pool-heading">加密订阅池</h2>
             <span className="count-badge tabular">{sources.length}</span>
           </div>
           <span className="mono-xs muted">
-            AES-256-GCM · Plaintext URLs never echo back
+            AES-256-GCM · 明文地址绝不回传浏览器
           </span>
         </div>
 
@@ -1160,12 +1172,12 @@ export function SubscriptionsView({
             <table className="data-table">
               <thead>
                 <tr>
-                  <th scope="col">Name</th>
-                  <th scope="col">Identifier</th>
-                  <th scope="col">URL Fingerprint</th>
-                  <th scope="col">Authorized Sites</th>
+                  <th scope="col">名称</th>
+                  <th scope="col">订阅 ID</th>
+                  <th scope="col">链接 SHA-256 指纹</th>
+                  <th scope="col">已授权站点数</th>
                   <th scope="col" className="col-right">
-                    Actions
+                    操作
                   </th>
                 </tr>
               </thead>
@@ -1175,16 +1187,16 @@ export function SubscriptionsView({
                     <th scope="row" className="sticky-col">
                       <strong>{source.name}</strong>
                     </th>
-                    <td data-label="Identifier">
+                    <td data-label="订阅 ID">
                       <code>{source.id}</code>
                     </td>
-                    <td data-label="URL Fingerprint">
+                    <td data-label="链接指纹">
                       <code className="mono-pill">{source.fingerprint}</code>
                     </td>
-                    <td data-label="Authorized Sites" className="tabular">
+                    <td data-label="已授权站点数" className="tabular">
                       {grantCounts.get(source.id) ?? 0} / {sites.length}
                     </td>
-                    <td data-label="Actions" className="col-right">
+                    <td data-label="操作" className="col-right">
                       <div className="inline-actions">
                         <button
                           type="button"
@@ -1193,7 +1205,7 @@ export function SubscriptionsView({
                           onClick={() => onEditSubscription(source)}
                         >
                           <IconEdit />
-                          <span>Edit / Rotate URL</span>
+                          <span>编辑 / 更换链接</span>
                         </button>
                         <button
                           type="button"
@@ -1202,7 +1214,7 @@ export function SubscriptionsView({
                           onClick={() => onDeleteSubscription(source)}
                         >
                           <IconTrash />
-                          <span>Delete</span>
+                          <span>删除</span>
                         </button>
                       </div>
                     </td>
@@ -1213,13 +1225,13 @@ export function SubscriptionsView({
           </div>
         ) : (
           <div className="empty-state">
-            <h3>Subscription pool is empty</h3>
+            <h3>加密订阅池为空</h3>
             <p className="muted">
-              Add your first HTTPS subscription source to start distributing subsets across sites.
+              添加第一条 HTTPS 机场订阅源后，即可在下方矩阵为不同站点勾选分发的订阅子集。
             </p>
             <button type="button" className="btn primary" onClick={onAddSubscription}>
               <IconPlus />
-              <span>Add first subscription</span>
+              <span>添加第一条订阅</span>
             </button>
           </div>
         )}
@@ -1228,11 +1240,11 @@ export function SubscriptionsView({
       <section className="panel" aria-labelledby="matrix-heading">
         <div className="panel-toolbar">
           <div className="panel-title-group">
-            <h2 id="matrix-heading">Site Authorization Matrix</h2>
-            <span className="count-badge tabular">{sites.length} sites</span>
+            <h2 id="matrix-heading">站点授权矩阵</h2>
+            <span className="count-badge tabular">{sites.length} 个站点</span>
           </div>
           <span className="mono-xs muted">
-            Saving bumps desired revision for the updated site
+            保存修改后将自动递增对应站点的期望配置版本号
           </span>
         </div>
 
@@ -1246,7 +1258,7 @@ export function SubscriptionsView({
             <table className="data-table matrix-table">
               <thead>
                 <tr>
-                  <th scope="col">Site</th>
+                  <th scope="col">站点</th>
                   {sources.map((source) => (
                     <th key={source.id} scope="col" className="col-center">
                       <div>{source.name}</div>
@@ -1254,7 +1266,7 @@ export function SubscriptionsView({
                     </th>
                   ))}
                   <th scope="col" className="col-right">
-                    Apply Changes
+                    保存变更
                   </th>
                 </tr>
               </thead>
@@ -1272,7 +1284,7 @@ export function SubscriptionsView({
                         >
                           <span className="row-title-text">{site.name}</span>
                           <span className="mono-xs muted">
-                            {site.id} · rev {site.revision}
+                            {site.id} · 版本 {site.revision}
                           </span>
                         </button>
                       </th>
@@ -1289,7 +1301,7 @@ export function SubscriptionsView({
                                 type="checkbox"
                                 checked={checked}
                                 disabled={busy}
-                                aria-label={`Authorize ${source.name} for ${site.name}`}
+                                aria-label={`允许站点 ${site.name} 拉取 ${source.name}`}
                                 onChange={() => toggleCell(site, source.id)}
                               />
                               <span className="matrix-mobile-label">{source.name}</span>
@@ -1297,7 +1309,7 @@ export function SubscriptionsView({
                           </td>
                         );
                       })}
-                      <td data-label="Apply Changes" className="col-right">
+                      <td data-label="保存变更" className="col-right">
                         <div className="inline-actions">
                           {dirty ? (
                             <>
@@ -1312,7 +1324,7 @@ export function SubscriptionsView({
                                   }))
                                 }
                               >
-                                Reset
+                                重置
                               </button>
                               <button
                                 type="button"
@@ -1325,11 +1337,11 @@ export function SubscriptionsView({
                                   )
                                 }
                               >
-                                Save
+                                保存
                               </button>
                             </>
                           ) : (
-                            <span className="mono-xs muted">Synced</span>
+                            <span className="mono-xs muted">已同步</span>
                           )}
                         </div>
                       </td>
@@ -1343,8 +1355,8 @@ export function SubscriptionsView({
           <div className="empty-state">
             <p className="muted">
               {sites.length === 0
-                ? "Create at least one managed site before configuring grant assignments."
-                : "Add at least one subscription source above to map site permissions."}
+                ? "请先创建至少一个纳管站点后再分配订阅权限。"
+                : "请先在上方添加至少一条订阅源后再配置站点授权矩阵。"}
             </p>
           </div>
         )}

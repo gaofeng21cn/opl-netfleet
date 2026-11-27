@@ -75,7 +75,7 @@ function ModalDialog({
           <button
             type="button"
             className="icon-btn"
-            aria-label="Close dialog"
+            aria-label="关闭弹窗"
             onClick={onClose}
           >
             <IconClose />
@@ -108,7 +108,7 @@ export function ConfirmDialog({
   return (
     <ModalDialog
       open={!!state}
-      title={state?.title ?? "Confirm action"}
+      title={state?.title ?? "确认操作"}
       labelledBy="confirm-dialog-title"
       initialFocusRef={cancelRef}
       onClose={onClose}
@@ -126,7 +126,7 @@ export function ConfirmDialog({
               disabled={busy}
               onClick={onClose}
             >
-              Cancel
+              取消
             </button>
             <button
               type="button"
@@ -134,7 +134,7 @@ export function ConfirmDialog({
               disabled={busy}
               onClick={() => void onConfirm()}
             >
-              {busy ? "Processing…" : state.confirmLabel}
+              {busy ? "处理中…" : state.confirmLabel}
             </button>
           </footer>
         </div>
@@ -177,11 +177,11 @@ export function AddSiteDialog({
     const id = String(data.get("id") ?? "").trim();
     const name = String(data.get("name") ?? "").trim();
     if (!/^[a-z][a-z0-9-]{1,47}$/.test(id)) {
-      setLocalError("Site ID must start with a lowercase letter and use 2–48 lowercase letters, digits, or hyphens.");
+      setLocalError("站点 ID 必须以小写字母开头，仅含 2–48 位小写字母、数字或连字符。");
       return;
     }
     if (!name) {
-      setLocalError("Site display name is required.");
+      setLocalError("请填写站点显示名称。");
       return;
     }
     const ok = await onCreate({ id, name, issueToken });
@@ -191,14 +191,14 @@ export function AddSiteDialog({
   return (
     <ModalDialog
       open={open}
-      title="Add Managed Site"
+      title="新增纳管站点"
       labelledBy="add-site-title"
       onClose={onClose}
       className="modal-md"
     >
       <form ref={formRef} className="modal-body form-stack" onSubmit={submit}>
         <div className="field-group">
-          <label htmlFor="new-site-id">Site Identifier</label>
+          <label htmlFor="new-site-id">站点 ID（不可修改）</label>
           <input
             id="new-site-id"
             name="id"
@@ -210,17 +210,17 @@ export function AddSiteDialog({
             autoComplete="off"
           />
           <p className="field-hint">
-            Immutable slug used in agent config and API routes (<code>[a-z][a-z0-9-]</code>).
+            用于路由器设备配置和 API 路由匹配（规则 <code>[a-z][a-z0-9-]</code>）。
           </p>
         </div>
         <div className="field-group">
-          <label htmlFor="new-site-name">Display Name</label>
+          <label htmlFor="new-site-name">站点显示名称</label>
           <input
             id="new-site-name"
             name="name"
             required
             maxLength={120}
-            placeholder="Tokyo Primary Edge"
+            placeholder="例如：主节点网关"
             autoComplete="off"
           />
         </div>
@@ -230,7 +230,7 @@ export function AddSiteDialog({
             checked={issueToken}
             onChange={(event) => setIssueToken(event.target.checked)}
           />
-          <span>Immediately issue a one-time Device Token after creating the site</span>
+          <span>创建后立即签发一次性设备 Token</span>
         </label>
         {localError && (
           <p className="inline-error" role="alert">
@@ -244,10 +244,10 @@ export function AddSiteDialog({
             disabled={busy}
             onClick={onClose}
           >
-            Cancel
+            取消
           </button>
           <button type="submit" className="btn primary" disabled={busy}>
-            {busy ? "Creating…" : "Create Site"}
+            {busy ? "创建中…" : "创建站点"}
           </button>
         </footer>
       </form>
@@ -289,15 +289,15 @@ export function SubscriptionDialog({
     const url = String(data.get("url") ?? "").trim();
 
     if (!source && !/^[a-z][a-z0-9_-]{1,47}$/.test(id)) {
-      setLocalError("Subscription ID must match ^[a-z][a-z0-9_-]{1,47}$.");
+      setLocalError("订阅 ID 须符合 ^[a-z][a-z0-9_-]{1,47}$。");
       return;
     }
     if (!name) {
-      setLocalError("Subscription name is required.");
+      setLocalError("请填写订阅显示名称。");
       return;
     }
     if ((!source || url.length > 0) && !url.startsWith("https://")) {
-      setLocalError("Subscription URL must use HTTPS and exclude embedded credentials.");
+      setLocalError("订阅 URL 必须以 https:// 开头，且不可包含内嵌用户名密码。");
       return;
     }
     const ok = await onSubmit({ id: source ? undefined : id, name, url });
@@ -307,7 +307,7 @@ export function SubscriptionDialog({
   return (
     <ModalDialog
       open={open}
-      title={source ? `Update Subscription · ${source.id}` : "Add Encrypted Subscription"}
+      title={source ? `编辑订阅 · ${source.id}` : "添加加密订阅"}
       labelledBy="sub-dialog-title"
       onClose={onClose}
       className="modal-md"
@@ -315,7 +315,7 @@ export function SubscriptionDialog({
       <form ref={formRef} className="modal-body form-stack" onSubmit={submit}>
         {!source && (
           <div className="field-group">
-            <label htmlFor="sub-id">Subscription Identifier</label>
+            <label htmlFor="sub-id">订阅 ID（英文标识）</label>
             <input
               id="sub-id"
               name="id"
@@ -327,24 +327,24 @@ export function SubscriptionDialog({
               autoComplete="off"
             />
             <p className="field-hint">
-              Referenced inside each site&apos;s <code>sections</code> map in OpenWrt <code>site-sync</code> config.
+              供各站点的 OpenWrt <code>site-sync</code> 配置中的 <code>sections</code> 映射使用。
             </p>
           </div>
         )}
         <div className="field-group">
-          <label htmlFor="sub-name">Display Name</label>
+          <label htmlFor="sub-name">显示名称</label>
           <input
             id="sub-name"
             name="name"
             required
             maxLength={120}
             defaultValue={source?.name ?? ""}
-            placeholder="Upstream Transit Alpha"
+            placeholder="例如：主线机场 A"
             autoComplete="off"
           />
         </div>
         <div className="field-group">
-          <label htmlFor="sub-url">HTTPS Subscription URL</label>
+          <label htmlFor="sub-url">HTTPS 订阅链接</label>
           <div className="input-with-action">
             <input
               id="sub-url"
@@ -355,21 +355,21 @@ export function SubscriptionDialog({
               maxLength={2048}
               placeholder={
                 source
-                  ? "Leave blank to preserve existing encrypted URL"
+                  ? "留空则保留当前已加密链接"
                   : "https://provider.example.invalid/subscribe?..."
               }
             />
             <button
               type="button"
               className="icon-btn"
-              aria-label={showUrl ? "Hide subscription URL" : "Reveal subscription URL"}
+              aria-label={showUrl ? "隐藏订阅链接" : "显示订阅链接"}
               onClick={() => setShowUrl((prev) => !prev)}
             >
               <IconEye open={showUrl} />
             </button>
           </div>
           <p className="field-hint">
-            Sealed with AES-256-GCM before storage. Never returned back to browsers after saving.
+            入库前使用 AES-256-GCM 主密钥信封加密，保存后绝不向浏览器回显明文链接。
           </p>
         </div>
         {localError && (
@@ -384,10 +384,10 @@ export function SubscriptionDialog({
             disabled={busy}
             onClick={onClose}
           >
-            Cancel
+            取消
           </button>
           <button type="submit" className="btn primary" disabled={busy}>
-            {busy ? "Saving…" : source ? "Save Changes" : "Encrypt & Add"}
+            {busy ? "保存中…" : source ? "保存修改" : "加密并添加"}
           </button>
         </footer>
       </form>
@@ -444,7 +444,7 @@ export function TokenRevealDialog({
   return (
     <ModalDialog
       open={!!issued}
-      title={issued ? `Device Token Issued · ${issued.id}` : "Device Token"}
+      title={issued ? `设备 Token 已签发 · ${issued.id}` : "设备 Token"}
       labelledBy="token-dialog-title"
       onClose={onClose}
       className="modal-lg"
@@ -452,18 +452,18 @@ export function TokenRevealDialog({
       {issued && (
         <div className="modal-body form-stack">
           <div className="callout is-warn">
-            This secret token is shown once and stored on the server strictly as a SHA-256 hash. Save it into the target router&apos;s private config before closing.
+            该一次性设备密钥仅在本次显示，服务端数据库只保存单向 SHA-256 哈希。关闭前请复制并写入目标路由器私有配置文件。
           </div>
           <div className="terminal-panel">
             <div className="terminal-bar">
-              <span className="mono-xs">ONE-TIME BEARER TOKEN</span>
+              <span className="mono-xs">一次性设备 BEARER TOKEN</span>
               <button
                 type="button"
                 className="btn-inline"
                 onClick={() => copy("token", issued.device_token)}
               >
                 {copiedPart === "token" ? <IconCheck /> : <IconCopy />}
-                <span>{copiedPart === "token" ? "Copied" : "Copy token"}</span>
+                <span>{copiedPart === "token" ? "已复制" : "复制 Token"}</span>
               </button>
             </div>
             <pre className="terminal-code">
@@ -473,7 +473,7 @@ export function TokenRevealDialog({
           <div className="terminal-panel">
             <div className="terminal-bar">
               <span className="mono-xs">
-                /etc/opl-netfleet/site-sync/config.json (0600)
+                /etc/opl-netfleet/site-sync/config.json（权限 0600）
               </span>
               <button
                 type="button"
@@ -481,7 +481,7 @@ export function TokenRevealDialog({
                 onClick={() => copy("config", configSnippet)}
               >
                 {copiedPart === "config" ? <IconCheck /> : <IconCopy />}
-                <span>{copiedPart === "config" ? "Copied" : "Copy JSON"}</span>
+                <span>{copiedPart === "config" ? "已复制" : "复制配置 JSON"}</span>
               </button>
             </div>
             <pre className="terminal-code">
@@ -490,7 +490,7 @@ export function TokenRevealDialog({
           </div>
           <footer className="modal-actions">
             <button type="button" className="btn primary" onClick={onClose}>
-              Done
+              我已保存，完成
             </button>
           </footer>
         </div>
@@ -501,11 +501,17 @@ export function TokenRevealDialog({
 
 export type PaletteAction = {
   id: string;
-  group: "Navigation" | "Sites" | "Subscriptions" | "Actions";
+  group: "页面导航" | "纳管站点" | "订阅源" | "快捷操作";
   title: string;
   meta: string;
   badge?: string;
   run: () => void;
+};
+
+const THEME_NAMES: Record<ThemeMode, string> = {
+  system: "跟随系统",
+  light: "浅色",
+  dark: "深色",
 };
 
 export function CommandPaletteDialog({
@@ -550,59 +556,59 @@ export function CommandPaletteDialog({
     const base: PaletteAction[] = [
       {
         id: "nav-overview",
-        group: "Navigation",
-        title: "Overview",
-        meta: "Fleet health, active exits, throughput",
+        group: "页面导航",
+        title: "站点总览",
+        meta: "全部站点运行状态、出口延迟与实时吞吐",
         run: onNavigateOverview,
       },
       {
         id: "nav-subs",
-        group: "Navigation",
-        title: "Subscriptions & Grant Matrix",
-        meta: "Encrypted subscription pool and site permissions",
+        group: "页面导航",
+        title: "订阅与站点授权",
+        meta: "加密订阅池维护与按站点子集分发矩阵",
         run: onNavigateSubscriptions,
       },
       ...sites.map((site) => ({
         id: `site-${site.id}`,
-        group: "Sites" as const,
+        group: "纳管站点" as const,
         title: site.name,
-        meta: `${site.id} · rev ${site.snapshot?.latest.applied_revision ?? "—"}/${site.revision}`,
-        badge: site.online ? "Online" : "Offline",
+        meta: `${site.id} · 版本 ${site.snapshot?.latest.applied_revision ?? "—"}/${site.revision}`,
+        badge: site.online ? "在线" : "离线",
         run: () => onNavigateSite(site.id),
       })),
       ...sources.map((src) => ({
         id: `sub-${src.id}`,
-        group: "Subscriptions" as const,
+        group: "订阅源" as const,
         title: src.name,
-        meta: `${src.id} · ${src.fingerprint}`,
+        meta: `${src.id} · 摘要 ${src.fingerprint}`,
         run: onNavigateSubscriptions,
       })),
       {
         id: "act-add-site",
-        group: "Actions",
-        title: "Add Managed Site",
-        meta: "Register a router and issue a device token",
+        group: "快捷操作",
+        title: "新增纳管站点",
+        meta: "注册新网关节点并签发一次性设备 Token",
         run: onAddSite,
       },
       {
         id: "act-add-sub",
-        group: "Actions",
-        title: "Add Encrypted Subscription",
-        meta: "Encrypt an HTTPS source URL into the pool",
+        group: "快捷操作",
+        title: "添加加密订阅",
+        meta: "将上游 HTTPS 订阅链接信封加密后加入订阅池",
         run: onAddSubscription,
       },
       {
         id: "act-refresh",
-        group: "Actions",
-        title: "Refresh Telemetry",
-        meta: "Pull latest snapshots and subscription metadata",
+        group: "快捷操作",
+        title: "立即刷新遥测数据",
+        meta: "拉取最新站点心跳快照与订阅元信息",
         run: onRefresh,
       },
       {
         id: "act-theme",
-        group: "Actions",
-        title: `Switch Theme (Current: ${theme})`,
-        meta: "Cycle system, light, and dark modes",
+        group: "快捷操作",
+        title: `切换外观主题（当前：${THEME_NAMES[theme]}）`,
+        meta: "在跟随系统、浅色与深色模式间切换",
         run: onCycleTheme,
       },
     ];
@@ -645,7 +651,7 @@ export function CommandPaletteDialog({
       <div className="palette-head">
         <IconSearch />
         <label id="palette-label" htmlFor="palette-input" className="sr-only">
-          Search sites, subscriptions, pages, and actions
+          搜索站点、订阅、页面或快捷操作
         </label>
         <input
           ref={inputRef}
@@ -667,12 +673,12 @@ export function CommandPaletteDialog({
               onClose();
             }
           }}
-          placeholder="Search sites, subscriptions, pages, and actions…"
+          placeholder="搜索站点、订阅、页面或操作…"
           autoComplete="off"
         />
         <kbd className="kbd-pill">ESC</kbd>
       </div>
-      <div className="palette-list" role="listbox" aria-label="Command matches">
+      <div className="palette-list" role="listbox" aria-label="匹配结果">
         {items.length ? (
           items.map((item, idx) => (
             <button
@@ -695,7 +701,7 @@ export function CommandPaletteDialog({
               {item.badge && (
                 <span
                   className={
-                    item.badge === "Online" ? "status-pill is-online" : "status-pill is-offline"
+                    item.badge === "在线" ? "status-pill is-online" : "status-pill is-offline"
                   }
                 >
                   {item.badge}
@@ -704,7 +710,7 @@ export function CommandPaletteDialog({
             </button>
           ))
         ) : (
-          <p className="palette-empty muted">No matching pages, sites, or actions.</p>
+          <p className="palette-empty muted">没有匹配的页面、站点或操作。</p>
         )}
       </div>
     </ModalDialog>

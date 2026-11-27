@@ -117,12 +117,48 @@ export class CloudApp {
     );
   }
   async login(body: unknown) {
-    const token = asObject(body)?.token;
-    const identity =
-      typeof token === "string"
-        ? await this.identity.authenticate(token)
-        : null;
-    return identity ? this.session(identity) : null;
+    const input = asObject(body);
+    if (!input) return null;
+    let identity: Identity | null = null;
+    if ("email" in input || "password" in input) {
+      if (
+        only(input, ["email", "password"]) &&
+        typeof input.email === "string" &&
+        typeof input.password === "string" &&
+        input.email.trim().length > 0 &&
+        input.email.length <= 254 &&
+        input.password.length > 0 &&
+        input.password.length <= 512 &&
+        this.identity.authenticatePassword
+      ) {
+        identity = await this.identity.authenticatePassword(
+          input.email,
+          input.password,
+        );
+      }
+    } else if (
+      only(input, ["token"]) &&
+      typeof input.token === "string" &&
+      input.token.length > 0 &&
+      input.token.length <= 4096
+    ) {
+      identity = await this.identity.authenticate(input.token);
+    }
+    return identity
+      ? {
+          session: this.session(identity),
+          user: { email: identity.email, role: identity.role },
+        }
+      : null;
+  }
+  async me(headers: Headers) {
+    const auth = await this.human(headers);
+    return auth
+      ? {
+          status: 200,
+          body: { email: auth.identity.email, role: auth.identity.role },
+        }
+      : unauthorized;
   }
   async heartbeat(headers: Headers, body: unknown) {
     const site = await this.device(headers);
