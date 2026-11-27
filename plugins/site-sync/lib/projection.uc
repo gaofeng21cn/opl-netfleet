@@ -40,8 +40,8 @@ export function project(site, applied, status, totals, previous, now, digest, ev
 		if (length(quotas) == 32) break;
 		if (!identifier(item.id)) continue;
 		const quota = { provider: item.id };
-		if (counter(item.quota?.available)) quota.remaining_bytes = item.quota.available;
-		if (counter(item.quota?.total)) quota.total_bytes = item.quota.total;
+		if (counter(item.quota?.remaining_bytes)) quota.remaining_bytes = item.quota.remaining_bytes;
+		if (counter(item.quota?.total_bytes)) quota.total_bytes = item.quota.total_bytes;
 		if (length(keys(quota)) > 1) push(quotas, quota);
 	}
 	const body = { site_id: site, applied_revision: applied,

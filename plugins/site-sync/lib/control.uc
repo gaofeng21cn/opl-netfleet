@@ -120,6 +120,7 @@ return function(context) {
 		const input = read(path);
 		if (input?.origin != config.origin || input.site_id != config.site_id || !counter(input.revision) ||
 			input.config_digest != storage.sha256_text(sprintf("%J", config))) return { ok: false, error: "sync_config_changed" };
+		const result = sync_sources(input.sources);
 		if (result?.ok != true) return { ok: false, error: "subscription_apply_failed" };
 		return files.atomic_json(state_file, { origin: config.origin, site_id: config.site_id, revision: input.revision }) ?
 			{ ok: true } : { ok: false, error: "sync_receipt_failed" };
