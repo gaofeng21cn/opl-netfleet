@@ -17,7 +17,7 @@ Options:
   --test-ref <ref>  Use revised VM tests with identical product source
   --packages <dir>  Also install and qualify the exact APK or IPK candidate directory
   --openwrt-version <ver>  Official OpenWrt VM image version (25.12.5 or 24.10.2; default 25.12.5)
-  --diagnostic <lane>  Run native, setup, migration, runtime, package, compatibility, or opkg diagnostics
+  --diagnostic <lane>  Run native, setup, migration, runtime, package, compatibility, opkg, bundle, or migrate-bundle diagnostics
   --release-lane <lane>  Run one isolated release lane (native, setup, migration, or package)
   --release-harness <commit>  Use the named VM runner and guest tests for release recovery
   --core-package <dir>  Qualify a same-binary core architecture variant against --base-qualification
@@ -79,7 +79,7 @@ while (($#)); do
 		--diagnostic)
 			(($# >= 2)) || die "--diagnostic requires a lane"
 			diagnostic=$2
-			case "$diagnostic" in native|setup|migration|runtime|package|compatibility|opkg) ;; *) die "unknown diagnostic lane: $diagnostic" ;; esac
+			case "$diagnostic" in native|setup|migration|runtime|package|compatibility|opkg|bundle|migrate-bundle) ;; *) die "unknown diagnostic lane: $diagnostic" ;; esac
 			shift 2
 			;;
 		--release-lane)
@@ -129,7 +129,9 @@ done
 [[ -z "$plugin_packages" || "$diagnostic" == all || "$diagnostic" == native ]] || die "plugin packages require the full suite or native diagnostic lane"
 [[ "$diagnostic" != package || -n "$packages" ]] || die "package diagnostic requires --packages"
 [[ "$diagnostic" != opkg || -n "$packages" ]] || die "opkg diagnostic requires --packages"
-[[ "$diagnostic" == all || "$diagnostic" == package || "$diagnostic" == setup || "$diagnostic" == compatibility || "$diagnostic" == opkg || -z "$packages" ]] || die "this diagnostic does not accept --packages"
+[[ "$diagnostic" != bundle || -n "$packages" ]] || die "bundle diagnostic requires --packages"
+[[ "$diagnostic" != migrate-bundle || -n "$packages" ]] || die "migrate-bundle diagnostic requires --packages"
+[[ "$diagnostic" == all || "$diagnostic" == package || "$diagnostic" == setup || "$diagnostic" == compatibility || "$diagnostic" == opkg || "$diagnostic" == bundle || "$diagnostic" == migrate-bundle || -z "$packages" ]] || die "this diagnostic does not accept --packages"
 if [[ -n "$release_lane" ]]; then
 	[[ "$diagnostic" == all && -z "$test_ref$plugin_packages" ]] ||
 		die 'release lanes require the candidate source and cannot be combined with diagnostics or plugin tests'
@@ -215,6 +217,8 @@ git -c tar.umask=0022 -C "$repo_dir" archive "$source_commit" \
 	scripts/openwrt-vm \
 	scripts/openwrt-apk.py \
 	scripts/install-netfleet.sh \
+	scripts/netfleet_usign.py \
+	scripts/netfleet-bundle-build.py \
 	scripts/verify-netfleet-release.py examples/plugins plugins tests >"$work_dir/source.tar"
 # BSD tar can stop at the end markers before Git finishes its padding blocks.
 # A complete archive avoids SIGPIPE under pipefail on macOS.
@@ -316,13 +320,16 @@ print(json.dumps(identity))
 PY
 )
 	fi
-	if [[ "$diagnostic" == opkg ]]; then
+	if [[ "$diagnostic" == opkg || ( "$diagnostic" == bundle && "$openwrt_version" == 24.10.2 ) ]]; then
 		python3 - "$packages" "$repo_dir/scripts/netfleet_usign.py" "$package_commit" "$package_tree" <<'PY'
 import importlib.util, json, sys
 from pathlib import Path
 pkg_dir = Path(sys.argv[1])
 manifest = json.loads((pkg_dir / "manifest.json").read_text())
-if (manifest.get("package_format") != "ipk" or manifest.get("package_arch") != "all"
+has_ipk_index = manifest.get("package_format") == "ipk" or (
+    manifest.get("delivery_model") == "release-bundle" and isinstance(manifest.get("opkg_index"), dict)
+)
+if (not has_ipk_index
         or manifest.get("build_target_arch") != "aarch64_generic"
         or manifest.get("source_commit") != sys.argv[3]
         or manifest.get("source_tree") != sys.argv[4]):
@@ -349,6 +356,10 @@ if (
 ):
     raise SystemExit("openwrt-vm: package candidate must be a noarch APK set built for aarch64_generic")
 PY
+	fi
+	if [[ "$diagnostic" == bundle ]]; then
+		bundle_sign_key=${NETFLEET_BUNDLE_SIGN_KEY:-$HOME/.config/opl-netfleet/keys/netfleet-ed25519-private.pem}
+		[[ -f "$bundle_sign_key" ]] || die "bundle diagnostic requires NETFLEET_BUNDLE_SIGN_KEY"
 	fi
 	package_manifest_sha=$(shasum -a 256 "$packages/manifest.json" | awk '{print $1}')
 	if [[ -n "$release_lane" ]]; then
@@ -386,6 +397,8 @@ NETFLEET_QEMU_CPU=$qemu_cpu \
 	NETFLEET_PLUGIN_PACKAGES="$plugin_packages" \
 	NETFLEET_PACKAGE_ARCHIVE="$package_archive" \
 	NETFLEET_PACKAGE_MANIFEST_SHA256="$package_manifest_sha" \
+	NETFLEET_VM_LEGACY_FEED="${NETFLEET_VM_LEGACY_FEED:-$cache_root/opl-netfleet/packages/v0.9.32-3fd1e5bd}" \
+	NETFLEET_BUNDLE_SIGN_KEY="${NETFLEET_BUNDLE_SIGN_KEY:-$HOME/.config/opl-netfleet/keys/netfleet-ed25519-private.pem}" \
 	sh "$source_dir/scripts/openwrt-vm/qualify.sh"
 
 [[ -f "$output_dir/$output_name" ]] || die "qualification receipt was not produced"

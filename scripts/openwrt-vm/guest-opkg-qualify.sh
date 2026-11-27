@@ -85,7 +85,7 @@ uclient-fetch -q -O "$candidate/install-netfleet.sh" "$feed_url/install-netfleet
 [ "$(digest "$candidate/manifest.json")" = "$manifest_sha" ]
 assert_json "$candidate/manifest.json" '@.source_commit' "$source_commit"
 assert_json "$candidate/manifest.json" '@.source_tree' "$source_tree"
-assert_json "$candidate/manifest.json" '@.package_format' ipk
+assert_json "$candidate/manifest.json" '@.opkg_index.packages.name' Packages
 
 NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 \
 	sh "$candidate/install-netfleet.sh" >>"$work/packages.log" 2>&1
@@ -143,9 +143,10 @@ ucode -e '
 
 ucode "$main" components-get >"$work/components-get.json"
 assert_json "$work/components-get.json" '@.ok' true
-assert_json "$work/components-get.json" '@.result.supported' false
-assert_json "$work/components-get.json" '@.result.unsupported_reason' opkg_read_only
+assert_json "$work/components-get.json" '@.result.supported' true
+assert_json "$work/components-get.json" '@.result.delivery_mode' release-bundle
 assert_json "$work/components-get.json" '@.result.package_manager' opkg
+assert_json "$work/components-get.json" '@.result.capabilities.release_bundle' true
 ucode -e '
 	import { readfile } from "fs";
 	const r = json(readfile(ARGV[0])).result;

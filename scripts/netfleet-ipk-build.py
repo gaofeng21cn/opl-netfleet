@@ -200,8 +200,7 @@ stop_core() {
 \tif /etc/init.d/opl-netfleet-core running >/dev/null 2>&1; then
 \t\trun_step "opl-netfleet-core stop" /etc/init.d/opl-netfleet-core stop || return 1
 \telse
-\t\t/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || true
-\t\t[ ! -x "$main" ] || run_step "native-gateway-cleanup" ucode "$main" native-gateway-cleanup || return 1
+\t\t/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || return 1
 \tfi
 }
 is_upgrade=0
@@ -271,19 +270,42 @@ run_step() {{
 bundle_root=/usr/share/opl-netfleet
 release_dir="releases/{version}"
 run_step "mkdir bundle dirs" mkdir -p "$bundle_root/releases" /usr/libexec/opl-netfleet/plugins /etc/opl-netfleet/extensions || exit 1
-if [ ! -e "$bundle_root/current" ] || [ ! -d "$bundle_root/current/runtime" ]; then
-\tln -sfn "$release_dir" "$bundle_root/.current.next" && mv -f "$bundle_root/.current.next" "$bundle_root/current" || {{
-\t\trm -f "$bundle_root/current"
-\t\trun_step "ln current" ln -s "$release_dir" "$bundle_root/current" || exit 1
+ucode -e '
+\timport * as fs from "fs";
+\tconst root = ARGV[0], ver = ARGV[1], rel = ARGV[2];
+\tfunction swap(link_path, target) {{
+\t\tconst parent = fs.dirname(link_path);
+\t\tconst tmp = parent + "/." + fs.basename(link_path) + ".next";
+\t\tfs.unlink(tmp);
+\t\tif (!fs.symlink(target, tmp) || !fs.rename(tmp, link_path)) {{ fs.unlink(tmp); die("symlink_failed:" + link_path); }}
 \t}}
-fi
-for name in system.json build.json nikki netfleet.config; do
-\trm -rf "$bundle_root/$name.tmp"
-\tif [ -e "$bundle_root/$name" ] && [ ! -L "$bundle_root/$name" ]; then
-\t\trun_step "rm legacy $name" rm -rf "$bundle_root/$name" || exit 1
-\tfi
-\trun_step "ln $name" ln -sfn "current/share/$name" "$bundle_root/$name" || exit 1
-done
+\tfunction ver_ge(a, b) {{
+\t\tif (b == null) return true;
+\t\tconst pa = split(a, "."), pb = split(b, ".");
+\t\tif (length(pa) != 3 || length(pb) != 3) return true;
+\t\tfor (let i = 0; i < 3; i++) {{
+\t\t\tif (int(pa[i]) != int(pb[i])) return int(pa[i]) > int(pb[i]);
+\t\t}}
+\t\treturn true;
+\t}}
+\tconst cur = fs.readlink(root + "/current");
+\tlet cur_ver = null;
+\ttry {{ cur_ver = json(fs.readfile(root + "/current/share/build.json")).version; }} catch (e) {{}}
+\tif (cur == null || fs.stat(root + "/current/runtime") == null || ver_ge(ver, cur_ver)) {{
+\t\tif (cur != null && cur != rel && fs.stat(root + "/" + cur + "/share/build.json") != null)
+\t\t\tswap(root + "/previous", cur);
+\t\tswap(root + "/current", rel);
+\t}}
+\tfor (let name in ["system.json", "build.json", "nikki", "netfleet.config", "LICENSE.Apache-2.0"]) {{
+\t\tconst p = root + "/" + name;
+\t\tconst st = fs.lstat(p);
+\t\tif (st != null && st.type != "link") {{
+\t\t\tif (st.type == "directory") system("rm -rf " + p);
+\t\t\telse fs.unlink(p);
+\t\t}}
+\t\tswap(p, "current/share/" + name);
+\t}}
+' "$bundle_root" "{version}" "$release_dir" || exit 1
 main=/usr/libexec/opl-netfleet/main.uc
 upgrade_state=/tmp/opl-netfleet-package-upgrade-state
 stop_netfleet() {{
@@ -306,8 +328,7 @@ stop_core() {{
 \tif /etc/init.d/opl-netfleet-core running >/dev/null 2>&1; then
 \t\trun_step "opl-netfleet-core stop" /etc/init.d/opl-netfleet-core stop || return 1
 \telse
-\t\t/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || true
-\t\t[ ! -x "$main" ] || run_step "native-gateway-cleanup" ucode "$main" native-gateway-cleanup || return 1
+\t\t/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || return 1
 \tfi
 }}
 is_upgrade=0
@@ -557,6 +578,9 @@ def build_ipk_feed(
     skip_core: bool = False,
     mihomo_asset: Path | None = None,
     sign_key: Path | None = None,
+    merge_manifest: bool = False,
+    source_commit: str | None = None,
+    source_tree: str | None = None,
 ) -> dict[str, object]:
     repo = repo.resolve()
     output_dir = output_dir.resolve()
@@ -565,13 +589,23 @@ def build_ipk_feed(
     usign = _load_module("netfleet_usign", repo / "scripts/netfleet_usign.py")
     bundle_builder = _load_module("netfleet_bundle_build", repo / "scripts/netfleet-bundle-build.py")
 
+    manifest_out = output_dir / "manifest.json"
+    existing_manifest: dict[str, object] | None = None
+    if merge_manifest and manifest_out.is_file():
+        existing_manifest = json.loads(manifest_out.read_text(encoding="utf-8"))
+
     if version is None:
         version = json.loads((repo / "product-version.json").read_text(encoding="utf-8"))["version"]
     if not SEMVER_RE.fullmatch(version):
         raise ValueError(f"invalid version: {version}")
     min_shell_version = min_shell_version or version
 
-    source_commit, source_tree = bundle_builder.git_identity(repo)
+    if not source_commit or not source_tree:
+        if existing_manifest is not None:
+            source_commit = str(existing_manifest.get("source_commit") or "")
+            source_tree = str(existing_manifest.get("source_tree") or "")
+        else:
+            source_commit, source_tree = bundle_builder.git_identity(repo)
     resolved_key = Path(
         sign_key or os.environ.get("NETFLEET_BUNDLE_SIGN_KEY") or bundle_builder.DEFAULT_SIGN_KEY
     )
@@ -585,12 +619,40 @@ def build_ipk_feed(
     with tempfile.TemporaryDirectory(prefix="netfleet-ipk-stage-") as tmp:
         stage_root = Path(tmp)
         expanded_bundle = stage_root / "expanded-bundle"
-        bundle_summary = bundle_builder.build_bundle(
-            repo, output_dir,
-            version=version, min_shell_version=min_shell_version, channel=channel,
-            source_commit=source_commit, source_tree=source_tree,
-            sign_key=resolved_key, keep_expanded_dir=expanded_bundle,
-        )
+        existing_archive = output_dir / f"opl-netfleet-bundle-{version}.tar.gz"
+        existing_rmf = output_dir / "release-manifest.json"
+        existing_rsig = output_dir / "release-manifest.json.sig"
+        existing_rpub = output_dir / "opl-netfleet-bundle.pub"
+        if merge_manifest and existing_archive.is_file() and existing_rmf.is_file() and existing_rsig.is_file() and existing_rpub.is_file():
+            rmf = json.loads(existing_rmf.read_text(encoding="utf-8"))
+            if rmf.get("version") != version or rmf.get("source_commit") != source_commit or rmf.get("source_tree") != source_tree:
+                raise ValueError("existing Release Bundle does not match requested IPK build identity")
+            expanded_bundle.mkdir(parents=True, exist_ok=True)
+            with tarfile.open(existing_archive, "r:gz") as tf:
+                for member in tf.getmembers():
+                    clean = member.name.lstrip("./")
+                    if not clean or member.islnk() or member.issym() or clean.startswith("/") or ".." in Path(clean).parts:
+                        raise ValueError(f"unsafe existing bundle archive entry: {member.name}")
+                tf.extractall(expanded_bundle, filter="data")
+            runtime_payload_hasher = hashlib.sha256()
+            for rel in sorted(rmf.get("files", {})):
+                meta = rmf["files"][rel]
+                runtime_payload_hasher.update(f"{meta['sha256']}  {rel}\n".encode("ascii"))
+            bundle_summary = {
+                "archive": existing_archive.name,
+                "archive_sha256": hashlib.sha256(existing_archive.read_bytes()).hexdigest(),
+                "archive_size": existing_archive.stat().st_size,
+                "manifest_sha256": hashlib.sha256(existing_rmf.read_bytes()).hexdigest(),
+                "manifest_sig_sha256": hashlib.sha256(existing_rsig.read_bytes()).hexdigest(),
+                "runtime_payload_sha256": runtime_payload_hasher.hexdigest(),
+            }
+        else:
+            bundle_summary = bundle_builder.build_bundle(
+                repo, output_dir,
+                version=version, min_shell_version=min_shell_version, channel=channel,
+                source_commit=source_commit, source_tree=source_tree,
+                sign_key=resolved_key, keep_expanded_dir=expanded_bundle,
+            )
 
         # 1. opl-netfleet_<version>_all.ipk
         shell_data = stage_root / "opl-netfleet"
@@ -768,53 +830,70 @@ def build_ipk_feed(
         data = path.read_bytes()
         return {"name": path.name, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
 
-    manifest = {
-        "schema": "opl-netfleet-package-manifest.v2",
-        "delivery_model": "release-bundle",
-        "package_format": "ipk",
-        "package_arch": "all",
-        "build_target_arch": core_arch,
-        "package_version": version,
-        "source_commit": source_commit,
-        "source_tree": source_tree,
-        "runtime_payload_sha256": bundle_summary["runtime_payload_sha256"],
-        "usign_key_id": usign_key_id,
-        "usign_public_key": _file_ref(pub_path),
-        "opkg_index": {
+    ipk_items = [
+        {
+            "package": pkg["package"],
+            "name": pkg["name"],
+            "version": pkg["version"],
+            "sha256": pkg["sha256"],
+            "size": pkg["size"],
+        }
+        for pkg in built_packages
+        if pkg["package"] != "mihomo-meta"
+    ]
+    ipk_files = {
+        str(pkg["package"]): str(pkg["name"])
+        for pkg in built_packages
+        if pkg["package"] != "mihomo-meta"
+    }
+    release_bundle_ref = {
+        "archive": bundle_summary["archive"],
+        "archive_sha256": bundle_summary["archive_sha256"],
+        "archive_size": bundle_summary["archive_size"],
+        "manifest": "release-manifest.json",
+        "manifest_sha256": bundle_summary["manifest_sha256"],
+        "manifest_sig": "release-manifest.json.sig",
+        "manifest_sig_sha256": bundle_summary["manifest_sig_sha256"],
+        "public_key": "opl-netfleet-bundle.pub",
+    }
+    if merge_manifest and existing_manifest is not None:
+        manifest = dict(existing_manifest)
+        manifest["delivery_model"] = "release-bundle"
+        manifest["usign_key_id"] = usign_key_id
+        manifest["usign_public_key"] = _file_ref(pub_path)
+        manifest["opkg_index"] = {
             "packages": _file_ref(packages_path),
             "packages_gz": _file_ref(packages_gz_path),
             "packages_sig": _file_ref(sig_path),
-        },
-        "release_bundle": {
-            "archive": bundle_summary["archive"],
-            "archive_sha256": bundle_summary["archive_sha256"],
-            "archive_size": bundle_summary["archive_size"],
-            "manifest": "release-manifest.json",
-            "manifest_sha256": bundle_summary["manifest_sha256"],
-            "manifest_sig": "release-manifest.json.sig",
-            "manifest_sig_sha256": bundle_summary["manifest_sig_sha256"],
-            "public_key": "opl-netfleet-bundle.pub",
-        },
-        "feed_bootstrap": _file_ref(installer_dst),
-        "artifacts": [
-            {
-                "package": pkg["package"],
-                "name": pkg["name"],
-                "version": pkg["version"],
-                "sha256": pkg["sha256"],
-                "size": pkg["size"],
-            }
-            for pkg in built_packages
-            if pkg["package"] != "mihomo-meta"
-        ],
-        "artifact_files": {
-            str(pkg["package"]): str(pkg["name"])
-            for pkg in built_packages
-            if pkg["package"] != "mihomo-meta"
-        },
-        "dependency_artifacts": dependency_artifacts,
-    }
-    manifest_out = output_dir / "manifest.json"
+        }
+        manifest["release_bundle"] = release_bundle_ref
+        manifest["ipk_artifacts"] = ipk_items
+        manifest["ipk_artifact_files"] = ipk_files
+        manifest["ipk_dependency_artifacts"] = dependency_artifacts
+    else:
+        manifest = {
+            "schema": "opl-netfleet-package-manifest.v2",
+            "delivery_model": "release-bundle",
+            "package_format": "ipk",
+            "package_arch": "all",
+            "build_target_arch": core_arch,
+            "package_version": version,
+            "source_commit": source_commit,
+            "source_tree": source_tree,
+            "runtime_payload_sha256": bundle_summary["runtime_payload_sha256"],
+            "usign_key_id": usign_key_id,
+            "usign_public_key": _file_ref(pub_path),
+            "opkg_index": {
+                "packages": _file_ref(packages_path),
+                "packages_gz": _file_ref(packages_gz_path),
+                "packages_sig": _file_ref(sig_path),
+            },
+            "release_bundle": release_bundle_ref,
+            "feed_bootstrap": _file_ref(installer_dst),
+            "artifacts": ipk_items,
+            "artifact_files": ipk_files,
+            "dependency_artifacts": dependency_artifacts,
+        }
     manifest_out.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     manifest_out.chmod(0o644)
     return manifest
@@ -831,6 +910,9 @@ def main() -> int:
     parser.add_argument("--skip-core", action="store_true")
     parser.add_argument("--mihomo-asset", type=Path)
     parser.add_argument("--sign-key", type=Path)
+    parser.add_argument("--merge-manifest", action="store_true")
+    parser.add_argument("--source-commit")
+    parser.add_argument("--source-tree")
     args = parser.parse_args()
     manifest = build_ipk_feed(
         args.repo, args.output,
@@ -838,13 +920,16 @@ def main() -> int:
         channel=args.channel, core_arch=args.arch,
         skip_core=args.skip_core, mihomo_asset=args.mihomo_asset,
         sign_key=args.sign_key,
+        merge_manifest=args.merge_manifest,
+        source_commit=args.source_commit,
+        source_tree=args.source_tree,
     )
     print(json.dumps({
         "ok": True,
         "package_format": manifest["package_format"],
         "version": manifest["package_version"],
         "usign_key_id": manifest["usign_key_id"],
-        "artifacts": manifest["artifact_files"],
+        "artifacts": manifest.get("ipk_artifact_files", manifest["artifact_files"]),
     }, indent=2))
     return 0
 

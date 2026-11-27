@@ -24,7 +24,7 @@ command -v jsonfilter >/dev/null 2>&1 || die 'OpenWrt jsonfilter is required'
 
 if [ "$pkg_mgr" = apk ]; then
 	# Layout migrations need their own rollback qualification, including optional packages.
-	if apk info -e opl-netfleet >/dev/null 2>&1 && ! apk info -e opl-netfleet-kernel >/dev/null 2>&1; then
+	if apk info -e opl-netfleet >/dev/null 2>&1 && ! apk info -e opl-netfleet-kernel >/dev/null 2>&1 && [ ! -e /usr/share/opl-netfleet/shell.json ]; then
 		die 'legacy monolith migration requires a qualified package transaction; installed packages were not changed'
 	fi
 fi
@@ -66,6 +66,29 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+write_release_feed() {
+	if [ -n "${NETFLEET_RELEASE_FEED_FILE:-}" ]; then
+		release_feed_file=$NETFLEET_RELEASE_FEED_FILE
+	elif [ "${NETFLEET_INSTALL_TESTING:-0}" = 1 ]; then
+		release_feed_file="$(dirname "${NETFLEET_APK_REPOSITORY_FILE:-${NETFLEET_OPKG_CUSTOMFEEDS_FILE:-$work/release-feed.json}}")/release-feed.json"
+	else
+		release_feed_file=/etc/opl-netfleet/release-feed.json
+	fi
+	mkdir -p "$(dirname "$release_feed_file")"
+	case "$feed_base" in
+		https://*)
+			printf '{"schema":"opl-netfleet-release-feed.v1","url":"%s"}\n' "$feed_base" >"$release_feed_file.$$"
+			;;
+		http://*)
+			[ "${NETFLEET_ALLOW_INSECURE_FEED:-0}" = 1 ] || die 'HTTP feed requires NETFLEET_ALLOW_INSECURE_FEED=1'
+			printf '{"schema":"opl-netfleet-release-feed.v1","url":"%s","allow_insecure":true}\n' "$feed_base" >"$release_feed_file.$$"
+			;;
+		*) die 'feed URL must use HTTPS' ;;
+	esac
+	chmod 0600 "$release_feed_file.$$"
+	mv -f "$release_feed_file.$$" "$release_feed_file"
+}
+
 fetch() {
 	url=$1
 	destination=$2
@@ -102,8 +125,7 @@ if [ "$pkg_mgr" = opkg ]; then
 
 	opkg_keys_dir=${NETFLEET_OPKG_KEYS_DIR:-/etc/opkg/keys}
 	opkg_feeds_file=${NETFLEET_OPKG_CUSTOMFEEDS_FILE:-/etc/opkg/customfeeds.conf}
-	release_feed_file=${NETFLEET_RELEASE_FEED_FILE:-/etc/opl-netfleet/release-feed.json}
-	mkdir -p "$opkg_keys_dir" "$(dirname "$opkg_feeds_file")" "$(dirname "$release_feed_file")"
+	mkdir -p "$opkg_keys_dir" "$(dirname "$opkg_feeds_file")"
 
 	cp "$work/$opkg_key_name" "$opkg_keys_dir/.$key_id.$$"
 	chmod 0644 "$opkg_keys_dir/.$key_id.$$"
@@ -119,9 +141,7 @@ if [ "$pkg_mgr" = opkg ]; then
 	chmod 0644 "$feeds_staged"
 	mv -f "$feeds_staged" "$opkg_feeds_file"
 
-	printf '{"schema":"opl-netfleet-release-feed.v1","url":"%s"}\n' "$feed_base" >"$release_feed_file.$$"
-	chmod 0600 "$release_feed_file.$$"
-	mv -f "$release_feed_file.$$" "$release_feed_file"
+	write_release_feed
 
 	for index_attempt in 1 2 3; do
 		if opkg update; then break; fi
@@ -220,6 +240,7 @@ printf '%s/packages.adb\n' "$feed_base" >"$repository_staged"
 chmod 0644 "$repository_staged"
 mv -f "$key_staged" "$key_target"
 mv -f "$repository_staged" "$repository_file"
+write_release_feed
 if [ "$install_profile" = full ]; then
  cp "$work/compat-public-key.pem" "$keys_dir/.compat-public-key.pem.$$"
  chmod 0644 "$keys_dir/.compat-public-key.pem.$$"
@@ -236,31 +257,105 @@ for index_attempt in 1 2 3; do
 done
 # Read the candidate product composition so newly added plugins are included too.
 apk --no-network query --from none -X "$feed_base/packages.adb" \
-	--format json --fields depends opl-netfleet >"$work/product.json"
-dependencies=$(jsonfilter -i "$work/product.json" -e '@[*].depends[*]')
+	--format json --fields depends,provides opl-netfleet >"$work/product.json"
+dependencies=$(jsonfilter -i "$work/product.json" -e '@[*].depends[*]' 2>/dev/null || true)
+provides=$(jsonfilter -i "$work/product.json" -e '@[*].provides[*]' 2>/dev/null || true)
 set -- opl-netfleet luci-app-netfleet
 set -f
+has_legacy=0
 for dependency in $dependencies; do
 	name=${dependency%%[\<\>\=\~]*}
 	case "$name" in
 		opl-netfleet-kernel|opl-netfleet-plugin-*)
 			case "$name" in *[!a-z0-9-]*) die 'invalid product package name' ;; esac
 			set -- "$@" "$name"
+			has_legacy=1
 			;;
 	esac
 done
-[ "$#" -gt 2 ] || die 'product package dependencies are missing'
-if [ "$install_profile" = full ]; then
- set -- "$@" opl-netfleet-plugin-https-compat opl-netfleet-https-compat opl-netfleet-plugin-device-identity
- # Resolve the entire composition before installing any package. No service
- # enable action is issued here; package hooks preserve existing user choices.
- apk --timeout 300 --simulate add "$@" >/dev/null || die 'full installation dependencies unavailable; packages were not changed'
- apk --timeout 300 add "$@"
-elif ! apk info -e opl-netfleet >/dev/null 2>&1 || ! apk info -e luci-app-netfleet >/dev/null 2>&1; then
-	apk --timeout 300 add opl-netfleet luci-app-netfleet
+set +f
+if [ "$has_legacy" = 0 ]; then
+	is_thin_shell=0
+	for cap in $provides; do
+		case "${cap%%=*}" in
+			netfleet-plugin-api-v1) is_thin_shell=1 ;;
+		esac
+	done
+	[ "$is_thin_shell" = 1 ] || die 'product package dependencies are missing'
+	if apk info -e mihomo-meta >/dev/null 2>&1; then
+		set -- "$@" mihomo-meta
+	elif [ ! -e /etc/init.d/nikki ] && { { ! command -v mihomo >/dev/null 2>&1 && [ ! -e /usr/bin/mihomo ]; } || { [ -L /usr/bin/mihomo ] && [ "$(readlink /usr/bin/mihomo 2>/dev/null || true)" = /usr/libexec/mihomo ]; }; }; then
+		set -- "$@" mihomo-meta
+	fi
 fi
-# Named upgrades leave satisfied system dependencies and newer plugins installed.
-apk --timeout 300 upgrade "$@"
+if [ "$install_profile" = full ]; then
+	if [ "$has_legacy" = 1 ]; then
+		set -- "$@" opl-netfleet-plugin-https-compat opl-netfleet-https-compat opl-netfleet-plugin-device-identity
+	else
+		set -- "$@" opl-netfleet-https-compat opl-netfleet-plugin-device-identity
+	fi
+	# Resolve the entire composition before installing any package. No service
+	# enable action is issued here; package hooks preserve existing user choices.
+	apk --timeout 300 --simulate add "$@" >/dev/null || die 'full installation dependencies unavailable; packages were not changed'
+	apk --timeout 300 add "$@"
+	apk --timeout 300 upgrade "$@"
+elif [ "$has_legacy" = 0 ] && apk info -e opl-netfleet-kernel >/dev/null 2>&1; then
+	# Migrate 28-pkg installation (opl-netfleet-kernel + 24 built-in plugin APKs) to Release Bundle thin shell.
+	mkdir -p "$work/apks"
+	apk --timeout 300 fetch --output "$work/apks" "$@" >/dev/null ||
+		die 'failed to fetch thin-shell packages; existing installation was not changed'
+	for pkg_file in "$work/apks"/*.apk; do
+		[ -f "$pkg_file" ] || die 'thin-shell package download missing; existing installation was not changed'
+		apk --no-network verify "$pkg_file" >/dev/null ||
+			die 'thin-shell package signature verification failed; existing installation was not changed'
+	done
+	upgrade_state=/tmp/opl-netfleet-package-upgrade-state
+	[ ! -e "$upgrade_state" ] || die 'previous package upgrade state is incomplete; refusing migration'
+	backend=nikki-mihomo
+	if [ -e /etc/opl-netfleet/backend.json ]; then
+		backend=$(jsonfilter -i /etc/opl-netfleet/backend.json -e '@.kind') || die 'cannot read backend identity'
+	fi
+	case "$backend" in nikki-mihomo|native-mihomo) ;; *) die "invalid backend identity: $backend" ;; esac
+	was_enabled=0; was_running=0; core_enabled=0; core_running=0
+	if [ -x /etc/init.d/opl-netfleet ]; then
+		/etc/init.d/opl-netfleet enabled >/dev/null 2>&1 && was_enabled=1 || true
+		/etc/init.d/opl-netfleet running >/dev/null 2>&1 && was_running=1 || true
+	fi
+	if [ "$backend" = native-mihomo ] && [ -x /etc/init.d/opl-netfleet-core ]; then
+		/etc/init.d/opl-netfleet-core enabled >/dev/null 2>&1 && core_enabled=1 || true
+		/etc/init.d/opl-netfleet-core running >/dev/null 2>&1 && core_running=1 || true
+	fi
+	umask 077
+	printf '%s %s %s %s %s\n' "$backend" "$was_enabled" "$was_running" "$core_enabled" "$core_running" >"$upgrade_state" ||
+		die 'cannot snapshot service state before migration'
+	: >/tmp/opl-netfleet-microkernel-migration || die 'cannot mark migration state'
+	if [ -x /etc/init.d/opl-netfleet ] && /etc/init.d/opl-netfleet running >/dev/null 2>&1; then
+		/etc/init.d/opl-netfleet stop >/dev/null 2>&1 || die 'failed to stop opl-netfleet before migration'
+	fi
+	if [ "$backend" = native-mihomo ] && [ -x /etc/init.d/opl-netfleet-core ] && /etc/init.d/opl-netfleet-core running >/dev/null 2>&1; then
+		/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || die 'failed to stop opl-netfleet-core before migration'
+	fi
+	legacy_del='opl-netfleet-kernel'
+	for inst in $(apk info 2>/dev/null | grep -E '^opl-netfleet-plugin-' || true); do
+		[ "$inst" = opl-netfleet-plugin-device-identity ] && continue
+		legacy_del="$legacy_del $inst"
+	done
+	negated=
+	for p in $legacy_del; do
+		negated="$negated !$p"
+	done
+	if ! apk --timeout 300 add --upgrade "$@" $negated; then
+		apk --no-network del $legacy_del || die 'failed to remove legacy built-in plugin packages'
+		apk --no-network add --upgrade "$work/apks"/*.apk || die 'failed to install verified thin-shell packages after legacy removal'
+	fi
+	[ -e /usr/share/opl-netfleet/shell.json ] && [ -f /usr/share/opl-netfleet/current/runtime/kernel/host.uc ] ||
+		die 'thin-shell migration post-install layout verification failed'
+elif ! apk info -e opl-netfleet >/dev/null 2>&1 || ! apk info -e luci-app-netfleet >/dev/null 2>&1; then
+	apk --timeout 300 add "$@"
+	apk --timeout 300 upgrade "$@"
+else
+	apk --timeout 300 upgrade "$@"
+fi
 
 # First full installation exposes the optional management page without enabling
 # interception. Existing installations retain the administrator's load choice.

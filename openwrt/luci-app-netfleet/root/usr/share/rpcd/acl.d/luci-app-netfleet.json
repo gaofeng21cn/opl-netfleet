@@ -54,6 +54,7 @@
           "components_update",
           "components_plugin",
           "components_recover",
+          "components_rollback",
           "components_cancel",
           "native_setup_apply",
           "subscriptions_set",

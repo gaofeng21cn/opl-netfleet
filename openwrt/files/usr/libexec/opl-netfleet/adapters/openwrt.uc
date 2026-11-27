@@ -112,12 +112,10 @@ export function create(root) {
 	const resolved_root = root != null ? (fs.realpath(root) ?? root) : null;
 	const primary_plugins = resolved_root != null ? fs.realpath(`${resolved_root}/plugins`) : null;
 	const extra_plugin_roots = [];
-	if (resolved_root != null && resolved_root == installed_root) {
-		for (let candidate in ['/usr/libexec/opl-netfleet/plugins', '/etc/opl-netfleet/extensions']) {
-			const real = fs.realpath(candidate);
-			if (fs.lstat(candidate)?.type == 'directory' && real != null && real != primary_plugins)
-				push(extra_plugin_roots, candidate);
-		}
+	for (let candidate in ['/usr/libexec/opl-netfleet/plugins', '/etc/opl-netfleet/extensions']) {
+		const real = fs.realpath(candidate);
+		if (fs.lstat(candidate)?.type == 'directory' && real != null && real != primary_plugins)
+			push(extra_plugin_roots, candidate);
 	}
 	return { paths: { ...PATHS, installed_root: installed_root, default_system: default_system },
 		extra_plugin_roots: extra_plugin_roots, trusted_owner: OWNER,

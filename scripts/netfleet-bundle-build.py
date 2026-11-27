@@ -206,6 +206,8 @@ def stage_bundle_tree(
         payload_hasher.update(f"{digest}  {rel}\n".encode("ascii"))
 
     # Collect declared system dependencies from bundled plugins + shell core baseline.
+    # Virtual per-plugin package names and optional external/bundled mihomo binary
+    # aliases are excluded so thin shells work identically on apk and opkg hosts.
     deps = {
         "ucode", "ucode-mod-fs", "ucode-mod-uci", "ucode-mod-ubus", "ucode-mod-uloop",
         "ucode-mod-socket", "ucode-mod-digest", "yq", "curl", "ca-bundle", "flock",
@@ -213,7 +215,10 @@ def stage_bundle_tree(
         "kmod-nft-tproxy", "usign",
     }
     for pid in default_ids:
-        deps.update(plugins[pid].get("package_dependencies", []))
+        for dep in plugins[pid].get("package_dependencies", []):
+            if dep == "opl-netfleet-kernel" or dep == "mihomo" or dep.startswith("opl-netfleet-plugin-"):
+                continue
+            deps.add(dep)
     return files_meta, payload_hasher.hexdigest(), sorted(deps)
 
 

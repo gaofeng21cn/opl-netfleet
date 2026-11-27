@@ -78,6 +78,11 @@
       "service": "components.control",
       "method": "command",
       "access": "write"
+    },
+    "components-rollback": {
+      "service": "components.control",
+      "method": "command",
+      "access": "write"
     }
   },
   "package_dependencies": [

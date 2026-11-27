@@ -260,23 +260,7 @@ class ReleaseToolsTests(unittest.TestCase):
             self.assertEqual(field('version.' + identity), [plugins[identity]['version']])
             deps = sorted({*plugins[identity].get('package_dependencies', []), *(plugins[req]['package'] for req in graph[identity])})
             self.assertEqual(field('depends.' + identity), [f'+{name}' for name in deps])
-        # Exercise actual Make expansion, including nested plugin template eval.
-        source = (ROOT / 'openwrt/Makefile').read_text()
-        header = source[source.index('NETFLEET_METADATA:='):source.index('define Package/opl-netfleet-kernel')]
-        makefile = header + """
-define fixture
-version.$(1):=$(call netfleet_metadata,version.$(1))
-depends.$(1):=$(call netfleet_metadata,depends.$(1))
-endef
-$(foreach plugin,$(NETFLEET_PLUGINS),$(eval $(call fixture,$(plugin))))
-all:
-	@$(foreach plugin,$(NETFLEET_PLUGINS),echo '$(plugin) $(version.$(plugin)) $(depends.$(plugin))';)
-"""
-        actual = subprocess.check_output(['make', '-s', '-f', '-'], input=makefile,
-                                         text=True, cwd=script.parent).splitlines()
-        expected = [' '.join([identity, *field('version.' + identity), *field('depends.' + identity)])
-                    for identity in field('id')]
-        self.assertEqual([line.split() for line in actual], [line.split() for line in expected])
+        self.assertNotIn('define Package/opl-netfleet-kernel', (ROOT / 'openwrt/Makefile').read_text())
 
     def test_batch_package_metadata_rejects_invalid_composition(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -1272,9 +1256,9 @@ exit "$code"
 
     def test_native_removal_requires_clean_dataplane(self):
         self.update_state(dirty=True)
-        self.assertNotEqual(0, self.hook('prerm').returncode)
+        self.assertNotEqual(0, self.hook('prerm', PKG_UPGRADE='0').returncode)
         self.update_state(dirty=False)
-        result = self.hook('prerm')
+        result = self.hook('prerm', PKG_UPGRADE='0')
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertFalse(self.read_state()['opl-netfleet-core']['running'])
         self.assertFalse(self.read_state()['opl-netfleet-core']['enabled'])
@@ -1282,7 +1266,7 @@ exit "$code"
 
     def test_nikki_removal_retains_existing_owner_cleanup(self):
         self.update_state(backend='nikki-mihomo')
-        result = self.hook('prerm')
+        result = self.hook('prerm', PKG_UPGRADE='0')
         self.assertEqual(0, result.returncode, result.stderr)
         actions = [call[-1] for call in self.read_state()['calls'] if call[0] == 'ucode']
         self.assertIn('disable', actions)
@@ -1373,27 +1357,18 @@ class PrebuiltComponentFixtures(unittest.TestCase):
 
 
 class IncrementalPackagingTests(unittest.TestCase):
-    def test_plugins_flag_requires_reuse_feed_and_rejects_core_only(self):
+    def test_thin_shell_packager_requires_signing_keys_and_core_only_guard(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             sdk = root / 'sdk'
             sdk.mkdir()
             (sdk / 'Makefile').write_text('all:\n\t@true\n')
-            reuse = root / 'reuse'
-            reuse.mkdir()
-            (reuse / 'manifest.json').write_text('{}\n')
             res1 = subprocess.run(
-                [str(PACKAGER), '--sdk', str(sdk), '--plugins', 'compilation'],
+                [str(PACKAGER), '--sdk', str(sdk), '--core-arch', 'aarch64_generic'],
                 text=True, capture_output=True, check=False,
             )
             self.assertNotEqual(res1.returncode, 0)
-            self.assertIn('--reuse-feed', res1.stderr)
-            res2 = subprocess.run(
-                [str(PACKAGER), '--sdk', str(sdk), '--plugins', 'compilation', '--reuse-feed', str(reuse), '--core-only'],
-                text=True, capture_output=True, check=False,
-            )
-            self.assertNotEqual(res2.returncode, 0)
-            self.assertIn('--core-only', res2.stderr)
+            self.assertIn('--core-only', res1.stderr)
 
     def test_compile_plugins_only_and_exclude_filters(self):
         spec = importlib.util.spec_from_file_location('compile_plugins', ROOT / 'openwrt/compile-plugins.py')

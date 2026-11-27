@@ -5,144 +5,265 @@ PKG_VERSION:=0.9.32
 PKG_RELEASE:=
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=OPL NetFleet
-PKG_BUILD_DEPENDS:=ucode/host
 
 include $(INCLUDE_DIR)/package.mk
-
-NETFLEET_METADATA:=$(shell python3 ./plugin-packages.py metadata)
-netfleet_metadata=$(patsubst $(1)=%,%,$(filter $(1)=%,$(NETFLEET_METADATA)))
-NETFLEET_PLUGINS:=$(call netfleet_metadata,id)
-NETFLEET_DEFAULT_PLUGINS:=$(call netfleet_metadata,default)
-NETFLEET_SELECTED_PLUGINS:=$(if $(strip $(NETFLEET_ONLY_PLUGINS)),$(filter $(NETFLEET_ONLY_PLUGINS),$(NETFLEET_PLUGINS)),$(NETFLEET_PLUGINS))
-NETFLEET_EMPTY:=
-NETFLEET_SPACE:=$(NETFLEET_EMPTY) $(NETFLEET_EMPTY)
-NETFLEET_LICENSE_SOURCE:=$(firstword $(wildcard ./LICENSE ../LICENSE))
-NETFLEET_PLUGINS_SOURCE:=$(firstword $(wildcard ./plugins ../plugins))
-ifeq ($(strip $(NETFLEET_PLUGINS)),)
-  $(error NetFleet default plugin composition is invalid)
-endif
-
-define Package/opl-netfleet-kernel
-  SECTION:=net
-  CATEGORY:=Network
-  TITLE:=OPL NetFleet microkernel
-  LICENSE:=Apache-2.0
-  PROVIDES:=netfleet-plugin-api-v1
-  REPLACES:=opl-netfleet
-  DEPENDS:=+ucode +ucode-mod-fs +ucode-mod-digest +flock +coreutils-timeout
-  PKGARCH:=all
-endef
-
-define Package/opl-netfleet-kernel/install
-	$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/kernel $(1)/usr/libexec/opl-netfleet/adapters $(1)/usr/libexec/rpcd $(1)/usr/share/opl-netfleet $(1)/etc/opl-netfleet
-	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet/main.uc $(1)/usr/libexec/opl-netfleet/main.uc
-	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet/supervisor.uc $(1)/usr/libexec/opl-netfleet/supervisor.uc
-	$(INSTALL_DATA) ./files/usr/libexec/opl-netfleet/kernel/*.uc $(1)/usr/libexec/opl-netfleet/kernel/
-	$(INSTALL_DATA) ./files/usr/libexec/opl-netfleet/adapters/*.uc $(1)/usr/libexec/opl-netfleet/adapters/
-	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet-plugin-package $(1)/usr/libexec/opl-netfleet-plugin-package
-	$(INSTALL_BIN) ./files/usr/libexec/rpcd/opl-netfleet.plugins $(1)/usr/libexec/rpcd/opl-netfleet.plugins
-	$(INSTALL_DATA) $(NETFLEET_LICENSE_SOURCE) $(1)/usr/share/opl-netfleet/LICENSE.Apache-2.0
-endef
-
-define Package/opl-netfleet-kernel/preinst
-#!/bin/sh
-[ -n "$${IPKG_INSTROOT}" ] && exit 0
-main=/usr/libexec/opl-netfleet/main.uc
-maintenance=/var/run/opl-netfleet-plugin-maintenance
-if [ -f /usr/libexec/opl-netfleet/kernel/host.uc ]; then
-	umask 077
-	mkdir -p "$$maintenance" /var/lock/opl-netfleet-code || exit 1
-	plugins=
-	for path in /usr/libexec/opl-netfleet/plugins/*/manifest.json; do
-		[ -f "$$path" ] || continue
-		id=$${path%/manifest.json}; id=$${id##*/}
-		case "$$id" in ""|*[!a-z0-9-]*) exit 1 ;; esac
-		plugins="$$plugins $$id"
-	done
-	printf '%s\n' "$$plugins" >"$$maintenance/.kernel-plugins" || exit 1
-	if [ -n "$$plugins" ]; then
-		while ! ucode "$$main" plugin-package-drain $$plugins; do sleep 2; done
-	fi
-	exec 8>/var/lock/opl-netfleet-code/.kernel.lock
-	flock 8 || exit 1
-	printf '%s\n' replacing >"$$maintenance/.kernel" || exit 1
-	exit 0
-fi
-legacy=/usr/libexec/opl-netfleet/application/native_gateway.uc
-[ -f "$$legacy" ] && [ ! -f /usr/libexec/opl-netfleet/kernel/host.uc ] || exit 0
-upgrade_state=/tmp/opl-netfleet-package-upgrade-state
-if [ ! -s "$$upgrade_state" ]; then
-	backend=nikki-mihomo
-	[ ! -f /etc/opl-netfleet/backend.json ] || backend=$$(jsonfilter -i /etc/opl-netfleet/backend.json -e '@.kind')
-	case "$$backend" in nikki-mihomo|native-mihomo) ;; *) exit 1 ;; esac
-	enabled=0; running=0; core_enabled=0; core_running=0
-	/etc/init.d/opl-netfleet enabled >/dev/null 2>&1 && enabled=1
-	/etc/init.d/opl-netfleet running >/dev/null 2>&1 && running=1
-	if [ "$$backend" = native-mihomo ]; then
-		/etc/init.d/opl-netfleet-core enabled >/dev/null 2>&1 && core_enabled=1
-		/etc/init.d/opl-netfleet-core running >/dev/null 2>&1 && core_running=1
-	fi
-	umask 077
-	printf '%s %s %s %s %s\n' "$$backend" "$$enabled" "$$running" "$$core_enabled" "$$core_running" >"$$upgrade_state" || exit 1
-fi
-read -r backend enabled running core_enabled core_running <"$$upgrade_state"
-case "$$backend:$$enabled:$$running:$$core_enabled:$$core_running" in
-	nikki-mihomo:[01]:[01]:0:0|native-mihomo:[01]:[01]:[01]:[01]) ;;
-	*) exit 1 ;;
-esac
-# APK may continue after a failed hook. Keep the old files installed until the
-# old runtime confirms cleanup, using only the 0.6 migration entrypoint here.
-while :; do
-	/etc/init.d/opl-netfleet stop >/dev/null 2>&1 || { sleep 1; continue; }
-	/etc/init.d/opl-netfleet running >/dev/null 2>&1 && { sleep 1; continue; }
-	if [ "$$backend" = native-mihomo ]; then
-		/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || { sleep 1; continue; }
-		core_status=$$(ucode "$$legacy" status) || { sleep 1; continue; }
-		[ "$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.core_running')" = false ] || { sleep 1; continue; }
-		[ "$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.clean')" = true ] || { sleep 1; continue; }
-	fi
-	break
-done
-umask 077
-printf '%s\n' 0.6 >/tmp/opl-netfleet-microkernel-migration
-exit 0
-endef
-
-define Package/opl-netfleet-kernel/postinst
-#!/bin/sh
-[ -n "$${IPKG_INSTROOT}" ] && exit 0
-maintenance=/var/run/opl-netfleet-plugin-maintenance
-if [ -f "$$maintenance/.kernel-plugins" ]; then
-	plugins=$$(cat "$$maintenance/.kernel-plugins")
-	rm -f "$$maintenance/.kernel" || exit 1
-	[ -z "$$plugins" ] || ucode /usr/libexec/opl-netfleet/main.uc plugin-package-resume $$plugins || exit 1
-	rm -f "$$maintenance/.kernel-plugins" || exit 1
-fi
-[ ! -x /etc/init.d/rpcd ] || /etc/init.d/rpcd restart
-exit 0
-endef
 
 define Package/opl-netfleet
   SECTION:=net
   CATEGORY:=Network
-  TITLE:=OPL NetFleet default network platform
-  DEPENDS:=+opl-netfleet-kernel $(foreach plugin,$(NETFLEET_DEFAULT_PLUGINS),+opl-netfleet-plugin-$(plugin))
-  EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.1)$(if $(CONFIG_USE_APK),$(comma) !opl-netfleet-https-compat (<0.1.8))
-  $(if $(CONFIG_USE_APK),,CONFLICTS:=opl-netfleet-https-compat (<0.1.8))
+  TITLE:=OPL NetFleet thin shell and Release Bundle runtime
+  PROVIDES:=netfleet-plugin-api-v1
+  REPLACES:=opl-netfleet-kernel
+  DEPENDS:=+ucode +ucode-mod-fs +ucode-mod-uci +ucode-mod-ubus +ucode-mod-uloop +ucode-mod-socket +ucode-mod-digest +yq +curl +ca-bundle +flock +coreutils-timeout +unzip +ip-full +nftables-json +kmod-nft-socket +kmod-nft-tproxy +usign
+  EXTRA_DEPENDS:=!opl-netfleet-https-compat (<0.1.8)
   PKGARCH:=all
 endef
 
 define Package/opl-netfleet/description
-  Target-local subscriptions, safe Mihomo profile activation, transparent
-  proxying, and one procd-supervised scheduler. Supports Nikki migration.
+  OPL NetFleet thin OpenWrt runtime shell delivering signed pure-source
+  Release Bundles with atomic current symlink switching and instant rollback.
 endef
 
-# Refuse package removal while the generated profile is the live Nikki owner.
-# The runtime performs the same guarded disable/readback contract; this hook is
-# the last package-manager boundary before files can be deleted.
+define Build/Compile
+endef
+
+define Package/opl-netfleet/install
+	$(INSTALL_DIR) $(1)/etc/init.d $(1)/etc/opl-netfleet/policy-sources $(1)/etc/opl-netfleet/extensions
+	$(INSTALL_BIN) ./files/etc/init.d/opl-netfleet $(1)/etc/init.d/opl-netfleet
+	$(INSTALL_BIN) ./files/etc/init.d/opl-netfleet-core $(1)/etc/init.d/opl-netfleet-core
+	$(INSTALL_BIN) ./files/etc/init.d/opl-netfleet-update-recovery $(1)/etc/init.d/opl-netfleet-update-recovery
+	$(INSTALL_DATA) ./files/etc/opl-netfleet/policy.example.json $(1)/etc/opl-netfleet/policy.example.json
+	$(INSTALL_DATA) ./files/etc/opl-netfleet/policy-sources/*.json $(1)/etc/opl-netfleet/policy-sources/
+	$(INSTALL_DATA) ./files/etc/opl-netfleet/rulesets.lock.json $(1)/etc/opl-netfleet/rulesets.lock.json
+
+	$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/plugins $(1)/usr/libexec/rpcd
+	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet/main.uc $(1)/usr/libexec/opl-netfleet/main.uc
+	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet/supervisor.uc $(1)/usr/libexec/opl-netfleet/supervisor.uc
+	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet-plugin-package $(1)/usr/libexec/opl-netfleet-plugin-package
+	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet-transfer $(1)/usr/libexec/opl-netfleet-transfer
+	$(INSTALL_BIN) ./files/usr/libexec/rpcd/opl-netfleet $(1)/usr/libexec/rpcd/opl-netfleet
+	$(INSTALL_BIN) ./files/usr/libexec/rpcd/opl-netfleet.plugins $(1)/usr/libexec/rpcd/opl-netfleet.plugins
+
+	test -f ./bundle-stage/share/build.json && test -f ./bundle.pub && test -f ./shell.json
+	$(INSTALL_DIR) $(1)/usr/share/opl-netfleet/releases/$(PKG_VERSION) $(1)/usr/share/opl-netfleet/keys
+	$(CP) ./bundle-stage/. $(1)/usr/share/opl-netfleet/releases/$(PKG_VERSION)/
+	$(INSTALL_DATA) ./shell.json $(1)/usr/share/opl-netfleet/shell.json
+	$(INSTALL_DATA) ./bundle.pub $(1)/usr/share/opl-netfleet/keys/release-bundle.pub
+endef
+
+define Package/opl-netfleet/preinst
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+main=/usr/libexec/opl-netfleet/main.uc
+upgrade_state=/tmp/opl-netfleet-package-upgrade-state
+run_step() {
+	label="$$1"; shift
+	out=$$("$$@" 2>&1) && return 0
+	rc=$$?
+	printf 'opl-netfleet preinst: %s failed (exit %s): %s\n' "$$label" "$$rc" "$$out" >&2
+	return "$$rc"
+}
+stop_netfleet() {
+	if [ -x /etc/init.d/opl-netfleet ] && /etc/init.d/opl-netfleet running >/dev/null 2>&1; then
+		run_step "opl-netfleet stop" /etc/init.d/opl-netfleet stop || return 1
+	elif [ -x /etc/init.d/opl-netfleet ]; then
+		/etc/init.d/opl-netfleet stop >/dev/null 2>&1 || true
+	fi
+}
+stop_core() {
+	[ -x /etc/init.d/opl-netfleet-core ] || return 0
+	if /etc/init.d/opl-netfleet-core running >/dev/null 2>&1; then
+		run_step "opl-netfleet-core stop" /etc/init.d/opl-netfleet-core stop || return 1
+	else
+		/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || return 1
+	fi
+}
+is_upgrade=0
+[ "$${PKG_UPGRADE:-0}" != 1 ] || is_upgrade=1
+[ "$${1:-}" != upgrade ] || is_upgrade=1
+[ "$$is_upgrade" = 1 ] || exit 0
+if [ -f /tmp/opl-netfleet-microkernel-migration ] && [ -s "$$upgrade_state" ]; then
+	read -r backend enabled running core_enabled core_running <"$$upgrade_state"
+	case "$$backend:$$enabled:$$running:$$core_enabled:$$core_running" in
+		nikki-mihomo:[01]:[01]:0:0|native-mihomo:[01]:[01]:[01]:[01]) exit 0 ;;
+		*) exit 1 ;;
+	esac
+fi
+[ ! -e "$$upgrade_state" ] || {
+	printf '%s\n' 'opl-netfleet: previous package state restoration is incomplete' >&2
+	exit 1
+}
+backend=nikki-mihomo
+if [ -e /etc/opl-netfleet/backend.json ]; then
+	backend=$$(jsonfilter -i /etc/opl-netfleet/backend.json -e '@.kind') || exit 1
+fi
+case "$$backend" in nikki-mihomo|native-mihomo) ;; *) exit 1 ;; esac
+enabled=0; running=0; core_enabled=0; core_running=0
+if [ -x /etc/init.d/opl-netfleet ]; then
+	/etc/init.d/opl-netfleet enabled >/dev/null 2>&1 && enabled=1 || true
+	/etc/init.d/opl-netfleet running >/dev/null 2>&1 && running=1 || true
+fi
+if [ "$$backend" = native-mihomo ] && [ -x /etc/init.d/opl-netfleet-core ]; then
+	/etc/init.d/opl-netfleet-core enabled >/dev/null 2>&1 && core_enabled=1 || true
+	/etc/init.d/opl-netfleet-core running >/dev/null 2>&1 && core_running=1 || true
+fi
+umask 077
+printf '%s %s %s %s %s\n' "$$backend" "$$enabled" "$$running" "$$core_enabled" "$$core_running" >"$$upgrade_state" || exit 1
+stop_netfleet || exit 1
+if [ "$$backend" = native-mihomo ]; then
+	stop_core || exit 1
+fi
+for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+	if [ ! -x /etc/init.d/opl-netfleet ] || ! /etc/init.d/opl-netfleet running >/dev/null 2>&1; then
+		if [ "$$backend" != native-mihomo ]; then
+			exit 0
+		fi
+		core_status=$$(ucode "$$main" native-gateway-status) || exit 1
+		stopped=$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.core_running')
+		clean=$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.clean')
+		[ "$$stopped" != false ] || [ "$$clean" != true ] || exit 0
+	fi
+	sleep 1
+done
+printf '%s\n' 'opl-netfleet: old processes did not stop before upgrade' >&2
+exit 1
+endef
+
+define Package/opl-netfleet/postinst
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+run_step() {
+	label="$$1"; shift
+	out=$$("$$@" 2>&1) && return 0
+	rc=$$?
+	printf 'opl-netfleet postinst: %s failed (exit %s): %s\n' "$$label" "$$rc" "$$out" >&2
+	return "$$rc"
+}
+for path in \
+	/etc/opl-netfleet/policy.example.json \
+	/etc/opl-netfleet/policy-sources/base-v1.json \
+	/etc/opl-netfleet/rulesets.lock.json; do
+	[ ! -f "$$path.apk-new" ] || mv -f "$$path.apk-new" "$$path" || exit 1
+done
+bundle_root=$${NETFLEET_BUNDLE_ROOT:-/usr/share/opl-netfleet}
+pkg_ver='$(PKG_VERSION)'
+if [ -d "$$bundle_root/releases/$$pkg_ver/runtime" ]; then
+	mkdir -p "$$bundle_root/releases" /usr/libexec/opl-netfleet/plugins /etc/opl-netfleet/extensions || exit 1
+	ucode -e '
+		import * as fs from "fs";
+		const root = ARGV[0], ver = ARGV[1];
+		function swap(link_path, target) {
+			const parent = fs.dirname(link_path);
+			const tmp = parent + "/." + fs.basename(link_path) + ".next";
+			fs.unlink(tmp);
+			if (!fs.symlink(target, tmp) || !fs.rename(tmp, link_path)) { fs.unlink(tmp); die("symlink_failed:" + link_path); }
+		}
+		function ver_ge(a, b) {
+			if (b == null) return true;
+			const pa = split(a, "."), pb = split(b, ".");
+			if (length(pa) != 3 || length(pb) != 3) return true;
+			for (let i = 0; i < 3; i++) {
+				if (int(pa[i]) != int(pb[i])) return int(pa[i]) > int(pb[i]);
+			}
+			return true;
+		}
+		const cur = fs.readlink(root + "/current");
+		let cur_ver = null;
+		try { cur_ver = json(fs.readfile(root + "/current/share/build.json")).version; } catch (e) {}
+		if (cur == null || fs.stat(root + "/current/runtime") == null || ver_ge(ver, cur_ver)) {
+			if (cur != null && cur != ("releases/" + ver) && fs.stat(root + "/" + cur + "/share/build.json") != null)
+				swap(root + "/previous", cur);
+			swap(root + "/current", "releases/" + ver);
+		}
+		for (let name in ["system.json", "build.json", "nikki", "netfleet.config", "LICENSE.Apache-2.0"]) {
+			const p = root + "/" + name;
+			const st = fs.lstat(p);
+			if (st != null && st.type != "link") {
+				if (st.type == "directory") system("rm -rf " + p);
+				else fs.unlink(p);
+			}
+			swap(p, "current/share/" + name);
+		}
+	' "$$bundle_root" "$$pkg_ver" || exit 1
+fi
+main=/usr/libexec/opl-netfleet/main.uc
+upgrade_state=/tmp/opl-netfleet-package-upgrade-state
+stop_netfleet() {
+	/etc/init.d/opl-netfleet stop >/dev/null 2>&1 || true
+	for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+		/etc/init.d/opl-netfleet running >/dev/null 2>&1 || return 0
+		sleep 1
+	done
+	return 1
+}
+stop_core() {
+	[ -x /etc/init.d/opl-netfleet-core ] || return 0
+	if /etc/init.d/opl-netfleet-core running >/dev/null 2>&1; then
+		run_step "opl-netfleet-core stop" /etc/init.d/opl-netfleet-core stop || return 1
+	else
+		/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || return 1
+	fi
+}
+is_upgrade=0
+[ "$${PKG_UPGRADE:-0}" != 1 ] || is_upgrade=1
+[ ! -s "$$upgrade_state" ] || is_upgrade=1
+if [ "$$is_upgrade" != 1 ]; then
+	stop_netfleet || exit 1
+	/etc/init.d/opl-netfleet disable >/dev/null 2>&1 || exit 1
+	/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || exit 1
+	/etc/init.d/opl-netfleet-core disable >/dev/null 2>&1 || exit 1
+	rm -f "$$upgrade_state"
+elif [ -s "$$upgrade_state" ]; then
+	read -r backend was_enabled was_running core_enabled core_running <"$$upgrade_state"
+	case "$$backend:$$was_enabled:$$was_running:$$core_enabled:$$core_running" in
+		nikki-mihomo:[01]:[01]:0:0|native-mihomo:[01]:[01]:[01]:[01]) ;;
+		*) exit 1 ;;
+	esac
+	if [ "$$backend" = native-mihomo ]; then
+		if [ "$$core_enabled" = 1 ]; then
+			/etc/init.d/opl-netfleet-core enable >/dev/null 2>&1 || exit 1
+		else
+			/etc/init.d/opl-netfleet-core disable >/dev/null 2>&1 || exit 1
+		fi
+		if [ "$$core_running" = 1 ]; then
+			NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet-core restart >/dev/null 2>&1 || exit 1
+			core_status=$$(ucode "$$main" native-gateway-status) || exit 1
+			[ "$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.ready')" = true ] || exit 1
+		else
+			/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || exit 1
+			core_status=$$(ucode "$$main" native-gateway-status) || exit 1
+			[ "$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.core_running')" = false ] || exit 1
+			[ "$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.clean')" = true ] || exit 1
+		fi
+	else
+		stop_core || exit 1
+		/etc/init.d/opl-netfleet-core disable >/dev/null 2>&1 || exit 1
+	fi
+	if [ "$$was_enabled" = 1 ]; then
+		/etc/init.d/opl-netfleet enable >/dev/null 2>&1 || exit 1
+	else
+		/etc/init.d/opl-netfleet disable >/dev/null 2>&1 || exit 1
+	fi
+	if [ "$$was_running" = 1 ]; then
+		NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet restart >/dev/null 2>&1 || exit 1
+		/etc/init.d/opl-netfleet running >/dev/null 2>&1 || exit 1
+	else
+		stop_netfleet || exit 1
+	fi
+	rm -f "$$upgrade_state"
+	rm -f /tmp/opl-netfleet-microkernel-migration
+else
+	printf '%s\n' 'opl-netfleet: package upgrade state is missing' >&2
+	exit 1
+fi
+[ ! -x /etc/init.d/rpcd ] || /etc/init.d/rpcd restart >/dev/null 2>&1 || true
+exit 0
+endef
+
 define Package/opl-netfleet/prerm
 #!/bin/sh
 [ -n "$${IPKG_INSTROOT}" ] && exit 0
+[ "$${PKG_UPGRADE:-0}" != 1 ] && [ "$${1:-}" != upgrade ] || exit 0
 main=/usr/libexec/opl-netfleet/main.uc
 backend=nikki-mihomo
 if [ -e /etc/opl-netfleet/backend.json ]; then
@@ -151,7 +272,9 @@ fi
 if [ "$$backend" = native-mihomo ]; then
 	/etc/init.d/opl-netfleet stop >/dev/null 2>&1 || exit 1
 	/etc/init.d/opl-netfleet disable >/dev/null 2>&1 || exit 1
-	uci set netfleet.config.enabled=0 && uci commit netfleet || exit 1
+	if uci -q get netfleet.config >/dev/null 2>&1; then
+		uci set netfleet.config.enabled=0 && uci commit netfleet || exit 1
+	fi
 	/etc/init.d/opl-netfleet-core disable >/dev/null 2>&1 || exit 1
 	/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || exit 1
 	for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
@@ -184,8 +307,6 @@ is_netfleet_profile() {
 	exit 1
 }
 
-# Always use the owner implementation: a failed restart can leave UCI naming a
-# native Profile while the old Mihomo process still serves NetFleet groups.
 if ! ucode "$$main" disable >/dev/null; then
 	printf '%s\n' 'opl-netfleet: disable/readback failed; refusing removal' >&2
 	exit 1
@@ -205,274 +326,18 @@ fi
 exit 0
 endef
 
-define Build/Compile
-	$(RM) -r $(PKG_BUILD_DIR)/compiled-plugins
-	$(INSTALL_DIR) $(PKG_BUILD_DIR)/compiled-plugins
-	$(CP) $(patsubst %,"$(NETFLEET_PLUGINS_SOURCE)/%",$(NETFLEET_SELECTED_PLUGINS)) "$(PKG_BUILD_DIR)/compiled-plugins/"
-	chmod -R go-w "$(PKG_BUILD_DIR)/compiled-plugins"
-	python3 ./compile-plugins.py --root $(PKG_BUILD_DIR)/compiled-plugins --compiler $(STAGING_DIR_HOSTPKG)/bin/ucode --libraries $(STAGING_DIR_HOSTPKG)/lib/ucode $(if $(strip $(NETFLEET_SKIP_COMPILE_PLUGINS)),--exclude "$(subst $(NETFLEET_SPACE),$(comma),$(strip $(NETFLEET_SKIP_COMPILE_PLUGINS)))") >$(PKG_BUILD_DIR)/bytecode.json
-endef
-
-define Package/opl-netfleet/preinst
+define Package/opl-netfleet/postrm
 #!/bin/sh
 [ -n "$${IPKG_INSTROOT}" ] && exit 0
-main=/usr/libexec/opl-netfleet/main.uc
-upgrade_state=/tmp/opl-netfleet-package-upgrade-state
-[ "$${PKG_UPGRADE:-0}" = 1 ] || exit 0
-if [ -f /tmp/opl-netfleet-microkernel-migration ] && [ -s "$$upgrade_state" ]; then
-	read -r backend enabled running core_enabled core_running <"$$upgrade_state"
-	case "$$backend:$$enabled:$$running:$$core_enabled:$$core_running" in
-		nikki-mihomo:[01]:[01]:0:0|native-mihomo:[01]:[01]:[01]:[01]) exit 0 ;;
-		*) exit 1 ;;
-	esac
-fi
-[ ! -e "$$upgrade_state" ] || {
-	printf '%s\n' 'opl-netfleet: previous package state restoration is incomplete' >&2
-	exit 1
-}
-backend=nikki-mihomo
-if [ -e /etc/opl-netfleet/backend.json ]; then
-	backend=$$(jsonfilter -i /etc/opl-netfleet/backend.json -e '@.kind') || exit 1
-fi
-case "$$backend" in nikki-mihomo|native-mihomo) ;; *) exit 1 ;; esac
-enabled=0
-running=0
-core_enabled=0
-core_running=0
-/etc/init.d/opl-netfleet enabled >/dev/null 2>&1 && enabled=1
-/etc/init.d/opl-netfleet running >/dev/null 2>&1 && running=1
-if [ "$$backend" = native-mihomo ]; then
-	/etc/init.d/opl-netfleet-core enabled >/dev/null 2>&1 && core_enabled=1
-	/etc/init.d/opl-netfleet-core running >/dev/null 2>&1 && core_running=1
-fi
-umask 077
-printf '%s %s %s %s %s\n' "$$backend" "$$enabled" "$$running" "$$core_enabled" "$$core_running" >"$$upgrade_state" || exit 1
-/etc/init.d/opl-netfleet stop >/dev/null 2>&1 || exit 1
-if [ "$$backend" = native-mihomo ]; then
-	/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || exit 1
-fi
-for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-	if ! /etc/init.d/opl-netfleet running >/dev/null 2>&1; then
-		if [ "$$backend" != native-mihomo ]; then
-			exit 0
-		fi
-		core_status=$$(ucode "$$main" native-gateway-status) || exit 1
-		stopped=$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.core_running')
-		clean=$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.clean')
-		[ "$$stopped" != false ] || [ "$$clean" != true ] || exit 0
-	fi
-	sleep 1
-done
-printf '%s\n' 'opl-netfleet: old processes did not stop before upgrade' >&2
-exit 1
-endef
-
-define Package/opl-netfleet/install
-	$(INSTALL_DIR) $(1)/usr/share/opl-netfleet
-	$(INSTALL_DATA) ./files/usr/share/opl-netfleet/build.json $(1)/usr/share/opl-netfleet/build.json
-	$(INSTALL_DATA) ./files/usr/share/opl-netfleet/system.json $(1)/usr/share/opl-netfleet/system.json
-endef
-
-define Package/opl-netfleet/postinst
-#!/bin/sh
-[ -n "$${IPKG_INSTROOT}" ] && exit 0
-main=/usr/libexec/opl-netfleet/main.uc
-upgrade_state=/tmp/opl-netfleet-package-upgrade-state
-stop_netfleet() {
-	/etc/init.d/opl-netfleet stop >/dev/null 2>&1 || true
-	for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-		/etc/init.d/opl-netfleet running >/dev/null 2>&1 || return 0
-		sleep 1
-	done
-	return 1
-}
-if [ "$${PKG_UPGRADE:-0}" != 1 ]; then
-	stop_netfleet || exit 1
-	/etc/init.d/opl-netfleet disable >/dev/null 2>&1 || exit 1
-	/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || exit 1
-	/etc/init.d/opl-netfleet-core disable >/dev/null 2>&1 || exit 1
-	rm -f "$$upgrade_state"
-elif [ -s "$$upgrade_state" ]; then
-	read -r backend was_enabled was_running core_enabled core_running <"$$upgrade_state"
-	case "$$backend:$$was_enabled:$$was_running:$$core_enabled:$$core_running" in
-		nikki-mihomo:[01]:[01]:0:0|native-mihomo:[01]:[01]:[01]:[01]) ;;
-		*) exit 1 ;;
-	esac
-	if [ "$$backend" = native-mihomo ]; then
-		if [ "$$core_enabled" = 1 ]; then
-			/etc/init.d/opl-netfleet-core enable >/dev/null 2>&1 || exit 1
-		else
-			/etc/init.d/opl-netfleet-core disable >/dev/null 2>&1 || exit 1
-		fi
-		if [ "$$core_running" = 1 ]; then
-			NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet-core restart >/dev/null 2>&1 || exit 1
-			core_status=$$(ucode "$$main" native-gateway-status) || exit 1
-			[ "$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.ready')" = true ] || exit 1
-		else
-			/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || exit 1
-			core_status=$$(ucode "$$main" native-gateway-status) || exit 1
-			[ "$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.core_running')" = false ] || exit 1
-			[ "$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.clean')" = true ] || exit 1
-		fi
-	else
-		/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || exit 1
-		/etc/init.d/opl-netfleet-core disable >/dev/null 2>&1 || exit 1
-	fi
-	if [ "$$was_enabled" = 1 ]; then
-		/etc/init.d/opl-netfleet enable >/dev/null 2>&1 || exit 1
-	else
-		/etc/init.d/opl-netfleet disable >/dev/null 2>&1 || exit 1
-	fi
-	if [ "$$was_running" = 1 ]; then
-		NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet restart >/dev/null 2>&1 || exit 1
-		/etc/init.d/opl-netfleet running >/dev/null 2>&1 || exit 1
-	else
-		stop_netfleet || exit 1
-	fi
-	rm -f "$$upgrade_state"
-	rm -f /tmp/opl-netfleet-microkernel-migration
-else
-	printf '%s\n' 'opl-netfleet: package upgrade state is missing' >&2
-	exit 1
-fi
+[ "$${PKG_UPGRADE:-0}" != 1 ] && [ "$${1:-}" != upgrade ] || exit 0
+rm -f /usr/share/opl-netfleet/current /usr/share/opl-netfleet/previous \
+	/usr/share/opl-netfleet/system.json /usr/share/opl-netfleet/build.json \
+	/usr/share/opl-netfleet/nikki /usr/share/opl-netfleet/netfleet.config \
+	/usr/share/opl-netfleet/LICENSE.Apache-2.0
+rm -rf /usr/share/opl-netfleet/releases /var/run/opl-netfleet-plugin-maintenance \
+	/var/lock/opl-netfleet-code /tmp/opl-netfleet-plugin-inspection
+[ ! -x /etc/init.d/rpcd ] || /etc/init.d/rpcd restart >/dev/null 2>&1 || true
 exit 0
 endef
 
-define PluginFiles/platform-openwrt
-	$(INSTALL_DIR) $(1)/usr/share/opl-netfleet
-	$(INSTALL_DATA) ./files/etc/config/netfleet $(1)/usr/share/opl-netfleet/netfleet.config
-endef
-
-define PluginFiles/mihomo
-	$(INSTALL_DIR) $(1)/usr/share/opl-netfleet/nikki $(1)/etc/init.d
-	$(INSTALL_DATA) ./files/usr/share/opl-netfleet/nikki/* $(1)/usr/share/opl-netfleet/nikki/
-	$(INSTALL_BIN) ./files/etc/init.d/opl-netfleet-core $(1)/etc/init.d/opl-netfleet-core
-endef
-
-define PluginFiles/configuration
-	$(INSTALL_DIR) $(1)/etc/opl-netfleet/policy-sources
-	$(INSTALL_DATA) ./files/etc/opl-netfleet/policy.example.json $(1)/etc/opl-netfleet/policy.example.json
-	$(INSTALL_DATA) ./files/etc/opl-netfleet/policy-sources/*.json $(1)/etc/opl-netfleet/policy-sources/
-	$(INSTALL_DATA) ./files/etc/opl-netfleet/rulesets.lock.json $(1)/etc/opl-netfleet/rulesets.lock.json
-endef
-
-define PluginFiles/components
-	$(INSTALL_DIR) $(1)/etc/init.d
-	$(INSTALL_BIN) ./files/etc/init.d/opl-netfleet-update-recovery $(1)/etc/init.d/opl-netfleet-update-recovery
-endef
-
-define PluginFiles/maintenance
-	$(INSTALL_DIR) $(1)/usr/libexec
-	$(INSTALL_BIN) ./files/usr/libexec/opl-netfleet-transfer $(1)/usr/libexec/opl-netfleet-transfer
-endef
-
-define PluginFiles/status
-	$(INSTALL_DIR) $(1)/usr/libexec/rpcd
-	$(INSTALL_BIN) ./files/usr/libexec/rpcd/opl-netfleet $(1)/usr/libexec/rpcd/opl-netfleet
-endef
-
-define PluginFiles/scheduler
-	$(INSTALL_DIR) $(1)/etc/init.d
-	$(INSTALL_BIN) ./files/etc/init.d/opl-netfleet $(1)/etc/init.d/opl-netfleet
-endef
-
-define NetFleetServicePlugin
-define Package/opl-netfleet-plugin-$(1)
-  SECTION:=net
-  CATEGORY:=Network
-  TITLE:=OPL NetFleet $(1) service plugin
-  LICENSE:=$(if $(filter mihomo,$(1)),GPL-3.0-only,Apache-2.0)
-  VERSION:=$(call netfleet_metadata,version.$(1))
-  REPLACES:=opl-netfleet
-  DEPENDS:=+opl-netfleet-kernel $(call netfleet_metadata,depends.$(1))
-  EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.9.13)
-  EXTRA_DEPENDS+=$(if $(filter platform-openwrt,$(1)),$(comma) opl-netfleet-plugin-models (>=0.7.12))
-  EXTRA_DEPENDS+=$(if $(filter selection,$(1)),$(comma) opl-netfleet-plugin-models (>=0.7.20)$(comma) opl-netfleet-plugin-selection-algorithm (>=0.8.7))
-  EXTRA_DEPENDS+=$(if $(filter configuration,$(1)),$(comma) opl-netfleet-plugin-activation (>=0.7.7))
-  EXTRA_DEPENDS+=$(if $(filter product-ui,$(1)),$(comma) luci-app-netfleet (>=0.8.4)$(comma) opl-netfleet-plugin-subscriptions (>=0.7.4)$(comma) opl-netfleet-plugin-network (>=0.8.7)$(comma) opl-netfleet-plugin-components (>=0.8.17))
-  EXTRA_DEPENDS+=$(if $(filter compilation mihomo network,$(1)),$(comma) opl-netfleet-plugin-models (>=0.7.15))
-  EXTRA_DEPENDS+=$(if $(filter compilation,$(1)),$(comma) opl-netfleet-plugin-mihomo (>=0.9.16))
-  EXTRA_DEPENDS+=$(if $(filter network,$(1)),$(comma) opl-netfleet-plugin-mihomo (>=0.9.13))
-  EXTRA_DEPENDS+=$(if $(filter refresh,$(1)),$(comma) opl-netfleet-plugin-compilation (>=0.7.7)$(comma) opl-netfleet-plugin-models (>=0.7.20))
-  EXTRA_DEPENDS+=$(if $(filter activation selection,$(1)),$(comma) opl-netfleet-plugin-mihomo (>=0.9.17))
-  EXTRA_DEPENDS+=$(if $(filter components network setup scheduler status,$(1)),$(comma) opl-netfleet-plugin-mihomo (>=0.9.12))
-  EXTRA_DEPENDS+=$(if $(filter configuration maintenance mihomo network refresh setup components platform-storage,$(1)),$(comma) opl-netfleet-plugin-platform (>=0.8.9))
-  EXTRA_DEPENDS+=$(if $(filter mihomo,$(1)),$(comma) !opl-netfleet-plugin-network (<0.8.7))
-  EXTRA_DEPENDS+=$(if $(filter configuration status,$(1)),$(comma) opl-netfleet-plugin-models (>=0.7.18))
-  EXTRA_DEPENDS+=$(if $(filter activation scheduler,$(1)),$(comma) opl-netfleet-plugin-models (>=0.7.20))
-  EXTRA_DEPENDS+=$(if $(filter activation,$(1)),$(comma) opl-netfleet-plugin-selection (>=0.8.11))
-  EXTRA_DEPENDS+=$(if $(filter product-ui,$(1)),$(comma) opl-netfleet-plugin-configuration (>=0.7.10)$(comma) opl-netfleet-plugin-status (>=0.8.12))
-  EXTRA_DEPENDS+=$(if $(filter subscriptions,$(1)),$(comma) opl-netfleet-plugin-models (>=0.7.12)$(comma) opl-netfleet-plugin-platform (>=0.8.4)$(comma) opl-netfleet-plugin-platform-openwrt (>=0.8.4))$(if $(filter refresh scheduler,$(1)),$(comma) opl-netfleet-plugin-subscriptions (>=0.7.1))
-  PKGARCH:=all
-endef
-
-define Package/opl-netfleet-plugin-$(1)/install
-	$$(INSTALL_DIR) $$(1)/usr/libexec/opl-netfleet/plugins/$(1)
-	$$(CP) $$(PKG_BUILD_DIR)/compiled-plugins/$(1)/. $$(1)/usr/libexec/opl-netfleet/plugins/$(1)/
-	python3 ./plugin_payload.py project $$(PKG_BUILD_DIR)/compiled-plugins/$(1) $$(1)/www
-$(call PluginFiles/$(1),$$(1))
-endef
-
-define Package/opl-netfleet-plugin-$(1)/preinst
-#!/bin/sh
-[ -n "$$$${IPKG_INSTROOT}" ] && exit 0
-exec /usr/libexec/opl-netfleet-plugin-package $(1) preinst
-endef
-
-define Package/opl-netfleet-plugin-$(1)/prerm
-#!/bin/sh
-[ -n "$$$${IPKG_INSTROOT}" ] && exit 0
-exec /usr/libexec/opl-netfleet-plugin-package $(1) prerm
-endef
-
-define Package/opl-netfleet-plugin-$(1)/postinst
-#!/bin/sh
-[ -n "$$$${IPKG_INSTROOT}" ] && exit 0
-exec /usr/libexec/opl-netfleet-plugin-package $(1) postinst
-endef
-
-define Package/opl-netfleet-plugin-$(1)/postrm
-#!/bin/sh
-[ -n "$$$${IPKG_INSTROOT}" ] && exit 0
-exec /usr/libexec/opl-netfleet-plugin-package $(1) postrm
-endef
-endef
-
-$(foreach plugin,$(NETFLEET_PLUGINS),$(eval $(call NetFleetServicePlugin,$(plugin))))
-
-define Package/opl-netfleet-plugin-configuration/postinst
-#!/bin/sh
-[ -n "$${IPKG_INSTROOT}" ] && exit 0
-for path in \
-	/etc/opl-netfleet/policy.example.json \
-	/etc/opl-netfleet/policy-sources/base-v1.json \
-	/etc/opl-netfleet/rulesets.lock.json; do
-	[ ! -f "$$path.apk-new" ] || mv -f "$$path.apk-new" "$$path" || exit 1
-done
-exec /usr/libexec/opl-netfleet-plugin-package configuration postinst
-endef
-
-define Package/opl-netfleet-plugin-status/postinst
-#!/bin/sh
-[ -n "$${IPKG_INSTROOT}" ] && exit 0
-/usr/libexec/opl-netfleet-plugin-package status postinst || exit 1
-# rpcd registers executable-plugin methods at startup, before later APKs may replace them.
-[ ! -x /etc/init.d/rpcd ] || /etc/init.d/rpcd restart
-endef
-
-define Package/opl-netfleet-plugin-mihomo/postrm
-#!/bin/sh
-[ -n "$${IPKG_INSTROOT}" ] && exit 0
-/usr/libexec/opl-netfleet-plugin-package mihomo postrm || exit 1
-[ "$${PKG_UPGRADE:-0}" != 1 ] && [ "$${1:-}" != upgrade ] || exit 0
-rm -f /var/run/opl-netfleet-mihomo-handoff/state.json || exit 1
-[ ! -d /var/run/opl-netfleet-mihomo-handoff ] || rmdir /var/run/opl-netfleet-mihomo-handoff
-endef
-
-ifeq ($(strip $(NETFLEET_ONLY_PLUGINS)),)
-$(eval $(call BuildPackage,opl-netfleet-kernel))
-$(foreach plugin,$(NETFLEET_PLUGINS),$(eval $(call BuildPackage,opl-netfleet-plugin-$(plugin))))
 $(eval $(call BuildPackage,opl-netfleet))
-else
-$(foreach plugin,$(NETFLEET_SELECTED_PLUGINS),$(eval $(call BuildPackage,opl-netfleet-plugin-$(plugin))))
-endif

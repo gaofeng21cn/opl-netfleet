@@ -20,40 +20,22 @@ PAYLOAD_SPEC.loader.exec_module(PAYLOAD)
 
 class MvpLayoutTests(unittest.TestCase):
     def test_dynamic_ui_packages_require_the_composition_host(self):
-        with tempfile.TemporaryDirectory(prefix="netfleet-host-compatibility-") as temporary:
-            root = Path(temporary)
-            (root / "include").mkdir()
-            (root / "rules.mk").touch()
-            (root / "include/package.mk").touch()
-            for source, package, required in ((ROOT / "openwrt", "opl-netfleet", True),
-                                              (ROOT / "openwrt", "opl-netfleet-plugin-product-ui", True),
-                                              (ROOT / "openwrt", "opl-netfleet-plugin-models", True),
-                                              (LUCI, "luci-app-netfleet", True)):
-                harness = root / "metadata.mk"
-                harness.write_text(f"$(info __BEGIN__)\n$(info $(Package/{package}))\n$(info __END__)\nall:;@:\n")
-                result = subprocess.run([
-                    "make", "--no-print-directory", "-f", str(source / "Makefile"), "-f", str(harness),
-                    f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", "all",
-                ], cwd=source, capture_output=True, text=True, check=True)
-                definition = result.stdout.split("__BEGIN__\n", 1)[1].split("__END__", 1)[0]
-                minimum = "0.9.13" if package.startswith("opl-netfleet-plugin-") else ("0.8.8" if package == "luci-app-netfleet" else "0.8.1")
-                floor = f"EXTRA_DEPENDS:=opl-netfleet-kernel (>={minimum})"
-                self.assertEqual(required, floor in definition, package)
+        runtime_mk = (ROOT / "openwrt/Makefile").read_text()
+        self.assertIn("PROVIDES:=netfleet-plugin-api-v1", runtime_mk)
+        luci_mk = (LUCI / "Makefile").read_text()
+        self.assertIn("DEPENDS:=+luci-base +opl-netfleet", luci_mk)
+        self.assertIn("EXTRA_DEPENDS:=opl-netfleet (>=", luci_mk)
+        identity_mk = (ROOT / "openwrt/device-identity/Makefile").read_text()
+        self.assertIn("+opl-netfleet +netfleet-plugin-api-v1", identity_mk)
 
     def test_platform_quota_adapter_requires_shared_quota_model(self):
-        with tempfile.TemporaryDirectory(prefix="netfleet-quota-dependency-") as temporary:
-            root = Path(temporary)
-            (root / "include").mkdir()
-            (root / "rules.mk").touch()
-            (root / "include/package.mk").touch()
-            harness = root / "metadata.mk"
-            harness.write_text("$(info __BEGIN__)\n$(info $(Package/opl-netfleet-plugin-platform-openwrt))\n$(info __END__)\nall:;@:\n")
-            result = subprocess.run(["make", "--no-print-directory", "-f", str(ROOT / "openwrt/Makefile"),
-                                     "-f", str(harness), f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", "all"],
-                                    cwd=ROOT / "openwrt", capture_output=True, text=True, check=True)
-            floor = re.search(r"opl-netfleet-plugin-models \(>=([0-9]+\.[0-9]+\.[0-9]+)\)", result.stdout)
-            self.assertIsNotNone(floor)
-            self.assertGreaterEqual(tuple(map(int, floor[1].split("."))), (0, 7, 8))
+        script = ROOT / "openwrt/plugin-packages.py"
+        spec = importlib.util.spec_from_file_location("netfleet_pkg_comp", script)
+        comp = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(comp)
+        plugins, _, graph = comp.composition()
+        self.assertEqual({"models", "platform"}, graph["platform-openwrt"])
+        self.assertIn("ucode-mod-ubus", plugins["platform"]["package_dependencies"])
 
     def test_payload_revision_matches_runtime_directory_order_and_content(self):
         with tempfile.TemporaryDirectory(prefix="netfleet-payload-revision-") as temporary:
@@ -78,31 +60,37 @@ class MvpLayoutTests(unittest.TestCase):
                 PAYLOAD.payload_revision(root)
 
     def test_luci_shell_and_product_ui_install_as_separate_packages(self):
+        bundle_spec = importlib.util.spec_from_file_location("netfleet_bundle_build", ROOT / "scripts/netfleet-bundle-build.py")
+        bundle_mod = importlib.util.module_from_spec(bundle_spec)
+        bundle_spec.loader.exec_module(bundle_mod)
         with tempfile.TemporaryDirectory(prefix="netfleet-ui-layout-") as temporary:
             root = Path(temporary)
             (root / "include").mkdir()
             (root / "rules.mk").touch()
             (root / "include/package.mk").touch()
             stage = root / "stage"
-            shutil.copytree(PLUGINS / "product-ui", root / "compiled-plugins/product-ui")
-            for source, package in ((ROOT / "openwrt", "opl-netfleet-plugin-product-ui"),
-                                    (LUCI, "luci-app-netfleet")):
-                harness = root / f"{package}.mk"
-                harness.write_text(
-                    "INSTALL_DIR:=mkdir -p\nINSTALL_DATA:=install -m 0644\nCP:=cp -R\n"
-                    "all:\n\t$(call Package/" + package + "/install," + str(stage) + ")\n")
-                subprocess.run([
-                    "make", "--no-print-directory", "-f", str(source / "Makefile"),
-                    "-f", str(harness), f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", f"PKG_BUILD_DIR={root}", "all",
-                ], cwd=source, capture_output=True, text=True, check=True)
+            bundle_stage = root / "bundle-stage"
+            bundle_mod.stage_bundle_tree(
+                ROOT, bundle_stage, version="0.9.32", channel="stable",
+                source_commit="a" * 40, source_tree="b" * 40,
+            )
+            harness = root / "luci-app-netfleet.mk"
+            harness.write_text(
+                "INSTALL_DIR:=mkdir -p\nINSTALL_DATA:=install -m 0644\nCP:=cp -R\n"
+                "all:\n\t$(call Package/luci-app-netfleet/install," + str(stage) + ")\n")
+            subprocess.run([
+                "make", "--no-print-directory", "-f", str(LUCI / "Makefile"),
+                "-f", str(harness), f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", f"PKG_BUILD_DIR={root}", "all",
+            ], cwd=LUCI, capture_output=True, text=True, check=True)
             public = stage / "www/luci-static/resources/netfleet"
             package_version = re.search(r"^PKG_VERSION:=(\S+)$", (LUCI / "Makefile").read_text(), re.M).group(1)
             shell_modules = public / f"v{package_version.replace('.', '_')}"
             self.assertEqual({"api.js", "plugin-host.js"}, {path.name for path in shell_modules.glob("*.js")})
             self.assertEqual([], list(public.glob("*.js")))
+            self.assertEqual("/usr/share/opl-netfleet/current/www", str((public / "bundle").readlink()))
             product = PLUGINS / "product-ui/resources"
             revision = PAYLOAD.payload_revision(product.parent)
-            installed_product = public / "plugins/product-ui" / revision / "resources"
+            installed_product = bundle_stage / "www/plugins/product-ui" / revision / "resources"
             self.assertEqual({path.relative_to(product): path.read_bytes()
                               for path in product.rglob("*") if path.is_file()},
                              {path.relative_to(installed_product): path.read_bytes()
@@ -114,27 +102,23 @@ class MvpLayoutTests(unittest.TestCase):
             self.assertFalse((stage / "www/luci-static/resources/view/netfleet/overview.js").exists())
 
     def test_kernel_package_installs_host_adapters(self):
+        bundle_spec = importlib.util.spec_from_file_location("netfleet_bundle_build", ROOT / "scripts/netfleet-bundle-build.py")
+        bundle_mod = importlib.util.module_from_spec(bundle_spec)
+        bundle_spec.loader.exec_module(bundle_mod)
+        makefile = (ROOT / "openwrt/Makefile").read_text()
+        self.assertIn("+ucode-mod-digest", makefile)
+        self.assertIn("./files/usr/libexec/opl-netfleet-plugin-package", makefile)
+        self.assertIn("./files/usr/libexec/rpcd/opl-netfleet.plugins", makefile)
         with tempfile.TemporaryDirectory(prefix="netfleet-kernel-layout-") as temporary:
-            root = Path(temporary)
-            (root / "include").mkdir()
-            (root / "rules.mk").touch()
-            (root / "include/package.mk").touch()
-            harness = root / "install.mk"
-            harness.write_text(
-                "INSTALL_DIR:=mkdir -p\nINSTALL_BIN:=install -m 0755\nINSTALL_DATA:=install -m 0644\n"
-                "$(eval $(Package/opl-netfleet-kernel))\n"
-                "all:\n\t@echo kernel-dependencies: $(DEPENDS)\n\t$(call Package/opl-netfleet-kernel/install," + str(root / "stage") + ")\n")
-            result = subprocess.run([
-                "make", "--no-print-directory", "-f", str(ROOT / "openwrt/Makefile"),
-                "-f", str(harness), f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", "all",
-            ], cwd=ROOT / "openwrt", capture_output=True, text=True, check=True)
-            self.assertIn("+ucode-mod-digest", result.stdout.split("kernel-dependencies:", 1)[1].splitlines()[0])
-            installed = root / "stage/usr/libexec/opl-netfleet/adapters"
+            stage = Path(temporary) / "bundle-stage"
+            bundle_mod.stage_bundle_tree(
+                ROOT, stage, version="0.9.32", channel="stable",
+                source_commit="a" * 40, source_tree="b" * 40,
+            )
+            installed = stage / "runtime/adapters"
             expected = {path.name: path.read_bytes() for path in (RUNTIME / "adapters").glob("*.uc")}
             self.assertIn("openwrt.uc", expected)
             self.assertEqual(expected, {path.name: path.read_bytes() for path in installed.glob("*.uc")})
-            self.assertEqual((ROOT / "openwrt/files/usr/libexec/rpcd/opl-netfleet.plugins").read_bytes(),
-                             (root / "stage/usr/libexec/rpcd/opl-netfleet.plugins").read_bytes())
 
     def test_default_composition_preserves_lightweight_algorithm_installation(self):
         script = ROOT / "openwrt/plugin-packages.py"
@@ -173,11 +157,6 @@ class MvpLayoutTests(unittest.TestCase):
     def test_default_package_installs_only_public_plugin_resources_to_web_root(self):
         with tempfile.TemporaryDirectory(prefix="netfleet-package-layout-") as temporary:
             root = Path(temporary)
-            (root / "include").mkdir()
-            (root / "rules.mk").touch()
-            (root / "include/package.mk").touch()
-            for name in ("Makefile", "plugin-packages.py", "plugin_payload.py"):
-                shutil.copyfile(ROOT / "openwrt" / name, root / name)
             plugin = root / "plugins/layout-test"
             (plugin / "lib").mkdir(parents=True)
             (plugin / "config").mkdir()
@@ -194,27 +173,18 @@ class MvpLayoutTests(unittest.TestCase):
             (plugin / "config/private.json").write_text('{"private":true}\n')
             (plugin / "resources/page.js").write_text('export default {};\n')
             (plugin / "resources/nested/page.css").write_text('body { color: black; }\n')
-            # This fixture exercises install layout; SDK tests cover compilation.
-            shutil.copytree(plugin, root / "compiled-plugins/layout-test")
-            harness = root / "install.mk"
-            harness.write_text(
-                "INSTALL_DIR:=mkdir -p\nCP:=cp -R\n"
-                "all:\n\t$(call Package/opl-netfleet-plugin-layout-test/install," + str(root / "stage") + ")\n")
-            subprocess.run([
-                "make", "--no-print-directory", "-f", str(root / "Makefile"),
-                "-f", str(harness), f"TOPDIR={root}", f"INCLUDE_DIR={root / 'include'}", f"PKG_BUILD_DIR={root}", "all",
-            ], cwd=root, capture_output=True, text=True, check=True)
-            runtime = root / "stage/usr/libexec/opl-netfleet/plugins/layout-test"
-            plugin_public = root / "stage/www/luci-static/resources/netfleet/plugins/layout-test"
-            public = plugin_public / PAYLOAD.payload_revision(runtime)
-            self.assertTrue((runtime / "lib/private.uc").is_file())
-            self.assertTrue((runtime / "config/private.json").is_file())
+            www_root = root / "stage/www"
+            PAYLOAD.project_resources(plugin, www_root)
+            plugin_public = www_root / "luci-static/resources/netfleet/plugins/layout-test"
+            public = plugin_public / PAYLOAD.payload_revision(plugin)
             self.assertEqual({Path("resources/page.js"), Path("resources/nested/page.css")}, {
                 path.relative_to(public) for path in public.rglob("*") if path.is_file()
             })
             self.assertEqual((plugin / "resources/page.js").read_bytes(),
                              (public / "resources/page.js").read_bytes())
             self.assertFalse((plugin_public / "resources").exists())
+            self.assertFalse((plugin_public / "lib").exists())
+            self.assertFalse((plugin_public / "config").exists())
 
     def test_required_runtime_surfaces_exist_without_a_second_worker(self):
         required = (
@@ -251,11 +221,9 @@ class MvpLayoutTests(unittest.TestCase):
         )
 
         makefile = (ROOT / "openwrt" / "Makefile").read_text()
-        self.assertIn("$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/kernel", makefile)
-        self.assertIn(
-            "./files/usr/libexec/opl-netfleet/kernel/*.uc $(1)/usr/libexec/opl-netfleet/kernel/",
-            makefile,
-        )
+        self.assertIn("./files/usr/libexec/opl-netfleet/main.uc $(1)/usr/libexec/opl-netfleet/main.uc", makefile)
+        self.assertIn("./bundle-stage/. $(1)/usr/share/opl-netfleet/releases/$(PKG_VERSION)/", makefile)
+        self.assertIn('swap(root + "/current"', makefile)
 
     def test_shell_entrypoints_parse_and_expose_current_deployment_modes(self):
         scripts = sorted((ROOT / "scripts").rglob("*.sh"))
