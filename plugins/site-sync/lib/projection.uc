@@ -1,16 +1,16 @@
 export function identifier(value) {
 	return type(value) == "string" && match(value, /^[A-Za-z][A-Za-z0-9_-]{0,47}$/) != null;
-}
+};
 
 export function counter(value) {
 	return type(value) == "int" && value >= 0 && value <= 9007199254740991;
-}
+};
 
 export function default_site_name(hostname) {
 	if (type(hostname) != "string") return "OpenWrt";
 	const cleaned = replace(trim(hostname), /[[:cntrl:]]/, "");
 	return length(cleaned) > 0 && length(cleaned) <= 120 ? cleaned : "OpenWrt";
-}
+};
 
 export function project(site, applied, status, totals, previous, now, digest, event) {
 	const mode = status.operating_mode;
@@ -55,7 +55,7 @@ export function project(site, applied, status, totals, previous, now, digest, ev
 		capabilities: capabilities, traffic: traffic, quotas: quotas, recovery: status.recovery != null };
 	if (index(["updated", "unchanged", "failed", "recovering", "restored"], event) >= 0) body.event = event;
 	return body;
-}
+};
 
 export function selected_sources(result, revision, sections, auto_sections) {
 	if (result?.revision != revision || type(result.subscriptions) != "array" ||
@@ -77,4 +77,4 @@ export function selected_sources(result, revision, sections, auto_sections) {
 		push(sources, { id: id, name: item.name, url: url });
 	}
 	return sources;
-}
+};
