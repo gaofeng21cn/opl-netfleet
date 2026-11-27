@@ -102,7 +102,14 @@ run_op() {
 	payload=${2:-'{}'}
 	expected_state=$3
 	expected_error=${4:-}
-	ubus -t 20 call opl-netfleet "$method" "$payload" >"$work/start.json"
+	for attempt in $(seq 1 20); do
+		ubus -t 20 call opl-netfleet "$method" "$payload" >"$work/start.json"
+		if [ "$(jsonfilter -i "$work/start.json" -e '@.ok' 2>/dev/null || true)" = true ]; then
+			break
+		fi
+		[ "$(jsonfilter -i "$work/start.json" -e '@.error' 2>/dev/null || true)" = mutation_busy ] || break
+		sleep 1
+	done
 	assert_json "$work/start.json" '@.ok' true
 	op_id=$(jsonfilter -i "$work/start.json" -e '@.result.operation.id')
 	[ -n "$op_id" ]
