@@ -595,6 +595,54 @@ function test_bundle_engine() {
 		fs.mkdir(ctx.ROOT, 0700);
 		try { bundle.check(ctx, ctx.ROOT); } catch (e) { check_err = e.message; }
 		check(check_err == 'feed_check_failed', 'bundle.check uses mkdtemp and fails cleanly when feed download fails, got: ' + check_err);
+		const bundle_src = fs.readfile(replace(sourcepath(), /[^/]+$/, '../plugins/components/lib/bundle.uc'));
+		check(match(bundle_src, /\/[^\n\/;()]*\\x00/) == null, 'bundle.uc must not embed NUL escapes inside POSIX regex literals');
+		fs.mkdir(root + '/badtar', 0755);
+		fs.writefile(root + '/badtar/ok.txt', 'ok');
+		const ok_tar = root + '/ok.tar.gz';
+		system('tar -czf ' + "'" + ok_tar + "'" + ' -C ' + "'" + root + '/badtar' + "'" + ' .');
+		const tar_size = fs.lstat(ok_tar).size;
+		const tx2 = root + '/tx2';
+		fs.mkdir(tx2, 0700);
+		fs.mkdir(tx2 + '/w', 0700);
+		const manifest_obj = {
+			schema: 'opl-netfleet-release-bundle.v1',
+			version: '0.9.33',
+			min_shell_version: '0.9.32',
+			archive: 'opl-netfleet-bundle-0.9.33.tar.gz',
+			archive_sha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+			archive_size: tar_size,
+			source_commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+			source_tree: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+			files: { 'missing.txt': { size: 2, sha256: 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', mode: '0644' } }
+		};
+		const ctx2 = {
+			...ctx,
+			ROOT: tx2,
+			operation: { update: () => true, finish: () => true },
+			cancellation: () => true,
+			read_json: p => match(p, /shell\.json$/) ? { shell_version: '0.9.32' } : match(p, /build\.json$/) ? { version: '0.9.32', source_commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' } : match(p, /release-manifest\.json$/) ? manifest_obj : { url: 'https://example.invalid/releases' },
+			run_command: cmd => {
+				if (index(cmd, 'curl ') == 0) {
+					const m = match(cmd, /--output '([^']+)'/);
+					if (m != null) {
+						if (index(cmd, 'bundle-0.9.33.tar.gz') >= 0) return system('cp ' + "'" + ok_tar + "'" + ' ' + "'" + m[1] + "'") == 0;
+						return fs.writefile(m[1], '{}');
+					}
+				}
+				if (index(cmd, 'usign ') == 0) return true;
+				return system(cmd) == 0;
+			},
+			capture: cmd => match(cmd, /^df /) ? '100000' : 'aarch64',
+			sha256: () => 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
+		};
+		fs.writefile(paths.BUNDLE_KEY_PATH, 'untrusted comment: test\nRWQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\n');
+		fs.chmod(paths.BUNDLE_KEY_PATH, 0644);
+		let sig_err = null;
+		try { bundle.apply(ctx2, { id: '11111111111111111111111111111111', feed: 'https://example.invalid/releases', version: '0.9.33' }, tx2 + '/w'); } catch (e) { sig_err = e.message; }
+		check(sig_err == 'bundle_signature_invalid' || sig_err == 'bundle_stage_invalid', 'bundle.apply returns deterministic error code, got: ' + sig_err);
+		check(match('a/b/c.uc', /[\r\t]/) == null && index('a/b/c.uc', '\x00') < 0, 'clean archive path passes regex/NUL guard');
+		check(index('a\x00b', '\x00') >= 0 && match('a\tb', /[\r\t]/) != null, 'control/NUL chars rejected');
 	} catch (e) {
 		err = e;
 	}

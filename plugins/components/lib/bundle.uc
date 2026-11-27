@@ -297,7 +297,7 @@ function check_archive_entries(ctx, archive_path) {
 		if (!length(raw)) continue;
 		const clean = replace(raw, /^\.\//, "");
 		if (!length(clean) || clean == ".") continue;
-		if (substr(clean, 0, 1) == "/" || match(clean, /(^|\/)\.\.?(\/|$)/) != null || match(clean, /[\r\t\x00]/) != null)
+		if (substr(clean, 0, 1) == "/" || match(clean, /(^|\/)\.\.?(\/|$)/) != null || match(clean, /[\r\t]/) != null || index(clean, "\x00") >= 0)
 			return false;
 	}
 	return true;
@@ -362,15 +362,22 @@ try {
 	for (let item in list) {
 		if (item.kind == 'plugin' && item.state == 'invalid') die('bundle_plugin_invalid:' + item.id);
 	}
+	if (type(loadfile(root + '/main.uc')) != 'function') die('bundle_main_invalid');
 	if (host.system.scheduler?.service != null) {
 		host.graph(host.system.scheduler.service, 1, {}, {}, {});
 	}
 	for (let id, flag in host.system.enabled) {
 		if (flag != true) continue;
-		const p = host.found[id];
+		const p = host.inspect(id);
 		if (!p?.ok) die('bundle_enabled_plugin_broken:' + id);
+		const seen_mod = {};
 		for (let svc, def in p.manifest.services ?? {}) {
 			if (host.system.bindings[svc] == id) host.graph(svc, def.version, {}, {}, {});
+			if (type(def?.module) == 'string' && !seen_mod[def.module]) {
+				seen_mod[def.module] = true;
+				if (type(loadfile(p.directory + '/' + def.module)) != 'function')
+					die('bundle_module_invalid:' + id + ':' + def.module);
+			}
 		}
 	}
 } catch (e) {
@@ -539,7 +546,16 @@ function rollback_switch(ctx, work, state, reason) {
 		if (ctx.KIND == "native-mihomo") ctx.gateway.cleanup();
 		ctx.fail("rollback_runtime_failed");
 	}
-	const prev_link_target = fs.readlink(ctx.paths.BUNDLE_PREVIOUS);
+	let prev_link_target = fs.readlink(ctx.paths.BUNDLE_PREVIOUS);
+	if (prev_link_target == state.target_rel) {
+		if (type(state.previous_prev_target) == "string" && length(state.previous_prev_target) && state.previous_prev_target != state.target_rel) {
+			atomic_symlink(ctx.paths.BUNDLE_PREVIOUS, state.previous_prev_target);
+			prev_link_target = state.previous_prev_target;
+		} else {
+			fs.unlink(ctx.paths.BUNDLE_PREVIOUS);
+			prev_link_target = null;
+		}
+	}
 	prune_generations(ctx, [prev_target, prev_link_target]);
 	const rolled_error = `${reason}_rolled_back`;
 	ctx.journal(work, { ...state, phase: "rolled_back", error: rolled_error });
