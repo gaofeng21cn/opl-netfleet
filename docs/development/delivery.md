@@ -107,6 +107,8 @@ python3 scripts/netfleet-delivery-preflight.py \
 
 先看 Actions 的 job 名称定位当前验收内容，再看对应阶段日志和回执。候选与回执仍在保留期内时，
 用 **Re-run failed jobs** 续跑失败阶段和下游任务，复用同一运行中的成功候选与回执。
+首次设置验收为已进入回滚的组件事务预留独立的有界观察窗口，直到读到同一事务的终态。
+坏包用例还会核对预期失败原因、旧包版本、配置和代理连通性。
 APK 和夹具按原字节免二次压缩上传。`netfleet-output/` 保存默认包，`netfleet-optional/` 保存可选签名包及构建身份，
 `netfleet-vm-components/` 保存与候选绑定的升级和回滚夹具。可选来源由 `scripts/https-compat/release-source.json` 固定，
 复用时检查摘要、签名和依赖调用链。`scripts/openwrt-sdk.json` 固定构建所用 SDK 的 URL 和 SHA-256。

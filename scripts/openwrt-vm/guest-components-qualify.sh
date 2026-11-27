@@ -60,14 +60,26 @@ unchanged() {
 			https://netfleet-probe.test:19443/generate_204
 	done
 }
+operation_uptime() {
+	awk '{ print int($1) }' /proc/uptime
+}
 wait_operation() {
 	wanted=$1
-	for attempt in $(seq 1 180); do
+	attempt=0
+	rollback_deadline=0
+	while [ "$attempt" -lt 180 ] || { [ "$rollback_deadline" -gt 0 ] && [ "$(operation_uptime)" -lt "$rollback_deadline" ]; }; do
+		attempt=$((attempt + 1))
 		if ! ubus -t 10 call opl-netfleet operation_get '{}' >"$work/operation-result.json"; then sleep 1; continue; fi
 		id=$(jsonfilter -i "$work/operation-result.json" -e '@.result.packages.id')
 		state=$(jsonfilter -i "$work/operation-result.json" -e '@.result.packages.state')
 		if [ "$id" = "$wanted" ]; then
 			case "$state" in succeeded|failed|interrupted) return 0 ;; esac
+			phase=$(jsonfilter -i "$work/operation-result.json" -e '@.result.packages.phase')
+			# A failed install can start restoring all packages near the end
+			# of the regular poll budget on a software-emulated guest.
+			if [ "$state" = running ] && [ "$phase" = rolling_back ] && [ "$rollback_deadline" -eq 0 ]; then
+				rollback_deadline=$(($(operation_uptime) + 900))
+			fi
 		fi
 		sleep 1
 	done

@@ -22,12 +22,49 @@ RUNTIME_GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-runtime-qualify.sh"
 PACKAGE_GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-package-qualify.sh"
 NATIVE_GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-native-qualify.sh"
 SETUP_GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-setup-qualify.sh"
+COMPONENTS_GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-components-qualify.sh"
 MIGRATION_GUEST = ROOT / "scripts" / "openwrt-vm" / "guest-migration-qualify.sh"
 INSTALLER = ROOT / "scripts" / "install-netfleet.sh"
 RECOVERY = ROOT / "scripts" / "recover-openwrt-local.sh"
 
 
 class OpenWrtVmTests(unittest.TestCase):
+    def test_component_rollback_wait_is_bounded_and_uses_exact_operation(self):
+        source = COMPONENTS_GUEST.read_text()
+        wait = source[source.index('wait_operation() {'):source.index('\nrequest() {')]
+        program = """set -eu
+work=$1
+scenario=$2
+polls=0
+operation_uptime() { echo "$((polls * 5))"; }
+sleep() { :; }
+ubus() {
+    polls=$((polls + 1))
+    echo "$polls" >"$work/polls"
+}
+jsonfilter() {
+    case "$4" in
+        *.id) if [ "$scenario" = unrelated ]; then echo other; else echo requested; fi ;;
+        *.phase) if [ "$polls" -ge 170 ]; then echo rolling_back; else echo installing; fi ;;
+        *.state)
+            if [ "$scenario" = terminal ] && [ "$polls" -ge 200 ]; then echo failed
+            else echo running
+            fi ;;
+    esac
+}
+""" + wait + '\nwait_operation requested\n'
+        with tempfile.TemporaryDirectory() as directory:
+            for scenario, expected_status, expected_polls in (
+                ('terminal', 0, 200),
+                ('unrelated', 1, 180),
+                ('stalled', 1, 350),
+            ):
+                with self.subTest(scenario=scenario):
+                    result = subprocess.run(['sh', '-c', program, 'rollback-wait', directory, scenario],
+                                            text=True, capture_output=True, timeout=5)
+                    self.assertEqual(result.returncode, expected_status, result.stderr)
+                    self.assertEqual(int(Path(directory, 'polls').read_text()), expected_polls)
+
     def test_setup_probe_keeps_failure_when_called_from_if(self):
         source = SETUP_GUEST.read_text()
         start = source.index('direct_probe() {')
