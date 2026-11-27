@@ -6,6 +6,7 @@
   "trigger": "tag",
   "tag_prefix": "v",
   "publisher_workflow": "release.yml",
+  "primary_lane": "openwrt",
   "observed_publishers": [
     {
       "lane": "macos-candidate",
@@ -13,7 +14,12 @@
     },
     {
       "lane": "macos-stable",
-      "workflow": "macos-sparkle-publish.yml"
+      "workflow": "macos-sparkle-publish.yml",
+      "channel": {
+        "kind": "sparkle",
+        "asset": "appcast.xml",
+        "release_tag": "macos-stable"
+      }
     }
   ],
   "channel": {
