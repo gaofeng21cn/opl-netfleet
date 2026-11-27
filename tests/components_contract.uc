@@ -533,6 +533,76 @@ if(!drain_scoped('/private') || calls[0].entry!='/private/code/main.uc')die('sco
 `)();
 }
 
+function test_bundle_engine() {
+	function check(value, message) { if (!value) die(message); }
+	const bundle = loadstring("import * as b from '" + replace(sourcepath(), /[^/]+$/, '../plugins/components/lib/bundle.uc') + "'; return b;")();
+	check(bundle.semver_cmp('0.9.32', '0.9.33') < 0, 'semver compares patch bump');
+	check(bundle.semver_cmp('0.9.33', '0.9.33') == 0, 'semver equality');
+	const root = fs.mkdtemp('/tmp/nf-bundle-contract.XXXXXX');
+	check(root != null, 'mkdtemp creates contract sandbox');
+	let err = null;
+	try {
+		fs.mkdir(root + '/releases', 0755);
+		fs.mkdir(root + '/releases/0.9.32', 0755);
+		fs.mkdir(root + '/releases/0.9.32/share', 0755);
+		fs.mkdir(root + '/etc', 0700);
+		fs.writefile(root + '/shell.json', '{"shell_version":"0.9.32"}');
+		fs.writefile(root + '/releases/0.9.32/share/build.json', '{"version":"0.9.32","source_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}');
+		fs.writefile(root + '/etc/release-feed.json', '{"url":"https://example.invalid/releases"}');
+		fs.chmod(root + '/etc/release-feed.json', 0600);
+		fs.symlink('releases/0.9.32', root + '/current');
+		const paths = {
+			SHELL_META_PATH: root + '/shell.json',
+			BUNDLE_CURRENT: root + '/current',
+			BUNDLE_PREVIOUS: root + '/previous',
+			BUNDLE_RELEASES: root + '/releases',
+			BUNDLE_ROOT: root,
+			BUNDLE_KEY_PATH: root + '/key.pub',
+			RELEASE_FEED_PATH: root + '/etc/release-feed.json'
+		};
+		check(bundle.enabled(paths), 'bundle enabled detects shell meta and current symlink');
+		const mkdtemp = template => fs.mkdtemp(template);
+		const ctx = {
+			paths,
+			ROOT: root + '/tx',
+			KIND: 'native-mihomo',
+			PACKAGES: ['opl-netfleet', 'luci-app-netfleet', 'mihomo-meta'],
+			DEPENDENCIES: ['ucode', 'usign'],
+			adapter: { package_available: () => false },
+			private_file: p => fs.lstat(p)?.type == 'file',
+			read_json: p => { try { return json(fs.readfile(p)); } catch (e) { return null; } },
+			atomic_json: (p, v) => fs.writefile(p, sprintf('%J', v)),
+			opkg_feed: () => null,
+			opkg_arch: () => 'aarch64_generic',
+			package_manager: () => 'apk',
+			installed: () => ({ 'opl-netfleet': '0.9.32', 'luci-app-netfleet': '0.9.32', usign: '2024', ucode: '2025' }),
+			controller_version: () => null,
+			api_secret: () => null,
+			capture: cmd => cmd == 'command -v usign' ? '/usr/bin/usign' : 'aarch64',
+			run_command: () => false,
+			mkdtemp,
+			q: s => "'" + replace(`${s}`, "'", "'\\''") + "'",
+			fail: c => die(c),
+			dashboard_resource: () => ({}),
+			inventory: () => [],
+			product_packages: () => ['opl-netfleet', 'luci-app-netfleet'],
+			auto_update_summary: () => null
+		};
+		check(bundle.feed_config(ctx)?.url == 'https://example.invalid/releases', 'feed_config reads release-feed.json');
+		const st = bundle.get_state(ctx);
+		check(st.delivery_mode == 'release-bundle' && st.bundle_version == '0.9.32' && !st.rollback_available, 'get_state projects release-bundle mode');
+		let check_err = null;
+		fs.mkdir(ctx.ROOT, 0700);
+		try { bundle.check(ctx, ctx.ROOT); } catch (e) { check_err = e.message; }
+		check(check_err == 'feed_check_failed', 'bundle.check uses mkdtemp and fails cleanly when feed download fails, got: ' + check_err);
+	} catch (e) {
+		err = e;
+	}
+	system('rm -rf ' + "'" + root + "'");
+	if (err != null) die(err);
+	print('bundle_engine_contract_ok\n');
+}
+
 const control_path = ARGV[0] ?? replace(sourcepath(), /[^/]+$/, '../plugins/components/lib/control.uc');
 const control_source = fs.readfile(control_path);
 if (control_source == null) die('components implementation unreadable');
@@ -540,3 +610,4 @@ test_component_packages();
 test_component_retained();
 test_components_recovery(control_source);
 test_components_update_control(control_source);
+test_bundle_engine();

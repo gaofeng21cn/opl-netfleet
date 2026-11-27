@@ -8,7 +8,7 @@ return function(context) {
 let observer, process_birth, pause_observer, resume_observer, drain_resource, native_identity;
 let network_guard = null;
 const adapter = loadstring(sprintf('import { create } from %J; return create;', context.root + '/adapters/openwrt.uc'))()(context.root);
-let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, recovery_world, restore_world, feed, newer, available, update_process, progress, get, local_stage, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, recovery_stop, restore_services, rollback, recover, journal, upgrade, command, prune_archives, auto_update_policy, reconcile_auto_update, auto_update_summary, auto_update;
+let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, recovery_world, restore_world, feed, newer, available, update_process, progress, get, local_stage, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, recovery_stop, restore_services, rollback, recover, journal, upgrade, command, prune_archives, auto_update_policy, reconcile_auto_update, auto_update_summary, auto_update, bundle_ctx;
 
 const gateway = context.use("mihomo.gateway");
 const dashboard_resource = context.use("dashboard.control").resource;
@@ -26,6 +26,7 @@ const ROOT_DIR = context.use("platform.runtime").ROOT_DIR;
 const SERVICE = context.use("platform.runtime").SERVICE;
 const read_json = context.use("platform.storage").read_json;
 const q = context.use("platform.process").shell_quote;
+const mkdtemp = context.use("platform.process").mkdtemp;
 const api_secret = context.use("platform.credentials").api_secret;
 const sha256 = context.use("platform.storage").sha256;
 const paths = context.use("platform.paths");
@@ -1239,10 +1240,10 @@ recovery_stop = function(work) {
 	}
 	return false;
 };
-function bundle_ctx() {
+bundle_ctx = function() {
 	return {
 		paths, adapter, gateway, operation, network_enter, network_leave, directory, fail, error_code,
-		private_file, private_directory, atomic_json, read_json, sha256, capture, parsed, run_command, q,
+		private_file, private_directory, atomic_json, read_json, sha256, capture, parsed, run_command, q, mkdtemp,
 		KIND, RUN_DIR, ROOT_DIR, SERVICE, ROOT, PENDING, CACHE, REQUEST, UPGRADE_STATE, MAIN,
 		PACKAGES, DEPENDENCIES, files, system: context.system,
 		inventory: context.inventory, auto_update_summary, dashboard_resource,
@@ -1250,7 +1251,7 @@ function bundle_ctx() {
 		api_secret, controller_version, proxies, select, service_running, probe_ok,
 		native_identity, private_paths, input_identity, same_inputs, journal, cancellation
 	};
-}
+};
 function start_recovery() {
 	if (!(type(bundle_engine) == "object" && bundle_engine.enabled(paths)) && package_manager() == "opkg") fail("package_manager_unsupported");
 	if (fs.lstat(PENDING) == null) return { recovered: false };

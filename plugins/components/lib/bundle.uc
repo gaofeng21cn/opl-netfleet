@@ -29,6 +29,16 @@ function current_target_rel(ctx) {
 	return type(raw) == "string" && length(raw) ? raw : null;
 }
 
+function work_id(work) {
+	return fs.basename(work);
+}
+
+function root_dir_safe(path) {
+	const st = fs.lstat(path);
+	if (st == null) return fs.mkdir(path, 0755) == true;
+	return st.type == "directory" && st.uid == 0 && (st.mode & 022) == 0;
+}
+
 export function shell_info(ctx) {
 	return fs.lstat(ctx.paths.SHELL_META_PATH) != null ? ctx.read_json(ctx.paths.SHELL_META_PATH) : null;
 };
@@ -119,7 +129,7 @@ export function check(ctx, work, feed_override) {
 	const cache_path = `${ctx.ROOT}/bundle-checked.json`;
 	const feed = feed_override ?? feed_config(ctx);
 	if (feed == null) ctx.fail("feed_not_configured");
-	const tmp = ctx.files.mkdtemp("/tmp/opl-netfleet-bcheck.XXXXXX");
+	const tmp = ctx.mkdtemp("/tmp/opl-netfleet-bcheck.XXXXXX");
 	if (tmp == null) ctx.fail("update_stage_failed");
 	const mf_path = `${tmp}/release-manifest.json`;
 	const sig_path = `${tmp}/release-manifest.json.sig`;
@@ -612,7 +622,7 @@ export function apply(ctx, request, work) {
 	ctx.cancellation(work);
 	if (!check_archive_entries(ctx, dl_path)) ctx.fail("bundle_stage_invalid");
 
-	if (!ctx.directory(ctx.paths.BUNDLE_RELEASES)) ctx.fail("unsafe_update_directory");
+	if (!root_dir_safe(ctx.paths.BUNDLE_RELEASES)) ctx.fail("unsafe_update_directory");
 	const staging = `${ctx.paths.BUNDLE_RELEASES}/.staging-${request.id}`;
 	ctx.run_command(`rm -rf ${ctx.q(staging)}`, work);
 	if (fs.mkdir(staging, 0755) != true) ctx.fail("update_stage_failed");
@@ -761,7 +771,3 @@ export function rollback_previous(ctx, work) {
 	system("sync");
 	return { rolled_back: true, version: prev_build.version, previous_version: before.version };
 };
-
-function work_id(work) {
-	return fs.basename(work);
-}

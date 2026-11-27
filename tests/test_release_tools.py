@@ -681,9 +681,10 @@ class ReleaseToolsTests(unittest.TestCase):
                     self.assertEqual(0, result.returncode, result.stderr)
                     expected = ['--timeout 300 update',
                                 '--no-network query --from none -X https://fixture.invalid/release/packages.adb '
-                                '--format json --fields depends opl-netfleet']
+                                '--format json --fields depends,provides opl-netfleet']
                     if 'luci-app-netfleet' not in installed or 'opl-netfleet ' not in installed:
-                        expected.append('--timeout 300 add opl-netfleet luci-app-netfleet')
+                        expected.append('--timeout 300 add opl-netfleet luci-app-netfleet '
+                                        'opl-netfleet-kernel opl-netfleet-plugin-dashboard opl-netfleet-plugin-selection')
                     expected.append('--timeout 300 upgrade opl-netfleet luci-app-netfleet '
                                     'opl-netfleet-kernel opl-netfleet-plugin-dashboard opl-netfleet-plugin-selection')
                     self.assertEqual(expected, log.read_text().splitlines())
@@ -728,7 +729,10 @@ class ReleaseToolsTests(unittest.TestCase):
                     self.assertEqual(min(failures + 1, 3), commands.count('--timeout 300 update'))
                     if failures == 1:
                         self.assertEqual(0, result.returncode, result.stderr)
-                        self.assertEqual(1, commands.count('--timeout 300 add opl-netfleet luci-app-netfleet'))
+                        self.assertEqual(1, commands.count(
+                            '--timeout 300 add opl-netfleet luci-app-netfleet '
+                            'opl-netfleet-kernel opl-netfleet-plugin-dashboard opl-netfleet-plugin-selection'
+                        ))
                         self.assertEqual(1, sum(' upgrade ' in item for item in commands))
                     else:
                         self.assertNotEqual(0, result.returncode)
