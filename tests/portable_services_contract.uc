@@ -116,6 +116,9 @@ try {
 		proxy_providers: () => ({providers: provider_state}), controller_ready: () => true,
 		select: () => true
 	};
+	ports["mihomo.probes"] = {
+		protected_probes_bounded: () => ({ok: true})
+	};
 	let delay_calls = 0;
 	ports["mihomo.latency"] = {measure: () => { delay_calls++; return {results: delays, target: policy.checks.latency.url}; }, measure_providers: () => true,
 		complete_from_fresh_history: round => round};

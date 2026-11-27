@@ -207,7 +207,32 @@ manager_tick=2;admitted=false;check(!restore_services(retained,'/unused'),'pendi
 admitted=true;engine_birth='changed';check(!restore_services(retained,'/unused'),'replacement engine identity must fail');
 `;
 	loadstring(harness + implementation + cases)();
-	const recovery_start = index(source, "rollback = function(");
+	const recovery_start = index(source, "function restore_runtime_tree(");
+	const tree_end = index(source, "rollback = function(", recovery_start);
+	const tree_restore = substr(source, recovery_start, tree_end - recovery_start);
+	loadstring(`
+const digest = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const archive = '/tx/new/plugin.apk', baseline = {'/code/old': 'old'};
+const before = {runtime_paths:['/code'], runtime_inputs:baseline};
+let files, sealed = true;
+function q(x) { return x; }
+function run_command(cmd, work) { return true; }
+function input_identity(paths) { return {...files}; }
+function read_json(path) { return {next:[archive], inputs:{[archive]:'signed'}}; }
+function sha256(path) { return sealed ? 'signed' : 'changed'; }
+function parsed(cmd) { return {paths:[{name:'code', files:[{name:'new',hash:digest}]}]}; }
+const fs = {lstat: path => ({type:'file'}), unlink: path => {delete files[path]; return true;}};
+` + tree_restore + `
+files = {...baseline, '/code/new':digest, '/code/foreign':digest};
+assert(!restore_runtime_tree(before,'/tx') && length(keys(files)) == 3);
+delete files['/code/foreign']; files['/code/new']='changed';
+assert(!restore_runtime_tree(before,'/tx') && exists(files,'/code/new'));
+files['/code/new']=digest; sealed=false;
+assert(!restore_runtime_tree(before,'/tx') && exists(files,'/code/new'));
+sealed=true;
+assert(restore_runtime_tree(before,'/tx') && length(keys(files)) == 1);
+assert(restore_runtime_tree(before,'/tx'));
+`)();
 	const recovery_end = index(source, "upgrade = function(", recovery_start);
 	const recovery = substr(source, recovery_start, recovery_end - recovery_start);
 	loadstring(`

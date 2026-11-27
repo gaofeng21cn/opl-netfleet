@@ -16,6 +16,7 @@ const guard_probe_url = context.use("models.policy").guard_probe_url;
 const is_active = context.use("models.activation").is_active;
 const refresh_history = context.use("subscriptions.facts").read_history;
 const refresh_due_at = context.use("models.subscription").refresh_due_at;
+const referenced_sections = context.use("models.subscription")?.referenced_sections;
 const pending_recovery = context.use("recovery.state").pending;
 
 settings = function() {
@@ -52,7 +53,10 @@ tick = function(previous) {
 	if (next_selection_at == null) next_selection_at = now + config.selection_interval_seconds;
 	try {
 		if (config.subscription_refresh_enabled == true) {
-			const due = refresh_due_at(refresh_history(), config.subscription_refresh_interval_seconds);
+			const sections = type(referenced_sections) == "function" ?
+				referenced_sections(settings_value.policy, current_profile()) : null;
+			const due = refresh_due_at(refresh_history(), config.subscription_refresh_interval_seconds,
+				length(sections ?? []) > 0 ? sections : null);
 			if ((due == null || now >= due) && run_owner("refresh", "scheduled"))
 				next_selection_at = now + config.selection_interval_seconds;
 		}

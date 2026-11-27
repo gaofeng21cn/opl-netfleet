@@ -12,6 +12,7 @@ const select_proxy = context.use("mihomo.controller").select;
 const protected_probes = context.use("mihomo.controller").protected_probes;
 const measure_latency = context.use("mihomo.latency").measure;
 const protected_probes_after_restart = context.use("mihomo.probes").protected_probes_after_restart;
+const protected_probes_bounded = context.use("mihomo.probes")?.protected_probes_bounded;
 const preferred_runtime_ready = context.use("models.activation").preferred_runtime_ready;
 const sorted_keys = context.use("models.ordering").sorted_keys;
 const automation_config = context.use("models.policy").automation;
@@ -145,6 +146,15 @@ refresh_data_fallback = function(secret, entry, policy, provider_state, selected
 			state = proxies(secret);
 			if (state?.proxies == null) return { ok: false, error: "mihomo_state_unavailable", round: round };
 		}
+		// Wrapper probes do not update the selected URLTest group's own health.
+		// Verify that exact path once before a stale global failure can hide its leaf.
+		if (restoring != true && state.proxies[selected_group]?.alive == false) {
+			if (!test_group_path(secret, selected_group, guard_checks))
+				return { ok: false, error: "selected_business_path_probe_failed", probe: health.guard_probe_id,
+					group: selected_group, method: "HEAD", expected_status: guard_expected, round: round };
+			state = proxies(secret);
+			if (state?.proxies == null) return { ok: false, error: "mihomo_state_unavailable", round: round };
+		}
 	}
 	state.providers = provider_state ?? proxy_providers(secret, 1)?.providers ?? null;
 	const runtime = resolve_runtime(entry, state);
@@ -239,6 +249,8 @@ activate_preferred_choice = function(secret, entry, choice, policy, after_restar
 			runtime: fallback.runtime
 		};
 	}
+	if (fallback.runtime.leaf != leaf.leaf)
+		return { ok: false, error: "selected_leaf_unavailable", choice: choice, leaf: fallback.runtime.leaf };
 	let probes = null;
 	if (verify_probes != false) {
 		probes = after_restart ? protected_probes_after_restart(policy) : protected_probes(policy);
@@ -366,10 +378,13 @@ activate_all_direct_fallbacks = function(secret, manifest, policy) {
 	};
 };
 
-candidate_group_names = function(entry) {
+candidate_group_names = function(entry, quotas) {
 	const result = [];
 	const groups = entry?.candidate_groups ?? [];
 	for (let i = 0; i < length(groups); i++) {
+		if (type(quotas) == "object" && quotas[groups[i]?.provider]?.state == "exhausted") {
+			continue;
+		}
 		if (type(groups[i]?.name) == "string") {
 			push(result, groups[i].name);
 		}
@@ -377,11 +392,20 @@ candidate_group_names = function(entry) {
 	return result;
 };
 
-reset_candidate_groups = function(secret, entry, detail, progress) {
-	const names = candidate_group_names(entry);
-	if (length(names) == 0) {
+reset_candidate_groups = function(secret, entry, detail, progress, quotas) {
+	const all_groups = entry?.candidate_groups ?? [];
+	if (length(all_groups) == 0) {
 		if (detail != null) detail.error = "candidate_groups_missing";
 		return false;
+	}
+	const names = candidate_group_names(entry, quotas);
+	if (length(names) == 0) {
+		if (type(quotas) != "object") {
+			if (detail != null) detail.error = "candidate_groups_missing";
+			return false;
+		}
+		if (progress != null) progress({ completed: 0, total: 0 });
+		return true;
 	}
 	for (let i = 0; i < length(names); i++) {
 		if (progress != null) progress({ completed: i, total: length(names) });
@@ -391,7 +415,7 @@ reset_candidate_groups = function(secret, entry, detail, progress) {
 	return true;
 };
 
-candidate_provider_leaves_ready = function(entry, proxy_state, provider_state, url, index_cache) {
+candidate_provider_leaves_ready = function(entry, proxy_state, provider_state, url, index_cache, quotas) {
 	const groups = entry?.candidate_groups ?? [];
 	if (length(groups) == 0 || type(proxy_state) != "object" ||
 		type(provider_state) != "object") {
@@ -400,6 +424,9 @@ candidate_provider_leaves_ready = function(entry, proxy_state, provider_state, u
 	const cache = index_cache ?? {};
 	for (let i = 0; i < length(groups); i++) {
 		const group = groups[i];
+		if (type(quotas) == "object" && quotas[group?.provider]?.state == "exhausted") {
+			continue;
+		}
 		const source_name = entry?.providers?.[group?.provider]?.source_name;
 		if (provider_group_leaf(proxy_state, provider_state, source_name, group?.name, url, cache) == null) {
 			return false;
@@ -408,14 +435,14 @@ candidate_provider_leaves_ready = function(entry, proxy_state, provider_state, u
 	return true;
 };
 
-wait_for_candidate_provider_leaves = function(secret, entry, timeout_seconds, url) {
+wait_for_candidate_provider_leaves = function(secret, entry, timeout_seconds, url, quotas) {
 	let state = null;
 	let provider_state = null;
 	const attempts = (type(timeout_seconds) == "int" && timeout_seconds > 0 ? timeout_seconds : 1) + 1;
 	for (let attempt = 0; attempt < attempts; attempt++) {
 		state = proxies(secret, 1);
 		provider_state = proxy_providers(secret, 1)?.providers ?? null;
-		if (candidate_provider_leaves_ready(entry, state?.proxies, provider_state, url, {})) {
+		if (candidate_provider_leaves_ready(entry, state?.proxies, provider_state, url, {}, quotas)) {
 			break;
 		}
 		if (attempt < attempts - 1) {
@@ -457,7 +484,8 @@ restore_runtime_selections = function(secret, manifest, before_groups, policy, d
 		else
 			refresh_data_fallback(secret, entry, policy);
 	}
-	const probes = after_restart == true ? protected_probes_after_restart(policy) : protected_probes(policy);
+	const probes = after_restart == true ? protected_probes_after_restart(policy) :
+		(type(protected_probes_bounded) == "function" ? protected_probes_bounded(policy, 2) : protected_probes(policy));
 	if (detail != null && !probes.ok) {
 		detail.error = probes.error;
 		detail.probes = probes;

@@ -9,3 +9,4 @@
 ## 提案列表
 
 - [`opl-netfleet-cloud.md`](opl-netfleet-cloud.md)：跨多站点集中性能监视与加密机场订阅子集下发的云端控制面（`opl-netfleet-cloud`）及设备同步插件方案。
+- [`openwrt-release-bundle-delivery.md`](openwrt-release-bundle-delivery.md)：通过「薄系统包壳（`.apk`/`.ipk` 零 SDK 产包）+ 纯源码签名 Release Bundle + 原子符号链接切换」解决跨 OpenWrt 24.10/25.12 兼容与多包升级回滚脆弱问题。

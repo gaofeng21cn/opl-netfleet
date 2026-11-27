@@ -13,6 +13,7 @@ const decision_event = context.use("events.record").decision_event;
 const record_events = context.use("events.record").record_events;
 const load_manifest = context.use("mihomo.artifacts").load_manifest;
 const protected_probes = context.use("mihomo.controller").protected_probes;
+const protected_probes_bounded = context.use("mihomo.probes")?.protected_probes_bounded;
 const proxies = context.use("mihomo.controller").proxies;
 const select_proxy = context.use("mihomo.controller").select;
 const reset_candidate_groups = context.use("mihomo.paths").reset_candidate_groups;
@@ -39,6 +40,7 @@ const POLICY_PATH = context.use("platform.paths").POLICY_PATH;
 const restore_recovery_with_probes = context.use("recovery.control").restore_recovery_with_probes;
 const guarded_mutation = context.use("recovery.control").guarded_mutation;
 const automatic_round = context.use("selection.round").automatic_round;
+const provider_quotas = context.use("subscriptions.facts")?.provider_quotas;
 
 automatic_select_action = function(policy, capability, evidence, trigger, initiator) {
 	const current = current_profile();
@@ -79,26 +81,44 @@ automatic_select_action = function(policy, capability, evidence, trigger, initia
 			visible: state.proxies?.[entry.name]?.now ?? null
 		};
 	}
-	const provider_measurement_ok = measure_providers(secret,
-		automatic_provider_sources(manifest, automatic_names), policy.checks);
-	const shared = { entries: {}, prepared: true };
+	const quotas = type(provider_quotas) == "function" ? provider_quotas(policy) : null;
+	const sources = automatic_provider_sources(manifest, automatic_names, quotas);
+	const provider_measurement_ok = length(sources) == 0 ? true : measure_providers(secret, sources, policy.checks);
+	const shared = { entries: {}, prepared: true, quotas: quotas };
 	for (let name in automatic_names) {
 		const detail = { capability: name };
 		if (!reset_candidate_groups(secret, manifest.generated_groups[name], detail,
-			counts => operation_update("resetting_candidates", { subject: name, ...counts })))
+			counts => operation_update("resetting_candidates", { subject: name, ...counts }), quotas))
 			fail("select", "candidate_group_reset_failed", detail);
 	}
-	operation_update("measuring", { subject: null, total: 0, completed: 0 });
 	const results = {};
+	const activations = {};
+	const attempted_choices = {};
+	const retryable_errors = ["selected_business_path_probe_failed", "selected_leaf_unavailable", "preferred_path_unavailable"];
 	for (let i = 0; i < length(automatic_names); i++) {
 		const name = automatic_names[i];
+		const entry = manifest.generated_groups[name];
 		const parent = policy.capabilities?.[name]?.prefer_region_from;
-		const preferred_region = parent == null ? null : results[parent]?.decision?.region_id;
-		const result = automatic_round(policy, manifest, manifest.generated_groups[name], name, secret,
-			baseline_probes.ok, state, provider_measurement_ok, preferred_region, shared, parent == null ? null : results[parent]?.decision);
+		const preferred_decision = parent == null ? null : results[parent]?.decision;
+		const preferred_region = preferred_decision?.region_id ?? null;
+		operation_update("measuring", { subject: name, total: length(automatic_names), completed: i });
+		const result = automatic_round(policy, manifest, entry, name, secret,
+			baseline_probes.ok, state, provider_measurement_ok, preferred_region, shared, preferred_decision);
 		results[name] = result;
 		if (!result.ok) {
 			const decision = result.decision ?? { error: result.error };
+			if (i > 0) {
+				const restored = baseline_probes.ok &&
+					restore_runtime_selections(secret, manifest, before_groups, policy);
+				if (restored) {
+					fail("select", "automatic_selection_failed", {
+						capability: name, decision: decision, restored: true
+					});
+				}
+				const fallback = restore_recovery_with_probes(policy, decision.error);
+				if (!fallback.ok) fail("select", "rollback_failed", { capability: name, decision: decision, fallback: fallback });
+				fail("select", "automatic_selection_failed", { capability: name, decision: decision, fallback: fallback });
+			}
 			if (!baseline_probes.ok) {
 				const fallback = restore_recovery_with_probes(policy, decision.error);
 				if (!fallback.ok) fail("select", "rollback_failed", { capability: name, decision: decision, fallback: fallback });
@@ -110,30 +130,51 @@ automatic_select_action = function(policy, capability, evidence, trigger, initia
 				candidates: public_candidates(result.candidates ?? []) });
 			return;
 		}
-	}
-	const activations = {};
-	for (let i = 0; i < length(automatic_names); i++) {
-		const name = automatic_names[i];
-		const result = results[name];
 		operation_update("applying", { subject: name, total: length(automatic_names), completed: i });
-		const activation = activate_preferred_choice(secret, manifest.generated_groups[name],
-			result.decision.group, policy, false, false, result.decision);
-		activations[name] = activation;
-		if (!activation.ok) {
+		const choices = type(result.choices) == "array" && length(result.choices) > 0 ? result.choices : [result.decision];
+		let activation = null;
+		let accepted_choice = null;
+		attempted_choices[name] = [];
+		for (let c = 0; c < length(choices); c++) {
+			const choice = choices[c];
+			activation = activate_preferred_choice(secret, entry, choice.group, policy, false, false, choice);
+			push(attempted_choices[name], {
+				group: choice.group,
+				provider_id: choice.provider_id,
+				region_id: choice.region_id,
+				ok: activation.ok == true,
+				error: activation.error ?? null
+			});
+			if (activation.ok) {
+				accepted_choice = choice;
+				break;
+			}
+			if (index(retryable_errors, activation.error) < 0) {
+				break;
+			}
+		}
+		if (accepted_choice == null || !activation?.ok) {
 			const restored = baseline_probes.ok &&
 				restore_runtime_selections(secret, manifest, before_groups, policy);
 			if (restored) {
 				fail("select", "automatic_selection_failed", {
-					capability: name, decision: result.decision, activation: activation, restored: true
+					capability: name, decision: choices[0], activation: activation,
+					attempted_choices: attempted_choices[name], restored: true
 				});
 			}
-			const fallback = restore_recovery_with_probes(policy, activation.error);
+			const fallback = restore_recovery_with_probes(policy, activation?.error ?? "automatic_selection_failed");
 			if (!fallback.ok) fail("select", "rollback_failed", { capability: name, activation: activation, fallback: fallback });
-			fail("select", "automatic_selection_failed", { capability: name, activation: activation, fallback: fallback });
+			fail("select", "automatic_selection_failed", {
+				capability: name, activation: activation,
+				attempted_choices: attempted_choices[name], fallback: fallback
+			});
 		}
+		result.decision = accepted_choice;
+		activations[name] = activation;
 	}
 	operation_update("verifying", { subject: null, total: length(automatic_names), completed: length(automatic_names) });
-	const activation_probes = protected_probes(policy);
+	const activation_probes = type(protected_probes_bounded) == "function" ?
+		protected_probes_bounded(policy, 2) : protected_probes(policy);
 	if (!activation_probes.ok) {
 		const restored = baseline_probes.ok &&
 			restore_runtime_selections(secret, manifest, before_groups, policy);

@@ -2,7 +2,7 @@ import { request as http_request, request_all as http_request_all } from "./http
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let controller_timeout_seconds, measure_providers, measure, latest_history, complete_from_fresh_history;
+let controller_timeout_seconds, measure_providers, measure, measure_groups, latest_history, complete_from_fresh_history;
 
 const url_path_segment = context.use("mihomo.controller").url_path_segment;
 const API = context.use("platform.runtime").API;
@@ -11,8 +11,8 @@ controller_timeout_seconds = function(timeout_ms) {
 	let seconds = int((timeout_ms + 999) / 1000) + 3;
 	if (seconds < 4) {
 		seconds = 4;
-	} else if (seconds > 30) {
-		seconds = 30;
+	} else if (seconds > 45) {
+		seconds = 45;
 	}
 	return seconds;
 };
@@ -67,7 +67,10 @@ measure = function(secret, group, checks) {
 		return { method: "mihomo_delay", status: "unavailable", reason: "invalid_input", results: {} };
 	}
 
-	const max_time = controller_timeout_seconds(timeout_ms);
+	const budget_ms = type(checks?.provider_healthcheck_timeout_ms) == "int" &&
+		checks.provider_healthcheck_timeout_ms > timeout_ms ?
+		checks.provider_healthcheck_timeout_ms : timeout_ms;
+	const max_time = controller_timeout_seconds(budget_ms);
 	const path = `/group/${url_path_segment(group)}/delay?url=${url_path_segment(url)}` +
 		`&timeout=${timeout_ms}&expected=${expected_status}`;
 	const response = http_request(API, {
@@ -101,6 +104,97 @@ measure = function(secret, group, checks) {
 				target: url,
 				expected_status: expected_status
 			};
+		}
+	}
+	return {
+		method: "mihomo_delay",
+		status: length(keys(measured)) > 0 ? "ok" : "unavailable",
+		target: url,
+		expected_status: expected_status,
+		results: measured
+	};
+};
+
+measure_groups = function(secret, groups, checks) {
+	const latency = checks?.latency ?? {};
+	const url = latency.url;
+	const timeout_ms = latency.timeout_ms;
+	const expected_status = latency.expected_status;
+	if (latency.method != "mihomo_delay" || type(secret) != "string" || length(secret) == 0 ||
+		type(groups) != "array" || type(url) != "string" ||
+		type(timeout_ms) != "int" || type(expected_status) != "int") {
+		return { method: "mihomo_delay", status: "unavailable", reason: "invalid_input", results: {} };
+	}
+	const valid_groups = [];
+	for (let i = 0; i < length(groups); i++) {
+		if (type(groups[i]) == "string" && length(groups[i]) > 0) {
+			push(valid_groups, groups[i]);
+		}
+	}
+	if (length(valid_groups) == 0) {
+		return { method: "mihomo_delay", status: "unavailable", target: url, expected_status: expected_status, results: {} };
+	}
+	const budget_ms = type(checks?.provider_healthcheck_timeout_ms) == "int" &&
+		checks.provider_healthcheck_timeout_ms > timeout_ms ?
+		checks.provider_healthcheck_timeout_ms : timeout_ms;
+	const http_timeout_ms = controller_timeout_seconds(budget_ms) * 1000;
+	const query = `?url=${url_path_segment(url)}&timeout=${timeout_ms}&expected=${expected_status}`;
+	const measured = {};
+	const batch_size = 4;
+	for (let offset = 0; offset < length(valid_groups); offset += batch_size) {
+		const batch_groups = [];
+		const specs = [];
+		for (let j = offset; j < length(valid_groups) && j < offset + batch_size; j++) {
+			const group_name = valid_groups[j];
+			push(batch_groups, group_name);
+			push(specs, {
+				target: API,
+				method: "GET",
+				path: `/group/${url_path_segment(group_name)}/delay${query}`,
+				headers: { Authorization: `Bearer ${secret}` },
+				connect_timeout_ms: 2000,
+				timeout_ms: http_timeout_ms
+			});
+		}
+		const responses = http_request_all(specs, http_timeout_ms);
+		for (let j = 0; j < length(responses); j++) {
+			const response = responses[j];
+			const group_name = batch_groups[j];
+			if (!response?.ok || response.status < 200 || response.status >= 300 || type(response.body) != "string") {
+				continue;
+			}
+			let result = null;
+			try {
+				result = json(response.body);
+			} catch (error) {
+				result = null;
+			}
+			if (type(result) != "object") continue;
+			const names = keys(result);
+			for (let k = 0; k < length(names); k++) {
+				const name = names[k];
+				const delay = result[name];
+				if (type(delay) == "int" && delay > 0) {
+					measured[name] = {
+						method: "mihomo_delay",
+						status: "ok",
+						delay_ms: delay,
+						target: url,
+						expected_status: expected_status
+					};
+				}
+			}
+			// Record group delay directly when Mihomo returns node-keyed or empty delay maps
+			// only if the group name itself carried a positive integer delay above.
+			if (measured[group_name] == null && type(result[group_name]) == "int" && result[group_name] > 0) {
+				measured[group_name] = {
+					method: "mihomo_delay",
+					status: "ok",
+					delay_ms: result[group_name],
+					target: url,
+					expected_status: expected_status
+				};
+			}
 		}
 	}
 	return {
@@ -166,5 +260,5 @@ complete_from_fresh_history = function(round, before, after, groups, checks) {
 	};
 };
 
-return { controller_timeout_seconds, measure_providers, measure, complete_from_fresh_history };
+return { controller_timeout_seconds, measure_providers, measure, measure_groups, complete_from_fresh_history };
 };

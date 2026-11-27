@@ -3,6 +3,8 @@ import { readfile } from "fs";
 import { use, release as release_services } from "./services.uc";
 
 const choose_automatic = use("selection.algorithm").choose_automatic;
+const rank_automatic = use("selection.algorithm").rank_automatic;
+const automatic_provider_sources = use("models.ordering").automatic_provider_sources;
 const provider_group_current_leaf = use("models.selector").provider_group_current_leaf;
 const speed_url = 'https://speed.example/204';
 const provider_group_leaf = (state, providers, source, group) => use("models.selector").provider_group_leaf(state, providers, source, group, speed_url);
@@ -295,6 +297,37 @@ result = choose_automatic([
 ], policy, "ai-compatible", null, "blocked", excluded_parent);
 if (!result.ok || result.candidate_id != "allowed-fast") die("excluded parent must choose fastest allowed node");
 
+const ranked = rank_automatic([
+	candidate("n-near", "p1", "near", 100, 10, "primary"),
+	candidate("n-fast", "p2", "fast", 20, 10, "primary"),
+	candidate("n-cur", "p1", "current", 80, 10, "primary"),
+	candidate("n-res", "p3", "near", 5, 10, "reserve")
+], policy, "standard", "current", null, null, 3);
+if (!ranked.ok || length(ranked.choices) != 3 ||
+	ranked.choices[0].region_id != "current" || ranked.choices[1].region_id != "fast" || ranked.choices[2].region_id != "near" ||
+	ranked.choices[2].layer != "primary") {
+	die("rank_automatic must keep sticky current first then order distinct primary candidates ahead of reserve");
+}
+const ranked_cold = rank_automatic([
+	candidate("n-near", "p1", "near", 100, 10, "primary"),
+	candidate("n-fast", "p2", "fast", 20, 10, "primary"),
+	candidate("n-cur", "p1", "current", 80, 10, "primary"),
+	candidate("n-res", "p3", "near", 5, 10, "reserve")
+], policy, "standard", null, null, null, 3);
+if (!ranked_cold.ok || length(ranked_cold.choices) != 3 ||
+	ranked_cold.choices[0].region_id != "fast" || ranked_cold.choices[1].region_id != "current" || ranked_cold.choices[2].region_id != "near" ||
+	ranked_cold.choices[2].layer != "primary") {
+	die("rank_automatic must order distinct primary candidates ahead of reserve");
+}
+
+const filtered_sources = automatic_provider_sources({
+	generated_groups: { standard: { providers: {
+		dead: { source_name: "SRC-DEAD" },
+		live: { source_name: "SRC-LIVE" }
+	} } }
+}, ["standard"], { dead: { state: "exhausted" }, live: { state: "available" } });
+if (join(",", filtered_sources) != "SRC-LIVE") die("automatic_provider_sources must skip exhausted providers");
+
 print("selection_contract_ok\n");
 
 {
@@ -331,6 +364,66 @@ services["selection.round"]={automatic_round:(p,m,e,n,s,b,st,pm,pr,shared)=>{kep
 factory({argv:[],use:name=>services[name]??{}}).automatic_select_action(policy,"standard",{},"manual","luci");
 if(kept_current!=true)die("manual remeasure bypassed region stickiness");
 
+// Top-K runner-up fallback activates candidate #2 without re-measuring and re-ranks follower onto it.
+let std_calls = [], ai_pref = null, bound_calls = 0;
+const topk_policy = {
+	main: { enabled: true },
+	capabilities: {
+		standard: { enabled: true, mode: "automatic" },
+		"ai-compatible": { enabled: true, mode: "automatic", prefer_region_from: "standard" }
+	}
+};
+const topk_manifest = {
+	generated_groups: {
+		standard: { name: "Overseas", mode: "automatic", candidate_groups: [{ name: "g-nl", provider: "p1", region: "nl" }, { name: "g-sg", provider: "p1", region: "sg" }], providers: { p1: { source_name: "SRC1" } } },
+		"ai-compatible": { name: "AI", mode: "automatic", candidate_groups: [{ name: "ai-nl", provider: "p1", region: "nl" }, { name: "ai-sg", provider: "p1", region: "sg" }], providers: { p1: { source_name: "SRC1" } } }
+	}
+};
+const topk_services = {
+	"events.output": { fail: (a, e) => die(e), ok: (a, r) => { out = r; } },
+	"events.operation": { begin: () => {}, update: () => {} },
+	"events.record": { decision_event: () => ({}), record_events: () => true },
+	"mihomo.artifacts": { load_manifest: () => topk_manifest },
+	"mihomo.controller": { protected_probes: () => ({ ok: true }), proxies: () => ({ proxies: { Selector: { now: "g-sg" }, Overseas: { now: "Automatic" }, AI: { now: "Automatic" } } }), select: () => true },
+	"mihomo.probes": { protected_probes_bounded: () => { bound_calls++; return { ok: true }; } },
+	"mihomo.latency": { measure_providers: () => true },
+	"mihomo.paths": {
+		selection_group: () => "Selector",
+		reset_candidate_groups: () => true,
+		activate_preferred_choice: (secret, entry, group) => {
+			if (entry.name == "Overseas") {
+				push(std_calls, group);
+				if (group == "g-nl") return { ok: false, error: "selected_business_path_probe_failed" };
+				return { ok: true, leaf: "leaf-sg", data_path: "preferred" };
+			}
+			return { ok: true, leaf: "ai-leaf-sg", data_path: "preferred" };
+		}
+	},
+	"models.activation": { is_active: () => true },
+	"models.evidence": { selection_snapshot: ev => ev, measurement_identity: () => ({}) },
+	"models.ordering": { automatic_capability_order: () => ["standard", "ai-compatible"], automatic_provider_sources: () => ["SRC1"] },
+	"models.selection-view": { public_candidates: items => items },
+	"platform.documents": { write_evidence: () => true },
+	"platform.profile": { current_profile: () => "active" },
+	"platform.credentials": { api_secret: () => "fixture" },
+	"subscriptions.facts": { provider_quotas: () => ({ p1: { state: "available" } }) },
+	"selection.round": {
+		automatic_round: (p, m, e, cap, sec, keep, st, pm, pref_region) => {
+			if (cap == "standard") {
+				const d1 = { ok: true, region_id: "nl", group: "g-nl", candidate_id: "leaf-nl", provider_id: "p1", delay_ms: 40, layer: "primary" };
+				const d2 = { ok: true, region_id: "sg", group: "g-sg", candidate_id: "leaf-sg", provider_id: "p1", delay_ms: 60, layer: "primary" };
+				return { ok: true, decision: d1, choices: [d1, d2], candidates: [] };
+			}
+			ai_pref = pref_region;
+			const dai = { ok: true, region_id: pref_region, group: `ai-${pref_region}`, candidate_id: `ai-leaf-${pref_region}`, provider_id: "p1", delay_ms: 60, layer: "primary" };
+			return { ok: true, decision: dai, choices: [dai], candidates: [] };
+		}
+	}
+};
+factory({ argv: [], use: name => topk_services[name] ?? {} }).automatic_select_action(topk_policy, "standard", {}, "manual", "luci");
+if (join(",", std_calls) != "g-nl,g-sg" || ai_pref != "sg" || out.capabilities.standard.selected_group != "g-sg" || bound_calls != 1)
+	die("top-k runner-up fallback and follower re-ranking failed");
+
 }
 {
 const factory = loadfile(replace(sourcepath(), /[^/]+$/, "../plugins/selection/lib/round.uc"))() ;
@@ -359,5 +452,40 @@ const failed_shared = {entries: {}, prepared: true};
 round(local_policy, manifest, entry, "standard", "fixture", true, state, false, null, failed_shared);
 const failed = round(local_policy, manifest, manifest.generated_groups["ai-compatible"], "ai-compatible", "fixture", true, state, false, null, failed_shared);
 if (samples != 2 || failed.ok) die("same failed measurement must not be retried under another exit name");
+
+let batch_calls = [];
+const mixed_services = {
+	...services,
+	"mihomo.latency": {
+		measure: () => die("exhausted round must not sweep combined selector"),
+		measure_groups: (secret, groups) => { batch_calls = groups; return { target: speed_url, results: { live_g: { status: "ok", delay_ms: 55 } } }; },
+		complete_from_fresh_history: round => round
+	},
+	"mihomo.controller": {
+		proxies: () => ({ proxies: { live_g: { all: ["common"], now: "common" }, dead_g: { all: ["REJECT"], now: "REJECT" } } }),
+		proxy_providers: () => ({ providers: {} })
+	},
+	"mihomo.paths": {
+		selection_group: entry => entry.name,
+		reset_candidate_groups: () => true,
+		candidate_provider_leaves_ready: () => true,
+		candidate_group_names: (entry, quotas) => map(filter(entry.candidate_groups, g => quotas?.[g.provider]?.state != "exhausted"), g => g.name)
+	},
+	"subscriptions.facts": { provider_quotas: () => ({ dead: { state: "exhausted" }, live: { state: "available" } }) }
+};
+const mixed_entry = {
+	name: "first",
+	providers: { dead: { source_name: "dead_src" }, live: { source_name: "source" } },
+	candidate_groups: [
+		{ name: "dead_g", provider: "dead", region: "near", role: "primary", filter: "near" },
+		{ name: "live_g", provider: "live", region: "near", role: "primary", filter: "near" }
+	]
+};
+const mixed_round = factory({ use: name => mixed_services[name] }).automatic_round(
+	local_policy, { generated_groups: { standard: mixed_entry } }, mixed_entry, "standard", "fixture",
+	true, state, true, null, { entries: {}, prepared: true, quotas: { dead: { state: "exhausted" }, live: { state: "available" } } }
+);
+if (join(",", batch_calls) != "live_g" || !mixed_round.ok || mixed_round.decision.group != "live_g")
+	die("exhausted provider must trigger scoped measure_groups on eligible candidates only");
 }
 release_services();

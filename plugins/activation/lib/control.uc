@@ -67,6 +67,7 @@ const clear_recovery = context.use("recovery.state").clear;
 const pending_recovery = context.use("recovery.state").pending;
 const defer_recovery = context.use("recovery.state").defer;
 const automatic_round = context.use("selection.round").automatic_round;
+const provider_quotas = context.use("subscriptions.facts").provider_quotas;
 const remove_policy_provider_links = context.use("subscriptions.facts").remove_policy_provider_links;
 
 fail_enable_after_switch = function(policy, original_profile, reason, details) {
@@ -202,43 +203,78 @@ enable_action = function(policy, evidence, quiet, report, replacing_active) {
 		};
 	}
 	if (length(automatic_names)) progress("measuring", { subject: null });
+	const quotas = provider_quotas(policy);
+	const sources = automatic_provider_sources(manifest, automatic_names, quotas);
 	const provider_measurement_ok = length(automatic_names) == 0 ? null :
-		measure_providers(secret, automatic_provider_sources(manifest, automatic_names), policy.checks);
-	const shared = {entries: {}, prepared: true};
+		length(sources) == 0 ? true : measure_providers(secret, sources, policy.checks);
+	const shared = {entries: {}, prepared: true, quotas: quotas};
 	for (let capability in automatic_names) {
 		progress("resetting_candidates", { subject: capability });
 		const detail = { capability };
 		if (!reset_candidate_groups(secret, manifest.generated_groups[capability], detail,
-			counts => progress("resetting_candidates", { subject: capability, ...counts })))
+			counts => progress("resetting_candidates", { subject: capability, ...counts }), quotas))
 			reject("candidate_group_reset_failed", detail);
 	}
+	const retryable_errors = ["selected_business_path_probe_failed", "selected_leaf_unavailable", "preferred_path_unavailable"];
 	for (let i = 0; i < length(automatic_names); i++) {
 		const capability = automatic_names[i];
 		const entry = manifest.generated_groups[capability];
 		const parent = policy.capabilities?.[capability]?.prefer_region_from;
 		progress("selecting", { subject: capability, total: length(automatic_names), completed: i });
-		const preferred_region = parent == null ? null : automatic_results[parent]?.decision?.region_id;
+		const preferred_decision = parent == null ? null : automatic_results[parent]?.decision;
+		const preferred_region = preferred_decision?.region_id;
 		const result = automatic_round(policy, manifest, entry, capability, secret, false,
-			enable_freshness_baseline, provider_measurement_ok, preferred_region, shared,
-			parent == null ? null : automatic_results[parent]?.decision);
+			enable_freshness_baseline, provider_measurement_ok, preferred_region, shared, preferred_decision);
 		if (!result.ok) {
 			reject(result.error, {
 				capability: capability,
 				automatic: result
 			});
 		}
+		progress("activating_exit", { subject: capability, total: length(capability_names), completed: i });
+		const choices = type(result.choices) == "array" && length(result.choices) > 0 ? result.choices : [result.decision];
+		let activation = null;
+		let accepted_choice = null;
+		const attempted = [];
+		for (let c = 0; c < length(choices); c++) {
+			const choice = choices[c];
+			activation = activate_preferred_choice(secret, entry, choice.group, policy, true, false, choice);
+			push(attempted, {
+				group: choice.group,
+				provider_id: choice.provider_id,
+				region_id: choice.region_id,
+				ok: activation.ok == true,
+				error: activation.error ?? null
+			});
+			if (activation.ok) {
+				accepted_choice = choice;
+				break;
+			}
+			if (index(retryable_errors, activation.error) < 0) {
+				break;
+			}
+		}
+		if (accepted_choice == null || !activation?.ok) {
+			reject(activation?.error ?? "automatic_selection_failed", {
+				capability: capability,
+				selected_group: choices[0]?.group,
+				activation: activation,
+				attempted_choices: attempted
+			});
+		}
+		result.decision = accepted_choice;
 		automatic_results[capability] = result;
-		selections[capability].selected_group = result.decision.group;
+		selections[capability].selected_group = accepted_choice.group;
+		selections[capability].selected_leaf = activation.leaf;
+		selections[capability].data_path = activation.data_path;
+		progress("activating_exit", { subject: capability, total: length(capability_names), completed: i + 1 });
 	}
 	for (let i = 0; i < length(capability_names); i++) {
 		const capability = capability_names[i];
 		const entry = manifest.generated_groups[capability];
+		if (entry.mode == "automatic") continue;
 		progress("activating_exit", { subject: capability, total: length(capability_names), completed: i });
-		const activation = entry.mode == "automatic" ?
-			activate_preferred_choice(secret, entry, selections[capability].selected_group,
-				policy, true, false, automatic_results[capability].decision) :
-			activate_manual_choice(secret, entry, selections[capability].user_choice,
-				policy, false);
+		const activation = activate_manual_choice(secret, entry, selections[capability].user_choice, policy, false);
 		if (!activation.ok) {
 			reject(activation.error, {
 				capability: capability,

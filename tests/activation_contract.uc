@@ -346,6 +346,61 @@ function test_path_activation() {
 	const changed = activation_paths.activate_preferred_choice('fixture', automatic_entry, 'candidate', policy, false, false, { group: 'candidate', candidate_id: 'leaf' });
 	check(!changed.ok && changed.error == 'selected_leaf_unavailable' && measures == 0, 'changed leaf cannot inherit prior speed evidence');
 
+	// A newer failed speed check can overwrite global health even when the
+	// preferred selector's business check succeeded through this same group.
+	let group_alive = false, candidate_passes = true, checked = 0, actual_leaf = 'leaf';
+	const controller = services['mihomo.controller'];
+	const ordinary_test = controller.test_group_path, ordinary_resolve = services['models.status'].resolve_runtime;
+	controller.proxies = () => ({ proxies: { candidate: { alive: group_alive }, preferred: { all: ['candidate'] }, visible: { all: ['automatic'] } } });
+	controller.test_group_path = (secret, group, checks) => {
+		if (group != 'candidate') return ordinary_test(secret, group, checks);
+		check(checks.latency.url == 'https://business.test/guard' && checks.latency.expected_status == 200, 'candidate must use guard HEAD');
+		checked++;
+		group_alive = candidate_passes;
+		return group_alive;
+	};
+	services['models.status'].resolve_runtime = () => ({ leaf: group_alive ? actual_leaf : null, data_path: 'preferred' });
+	selected_leaf = 'leaf';
+	const stale_paths = factory({ use: name => services[name] });
+	const verify_stale = () => stale_paths.activate_preferred_choice('fixture', automatic_entry, 'candidate', policy, false, false, { group: 'candidate', candidate_id: 'leaf' });
+	check(verify_stale().ok && checked == 1 && measures == 0, 'verify selected group once without repeating the speed round');
+	group_alive = false; candidate_passes = false;
+	const rejected = verify_stale();
+	check(rejected.error == 'selected_business_path_probe_failed' && rejected.group == 'candidate', 'reject real candidate business failures');
+	group_alive = false; candidate_passes = true; actual_leaf = 'other';
+	check(verify_stale().error == 'selected_leaf_unavailable', 'business success cannot transfer speed evidence to a changed leaf');
+	controller.test_group_path = ordinary_test;
+	services['models.status'].resolve_runtime = ordinary_resolve;
+
+	// Exhausted providers are skipped during candidate reset without rejecting non-empty manifests.
+	const unfixed_groups = [];
+	const orig_unfix = controller.unfix;
+	controller.unfix = (secret, group) => { push(unfixed_groups, group); return true; };
+	const reset_paths = factory({ use: name => services[name] });
+	const mixed_entry = { candidate_groups: [{ name: 'c-dead', provider: 'p1' }, { name: 'c-live', provider: 'p2' }] };
+	check(reset_paths.reset_candidate_groups('fixture', mixed_entry, {}, null, { p1: { state: 'exhausted' }, p2: { state: 'available' } }) &&
+		join(',', unfixed_groups) == 'c-live', 'reset_candidate_groups skips exhausted providers');
+	splice(unfixed_groups, 0, length(unfixed_groups));
+	check(reset_paths.reset_candidate_groups('fixture', { candidate_groups: [{ name: 'c-dead', provider: 'p1' }] }, {}, null, { p1: { state: 'exhausted' } }) &&
+		length(unfixed_groups) == 0, 'reset_candidate_groups succeeds without requests when all providers are exhausted');
+	controller.unfix = orig_unfix;
+
+	// Bounded selection probe retries once on transient transport/5xx errors, not on 4xx.
+	const probes_factory = loadfile(`${plugins_root}/mihomo/lib/probes.uc`)();
+	let probe_seq = [];
+	const probe_services = {
+		"events.output": { fail: (a, e) => die(e), ok: () => {} },
+		"mihomo.controller": { protected_probes: () => shift(probe_seq) },
+		"platform.documents": { load_policy: () => policy },
+		"platform.paths": { POLICY_PATH: '/unused' }
+	};
+	const probes_svc = probes_factory({ use: name => probe_services[name] });
+	probe_seq = [{ ok: false, error: 'protected_probe_failed', actual_status: '504' }, { ok: true, count: 1 }];
+	check(probes_svc.protected_probes_bounded(policy, 2).ok && length(probe_seq) == 0, 'transient 504 retries once');
+	probe_seq = [{ ok: false, error: 'protected_probe_failed', actual_status: '403' }, { ok: true, count: 1 }];
+	const probe_403 = probes_svc.protected_probes_bounded(policy, 2);
+	check(!probe_403.ok && probe_403.actual_status == '403' && length(probe_seq) == 1, 'deterministic 403 does not retry');
+
 	const saved_entry = { ...entry, candidate_groups: [{ name: 'old label', provider: 'airport', region: 'test' }] };
 	let selection_state = { preferred: { now: 'old label', all: ['old label'] }, visible: { now: 'automatic', all: ['automatic'] } };
 	const restored_choices = [];

@@ -231,6 +231,18 @@ class BackendHealthTests(unittest.TestCase):
                             self.send_response(204)
                             self.send_header('Connection', 'close')
                             self.end_headers()
+                    elif self.path.startswith('/group/') and '/delay?' in self.path:
+                        group_name = self.path[len('/group/'):].split('/delay?', 1)[0]
+                        if group_name == 'fail-group':
+                            self.send_response(503)
+                            body = b'{"message":"down"}\n'
+                        else:
+                            body = json.dumps({group_name: 42, f"{group_name}-leaf": 37}).encode('utf-8')
+                            self.send_response(200)
+                        self.send_header('Content-Length', str(len(body)))
+                        self.send_header('Connection', 'close')
+                        self.end_headers()
+                        self.wfile.write(body)
                     elif self.path.startswith('/proxies/preferred-') and '/delay?' in self.path:
                         state['seq'] += 1
                         if self.path.startswith('/proxies/preferred-down/'):
@@ -353,7 +365,17 @@ class BackendHealthTests(unittest.TestCase):
                     const timed = http_request({json.dumps(base)}, {{ path: "/slow", timeout_ms: 60 }});
                     const ok_all = lat.measure_providers("sec", ["alpha", "beta", "gamma"], {{ provider_healthcheck_timeout_ms: 2000 }});
                     const partial = lat.measure_providers("sec", ["alpha", "fail_src", "beta"], {{ provider_healthcheck_timeout_ms: 2000 }});
-                    printf("%J", {{ path_down, path_1024, path_zero, path_404, path_200_mismatch, ver, chunked, sel, unix_ver, oversized: oversized.transport_error, timed: timed.transport_error, ok_all, partial }});
+                    const group_single = lat.measure("sec", "selector-main", {{
+                        provider_healthcheck_timeout_ms: 20000,
+                        latency: {{ method: "mihomo_delay", url: "https://probe.invalid/204", timeout_ms: 1500, expected_status: 204 }}
+                    }});
+                    const group_batch = lat.measure_groups("sec", ["g1", "g2", "g3", "fail-group", "g4", "g5"], {{
+                        provider_healthcheck_timeout_ms: 20000,
+                        latency: {{ method: "mihomo_delay", url: "https://probe.invalid/204", timeout_ms: 1500, expected_status: 204 }}
+                    }});
+                    const budget_20s = lat.controller_timeout_seconds(20000);
+                    const budget_cap = lat.controller_timeout_seconds(60000);
+                    printf("%J", {{ path_down, path_1024, path_zero, path_404, path_200_mismatch, ver, chunked, sel, unix_ver, oversized: oversized.transport_error, timed: timed.transport_error, ok_all, partial, group_single, group_batch, budget_20s, budget_cap }});
                 ''', health=False))
                 self.assertFalse(result['path_down'])
                 self.assertTrue(result['path_1024'])
@@ -368,6 +390,14 @@ class BackendHealthTests(unittest.TestCase):
                 self.assertEqual(result['timed'], 'timeout')
                 self.assertTrue(result['ok_all'])
                 self.assertFalse(result['partial'])
+                self.assertEqual(result['budget_20s'], 23)
+                self.assertEqual(result['budget_cap'], 45)
+                self.assertEqual(result['group_single']['results']['selector-main-leaf']['delay_ms'], 37)
+                self.assertEqual(result['group_batch']['status'], 'ok')
+                for g in ('g1', 'g2', 'g3', 'g4', 'g5'):
+                    self.assertEqual(result['group_batch']['results'][g]['delay_ms'], 42)
+                self.assertNotIn('fail-group', result['group_batch']['results'])
+                self.assertIn(('GET', '/group/selector-main/delay?url=https%3A%2F%2Fprobe.invalid%2F204&timeout=1500&expected=204', 'Bearer sec'), seen)
                 self.assertIn(('PUT', '/proxies/%E6%B5%B7%E5%A4%96%20%E5%87%BA%E5%8F%A3', {'name': '香港'}), seen)
                 self.assertIn(('GET', '/providers/proxies/gamma/healthcheck', 'Bearer sec'), seen)
             finally:

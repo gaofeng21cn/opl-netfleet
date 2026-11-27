@@ -85,11 +85,14 @@ initial_user_choice = function(entry, candidate_group) {
 	return regions[0]?.name ?? entry?.direct_name ?? "DIRECT";
 };
 
-provider_sources = function(entry) {
+provider_sources = function(entry, quotas) {
 	const result = [];
 	const providers = entry?.providers ?? {};
 	const names = keys(providers);
 	for (let i = 0; i < length(names); i++) {
+		if (type(quotas) == "object" && quotas[names[i]]?.state == "exhausted") {
+			continue;
+		}
 		const source = providers[names[i]]?.source_name;
 		if (type(source) == "string" && length(source) > 0) {
 			push(result, source);
@@ -98,11 +101,11 @@ provider_sources = function(entry) {
 	return result;
 };
 
-automatic_provider_sources = function(manifest, capability_names) {
+automatic_provider_sources = function(manifest, capability_names, quotas) {
 	const result = [];
 	const seen = {};
 	for (let i = 0; i < length(capability_names); i++) {
-		const sources = provider_sources(manifest?.generated_groups?.[capability_names[i]]);
+		const sources = provider_sources(manifest?.generated_groups?.[capability_names[i]], quotas);
 		for (let j = 0; j < length(sources); j++) {
 			if (seen[sources[j]] != true) {
 				seen[sources[j]] = true;

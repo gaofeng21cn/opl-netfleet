@@ -845,6 +845,32 @@ for (let row in host.inventory()) if (row.enabled === true && row.state != 'avai
 `;
 	if (!fs.writefile(`${preview}/validate.uc`, script) || !run_command(`ucode ${q(preview + '/validate.uc')}`, work)) fail('runtime_contract_changed');
 }
+function restore_runtime_tree(before, work) {
+	if (!run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work)) return false;
+	const current = input_identity(before.runtime_paths);
+	const expected = before.runtime_inputs;
+	for (let path, digest in expected)
+		if (!exists(current, path) || current[path] != digest) return false;
+	const added = filter(keys(current), path => !exists(expected, path));
+	if (!length(added)) return true;
+	// Extraction overlays the old tree. Only detach files introduced by the
+	// sealed APKs. A foreign addition or a locally edited file stays in place.
+	const state = read_json(`${work}/journal.json`);
+	const matched = {};
+	for (let archive in state?.next ?? []) {
+		if (index(archive, work + "/") != 0 || !state.inputs?.[archive] ||
+			sha256(archive) != state.inputs[archive]) return false;
+		const payload = parsed(`apk adbdump --format json ${q(archive)}`);
+		for (let dir in payload?.paths ?? []) for (let file in dir.files ?? []) {
+			const path = "/" + (dir.name ? dir.name + "/" : "") + file.name;
+			if (exists(current, path) && type(file.hash) == "string" &&
+				match(file.hash, /^[0-9a-f]{64}$/) && file.hash == current[path]) matched[path] = true;
+		}
+	}
+	for (let path in added) if (!matched[path] || fs.lstat(path)?.type != "file") return false;
+	for (let path in added) if (!fs.unlink(path)) return false;
+	return sprintf("%J", input_identity(before.runtime_paths)) == sprintf("%J", expected);
+}
 rollback = function(before, work, names, versions, old, install_started, already_stopped) {
 	const errors = [];
 	function attempt(code, action) {
@@ -861,8 +887,7 @@ rollback = function(before, work, names, versions, old, install_started, already
 			// A failed candidate may have installed a core start hook that cannot
 			// run, including while earlier dependency packages are rolling back.
 			const hooks_restored = attempt("rollback_runtime_files_failed", () =>
-				run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work) &&
-				sprintf("%J", input_identity(before.runtime_paths)) == sprintf("%J", before.runtime_inputs));
+				restore_runtime_tree(before, work));
 			if (hooks_restored && length(old)) attempt("rollback_install_failed", () => run_command(`NETFLEET_PACKAGE_RESTORE=1 apk --preserve-env --no-network --repositories-file /dev/null ${before.runtime_retained ? '--scripts=no ' : ''}${already_stopped ? "--force-reinstall " : ""}add ${archive_arguments(old)}`, work));
 			// Restoring old roots may already collect newly added dependencies,
 			// including after an interrupted APK write. Remove only survivors.
@@ -1210,8 +1235,7 @@ recover = function() {
 	for (let path in old) if (index(path, `${work}/old/`) != 0 || !archive_valid(path, work)) fail("rollback_package_unavailable");
 	journal(work, { ...state, phase: "recovering" });
 	if (!(before.scoped ? drain_scoped(work) : recovery_stop(work))) fail("rollback_stop_failed");
-	if (!run_command(`tar -xf ${q(`${work}/runtime.tar`)} -C /`, work) ||
-		sprintf("%J", input_identity(before.runtime_paths)) != sprintf("%J", before.runtime_inputs)) fail("rollback_identity_mismatch");
+	if (!restore_runtime_tree(before, work)) fail("rollback_identity_mismatch");
 	// The marker protects a kernel generation; only release it after restoring all old bytes.
 	fs.unlink("/var/run/opl-netfleet-plugin-maintenance/.kernel");
 	const recovery_error = rollback(before, work, names, versions, old, true, true);

@@ -447,6 +447,7 @@ for name in $product_packages; do
 	[ "$name" != opl-netfleet-plugin-dashboard ] || expected=$independent
 	apk list --manifest | grep -Fqx "$name $expected"
 done
+[ ! -e /usr/libexec/opl-netfleet/plugins/configuration/lib/fixture-extra.uc ]
 apk --no-network --simulate add opl-netfleet luci-app-netfleet >>"$work/post-hook-reconcile.log" 2>&1
 rpc_ready
 unchanged

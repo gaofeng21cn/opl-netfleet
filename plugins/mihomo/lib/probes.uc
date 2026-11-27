@@ -2,7 +2,7 @@
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let require_protected_probes, protected_probes_after_restart, command_probe;
+let require_protected_probes, protected_probes_after_restart, protected_probes_bounded, command_probe;
 
 const fail = context.use("events.output").fail;
 const ok = context.use("events.output").ok;
@@ -33,6 +33,25 @@ protected_probes_after_restart = function(policy) {
 	return result;
 };
 
+protected_probes_bounded = function(policy, attempts, limit_seconds) {
+	let max_attempts = type(attempts) == "int" ? attempts : 2;
+	if (max_attempts < 1) max_attempts = 1;
+	if (max_attempts > 4) max_attempts = 4;
+	let result = null;
+	for (let attempt = 0; attempt < max_attempts; attempt++) {
+		result = protected_probes(policy, limit_seconds);
+		if (result?.ok == true) return result;
+		const status = result?.actual_status;
+		const transient = result?.error == "protected_probe_failed" &&
+			(status == null || status == "" || index(["000", "502", "503", "504"], `${status}`) >= 0);
+		if (!transient || attempt + 1 >= max_attempts) {
+			return result;
+		}
+		sleep(1000);
+	}
+	return result;
+};
+
 command_probe = function(argv) {
 	const policy = load_policy();
 	if (policy == null) fail(argv[0], "policy_unreadable", POLICY_PATH);
@@ -41,5 +60,5 @@ command_probe = function(argv) {
 	ok("probe", result);
 };
 
-return { require_protected_probes, protected_probes_after_restart, command_probe };
+return { require_protected_probes, protected_probes_after_restart, protected_probes_bounded, command_probe };
 };

@@ -7,6 +7,7 @@ let automatic_candidates, current_region, automatic_round;
 const proxies = context.use("mihomo.controller").proxies;
 const proxy_providers = context.use("mihomo.controller").proxy_providers;
 const measure_latency = context.use("mihomo.latency").measure;
+const measure_groups = context.use("mihomo.latency")?.measure_groups;
 const complete_from_fresh_history = context.use("mihomo.latency").complete_from_fresh_history;
 const reset_candidate_groups = context.use("mihomo.paths").reset_candidate_groups;
 const selection_group = context.use("mihomo.paths").selection_group;
@@ -17,6 +18,7 @@ const candidate_group_names = context.use("mihomo.paths").candidate_group_names;
 const provider_group_measurement_reason = context.use("models.selector").provider_group_measurement_reason;
 const provider_group_leaf = context.use("models.selector").provider_group_leaf;
 const choose_automatic = context.use("selection.algorithm").choose_automatic;
+const rank_automatic = context.use("selection.algorithm")?.rank_automatic;
 const provider_round_summary = context.use("models.selector").provider_round_summary;
 const resolve_runtime = context.use("models.status").resolve_runtime;
 const provider_quotas = context.use("subscriptions.facts").provider_quotas;
@@ -74,12 +76,21 @@ function measurement_key(entry, group, state, providers, target, index_cache) {
 automatic_round = function(policy, manifest, manifest_entry, capability, secret, keep_current,
 	freshness_baseline, provider_measurement_ok, preferred_region, shared, preferred_candidate) {
 	const before = freshness_baseline ?? proxies(secret);
+	const quotas = shared?.quotas ?? provider_quotas(policy);
+	let has_exhausted = false;
+	const provider_ids = keys(manifest_entry?.providers ?? {});
+	for (let i = 0; i < length(provider_ids); i++) {
+		if (quotas?.[provider_ids[i]]?.state == "exhausted") {
+			has_exhausted = true;
+			break;
+		}
+	}
 	// Mihomo caches an empty-fallback selected during provider startup for up to
 	// ten seconds. Clear each automatic leaf group through the controller before
 	// the single capability delay; the delay still owns all node measurements and
 	// Mihomo remains the only leaf selector.
 	const reset_detail = {};
-	if (shared?.prepared != true && !reset_candidate_groups(secret, manifest_entry, reset_detail)) {
+	if (shared?.prepared != true && !reset_candidate_groups(secret, manifest_entry, reset_detail, null, quotas)) {
 		return { ok: false, error: "candidate_group_reset_failed", detail: reset_detail, candidates: [] };
 	}
 	const reused = {};
@@ -91,16 +102,28 @@ automatic_round = function(policy, manifest, manifest_entry, capability, secret,
 		if (shared?.entries?.[key] == null) reusable = false;
 		else if (shared.entries[key].latency != null) reused[group.name] = shared.entries[key].latency;
 	}
-	let latency_round = reusable ? { target: policy.checks.latency.url, results: reused } :
-		measure_latency(secret, selection_group(manifest_entry), policy.checks);
+	const eligible_groups = candidate_group_names(manifest_entry, quotas);
+	let latency_round;
+	if (reusable) {
+		latency_round = { target: policy.checks.latency.url, results: reused };
+	} else if (has_exhausted && type(measure_groups) == "function") {
+		latency_round = measure_groups(secret, eligible_groups, policy.checks);
+	} else {
+		latency_round = measure_latency(secret, selection_group(manifest_entry), policy.checks);
+	}
 	let measured_state = reusable ? shared.state : proxies(secret);
 	if (measured_state == null || measured_state.proxies == null) {
 		return { ok: false, error: "mihomo_state_unavailable_after_delay", candidates: [] };
 	}
 	let provider_state = reusable ? shared.provider_state : proxy_providers(secret, 1)?.providers ?? null;
 	let round_index = reusable ? shared_index : {};
-	if (!reusable && !candidate_provider_leaves_ready(manifest_entry, measured_state.proxies, provider_state, policy.checks.latency.url, round_index)) {
-		const waited = wait_for_candidate_provider_leaves(secret, manifest_entry,
+	const ready_entry = has_exhausted ? {
+		...manifest_entry,
+		candidate_groups: filter(manifest_entry.candidate_groups ?? [], g => quotas?.[g?.provider]?.state != "exhausted")
+	} : manifest_entry;
+	if (!reusable && length(ready_entry.candidate_groups ?? []) > 0 &&
+		!candidate_provider_leaves_ready(ready_entry, measured_state.proxies, provider_state, policy.checks.latency.url, round_index)) {
+		const waited = wait_for_candidate_provider_leaves(secret, ready_entry,
 			candidate_leaf_wait_seconds(policy), policy.checks.latency.url);
 		if (waited.state != null && waited.state.proxies != null) {
 			measured_state = waited.state;
@@ -109,7 +132,7 @@ automatic_round = function(policy, manifest, manifest_entry, capability, secret,
 		round_index = {};
 	}
 	latency_round = complete_from_fresh_history(latency_round, before, measured_state,
-		candidate_group_names(manifest_entry), policy.checks);
+		eligible_groups, policy.checks);
 	if (shared != null && !reusable) {
 		shared.state = measured_state;
 		shared.provider_state = provider_state;
@@ -119,14 +142,20 @@ automatic_round = function(policy, manifest, manifest_entry, capability, secret,
 			shared.entries[key] = { latency: latency_round.results?.[group.name] ?? null };
 		}
 	}
-	const candidates = automatic_candidates(manifest, provider_quotas(policy), measured_state,
+	const candidates = automatic_candidates(manifest, quotas, measured_state,
 		provider_state, capability, latency_round, round_index);
-	const decision = choose_automatic(candidates, policy, capability,
-		keep_current && preferred_candidate == null ? current_region(manifest_entry, measured_state) : null, preferred_region, preferred_candidate);
+	const current = keep_current && preferred_candidate == null ? current_region(manifest_entry, measured_state) : null;
+	const ranked = type(rank_automatic) == "function" ?
+		rank_automatic(candidates, policy, capability, current, preferred_region, preferred_candidate, 3) : null;
+	const decision = ranked != null ?
+		(ranked.ok ? ranked.decision : { ok: false, error: ranked.error }) :
+		choose_automatic(candidates, policy, capability, current, preferred_region, preferred_candidate);
+	const choices = ranked?.ok ? ranked.choices : (decision.ok == true ? [decision] : []);
 	return {
 		ok: decision.ok == true,
 		error: decision.error,
 		decision: decision,
+		choices: choices,
 		candidates: candidates,
 		summary: provider_round_summary(manifest_entry, measured_state?.proxies, provider_state, policy.checks.latency.url, round_index),
 		latency_round: latency_round,

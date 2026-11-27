@@ -212,7 +212,10 @@ def build(candidate, output, baseline=None):
                 failed_hook.write_text("#!/bin/sh\nexit 1\n")
                 script_args = [f"pre-upgrade:{failed_hook}" if value.startswith("pre-upgrade:") else value
                                for value in script_args]
+                extra = root / "usr/libexec/opl-netfleet/plugins/configuration/lib/fixture-extra.uc"
+                extra.write_text("return true;\n")
                 package(following, "bad-hook")
+                extra.unlink()
                 pause_hook = scratch / "pause-pre-upgrade"
                 pause_hook.write_text("#!/bin/sh\ntouch /tmp/netfleet-update-paused\nwhile :; do sleep 1; done\n")
                 script_args = [f"pre-upgrade:{pause_hook}" if value.startswith("pre-upgrade:") else value

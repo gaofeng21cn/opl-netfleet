@@ -1,6 +1,6 @@
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let manual_member, generated_group, choose_automatic, eligible_candidates, candidate_eligible, is_object, array_has, region_representatives, candidate_before, quota_rank, quota_value, candidate_key, best_region, best_in_region;
+let manual_member, generated_group, choose_automatic, rank_automatic, eligible_candidates, candidate_eligible, is_object, array_has, region_representatives, candidate_before, quota_rank, quota_value, candidate_key, best_region, best_in_region;
 
 const region_switch_margin = context.use("models.policy").region_switch_margin;
 manual_member = function(manifest, capability, choice) {
@@ -206,5 +206,73 @@ best_in_region = function(candidates, region_id) {
 	return winner;
 };
 
-return { manual_member, choose_automatic };
+function format_decision(selected, layer_name, current_region, reason, preferred_region) {
+	return {
+		ok: true,
+		region_id: selected.region_id,
+		group: selected.group,
+		candidate_id: selected.candidate_id ?? selected.id,
+		provider_id: selected.provider_id,
+		delay_ms: selected.latency.delay_ms,
+		layer: layer_name,
+		changed_region: current_region == null || selected.region_id != current_region,
+		reason: reason,
+		preferred_region: preferred_region ?? null
+	};
+};
+
+function sort_candidates(items, compare_region_id) {
+	const result = [];
+	for (let i = 0; i < length(items); i++) {
+		push(result, items[i]);
+		for (let j = length(result) - 1; j > 0; j--) {
+			const left = result[j];
+			const right = result[j - 1];
+			const better = candidate_before(left, right) ||
+				(compare_region_id && left.latency.delay_ms == right.latency.delay_ms && left.region_id < right.region_id);
+			if (!better) break;
+			result[j - 1] = left;
+			result[j] = right;
+		}
+	}
+	return result;
+};
+
+rank_automatic = function(candidates, policy, capability, current_region, preferred_region, preferred_candidate, max_choices) {
+	const first = choose_automatic(candidates, policy, capability, current_region, preferred_region, preferred_candidate);
+	if (!first.ok) {
+		return { ok: false, error: first.error, choices: [] };
+	}
+	const limit = type(max_choices) == "int" && max_choices > 0 ? max_choices : 3;
+	const choices = [first];
+	const seen_groups = {};
+	seen_groups[first.group] = true;
+	const layers = [
+		eligible_candidates(candidates, capability, policy, "primary"),
+		eligible_candidates(candidates, capability, policy, "reserve")
+	];
+	for (let layer_index = 0; layer_index < length(layers) && length(choices) < limit; layer_index++) {
+		const layer = layers[layer_index];
+		if (length(layer) == 0) continue;
+		const layer_name = layer_index == 0 ? "primary" : "reserve";
+		const reps = region_representatives(layer);
+		const ordered_reps = sort_candidates(values(reps), true);
+		for (let i = 0; i < length(ordered_reps) && length(choices) < limit; i++) {
+			const item = ordered_reps[i];
+			if (seen_groups[item.group] == true) continue;
+			seen_groups[item.group] = true;
+			push(choices, format_decision(item, layer_name, current_region, "runner_up_eligible", preferred_region));
+		}
+		const ordered_all = sort_candidates(layer, false);
+		for (let i = 0; i < length(ordered_all) && length(choices) < limit; i++) {
+			const item = ordered_all[i];
+			if (seen_groups[item.group] == true) continue;
+			seen_groups[item.group] = true;
+			push(choices, format_decision(item, layer_name, current_region, "runner_up_eligible", preferred_region));
+		}
+	}
+	return { ok: true, decision: first, choices: choices };
+};
+
+return { manual_member, choose_automatic, rank_automatic };
 };

@@ -296,10 +296,32 @@ function test_refresh_history() {
 			'download followed by rollback is not an accepted source update');
 		check(history.record(event(now, true), false), 'single-source manual success persists');
 		check(history.read().subscriptions.alpha.last_success == now && history.read().last_success_at == now - 86000 &&
-			model.refresh_due_at(history.read(), 86400) == now + 250, 'manual source refresh does not postpone the fleet schedule');
+			model.refresh_due_at(history.read(), 86400) == now + 850, 'manual source refresh does not postpone the fleet schedule');
 		const projection = model.project({ subscription_refresh_enabled: true, subscription_refresh_interval_seconds: 86400 }, [], history.read());
-		check(projection.last_success_at == now - 86000 && projection.last_run_at == now - 50 && projection.next_run_at == now + 250,
+		check(projection.last_success_at == now - 86000 && projection.last_run_at == now - 50 && projection.next_run_at == now + 850,
 			'status uses persisted success, attempt, and the same scheduling deadline');
+
+		// Verify exponential failure backoff ladder and per-source due filtering.
+		check(model.failure_backoff_seconds(1, 86400) == 300 &&
+			model.failure_backoff_seconds(2, 86400) == 900 &&
+			model.failure_backoff_seconds(3, 86400) == 3600 &&
+			model.failure_backoff_seconds(4, 86400) == 14400 &&
+			model.failure_backoff_seconds(5, 86400) == 43200 &&
+			model.failure_backoff_seconds(6, 86400) == 43200 &&
+			model.failure_backoff_seconds(5, 1800) == 1800,
+			'exponential failure backoff ladder respects cap and interval');
+		let per_source = model.history_update(null, {
+			at: now - 1000, action: 'refresh', ok: false, reason: 'partially_updated',
+			subscriptions: [{ section: 'alpha', result: 'updated' }, { section: 'beta', result: 'failed' }]
+		}, true);
+		per_source = model.history_update(per_source, {
+			at: now - 500, action: 'refresh', ok: false, reason: 'update_failed',
+			subscriptions: [{ section: 'beta', result: 'failed' }]
+		}, true);
+		check(join(',', model.due_sections(['alpha', 'beta'], per_source, 86400, now)) == '', 'both healthy and backed-off sections wait');
+		check(model.refresh_due_at(per_source, 86400, ['alpha', 'beta']) == now + 400, 'per-section due timestamp tracks earliest retry');
+		check(join(',', model.due_sections(['alpha', 'beta'], per_source, 86400, now + 400)) == 'beta',
+			'only the backed-off section runs when its retry window expires while healthy source stays idle');
 
 		// Exercise the shipped scheduler through a fresh factory, using persisted owner state.
 		let commands = [], locked = false;
@@ -350,12 +372,20 @@ function test_refresh_history() {
 		let output;
 		ports['events.output'] = { ok: (action, result) => { output = result; }, fail: (action, error) => die(error) };
 		const refresh = loadfile(`${plugins_root}/refresh/lib/control.uc`)()({ use: name => ports[name] ?? {} });
+		history.record(event(now - 90000, true), true);
 		const success_before = history.read().last_success_at;
 		refresh.refresh_action({ providers: { alpha: { enabled: true, section: 'alpha' } } }, null, 'scheduled');
 		check(output?.state == 'failed' && reopen().read().latest.reason == 'upstream_unavailable' &&
 			reopen().read().last_success_at == success_before, 'actual refresh command records failure while preserving accepted update');
 		check(model.refresh_due_at(reopen().read(), 86400) == reopen().read().latest.at + 300,
 			'failure in the same second as success still uses retry backoff');
+		let backed_off_upstream_called = false;
+		ports['platform.device'] = { upstream_ready: () => { backed_off_upstream_called = true; return false; } };
+		const scheduled_backed_off = loadfile(`${plugins_root}/refresh/lib/control.uc`)()({ use: name => ports[name] ?? {} });
+		scheduled_backed_off.refresh_action({ providers: { alpha: { enabled: true, section: 'alpha' } } }, null, 'scheduled');
+		check(output?.state == 'not_due' && !backed_off_upstream_called,
+			'scheduled refresh skips sections still inside failure backoff');
+		ports['platform.device'] = { upstream_ready: () => false };
 
 		// A full disk must not interrupt recovery after a failed rollback.
 		let recovered = false;

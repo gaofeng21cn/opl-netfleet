@@ -25,7 +25,7 @@
 ## 目标与理由
 
 - [`product/whitepaper.md`](product/whitepaper.md)：产品理念、理想形态和长期方向，不定义当前能力。
-- [`proposals/`](proposals/README.md)：已经形成方向但尚未成为当前合同的技术方案（含 [OPL NetFleet Cloud 多站点集中控制面提案](proposals/opl-netfleet-cloud.md)）。
+- [`proposals/`](proposals/README.md)：已经形成方向但尚未成为当前合同的技术方案（含 [OPL NetFleet Cloud 多站点集中控制面提案](proposals/opl-netfleet-cloud.md)与 [OpenWrt 薄系统包壳与 Release Bundle 交付提案](proposals/openwrt-release-bundle-delivery.md)）。
 - [`decisions/`](decisions/README.md)：未来仍有价值的决策理由、替代方案和重审条件。
 
 ## 不在这里管理的内容

@@ -41,6 +41,7 @@ const guard_probe_url = context.use("models.policy").guard_probe_url;
 const automation_config = context.use("models.policy").automation;
 const referenced_subscription_sections = context.use("models.subscription").referenced_sections;
 const enabled_subscription_sections = context.use("models.subscription").enabled_sections;
+const due_subscription_sections = context.use("models.subscription")?.due_sections;
 const unavailable_results = context.use("models.subscription").unavailable_results;
 const evaluate_entry = context.use("models.subscription").evaluate_entry;
 const summarize_refresh = context.use("models.subscription").summarize;
@@ -247,8 +248,15 @@ refresh_action = function(policy, section, initiator) {
 		ok("refresh", { state: "disabled" });
 		return;
 	}
-	const sections = section != null ? [section] : BACKEND_KIND == "native-mihomo" ?
+	let sections = section != null ? [section] : BACKEND_KIND == "native-mihomo" ?
 		referenced_subscription_sections(policy, current_profile()) : enabled_subscription_sections(policy);
+	if (requested == "scheduled" && section == null && length(sections) > 0 && type(due_subscription_sections) == "function") {
+		sections = due_subscription_sections(sections, read_history(), config.subscription_refresh_interval_seconds, int(time()));
+		if (length(sections) == 0) {
+			ok("refresh", { state: "not_due", provider_count: 0 });
+			return;
+		}
+	}
 	operation_update("preparing", { total: length(sections) });
 	if (length(sections) == 0) {
 		ok("refresh", { state: "no_enabled_providers", provider_count: 0 });

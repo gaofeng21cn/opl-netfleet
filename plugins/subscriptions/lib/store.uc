@@ -216,6 +216,15 @@ download = function(source, scratch) {
 	if (!cache_accepted(parsed)) return { ok: false, error: "invalid_subscription" };
 	const validation = `${scratch}/validation.json`;
 	if (!write_private(validation, sprintf("%J", parsed))) return { ok: false, error: "subscription_validation_write_failed" };
+	// Default-format validation may need Mihomo's MMDB before it can parse
+	// GEOIP rules. Copy the operator-provisioned database into the sandbox:
+	// Mihomo can remove or replace the copy while validating an invalid file.
+	const geodata = `${BASE}/subscription-validation`;
+	const mmdb = `${geodata}/geoip.metadb`;
+	if (parsed["geodata-mode"] != true && parsed["geox-url"]?.mmdb == null &&
+		private_directory(geodata) && private_file(mmdb) &&
+		system(`cp ${shell_quote(mmdb)} ${shell_quote(scratch + "/geoip.metadb")}`) != 0)
+		return { ok: false, error: "subscription_validation_write_failed" };
 	if (system(`SAFE_PATHS='' mihomo -t -d ${shell_quote(scratch)} -f ${shell_quote(validation)} >/dev/null 2>&1`) != 0)
 		return { ok: false, error: "subscription_mihomo_validation_failed" };
 	let quota = fetched.quota;
