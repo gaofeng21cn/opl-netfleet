@@ -13,7 +13,7 @@ define Package/opl-netfleet
   CATEGORY:=Network
   TITLE:=OPL NetFleet thin shell and Release Bundle runtime
   PROVIDES:=netfleet-plugin-api-v1
-  REPLACES:=opl-netfleet-kernel
+  REPLACES:=opl-netfleet-kernel opl-netfleet-plugin-activation opl-netfleet-plugin-compilation opl-netfleet-plugin-components opl-netfleet-plugin-configuration opl-netfleet-plugin-dashboard opl-netfleet-plugin-events opl-netfleet-plugin-https-compat opl-netfleet-plugin-maintenance opl-netfleet-plugin-mihomo opl-netfleet-plugin-models opl-netfleet-plugin-network opl-netfleet-plugin-platform opl-netfleet-plugin-platform-openwrt opl-netfleet-plugin-platform-storage opl-netfleet-plugin-product-ui opl-netfleet-plugin-recovery opl-netfleet-plugin-refresh opl-netfleet-plugin-scheduler opl-netfleet-plugin-selection opl-netfleet-plugin-selection-algorithm opl-netfleet-plugin-setup opl-netfleet-plugin-status opl-netfleet-plugin-subscriptions
   DEPENDS:=+ucode +ucode-mod-fs +ucode-mod-uci +ucode-mod-ubus +ucode-mod-uloop +ucode-mod-socket +ucode-mod-digest +yq +curl +ca-bundle +flock +coreutils-timeout +unzip +ip-full +nftables-json +kmod-nft-socket +kmod-nft-tproxy +usign
   EXTRA_DEPENDS:=!opl-netfleet-https-compat (<0.1.8)
   PKGARCH:=all
@@ -227,8 +227,15 @@ elif [ -s "$$upgrade_state" ]; then
 		fi
 		if [ "$$core_running" = 1 ]; then
 			NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet-core restart >/dev/null 2>&1 || exit 1
-			core_status=$$(ucode "$$main" native-gateway-status) || exit 1
-			[ "$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.ready')" = true ] || exit 1
+			core_ready=0
+			for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+				if core_status=$$(ucode "$$main" native-gateway-status 2>/dev/null) && [ "$$(printf '%s' "$$core_status" | jsonfilter -e '@.result.ready' 2>/dev/null || true)" = true ]; then
+					core_ready=1
+					break
+				fi
+				sleep 1
+			done
+			[ "$$core_ready" = 1 ] || exit 1
 		else
 			/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || exit 1
 			core_status=$$(ucode "$$main" native-gateway-status) || exit 1
@@ -246,12 +253,19 @@ elif [ -s "$$upgrade_state" ]; then
 	fi
 	if [ "$$was_running" = 1 ]; then
 		NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet restart >/dev/null 2>&1 || exit 1
-		/etc/init.d/opl-netfleet running >/dev/null 2>&1 || exit 1
+		netfleet_running=0
+		for attempt in 1 2 3 4 5 6 7 8 9 10; do
+			if /etc/init.d/opl-netfleet running >/dev/null 2>&1; then
+				netfleet_running=1
+				break
+			fi
+			sleep 1
+		done
+		[ "$$netfleet_running" = 1 ] || exit 1
 	else
 		stop_netfleet || exit 1
 	fi
 	rm -f "$$upgrade_state"
-	rm -f /tmp/opl-netfleet-microkernel-migration
 else
 	printf '%s\n' 'opl-netfleet: package upgrade state is missing' >&2
 	exit 1

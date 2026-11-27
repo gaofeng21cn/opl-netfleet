@@ -294,13 +294,18 @@ if [ "$install_profile" = full ]; then
 	else
 		set -- "$@" opl-netfleet-https-compat opl-netfleet-plugin-device-identity
 	fi
-	# Resolve the entire composition before installing any package. No service
-	# enable action is issued here; package hooks preserve existing user choices.
-	apk --timeout 300 --simulate add "$@" >/dev/null || die 'full installation dependencies unavailable; packages were not changed'
-	apk --timeout 300 add "$@"
-	apk --timeout 300 upgrade "$@"
-elif [ "$has_legacy" = 0 ] && apk info -e opl-netfleet-kernel >/dev/null 2>&1; then
-	# Migrate 28-pkg installation (opl-netfleet-kernel + 24 built-in plugin APKs) to Release Bundle thin shell.
+fi
+if [ "$has_legacy" = 0 ] && apk info -e opl-netfleet-kernel >/dev/null 2>&1; then
+	# Migrate 28-pkg installation (opl-netfleet-kernel + built-in plugin APKs) to Release Bundle thin shell.
+	legacy_del='opl-netfleet-kernel'
+	for inst in $(apk info 2>/dev/null | grep -E '^opl-netfleet-plugin-' || true); do
+		[ "$inst" = opl-netfleet-plugin-device-identity ] && continue
+		legacy_del="$legacy_del $inst"
+	done
+	negated=
+	for p in $legacy_del; do
+		negated="$negated !$p"
+	done
 	mkdir -p "$work/apks"
 	apk --timeout 300 fetch --output "$work/apks" "$@" >/dev/null ||
 		die 'failed to fetch thin-shell packages; existing installation was not changed'
@@ -309,6 +314,10 @@ elif [ "$has_legacy" = 0 ] && apk info -e opl-netfleet-kernel >/dev/null 2>&1; t
 		apk --no-network verify "$pkg_file" >/dev/null ||
 			die 'thin-shell package signature verification failed; existing installation was not changed'
 	done
+	if [ "$install_profile" = full ]; then
+		apk --timeout 300 --simulate add --upgrade "$@" $negated >/dev/null ||
+			die 'full installation dependencies unavailable; packages were not changed'
+	fi
 	upgrade_state=/tmp/opl-netfleet-package-upgrade-state
 	[ ! -e "$upgrade_state" ] || die 'previous package upgrade state is incomplete; refusing migration'
 	backend=nikki-mihomo
@@ -335,21 +344,70 @@ elif [ "$has_legacy" = 0 ] && apk info -e opl-netfleet-kernel >/dev/null 2>&1; t
 	if [ "$backend" = native-mihomo ] && [ -x /etc/init.d/opl-netfleet-core ] && /etc/init.d/opl-netfleet-core running >/dev/null 2>&1; then
 		/etc/init.d/opl-netfleet-core stop >/dev/null 2>&1 || die 'failed to stop opl-netfleet-core before migration'
 	fi
-	legacy_del='opl-netfleet-kernel'
-	for inst in $(apk info 2>/dev/null | grep -E '^opl-netfleet-plugin-' || true); do
-		[ "$inst" = opl-netfleet-plugin-device-identity ] && continue
-		legacy_del="$legacy_del $inst"
+	stopped_clean=0
+	for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+		if [ ! -x /etc/init.d/opl-netfleet ] || ! /etc/init.d/opl-netfleet running >/dev/null 2>&1; then
+			if [ "$backend" != native-mihomo ]; then
+				stopped_clean=1
+				break
+			fi
+			if [ -x /usr/libexec/opl-netfleet/main.uc ] && core_status=$(ucode /usr/libexec/opl-netfleet/main.uc native-gateway-status 2>/dev/null); then
+				core_now=$(printf '%s' "$core_status" | jsonfilter -e '@.result.core_running' 2>/dev/null || true)
+				clean_now=$(printf '%s' "$core_status" | jsonfilter -e '@.result.clean' 2>/dev/null || true)
+				if [ "$core_now" = false ] && [ "$clean_now" = true ]; then
+					stopped_clean=1
+					break
+				fi
+			elif [ ! -x /etc/init.d/opl-netfleet-core ] || ! /etc/init.d/opl-netfleet-core running >/dev/null 2>&1; then
+				stopped_clean=1
+				break
+			fi
+		fi
+		sleep 1
 	done
-	negated=
-	for p in $legacy_del; do
-		negated="$negated !$p"
-	done
-	if ! apk --timeout 300 add --upgrade "$@" $negated; then
-		apk --no-network del $legacy_del || die 'failed to remove legacy built-in plugin packages'
-		apk --no-network add --upgrade "$work/apks"/*.apk || die 'failed to install verified thin-shell packages after legacy removal'
+	[ "$stopped_clean" = 1 ] || die 'existing NetFleet processes did not stop cleanly before migration'
+	pkg_hook=/usr/libexec/opl-netfleet-plugin-package
+	if [ -f "$pkg_hook" ]; then
+		cp "$pkg_hook" "$work/plugin-package.orig" || die 'cannot back up legacy plugin package helper'
+		chmod 0755 "$work/plugin-package.orig"
+		cat >"$work/plugin-package.shim" <<'SHIM'
+#!/bin/sh
+set -eu
+[ -z "${IPKG_INSTROOT:-}" ] || exit 0
+phase=${2:-}
+if [ -f /tmp/opl-netfleet-microkernel-migration ] && { [ "$phase" = prerm ] || [ "$phase" = postrm ]; }; then
+	rm -rf /var/run/opl-netfleet-plugin-maintenance /var/run/opl-netfleet-mihomo-handoff 2>/dev/null || true
+	exit 0
+fi
+exit 1
+SHIM
+		chmod 0755 "$work/plugin-package.shim"
+		mv -f "$work/plugin-package.shim" "$pkg_hook" || die 'cannot install migration-guarded plugin helper'
 	fi
-	[ -e /usr/share/opl-netfleet/shell.json ] && [ -f /usr/share/opl-netfleet/current/runtime/kernel/host.uc ] ||
+	if ! apk --timeout 300 add --upgrade "$@" $negated; then
+		if ! apk --no-network add --upgrade "$work/apks"/*.apk $negated; then
+			if apk info -e opl-netfleet-kernel >/dev/null 2>&1 && [ -f "$work/plugin-package.orig" ]; then
+				mv -f "$work/plugin-package.orig" "$pkg_hook" >/dev/null 2>&1 || true
+				rm -f /tmp/opl-netfleet-microkernel-migration "$upgrade_state"
+				if [ "$backend" = native-mihomo ] && [ "$core_running" = 1 ] && [ -x /etc/init.d/opl-netfleet-core ]; then
+					NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet-core restart >/dev/null 2>&1 || true
+				fi
+				if [ "$was_running" = 1 ] && [ -x /etc/init.d/opl-netfleet ]; then
+					NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet restart >/dev/null 2>&1 || true
+				fi
+			fi
+			die 'failed to migrate 28-pkg installation to thin shell'
+		fi
+	fi
+	rm -f /tmp/opl-netfleet-microkernel-migration
+	[ ! -e "$upgrade_state" ] && [ -e /usr/share/opl-netfleet/shell.json ] && [ -f /usr/share/opl-netfleet/current/runtime/kernel/host.uc ] ||
 		die 'thin-shell migration post-install layout verification failed'
+elif [ "$install_profile" = full ]; then
+	# Resolve the entire composition before installing any package. No service
+	# enable action is issued here; package hooks preserve existing user choices.
+	apk --timeout 300 --simulate add "$@" >/dev/null || die 'full installation dependencies unavailable; packages were not changed'
+	apk --timeout 300 add "$@"
+	apk --timeout 300 upgrade "$@"
 elif ! apk info -e opl-netfleet >/dev/null 2>&1 || ! apk info -e luci-app-netfleet >/dev/null 2>&1; then
 	apk --timeout 300 add "$@"
 	apk --timeout 300 upgrade "$@"

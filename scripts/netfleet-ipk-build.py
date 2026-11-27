@@ -350,11 +350,17 @@ elif [ -s "$upgrade_state" ]; then
 \t\tfi
 \t\tif [ "$core_running" = 1 ]; then
 \t\t\tNETFLEET_PACKAGE_RESTORE=1 run_step "opl-netfleet-core restart" /etc/init.d/opl-netfleet-core restart || exit 1
-\t\t\tcore_status=$(ucode "$main" native-gateway-status) || {{
-\t\t\t\tprintf 'opl-netfleet postinst: native-gateway-status failed: %s\\n' "$core_status" >&2
-\t\t\t\texit 1
-\t\t\t}}
-\t\t\t[ "$(printf '%s' "$core_status" | jsonfilter -e '@.result.ready')" = true ] || {{
+\t\t\tcore_ready=0
+\t\t\tcore_status=
+\t\t\tfor attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+\t\t\t\tcore_status=$(ucode "$main" native-gateway-status 2>&1 || true)
+\t\t\t\tif [ "$(printf '%s' "$core_status" | jsonfilter -e '@.result.ready' 2>/dev/null || true)" = true ]; then
+\t\t\t\t\tcore_ready=1
+\t\t\t\t\tbreak
+\t\t\t\tfi
+\t\t\t\tsleep 1
+\t\t\tdone
+\t\t\t[ "$core_ready" = 1 ] || {{
 \t\t\t\tprintf 'opl-netfleet postinst: native gateway not ready: %s\\n' "$core_status" >&2
 \t\t\t\texit 1
 \t\t\t}}
@@ -372,7 +378,18 @@ elif [ -s "$upgrade_state" ]; then
 \tfi
 \tif [ "$was_running" = 1 ]; then
 \t\tNETFLEET_PACKAGE_RESTORE=1 run_step "opl-netfleet restart" /etc/init.d/opl-netfleet restart || exit 1
-\t\trun_step "opl-netfleet running" /etc/init.d/opl-netfleet running || exit 1
+\t\tnetfleet_running=0
+\t\tfor attempt in 1 2 3 4 5 6 7 8 9 10; do
+\t\t\tif /etc/init.d/opl-netfleet running >/dev/null 2>&1; then
+\t\t\t\tnetfleet_running=1
+\t\t\t\tbreak
+\t\t\tfi
+\t\t\tsleep 1
+\t\tdone
+\t\t[ "$netfleet_running" = 1 ] || {{
+\t\t\tprintf 'opl-netfleet postinst: service failed to remain running after restart\\n' >&2
+\t\t\texit 1
+\t\t}}
 \telse
 \t\tstop_netfleet || exit 1
 \tfi
