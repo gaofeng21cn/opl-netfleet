@@ -10,7 +10,8 @@
   "observed_publishers": [
     {
       "lane": "macos-candidate",
-      "workflow": "macos-sparkle-release.yml"
+      "workflow": "macos-sparkle-release.yml",
+      "match": "tag"
     },
     {
       "lane": "macos-stable",
