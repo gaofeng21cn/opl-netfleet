@@ -115,7 +115,7 @@ finish() {
 	trap - EXIT INT TERM
 	if [ "$rc" -ne 0 ]; then
 		echo "OpenWrt qualification failed at stage: $stage" >&2
-		for dump in "$work"/*-result.json "$work"/*-result.stderr "$work/official-package-mirror.log" "$qemu_log"; do
+		for dump in "$work"/*-result.json "$work/official-package-mirror.log" "$qemu_log"; do
 			[ ! -s "$dump" ] || { echo "--- $dump" >&2; cat "$dump" >&2; }
 		done
 		if [ "${NETFLEET_VM_DEBUG_KEEP:-0}" = 1 ]; then
@@ -594,10 +594,11 @@ run_guest() {
       guest_source_commit=$(python3 -c 'import json,os;print(json.loads(os.environ["NETFLEET_COMPAT_BASE_IDENTITY"])["source_commit"])')
       guest_source_tree=$(python3 -c 'import json,os;print(json.loads(os.environ["NETFLEET_COMPAT_BASE_IDENTITY"])["source_tree"])')
     fi
+	# Leave guest diagnostics connected to the runner so they survive a job
+	# timeout. Only stdout belongs to the lane's JSON result.
 	if ! ssh $ssh_common root@127.0.0.1 \
 		"sh /tmp/$guest_script '$guest_source_commit' '$guest_source_tree' $guest_arguments" \
-		>"$work/$result_name-result.json" 2>"$work/$result_name-result.stderr"; then
-		cat "$work/$result_name-result.stderr" >&2
+		>"$work/$result_name-result.json"; then
 		exit 1
 	fi
 	printf '%s\n' "$(($(now_ms) - guest_started_ms))" >"$work/$result_name-ms"
