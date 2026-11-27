@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import argparse
 import base64
+import functools
 import hashlib
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -15,8 +18,32 @@ import tempfile
 ED25519_SPKI_PREFIX = bytes.fromhex("302a300506032b6570032100")
 
 
+@functools.lru_cache(maxsize=1)
+def resolve_openssl() -> str:
+    """Prefer OpenSSL 3 (supports Ed25519 `-rawin`) over macOS Apple LibreSSL."""
+    candidates: list[str] = []
+    for item in (
+        os.environ.get("NETFLEET_OPENSSL"),
+        shutil.which("openssl"),
+        "/opt/homebrew/opt/openssl@3/bin/openssl",
+        "/usr/local/opt/openssl@3/bin/openssl",
+        "/opt/homebrew/bin/openssl",
+        "/usr/local/bin/openssl",
+    ):
+        if item and item not in candidates:
+            candidates.append(item)
+    for candidate in candidates:
+        try:
+            probe = subprocess.run([candidate, "version"], capture_output=True, text=True, check=False)
+        except OSError:
+            continue
+        if probe.returncode == 0 and probe.stdout.strip().startswith("OpenSSL "):
+            return candidate
+    return shutil.which("openssl") or "openssl"
+
+
 def _run_openssl(args: list[str]) -> bytes:
-    proc = subprocess.run(["openssl", *args], capture_output=True)
+    proc = subprocess.run([resolve_openssl(), *args], capture_output=True)
     if proc.returncode != 0:
         err = proc.stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(f"openssl {' '.join(args[:2])} failed: {err}")
@@ -121,7 +148,7 @@ def verify_file(pub_path: Path, message_path: Path, sig_path: Path) -> bool:
         sig_bin.write_bytes(raw_sig)
         proc = subprocess.run(
             [
-                "openssl", "pkeyutl", "-verify",
+                resolve_openssl(), "pkeyutl", "-verify",
                 "-pubin", "-keyform", "DER", "-inkey", str(pub_der),
                 "-rawin", "-in", str(message_path), "-sigfile", str(sig_bin),
             ],
