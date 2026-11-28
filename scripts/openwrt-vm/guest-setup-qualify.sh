@@ -72,10 +72,6 @@ package_identity() {
 	while read -r expected path extra; do
 		[ -n "$expected" ] || continue
 		[ -z "${extra:-}" ]
-		case "$path" in
-			usr/libexec/opl-netfleet/plugins/https-compat/*|www/luci-static/resources/netfleet/plugins/https-compat/*)
-				if ! apk info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1; then [ ! -e "/$path" ]; continue; fi ;;
-		esac
 		[ -f "/$path" ]
 		[ "$(digest "/$path")" = "$expected" ]
 	done <"$candidate/FILES.sha256"
@@ -199,13 +195,6 @@ legacy_native_migration() {
 	guest_stage legacy_native_failed_upgrade
 	uclient-fetch -q -O /etc/apk/keys/netfleet-component-fixture.pem \
 		"$feed_url/components-fixtures/component-fixture.pem"
-	uclient-fetch -q -O "$candidate/incompatible-compatibility.apk" \
-		"$feed_url/components-fixtures/incompatible-compatibility.apk"
-	apk --no-network verify "$candidate/incompatible-compatibility.apk" >>"$work/packages.log" 2>&1
-	if package_transaction --simulate add $current_packages "$candidate/incompatible-compatibility.apk"; then
-		echo 'unsupported legacy engine was accepted' >&2
-		exit 1
-	fi
 	bad_version=$(jsonfilter -i "$work/legacy-fixture.json" -e '@.package_versions["opl-netfleet-plugin-mihomo"].bad')
 	bad_file=opl-netfleet-plugin-mihomo-$bad_version.apk
 	uclient-fetch -q -O "$candidate/$bad_file" "$feed_url/components-fixtures/bad/$bad_file"
@@ -223,13 +212,6 @@ legacy_native_migration() {
 	direct_probe
 
 	guest_stage legacy_native_formal_package_rollback
-	if apk info -e opl-netfleet-https-compat >/dev/null 2>&1; then
-		# The legacy engine owns its own lock. Run its normal removal before the
-		# product transaction takes that lock, with the engine already bypassed.
-		! nft list table inet netfleet_compat >/dev/null 2>&1
-		timeout 60 apk --no-network del opl-netfleet-https-compat >>"$work/packages.log" 2>&1 || true
-		! apk info -e opl-netfleet-https-compat >/dev/null 2>&1
-	fi
 	# Old pre-upgrade hooks import removed monolith modules. Run normal remove
 	# and install hooks, then restore the private snapshot with the old owner.
 	package_transaction del $product_packages || true
@@ -257,9 +239,6 @@ legacy_native_migration() {
 	package_transaction add $current_packages
 	package_identity
 	native_restored
-	while read -r expected filename name version; do
-		[ "$name" != opl-netfleet-https-compat ] || apk list --manifest | grep -Fqx "$name $version"
-	done <"$work/legacy-files.txt"
 	[ ! -e /usr/libexec/opl-netfleet/adapters/runtime.uc ]
 	[ -f /usr/libexec/opl-netfleet/adapters/openwrt.uc ]
 	[ ! -e /tmp/opl-netfleet-package-upgrade-state ]
@@ -269,10 +248,6 @@ legacy_native_migration() {
 	dependency_packages=$(printf '%s\n' "$product_packages" | tr ' ' '\n' | grep -vE '^(|opl-netfleet|luci-app-netfleet)$')
 	package_transaction del $dependency_packages mihomo-meta yq unzip
 	legacy_checks=',"legacy_native_upgrade":true,"legacy_native_failed_upgrade_direct_usable":true,"legacy_native_formal_package_rollback":true,"legacy_native_private_state_and_routes_restored":true'
-	if apk info -e opl-netfleet-https-compat >/dev/null 2>&1; then
-		legacy_checks="$legacy_checks,\"legacy_native_optional_engine_preserved\":true"
-		timeout 60 apk --no-network del opl-netfleet-https-compat >>"$work/packages.log" 2>&1
-	fi
 }
 setup_request() {
 	ucode -e '
@@ -354,7 +329,7 @@ else
 	cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
 	mkdir -p /usr/libexec/opl-netfleet/plugins
 	for plugin in /tmp/plugins/*; do
-		[ -d "$plugin" ] && [ "$(basename -- "$plugin")" != "device-identity" ] && cp -R "$plugin" /usr/libexec/opl-netfleet/plugins/
+		[ -d "$plugin" ] && cp -R "$plugin" /usr/libexec/opl-netfleet/plugins/
 	done
 cp /tmp/openwrt/files/usr/libexec/opl-netfleet-plugin-package /usr/libexec/
 chmod 0755 /usr/libexec/opl-netfleet-plugin-package

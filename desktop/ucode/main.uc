@@ -20,8 +20,7 @@ const READ_ONLY_COMMANDS = {
 	"probe": true, "native-gateway-preview": true, "native-gateway-status": true,
 	"migration-get": true, "native-setup-get": true, "subscriptions-get": true,
 	"onboarding-get": true, "desktop-discover": true, "desktop-sources": true,
-	"desktop-snapshot": true,
-	"compatibility-get": true, "public-ca": true
+	"desktop-snapshot": true
 };
 // One actual flock covers command entry, all recursive owner calls and readback.
 const lock = adapter.network_lock(adapter.paths.network_lock, READ_ONLY_COMMANDS[ARGV[0]] == true ? false : true);

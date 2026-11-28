@@ -41,20 +41,12 @@ function test_component_packages() {
 	rejects(() => validate(changes(pair), engineRequest, { [engine]: '1.0.0', [name]: '1.0.0' }, [], {}), 'plugin_package_protected');
 	check(validate(changes('(1/1) Upgrading ' + engine + ' (1.0.0 -> 2.0.0)'), engineRequest, { [engine]: '1.0.0', [name]: '1.1.0' }, [], owner).names[0] == engine, 'compatible installed control is not reinstalled');
 	rejects(() => validate(changes('(1/2) Upgrading opl-netfleet-kernel (1 -> 2)\n' + pair), engineRequest, { [engine]: '1.0.0', [name]: '1.0.0', 'opl-netfleet-kernel': '1' }, [], owner), 'plugin_dependency_change_required');
-	const compat = 'opl-netfleet-https-compat', backend = 'opl-netfleet-plugin-mihomo';
-	const compatRequest = { action: 'update', name: compat, version: '0.6.10', before_version: '0.6.9', confirm: true };
-	const compatOwner = { [compat]: 'https-compat' }, compatInstalled = { [compat]: '0.6.9', [backend]: '0.9.9' };
-	const closure = changes('(1/2) Upgrading ' + backend + ' (0.9.9 -> 0.9.10)\n(2/2) Upgrading ' + compat + ' (0.6.9 -> 0.6.10)');
-	check(validate(closure, compatRequest, compatInstalled, [backend], compatOwner, true).candidates[backend] == '0.9.10', 'native HTTPS admits its installed backend dependency in one transaction');
+	const backend = 'opl-netfleet-plugin-mihomo';
 	const nativeRequest = { action: 'update', name: backend, version: '0.9.11', before_version: '0.9.10', confirm: true };
 	const nativeInstalled = { [backend]: '0.9.10', 'opl-netfleet': '0.9.7', 'opl-netfleet-plugin-network': '0.8.4' };
 	const nativeClosure = changes('(1/3) Upgrading opl-netfleet (0.9.7 -> 0.9.10)\n(2/3) Upgrading opl-netfleet-plugin-network (0.8.4 -> 0.8.5)\n(3/3) Upgrading ' + backend + ' (0.9.10 -> 0.9.11)');
 	check(length(validate(nativeClosure, nativeRequest, nativeInstalled, [], {}, true).names) == 3, 'native gateway update admits its required composition metadata and editor');
 	rejects(() => validate(nativeClosure, nativeRequest, nativeInstalled, [], {}, false), 'plugin_dependency_change_required');
-	rejects(() => validate(closure, compatRequest, compatInstalled, [backend], compatOwner, false), 'plugin_dependency_change_required');
-	rejects(() => validate(closure, { ...compatRequest, name: engine, version: '2.0.0', before_version: '1.0.0' }, { ...compatInstalled, [engine]: '1.0.0' }, [backend], owner, true), 'plugin_dependency_change_required');
-	rejects(() => validate(changes('(1/2) Installing ' + backend + ' (0.9.10)\n(2/2) Upgrading ' + compat + ' (0.6.9 -> 0.6.10)'), compatRequest, { [compat]: '0.6.9' }, [], compatOwner, true), 'plugin_dependency_change_required');
-	rejects(() => validate([...changes('(1/3) Upgrading mihomo-meta (1.0.0 -> 2.0.0)\n'), ...closure], compatRequest, compatInstalled, [], compatOwner, true), 'plugin_dependency_change_required');
 
 	const luciUpdate = { action: 'update', name: 'luci-app-netfleet', version: '0.9.1', before_version: '0.9.0', confirm: true };
 	check(validate(changes('(1/1) Upgrading luci-app-netfleet (0.9.0 -> 0.9.1)'), luciUpdate, { 'luci-app-netfleet': '0.9.0' }, ['opl-netfleet', 'luci-app-netfleet']).candidates['luci-app-netfleet'] == '0.9.1', 'luci-app-netfleet supports independent update');
@@ -149,9 +141,9 @@ function test_component_retained() {
 	check(!manifest(before, { ...after, services: {} }), 'existing services cannot disappear');
 	check(!manifest(before, { ...after, services: { gateway: { version: 2, module: 'gateway.uc' } } }), 'service ABI cannot change');
 	check(!manifest(before, { ...after, services: { gateway: { ...before.services.gateway, requires: {} } } }), 'existing dependencies cannot disappear');
-	const defaults = { schema: 'opl-netfleet-system.v1', bindings: { gateway: 'mihomo' }, enabled: { mihomo: true, 'https-compat': false }, product_packages: ['mihomo'], scheduler: { service: 'scheduler', method: 'tick' } };
+	const defaults = { schema: 'opl-netfleet-system.v1', bindings: { gateway: 'mihomo' }, enabled: { mihomo: true, 'example-optional': false }, product_packages: ['mihomo'], scheduler: { service: 'scheduler', method: 'tick' } };
 	check(composition(defaults, { ...defaults, bindings: { ...defaults.bindings, profile: 'mihomo' } }), 'new bindings can enter the reviewed cohort');
-	check(!composition(defaults, { ...defaults, enabled: { mihomo: true, 'https-compat': true } }), 'plugin defaults cannot change');
+	check(!composition(defaults, { ...defaults, enabled: { mihomo: true, 'example-optional': true } }), 'plugin defaults cannot change');
 	check(!composition(defaults, { ...defaults, bindings: { gateway: 'other' } }), 'existing owners cannot change');
 	check(!composition(defaults, { ...defaults, product_packages: ['mihomo', 'other'] }), 'package composition cannot change');
 	print('component_retained_contract_ok\n');
@@ -166,7 +158,6 @@ function test_components_recovery(source) {
 let now = 0, sets = 0, starts = 0, chosen = "old", broken = false, changed = false, running = {};
 let restore_services;
 const SERVICE = "test-core", MAIN = "test-main", KIND = "native-mihomo";
-const paths = { COMPAT_STATE_PATH: "/unused/compat-state.json" };
 function time() { return now; }
 function system(command) { now++; return 0; }
 function run_command(command, work) { starts++; return true; }
@@ -177,10 +168,7 @@ function controller_version(secret, timeout) { return now >= 1 ? "test" : null; 
 function proxies(secret, timeout) { return {proxies: now >= 3 ? {group: {all: ["old", "desired"], now: chosen}} : {}}; }
 function select(secret, name, choice) { sets++; chosen = choice; return true; }
 function q(value) { return value; }
-let manager_tick=2, admitted=true, engine_birth='same';
-function read_json(path){return {last_tick:manager_tick,rule_recovery:{rule:{admitted}}};}
-function process_birth(pid){return engine_birth;}
-function parsed(command) { if(index(command,'compatibility-get')>=0)return {ok:true,result:{requested:true,intercepting:true,leases:1}};return {result: {active: true, runtime: {controller_available: true, lan_runtime: {dns_ready: now >= 5, transparent_proxy_ready: now >= 5}}}}; }
+function parsed(command) { return {result: {active: true, runtime: {controller_available: true, lan_runtime: {dns_ready: now >= 5, transparent_proxy_ready: now >= 5}}}}; }
 function probe_ok() { return !broken && now >= 7; }
 function check(value, message) { if (!value) die(message); }
 `;
@@ -199,12 +187,12 @@ check(!restore_services(before, "/unused") && now == 52, "persistent probe failu
 now = 7; broken = false; changed = true;
 check(!restore_services(before, "/unused") && now == 7, "changed private configuration must fail immediately");
 changed=false;running={"test-core":true,"opl-netfleet":true};
-native_identity=()=>({pid:1});
-const retained={...before,runtime_retained:true,retained_core:{pid:1},retained_engine:{pid:2,birth:'same'},retained_compat:{requested:true,intercepting:true,last_tick:1}};
-check(restore_services(retained,'/unused'),'fresh actual manager admission is accepted');
-manager_tick=1;check(!restore_services(retained,'/unused'),'old lease alone cannot prove a replacement manager renewed it');
-manager_tick=2;admitted=false;check(!restore_services(retained,'/unused'),'pending DNS cannot pass retained-runtime acceptance');
-admitted=true;engine_birth='changed';check(!restore_services(retained,'/unused'),'replacement engine identity must fail');
+let current_core={pid:1};
+native_identity=()=>current_core;
+const retained={...before,runtime_retained:true,retained_core:{pid:1}};
+check(restore_services(retained,'/unused'),'retained runtime with unchanged core identity is accepted');
+current_core={pid:2};
+check(!restore_services(retained,'/unused'),'changed retained core identity must fail');
 `;
 	loadstring(harness + implementation + cases)();
 	const recovery_start = index(source, "function restore_runtime_tree(");
@@ -292,21 +280,12 @@ check(stops==stops_before && scoped_drains>=2, "plugin recovery failure must nev
 	const verify_start = index(source, 'function verify_runtime(');
 	const verify_end = index(source, 'function drain_scoped(', verify_start);
 	loadstring(`
-let held=true, ready_at=2, raises=false, now=0, checks=0;
-function time(){return now;}function system(){now++;return 0;}
-function network_leave(){held=false;}function network_enter(){held=true;}
-function parsed(){die('a one-shot HTTPS controller must not run');}
-function restore_services(before){if(before.runtime_retained&&held)die('retained verification cannot block renewal');checks++;if(raises)die('verification_failure');return now>=ready_at;}
-function check(v,m){if(!v)die(m);}
+let calls = [];
+function restore_services(before, work) { push(calls, { before, work }); return before.ok == true; }
+function check(v, m) { if (!v) die(m); }
 ` + substr(source, verify_start, verify_end - verify_start) + `
-const before={runtime_retained:true,retained_engine:{pid:2}};
-check(verify_runtime(before,'work')&&held&&now==2,'wait for the actual manager without blocking its renewal');
-ready_at=30;now=0;check(verify_runtime(before,'work')&&held&&now==30,'expired admission must allow the actual manager recovery hold');
-ready_at=100;now=0;check(!verify_runtime(before,'work')&&held&&now==45,'failed manager readiness must be bounded');
-raises=true;try{verify_runtime(before,'work');}catch(e){}
-check(held,'verification exceptions must reacquire the mutation lock');
-raises=false;ready_at=0;const previous=now;
-check(verify_runtime({},'work')&&held&&now==previous,'ordinary stopped-runtime recovery keeps its existing lock');
+check(verify_runtime({ ok: true }, 'work') && length(calls) == 1 && calls[0].work == 'work', 'verify_runtime delegates to restore_services');
+check(!verify_runtime({ ok: false }, 'work'), 'verify_runtime propagates failed restoration');
 `)();
 
 	const world_start = index(source, "restore_world = function(");
@@ -360,22 +339,14 @@ function test_components_update_control(source) {
 	}
 	const ownership = extract('function package_owners(', 'function package_paths(');
 	loadstring(`
-const COMPATIBILITY_PACKAGE='opl-netfleet-https-compat';
-const paths={COMPAT_EXTENSION_PATH:'/unused/extension.json'};
-function compatibility_package(){return COMPATIBILITY_PACKAGE;}
-let rows=[{id:'https-compat',kind:'plugin',package:'opl-netfleet-plugin-https-compat'}];
-let info={type:'file',uid:0,mode:420,size:80}, descriptor={id:'https-compat',api_version:1};
-const context={inventory:()=>rows}, fs={lstat:()=>info};
-function read_json(){return descriptor;}
+let rows=[{id:'example',kind:'plugin',package:'opl-netfleet-plugin-example'},{id:'other',kind:'resource',package:'ignored-resource'}];
+const context={inventory:()=>rows};
 function check(value,message){if(!value)die(message);}
 ` + ownership + `
-const versions={'opl-netfleet-plugin-https-compat':'0.9.6','opl-netfleet-https-compat':'0.6.3'};
-check(package_owners(versions)[COMPATIBILITY_PACKAGE]=='https-compat','service inventory resolves separate native engine');
-check(package_owners({})[COMPATIBILITY_PACKAGE]==null,'absent runtime is not managed');
-descriptor.id='foreign';check(package_owners(versions)[COMPATIBILITY_PACKAGE]==null,'foreign descriptor is not admitted');descriptor.id='https-compat';
-info.mode=438;check(package_owners(versions)[COMPATIBILITY_PACKAGE]==null,'writable descriptor is not admitted');info.mode=420;
-info.type='link';check(package_owners(versions)[COMPATIBILITY_PACKAGE]==null,'symlink descriptor is not admitted');info.type='file';
-rows=[];check(package_owners(versions)[COMPATIBILITY_PACKAGE]==null,'runtime without control owner is not managed');
+const owners=package_owners({'opl-netfleet-plugin-example':'1.0.0'});
+check(owners['opl-netfleet-plugin-example']=='example','service inventory resolves plugin package owner');
+check(owners['ignored-resource']==null,'non-plugin kind is excluded from plugin package ownership');
+rows=[];check(package_owners({'opl-netfleet-plugin-example':'1.0.0'})['opl-netfleet-plugin-example']==null,'unowned package has no plugin owner');
 `)();
 
 	const controls = extract('function cancel_update(', 'function lifecycle(');
@@ -498,8 +469,7 @@ for(let row in [{action:'Upgrading',name:'lib',version:'2'},{action:'Purging',na
 	const selection = extract('upgrade = function(', '\tconst space = capture(`df -Pk');
 	loadstring(`
 let upgrade,state;
-const PACKAGES=['opl-netfleet','luci-app-netfleet','mihomo-meta'],COMPATIBILITY_PACKAGE='opl-netfleet-https-compat',UPGRADE_STATE='marker';
-function compatibility_package(){return COMPATIBILITY_PACKAGE;}
+const PACKAGES=['opl-netfleet','luci-app-netfleet','mihomo-meta'],UPGRADE_STATE='marker';
 let versions={'opl-netfleet':'1','luci-app-netfleet':'1','opl-netfleet-kernel':'1','opl-netfleet-plugin-dashboard':'1'};
 function product_packages(){return keys(versions);}function installed(){return versions;}function newer(a,b){return a!=null&&b!=null&&int(a)>int(b);}
 function version_valid(v){return v!=null;}function fail(e){die(e);}function journal(w,v){state=v;}

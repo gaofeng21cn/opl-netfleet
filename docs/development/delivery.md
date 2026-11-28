@@ -66,7 +66,7 @@ SDK UCode 构建前按 SDK 自带的固定提交初始化 base feed，再安装 
 ### 资格冻结与阶段化交付
 
 长资格开始前先冻结四个身份：源 commit/tree、候选 `manifest.json`、测试 ref 和资格输入
-目录。可以把以下只读预检作为长 QEMU 或 HTTPS 资格的第一步：
+目录。可以把以下只读预检作为长 QEMU 资格的第一步：
 
 ```sh
 python3 scripts/netfleet-delivery-preflight.py \
@@ -75,8 +75,7 @@ python3 scripts/netfleet-delivery-preflight.py \
 ```
 
 预检会验证候选确实属于该源码、测试 ref 只改变测试工具、载荷没有 `._*` 或编辑器临时文件，
-并确认 components owner 仍通过 `platform.paths` 取得私有运行路径。HTTPS 资格可用
-`scripts/https-compat/qualify.py --preflight` 自动执行同一门；预检失败时不启动 QEMU。
+并确认 components owner 仍通过 `platform.paths` 取得私有运行路径。
 生产代码、候选包或依赖变更后必须重新冻结并取得完整资格；只有测试工具变化且身份仍绑定时，
 才允许使用 `--test-ref`。资格失败后按失败阶段恢复，保留同一身份下已经成立的阶段回执，
 不要把一个长场景的失败简单重跑成另一批候选。
@@ -93,29 +92,26 @@ python3 scripts/netfleet-delivery-preflight.py \
 | --- | --- | --- |
 | 锁定源码与构建候选 | GitHub 托管 Ubuntu x64 | 核对 tag、产品版本和主线归属。用固定 SDK 构建签名薄壳 APK、零 SDK IPK 及签名纯源码 Release Bundle，封存候选和摘要。 |
 | 并行运行四组基础资格 | 四个 GitHub 托管 Ubuntu ARM64 job | 独立启动干净 OpenWrt VM，分别验证原生运行、首次设置及组件事务、管理与运行及迁移、签名薄壳安装与运行。ARM64 Linux 有 KVM 时使用 KVM，否则使用 TCG。各组记录阶段耗时和结果。 |
-| 汇总并验收可选组合 | GitHub 托管 Ubuntu ARM64 | 核对四组回执绑定本次源码、候选清单和夹具，再验证默认薄壳加 HTTPS 兼容模块及设备身份插件的完整组合。 |
+| 汇总发布回执 | GitHub 托管 Ubuntu x64 | 核对四组回执绑定本次源码、候选清单和夹具，生成统一发布资格回执。 |
 | 发布与公开回读 | GitHub 托管 Ubuntu x64 | 发布同一套签名包、`Packages*`/`packages.adb` 与 Release Bundle 资产，随后从公开地址下载并核对源码身份、文件集合和逐字节摘要。 |
 
 先看 Actions 的 job 名称定位当前验收内容，再看对应阶段日志和回执。候选与回执仍在保留期内时，
 用 **Re-run failed jobs** 续跑失败阶段和下游任务，复用同一运行中的成功候选与回执。
 如果验收脚本已修复并合入主线，从 `main` 手动触发 `Release NetFleet`，填写原产品 tag、
-tag 运行 ID、签名候选 artifact ID 和摘要。基础及可选组合验收使用同一主线提交的 VM runner
+tag 运行 ID、签名候选 artifact ID 和摘要。基础资格验收使用同一主线提交的 VM runner
 与客体验收脚本，回执记录该提交，产品源码、签名包和封存夹具仍绑定原候选。
 首次设置验收为已进入回滚的组件事务预留独立的有界观察窗口，直到读到同一事务的终态。
 组件验收只在 RPC 明确返回启动前的 `mutation_busy` 时重试请求。LAN 故障验收在取得部署锁后注入故障，
 持锁覆盖完整观察窗口。
 坏包用例还会核对预期失败原因、旧包版本、配置和代理连通性。
 仅修改客体验收脚本时，每日发布不生成新产品版本。已有候选可使用上述入口复验。
-APK 和夹具按原字节免二次压缩上传。`netfleet-output/` 保存默认包，`netfleet-optional/` 保存可选签名包及构建身份，
-`netfleet-vm-components/` 保存与候选绑定的升级和回滚夹具。可选来源由 `scripts/https-compat/release-source.json` 固定，
-复用时检查摘要、签名和依赖调用链。`scripts/openwrt-sdk.json` 固定构建所用 SDK 的 URL 和 SHA-256。
-发布器所需 x64 APK 工具由发布 job 单独下载。
+APK 和夹具按原字节免二次压缩上传。`netfleet-output/` 保存默认包，`netfleet-vm-components/` 保存与候选绑定的升级和回滚夹具。`scripts/openwrt-sdk.json` 固定构建所用 SDK 的 URL 和 SHA-256。
 
 #### 定向诊断和本地验收
 
 开发时可手动运行 `.github/workflows/netfleet-openwrt-candidate.yml`，输入源码 ref、SDK URL 及 SHA-256，或用
 `scripts/netfleet-package-build.sh` 在已准备的 SDK 上构建。需要定向复现时，按[隔离 OpenWrt](validation.md#隔离-openwrt)选择对应诊断，
-复用同一候选和夹具。本机运行 QEMU 和可选资格命令时，用
+复用同一候选和夹具。本机运行 QEMU 资格命令时，用
 `env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY` 清除宿主壳代理环境变量。
 
 使用已通过完整验收的本地候选进行容灾发布时，复用已经建立的 tag，先停止该 tag 的云端发布运行并确认终止，再调用同一发布器。
@@ -123,27 +119,9 @@ APK 和夹具按原字节免二次压缩上传。`netfleet-output/` 保存默认
 ```sh
 scripts/publish-netfleet-release.sh --tag vX.Y.Z \
   --candidate /absolute/path/to/candidate \
-  --qualification /absolute/path/to/qualification.json \
-  --compat-candidate /absolute/path/to/optional-candidate \
-  --compat-qualification /absolute/path/to/optional-qualification.json \
-  --apk scripts/openwrt-apk.py
+  --qualification /absolute/path/to/qualification.json
 ```
 
-发布使用与构建相同的 `NETFLEET_SDK`；`scripts/openwrt-apk.py` 在 Linux 直接运行 SDK APK，
-在 macOS 使用已准备的本地构建镜像执行签名校验与索引工具。输入目录只读、索引输出目录可写，
-不需要每次部署临时拼装 Docker 包装器，也不直接执行异平台二进制。
-
-正式产品发布工作流先取得默认资格，再取得精确可选组合资格，最后提供上述全部参数发布完整 Feed。
-仅默认包的手动发布入口可省略可选参数，但不用于产品稳定渠道。
-复用未变化的可选 APK 且实际依赖调用链变化时，用
-`scripts/https-compat/qualify.py --composition` 对新的默认候选执行组合验证；
-未变调用链可复用原独立资格，发布入口逐文件验证其适用性。组合验证传入 `--packages`、`--base-qualification`、
-`--candidate` 和 `--output`。该入口保留引擎原始版本与构建身份，使用新基础包源码
-测试首次完整安装、重复安装与故障恢复，不伪造引擎升级或改写旧清单。
-测试工具有修复时可另传 `--test-ref <commit>`：安装包仍保留原 commit/tree 与 SHA-256，
-回执另记测试源码；入口验证基座运行源码未变。只修测试或部署工具不重建包、不重跑
-已经成立的完整基础资格。测试返回 `mutation_busy` 时仅重试明确未执行的调用，
-执行结果不明时先读事务，不重放。
 入口检查候选与资格回执绑定、版本与 tag 一致、候选已被最新远端主线包含，再创建不可变
 Release 并下载公开资产校验。主线前进后仍使用已冻结并验收的候选。候选自身变更时重新
 构建和验收，不改旧回执。发布成功

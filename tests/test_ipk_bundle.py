@@ -83,6 +83,7 @@ class IpkBundleTests(unittest.TestCase):
         self.assertTrue(USIGN.verify_file(out1 / "opl-netfleet-bundle.pub", out1 / "release-manifest.json", out1 / "release-manifest.json.sig"))
         self.assertIn("runtime/plugins/components/lib/control.uc", manifest["files"])
         self.assertNotIn("runtime/plugins/https-compat/manifest.json", manifest["files"])
+        self.assertNotIn("runtime/plugins/device-identity/manifest.json", manifest["files"])
         with tarfile.open(out1 / s1["archive"], "r:gz") as tf:
             members = tf.getmembers()
             self.assertFalse(any(m.issym() or m.islnk() for m in members))
@@ -199,6 +200,12 @@ esac
             f"""#!/bin/sh
 echo "opkg $*" >> "{fake_log}"
 if [ "$1" = "list-installed" ]; then
+  case " ${{NETFLEET_OPKG_INSTALLED:-}} " in
+    *" $2 "*)
+      echo "$2 - 1.19.23"
+      exit 0
+      ;;
+  esac
   exit 1
 fi
 exit 0
@@ -228,6 +235,7 @@ exit 0
                 "NETFLEET_OPKG_KEYS_DIR": str(fake_etc / "opkg/keys"),
                 "NETFLEET_OPKG_CUSTOMFEEDS_FILE": str(fake_etc / "opkg/customfeeds.conf"),
                 "NETFLEET_RELEASE_FEED_FILE": str(fake_etc / "opl-netfleet/release-feed.json"),
+                "NETFLEET_NIKKI_INIT": str(self.root / "missing-nikki"),
             }
             res = subprocess.run(["/bin/sh", str(ROOT / "scripts/install-netfleet.sh")], env=env, capture_output=True, text=True)
             self.assertEqual(res.returncode, 0, msg=res.stderr)
@@ -238,6 +246,27 @@ exit 0
             ops = fake_log.read_text().splitlines()
             self.assertIn("opkg update", ops)
             self.assertTrue(any(line.startswith("opkg install ") and "opl-netfleet" in line and "mihomo-meta" in line for line in ops))
+
+            nikki_init = self.root / "present-nikki"
+            nikki_init.write_text("#!/bin/sh\nexit 0\n")
+            for sub_label, extra_env in (
+                ("existing_mihomo_meta", {"NETFLEET_OPKG_INSTALLED": "mihomo-meta"}),
+                ("nikki_present", {"NETFLEET_NIKKI_INIT": str(nikki_init)}),
+            ):
+                with self.subTest(opkg_guard=sub_label):
+                    fake_log.write_text("")
+                    guard_res = subprocess.run(
+                        ["/bin/sh", str(ROOT / "scripts/install-netfleet.sh")],
+                        env={**env, **extra_env},
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(guard_res.returncode, 0, msg=guard_res.stderr)
+                    guard_ops = fake_log.read_text().splitlines()
+                    install_lines = [line for line in guard_ops if line.startswith("opkg install ")]
+                    self.assertTrue(install_lines)
+                    self.assertTrue(all("opl-netfleet" in line and "luci-app-netfleet" in line for line in install_lines))
+                    self.assertFalse(any("mihomo-meta" in line for line in guard_ops if line.startswith(("opkg install ", "opkg upgrade "))))
 
             # Tampered signature must fail before rewriting customfeeds.
             (fake_etc / "opkg/customfeeds.conf").write_text("src/gz keep http://keep.invalid\n")

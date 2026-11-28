@@ -44,7 +44,6 @@ function errorLabel(code) {
 		runtime_mode_changed: '设备运行模式已变化，请读取当前状态后再切换',
 		runtime_mode_unconfirmed: '切换后的运行模式未通过确认',
 		runtime_mode_cleanup_failed: '停止代理后的网络接管清理未通过确认',
-		compatibility_stop_failed: 'HTTPS 兼容服务未能停止，未继续切换核心',
 		supervisor_stop_failed: '自动调度未能停止，未继续切换核心',
 		supervisor_start_failed: '自动调度未能启动',
 		profile_restore_failed: '原生代理配置未能恢复运行',
@@ -60,7 +59,6 @@ function errorLabel(code) {
 		plugin_kernel_maintenance: '内核正在更新，请稍后重试',
 		plugin_disabled: '插件未启用',
 		healthy_connections_still_draining: '现有连接仍在传输，尚未排空。为保留连接，请在传输结束后重试',
-		compatibility_stop_unconfirmed: '尚未确认兼容服务已停止，请查看当前状态',
 		plugin_required_by: '其他已启用插件仍依赖此插件',
 		plugin_binding_conflict: '服务已绑定其他插件',
 		plugin_service_unbound: '服务尚未绑定提供者',
@@ -201,7 +199,7 @@ const PHASE_LABELS = {
 
 const MODE_LABELS = { openwrt: '纯 OpenWrt', mihomo: 'Mihomo 原生代理', netfleet: 'NetFleet 增强代理' };
 const MODE_PHASE_LABELS = {
-	checking_mode: '核对当前运行模式', stopping_compatibility: '停止 HTTPS 兼容服务',
+	checking_mode: '核对当前运行模式',
 	stopping_scheduler: '暂停自动调度', stopping_proxy: '停止代理并清理网络接管',
 	restoring_native: '恢复原生代理并检查网络', starting_scheduler: '启动自动调度',
 	checking_inputs: '校验运行配置与恢复条件', switching_profile: '切换配置并重启代理核心',

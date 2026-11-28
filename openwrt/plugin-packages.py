@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent
 PLUGIN_ROOT = ROOT / "plugins" if (ROOT / "plugins").is_dir() else ROOT.parent / "plugins"
 ID = re.compile(r"[a-z][a-z0-9-]*")
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
-OPTIONAL_PLUGINS = frozenset({"https-compat"})
+OPTIONAL_PLUGINS = frozenset()
 PACKAGE = re.compile(r"[a-z0-9][a-z0-9+_.-]*")
 
 
@@ -22,8 +22,6 @@ def composition():
     services = {}
     for path in sorted(PLUGIN_ROOT.glob("*/manifest.json")):
         manifest = json.loads(path.read_text())
-        # Device identity is a separately packaged process plugin and is not
-        # part of the service graph used by the kernel package.
         if manifest.get("schema") != "opl-netfleet-service-plugin.v1":
             continue
         identity = manifest.get("id")

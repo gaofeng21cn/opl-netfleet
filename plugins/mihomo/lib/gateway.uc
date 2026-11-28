@@ -7,7 +7,7 @@ import { sha256 as digest_sha256 } from "digest";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
-let shell, capture, parse, directory, uci_value, enabled, merge, source_path, process_state, controller_ready, ownership, routes_present, readiness, status, render_profile, prepare, cleanup, attach, reconcile, watch, interception_snapshot, command;
+let shell, capture, parse, directory, uci_value, enabled, merge, source_path, process_state, controller_ready, ownership, routes_present, readiness, status, render_profile, prepare, cleanup, attach, reconcile, watch, command;
 
 const private_file = context.use("platform.files").private_file;
 const private_directory = context.use("platform.files").private_directory;
@@ -177,19 +177,7 @@ prepare = function() {
 	return { ok: true, result: { prepared: true, config_sha256: sha256(CONFIG) } };
 };
 cleanup = function() {
-	// The optional TLS layer cannot remain attached while the original gateway is changing.
-	const compatibility_clean = !shell("nft list table inet netfleet_compat") ||
-		shell("nft delete table inet netfleet_compat");
-	let marked_clean = compatibility_clean;
-	if (marked_clean) try {
-		// The private table can already be absent after an interrupted stop.
-		// Its conntrack bit still makes the base TProxy skip those flows.
-		if (fs.stat("/usr/lib/ucode/netfleet_interception.so")) require("netfleet_interception").clear_marked();
-		else if (fs.stat(`${STATE}/interception.json`)) marked_clean = false;
-	} catch (_) { marked_clean = false; }
-	if (marked_clean) fs.unlink(`${STATE}/interception.json`);
-	const cleaned = marked_clean ? { ok: true, result: { clean: true } } :
-		{ ok: false, error: "compatibility_cleanup_failed", result: { clean: false, base_clean: true } };
+	const cleaned = { ok: true, result: { clean: true } };
 	const state = ownership();
 	if (state == null) return shell("nft list table inet netfleet") ?
 		{ ok: false, error: "network_owner_unknown" } : cleaned;
@@ -315,89 +303,6 @@ watch = function() {
 	return { ok: false, error: "lifecycle_subscription_ended" };
 };
 
-interception_snapshot = function(listener) {
-	const uci = cursor();
-	if (!match(listener?.service ?? '', /^[a-z][a-z0-9-]{0,47}$/) || !match(listener?.instance ?? '', /^[a-z][a-z0-9-]{0,47}$/))
-		return { ok: false, error: 'lease_listener_invalid' };
-	const service = parse(capture(`ubus call service list ${shell_quote(sprintf('%J', { name: listener.service }))}`));
-	const engine = service?.[listener.service]?.instances?.[listener.instance];
-	const membership = engine?.running == true && type(engine.pid) == "int" ? fs.readfile(`/proc/${engine.pid}/cgroup`) : null;
-	let engine_group = null;
-	for (let line in split(membership ?? "", "\n"))
-		if (index(line, "0::/") == 0) engine_group = substr(line, 4);
-	const credentials = { user: [], group: [] };
-	const process_status = engine?.running == true && type(engine.pid) == "int" ? fs.readfile(`/proc/${engine.pid}/status`) : null;
-	for (let line in split(process_status ?? "", "\n")) {
-		const kind = index(line, "Uid:") == 0 ? "user" : index(line, "Gid:") == 0 ? "group" : null;
-		if (kind != null) credentials[kind] = map(split(trim(substr(line, 4)), /[[:space:]]+/), value => int(value));
-	}
-	const accounts = { user: {}, group: {} };
-	for (let kind, path in { user: "/etc/passwd", group: "/etc/group" })
-		for (let line in split(fs.readfile(path) ?? "", "\n")) {
-			const fields = split(line, ":");
-			if (length(fields) >= 3 && match(fields[2], /^[0-9]+$/)) accounts[kind][fields[0]] = int(fields[2]);
-		}
-	const listener_uid = accounts.user[listener.user];
-	const listener_identity_ready = engine?.running == true && engine_group != null && listener_uid != null &&
-		listener_uid > 0 && length(credentials.user) == 4 && !length(filter(credentials.user, id => id != listener_uid));
-	let custom = false;
-	for (let kind in ["router_access_control", "lan_access_control"]) {
-		let defaults = 0;
-		uci.foreach("netfleet", kind, (section) => {
-			if (`${section.enabled}` != "1") return;
-			// Router service exclusions are equivalent only when the actual engine cannot match them.
-			if (kind == "router_access_control" && engine_group != null &&
-				length(section.cgroup ?? []) + length(section.user ?? []) + length(section.group ?? []) > 0) {
-				let excluded = true;
-				for (let key in ["ip", "ip6", "mac"])
-					if (length(section[key] ?? []) > 0) excluded = false;
-				for (let key in ["user", "group"])
-					for (let name in section[key] ?? [])
-						if (accounts[key][name] == null || length(credentials[key]) != 4 || index(credentials[key], accounts[key][name]) >= 0)
-							excluded = false;
-				for (let group in section.cgroup)
-					if (!match(group, /^[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*$/) || group == engine_group || index(engine_group, `${group}/`) == 0)
-						excluded = false;
-				if (excluded) return;
-			}
-			for (let key in ["ip", "ip6", "mac", "user", "group", "cgroup"])
-				if (length(section[key] ?? []) > 0) custom = true;
-			if (`${section.proxy}` != "1") custom = true;
-			defaults++;
-		});
-		if (defaults != 1) custom = true;
-	}
-	const declaration=parse(fs.readfile(paths.COMPAT_EXTENSION_PATH));
-	const native_io=declaration?.gateway_io=='native'||fs.stat('/usr/lib/ucode/netfleet_interception.so')?require('netfleet_interception'):null;
-	let observed;
-	if(native_io) observed=native_io.observe();
-	else {
-		// Keep the set read separate: nft's combined read cache can omit its elements.
-		const nft = parse(capture("nft -j list set inet netfleet lan_inbound_device"));
-		const guard_chain = parse(capture("nft -j list chain inet netfleet mangle_prerouting_lan"));
-		let interfaces = [];
-		for (let item in nft?.nftables ?? []) if (item.set?.family == "inet" && item.set?.table == "netfleet" && item.set?.name == "lan_inbound_device") interfaces = item.set.elem ?? [];
-		const table_present = length(filter(guard_chain?.nftables ?? [], item => item.chain?.family == "inet" && item.chain?.table == "netfleet" && item.chain?.name == "mangle_prerouting_lan")) > 0;
-		const guard_rules = filter(guard_chain?.nftables ?? [], item => item.rule?.family == "inet" && item.rule?.table == "netfleet" && item.rule?.chain == "mangle_prerouting_lan");
-		const guard = filter(guard_rules[0]?.rule?.expr ?? [], expr => expr.counter == null);
-		const condition = guard[0]?.match;
-		const ownership_guard = length(guard) == 2 && condition?.op == "!=" && condition?.right == 0 &&
-			condition?.left?.["&"]?.[0]?.ct?.key == "mark" && condition?.left?.["&"]?.[1] == 16777216 &&
-			guard[1] != null && "return" in guard[1];
-		observed={present:table_present,guard:ownership_guard,interfaces};
-	}
-	const core = process_state();
-	const result = readiness(observed.present, core, native_io);
-	return { ok: true, result: { backend: "native-mihomo", ready: result.result?.ready == true && enabled("config", "enabled"),
-		compatibility_ownership_guard: observed.guard, generation: observed.generation, core_pid: core.pid, engine_pid: engine?.pid,
-		router_proxy: enabled("proxy", "router_proxy"), lan_proxy: enabled("proxy", "lan_proxy"),
-		ipv4_proxy: enabled("proxy", "ipv4_proxy"), ipv6_proxy: enabled("proxy", "ipv6_proxy"),
-		interfaces: sort(observed.interfaces), custom_lan_access: custom, listener_identity_ready: listener_identity_ready,
-		source_bypass: length(uci_value("proxy", "bypass_fwmark", [])) > 0,
-		dscp_bypass: map(uci_value("proxy", "bypass_dscp", []), value => int(value)) } };
-};
-
-
 command = function(argv) {
 	const ARGV = [substr(argv[0], 15), ...slice(argv, 1)];
 
@@ -418,5 +323,5 @@ printf("%J\n", result);
 exit(result.ok ? 0 : 1);
 };
 
-return { command, cleanup, status, readiness, process_state, interception_snapshot, rule_data_status: rule_data.status };
+return { command, cleanup, status, readiness, process_state, rule_data_status: rule_data.status };
 };

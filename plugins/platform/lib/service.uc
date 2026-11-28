@@ -12,8 +12,8 @@ const SERVICE_NAME = "opl-netfleet";
 
 service_state = function(name) {
 	name ??= SERVICE_NAME;
-	if (index([SERVICE_NAME, "opl-netfleet-compat"], name) < 0) die("unsupported_service");
-	const instance = name == SERVICE_NAME ? "supervisor" : "engine";
+	if (name != SERVICE_NAME) die("unsupported_service");
+	const instance = "supervisor";
 	const init = `/etc/init.d/${name}`;
 	const info = fs.stat(init);
 	const installed = info?.type == "file" && (info.mode & 0111) != 0;

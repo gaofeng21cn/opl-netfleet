@@ -87,7 +87,7 @@ automatic capability 必须形成无环依赖图，并且只有一个不声明 `
 | Component update owner | `components.control` 发现已安装包和显式 Feed 候选，管理默认产品包组合与可恢复更新；功能插件安装状态来自内核清单 |
 | canonical deploy owner | 为 Fleet/可重复运维从精确 Git commit/tree 和私有 deployment bundle 完成兼容性预检、依赖补齐、平台运行基线准备、NetFleet 安装/恢复和 installed parity；它不是独立插件首次设置的前置条件 |
 | NetFleet UI | owner 状态的只读投影和有限命令，不拥有配置或算法；门槛、周期、着色和说明只读 status 投影 |
-| Plugin host | 按[微内核合同](microkernel.md)解析各插件 manifest 中的服务依赖与命令；HTTPS 兼容和 Zashboard 分别由 `https-compat.control`、`dashboard.control` 提供，不维护静态业务注册表 |
+| Plugin host | 按[微内核合同](microkernel.md)解析各插件 manifest 中的服务依赖与命令；Zashboard 等模块按插件清单提供服务方法，不维护静态业务注册表 |
 
 依赖只能向下流动，不能由投影反向写入事实：
 

@@ -69,7 +69,6 @@ NetFleet 将业务、平台能力和界面组织为功能插件。内核处理�
 | --- | --- | --- |
 | **默认网络功能** | 订阅、编译、选优、启停、恢复、配置和调度 | 随签名纯源码 Release Bundle 与薄系统包壳 `opl-netfleet` 统一交付，原子符号链接切换与即时回退 |
 | **产品界面** | 概览、出口、机场、地区、配置、组件和诊断 | `product-ui` 贡献七个页面，LuCI 壳只负责发现、导航和页面生命周期 |
-| **HTTPS 兼容** | 为指定设备和目标提供 HTTP/1.1 到 HTTP/2 的兼容转换 | 管理插件连接独立可选转换包；设备信任私有 CA 后显式接入，故障时旁路回原选路 |
 | **Zashboard** | 查看 Mihomo 实时连接、流量、规则命中和代理组 | 独立 Dashboard 插件管理入口和资源；面板资源可单独更新，无需重启 Mihomo |
 | **开发示例** | 独立服务、配置保存与可交互页面 | `workspace-note` 提供完整外部插件；`host-info` 和 `device-info` 分别演示最小服务组合与进程入口 |
 
@@ -110,17 +109,6 @@ macOS 本机 MVP 的构建、使用和验证见[macOS 开发指南](docs/develop
 ```sh
 uclient-fetch -q -O /tmp/install-netfleet.sh https://github.com/gaofeng21cn/opl-netfleet/releases/latest/download/install-netfleet.sh && sh /tmp/install-netfleet.sh
 ```
-
-需要全功能安装时，在同一安装入口选择 `NETFLEET_INSTALL_PROFILE=full`。可选包源必须提供
-签名的 `compat-packages.adb`、`compat-public-key.pem` 与对应 APK；默认与产品包源同址，
-分开托管时由 `NETFLEET_COMPAT_FEED_BASE` 指定。没有完整依赖时安装失败，不悄悄降为基础组合。
-
-```sh
-NETFLEET_INSTALL_PROFILE=full sh /tmp/install-netfleet.sh
-```
-
-全功能指安装 HTTPS 引擎和 Device identity 等可选能力。HTTPS 默认关闭，保留已配置的规则和信任，
-需要时从插件配置页一键开启。已有安装的功能开关不会因选择安装组合而改变。
 
 
 该命令只安装 APK 公钥、软件源和程序文件，不写入 policy、订阅或 Nikki mixin，也不自动接管网络。
@@ -237,7 +225,6 @@ bun run build
 - [模块与扩展](docs/architecture/extensions.md)
 - [插件开发与安装](docs/development/plugins.md)
 - [macOS 开发](docs/development/macos.md)
-- [HTTPS 兼容模块](docs/architecture/https-compatibility.md)
 - [UI 设计](docs/design/ui.md)
 - [能力与平台归属](docs/product/capabilities.md)
 - [平台实现层](docs/platform/README.md)

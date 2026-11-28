@@ -130,13 +130,6 @@ def build(candidate, output, baseline=None):
                         "-out", str(private_key)], check=True, capture_output=True)
         subprocess.run(["openssl", "pkey", "-in", str(private_key), "-pubout", "-out", str(public_key)],
                        check=True, capture_output=True)
-        incompatible_root = scratch / "incompatible-compatibility"
-        incompatible_root.mkdir()
-        run("mkpkg", "--files", incompatible_root, "--sign-key", private_key,
-            "--output", output / "incompatible-compatibility.apk",
-            "--info", "name:opl-netfleet-https-compat", "--info", "version:0.1.7-r1",
-            "--info", "arch:noarch", "--info", "description:Dependency rejection fixture",
-            "--info", "license:MIT", "--info", "depends:opl-netfleet")
         for kind in ("good", "bad", "bad-core", "bad-hook", "interrupted"):
             (output / kind).mkdir()
             for archive in candidate.glob("*.apk"):
@@ -256,13 +249,10 @@ def build(candidate, output, baseline=None):
                 run("verify", "--keys-dir", legacy_dir, target)
                 metadata = json.loads(run("adbdump", "--format", "json", target))
                 name = metadata["info"]["name"]
-                if name not in ("opl-netfleet", "luci-app-netfleet", "opl-netfleet-https-compat"):
-                    raise SystemExit("Legacy fixture contains an unsupported package")
                 if name == "opl-netfleet-https-compat":
-                    legacy["system_dependencies"] = [
-                        dependency for dependency in metadata["info"].get("depends", [])
-                        if dependency != "opl-netfleet"
-                    ]
+                    continue
+                if name not in ("opl-netfleet", "luci-app-netfleet"):
+                    raise SystemExit("Legacy fixture contains an unsupported package")
                 legacy["artifacts"].append({"name": target.name, "package": name,
                                             "version": metadata["info"]["version"],
                                             "sha256": hashlib.sha256(target.read_bytes()).hexdigest()})

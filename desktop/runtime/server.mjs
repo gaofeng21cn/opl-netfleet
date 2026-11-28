@@ -685,7 +685,7 @@ async function main() {
     const pluginsRoot = path.resolve(desktopRoot, '../plugins');
     await fs.mkdir(path.join(codeRoot, 'plugins'), { recursive: true });
     for (const entry of await fs.readdir(pluginsRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.name === 'device-identity') continue;
+      if (!entry.isDirectory()) continue;
       await fs.cp(path.join(pluginsRoot, entry.name), path.join(codeRoot, 'plugins', entry.name), { recursive: true, force: true });
     }
   }

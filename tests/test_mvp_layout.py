@@ -25,8 +25,8 @@ class MvpLayoutTests(unittest.TestCase):
         luci_mk = (LUCI / "Makefile").read_text()
         self.assertIn("DEPENDS:=+luci-base +opl-netfleet", luci_mk)
         self.assertIn("EXTRA_DEPENDS:=opl-netfleet (>=", luci_mk)
-        identity_mk = (ROOT / "openwrt/device-identity/Makefile").read_text()
-        self.assertIn("+opl-netfleet +netfleet-plugin-api-v1", identity_mk)
+        self.assertFalse((ROOT / "openwrt/device-identity").exists())
+        self.assertFalse((ROOT / "openwrt/https-compat").exists())
 
     def test_platform_quota_adapter_requires_shared_quota_model(self):
         script = ROOT / "openwrt/plugin-packages.py"
@@ -148,11 +148,11 @@ class MvpLayoutTests(unittest.TestCase):
         self.assertEqual(set(plugins), set(system["enabled"]))
         self.assertEqual({"opl-netfleet-kernel", *(plugin["package"] for identity, plugin in plugins.items() if identity not in package_composition.OPTIONAL_PLUGINS)},
                          set(system["product_packages"]))
-        self.assertFalse(system["enabled"]["https-compat"])
+        self.assertNotIn("https-compat", system["enabled"])
+        self.assertNotIn("https-compat", plugins)
+        self.assertNotIn("device-identity", plugins)
         defaults = subprocess.check_output(["python3", str(script), "default-ids"], text=True).split()
         self.assertNotIn("https-compat", defaults)
-        for identity in defaults:
-            self.assertNotIn("https-compat", closure(identity))
 
     def test_default_package_installs_only_public_plugin_resources_to_web_root(self):
         with tempfile.TemporaryDirectory(prefix="netfleet-package-layout-") as temporary:

@@ -36,7 +36,7 @@ if command -v "$ucode_bin" >/dev/null 2>&1; then
 	cp -R "$runtime_dir"/. "$shared_work/runtime/"
 	for p in "$root_dir/plugins"/*; do
 		[ -f "$p/manifest.json" ] || continue
-		[ "$(basename "$p")" = "device-identity" ] || cp -R "$p" "$shared_work/runtime/plugins/"
+		cp -R "$p" "$shared_work/runtime/plugins/"
 	done
 	chmod -R u+rwX,go-w "$shared_work/runtime"
 	export NETFLEET_TEST_RUNTIME="$shared_work/runtime"
@@ -62,8 +62,7 @@ network_contract.uc
 maintenance_contract.uc
 dashboard_version_contract.uc
 components_contract.uc
-site_sync_contract.uc
-https_lifecycle_contract.uc"
+site_sync_contract.uc"
 	if [ "$openwrt_host" = 1 ]; then
 		contracts="$contracts
 adapter_contract.uc

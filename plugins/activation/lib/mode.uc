@@ -19,8 +19,7 @@ return function(context) {
 		const value = { profile: current, backend_enabled: profile.backend_enabled(), mihomo_running: running,
 			active: model.is_active(current), controller_available: state?.proxies != null,
 			netfleet_present: readback.state_has_netfleet(state, storage.read_json(backend.MANIFEST_PATH), current),
-			cleanup: running ? null : backend.cleanup_state(), supervisor: service.service_state(),
-			compatibility: service.service_state("opl-netfleet-compat") };
+			cleanup: running ? null : backend.cleanup_state(), supervisor: service.service_state() };
 		return { ...value, mode: model.operating_mode(value) };
 	};
 	function failure(error, detail) { return { ok: false, error, result: { ...get(), detail: detail ?? null } }; };
@@ -59,11 +58,6 @@ return function(context) {
 		const attempt = output.capture(() => {
 			if (!recovery_state.clear()) output.fail("set-mode", "recovery_state_write_failed");
 			if (request.mode == before.mode) return;
-			if (request.mode != "netfleet" && before.compatibility.installed) {
-				operation.update("stopping_compatibility", { actual_mode: null });
-				if (!service.set_service_state({ enabled: false, running: false }, "opl-netfleet-compat").ok)
-					output.fail("set-mode", "compatibility_stop_failed");
-			}
 			operation.update("stopping_scheduler", { actual_mode: null });
 			if (!pause()) output.fail("set-mode", "supervisor_stop_failed");
 			recovery_needed = true;

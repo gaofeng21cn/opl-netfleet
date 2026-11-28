@@ -132,7 +132,7 @@ chmod 0755 "$bin/mihomo" "$bin/netfleet-test-primary" "$bin/netfleet-test-reserv
 cp -R /tmp/openwrt/files/usr/libexec/opl-netfleet /usr/libexec/
 mkdir -p /usr/libexec/opl-netfleet/plugins
 for plugin in /tmp/plugins/*; do
-	[ -d "$plugin" ] && [ "$(basename -- "$plugin")" != "device-identity" ] && cp -R "$plugin" /usr/libexec/opl-netfleet/plugins/
+	[ -d "$plugin" ] && cp -R "$plugin" /usr/libexec/opl-netfleet/plugins/
 done
 cp /tmp/openwrt/files/usr/libexec/opl-netfleet-plugin-package /usr/libexec/
 chmod 0755 /usr/libexec/opl-netfleet-plugin-package

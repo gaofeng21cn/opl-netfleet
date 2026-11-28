@@ -56,16 +56,6 @@
         "platform.runtime": 1
       }
     },
-    "mihomo.interception": {
-      "version": 1,
-      "module": "lib/interception.uc",
-      "requires": {
-        "mihomo.gateway": 1,
-        "platform.files": 1,
-        "platform.process": 1,
-        "platform.paths": 1
-      }
-    },
     "mihomo.artifacts": {
       "version": 1,
       "module": "lib/artifacts.uc",

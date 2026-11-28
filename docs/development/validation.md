@@ -165,8 +165,7 @@ lane 的投影，不能用它替代签名包的安装运行结果。`supervisor_
 组合应用和包更新；热替换分别记录调用排空时间、资源恢复时间和业务中断时间。
 
 数据面独立测量 IPv4/IPv6、DNS、TCP/UDP TProxy、吞吐、并发连接和关键业务长连接；
-同时观察核心与宿主进程树的 CPU/RSS、文件描述符、连接数及临时空间。HTTPS 兼容模块
-启用与旁路分别测量上传、SSE 和取消。扩大订阅与实例规模，检查控制面并发读取和插件
+同时观察核心与宿主进程树的 CPU/RSS、文件描述符、连接数及临时空间。扩大订阅与实例规模，检查控制面并发读取和插件
 私有写入是否拖延网络恢复；持续运行及反复更新后检查资源是否回到稳定水平。
 
 `profile-openwrt.uc [1..30]` 在设备端通过真实 status caller 分段记录宿主加载、controller 读取、
@@ -195,8 +194,6 @@ lane 的投影，不能用它替代签名包的安装运行结果。`supervisor_
 在隔离环境覆盖最小支持旧组合到精确候选集合的更新，以及新旧插件保留共存时的实际调用。
 包依赖模拟只验证声明约束；还需通过受影响的正式 caller 验证参数、返回值和失败恢复。
 目标未改变的插件也属于最终组合，不能从验收身份中省略。
-HTTPS 的保留包组合入口见[插件开发](plugins.md)：在合格基础上安装目标保留的精确签名
-插件，再运行完整独立资格；由组合回执绑定实际文件，而不是放宽安装端的字节检查。
 
 `tests/test_plugin_sdk.py` 覆盖完整模板、仓库外打包、动作和页面引用、配置读写与资源
 安装。配置 `UCODE=/path/to/ucode` 后同一入口执行 `workspace-note` 的实际工厂，验证
@@ -231,20 +228,6 @@ world 约束恢复、无资源 owner 插件更新时核心 PID 不变，以及�
 ### 插件增量资格与 owner 边界
 
 插件任务不得把其他插件的源码、包或设备状态当作自己的交付物。先由基础组合 owner 以最新 canonical `main` 生成基础包并取得完整 QEMU qualification；回执绑定基础包的 source commit/tree、manifest 和运行 caller 摘要。插件 owner 再以这份回执作为固定基座，只验证自己的增量包、依赖、启停、故障恢复和卸载。固定基座中的任何运行 caller 变化都会使增量资格失效，必须退回基础组合 owner 重新资格，不能用旧回执强行安装。
-
-HTTPS 的顺序固定为：基础组合资格 → HTTPS 独立资格 → 插件包 dry-run → 只更新 HTTPS 包的 canary → 目标回读 → 吸收 canonical `main`。订阅、平台、模型、UI 等共享插件由各自 owner 按同一顺序交付；它们的候选可以组成测试基座，但不能进入 HTTPS 插件提交。资格脚本必须对同一工作区加互斥锁，防止重复 QEMU 和共享证据目录互相污染。
-
-长 HTTPS 场景前先执行 `scripts/https-compat/qualify.py --preflight`。这是一道几秒内结束的
-宿主门，检查同源码候选、测试 ref 允许范围、fixture 载荷清洁度以及 `platform.paths` 的
-真实 provider 绑定；它用于提前截住路径为 `undefined/interception.json`、
-`native_observer_identity_unavailable`、`plugin_payload_name_invalid` 和
-`plugin_files_unsafe` 这类输入或装载错误。通过后才进入完整长连接、升级回退和资源压力场景。
-短门不能替代真实 QEMU 资格，也不能复用受生产代码影响的旧资格。
-
-HTTPS 资格输入目录在传入 VM 前必须是可清点的干净载荷：只允许预期的常规文件，禁止符号链接、
-`._*`、`.DS_Store`、交换文件和临时分片；`cycle.json`、`fixture.json` 等 JSON 必须能在宿主
-解析。短门失败时修复 owner 或输入后只重跑短门；完整资格失败时按回执中的阶段从失败 lane
-恢复，未受影响且身份仍一致的阶段可以复用其不可变回执。
 
 ### 同一核心的架构封装验证
 

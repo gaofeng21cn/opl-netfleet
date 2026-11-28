@@ -4,12 +4,7 @@ import { create as create_adapter } from "/usr/libexec/opl-netfleet/adapters/ope
 const baseline = create("/usr/libexec/opl-netfleet", { adapter: create_adapter() });
 const system = baseline.system;
 baseline.release();
-// This contract explicitly exercises the installed optional management plugin.
-// Keep the production default disabled and enable only this in-memory host.
-const compatibility_installed = fs.lstat('/usr/libexec/opl-netfleet/plugins/https-compat/manifest.json') != null;
-system.enabled['https-compat'] = compatibility_installed;
 const host = create("/usr/libexec/opl-netfleet", { adapter: create_adapter(), system });
-const compatibility = compatibility_installed ? host.use("https-compat.control") : null;
 const dashboard = host.use("dashboard.control");
 const descriptor_error = host.use("models.extensions").descriptor_error;
 
@@ -24,63 +19,23 @@ const rpc = fs.popen(`sh '${rpc_path}' list`);
 const methods = json(rpc.read("all"));
 check(rpc.close() == 0, "real RPC list succeeds");
 const acl = json(fs.readfile(acl_path));
-for (let definition in compatibility_installed ? [compatibility.extension, dashboard.extension] : [dashboard.extension]) {
+for (let definition in [dashboard.extension]) {
 	check(descriptor_error(definition) == null, "shipped module descriptor validates");
 	for (let command, entry in definition.commands) {
 		check(host.command(command) != null, "adapter command registered by installed service manifest");
 		const method = replace(command, "-", "_");
-		if (definition.id == 'https-compat') {
-			check(methods[method] == null, "HTTPS CLI commands do not add host-specific RPC methods");
-			continue;
-		}
 		check(methods[method] != null, "declared command exists in real RPC list");
 		let permitted = false;
 		for (let key, group in acl) if (index(group?.[entry.access]?.ubus?.["opl-netfleet"] ?? [], method) >= 0) permitted = true;
 		check(permitted, "declared access matches installed RPC ACL");
 	}
 }
-if (compatibility_installed) {
-const full = compatibility.config_get();
-const summary = compatibility.config_get({ diagnostics: false });
-check(full.ok && summary.ok, 'both HTTPS status projections read the owner');
-check(sprintf('%J', full.result.config) == sprintf('%J', summary.result.config), 'summary retains complete configuration');
-check(full.result.revision == summary.result.revision, 'summary retains write revision');
-for (let key in ['events', 'local_probes', 'last_failure', 'engine_restart'])
-	check(!(key in summary.result), 'summary omits heavy diagnostic fields');
-check('events' in compatibility.config_get({ diagnostics: true }).result, 'full read after summary retains diagnostics');
-const manifest = host.found['https-compat'].manifest;
-const plugin_rpc = fs.popen(`sh '${rpc_path}.plugins' list`);
-const plugin_methods = json(plugin_rpc.read('all'));
-check(plugin_rpc.close() == 0, 'real generic plugin RPC list succeeds');
-for (let action in ['config-get', 'config-set', 'enable', 'disable', 'probe', 'public-ca']) {
-	const entry = manifest.actions[action];
-	check(entry != null && entry.lock == 'plugin', "HTTPS action belongs to its plugin");
-	const method = entry.access == 'read' ? 'plugin_read' : 'plugin_call';
-	check(plugin_methods[method] != null, "HTTPS uses the real generic plugin RPC");
-	let permitted = false;
-	for (let key, group in acl) if (index(group?.[entry.access]?.ubus?.['opl-netfleet.plugins'] ?? [], method) >= 0) permitted = true;
-	check(permitted, "generic plugin action access matches installed ACL");
-}
-}
 const rows = host.inventory(null);
 for (let id, enabled in host.system.enabled) if (enabled)
 	check(length(filter(rows, row => row.id == id && row.runtime == "service")) == 1, "configured service plugin appears once in inventory");
 const components = host.use("components.control").get();
 check(components.dashboard.installed_version == dashboard.resource().installed_version, "components reuses resource owner version");
-for(let name in ['compatibility-private-backup','compatibility-tick']) {
-	check(methods[replace(name, '-', '_')] == null, 'private CLI operations are not RPC methods');
-	if(compatibility_installed) check(compatibility.dispatch(name).error == 'extension_action_not_allowed',
-		'public plugin dispatcher rejects private lifecycle operations');
-}
-if (compatibility_installed)
-	check(compatibility.dispatch("run").error == "extension_action_not_allowed", "adapter cannot bypass allowlist");
 check(dashboard.dispatch("unknown").error == "extension_action_not_allowed", "resource adapter rejects unknown method");
-if (compatibility_installed && !compatibility.inspection().available) {
-	check(dispatch("compatibility-get").result.installed == false, "absent optional component readable through real registry");
-	check(dispatch("compatibility-enable", "/unused").ok == false, "absent optional component cannot activate");
-	check(compatibility.internal(['compatibility-tick']).error == 'compatibility_component_not_installed',
-		'absent optional engine returns a fixed error to lifecycle callers');
-}
 check(dispatch("dashboard-get").ok == true, "resource caller reaches existing owner");
 host.release();
 print("extensions_device_ok\n");

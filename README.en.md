@@ -114,7 +114,6 @@ and styles share a resource directory bound to the same code revision.
 | --- | --- | --- |
 | **Default network functions** | Subscriptions, compilation, selection, activation, recovery, configuration, and scheduling | Delivered together with the thin system shell `opl-netfleet` via a signed pure-source Release Bundle, with atomic symlink switching and instant rollback |
 | **Product interface** | Overview, exits, providers, regions, configuration, components, and diagnostics | `product-ui` contributes seven pages; the LuCI shell handles discovery, navigation, and page lifecycle |
-| **HTTPS compatibility** | HTTP/1.1-to-HTTP/2 compatibility for selected devices and destinations | A management plugin connects the optional converter package; explicit onboarding after device trust in a private CA, with bypass to the original route on failure |
 | **Zashboard** | Live Mihomo connections, traffic, rule matches, and proxy groups | A separate Dashboard plugin manages the entry and resources; dashboard assets can be updated without restarting Mihomo |
 | **Developer examples** | Independent services, saved configuration, and interactive pages | `workspace-note` is a complete external plugin; `host-info` and `device-info` demonstrate minimal service composition and process entry points |
 
@@ -332,7 +331,6 @@ bun run build
 - [Modules and extensions](docs/architecture/extensions.md)
 - [Plugin development and installation](docs/development/plugins.md)
 - [macOS development](docs/development/macos.md)
-- [HTTPS compatibility](docs/architecture/https-compatibility.md)
 - [UI design](docs/design/ui.md)
 - [Capabilities and platform ownership](docs/product/capabilities.md)
 - [Platform implementation layer](docs/platform/README.md)

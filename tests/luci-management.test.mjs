@@ -106,14 +106,6 @@ beforeEach(() => {
 });
 
 function loadModule(name, api) {
-  if (name === 'compatibility.js') {
-    const source = fs.readFileSync(path.join(RESOURCES, '../../https-compat/resources/manager.js'), 'utf8');
-    return new Function('E', source.replace('export function', 'function') + '\nreturn createManager;')(E)({
-      api,
-      ui,
-      readOnly: () => false,
-    });
-  }
   const product = new Function('baseclass', fs.readFileSync(path.join(RESOURCES, 'product.js'), 'utf8'))(baseclass);
   const advanced = new Function('baseclass', 'ui', 'E', fs.readFileSync(path.join(RESOURCES, 'advanced.js'), 'utf8'))(baseclass, ui, E);
   let shared;
@@ -1045,10 +1037,10 @@ test('components follow user order and keep plugin actions in scope', () => {
     dependencies: [],
     extensions: [
       {
-        id: 'https-compat',
-        label: 'HTTPS compatibility',
-        presentation: { label: 'HTTPS 兼容', description: '为指定设备和网站提供 HTTPS 协议兼容' },
-        product: { required: false, unloadable: true, engine: 'opl-netfleet-https-compat' },
+        id: 'example-service',
+        label: 'Example Service',
+        presentation: { label: '示例服务', description: '为指定场景提供示例扩展能力' },
+        product: { required: false, unloadable: true, engine: 'opl-netfleet-example-engine' },
         kind: 'plugin',
         runtime: 'service',
         version: '0.9.2',
@@ -1069,7 +1061,7 @@ test('components follow user order and keep plugin actions in scope', () => {
   fire(button(nav, '功能插件'));
   page = managed.components(owner);
   assert(!button(page, '检查更新'), 'plugin package updates use the platform package manager');
-  assert(text(page).includes('HTTPS 兼容') && text(page).includes('https-compat') && text(page).includes('为指定设备和网站提供 HTTPS 协议兼容'));
+  assert(text(page).includes('示例服务') && text(page).includes('example-service') && text(page).includes('为指定场景提供示例扩展能力'));
   assert(text(page).includes('Custom name'), 'unknown plugins retain the declared name');
   assert(button(page, '查看状态'));
   assert.deepEqual(all(page, node => node.tag === 'th').map(text), ['插件', '分类与用途', '版本', '配置', '运行管理']);
@@ -1133,9 +1125,9 @@ test('optional component inventory is local readonly and deduplicated', () => {
   const owner = controller();
   owner.componentsSection = 'plugins';
   const extension = {
-    id: 'https-compat', label: 'HTTPS 兼容', kind: 'optional', package: 'opl-netfleet-https-compat',
+    id: 'example-module', label: '示例扩展', kind: 'optional', package: 'opl-netfleet-example-engine',
     installed_version: '0.2.0-r1', api_version: 93, compatible: true, available: true, state: 'ready', reason: null,
-    dependencies: [{ id: 'mitmproxy', available: true, installed_version: '12.2.3' }], ui: ['config:compatibility'],
+    dependencies: [{ id: 'example-dep', available: true, installed_version: '12.2.3' }], ui: ['settings'],
   };
   owner.components = {
     supported: true, feed: { configured: false }, components: [], dependencies: [{ id: 'curl', label: 'curl', available: true }],
@@ -1149,30 +1141,30 @@ test('optional component inventory is local readonly and deduplicated', () => {
   fire(button(root, '基础组件'));
   assert.equal(all(managed.components(owner), node => node.tag === 'strong' && text(node) === 'Zashboard').length, 1);
   fire(button(managed.components(owner), '功能插件'));
-  let row = find(root, node => node.tag === 'tr' && text(node).includes('HTTPS 兼容'));
+  let row = find(root, node => node.tag === 'tr' && text(node).includes('示例扩展'));
   assert(text(row).includes('0.2.0-r1'));
   assert(text(row).includes('可配置'));
   assert(!text(row).includes('已就绪'));
   assert(!find(row, node => node.tag === 'details').open);
-  assert(text(row).includes('mitmproxy：12.2.3'));
+  assert(text(row).includes('example-dep：12.2.3'));
   assert(!text(row).includes('93'));
   assert.deepEqual(all(row, node => node.tag === 'button').map(text), [], 'engine payload is managed through its service plugin');
   owner.components.extensions[0] = {
     ...extension, installed_version: null, state: 'not_installed', available: false, reason: 'extension_component_not_installed',
-    dependencies: [{ id: 'mitmproxy', available: false, installed_version: null }],
+    dependencies: [{ id: 'example-dep', available: false, installed_version: null }],
   };
   root = managed.components(owner);
-  row = find(root, node => node.tag === 'tr' && text(node).includes('HTTPS 兼容'));
+  row = find(root, node => node.tag === 'tr' && text(node).includes('示例扩展'));
   assert(text(row).includes('未安装'));
   assert(text(row).includes('未安装可选模块'));
   assert(!text(row).includes('extension_component_not_installed'));
-  assert(!text(row).includes('mitmproxy'));
+  assert(!text(row).includes('example-dep'));
   assert(!find(row, node => node.tag === 'details' && text(node).includes('运行依赖')));
   assert.equal(all(row, node => node.attrs.class === 'is-warning').length, 0);
   assert.equal(all(root, node => node.attrs.role === 'alert').length, 0);
   assert(!text(root).includes('运行依赖正常'), 'base dependencies belong to the basic components tab');
   owner.components.extensions[0] = { ...extension, installed_version: null, available: true };
-  row = find(managed.components(owner), node => node.tag === 'tr' && text(node).includes('HTTPS 兼容'));
+  row = find(managed.components(owner), node => node.tag === 'tr' && text(node).includes('示例扩展'));
   assert(text(row).includes('安装版本未确认'));
   assert(!text(row).includes('未安装'));
   for (const [state, code, message] of [
@@ -1186,14 +1178,14 @@ test('optional component inventory is local readonly and deduplicated', () => {
   ]) {
     owner.components.extensions[0] = {
       ...extension, state, reason: code, available: false,
-      dependencies: [{ id: 'mitmproxy', available: false, installed_version: null }, { id: 'openssl', available: null, installed_version: null }],
+      dependencies: [{ id: 'example-dep', available: false, installed_version: null }, { id: 'openssl', available: null, installed_version: null }],
     };
     root = managed.components(owner);
-    row = find(root, node => node.tag === 'tr' && text(node).includes('HTTPS 兼容'));
+    row = find(root, node => node.tag === 'tr' && text(node).includes('示例扩展'));
     assert(text(row).includes(message));
-    assert(text(row).includes('mitmproxy：缺少'));
+    assert(text(row).includes('example-dep：缺少'));
     assert(text(row).includes('openssl：未确认'));
-    assert(find(row, node => node.tag === 'details' && text(node).includes('mitmproxy')).open);
+    assert(find(row, node => node.tag === 'details' && text(node).includes('example-dep')).open);
     assert.equal(all(root, node => node.attrs.role === 'alert').length, 0);
   }
 });
@@ -1540,7 +1532,7 @@ test('service switch reads identity and preserves state on dependency failure', 
 test('plugin switch terminal result and process inventory', async () => {
   const owner = controller();
   owner.componentsSection = 'plugins';
-  const plugin = { id: 'device-identity', kind: 'plugin', runtime: 'process', revision: 'r1', enabled: null };
+  const plugin = { id: 'example-process', kind: 'plugin', runtime: 'process', revision: 'r1', enabled: null };
   owner.components = { supported: true, feed: {}, components: [], extensions: [plugin] };
   let loaded = true, failed = false, unavailable = false;
   const calls = [];
@@ -1594,7 +1586,7 @@ test('plugin state busy read is bounded and instance scoped', async () => {
   try {
     const owner = controller();
     owner.componentsSection = 'plugins';
-    const plugin = { id: 'device-identity', kind: 'plugin', runtime: 'process', revision: 'r1', instance: 'review', enabled: null };
+    const plugin = { id: 'example-process', kind: 'plugin', runtime: 'process', revision: 'r1', instance: 'review', enabled: null };
     owner.components = { supported: true, feed: {}, components: [], extensions: [plugin] };
     let attempts = 0, busy = 2;
     const managed = loadModule('managed.js', {
@@ -1635,24 +1627,24 @@ test('plugin state busy read is bounded and instance scoped', async () => {
   }
 });
 
-test('https service exposes configuration without loading engine', () => {
+test('service plugin exposes configuration without loading engine', () => {
   const owner = controller();
   owner.componentsSection = 'plugins';
   const opened = [];
   owner.context = { navigate: id => opened.push(id) };
   const plugin = {
-    id: 'https-compat', label: 'HTTPS compatibility',
-    presentation: { label: 'HTTPS 兼容', description: '为指定设备和网站提供 HTTPS 协议兼容' },
-    product: { required: false, unloadable: true, engine: 'opl-netfleet-https-compat' },
-    kind: 'plugin', runtime: 'service', version: '0.8.0', revision: 'https-r1', enabled: true,
+    id: 'example-service', label: 'Example Service',
+    presentation: { label: '示例服务', description: '示例扩展说明' },
+    product: { required: false, unloadable: true, engine: 'opl-netfleet-example-engine' },
+    kind: 'plugin', runtime: 'service', version: '0.8.0', revision: 'service-r1', enabled: true,
     configuration: { read: 'config-get', write: 'config-set' },
-    ui: [{ id: 'settings', title: 'HTTPS 兼容', module: 'resources/page.js' }],
+    ui: [{ id: 'settings', title: '示例服务', module: 'resources/page.js' }],
   };
   owner.components = { supported: true, feed: {}, components: [], dependencies: [], extensions: [plugin] };
   const managed = loadModule('managed.js', {});
   let page = managed.components(owner);
   fire(button(page, '配置'));
-  assert.deepEqual(opened, ['plugin:https-compat:settings']);
+  assert.deepEqual(opened, ['plugin:example-service:settings']);
   assert(button(page, '查看状态'));
   assert(text(page).includes('运行管理'));
   assert(text(page).includes('已加载 · 未就绪'), 'service plugin request and engine readiness are shown separately');
@@ -1813,373 +1805,6 @@ test('only event consumers read events and core requests logs', async () => {
   owner.diagnosticSection = 'core';
   await owner.refreshEvents();
   assert.deepEqual(calls, [false, true]);
-});
-
-test('http2 website defaults preserve scope and dynamic binding', async () => {
-  const owner = controller();
-  owner.compatibility = {
-    installed: true, requested: true, intercepting: true, revision: 'compat-r1',
-    config: { rules: [], devices: [{ id: 'egress', name: 'Shared egress', addresses: ['192.0.2.2'] }] },
-    rules: {}, trust: {}, events: [],
-  };
-  const writes = [];
-  const manager = loadModule('compatibility.js', {
-    compatibilityGet: async () => clone(owner.compatibility),
-    compatibilityApply: async request => { writes.push(request); owner.compatibility.config = clone(request.config); },
-    pluginRead: () => { throw Error('must not read another plugin'); },
-    pluginCall: () => { throw Error('must not manage another plugin'); },
-  });
-  let root = manager.render(owner);
-  assert(!text(root).includes('目标恢复'));
-  assert(!text(root).includes('自动发现'));
-  assert(!text(root).includes('转发引擎'), 'diagnostics are not generated until expanded');
-  fire(button(root, '添加网站'));
-  const field = label => find(find(modal.content, node => node.tag === 'label' && text(node).startsWith(label)), node => node.tag === 'input');
-  fire(field('网站域名'), 'input', { value: 'Service.Example' });
-  await fire(button(modal.content, '保存'));
-  assert.equal(writes.length, 1, 'save needs no second confirmation');
-  assert.deepEqual(
-    { ...writes[0].config.rules[0], id: 'generated' },
-    { id: 'generated', name: 'service.example', domain: 'service.example', match: 'exact', port: 443, strategy: 'h2', enabled: true, devices: ['egress'] },
-  );
-  owner.compatibility.rule_recovery = { [owner.compatibility.config.rules[0].id]: { admitted: true } };
-  root = manager.render(owner);
-  assert(text(root).includes('等待请求验证 HTTP/2'));
-  owner.compatibility.config.devices.push({ id: 'other', name: 'Other', addresses: ['192.0.2.3'] });
-  fire(button(manager.render(owner), '添加网站'));
-  fire(field('网站域名'), 'input', { value: 'another.example' });
-  await fire(button(modal.content, '保存'));
-  assert.equal(writes.length, 1, 'multiple scopes require an explicit selection');
-  assert(text(notifications.at(-1).text).includes('请选择接入范围'));
-  ui.hideModal();
-  owner.compatibility.config.devices[0].identity = { binding: 'a'.repeat(64), mac: '02:00:00:00:00:01' };
-  owner.compatibility.config.devices[0].addresses = [];
-  owner.accessExpanded = true;
-  fire(button(manager.render(owner), '编辑范围'));
-  await fire(button(modal.content, '保存'));
-  assert.deepEqual(writes.at(-1).config.devices[0].identity, { binding: 'a'.repeat(64), mac: '02:00:00:00:00:01' });
-  root = manager.render(owner);
-  fire(button(root, '删除'));
-  assert(modal, 'deletion still explains its effect');
-  owner.compatibilityLive = false;
-  await fire(button(modal.content, '删除'));
-  assert.equal(writes.length, 2, 'a stale confirmation cannot authorize a write');
-});
-
-test('compatibility retains failure when current probes pass', () => {
-  const owner = controller();
-  owner.diagnosticsExpanded = true;
-  owner.compatibility = {
-    installed: true, requested: true, intercepting: false, reason: 'manual_recovery_required',
-    config: { rules: [], devices: [] }, recovery: { latched: true, faults: [1] }, engine_restart: { attempts: 4 },
-    local_probes: { processing: { ok: true, duration_ms: 200, stage: 'http' } },
-    last_failure: {
-      at: 42, reason: 'processing_chain_failed', health_error: 'health_socket_timeout',
-      local_probes: { processing: { ok: false, reason: 'timeout', stage: 'http', duration_ms: 1510, timeout_ms: 1400 } },
-    },
-  };
-  const manager = loadModule('compatibility.js', {});
-  let root = manager.render(owner);
-  assert(text(root).includes('本地健康接口超时'));
-  assert(text(root).includes('1510 ms / 1400 ms'));
-  assert(text(root).includes('1 次独立故障'));
-  assert(text(root).includes('4 次'));
-  assert(button(root, '恢复转发'));
-  owner.compatibility.reason = 'maintenance';
-  owner.compatibility.recovery.latched = false;
-  assert(button(manager.render(owner), '恢复转发'), 'maintenance requires an explicit recovery action');
-  owner.compatibility.events = [{ ...owner.compatibility.last_failure }];
-  delete owner.compatibility.last_failure;
-  root = manager.render(owner);
-  assert(text(root).includes('1510 ms / 1400 ms'), 'old engine event still explains the failure');
-  owner.compatibilityLive = false;
-  root = manager.render(owner);
-  assert(!text(root).includes('1510 ms'), 'failure diagnostics are never restored from display cache');
-});
-
-test('compatibility cached content is not write authority', async () => {
-  const owner = controller();
-  owner.accessExpanded = true;
-  owner.compatibilityLive = false;
-  owner.compatibility = {
-    installed: true, requested: true, intercepting: false, reason: 'engine_unavailable',
-    config: {
-      rules: [{ id: 'site', name: 'Site', domain: 'service.example', port: 443, strategy: 'h2', enabled: true, devices: ['mac'] }],
-      devices: [{ id: 'mac', name: 'Mac', addresses: ['192.0.2.2'] }],
-    },
-    rules: {}, trust: {}, rule_recovery: { site: { intercepting: true } },
-  };
-  let reads = 0, rejectRead;
-  const api = {
-    compatibilityGet: () => { reads++; return new Promise((_, reject) => { rejectRead = reject; }); },
-    pluginRead: () => { throw new Error('tab must not load another plugin'); },
-  };
-  const manager = loadModule('compatibility.js', api);
-  let root = manager.render(owner);
-  assert(button(root, '添加网站').disabled);
-  assert(text(root).includes('service.example'));
-  assert(!text(root).includes('正在接管'), 'module bypass overrides stale rule interception');
-  root = manager.render(owner);
-  assert(text(root).includes('Mac'));
-  assert(button(root, '添加接入范围').disabled);
-  assert.equal(reads, 0);
-  const pending = manager.refresh(owner);
-  assert.equal(manager.refresh(owner), pending, 'refresh is single-flight');
-  rejectRead(new Error('offline'));
-  await pending;
-  root = manager.render(owner);
-  assert(text(root).includes('Mac'));
-  assert(text(root).includes('刷新失败'));
-  assert(button(root, '添加接入范围').disabled);
-  assert.equal(reads, 1);
-});
-
-test('compatibility disposal ignores late read', async () => {
-  const owner = controller();
-  let disposed = false, complete, redraws = 0;
-  owner.disposed = () => disposed;
-  owner.redraw = () => { redraws++; };
-  const manager = loadModule('compatibility.js', { compatibilityGet: () => new Promise(resolve => { complete = resolve; }) });
-  const pending = manager.refresh(owner);
-  disposed = true;
-  complete({ requested: true });
-  await pending;
-  assert.equal(owner.compatibility, undefined);
-  assert.equal(redraws, 0, 'late results must not redraw a departed page');
-  await manager.refresh(owner);
-  assert.equal(redraws, 0);
-});
-
-test('compatibility refresh preserves body until result', async () => {
-  const owner = controller();
-  owner.compatibility = {
-    installed: true, requested: true, intercepting: true,
-    config: { rules: [], devices: [{ id: 'egress', name: 'Shared egress', addresses: [] }] },
-  };
-  let complete, redraws = 0;
-  const manager = loadModule('compatibility.js', { compatibilityGet: () => new Promise(resolve => { complete = resolve; }) });
-  let root = manager.render(owner);
-  owner.redraw = () => { redraws++; root = manager.render(owner); };
-  assert(!button(root, '编辑范围'), 'collapsed access content is not constructed');
-  const section = find(root, node => node.tag === 'details' && text(node) === '接入与证书');
-  fire(section, 'toggle', { open: true });
-  assert(button(root, '编辑范围'));
-  const body = root;
-  redraws = 0;
-  const pending = fire(button(root, '刷新状态'));
-  assert.equal(redraws, 0, 'starting a read must preserve the body and focus');
-  assert.equal(root, body);
-  assert(button(root, '刷新状态').disabled);
-  assert(text(root).includes('正在刷新'));
-  assert.equal(manager.refresh(owner), pending, 'overlapping reads remain single-flight');
-  complete(clone(owner.compatibility));
-  await pending;
-  assert.equal(redraws, 1, 'one result causes one body render');
-  assert(!button(root, '刷新状态').disabled);
-  assert(!text(root).includes('正在刷新'));
-  assert(button(root, '编辑范围'), 'expanded access remains available after refresh');
-});
-
-test('compatibility diagnostics expand during summary read', async () => {
-  const owner = controller();
-  const state = { installed: true, requested: true, intercepting: true, config: { rules: [], devices: [] } };
-  owner.compatibility = clone(state);
-  owner.compatibilityDiagnostics = false;
-  const reads = [], pending = [];
-  const manager = loadModule('compatibility.js', {
-    compatibilityGet: params => { reads.push(params); return new Promise(resolve => pending.push(resolve)); },
-  });
-  let root = manager.render(owner);
-  owner.redraw = () => { root = manager.render(owner); };
-  const first = manager.refresh(owner);
-  fire(find(root, node => node.tag === 'details' && text(node) === '技术诊断'), 'toggle', { open: true });
-  assert.equal(reads.length, 1, 'expansion cannot overlap a pending read');
-  assert(text(root).includes('正在读取诊断记录'));
-  assert(!text(root).includes('尚无故障记录'));
-  pending.shift()(clone(state));
-  await first;
-  assert.deepEqual(reads, [{ diagnostics: false }, { diagnostics: true }]);
-  const second = owner.compatibilityRead;
-  pending.shift()({ ...state, events: [{ at: 1, reason: 'client_cancelled' }] });
-  await second;
-  assert(text(root).includes('客户端已取消'));
-  const details = find(root, node => node.tag === 'details' && text(node).startsWith('技术诊断'));
-  fire(details, 'toggle', { open: false });
-  assert.equal(reads.length, 2, 'closing diagnostics does not add a request');
-  const third = manager.refresh(owner);
-  assert.deepEqual(reads[2], { diagnostics: false });
-  pending.shift()(clone(state));
-  await third;
-  assert(!text(root).includes('客户端已取消'));
-});
-
-test('compatibility display cache is bounded and redacted', async () => {
-  const source = fs.readFileSync(path.join(RESOURCES, '../../https-compat/resources/display.js'), 'utf8');
-  const { displayCache } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
-  const values = new Map();
-  const storage = () => ({ getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) });
-  const cache = displayCache('device-a:revision-a', storage);
-  const state = {
-    installed: true, requested: true, revision: 'PRIVATE_REVISION', ca_key: 'PRIVATE_KEY',
-    config: {
-      rules: [{ id: 'site', name: 'Site', domain: 'service.example', devices: ['mac'] }],
-      devices: [{ id: 'mac', name: 'Mac', addresses: [], identity: { binding: 'PRIVATE_BINDING' } }],
-    },
-    device_addresses: { mac: ['2001:db8::2'] },
-    address_source: { config: { password: 'PRIVATE_PASSWORD' } },
-    trust: { mac: { verified: true, runtimes: { codex_app: true }, token: 'PRIVATE_TOKEN' } },
-    events: [{ body: 'PRIVATE_BODY' }],
-  };
-  cache.write(state, Date.now(), 'devices');
-  assert(!values.get('device-a:revision-a').includes('PRIVATE_'));
-  const cached = cache.read();
-  assert.equal(cached.tab, undefined);
-  assert.deepEqual(cached.state.config.devices[0].addresses, ['2001:db8::2']);
-  assert.equal(cached.state.revision, undefined);
-  assert.equal(displayCache('device-b:revision-a', storage).read(), null);
-  assert.equal(displayCache('device-a:revision-b', storage).read(), null);
-  values.set('device-a:revision-a', '{');
-  assert.equal(cache.read(), null);
-  values.set('device-a:revision-a', 'x'.repeat(128 * 1024 + 1));
-  assert.equal(cache.read(), null);
-  assert.doesNotThrow(() => displayCache('disabled', () => { throw Error('disabled'); }).write(state, Date.now(), 'rules'));
-});
-
-test('compatibility page keeps following bypass and cleans up', async () => {
-  const source = fs.readFileSync(path.join(RESOURCES, '../../https-compat/resources/page.js'), 'utf8')
-    .replace(/^import .*;$/gm, '').replace('export async function mount', 'async function mount')
-    .replace('import.meta.url', "'https://router.test/page.js'");
-  const timers = new Map();
-  let serial = 0, view, dispose, refreshes = 0;
-  const signal = { aborted: false };
-  const dom = () => ({ append() {}, contains() { return false; }, querySelectorAll() { return []; }, replaceChildren() {}, remove() {} });
-  globalThis.document = { hidden: false, createElement: dom, addEventListener() {}, removeEventListener() {} };
-  const requirements = [], rpcCalls = [];
-  globalThis.L.env = { rpctimeout: 20 };
-  globalThis.L.require = async name => {
-    requirements.push(name);
-    if (name === 'netfleet.api') throw Error('HTTP 404');
-    return name === 'rpc' ? { declare: spec => async request => { rpcCalls.push({ spec, request }); return { ok: true, result: { loaded: true } }; } } : {};
-  };
-  let pageApi;
-  const manager = { render: () => ({}), refresh: async c => { view = c; refreshes++; c.follow(); } };
-  const mount = new Function('createManager', 'displayCache', 'setTimeout', 'clearTimeout', source + ';return mount;')(
-    options => { pageApi = options.api; return manager; }, () => ({ read: () => null, write() {} }),
-    (fn, ms) => { timers.set(++serial, { fn, ms }); return serial; }, id => timers.delete(id),
-  );
-  await mount({ signal, container: dom(), scope: { effect: cb => { dispose = cb; } } });
-  assert.deepEqual(requirements, ['ui'], 'plugin uses only its scoped host API');
-  assert.equal(pageApi.pluginRead, undefined);
-  assert.equal(pageApi.pluginCall, undefined);
-  assert.equal(rpcCalls.length, 0);
-  assert.equal(globalThis.L.env.rpctimeout, 20, 'transport restores the LuCI timeout');
-  assert.equal([...timers.values()][0].ms, 10000, 'failed or initial reads keep following');
-  for (const reason of ['lan_access_not_equivalent', 'rules_bypassed', 'future_reason']) {
-    view.compatibilityLive = true;
-    view.compatibility = { requested: true, intercepting: false, reason };
-    view.follow();
-    assert.equal(timers.size, 1);
-    assert.equal([...timers.values()][0].ms, 3000);
-  }
-  view.compatibility.intercepting = true;
-  view.follow();
-  assert.equal([...timers.values()][0].ms, 10000, 'active traffic stats keep refreshing');
-  globalThis.document.hidden = true;
-  view.follow();
-  assert.equal(timers.size, 0);
-  globalThis.document.hidden = false;
-  view.compatibility = { requested: false, active_connections: 0 };
-  view.follow();
-  assert.equal(timers.size, 0, 'disabled and drained stays idle');
-  view.compatibility.active_connections = 2;
-  view.follow();
-  assert.equal(timers.size, 1);
-  signal.aborted = true;
-  dispose();
-  assert.equal(timers.size, 0);
-  assert.equal(refreshes, 1);
-});
-
-test('unmanaged compatibility preserves revision bound disable', async () => {
-  const owner = controller();
-  const state = {
-    installed: true, managed: false, requested: true, intercepting: false, active_connections: 2, revision: 'compat-r1',
-    reason: 'engine_unavailable', management_reason: 'extension_api_incompatible',
-    config: { rules: [], devices: [] }, rules: {}, trust: {}, events: [],
-  };
-  owner.compatibility = clone(state);
-  let reads = 0;
-  const disabled = [];
-  const api = {
-    compatibilityGet: async () => { reads++; return { ...state, requested: false, revision: 'compat-r2' }; },
-    compatibilityDisable: async request => { disabled.push(request); },
-    compatibilityEnable: async () => { throw new Error('unmanaged module must not enable'); },
-    compatibilityProbe: async () => { throw new Error('unmanaged module must not probe'); },
-    compatibilityApply: async () => { throw new Error('unmanaged module must not apply'); },
-  };
-  const compatibility = loadModule('compatibility.js', api);
-  let root = compatibility.render(owner);
-  assert(text(root).includes('模块接口与当前 NetFleet 不兼容'));
-  assert(button(root, '添加网站').disabled);
-  owner.diagnosticsExpanded = true;
-  root = compatibility.render(owner);
-  assert(!button(root, '连接验证'), 'status-only RPC must not be presented as a connection test');
-  assert(!button(root, '导出诊断').disabled);
-  assert(!button(root, '恢复转发'));
-  const toggle = find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox');
-  assert(toggle.checked);
-  assert(!toggle.disabled, 'an incompatible installed module must remain stoppable');
-  const stopping = fire(toggle, 'change', { checked: false });
-  await stopping;
-  assert.deepEqual(disabled, [{ revision: 'compat-r1' }]);
-  assert.equal(reads, 1);
-  root = compatibility.render(owner);
-  assert(find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox').disabled);
-  assert(text(root).includes('仍有 2 条连接'));
-  assert(!button(root, '导出诊断').disabled);
-  await fire(button(root, '刷新状态'));
-  assert.equal(reads, 2);
-});
-
-test('compatibility direct toggle and edit recheck capabilities', async () => {
-  const owner = controller();
-  owner.compatibility = {
-    installed: true, requested: false, intercepting: false, active_connections: 0, revision: 'compat-r1',
-    reason: 'disabled', config: { rules: [], devices: [] }, rules: {}, trust: {}, events: [],
-  };
-  let enables = 0, applies = 0;
-  const api = {
-    compatibilityEnable: async () => { enables++; },
-    compatibilityApply: async () => { applies++; },
-    compatibilityGet: async () => clone(owner.compatibility),
-  };
-  const compatibility = loadModule('compatibility.js', api);
-  let root = compatibility.render(owner);
-  assert(button(root, '添加网站').disabled, 'a rule requires a device');
-  assert(!button(root, '添加接入范围').disabled, 'absence of managed must preserve the existing contract');
-  let toggle = find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox');
-  assert(!toggle.disabled);
-  await fire(toggle, 'change', { checked: true });
-  assert.equal(enables, 1, 'explicit toggle applies directly');
-  assert.equal(modal, null);
-  owner.compatibility.managed = true;
-  root = compatibility.render(owner);
-  fire(button(root, '添加接入范围'));
-  const fields = all(modal.content, node => node.tag === 'input');
-  fire(fields[0], 'input', { value: 'Test Mac' });
-  fire(fields[1], 'input', { value: '192.0.2.10' });
-  owner.compatibility.managed = false;
-  await fire(button(modal.content, '保存'));
-  assert.equal(applies, 0, 'an open edit must not bypass a refreshed capability denial');
-  owner.compatibility.installed = false;
-  owner.compatibility.requested = true;
-  owner.compatibility.reason = 'extension_component_not_installed';
-  root = compatibility.render(owner);
-  toggle = find(root, node => node.tag === 'input' && node.attrs.type === 'checkbox');
-  assert(toggle.disabled, 'an absent owner cannot receive disable');
-  assert(!button(root, '刷新状态').disabled);
-  assert(text(root).includes('请在组件列表安装 HTTP/2 转发引擎'));
-  assert(!text(root).includes('extension_component_not_installed'));
 });
 
 test('native luci uses display cache then revalidates once', async () => {

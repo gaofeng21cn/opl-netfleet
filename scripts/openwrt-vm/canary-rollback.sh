@@ -22,30 +22,16 @@ validate() {
  ucode - "$stage" <<'UC'
 import * as fs from 'fs';import {sha256} from 'digest';
 const dir=ARGV[0],value=json(fs.readfile(dir+'/rollback.json'));
-if(index(['opl-netfleet-https-compat','opl-netfleet-plugin-mihomo'],value.package)<0)die('canary_package_not_allowed');
+if(value.package!='opl-netfleet-plugin-mihomo')die('canary_package_not_allowed');
 if(value.world_entry!=null && (type(value.world_entry)!='string'||length(value.world_entry)>1024||
-   match(value.world_entry,/[\r\n]/)||!match(value.world_entry,/^(opl-netfleet-https-compat|opl-netfleet-plugin-mihomo)([=<>~!]|$)/)))die('canary_world_entry_invalid');
-if(value.engine_identity!=null) {
- const e=value.engine_identity;
- if(type(e.pid)!='int'||e.pid<=1)die('canary_engine_identity_invalid');
- const stat=fs.readfile('/proc/'+e.pid+'/stat');
- if(!stat||split(trim(substr(stat,rindex(stat,') ')+2)),/\s+/)[19]!=e.birth||
-    sha256(fs.readfile('/proc/'+e.pid+'/exe')??'')!=e.sha256)die('canary_engine_identity_changed');
-}
+   match(value.world_entry,/[\r\n]/)||!match(value.world_entry,/^opl-netfleet-plugin-mihomo([=<>~!]|$)/)))die('canary_world_entry_invalid');
 const companions=value.companions ?? [];
 if(type(companions)!='array'||length(companions)>3||length(filter(companions,row=>index(['opl-netfleet-plugin-mihomo','opl-netfleet','opl-netfleet-plugin-network'],row.package)<0)))die('canary_companion_not_allowed');
 const names=[value.package,...map(companions,row=>row.package)];
 if(length(uniq(sort(names)))!=length(names))die('canary_companion_not_allowed');
-const packages=fs.popen("apk --no-network query --from installed --format json --fields name,version 'opl-netfleet-https-compat' 'opl-netfleet-plugin-mihomo' 'opl-netfleet' 'opl-netfleet-plugin-network' 'opl-netfleet-plugin-components'");
+const packages=fs.popen("apk --no-network query --from installed --format json --fields name,version 'opl-netfleet-plugin-mihomo' 'opl-netfleet' 'opl-netfleet-plugin-network' 'opl-netfleet-plugin-components'");
 const installed=json(packages.read('all'));if(packages.close()!=0)die('canary_installed_read_failed');
 const version=name=>filter(installed,row=>row.name==name)[0]?.version;
-if(value.plugin_disabled===true && index(names,'opl-netfleet-https-compat')>=0) {
- const components=version('opl-netfleet-plugin-components');
- if(!match(components??'',/^[0-9]+\.[0-9]+\.[0-9]+(-r[0-9]+)?$/))die('canary_rollback_admission_unavailable');
- const compare=fs.popen('apk version -t '+components+' 0.8.10');
- const order=trim(compare.read('all'));
- if(compare.close()!=0||index(['=','>'],order)<0)die('canary_rollback_admission_unavailable');
-}
 if(value.core_birth!=null) {
  const stat=fs.readfile('/proc/'+value.core_pid+'/stat');
  if(!stat||split(trim(substr(stat,rindex(stat,') ')+2)),/\s+/)[19]!=value.core_birth)die('canary_core_identity_changed');
@@ -151,23 +137,10 @@ test "$(pidof mihomo)" = "$(jsonfilter -i rollback.json -e '@.core_pid')"
 installed=$(apk --no-network query --from installed --format json --fields name,version "$primary" | jsonfilter -e '@[0].version')
 test "$installed" = "$old_version"
 flock -u 9
-if [ "$(jsonfilter -i rollback.json -e '@.plugin_disabled')" = true ]; then
- ucode "$main" plugins-system-get >restored-plugins.json
- ucode - restored-plugins.json <<'UC'
+ucode "$main" plugins-system-get >restored-plugins.json
+ucode - restored-plugins.json <<'UC'
 import * as fs from 'fs';
-const value=json(fs.readfile(ARGV[0])).result;
-const enabled={...value.defaults.enabled,...value.config.enabled};
-if(enabled['https-compat']!==false)die('canary_disabled_state_changed');
+const value=json(fs.readfile(ARGV[0]));
+if(value?.ok!==true)die('canary_system_state_unavailable');
 UC
- state restored
- exit 0
-fi
-intercepting=$(jsonfilter -i rollback.json -e '@.intercepting')
-for attempt in $(seq 1 60); do
- ucode "$main" compatibility-get >restored.json
- [ "$(jsonfilter -i restored.json -e '@.ok')" = true ] || exit 1
- [ "$(jsonfilter -i restored.json -e '@.result.intercepting')" = "$intercepting" ] && break
- sleep 2
-done
-test "$(jsonfilter -i restored.json -e '@.result.intercepting')" = "$intercepting"
 state restored

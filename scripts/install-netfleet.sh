@@ -22,9 +22,10 @@ fi
 command -v uci >/dev/null 2>&1 || die 'OpenWrt UCI is required'
 command -v jsonfilter >/dev/null 2>&1 || die 'OpenWrt jsonfilter is required'
 
+shell_manifest=${NETFLEET_SHELL_MANIFEST:-/usr/share/opl-netfleet/shell.json}
 if [ "$pkg_mgr" = apk ]; then
-	# Layout migrations need their own rollback qualification, including optional packages.
-	if apk info -e opl-netfleet >/dev/null 2>&1 && ! apk info -e opl-netfleet-kernel >/dev/null 2>&1 && [ ! -e /usr/share/opl-netfleet/shell.json ]; then
+	# Layout migrations need their own rollback qualification.
+	if apk info -e opl-netfleet >/dev/null 2>&1 && ! apk info -e opl-netfleet-kernel >/dev/null 2>&1 && [ ! -e "$shell_manifest" ]; then
 		die 'legacy monolith migration requires a qualified package transaction; installed packages were not changed'
 	fi
 fi
@@ -40,26 +41,7 @@ case "$feed_base" in
 	*[[:space:]]*) die 'feed URL must not contain whitespace' ;;
 esac
 
-install_profile=${NETFLEET_INSTALL_PROFILE:-default}
-case "$install_profile" in default|full) ;; *) die 'install profile must be default or full' ;; esac
-compat_feed=${NETFLEET_COMPAT_FEED_BASE:-$feed_base}
-compat_feed=${compat_feed%/}
-case "$compat_feed" in
- https://*) ;;
- http://*) [ "${NETFLEET_ALLOW_INSECURE_FEED:-0}" = 1 ] || die 'HTTP compatibility feed requires NETFLEET_ALLOW_INSECURE_FEED=1' ;;
- *) die 'compatibility feed URL must use HTTPS' ;;
-esac
-case "$compat_feed" in *[[:space:]]*) die 'compatibility feed URL must not contain whitespace' ;; esac
-
-if [ "$pkg_mgr" = opkg ] && [ "$install_profile" = full ]; then
-	die 'full compatibility engine profile is only available on apk targets'
-fi
-
-load_https=0
-if [ "$pkg_mgr" = apk ] && [ "$install_profile" = full ] && ! apk info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1; then
-	load_https=1
-fi
-
+nikki_init=${NETFLEET_NIKKI_INIT:-/etc/init.d/nikki}
 work=$(mktemp -d "${TMPDIR:-/tmp}/netfleet-install.XXXXXX")
 cleanup() {
 	rm -rf -- "$work"
@@ -150,9 +132,9 @@ if [ "$pkg_mgr" = opkg ]; then
 	done
 
 	set -- opl-netfleet luci-app-netfleet
-	if opkg list-installed mihomo-meta 2>/dev/null | grep -Eq '^mihomo-meta '; then
-		set -- "$@" mihomo-meta
-	elif [ ! -e /etc/init.d/nikki ] && { { ! command -v mihomo >/dev/null 2>&1 && [ ! -e /usr/bin/mihomo ]; } || { [ -L /usr/bin/mihomo ] && [ "$(readlink /usr/bin/mihomo 2>/dev/null || true)" = /usr/libexec/mihomo ]; }; }; then
+	if ! opkg list-installed mihomo-meta 2>/dev/null | grep -Eq '^mihomo-meta ' \
+		&& [ ! -e "$nikki_init" ] \
+		&& { { ! command -v mihomo >/dev/null 2>&1 && [ ! -e /usr/bin/mihomo ]; } || { [ -L /usr/bin/mihomo ] && [ "$(readlink /usr/bin/mihomo 2>/dev/null || true)" = /usr/libexec/mihomo ]; }; }; then
 		set -- "$@" mihomo-meta
 	fi
 
@@ -218,20 +200,6 @@ fetch "$feed_base/$key_name" "$key_download"
 grep -Fq -- '-----BEGIN PUBLIC KEY-----' "$key_download" || die 'downloaded APK public key is invalid'
 grep -Fq -- '-----END PUBLIC KEY-----' "$key_download" || die 'downloaded APK public key is invalid'
 
-# Fetch the optional key before changing package sources. A missing full feed
-# must not silently degrade a requested full installation to the default set.
-if [ "$install_profile" = full ]; then
- fetch "$compat_feed/compat-public-key.pem" "$work/compat-public-key.pem"
- grep -Fq -- '-----BEGIN PUBLIC KEY-----' "$work/compat-public-key.pem" || die 'invalid compatibility public key'
- grep -Fq -- '-----END PUBLIC KEY-----' "$work/compat-public-key.pem" || die 'invalid compatibility public key'
- # Fail before persisting a dead optional source. The package manager verifies
- # this index with its supplied public key before any repository change.
- fetch "$compat_feed/compat-packages.adb" "$work/compat-packages.adb"
- mkdir "$work/trusted"
- cp "$work/compat-public-key.pem" "$work/trusted/compat-public-key.pem"
- apk verify --keys-dir "$work/trusted" "$work/compat-packages.adb" >/dev/null || die 'invalid compatibility signed index'
-fi
-
 keys_dir=${NETFLEET_APK_KEYS_DIR:-/etc/apk/keys}
 repository_file=${NETFLEET_APK_REPOSITORY_FILE:-/etc/apk/repositories.d/opl-netfleet.list}
 repository_dir=$(dirname "$repository_file")
@@ -247,14 +215,6 @@ chmod 0644 "$repository_staged"
 mv -f "$key_staged" "$key_target"
 mv -f "$repository_staged" "$repository_file"
 write_release_feed
-if [ "$install_profile" = full ]; then
- cp "$work/compat-public-key.pem" "$keys_dir/.compat-public-key.pem.$$"
- chmod 0644 "$keys_dir/.compat-public-key.pem.$$"
- mv -f "$keys_dir/.compat-public-key.pem.$$" "$keys_dir/compat-public-key.pem"
- printf '%s/compat-packages.adb\n' "$compat_feed" >"$repository_dir/.opl-netfleet-compat.list.$$"
- chmod 0644 "$repository_dir/.opl-netfleet-compat.list.$$"
- mv -f "$repository_dir/.opl-netfleet-compat.list.$$" "$repository_dir/opl-netfleet-compat.list"
-fi
 
 for index_attempt in 1 2 3; do
 	if apk --timeout 300 update; then break; fi
@@ -288,24 +248,16 @@ if [ "$has_legacy" = 0 ]; then
 		esac
 	done
 	[ "$is_thin_shell" = 1 ] || die 'product package dependencies are missing'
-	if apk info -e mihomo-meta >/dev/null 2>&1; then
+	if ! apk info -e mihomo-meta >/dev/null 2>&1 \
+		&& [ ! -e "$nikki_init" ] \
+		&& { { ! command -v mihomo >/dev/null 2>&1 && [ ! -e /usr/bin/mihomo ]; } || { [ -L /usr/bin/mihomo ] && [ "$(readlink /usr/bin/mihomo 2>/dev/null || true)" = /usr/libexec/mihomo ]; }; }; then
 		set -- "$@" mihomo-meta
-	elif [ ! -e /etc/init.d/nikki ] && { { ! command -v mihomo >/dev/null 2>&1 && [ ! -e /usr/bin/mihomo ]; } || { [ -L /usr/bin/mihomo ] && [ "$(readlink /usr/bin/mihomo 2>/dev/null || true)" = /usr/libexec/mihomo ]; }; }; then
-		set -- "$@" mihomo-meta
-	fi
-fi
-if [ "$install_profile" = full ]; then
-	if [ "$has_legacy" = 1 ]; then
-		set -- "$@" opl-netfleet-plugin-https-compat opl-netfleet-https-compat opl-netfleet-plugin-device-identity
-	else
-		set -- "$@" opl-netfleet-https-compat opl-netfleet-plugin-device-identity
 	fi
 fi
 if [ "$has_legacy" = 0 ] && apk info -e opl-netfleet-kernel >/dev/null 2>&1; then
 	# Migrate 28-pkg installation (opl-netfleet-kernel + built-in plugin APKs) to Release Bundle thin shell.
 	legacy_del='opl-netfleet-kernel'
 	for inst in $(apk info 2>/dev/null | grep -E '^opl-netfleet-plugin-' || true); do
-		[ "$inst" = opl-netfleet-plugin-device-identity ] && continue
 		legacy_del="$legacy_del $inst"
 	done
 	negated=
@@ -320,10 +272,6 @@ if [ "$has_legacy" = 0 ] && apk info -e opl-netfleet-kernel >/dev/null 2>&1; the
 		apk --no-network verify "$pkg_file" >/dev/null ||
 			die 'thin-shell package signature verification failed; existing installation was not changed'
 	done
-	if [ "$install_profile" = full ]; then
-		apk --timeout 300 --simulate add --upgrade "$@" $negated >/dev/null ||
-			die 'full installation dependencies unavailable; packages were not changed'
-	fi
 	upgrade_state=/tmp/opl-netfleet-package-upgrade-state
 	[ ! -e "$upgrade_state" ] || die 'previous package upgrade state is incomplete; refusing migration'
 	backend=nikki-mihomo
@@ -408,39 +356,11 @@ SHIM
 	rm -f /tmp/opl-netfleet-microkernel-migration
 	[ ! -e "$upgrade_state" ] && [ -e /usr/share/opl-netfleet/shell.json ] && [ -f /usr/share/opl-netfleet/current/runtime/kernel/host.uc ] ||
 		die 'thin-shell migration post-install layout verification failed'
-elif [ "$install_profile" = full ]; then
-	# Resolve the entire composition before installing any package. No service
-	# enable action is issued here; package hooks preserve existing user choices.
-	apk --timeout 300 --simulate add "$@" >/dev/null || die 'full installation dependencies unavailable; packages were not changed'
-	apk --timeout 300 add "$@"
-	apk --timeout 300 upgrade "$@"
 elif ! apk info -e opl-netfleet >/dev/null 2>&1 || ! apk info -e luci-app-netfleet >/dev/null 2>&1; then
 	apk --timeout 300 add "$@"
 	apk --timeout 300 upgrade "$@"
 else
 	apk --timeout 300 upgrade "$@"
-fi
-
-# First full installation exposes the optional management page without enabling
-# interception. Existing installations retain the administrator's load choice.
-if [ "$load_https" = 1 ]; then
- ucode - "$work/load-https.json" <<'UC'
-import * as fs from 'fs';
-const main='/usr/libexec/opl-netfleet/main.uc';
-function quote(value) { return "'"+replace(value, /'/g, "'\\''")+"'"; }
-function call(args) {
- const p=fs.popen(`ucode ${main} ${args}`),r=json(p.read('all')),rc=p.close();
- if(rc||r?.ok!==true) die(sprintf('HTTPS management load failed: %J',r));
- return r.result;
-}
-const row=filter(call('plugins-list').plugins,p=>p.id=='https-compat'&&p.instance=='default')[0];
-if(!row) die('HTTPS management package missing');
-if(!row.loaded) {
- fs.writefile(ARGV[0],sprintf('%J',{request:{id:row.id,action:'load',revision:row.revision,confirm:true}}));
- fs.chmod(ARGV[0],0600);
- call(`plugin-call ${quote(ARGV[0])}`);
-}
-UC
 fi
 
 printf 'NetFleet packages installed from %s; open LuCI to review and confirm first takeover.\n' "$feed_base"

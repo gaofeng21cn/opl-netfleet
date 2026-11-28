@@ -31,7 +31,7 @@ function test_extensions_model() {
 	function check(value, message) { if (!value) die(message); }
 	const module = {
 		id: 'fixture', label: 'Fixture', api_version: API_VERSION, kind: 'optional', package: 'fixture-module',
-		dependencies: ['fixture-engine'], permission_class: 'network_interception', ui: ['settings', 'components'], commands: {
+		dependencies: ['fixture-engine'], permission_class: 'dashboard_resources', ui: ['settings', 'components'], commands: {
 			'fixture-get': { method: 'get', access: 'read', backends: ['native-mihomo', 'nikki-mihomo'] },
 			'fixture-enable': { method: 'enable', access: 'write', backends: ['native-mihomo'] },
 			'fixture-disable': { method: 'disable', access: 'write', backends: ['native-mihomo', 'nikki-mihomo'] }

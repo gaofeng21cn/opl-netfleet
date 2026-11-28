@@ -13,7 +13,7 @@ descriptor_error = function(value) {
 		type(value.label) != "string" || !length(value.label) || value.api_version != API_VERSION ||
 		index(["optional", "resource"], value.kind) < 0 ||
 		!match(value.package ?? "", /^[a-z][a-z0-9+-]*$/) ||
-		index(["network_interception", "dashboard_resources"], value.permission_class) < 0)
+		value.permission_class != "dashboard_resources")
 		return "extension_descriptor_invalid";
 	for (let key in ["dependencies", "ui"]) if (type(value[key]) != "array") return "extension_descriptor_invalid";
 	for (let name in value.dependencies) if (type(name) != "string" || !match(name, /^[a-z][a-z0-9+-]*$/)) return "extension_descriptor_invalid";

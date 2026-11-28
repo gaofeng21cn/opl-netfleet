@@ -86,8 +86,7 @@ status_action = function(policy, evidence) {
 	ok("status", build_status(policy, manifest, state, evidence, {
 		operating_mode: operating_mode({ profile: profile, backend_enabled: enabled, mihomo_running: mihomo_running,
 			active: is_active(profile), controller_available: state?.proxies != null,
-			netfleet_present: netfleet_present, cleanup: cleanup, supervisor: supervisor,
-			compatibility: service_state("opl-netfleet-compat") }),
+			netfleet_present: netfleet_present, cleanup: cleanup, supervisor: supervisor }),
 		build: installed_build(),
 		backend: backend_metadata(),
 		active: is_active(profile) && enabled && mihomo_running,
