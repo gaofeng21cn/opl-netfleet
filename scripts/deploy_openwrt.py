@@ -393,10 +393,15 @@ def verify_package_release(packages_dir: Path, source_commit: str, source_tree: 
         if isinstance(artifacts, list)
         else []
     )
+    required_packages = (
+        {"opl-netfleet", "luci-app-netfleet"}
+        if manifest.get("delivery_model") == "release-bundle"
+        else {"opl-netfleet", "opl-netfleet-kernel", "luci-app-netfleet"}
+    )
     if (
         len(package_names) != len(artifacts or [])
         or len(set(package_names)) != len(package_names)
-        or not {"opl-netfleet", "opl-netfleet-kernel", "luci-app-netfleet"}.issubset(package_names)
+        or not required_packages.issubset(package_names)
         or any(
             not isinstance(name, str)
             or not re.fullmatch(r"(?:opl-netfleet(?:-kernel|-plugin-[a-z][a-z0-9-]*)?|luci-app-netfleet)", name)

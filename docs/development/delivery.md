@@ -49,20 +49,11 @@ SDK UCode 构建前按 SDK 自带的固定提交初始化 base feed，再安装 
 架构优先从 SDK `.config` 读取，未配置时才查询 Make。共享 SDK 由构建锁保护，冲突立即
 返回；不要启动第二个构建、抢锁或清空别人使用的 SDK。
 
-复用已准备的 SDK 与下载缓存；输出使用独立候选目录。构建会清理本次产品编译目录，
-但保留 SDK 工具与下载缓存。当前默认产品构建入口仍生成完整候选包集合，并非按包摘要
-增量构建器；普通设备更新只安装有变化的包，两者不要混淆。只改文档或开发工具且产品
+构建入口通过 `scripts/netfleet-bundle-build.py` 打包经 `NETFLEET_BUNDLE_SIGN_KEY`（Ed25519 / `usign`）签名的纯源码 Release Bundle，再调用 OpenWrt SDK 封装薄系统包壳 `.apk`（`opl-netfleet`、`luci-app-netfleet`、`mihomo-meta`）及零 SDK 确定性构建入口 `scripts/netfleet-ipk-build.py` 输出对应 `.ipk` 与 `usign` 签名 `Packages*` 索引。只改文档或开发工具且产品
 载荷未变时，不为新的 Git 提交重建已冻结的包；验证仍以原候选的准确身份为准。
 完整 VM 的测试夹具修复可用 `openwrt-vm.sh --ref <候选提交> --test-ref <测试提交>`；
 入口只允许测试与文档差异，设备源、依赖或其他包输入变化会拒绝复用，回执另记测试身份。
-模拟旧版 APK 时，必须同步其内部最低依赖，先验证旧版组合可安装再测试升级；
-不能只递减包版本而保留指向新版提供者的依赖。
-
-构建 Makefile 每次解析只启动一次插件元数据读取和依赖图校验，再批量取得全部版本和
-依赖；不逐插件重复扫描依赖图。产品编译通过 GNU Make jobserver 默认并行四个任务；
-资源有限或排查时传 `--jobs 1` 使用串行（允许 1–16），SDK 准备与清理仍先顺序完成，
-全程保留一个 SDK 写入锁。这不是同时启动多个构建器。最终文件清单也在一个进程中计算 SHA-256，按字节序
-排序，保持原有清单格式。产品 clean、签名校验、字节码验证和运行时门禁继续执行。
+生成与校验顺序覆盖包结构校验、签名验签、`FILES.sha256` 一致性及 Release Bundle 完整性门禁，不再执行构建期跨分支 `ucode -c` 字节码预编译。
 
 候选目录旁的 `<候选目录>.build-timings.json` 记录预检、编译、打包和总秒数；编译桶再拆成
 `sdk_prepare_seconds`、`clean_seconds`、`product_compile_seconds`。诊断时结合 SDK 日志的
@@ -100,10 +91,10 @@ python3 scripts/netfleet-delivery-preflight.py \
 
 | Actions 阶段 | 运行位置 | 验证内容及输出 |
 | --- | --- | --- |
-| 锁定源码与构建候选 | GitHub 托管 Ubuntu x64 | 核对 tag、产品版本和主线归属。用固定 SDK 构建一套签名 APK，准备一次性更新夹具，封存候选和摘要。 |
-| 并行运行四组基础资格 | 四个 GitHub 托管 Ubuntu ARM64 job | 独立启动干净 OpenWrt VM，分别验证原生运行、首次设置及组件事务、管理与运行及迁移、签名 APK 安装与运行。ARM64 Linux 有 KVM 时使用 KVM，否则使用 TCG。各组记录阶段耗时和结果。 |
-| 汇总并验收可选组合 | GitHub 托管 Ubuntu ARM64 | 核对四组回执绑定本次源码、候选清单和夹具，再验证默认包加 HTTPS 兼容模块及设备身份插件的完整组合。 |
-| 发布与公开回读 | GitHub 托管 Ubuntu x64 | 发布同一套签名 APK 和两个 Feed，随后从公开地址下载并核对源码身份、文件集合和摘要。 |
+| 锁定源码与构建候选 | GitHub 托管 Ubuntu x64 | 核对 tag、产品版本和主线归属。用固定 SDK 构建签名薄壳 APK、零 SDK IPK 及签名纯源码 Release Bundle，封存候选和摘要。 |
+| 并行运行四组基础资格 | 四个 GitHub 托管 Ubuntu ARM64 job | 独立启动干净 OpenWrt VM，分别验证原生运行、首次设置及组件事务、管理与运行及迁移、签名薄壳安装与运行。ARM64 Linux 有 KVM 时使用 KVM，否则使用 TCG。各组记录阶段耗时和结果。 |
+| 汇总并验收可选组合 | GitHub 托管 Ubuntu ARM64 | 核对四组回执绑定本次源码、候选清单和夹具，再验证默认薄壳加 HTTPS 兼容模块及设备身份插件的完整组合。 |
+| 发布与公开回读 | GitHub 托管 Ubuntu x64 | 发布同一套签名包、`Packages*`/`packages.adb` 与 Release Bundle 资产，随后从公开地址下载并核对源码身份、文件集合和逐字节摘要。 |
 
 先看 Actions 的 job 名称定位当前验收内容，再看对应阶段日志和回执。候选与回执仍在保留期内时，
 用 **Re-run failed jobs** 续跑失败阶段和下游任务，复用同一运行中的成功候选与回执。

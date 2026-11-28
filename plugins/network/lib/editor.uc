@@ -21,6 +21,7 @@ const private_file = context.use("platform.files").private_file;
 const private_directory = context.use("platform.files").private_directory;
 const atomic_json = context.use("platform.files").atomic_json;
 const write_private = context.use("platform.files").write_private;
+const mkdtemp = context.use("platform.files").mkdtemp ?? ((t) => fs.mkdtemp(t));
 const KIND = context.use("platform.runtime").KIND;
 const service_state = context.use("platform.service").service_state;
 const set_service_state = context.use("platform.service").set_service_state;
@@ -142,7 +143,7 @@ validate = function(path) {
 		const found = discover();
 		const change = request(path, found);
 		if (!change.ok) return change;
-		work = fs.mkdtemp("/etc/opl-netfleet/.network.XXXXXX");
+		work = mkdtemp("/etc/opl-netfleet/.network.XXXXXX");
 		if (work == null || !private_directory(work)) return failure("network_workspace_failed");
 		const valid = candidate(found, change.settings, work);
 		result = valid.ok ? { ok: true, result: { valid: true, revision: found.revision, restart_required: found.running && !runtime_matches(found, change.settings), changes: change_summary(found, change.settings) } } : valid;
@@ -281,7 +282,7 @@ apply = function(path) {
 		if (!change.ok) return change;
 		if (sprintf("%J", found.settings) == sprintf("%J", change.settings) && runtime_matches(found, change.settings))
 			return { ok: true, result: { state: "unchanged", network: public_state(found) } };
-		work = fs.mkdtemp("/etc/opl-netfleet/.network.XXXXXX");
+		work = mkdtemp("/etc/opl-netfleet/.network.XXXXXX");
 		if (work == null || !private_directory(work)) return failure("network_workspace_failed");
 		const checked = candidate(found, change.settings, work);
 		if (!checked.ok) die(checked.error);

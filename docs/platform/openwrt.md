@@ -15,99 +15,31 @@ OpenWrt 默认绑定在 `/usr/share/opl-netfleet/system.json`，私有覆盖在
 
 ## 软件包、更新与部署输入
 
-### 软件包组合
+### 软件包组合与 Release Bundle 布局
 
-`opl-netfleet-kernel` 安装通用入口、服务解析、插件生命周期内核、OpenWrt 宿主适配器及
-`opl-netfleet.plugins` 通用管理 RPC，提供 `netfleet-plugin-api-v1`。
-`opl-netfleet-plugin-*` 分别安装功能插件的 manifest、实现和
-该功能拥有的资源、配置基线或系统入口。`opl-netfleet` 是默认产品聚合包，安装
-`system.json` 与构建身份，依赖完整默认功能集合；`luci-app-netfleet` 提供插件页面宿主，
-只依赖内核及必要的 LuCI 运行环境。默认产品的七个业务页面归
-`opl-netfleet-plugin-product-ui` 所有；独立插件的界面不要求安装默认网络产品。
-进程插件与 UCode 服务插件使用相同的 `/usr/libexec/opl-netfleet/plugins/<id>/` 安装空间，
-服务组合合同见[微内核与功能插件](../architecture/microkernel.md)。
+默认 OpenWrt 产品收敛为两个与 CPU 架构无关的薄系统包壳（`opl-netfleet`、`luci-app-netfleet`，`.apk` 标 `noarch`，`.ipk` 标 `all`），配合单一架构匹配的代理核心包 `mihomo-meta` 以及纯源码签名 Release Bundle：
 
-订阅账户备注的包依赖由 APK 求解：产品页面要求 `subscriptions >= 0.7.4`，后者要求
-`models >= 0.7.12` 和 `platform-openwrt >= 0.8.4`。从旧组合更新产品页面时，APK 在
-同一事务中升级必要提供者；不要求用户逐个配对安装，也不递增服务 API 来表达新增可选字段。
-
-当前官方服务插件要求内核至少 `0.9.13`，以解析插件拥有的动作与维护合同；
-`product-ui` 要求 LuCI 至少 `0.8.4`、`components` 至少 `0.8.17`（支持批量插件更新与能力声明），以及支持共享探针编辑的 `configuration >= 0.7.7`。
-新的运行切换与平台路径调用分别要求 `mihomo >= 0.9.12`、`platform >= 0.8.9`。
-软件包管理器在同一事务中解析这些最低版本，避免新调用者与旧提供者混装。
-
-包列表、服务绑定与插件依赖从源码 manifest 生成。每个服务的 `requires` 解析为提供者包，
-`package_dependencies` 声明功能实际使用的 OpenWrt 系统包；构建前检查缺失服务、接口版本和
-包依赖环。内核不依赖 Mihomo、订阅、选路或其他业务组件。默认系统配置的
-`product_packages` 列出产品维护集合，管理员独立安装的第三方插件不加入该集合。
-
-算法包 `opl-netfleet-plugin-selection-algorithm` 与选择控制器分开，独立安装算法不会
-拉入控制器与后端依赖。`platform-storage`、`platform-openwrt` 与 `platform` 分别承载
-存储文档、OpenWrt 配置和运行管理能力；安装依赖沿实际服务调用关系解析。
-
-声明 UI 的插件把公开资源安装到
-`/www/luci-static/resources/netfleet/plugins/<id>/<revision>/resources/`。revision 从
-完整安装 payload 计算，与内核清单一致；包生成器和外部 SDK 共用同一计算与资源投影入口。
-产品页面按当前页装载依赖，组件和订阅编辑等大模块仅在对应页面或操作时加载。
-工厂代码按资源版本复用，每个页面仍创建独立实例并执行作用域及权限检查。
-页面入口、静态 import 子模块、样式与其他相对资源处在同一版本目录，不依赖仅给入口
-追加查询参数实现更新。资源源码同时保留在插件私有安装目录，以便身份校验；运行时配置
-和凭据不放进公开资源。软件包管理器随该版本拥有和删除其公开投影。
+- **`opl-netfleet`**：声明全部系统运行时依赖（`ucode`、`ucode-mod-fs`、`ucode-mod-uci`、`ucode-mod-ubus`、`ucode-mod-uloop`、`ucode-mod-socket`、`ucode-mod-digest`、`yq`、`curl`、`ca-bundle`、`flock`、`coreutils-timeout`、`unzip`、`ip-full`、`nftables-json`、`kmod-nft-socket`、`kmod-nft-tproxy`、`usign`），安装固定宿主入口（`/etc/init.d/opl-netfleet`、`/etc/init.d/opl-netfleet-core`、`/etc/init.d/opl-netfleet-update-recovery`、`/usr/libexec/opl-netfleet/{main,supervisor}.uc`、`/usr/libexec/opl-netfleet-plugin-package`、`/usr/libexec/opl-netfleet-transfer`、`/usr/libexec/rpcd/opl-netfleet*`、默认策略基线 `/etc/opl-netfleet/{policy.example.json,policy-sources/,rulesets.lock.json}`），提供虚拟能力 `netfleet-plugin-api-v1`，并置入 `/usr/share/opl-netfleet/shell.json`、验签公钥 `/usr/share/opl-netfleet/keys/release-bundle.pub` 与初始版本目录 `/usr/share/opl-netfleet/releases/<version>/`。
+- **`luci-app-netfleet`**：声明 `+luci-base` 与 `+opl-netfleet`（APK 目标附带可选 `luci-app-attendedsysupgrade` 与 `uclient-fetch`），安装菜单、ACL 与薄宿主视图入口，并将 `/www/luci-static/resources/netfleet/bundle` 符号链接到 `/usr/share/opl-netfleet/current/www`。
+- **`/usr/share/opl-netfleet/` 不可变目录布局**：
+  - `releases/<version>/`：包含当前版本的纯源码 `runtime/`（`kernel/`、`adapters/`、`plugins/<id>/`）与 `share/`（`build.json`、`system.json`、`nikki/`、`netfleet.config`、`LICENSE.Apache-2.0`）以及版本化前端资源 `www/`。
+  - `current`、`previous`：分别通过同目录临时符号链接原子切换至有效 generation，并随 `current/share/{system.json,build.json,nikki,netfleet.config,LICENSE.Apache-2.0}` 暴露顶层固定读取入口；磁盘最多保留最近 2 个完整 generation。
+- **第三方与独立扩展插件**：继续在独立扩展目录 `/etc/opl-netfleet/extensions/` 或独立包空间 `/usr/libexec/opl-netfleet/plugins/<id>/` 中安装，微内核合并发现时保留独立启用状态，不受 Release Bundle 切换覆盖。需要原生二进制或内核依赖的可选组件（`opl-netfleet-https-compat`、`opl-netfleet-plugin-device-identity`、`mihomo-meta`）仍完全由系统包管理器（`.apk` / `.ipk`）拥有。服务组合与插件边界合同见[微内核与功能插件](../architecture/microkernel.md)。
 
 ### 版本化分发
 
-官方服务包使用 SDK 对应的 `ucode/host` 预编译 manifest 声明的工厂模块，
-设备只加载字节码，不在安装、启用或每次状态读取时编译源码。编译移除调试源码路径，
-安装包不依赖构建目录继续存在；编译器与目标解释器必须作为同一 SDK/固件组合验证。
-同插件的静态 import 由编译器解析，
-系统原生模块仍由设备 UCode 加载。源码与第三方源码插件的执行路径继续可用，
-不跨请求缓存服务实例，不绕过代码摘要、锁和 mutation 前置检查。
+`scripts/netfleet-bundle-build.py` 直接从源码与 `plugins/` 组装签名纯源码 Release Bundle（`opl-netfleet-bundle-<version>.tar.gz`、`release-manifest.json`、`release-manifest.json.sig` 与 `opl-netfleet-bundle.pub`），绑定 `source_commit`、`source_tree`、`runtime_payload_sha256`、`min_shell_version` 与逐文件摘要。所有 `.uc` 与前端静态模块保持纯源码分发，彻底取消跨设备构建期 `ucode -c` 字节码预编译；安装与运行时不写入调试源码目录，也不依赖固件自带特定的 UCode 字节码 ABI。
 
-编译仅发生在 SDK 独立构建目录；源码目录不被改写。安装、公开资源投影、FILES.sha256
-与候选身份共同消费这份编译结果。资格必须在目标 OpenWrt 中读取真实安装包并覆盖
-加载、独立更新、错误模块、恢复和卸载；本机编译成功不代替设备解释器兼容证明。
+`scripts/netfleet-package-build.sh` 同时产出两套可独立验收的包格式与同一 Release Bundle 绑定在发布目录的 `manifest.json`（`schema: "opl-netfleet-package-manifest.v2"`, `delivery_model: "release-bundle"`）：
 
-NetFleet 自有包的 `PKG_VERSION` 使用[插件版本合同](../architecture/packaging.md#插件版本)中的
-三段数字；`PKG_RELEASE` 留空，功能插件的 `VERSION` 直接消费 manifest 版本。
-OpenWrt 原生支持无打包后缀的 APK/IPK；发布清单的 artifact `version` 是完整安装版本，
-不再生成 `release` 或 `package_release` 字段。读取既有回退清单时仍识别其旧修订字段。
+- **OpenWrt 25.12+（`apk`）**：通过 `openwrt/Makefile` 构建签名 `opl-netfleet-*.apk`、`luci-app-netfleet-*.apk` 与 `mihomo-meta-*.apk`，以及同私钥签名的 `packages.adb`、`index.json` 和 `opl-netfleet-apk.pem`。
+- **OpenWrt 24.10 / iStoreOS（`opkg`）**：通过零 SDK 确定性构建器 `scripts/netfleet-ipk-build.py` 直接输出标准 Debian/OPKG 格式的 `*_all.ipk` 与 `mihomo-meta_*_<arch>.ipk`，并由 `scripts/netfleet_usign.py` 生成经 `usign` 签名的 `Packages`、`Packages.gz`、`Packages.sig` 及公钥 `opl-netfleet-usign.pub`，无需为每个旧 OpenWrt 分支维护独立 SDK。
 
+NetFleet 自有包的 `PKG_VERSION` 使用[插件版本合同](../architecture/packaging.md#插件版本)中的三段数字、`PKG_RELEASE` 留空；发布清单完整记录 `source_commit`、`source_tree`、`artifacts`、`ipk_artifacts`、`dependency_artifacts`、`release_bundle`、`opkg_index` 与 `FILES.sha256`。
 
-版本化 OpenWrt package 是 NetFleet 代码的可校验分发载体，绑定精确 source
-commit/tree、package 架构、SDK 构建目标和 artifact checksum，只包含内核、功能插件、
-系统入口和 LuCI 页面。package 不包含 target-local policy、订阅、Nikki mixin、URL/token、
-节点或 secrets；package 安装/升级不绕过 staged/activate 合同，也不自动替换当前
-数据面或设备私有生成 Profile。默认产品聚合包安装只读
-`/usr/share/opl-netfleet/build.json`，以当前 package 的版本、source commit/tree 作为代码身份；
-声明式部署的 `/etc/opl-netfleet/installed.json` 继续绑定 deployment bundle 和实例输入，但不能覆盖
-较新的 package 身份。manifest v2 还绑定 package format、运行时文件摘要、
-完整产品 package 集合和 APK 公钥（仅 APK）；每个插件 artifact 同时记录自身版本，
-不要求插件版本与内核同步。`dependency_artifacts` 单独绑定核心包的
-架构、版本、摘要和上游来源，不把核心字节混入 NetFleet runtime 摘要。APK 逐包签名必须使用本机私钥，私钥不进入
-Git、发布目录或设备。没有真实 OpenWrt SDK 时，构建入口必须明确失败，不能伪造
-package 或 manifest。APK 发布还包含同一私钥签名的 `packages.adb` feed index，并在
-manifest v2 的 `feed_index` 字段绑定其 SHA-256。Release 同时包含 `install-netfleet.sh`，由
-`feed_bootstrap` 字段绑定脚本名称与 SHA-256；该脚本下载公钥、原子写入公钥和
-`/etc/apk/repositories.d/opl-netfleet.list`；仓库声明直接指向 `$feed_base/packages.adb`，使
-`apk` 以 `ndx` 模式从同目录解析 package，而不是按目录型仓库扩展架构子目录。随后脚本在缺少
-默认产品或 LuCI 时使用不带 `--upgrade` 的 `apk add` 补齐产品及依赖。脚本从签名 Feed
-读取聚合包声明的内核和功能插件依赖，与聚合包、LuCI 一起定向升级；重复运行同样覆盖
-完整产品集合。已有系统依赖满足约束时不得主动升级，不固定版本到 world，也不执行全系统升级。
-它不得写入 policy、订阅或 Nikki mixin，也不得启用 NetFleet 或切换数据面。
-已安装旧单体而没有内核包时，bootstrap 在写入软件源或执行包事务前拒绝升级。
-跨包布局迁移须使用经过相同旧包组合与失败恢复验证的执行器，不能借普通安装命令绕过。
-OpenWrt 默认 package lifecycle 会启动新安装或升级后的 init script；默认产品聚合包必须在
-首次安装后显式停止并禁用服务。插件包在代码替换期间阻止默认 init 启动，恢复由
-经进程身份校验的生命周期协调者执行。产品升级记录并恢复升级前的 enabled/running 状态，不能把
-“文件升级”变成隐式接管或停用。
-内核、默认插件与 LuCI 均只包含脚本、配置和静态
-资源，因此 OpenWrt package 声明为 `PKGARCH:=all`：APK 元数据中的实际架构必须是
-`noarch`，而 `build_target_arch` 单独保留生成该 Release 的 SDK 目标，例如
-`aarch64_generic`。部署器允许 `noarch` 安装到任意目标架构；旧 Release 的原生架构兼容
-规则只用于读取既有产物，不能用于生成新 Release。Release 的
-`latest/download/packages.adb` 可作为稳定仓库索引，目标机只需安装一次公钥并写入
-`/etc/apk/repositories.d/opl-netfleet.list`，之后即可使用 `apk update`、`apk policy`
-和 `apk upgrade`。feed 只拥有代码包，不拥有订阅、policy、Nikki mixin 或运行时数据。
+`scripts/install-netfleet.sh` 根据目标机包管理器自动切换 `apk` 与 `opkg` 引导逻辑：安装签名公钥、写入可信源并完成最小产品集合安装或升级；对既有 `28` 包（`opl-netfleet-kernel` + 24 个内置服务插件）`apk` 安装执行单事务迁移：先预先抓取并验签薄壳安装包，快照服务启停状态并停止 `opl-netfleet`/`opl-netfleet-core`、确认干净退出后，通过 `/tmp/opl-netfleet-microkernel-migration` 标记与过渡保护包装隔离旧代 `prerm`/`postrm` 对已升级 UCode ABI 的重试死循环，再以 `apk add --upgrade opl-netfleet luci-app-netfleet !<legacy>...` 原子切换至薄系统包壳并恢复原服务状态。该脚本不写入 policy、订阅、Nikki mixin，也不隐式接管网络；旧单体无内核布局在改动源之前直接拒绝。
+
+OpenWrt 默认 package lifecycle 会启动新安装或升级后的 init script；因此 `opl-netfleet` 首次安装显式停止并禁用服务，升级则预先快照并在 `postinst` 按服务就绪状态轮询恢复原 `enabled`/`running` 意图。`NETFLEET_INSTALL_PROFILE=full` 仅在受支持的 `apk` 目标机从 `compat-packages.adb` 验证并补装 `opl-netfleet-https-compat` 与 `opl-netfleet-plugin-device-identity`，缺项时直接失败。
 
 ### 原生固件更新
 
@@ -143,94 +75,18 @@ NetFleet 定向升级不升级或替换它；核心更新是独立显式操作�
 
 ### 设备端组件维护
 
-LuCI 的“插件与更新”由设备包管理 owner 提供已安装 NetFleet、LuCI 和 Mihomo 的包版本，
-Mihomo 实际运行版本另从控制接口读取，不把磁盘文件版本当作运行版本。关键依赖来自 APK
-安装数据库；版本检查不混入常规网络状态读取。显式“检查更新”刷新签名 Feed，结果只表示
-该 Feed 当前可用版本，不声称它是 Mihomo 上游最新版本。
+LuCI 的“插件与更新”及 CLI `components-*` 入口由设备端 `plugins/components/lib/{bundle,control}.uc` 统一管理两类更新面：
 
-更新只接受固定组件和用户刚确认的候选版本：NetFleet 产品更新在同一事务中只替换实际有变化的包，
-Mihomo 本体单独确认。已安装的可选 HTTPS 引擎有独立版本，Feed 提供候选时纳入一致升级；
-未安装时不因主程序更新而增加该引擎。旧引擎依赖已移除的入口，默认产品组合通过版本冲突阻止
-留下不兼容组合；内核不反向声明可选引擎依赖或冲突。APK 排序会遍历冲突关系，
-而旧引擎又依赖产品，将冲突放在内核会使插件先于内核安装，破坏生命周期工具的可用性。
-独立更新后高于产品 Feed 的插件版本继续保留；其已验证签名和包身份的
-回滚归档同时用作未变版本的候选，不要求产品 Feed 重复提供独立插件仓库的版本。
-包事务保留管理员的显式安装集合：默认依赖不会因为暂存 APK 更新而变成独立安装的包，
-原本未固定版本的显式安装项也不会被临时归档的内容摘要固定；独立安装的插件继续保留。
-候选漂移须重新检查；不执行全系统升级、不替换已有其他核心提供者，不默认启用定时升级。若管理员显式启用自动更新，调度器以两阶段非阻塞方式执行：索引缓存过期时先触发异步 `check` worker 并在下一调度周期离线评估候选与触发安装事务，不持有网络写锁同步等待软件源下载。
-Feed 安装器对软件源索引读取做有界重试，索引持续不可用时停止；安装、升级和服务切换不自动重放。
-组件事务使用已有 curl 完成 APK 的 HTTP/HTTPS 下载，适配器只在该子进程的 PATH 中生效，
-不替换系统 wget。curl 禁用用户配置并保留 TLS 验证、有界超时及重定向支持；APK 继续拥有
-签名索引认证、归档认证和依赖求解。独立安装器在 curl 已存在时使用同一下载方式，空白设备仍可
-使用固件提供的下载器取得首次安装依赖。
-包管理器负责依赖解析、签名与架构检查。候选包及 NetFleet 自有回退包必须独立验签；既有 Mihomo 上游包若依赖仓库签名索引认证，回退归档同时保留原始签名索引和原包。APK 离线读取索引并校验包内容，按精确包名与版本恢复，不跳过信任检查、不重签上游包。索引与包共同绑定事务摘要，中断恢复沿用同一路径。写入前取得候选和可信旧版包，确认核心原子替换及
-解包所需的可用空间；下载前先以签名索引的安装体积检查空间，取得候选包后再按包内元数据
-复核，空间不足不得先停止健康核心。随后验证新核心能加载
-现有配置；旧版无法取得时不停止正在工作的后端。更新复用当前服务 owner，只有包含内核或 Mihomo 二进制替换的事务才预先停止完整运行栈；其余包按实际依赖排空与恢复资源。已是所选版本的 Mihomo 请求不下载或重启。保持私有输入，
-失败恢复旧包和原服务状态，并回读控制接口、DNS/透明代理及保护探针。
+1. **Release Bundle 默认产品原子更新（跨 `apk` 与 `opkg` 统一）**：
+   - 刷新来自受信任 Release Feed（`/etc/opl-netfleet/release-feed.json`）的 `release-manifest.json` 及其 `usign` 签名，对比当前 `/usr/share/opl-netfleet/shell.json`、`current/share/build.json` 与 `previous` 状态；
+   - 通过 `components_check`、`components_plan` 与 `components_apply` 执行七步原子事务：验签解压 staging（拒绝路径越界与非 regular 条目）-> 离线 `loadfile()` 编译校验及 `composition_report` 图验证 -> 按需保活交接（网关/启动脚本不变时保留核心与数据面持续运行，仅暂停持代码读锁的 supervisor/管理实例）-> 原子切换 `current` / `previous` 符号链接并同步 `rpcd` -> 有界就绪、构建身份及保护探针验证 -> 清理超出最近 2 版的历史 generation 并提交；
+   - 任一预检或运行验证失败立即把 `current` 切回 `previous`、恢复原服务状态并清理 staging；写期中断或断电由 `/etc/init.d/opl-netfleet-update-recovery` 在重启后依据持久事务目录 `/etc/opl-netfleet/package-transactions/pending.json` 自动回退或补完；
+   - 页面同时提供手动“回退到上一版本”入口，直接在有效 `previous` generation 之间秒级切换。
+2. **原生二进制、可选包与第三方插件包管理**：
+   - `mihomo-meta`（按 CPU 架构封装，先核验空间与配置 `mihomo -t` 再确认替换）、`opl-netfleet-https-compat` 与独立第三方 `opl-netfleet-plugin-*` 插件继续由系统包管理器拥有；
+   - 在 `apk` 目标机上，`components_plugin_plan` 与 `components_plugin` 解析签名 APK 索引完成独立插件的预览、安装、升级、卸载、保活交接与失败回退；在 `opkg` 目标机上，`components-get` 明确报告受支持的 Release Bundle 更新通道与只读系统包状态，不假冒不存在的 `apk` 子命令。
 
-包命令非零不能证明文件没有改变。组件回退按已安装版本、原运行代码摘要、私有配置和实际运行状态
-分别回读；回退安装之后恢复事务保存的原运行文件，保留更新前已经存在的运行文件与包记录差异，并校验逐文件身份。包安装或 world 恢复报错仍须尝试恢复已验证的旧运行面。无法恢复时再次
-尝试基础网络清理，保留各阶段失败记录，不能在首个错误后跳过网络恢复。
-恢复只补启缺失的服务；已经运行的核心和监督器继续工作，随后仍须验证配置、选路及网络状态。
-该回退只覆盖组件更新入口；外部迁移执行器必须独立通过相同旧包组合与故障注入验证。
-
-LuCI 的独立插件包管理使用 `components_plugin_plan` 与 `components_plugin`：请求包含动作
-`install/update/remove`、包名、当前版本、候选版本及确认的计划。预览只调用 APK 离线求解；
-后台 worker 在读取签名索引后重算计划，最近五分钟成功检查且 Feed 未变时复用 APK 的签名索引缓存；显式检查更新仍刷新索引。旧新版本或依赖变化时拒绝写入。候选列表来自已配置
-并信任的 APK 仓库，不接收任意下载 URL。接受 `opl-netfleet-plugin-*` 以及 inventory 已声明的可选运行包更新；默认产品必需包仍拒绝单独安装或卸载。APK 依赖元数据决定必要的配套插件或运行包升级，不在宿主、UI 或更新器中手工拼包。安装可新增缺少的依赖；已安装系统库、微内核或代理核心发生变化时要求基础维护。
-卸载要求插件禁用且没有包或服务依赖。APK 钩子负责排空和恢复，事务保存私有配置及包数据库
-意图；可选插件恢复不主动停止整套基础网络。已安装的签名插件归档留在设备，以便软件源前进
-后仍有旧版回退材料。进度、取消和中断恢复沿用组件事务。
-
-有限插件更新通过同一组件事务的 `components-install <private-stage>` 入口提交精确包集合。
-暂存描述只接受默认产品中已安装的功能插件及 LuCI 宿主包，逐包绑定候选与旧版的名称、版本和 SHA-256；
-候选和回退目录必须恰好包含声明的归档，目标端再验证签名、架构和当前安装版本。
-它不更新内核、产品聚合包、Mihomo 二进制或可选 HTTPS 引擎，也不修改软件源。
-这里的 Mihomo 二进制与可纳入更新集合的 `mihomo` 功能插件是不同软件包。
-Feed 更新由 APK 求解所选插件及必要依赖，预览后按确认的最小集合执行；离线引导只消费显式归档集合。
-包依赖检查不代替服务参数和返回语义验证。
-操作者须按[有限插件组合更新](../operations/canary-promotion.md#有限插件组合更新)核对
-真实调用关系与配套版本。入口将材料复制到
-现有持久事务目录后交由同一 procd worker 执行；客户端断连后读取事务结果，不重新安装。
-插件包钩子按依赖关闭准入并交接资源，事务不预先停止全部服务。安装后恢复遇到 `mutation_busy`
-时每两秒重试，最多十五次；真实生命周期错误立即返回，锁持续不可用也保留失败状态和恢复材料。
-失败继续使用同一快照与
-回退 owner；正常结束仍验证原私有输入、选择、运行状态和业务探针。
-APK world 中的版本范围及仓库约束必须保留并验证；显式更新的组件若原来精确锁定旧版本，成功后将该锁定移到用户选择的目标版本，失败回退恢复原锁定，不改动其他组件。旧本地归档的摘要固定项在成功更新时解除，
-回退时恢复原摘要。已有摘要与已安装数据库不一致时，事务保留原记录供诊断，恢复目标
-归一为该包的显式安装项，不重新施加一个实际未安装的摘要。此核对只针对显式更新集合，
-不得将旧摘要原样复制到已更新的软件包数据库。
-
-软件自升级会重启 rpcd，因此设备通过 procd 执行一个有界、无自动重试的一次性更新进程，
-使用全局 mutation lock 和更新前暂存的实现完成事务；浏览器关闭或临时断连不取消更新。
-正式替换前，组件 owner 通过既有插件生命周期有界排空资源；健康连接未排空则延后，
-反向恢复已暂停的资源并保留旧包，不进入 APK 安装钩子的无限等待。
-`components_cancel` 只接受当前事务 ID，在独立短锁内记录取消请求，与首次包替换互斥；
-不杀进程、不争抢网络锁。生命周期调用返回后处理取消，替换开始后只能完成或回滚。
-`operation_get` 和取消接口使用经过私有路径检查、带控制接口版本标记的事务代码副本，
-因此不依赖维护中的安装代码。旧事务没有该标记时不调用新增控制入口。
-包进度提供 `can_cancel / cancel_requested / write_started`，终态保留原因和完成时间。
-回滚在调用旧 APK 钩子前恢复并校验旧运行代码，避免依赖包钩子仍调用故障候选的启动实现；
-包恢复后再次确认私有输入、运行文件及资源恢复。原始失败原因写入持久事务，进程中断后的
-恢复沿用已记录原因，不把已知的安装失败改写为原因不明的中断。
-NetFleet 更新候选根据默认产品的完整包集合判断；仅子插件更新也可进入同一事务，
-已安装且高于 Feed 的独立插件版本保留。组件页的 `product.packages / missing / updates`
-只说明安装数据库与默认产品清单的关系，不代表网络健康或所有插件已启用。
-这不是第二个网络 owner，也不拥有持久运行状态；页面通过只读进度接口确认最终结果。
-组件更新的事务代码副本、候选与回退包、私有快照和阶段记录保存在 root 私有的
-`/etc/opl-netfleet/package-transactions/`。写入前保存并同步恢复材料和 pending 指针，
-组件事务 owner 才能停止服务与替换包。安装和回退 APK 的进程显式携带 `NETFLEET_PACKAGE_RESTORE=1`，并通过 `--preserve-env` 将该标志传入包钩子，
-允许已排空依赖的包生命周期恢复核心；该标志仅作用于事务子进程，普通启动仍受 pending 保护。
-普通失败立即回滚；进程中断或重启后，由同一
-事务代码副本执行 `components-recover`，核对快照、包签名、安装数据库和私有输入后
-恢复旧版与原运行意图。原生后端恢复先由事务副本中的网关清理接管并停止 procd 服务，
-确认核心退出后恢复旧运行文件，再由 APK 恢复软件包数据库与生命周期。新的更新在 pending 未消除时拒绝；恢复失败保留全部材料，
-不反复自动尝试；组件页可显式重试恢复。启动入口只触发一次恢复，完整运行与网络回读成功后才清除 pending。
-终态记录也持久保存：若终态写入后、清除指针前中断，恢复核对对应版本与运行状态，
-不把已经成功的更新降回旧版，也不重复启动仍在运行的服务；只补启缺失服务并验证运行状态。
-恢复检查与失败写入操作进度。临时操作进度丢失不阻止清理已完成事务或后续更新。
-暂存目录独立于用户备份，不把候选代码或回退包打进普通配置备份。
+正在运行原生后端与 HTTPS 兼容引擎时的保留核心交接、私有事务快照隔离、以及取消控制（`components_cancel`）继续严格遵守[打包合同](../architecture/packaging.md#更新与恢复)定义的安全与 fail-open 边界。
 
 独立插件模式不要求开发机生成 deployment bundle。已有 Nikki 的设备可以复用当前原生
 Profile 和有效 subscription cache；空白设备则由原生后端维护订阅和配置。安装 package

@@ -1,13 +1,14 @@
 import * as fs from "fs";
 import * as package_model from "./packages.uc";
 import * as retained_contract from "./retained.uc";
+import * as bundle_engine from "./bundle.uc";
 
 return function(context) {
 // Bind the service functions before assigning closures that may reference them.
 let observer, process_birth, pause_observer, resume_observer, drain_resource, native_identity;
 let network_guard = null;
 const adapter = loadstring(sprintf('import { create } from %J; return create;', context.root + '/adapters/openwrt.uc'))()(context.root);
-let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, recovery_world, restore_world, feed, newer, available, update_process, progress, get, local_stage, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, recovery_stop, restore_services, rollback, recover, journal, upgrade, command, prune_archives, auto_update_policy, reconcile_auto_update, auto_update_summary, auto_update;
+let capture, parsed, directory, fail, error_code, version_valid, product_packages, installed, package_world, recovery_world, restore_world, feed, newer, available, update_process, progress, get, local_stage, start, run_command, refresh_index, archive, private_paths, input_identity, same_inputs, probe_ok, service_running, stop_services, recovery_stop, restore_services, rollback, recover, journal, upgrade, command, prune_archives, auto_update_policy, reconcile_auto_update, auto_update_summary, auto_update, bundle_ctx;
 
 const gateway = context.use("mihomo.gateway");
 const dashboard_resource = context.use("dashboard.control").resource;
@@ -15,15 +16,17 @@ const operation = context.use("events.operation");
 const proxies = context.use("mihomo.controller").proxies;
 const select = context.use("mihomo.controller").select;
 const controller_version = context.use("mihomo.controller").controller_version;
-const private_file = context.use("platform.files").private_file;
-const private_directory = context.use("platform.files").private_directory;
-const atomic_json = context.use("platform.files").atomic_json;
+const files = context.use("platform.files");
+const private_file = files.private_file;
+const private_directory = files.private_directory;
+const atomic_json = files.atomic_json;
 const KIND = context.use("platform.runtime").KIND;
 const RUN_DIR = context.use("platform.runtime").RUN_DIR;
 const ROOT_DIR = context.use("platform.runtime").ROOT_DIR;
 const SERVICE = context.use("platform.runtime").SERVICE;
 const read_json = context.use("platform.storage").read_json;
 const q = context.use("platform.process").shell_quote;
+const mkdtemp = context.use("platform.process").mkdtemp;
 const api_secret = context.use("platform.credentials").api_secret;
 const sha256 = context.use("platform.storage").sha256;
 const paths = context.use("platform.paths");
@@ -72,12 +75,12 @@ function network_enter() {
 	}
 	fail('mutation_busy');
 }
-function network_leave() { network_guard?.close(); network_guard = null; }
+function network_leave() { if (network_guard != null) network_guard.close(); network_guard = null; }
 function worker_enter() {
 	const path = `${ROOT}/worker.lock`;
 	if (!directory(ROOT) || fs.lstat(path) != null && !private_file(path)) fail('unsafe_update_directory');
 	const lock = fs.open(path, 'ae', 0600);
-	if (lock == null || !lock.lock('xn')) { lock?.close(); fail('mutation_busy'); }
+	if (lock == null || !lock.lock('xn')) { if (lock != null) lock.close(); fail('mutation_busy'); }
 	return lock;
 }
 capture = function(command) {
@@ -93,8 +96,41 @@ error_code = function(error) {
 	const code = trim(split(`${error}`, "\n")[0]);
 	return match(code, /^[a-z][a-z0-9_]+$/) ? code : "component_operation_failed";
 };
+function package_manager() {
+	if (capture("command -v apk") != null) return "apk";
+	if (capture("command -v opkg") != null) return "opkg";
+	return null;
+};
+function opkg_installed() {
+	const raw = capture("opkg status");
+	if (raw == null || !length(raw)) return null;
+	const result = {};
+	for (let stanza in split(raw, "\n\n")) {
+		const name = match(stanza, /(^|\n)Package:[[:space:]]*([^\n]+)/)?.[2];
+		const status = match(stanza, /(^|\n)Status:[[:space:]]*([^\n]+)/)?.[2];
+		const version = match(stanza, /(^|\n)Version:[[:space:]]*([^\n]+)/)?.[2];
+		if (name != null && status != null && index(status, "installed") >= 0 && version_valid(version))
+			result[trim(name)] = trim(version);
+	}
+	return length(result) ? result : null;
+};
+function opkg_arch() {
+	return capture("opkg print-architecture | awk '$1 == \"arch\" && $2 != \"all\" && $2 != \"noarch\" { arch = $2 } END { if (arch) print arch; else print \"all\" }'") ?? "all";
+};
+function opkg_feed() {
+	const meta = fs.lstat(paths.RELEASE_FEED_PATH) != null && private_file(paths.RELEASE_FEED_PATH)
+		? read_json(paths.RELEASE_FEED_PATH) : null;
+	if (match(meta?.url ?? "", /^https?:\/\/[^[:space:]@]+$/)) return meta.url;
+	for (let line in split(fs.readfile(paths.OPKG_FEEDS_PATH ?? "/etc/opkg/customfeeds.conf") ?? "", "\n")) {
+		const matched = match(trim(line), /^src(?:\/gz)?[[:space:]]+opl_netfleet[[:space:]]+(https?:\/\/[^[:space:]@]+)$/);
+		if (matched != null) return matched[1];
+	}
+	return null;
+};
 version_valid = function(value) { return type(value) == "string" && length(value) < 80 && match(value, /^[A-Za-z0-9][A-Za-z0-9._+~:-]*$/); };
 product_packages = function() {
+	if (capture("command -v opkg") != null && capture("command -v apk") == null || fs.lstat(paths.SHELL_META_PATH) != null)
+		return [PACKAGES[0], PACKAGES[1]];
 	const declared = context.system?.product_packages;
 	if (type(declared) != "array" || !length(declared)) fail("product_package_manifest_missing");
 	const result = [PACKAGES[0], PACKAGES[1]];
@@ -106,6 +142,8 @@ product_packages = function() {
 	return result;
 };
 installed = function() {
+	const mgr = package_manager();
+	if (mgr == "opkg") return opkg_installed();
 	const rows = parsed("apk --no-network query --from installed --format json --fields name,version '*'");
 	if (type(rows) != "array" || !length(rows)) return null;
 	const result = {};
@@ -244,6 +282,7 @@ function plugin_packages(versions, product, catalog) {
 	}));
 }
 function plugin_plan(request, work, preview, simulation_budget) {
+	if (package_manager() == "opkg") fail("package_manager_unsupported");
 	if (type(request) != "object") fail("invalid_plugin_package_request");
 	const versions = installed();
 	if (versions == null) fail("package_manager_unavailable");
@@ -335,7 +374,7 @@ function cancel_update(id) {
 	if (!private_directory(work)) fail("unsafe_update_directory");
 	if (fs.lstat(`${work}/control.lock`) != null && !private_file(`${work}/control.lock`)) fail("unsafe_update_directory");
 	const lock = fs.open(`${work}/control.lock`, "ae", 0600);
-	if (lock == null || !lock.lock("xn")) { lock?.close(); fail("update_transition_busy"); }
+	if (lock == null || !lock.lock("xn")) { if (lock != null) lock.close(); fail("update_transition_busy"); }
 	let result;
 	try {
 		const state = read_json(`${work}/journal.json`);
@@ -452,7 +491,34 @@ function prepare_resources(work, names, versions, candidates) {
 	}
 }
 get = function() {
+	if (type(bundle_engine) == "object" && bundle_engine.enabled(paths)) return bundle_engine.get_state(bundle_ctx());
+	const mgr = capture("command -v apk") != null ? "apk" : capture("command -v opkg") != null ? "opkg" : null;
 	const versions = installed();
+	const running = controller_version(api_secret(), 2);
+	const binary = capture("mihomo -v");
+	const binary_version = match(binary ?? "", /^Mihomo[[:space:]]+([^[:space:]]+)/)?.[1] ?? null;
+	if (mgr == "opkg") {
+		const url = opkg_feed();
+		const product = product_packages();
+		const missing = filter(product, name => versions != null && versions[name] == null);
+		const rows = [];
+		for (let item in [["netfleet", "NetFleet", PACKAGES[0]], ["luci", "LuCI 接入组件", PACKAGES[1]], ["mihomo", "Mihomo", PACKAGES[2]]]) {
+			const current = versions?.[item[2]] ?? null;
+			push(rows, { id: item[0], label: item[1], installed_version: current ?? (item[0] == "mihomo" ? binary_version : null),
+				running_version: item[0] == "mihomo" ? running : null, available_version: null,
+				update_available: false, managed: false,
+				reason: item[0] == "mihomo" && KIND != "native-mihomo" ? "core_managed_externally" : current == null && item[0] != "mihomo" ? "package_not_installed" : "opkg_read_only" });
+		}
+		const dashboard = dashboard_resource();
+		return { supported: false, unsupported_reason: "opkg_read_only", package_manager: "opkg",
+			backend: KIND, architecture: opkg_arch(),
+			capabilities: { batch_plugin_update: false },
+			feed: { configured: url != null, url: url, checked_at: null, error: null }, components: rows,
+			plugin_packages: [], auto_update: null,
+			dashboard: dashboard, extensions: context.inventory(versions),
+			product: { packages: map(product, name => ({ name, installed_version: versions?.[name], available_version: null })), missing, updates: [] },
+			dependencies: map(DEPENDENCIES, name => ({ id: name, label: name, installed_version: versions?.[name], available: versions != null && (versions[name] != null || adapter.package_available(name)) })) };
+	}
 	const url = feed();
 	const checked = private_file(CACHE) ? read_json(CACHE) : null;
 	const cache = checked?.feed == url ? checked : null;
@@ -460,9 +526,6 @@ get = function() {
 	const product = product_packages();
 	const missing = filter(product, name => versions != null && versions[name] == null);
 	const updates = filter(product, name => newer(candidates[name], versions?.[name]));
-	const running = controller_version(api_secret(), 2);
-	const binary = capture("mihomo -v");
-	const binary_version = match(binary ?? "", /^Mihomo[[:space:]]+([^[:space:]]+)/)?.[1] ?? null;
 	const rows = [];
 	for (let item in [["netfleet", "NetFleet", PACKAGES[0]], ["luci", "LuCI 接入组件", PACKAGES[1]], ["mihomo", "Mihomo", PACKAGES[2]]]) {
 		const current = versions?.[item[2]] ?? null;
@@ -475,7 +538,7 @@ get = function() {
 			reason: !managed ? (item[0] == "mihomo" ? "core_managed_externally" : "package_not_installed") : null });
 	}
 	const dashboard = dashboard_resource();
-	return { supported: versions != null, backend: KIND, architecture: capture("apk --print-arch"),
+	return { supported: versions != null, package_manager: mgr, backend: KIND, architecture: capture("apk --print-arch"),
 		capabilities: { batch_plugin_update: true },
 		feed: { configured: url != null, url: url, checked_at: cache?.checked_at, error: cache?.error }, components: rows,
 		plugin_packages: plugin_packages(versions, product, cache?.plugin_catalog),
@@ -513,15 +576,31 @@ local_stage = function(path) {
 	return { names, candidates, packages: value.packages };
 };
 start = function(action, component, version) {
+	const bundle_mode = type(bundle_engine) == "object" && bundle_engine.enabled(paths);
+	if (!bundle_mode && (package_manager() == "opkg" || action == "rollback")) fail("package_manager_unsupported");
+	if (bundle_mode && index(["install", "plugin"], action) >= 0) fail("package_manager_unsupported");
 	if (!directory(ROOT)) fail("unsafe_update_directory");
 	if (fs.lstat(PENDING) != null) fail("previous_update_incomplete");
 	if (update_process()?.running == true) fail("mutation_busy");
+	if (action == "rollback") {
+		const bctx = bundle_ctx();
+		const cur = bundle_engine.current_info(bctx);
+		const prev = bundle_engine.previous_info(bctx);
+		if (prev?.version == null || prev.version == cur?.version) fail("rollback_package_unavailable");
+	}
 	const staged = action == "install" ? local_stage(component) : null;
 	const plugin = action == "plugin" && private_file(component) ? read_json(component)?.request : null;
 	if (action == "plugin" && type(plugin) != "object") fail("invalid_plugin_package_request");
 	if (plugin) plugin_plan(plugin);
-	if (action != "install" && plugin?.action != "remove" && feed() == null) fail("feed_not_configured");
-	if (action == "update" && (index(["netfleet", "mihomo"], component) < 0 || !version_valid(version))) fail("invalid_component_request");
+	const bundle_feed = bundle_mode && action != "rollback" ? bundle_engine.feed_config(bundle_ctx()) : null;
+	if (action != "install" && action != "rollback" && plugin?.action != "remove") {
+		if (bundle_mode ? bundle_feed == null : feed() == null) fail("feed_not_configured");
+	}
+	if (action == "update") {
+		if (bundle_mode && component != "netfleet") fail("package_manager_unsupported");
+		if (index(["netfleet", "mihomo"], component) < 0 || (version != null && !version_valid(version)) || (!bundle_mode && !version_valid(version)))
+			fail("invalid_component_request");
+	}
 	if (action != "check" && (fs.lstat(PENDING) != null || fs.lstat(UPGRADE_STATE) != null)) fail("previous_update_incomplete");
 	// Only the latest completed transaction is retained; unfinished recovery is never removed.
 	const previous = private_file(REQUEST) ? read_json(REQUEST) : null;
@@ -538,10 +617,12 @@ start = function(action, component, version) {
 	}
 	const id = replace(capture("cat /proc/sys/kernel/random/uuid"), "-", "");
 	if (!match(id ?? "", /^[a-f0-9]{32}$/)) fail("update_identity_unavailable");
-	const request = { id: id, action: action, plugin, component: staged || plugin ? "plugins" : component, version: version, started_at: time(), feed: staged ? null : feed(), packages: staged?.packages, names: staged?.names, candidates: staged?.candidates };
+	const request = { id: id, action: action, delivery: bundle_mode ? "bundle" : "package", plugin, component: staged || plugin ? "plugins" : component, version: version, started_at: time(), feed: (staged || action == "rollback") ? null : bundle_mode ? bundle_feed?.url : feed(), packages: staged?.packages, names: staged?.names, candidates: staged?.candidates };
 	// Keep the executing code independent of packages that will replace themselves.
 	const work = `${ROOT}/${id}`;
-	if (!directory(work) || system(`cp -R ${q(context.root)} ${q(`${work}/code`)}`) != 0 || !atomic_json(`${work}/code/system.json`, context.system) ||
+	const real_root = fs.realpath(context.root) ?? context.root;
+	if (!directory(work) || system(`cp -RL ${q(real_root)} ${q(`${work}/code`)}`) != 0 || system(`chmod -R go-w ${q(`${work}/code`)}`) != 0 ||
+		!atomic_json(`${work}/code/system.json`, context.system) ||
 		!atomic_json(`${work}/control-api.json`, { version: 1 }) || !atomic_json(REQUEST, request) || !atomic_json(`${work}/request.json`, request)) fail("update_stage_failed");
 	if (staged) {
 		for (let kind in ["old", "new"]) {
@@ -1084,7 +1165,7 @@ upgrade = function(request, work, candidates) {
 		prepare_resources(work, names, versions, candidates);
 		if (fs.lstat(`${work}/control.lock`) != null && !private_file(`${work}/control.lock`)) fail("unsafe_update_directory");
 		const lock = fs.open(`${work}/control.lock`, "ae", 0600);
-		if (lock == null || !lock.lock("x")) { lock?.close(); fail("update_transition_busy"); }
+		if (lock == null || !lock.lock("x")) { if (lock != null) lock.close(); fail("update_transition_busy"); }
 		try {
 			cancellation(work);
 			journal(work, { ...read_json(`${work}/journal.json`), phase: "installing", write_started: true });
@@ -1159,7 +1240,20 @@ recovery_stop = function(work) {
 	}
 	return false;
 };
+bundle_ctx = function() {
+	return {
+		paths, adapter, gateway, operation, network_enter, network_leave, directory, fail, error_code,
+		private_file, private_directory, atomic_json, read_json, sha256, capture, parsed, run_command, q, mkdtemp,
+		KIND, RUN_DIR, ROOT_DIR, SERVICE, ROOT, PENDING, CACHE, REQUEST, UPGRADE_STATE, MAIN,
+		PACKAGES, DEPENDENCIES, files, system: context.system,
+		inventory: context.inventory, auto_update_summary, dashboard_resource,
+		package_manager, opkg_arch, opkg_feed, product_packages, installed,
+		api_secret, controller_version, proxies, select, service_running, probe_ok,
+		native_identity, private_paths, input_identity, same_inputs, journal, cancellation
+	};
+};
 function start_recovery() {
+	if (!(type(bundle_engine) == "object" && bundle_engine.enabled(paths)) && package_manager() == "opkg") fail("package_manager_unsupported");
 	if (fs.lstat(PENDING) == null) return { recovered: false };
 	const id = private_file(PENDING) ? read_json(PENDING)?.id : null;
 	if (!match(id ?? '', /^[a-f0-9]{32}$/) || !private_directory(`${ROOT}/${id}/code`)) fail('update_recovery_state_invalid');
@@ -1198,6 +1292,7 @@ recover = function() {
 	operation.begin("packages", "rolling_back", { id: pending.id, subject: "netfleet" });
 	const work = `${ROOT}/${pending.id}`;
 	let state = private_file(`${work}/journal.json`) ? read_json(`${work}/journal.json`) : null;
+	if (pending.kind == "bundle" || state?.kind == "bundle") return bundle_engine.recover(bundle_ctx(), work, pending, state);
 	if (!state || state.before?.backend != KIND || !private_directory(work) || type(state.inputs) != "object" ||
 		index(["prepared", "draining", "installing", "recovering", "complete", "rolled_back"], state.phase) < 0) fail("update_recovery_state_invalid");
 	for (let path, digest in state.inputs) if (index(path, `${work}/`) != 0 || sha256(path) != digest) fail("update_recovery_artifact_changed");
@@ -1342,6 +1437,8 @@ auto_update_summary = function() {
 	};
 };
 auto_update = function(trigger) {
+	if (type(bundle_engine) == "object" && bundle_engine.enabled(paths)) return { skipped: true, reason: "release_bundle_manual_only" };
+	if (package_manager() == "opkg") return { skipped: true, reason: "opkg_read_only" };
 	const cfg = auto_update_policy();
 	if (!cfg.enabled) return { skipped: true, reason: "disabled" };
 	if (!directory(ROOT)) fail("unsafe_update_directory");
@@ -1416,7 +1513,7 @@ try {
 	if (index(['run', 'reconcile'], ARGV[0]) >= 0) worker_lock = worker_enter();
 	if (ARGV[0] == "recover") response = { ok: true, result: start_recovery() };
 	else if (ARGV[0] == 'reconcile') response = { ok: true, result: recover() };
-	else if (ARGV[0] == 'rollback') response = { ok: true, result: request_rollback(ARGV[1]) };
+	else if (ARGV[0] == 'rollback') response = { ok: true, result: ARGV[1] == null && type(bundle_engine) == "object" && bundle_engine.enabled(paths) ? start("rollback", "netfleet", null) : request_rollback(ARGV[1]) };
 	else if (ARGV[0] == "cancel") response = { ok: true, result: cancel_update(ARGV[1]) };
 	else if (ARGV[0] == "get") response = { ok: true, result: get() };
 	else if (ARGV[0] == "auto-update") response = { ok: true, result: auto_update(ARGV[1]) };
@@ -1426,22 +1523,40 @@ try {
 	else if (ARGV[0] == "run") {
 		const request = private_file(ARGV[1]) ? read_json(ARGV[1]) : null;
 		if (request == null || !match(request.id ?? "", /^[a-f0-9]{32}$/) || ARGV[1] != `${ROOT}/${request.id}/request.json` ||
-			index(["check", "update", "install", "plugin"], request.action) < 0) fail("update_request_changed");
+			index(["check", "update", "install", "plugin", "rollback"], request.action) < 0) fail("update_request_changed");
 		const work = `${ROOT}/${request.id}`;
-		operation.begin("packages", "checking", { id: request.id, subject: request.component ?? "feed" });
-		if (request.action != "install" && request.feed != feed()) fail("update_request_changed");
-		const staged = request.action == "install" ? local_stage(work) : null;
-		if (staged) { request.component = "plugins"; request.names = staged.names; }
-		const unchanged_core = request.action == "update" && request.component == "mihomo" && installed()?.[PACKAGES[2]] == request.version;
-		let candidates = staged ? staged.candidates : unchanged_core ? { [PACKAGES[2]]: request.version } : request.plugin?.action == "remove" ? {} : refresh_index(request, work);
-		if (request.plugin) {
-			const plan = plugin_plan(request.plugin, work);
-			request.names = plan.names; candidates = plan.candidates;
+		operation.begin("packages", request.action == "rollback" ? "rolling_back" : "checking", { id: request.id, subject: request.component ?? "feed" });
+		if (request.delivery == "bundle") {
+			if (request.action == "rollback") {
+				bundle_engine.rollback_previous(bundle_ctx(), work);
+			} else {
+				if (request.feed != bundle_engine.feed_config(bundle_ctx())?.url) fail("update_request_changed");
+				if (request.action == "check") {
+					bundle_engine.check(bundle_ctx(), work);
+					journal(work, { phase: "complete", write_started: false });
+				} else if (request.action == "update") {
+					bundle_engine.apply(bundle_ctx(), request, work);
+				} else {
+					fail("package_manager_unsupported");
+				}
+			}
+			operation.finish(true, null, null);
+			response = { ok: true };
+		} else {
+			if (request.action != "install" && request.feed != feed()) fail("update_request_changed");
+			const staged = request.action == "install" ? local_stage(work) : null;
+			if (staged) { request.component = "plugins"; request.names = staged.names; }
+			const unchanged_core = request.action == "update" && request.component == "mihomo" && installed()?.[PACKAGES[2]] == request.version;
+			let candidates = staged ? staged.candidates : unchanged_core ? { [PACKAGES[2]]: request.version } : request.plugin?.action == "remove" ? {} : refresh_index(request, work);
+			if (request.plugin) {
+				const plan = plugin_plan(request.plugin, work);
+				request.names = plan.names; candidates = plan.candidates;
+			}
+			if (request.action != "check") upgrade(request, work, candidates);
+			else journal(work, { phase: "complete", write_started: false });
+			operation.finish(true, null, null);
+			response = { ok: true };
 		}
-		if (request.action != "check") upgrade(request, work, candidates);
-		else journal(work, { phase: "complete", write_started: false });
-		operation.finish(true, null, null);
-		response = { ok: true };
 	} else response = { ok: false, error: "unknown_component_action" };
 } catch (error) {
 	const reason = error_code(error);
@@ -1458,7 +1573,7 @@ try {
 	response = { ok: false, error: reason };
 }
 network_leave();
-worker_lock?.close();
+if (worker_lock != null) worker_lock.close();
 printf("%J\n", response);
 exit(response.ok ? 0 : 1);
 };

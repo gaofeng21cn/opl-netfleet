@@ -19,6 +19,7 @@ const private_directory = context.use("platform.files").private_directory;
 const write_private = context.use("platform.files").write_private;
 const atomic_json = context.use("platform.files").atomic_json;
 const core_service = context.use("platform.files").core_service;
+const mkdtemp = context.use("platform.files").mkdtemp ?? ((t) => fs.mkdtemp(t));
 const KIND = context.use("platform.runtime").KIND;
 const read_json = context.use("platform.storage").read_json;
 const read_yaml = context.use("platform.storage").read_yaml;
@@ -285,7 +286,7 @@ update_result = function(id) {
 	if (!native_selected()) return { ok: false, error: "subscriptions_managed_by_nikki" };
 	if (!valid_id(id)) return { ok: false, error: "invalid_subscription_id" };
 	if (!config_ready() || !directory_ready()) return { ok: false, error: "unsafe_subscription_storage" };
-	const scratch = fs.mkdtemp("/tmp/opl-netfleet-subscription.XXXXXX");
+	const scratch = mkdtemp("/tmp/opl-netfleet-subscription.XXXXXX");
 	if (scratch == null) return { ok: false, error: "subscription_scratch_failed" };
 	let result;
 	try { result = do_update(id, scratch); }

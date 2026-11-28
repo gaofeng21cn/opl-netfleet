@@ -9,7 +9,7 @@ define Package/opl-netfleet-plugin-device-identity
   SECTION:=net
   CATEGORY:=Network
   TITLE:=NetFleet local device address source
-  DEPENDS:=+opl-netfleet-kernel +netfleet-plugin-api-v1 +ucode +ucode-mod-fs +ucode-mod-digest +ip-full +conntrack +coreutils-timeout
+  DEPENDS:=+opl-netfleet +netfleet-plugin-api-v1 +ucode +ucode-mod-fs +ucode-mod-digest +ip-full +conntrack +coreutils-timeout
 endef
 
 define Build/Prepare
@@ -25,12 +25,12 @@ define Build/Compile
 endef
 
 define Package/opl-netfleet-plugin-device-identity/install
-	$(INSTALL_DIR) $(1)/usr/libexec/opl-netfleet/plugins/device-identity/resources
-	$(INSTALL_BIN) ./files/control $(1)/usr/libexec/opl-netfleet/plugins/device-identity/control
-	$(INSTALL_DATA) ./files/manifest.json $(1)/usr/libexec/opl-netfleet/plugins/device-identity/manifest.json
-	$(INSTALL_DATA) ./files/resources/identity.uc $(1)/usr/libexec/opl-netfleet/plugins/device-identity/resources/identity.uc
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/atomic-replace $(1)/usr/libexec/opl-netfleet/plugins/device-identity/resources/atomic-replace
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/neighbor $(1)/usr/libexec/opl-netfleet/plugins/device-identity/resources/neighbor
+	$(INSTALL_DIR) $(1)/etc/opl-netfleet/extensions/device-identity/resources
+	$(INSTALL_BIN) ./files/control $(1)/etc/opl-netfleet/extensions/device-identity/control
+	$(INSTALL_DATA) ./files/manifest.json $(1)/etc/opl-netfleet/extensions/device-identity/manifest.json
+	$(INSTALL_DATA) ./files/resources/identity.uc $(1)/etc/opl-netfleet/extensions/device-identity/resources/identity.uc
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/atomic-replace $(1)/etc/opl-netfleet/extensions/device-identity/resources/atomic-replace
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/neighbor $(1)/etc/opl-netfleet/extensions/device-identity/resources/neighbor
 endef
 
 define Package/opl-netfleet-plugin-device-identity/preinst

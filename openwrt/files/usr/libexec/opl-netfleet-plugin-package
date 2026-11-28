@@ -3,6 +3,10 @@ set -eu
 [ -z "${IPKG_INSTROOT:-}" ] || exit 0
 id=${1:?plugin id required}
 phase=${2:?package phase required}
+if [ -f /tmp/opl-netfleet-microkernel-migration ] && { [ "$phase" = prerm ] || [ "$phase" = postrm ]; }; then
+	rm -rf /var/run/opl-netfleet-plugin-maintenance /var/run/opl-netfleet-mihomo-handoff 2>/dev/null || true
+	exit 0
+fi
 main=/usr/libexec/opl-netfleet/main.uc
 case "$phase" in
 	ready) exec ucode "$main" plugin-package-ready "$id" ;;

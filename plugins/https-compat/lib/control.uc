@@ -114,7 +114,7 @@ function action(name, params) {
 		const error = admission(extension, inspection(), `compatibility-${name}`, KIND);
 		if (error != null) return { ok: false, error };
 	}
-	const directory = fs.mkdtemp('/tmp/netfleet-compat-action.XXXXXX');
+	const directory = (files.mkdtemp ?? fs.mkdtemp)('/tmp/netfleet-compat-action.XXXXXX');
 	if (directory == null) return { ok: false, error: 'compatibility_request_unavailable' };
 	const path = `${directory}/request.json`;
 	let result;

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -14,6 +15,7 @@ import sys
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 PACKAGE_NAMES = {"opl-netfleet", "opl-netfleet-kernel", "luci-app-netfleet"}
+BUNDLE_PACKAGE_NAMES = {"opl-netfleet", "luci-app-netfleet"}
 PLUGIN_PACKAGE = re.compile(r"^opl-netfleet-plugin-[a-z][a-z0-9-]*$")
 LEGACY_PACKAGE_VERSIONS = {"0.2.0", "0.3.0", "0.3.1", "0.3.2", "0.3.3", "0.4.0"}
 BOOTSTRAP_MINIMUM_VERSION = (0, 4, 5)
@@ -153,6 +155,9 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
         fail("release APK architecture must be noarch")
     require_digest(manifest.get("runtime_payload_sha256"), "runtime payload identity")
 
+    is_release_bundle = manifest.get("delivery_model") == "release-bundle"
+    required_packages = BUNDLE_PACKAGE_NAMES if is_release_bundle else PACKAGE_NAMES
+
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, list) or not artifacts:
         fail("release package artifacts are missing")
@@ -163,7 +168,12 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
             fail("release artifact entry is invalid")
         package = item.get("package")
         name = item.get("name")
-        if not isinstance(package, str) or (package not in PACKAGE_NAMES and not PLUGIN_PACKAGE.fullmatch(package)) or package in seen:
+        valid_pkg = (
+            package in BUNDLE_PACKAGE_NAMES
+            if is_release_bundle
+            else (package in PACKAGE_NAMES or PLUGIN_PACKAGE.fullmatch(package))
+        )
+        if not isinstance(package, str) or not valid_pkg or package in seen:
             fail("release artifact package identity is invalid")
         if not isinstance(name, str) or Path(name).name != name or not name.endswith(f".{package_format}"):
             fail("release artifact filename is invalid")
@@ -174,7 +184,7 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
             fail(f"release artifact bytes do not match manifest: {name}")
         seen.add(package)
         artifact_files[package] = name
-    if not PACKAGE_NAMES.issubset(seen) or manifest.get("artifact_files") != artifact_files:
+    if not required_packages.issubset(seen) or manifest.get("artifact_files") != artifact_files:
         fail("release artifact mapping is invalid")
 
     dependencies = manifest.get("dependency_artifacts", [])
@@ -210,11 +220,12 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
         dependency_names.add(name)
 
     files_manifest = manifest.get("files_manifest")
-    if not isinstance(files_manifest, dict) or files_manifest.get("name") != "FILES.sha256":
-        fail("release files manifest identity is invalid")
-    files_manifest_path = files.get("FILES.sha256")
-    if files_manifest_path is None or require_digest(files_manifest.get("sha256"), "FILES.sha256") != digest(files_manifest_path):
-        fail("release files manifest bytes do not match manifest")
+    if files_manifest is not None or not (is_release_bundle and package_format == "ipk"):
+        if not isinstance(files_manifest, dict) or files_manifest.get("name") != "FILES.sha256":
+            fail("release files manifest identity is invalid")
+        files_manifest_path = files.get("FILES.sha256")
+        if files_manifest_path is None or require_digest(files_manifest.get("sha256"), "FILES.sha256") != digest(files_manifest_path):
+            fail("release files manifest bytes do not match manifest")
 
     public_key = manifest.get("apk_public_key")
     if package_format == "apk":
@@ -290,7 +301,9 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
                 fail("native runtime receipt package bytes differ from release")
             checked.add(package)
 
-    expected_names = {"manifest.json", "FILES.sha256", *artifact_files.values(), *dependency_names}
+    expected_names = {"manifest.json", *artifact_files.values(), *dependency_names}
+    if files_manifest is not None:
+        expected_names.add("FILES.sha256")
     if native_runtime is not None:
         expected_names.add("native-runtime.json")
     if package_format == "apk":
@@ -301,6 +314,92 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
         expected_names.add("install-netfleet.sh")
     if feed_metadata is not None:
         expected_names.add('index.json')
+    usign = None
+    if is_release_bundle:
+        usign_spec = importlib.util.spec_from_file_location(
+            "netfleet_usign", Path(__file__).resolve().parent / "netfleet_usign.py"
+        )
+        usign = importlib.util.module_from_spec(usign_spec)
+        usign_spec.loader.exec_module(usign)
+        release_bundle = manifest.get("release_bundle")
+        if not isinstance(release_bundle, dict):
+            fail("release bundle metadata is missing")
+        archive_name = release_bundle.get("archive")
+        mf_name = release_bundle.get("manifest")
+        sig_name = release_bundle.get("manifest_sig")
+        bpub_name = release_bundle.get("public_key")
+        if (not isinstance(archive_name, str) or Path(archive_name).name != archive_name
+                or not archive_name.endswith(".tar.gz")
+                or mf_name != "release-manifest.json" or sig_name != "release-manifest.json.sig"
+                or bpub_name != "opl-netfleet-bundle.pub"):
+            fail("release bundle artifact names are invalid")
+        for key in (archive_name, mf_name, sig_name, bpub_name):
+            if key not in files:
+                fail(f"release bundle file is missing: {key}")
+        if (release_bundle.get("archive_size") != files[archive_name].stat().st_size
+                or require_digest(release_bundle.get("archive_sha256"), archive_name) != digest(files[archive_name])
+                or require_digest(release_bundle.get("manifest_sha256"), mf_name) != digest(files[mf_name])
+                or require_digest(release_bundle.get("manifest_sig_sha256"), sig_name) != digest(files[sig_name])):
+            fail("release bundle file digests do not match manifest")
+        if not usign.verify_file(files[bpub_name], files[mf_name], files[sig_name]):
+            fail("release bundle signature verification failed")
+        rmf = json.loads(files[mf_name].read_text())
+        if (rmf.get("schema") != "opl-netfleet-release-bundle.v1"
+                or rmf.get("version") != package_version
+                or rmf.get("archive") != archive_name
+                or rmf.get("archive_sha256") != release_bundle.get("archive_sha256")
+                or rmf.get("archive_size") != release_bundle.get("archive_size")
+                or rmf.get("source_commit") != source_commit
+                or rmf.get("source_tree") != source_tree):
+            fail("release manifest metadata does not match release")
+        expected_names.update({archive_name, mf_name, sig_name, bpub_name})
+    opkg_index = manifest.get("opkg_index")
+    if opkg_index is not None:
+        if not is_release_bundle or not isinstance(opkg_index, dict) or usign is None:
+            fail("opkg index metadata is invalid")
+        usign_pub = manifest.get("usign_public_key")
+        if not isinstance(usign_pub, dict) or usign_pub.get("name") != "opl-netfleet-usign.pub":
+            fail("opkg release is missing usign public key")
+        pub_file = files.get("opl-netfleet-usign.pub")
+        if pub_file is None or require_digest(usign_pub.get("sha256"), "opl-netfleet-usign.pub") != digest(pub_file):
+            fail("usign public key bytes do not match manifest")
+        expected_names.add("opl-netfleet-usign.pub")
+        for key, expected_name in (("packages", "Packages"), ("packages_gz", "Packages.gz"), ("packages_sig", "Packages.sig")):
+            ref = opkg_index.get(key)
+            if not isinstance(ref, dict) or ref.get("name") != expected_name or expected_name not in files:
+                fail(f"opkg index entry is missing: {expected_name}")
+            if ref.get("size") != files[expected_name].stat().st_size or require_digest(ref.get("sha256"), expected_name) != digest(files[expected_name]):
+                fail(f"opkg index bytes do not match manifest: {expected_name}")
+            expected_names.add(expected_name)
+        if not usign.verify_file(pub_file, files["Packages"], files["Packages.sig"]):
+            fail("opkg index signature verification failed")
+        ipk_artifacts = manifest.get("ipk_artifacts")
+        if ipk_artifacts is not None:
+            if not isinstance(ipk_artifacts, list):
+                fail("ipk artifacts list is invalid")
+            ipk_files_map: dict[str, str] = {}
+            ipk_seen: set[str] = set()
+            for item in ipk_artifacts:
+                pkg = item.get("package")
+                name = item.get("name")
+                if not isinstance(pkg, str) or pkg not in BUNDLE_PACKAGE_NAMES or pkg in ipk_seen:
+                    fail("ipk artifact package identity is invalid")
+                if not isinstance(name, str) or Path(name).name != name or not name.endswith(".ipk") or name not in files:
+                    fail("ipk artifact file is missing")
+                if item.get("size") != files[name].stat().st_size or require_digest(item.get("sha256"), name) != digest(files[name]):
+                    fail(f"ipk artifact bytes do not match manifest: {name}")
+                ipk_seen.add(pkg)
+                ipk_files_map[pkg] = name
+                expected_names.add(name)
+            if not BUNDLE_PACKAGE_NAMES.issubset(ipk_seen) or manifest.get("ipk_artifact_files") != ipk_files_map:
+                fail("ipk artifact mapping is invalid")
+        for item in manifest.get("ipk_dependency_artifacts", []):
+            name = item.get("name")
+            if not isinstance(name, str) or Path(name).name != name or not name.endswith(".ipk") or name not in files:
+                fail("ipk dependency artifact is missing")
+            if item.get("size") != files[name].stat().st_size or require_digest(item.get("sha256"), name) != digest(files[name]):
+                fail("ipk dependency artifact bytes do not match manifest")
+            expected_names.add(name)
     expected_names.update(optional_files(files, manifest_path, build_target_arch))
     if set(files) != expected_names:
         fail("release file set does not match the manifest")

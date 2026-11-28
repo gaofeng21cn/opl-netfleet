@@ -29,6 +29,7 @@ const private_file = context.use("platform.files").private_file;
 const private_directory = context.use("platform.files").private_directory;
 const write_private = context.use("platform.files").write_private;
 const atomic_json = context.use("platform.files").atomic_json;
+const mkdtemp = context.use("platform.files").mkdtemp ?? ((t) => fs.mkdtemp(t));
 const KIND = context.use("platform.runtime").KIND;
 const RUN_DIR = context.use("platform.runtime").RUN_DIR;
 const SERVICE = context.use("platform.runtime").SERVICE;
@@ -197,7 +198,7 @@ profile_save = function(path) {
 	if (profile_referenced(id, read_json(POLICY_PATH), current_profile())) return failure("profile_is_referenced");
 	const target = `${PROFILES}/${id}`;
 	if (!safe_target(target)) return failure("unsafe_profile_storage");
-	const work = fs.mkdtemp(`${PROFILES}/.validate.XXXXXX`);
+	const work = mkdtemp(`${PROFILES}/.validate.XXXXXX`);
 	if (work == null) return failure("profile_stage_failed");
 	const temporary = `${work}/${id}`;
 	let valid = false;
@@ -362,7 +363,7 @@ backup_restore = function(path) {
 			if (!length(filter(installed, actual => actual.id == plugin.id && actual.api_version == plugin.api_version)))
 				return failure("backup_plugin_missing", { id: plugin.id });
 	}
-	const work = fs.mkdtemp(`${ROOT}/.maintenance.XXXXXX`);
+	const work = mkdtemp(`${ROOT}/.maintenance.XXXXXX`);
 	if (work == null) return failure("maintenance_snapshot_failed");
 	let before = null, changed = false, reason = null, resources = null;
 	try {
@@ -403,17 +404,17 @@ backup_restore = function(path) {
 			if (!uci.commit("netfleet") || !fs.chmod(CONFIG, 0600)) die("backup_profile_restore_failed");
 		}
 		if (!resume(before, work, false)) die("backup_runtime_verification_failed");
-		resources?.resume(composition.system);
+		if (resources != null) resources.resume(composition.system);
 	} catch (error) {
 		const code = trim(split(`${error}`, "\n")[0]);
 		reason = match(code, /^[a-z][a-z0-9_]+$/) ? code : "backup_restore_failed";
 	}
 	if (reason == null) { clean_work(work); return { ok: true, result: { state: "restored", revision: revision(), runtime_preserved: true } }; }
 	let restored = true;
-	try { resources?.quiesce(); } catch (error) { restored = false; }
+	try { if (resources != null) resources.quiesce(); } catch (error) { restored = false; }
 	if (restored) restored = !changed || restore_snapshot(before, work);
-	if (restored) try { resources?.resume(); } catch (error) { restored = false; }
-	resources?.close();
+	if (restored) try { if (resources != null) resources.resume(); } catch (error) { restored = false; }
+	if (resources != null) resources.close();
 	if (restored) clean_work(work);
 	return failure(reason, { rollback: { ok: restored }, recovery: restored ? "restored" : "failed" });
 };
@@ -425,7 +426,7 @@ core_action = function(path) {
 	if (request.confirm != true) return failure("explicit_confirmation_required");
 	if (index(["restart", "reload"], request.action) < 0) return failure("invalid_core_action");
 	if (`${cursor().get("netfleet", "config", "enabled") ?? "0"}` != "1") return failure("core_disabled");
-	const work = fs.mkdtemp(`${ROOT}/.maintenance.XXXXXX`);
+	const work = mkdtemp(`${ROOT}/.maintenance.XXXXXX`);
 	if (work == null) return failure("maintenance_snapshot_failed");
 	const before = snapshot(work, [], true);
 	if (before == null) { clean_work(work); return failure("maintenance_snapshot_failed"); }

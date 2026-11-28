@@ -77,7 +77,14 @@ def _parse_mode(mode):
 def verify_plugin_modes(metadata):
     for entry in metadata.get('paths', []):
         directory = entry.get('name', '')
-        if directory != 'usr/libexec/opl-netfleet/plugins' and not directory.startswith('usr/libexec/opl-netfleet/plugins/'):
+        in_plugin_dir = (
+            directory == 'usr/libexec/opl-netfleet/plugins'
+            or directory.startswith('usr/libexec/opl-netfleet/plugins/')
+            or directory == 'etc/opl-netfleet/extensions'
+            or directory.startswith('etc/opl-netfleet/extensions/')
+            or (directory.startswith('usr/share/opl-netfleet/releases/') and '/runtime/' in f'{directory}/')
+        )
+        if not in_plugin_dir:
             continue
         mode = _parse_mode((entry.get('acl') or {}).get('mode'))
         if mode is not None and (mode & 0o022):

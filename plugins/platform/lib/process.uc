@@ -4,10 +4,32 @@ return function(context) {
 	function shell_quote(value) {
 		return `'${replace(`${value}`, "'", "'\\''")}'`;
 	}
+	function mkdtemp(template) {
+		if (type(fs.mkdtemp) == 'function') return fs.mkdtemp(template);
+		if (type(template) != 'string') return null;
+		const prefix = replace(template, /X+$/, '');
+		if (prefix == template) return null;
+		const count = length(template) - length(prefix);
+		const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+		const rng = fs.open('/dev/urandom', 'r');
+		let seq = 0;
+		for (let attempt = 0; attempt < 64; attempt++) {
+			let suffix = '';
+			const bytes = rng ? rng.read(count) : null;
+			for (let i = 0; i < count; i++) {
+				const v = bytes != null && i < length(bytes) ? ord(substr(bytes, i, 1)) : ((time() * 31 + attempt * 17 + i * 13 + (++seq)) & 255);
+				suffix += substr(alphabet, v % 62, 1);
+			}
+			const candidate = prefix + suffix;
+			if (fs.mkdir(candidate, 0700)) { if (rng != null) rng.close(); return candidate; }
+		}
+		if (rng != null) rng.close();
+		return null;
+	}
 	function capture(command, seconds, input) {
 		if (type(command) != 'string' || type(seconds) != 'int' || seconds < 1 || seconds > 300)
 			die('process_capture_invalid');
-		const directory = fs.mkdtemp('/tmp/netfleet-capture.XXXXXX');
+		const directory = mkdtemp('/tmp/netfleet-capture.XXXXXX');
 		if (!directory) die('process_capture_unavailable');
 		const output = directory + '/output', source = directory + '/input';
 		let result, failure;
@@ -49,5 +71,5 @@ return function(context) {
 		const tail = split(trim(fields[2]), " ");
 		return length(tail) > 19 ? { pid: int(fields[1]), started: tail[19], alive: tail[0] != "Z" && tail[0] != "X" } : null;
 	}
-	return { shell_quote, capture, capture_json, run_owner, run_owner_result, process_identity };
+	return { shell_quote, mkdtemp, capture, capture_json, run_owner, run_owner_result, process_identity };
 };

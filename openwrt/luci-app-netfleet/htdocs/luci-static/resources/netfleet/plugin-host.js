@@ -81,7 +81,10 @@ export function pageFromHash(hash, pages) {
 
 export function resourceUrl(contribution) {
   if (!identifier.test(contribution.plugin.id) || !/^[A-Za-z0-9_-]{1,128}$/.test(contribution.plugin.revision) || !modulePath.test(contribution.page.module)) throw new Error('plugin_resource_invalid');
-  return `/luci-static/resources/netfleet/plugins/${contribution.plugin.id}/${contribution.plugin.revision}/${contribution.page.module}`;
+  const prefix = contribution.plugin.asset_scope === 'bundle'
+    ? '/luci-static/resources/netfleet/bundle/plugins'
+    : '/luci-static/resources/netfleet/plugins';
+  return `${prefix}/${contribution.plugin.id}/${contribution.plugin.revision}/${contribution.page.module}`;
 }
 
 export function createScope(events = sharedEvents, report = () => {}) {

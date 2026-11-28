@@ -124,6 +124,7 @@ class DeployOpenWrtTests(unittest.TestCase):
         tree: str | None = None,
         *,
         package_format: str = "apk",
+        release_bundle: bool = False,
     ) -> Path:
         if commit is None:
             commit = subprocess.check_output(["git", "rev-parse", "HEAD^{commit}"], cwd=ROOT, text=True).strip()
@@ -155,10 +156,11 @@ class DeployOpenWrtTests(unittest.TestCase):
         ext = package_format
         package_files = {
             "opl-netfleet": f"opl-netfleet_0.4.3-r1.{ext}",
-            "opl-netfleet-kernel": f"opl-netfleet-kernel_0.4.3-r1.{ext}",
-            "opl-netfleet-plugin-models": f"opl-netfleet-plugin-models_0.4.3-r1.{ext}",
             "luci-app-netfleet": f"luci-app-netfleet_0.4.3-r1.{ext}",
         }
+        if not release_bundle:
+            package_files["opl-netfleet-kernel"] = f"opl-netfleet-kernel_0.4.3-r1.{ext}"
+            package_files["opl-netfleet-plugin-models"] = f"opl-netfleet-plugin-models_0.4.3-r1.{ext}"
         for name in package_files.values():
             (release / name).write_text(name + "\n")
         runtime_lines = []
@@ -190,6 +192,8 @@ class DeployOpenWrtTests(unittest.TestCase):
                 for package, name in package_files.items()
             ],
         }
+        if release_bundle:
+            manifest["delivery_model"] = "release-bundle"
         if package_format == "apk":
             (release / "opl-netfleet-apk.pem").write_text("test-public-key\n")
             (release / "packages.adb").write_bytes(b"test-feed-index\n")
@@ -222,6 +226,21 @@ class DeployOpenWrtTests(unittest.TestCase):
         self.assertEqual("apk", receipt["release_format"])
         self.assertRegex(receipt["product_version"], r"^[0-9][0-9A-Za-z.+~-]*$")
         self.assertIsInstance(receipt["prepare_elapsed_ms"], int)
+
+    def test_host_dry_run_accepts_release_bundle_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            release = self._make_host_package_release(Path(directory), release_bundle=True)
+            result = subprocess.run(
+                [str(HOST), "openwrt-target", "--ref", "HEAD", "--packages", str(release), "--dry-run"],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+            receipt = json.loads(result.stdout)
+            self.assertTrue(receipt["ok"])
+            self.assertEqual("release-bundle", json.loads((release / "manifest.json").read_text())["delivery_model"])
 
     def test_host_rejects_deploy_without_packages_or_release(self):
         result = subprocess.run(

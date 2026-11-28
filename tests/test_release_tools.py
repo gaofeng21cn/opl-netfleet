@@ -260,23 +260,7 @@ class ReleaseToolsTests(unittest.TestCase):
             self.assertEqual(field('version.' + identity), [plugins[identity]['version']])
             deps = sorted({*plugins[identity].get('package_dependencies', []), *(plugins[req]['package'] for req in graph[identity])})
             self.assertEqual(field('depends.' + identity), [f'+{name}' for name in deps])
-        # Exercise actual Make expansion, including nested plugin template eval.
-        source = (ROOT / 'openwrt/Makefile').read_text()
-        header = source[source.index('NETFLEET_METADATA:='):source.index('define Package/opl-netfleet-kernel')]
-        makefile = header + """
-define fixture
-version.$(1):=$(call netfleet_metadata,version.$(1))
-depends.$(1):=$(call netfleet_metadata,depends.$(1))
-endef
-$(foreach plugin,$(NETFLEET_PLUGINS),$(eval $(call fixture,$(plugin))))
-all:
-	@$(foreach plugin,$(NETFLEET_PLUGINS),echo '$(plugin) $(version.$(plugin)) $(depends.$(plugin))';)
-"""
-        actual = subprocess.check_output(['make', '-s', '-f', '-'], input=makefile,
-                                         text=True, cwd=script.parent).splitlines()
-        expected = [' '.join([identity, *field('version.' + identity), *field('depends.' + identity)])
-                    for identity in field('id')]
-        self.assertEqual([line.split() for line in actual], [line.split() for line in expected])
+        self.assertNotIn('define Package/opl-netfleet-kernel', (ROOT / 'openwrt/Makefile').read_text())
 
     def test_batch_package_metadata_rejects_invalid_composition(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -697,9 +681,10 @@ all:
                     self.assertEqual(0, result.returncode, result.stderr)
                     expected = ['--timeout 300 update',
                                 '--no-network query --from none -X https://fixture.invalid/release/packages.adb '
-                                '--format json --fields depends opl-netfleet']
+                                '--format json --fields depends,provides opl-netfleet']
                     if 'luci-app-netfleet' not in installed or 'opl-netfleet ' not in installed:
-                        expected.append('--timeout 300 add opl-netfleet luci-app-netfleet')
+                        expected.append('--timeout 300 add opl-netfleet luci-app-netfleet '
+                                        'opl-netfleet-kernel opl-netfleet-plugin-dashboard opl-netfleet-plugin-selection')
                     expected.append('--timeout 300 upgrade opl-netfleet luci-app-netfleet '
                                     'opl-netfleet-kernel opl-netfleet-plugin-dashboard opl-netfleet-plugin-selection')
                     self.assertEqual(expected, log.read_text().splitlines())
@@ -744,7 +729,10 @@ all:
                     self.assertEqual(min(failures + 1, 3), commands.count('--timeout 300 update'))
                     if failures == 1:
                         self.assertEqual(0, result.returncode, result.stderr)
-                        self.assertEqual(1, commands.count('--timeout 300 add opl-netfleet luci-app-netfleet'))
+                        self.assertEqual(1, commands.count(
+                            '--timeout 300 add opl-netfleet luci-app-netfleet '
+                            'opl-netfleet-kernel opl-netfleet-plugin-dashboard opl-netfleet-plugin-selection'
+                        ))
                         self.assertEqual(1, sum(' upgrade ' in item for item in commands))
                     else:
                         self.assertNotEqual(0, result.returncode)
@@ -1272,9 +1260,9 @@ exit "$code"
 
     def test_native_removal_requires_clean_dataplane(self):
         self.update_state(dirty=True)
-        self.assertNotEqual(0, self.hook('prerm').returncode)
+        self.assertNotEqual(0, self.hook('prerm', PKG_UPGRADE='0').returncode)
         self.update_state(dirty=False)
-        result = self.hook('prerm')
+        result = self.hook('prerm', PKG_UPGRADE='0')
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertFalse(self.read_state()['opl-netfleet-core']['running'])
         self.assertFalse(self.read_state()['opl-netfleet-core']['enabled'])
@@ -1282,7 +1270,7 @@ exit "$code"
 
     def test_nikki_removal_retains_existing_owner_cleanup(self):
         self.update_state(backend='nikki-mihomo')
-        result = self.hook('prerm')
+        result = self.hook('prerm', PKG_UPGRADE='0')
         self.assertEqual(0, result.returncode, result.stderr)
         actions = [call[-1] for call in self.read_state()['calls'] if call[0] == 'ucode']
         self.assertIn('disable', actions)
@@ -1373,55 +1361,18 @@ class PrebuiltComponentFixtures(unittest.TestCase):
 
 
 class IncrementalPackagingTests(unittest.TestCase):
-    def test_plugins_flag_requires_reuse_feed_and_rejects_core_only(self):
+    def test_thin_shell_packager_requires_signing_keys_and_core_only_guard(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             sdk = root / 'sdk'
             sdk.mkdir()
             (sdk / 'Makefile').write_text('all:\n\t@true\n')
-            reuse = root / 'reuse'
-            reuse.mkdir()
-            (reuse / 'manifest.json').write_text('{}\n')
             res1 = subprocess.run(
-                [str(PACKAGER), '--sdk', str(sdk), '--plugins', 'compilation'],
+                [str(PACKAGER), '--sdk', str(sdk), '--core-arch', 'aarch64_generic'],
                 text=True, capture_output=True, check=False,
             )
             self.assertNotEqual(res1.returncode, 0)
-            self.assertIn('--reuse-feed', res1.stderr)
-            res2 = subprocess.run(
-                [str(PACKAGER), '--sdk', str(sdk), '--plugins', 'compilation', '--reuse-feed', str(reuse), '--core-only'],
-                text=True, capture_output=True, check=False,
-            )
-            self.assertNotEqual(res2.returncode, 0)
-            self.assertIn('--core-only', res2.stderr)
-
-    def test_compile_plugins_only_and_exclude_filters(self):
-        spec = importlib.util.spec_from_file_location('compile_plugins', ROOT / 'openwrt/compile-plugins.py')
-        mod = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(mod)
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            for pid in ('alpha', 'beta'):
-                pdir = root / pid
-                (pdir / 'lib').mkdir(parents=True)
-                (pdir / 'manifest.json').write_text(json.dumps({
-                    'id': pid,
-                    'services': {f'{pid}.s': {'module': 'lib/s.uc'}},
-                }))
-                (pdir / 'lib/s.uc').write_text(f'return {{ id: "{pid}" }};\n')
-            fake_ucode = root / 'ucode'
-            fake_ucode.write_text('#!' + sys.executable + '\nimport pathlib, sys\n'
-                                  'out = sys.argv[sys.argv.index("-o") + 1]\n'
-                                  'pathlib.Path(out).write_bytes(b"\\x1bucbfake")\n')
-            fake_ucode.chmod(0o755)
-            rows = mod.compile_plugins(root, fake_ucode, root, only=['alpha'])
-            self.assertEqual([r['plugin'] for r in rows], ['alpha'])
-            self.assertEqual((root / 'beta/lib/s.uc').read_text(), 'return { id: "beta" };\n')
-            rows_ex = mod.compile_plugins(root, fake_ucode, root, exclude=['beta'])
-            self.assertEqual([r['plugin'] for r in rows_ex], ['alpha'])
-            with self.assertRaisesRegex(ValueError, 'missing'):
-                mod.compile_plugins(root, fake_ucode, root, only=['missing'])
+            self.assertIn('--core-only', res1.stderr)
 
     def test_feed_build_merge_feed_overlays_by_package_name(self):
         with tempfile.TemporaryDirectory() as directory:

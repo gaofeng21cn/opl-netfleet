@@ -20,7 +20,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b'OK')
             return
         if (not self.path.startswith(self.server.release_prefix)
-                or not re.fullmatch(r'/releases/[0-9]+\.[0-9]+\.[0-9]+/(?:[A-Za-z0-9._+~-]+/)*[A-Za-z0-9._+~-]+\.(?:adb|apk)', self.path)
+                or not re.fullmatch(r'/releases/[0-9]+\.[0-9]+\.[0-9]+/(?:[A-Za-z0-9._+~-]+/)*(?:[A-Za-z0-9._+~-]+\.(?:adb|apk|ipk|gz|sig)|Packages)', self.path)
                 or '..' in self.path.split('/')):
             self.send_error(404)
             return

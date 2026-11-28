@@ -137,7 +137,7 @@ export function request_all(specs, default_timeout_ms) {
 	function finish(item, value) {
 		if (item.done) return;
 		item.done = true;
-		try { item.sock?.close(); } catch (error) {}
+		try { if (item.sock != null) item.sock.close(); } catch (error) {}
 		item.sock = null;
 		results[item.idx] = value;
 	};
@@ -273,12 +273,12 @@ export function request_all(specs, default_timeout_ms) {
 		}
 	} catch (error) {
 		for (let i = 0; i < length(items); i++) {
-			try { items[i].sock?.close(); } catch (close_error) {}
+			try { if (items[i].sock != null) items[i].sock.close(); } catch (close_error) {}
 		}
 		die(error?.message ?? "http_request_failed");
 	}
 	for (let i = 0; i < length(items); i++) {
-		try { items[i].sock?.close(); } catch (close_error) {}
+		try { if (items[i].sock != null) items[i].sock.close(); } catch (close_error) {}
 	}
 	return results;
 };

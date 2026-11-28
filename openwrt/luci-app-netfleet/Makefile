@@ -14,8 +14,8 @@ define Package/luci-app-netfleet
   SECTION:=luci
   CATEGORY:=LuCI
   TITLE:=OPL NetFleet status and recovery interface
-  DEPENDS:=+luci-base +opl-netfleet-kernel +USE_APK:luci-app-attendedsysupgrade +USE_APK:uclient-fetch
-  EXTRA_DEPENDS:=opl-netfleet-kernel (>=0.8.8)
+  DEPENDS:=+luci-base +opl-netfleet +USE_APK:luci-app-attendedsysupgrade +USE_APK:uclient-fetch
+  EXTRA_DEPENDS:=opl-netfleet (>=0.9.34)
   PKGARCH:=all
 endef
 
@@ -35,6 +35,7 @@ define Package/luci-app-netfleet/install
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/netfleet/plugin-host.js $(1)/www/luci-static/resources/netfleet/plugin-host.js
 	$(INSTALL_DATA) ./htdocs/luci-static/resources/view/netfleet/overview.js $(1)/www/luci-static/resources/view/netfleet/overview.js
 	sh ./stage-assets.sh $(1)/www/luci-static/resources $(NETFLEET_VIEW_VERSION)
+	ln -sf /usr/share/opl-netfleet/current/www $(1)/www/luci-static/resources/netfleet/bundle
 	$(INSTALL_DATA) ./root/usr/share/luci/menu.d/luci-app-netfleet.json $(1)/usr/share/luci/menu.d/luci-app-netfleet.json
 	$(INSTALL_DATA) ./root/usr/share/rpcd/acl.d/luci-app-netfleet.json $(1)/usr/share/rpcd/acl.d/luci-app-netfleet.json
 	$(if $(CONFIG_USE_APK),$(INSTALL_DIR) $(1)/usr/libexec)

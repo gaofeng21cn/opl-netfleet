@@ -21,8 +21,8 @@ service_state = function(name) {
 	const enabled = installed && system(`'${init}' enabled >/dev/null 2>&1`) == 0;
 	let state = null;
 	const bus = installed ? connect(null, 5) : null;
-	try { state = bus?.call("service", "list", { name }); } catch (error) {}
-	bus?.disconnect();
+	try { state = bus != null ? bus.call("service", "list", { name }) : null; } catch (error) {}
+	if (bus != null) bus.disconnect();
 	const running = state?.[name]?.instances?.[instance]?.running == true;
 	return { installed: installed, enabled: enabled, running: running };
 };

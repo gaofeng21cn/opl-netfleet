@@ -36,8 +36,16 @@ return function(context) {
 		EVENTS_PATH: "/var/lib/opl-netfleet/events.json",
 		OPERATION_DIR: "/tmp",
 		REFRESH_DIR: "/tmp/opl-netfleet-subscription-refresh",
-		// 安装构建身份的读取位置：包内构建记录与部署器写入的已安装身份。
+		// 安装构建身份与 Release Bundle 的读取位置：包内构建记录与部署器写入的已安装身份。
 		PACKAGE_BUILD_PATH: "/usr/share/opl-netfleet/build.json",
-		INSTALLED_IDENTITY_PATH: "/etc/opl-netfleet/installed.json"
+		INSTALLED_IDENTITY_PATH: "/etc/opl-netfleet/installed.json",
+		BUNDLE_ROOT: "/usr/share/opl-netfleet",
+		BUNDLE_CURRENT: "/usr/share/opl-netfleet/current",
+		BUNDLE_PREVIOUS: "/usr/share/opl-netfleet/previous",
+		BUNDLE_RELEASES: "/usr/share/opl-netfleet/releases",
+		BUNDLE_KEY_PATH: "/usr/share/opl-netfleet/keys/release-bundle.pub",
+		SHELL_META_PATH: "/usr/share/opl-netfleet/shell.json",
+		OPKG_FEEDS_PATH: "/etc/opkg/customfeeds.conf",
+		RELEASE_FEED_PATH: "/etc/opl-netfleet/release-feed.json"
 	};
 };

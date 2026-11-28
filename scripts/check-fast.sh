@@ -45,6 +45,7 @@ root, has_ucode, has_bun, has_node = sys.argv[1:]
 
 py_modules = [
     'tests.test_release_tools',
+    'tests.test_ipk_bundle',
     'tests.test_mvp_layout',
     'tests.test_official_package_mirror',
     'tests.test_native_openwrt',

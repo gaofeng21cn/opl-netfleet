@@ -5,6 +5,7 @@ return function(context) {
 let private_file, private_directory, write_private, atomic_json, core_service;
 
 const read_json = context.use("platform.storage").read_json;
+const mkdtemp = context.use("platform.storage").mkdtemp ?? ((t) => fs.mkdtemp(t));
 
 const BASE = context.use("platform.paths").NATIVE_ROOT;
 const SERVICE = context.use("platform.runtime").SERVICE;
@@ -51,5 +52,5 @@ core_service = function() {
 	return { ok: true, service: result[SERVICE] };
 };
 
-return { BASE, SERVICE, private_file, private_directory, write_private, atomic_json, core_service };
+return { BASE, SERVICE, private_file, private_directory, write_private, atomic_json, core_service, mkdtemp };
 };

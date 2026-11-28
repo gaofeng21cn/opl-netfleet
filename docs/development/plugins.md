@@ -15,7 +15,7 @@ NetFleet 的功能插件与第三方插件采用相同的发现、调用和安�
 服务插件通过具名接口组合能力，适合继续拆分和扩展 NetFleet 自身功能。进程插件保留
 Plugin API v1，可以使用设备已安装的 Shell、Python、UCode 或其他运行时。
 
-开发机需要 Python 3 和 NetFleet 源码；设备需要支持相应接口的 `opl-netfleet-kernel`。
+开发机需要 Python 3 和 NetFleet 源码；设备需要支持 `netfleet-plugin-api-v1` 的宿主壳（薄系统包壳 `opl-netfleet`，或兼容性旧版 `opl-netfleet-kernel`）。内置产品服务插件随签名纯源码 Release Bundle 部署到 `/usr/share/opl-netfleet/current/runtime/plugins/`；第三方或独立扩展插件继续使用标准 OpenWrt SDK 打包安装到独立插件/扩展目录。
 软件包使用匹配目标平台的 OpenWrt SDK 构建。SDK 需要 Linux 的大小写敏感文件系统，
 macOS 可使用 Linux 容器的独立卷。Python 仅供开发工具使用。
 
@@ -337,9 +337,7 @@ make -C "$sdk" defconfig
 make -C "$sdk" package/opl-netfleet-plugin-workspace-note/compile V=s
 ```
 
-生成器输出标准 OpenWrt `Makefile` 和 `files/`，由 SDK 生成 APK 或 IPK。服务插件依赖
-`opl-netfleet-kernel` 与声明的 `package_dependencies`；进程插件依赖微内核、API v1
-虚拟包及声明的 `dependencies`。SDK 不强制引入 `opl-netfleet` 默认产品组合。
+生成器输出标准 OpenWrt `Makefile` 和 `files/`，由 SDK 生成 APK 或 IPK。独立分发的第三方或扩展插件声明依赖 `netfleet-plugin-api-v1`（由薄系统包壳 `opl-netfleet` 及旧版 `opl-netfleet-kernel` 共同提供）及所需 `package_dependencies`；SDK 不强制引入额外业务配置。
 
 `--license` 必须与插件实际许可证一致。按[插件版本合同](../architecture/packaging.md#插件版本)
 修改 manifest 的三段数字版本；修复或发布包装变化递增最后一位，不另设打包修订参数。

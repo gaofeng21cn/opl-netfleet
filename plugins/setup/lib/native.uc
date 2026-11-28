@@ -9,6 +9,7 @@ const private_file = context.use("platform.files").private_file;
 const private_directory = context.use("platform.files").private_directory;
 const write_private = context.use("platform.files").write_private;
 const atomic_json = context.use("platform.files").atomic_json;
+const mkdtemp = context.use("platform.files").mkdtemp ?? ((t) => fs.mkdtemp(t));
 const KIND = context.use("platform.runtime").KIND;
 const service_state = context.use("platform.service").service_state;
 const set_service_state = context.use("platform.service").set_service_state;
@@ -163,7 +164,7 @@ apply = function(envelope_path) {
 	if (!found.ready) return failure("setup_not_ready", public_plan(found));
 	const validated = validate_request(read_json(envelope_path)?.request, found.revision);
 	if (!validated.ok) return validated;
-	const work = fs.mkdtemp("/etc/opl-netfleet/.setup.XXXXXX");
+	const work = mkdtemp("/etc/opl-netfleet/.setup.XXXXXX");
 	if (work == null || !private_directory(work)) return failure("setup_snapshot_failed");
 	const snapshot = { files: [], directories: {}, supervisor: found.supervisor };
 	for (let path in [BASE, STATE]) snapshot.directories[path] = fs.lstat(path) != null;

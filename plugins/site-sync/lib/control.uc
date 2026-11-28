@@ -139,7 +139,7 @@ return function(context) {
 		if (fs.lstat(runtime) == null) fs.mkdir(runtime, 0700);
 		if (!files.private_directory(runtime)) return { ok: false, error: "unsafe_sync_state" };
 		const lock = fs.open(runtime + "/worker.lock", "ae", 0600);
-		if (!lock?.lock("xn")) { lock?.close(); return { ok: true, state: "busy" }; }
+		if (lock == null || !lock.lock("xn")) { if (lock != null) lock.close(); return { ok: true, state: "busy" }; }
 		let result;
 		try {
 			const earlier = read(receipt_file), now = int(time());

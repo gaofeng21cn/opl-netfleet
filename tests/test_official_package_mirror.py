@@ -78,6 +78,26 @@ class MirrorTests(unittest.TestCase):
             self.assertEqual(self.read('/releases/25.12.5/base/packages.adb')[0], 502)
         self.assertEqual(list(self.server.cache_root.rglob('packages.adb')), [])
 
+    def test_relays_24_10_opkg_indexes_and_ipk_packages(self):
+        self.server.release_prefix = '/releases/24.10.2/'
+        samples = {
+            '/releases/24.10.2/packages/aarch64_generic/base/Packages.gz': b'gz-index',
+            '/releases/24.10.2/packages/aarch64_generic/base/Packages.sig': b'untrusted comment: sig\nAAAA\n',
+            '/releases/24.10.2/packages/aarch64_generic/base/Packages': b'Package: usign\n',
+            '/releases/24.10.2/packages/aarch64_generic/base/usign_2020-05-23-f1f65026-1_aarch64_generic.ipk': b'ipk-bytes',
+        }
+        def fake_urlopen(url, timeout=120):
+            for path, payload in samples.items():
+                if url.endswith(path):
+                    obj = io.BytesIO(payload)
+                    obj.headers = {'Content-Length': str(len(payload))}
+                    return obj
+            raise AssertionError(f'unexpected url {url}')
+
+        with mock.patch.object(mirror.request, 'urlopen', side_effect=fake_urlopen):
+            for path, payload in samples.items():
+                self.assertEqual(self.read(path), (200, payload))
+
 
 if __name__ == '__main__':
     unittest.main()
