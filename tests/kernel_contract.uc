@@ -23,7 +23,7 @@ function plugin(id, service, requires, source) {
 	write(`${root}/plugins/${id}/lib/main.uc`, source);
 	profile.enabled[id] = true; profile.bindings[service] = id;
 };
-function host(system) { return create(root, { adapter: create_adapter(), trusted_owner: fs.stat(root).uid, system: system ?? profile,
+function host(system) { return create(root, { adapter: create_adapter(), extra_plugin_roots: [], trusted_owner: fs.stat(root).uid, system: system ?? profile,
 	lock_root: `${root}/locks`, maintenance_root: `${root}/maintenance` }); };
 function cleanup() {
 	for (let path in reverse(paths)) { if (fs.lstat(path)?.type == 'directory') fs.rmdir(path); else fs.unlink(path); }
@@ -56,14 +56,14 @@ try {
 	let package_queries = 0;
 	const dependency_host = create(root, { adapter: { ...create_adapter(), package_available: name => {
 		package_queries++; return name == 'virtual-core';
-	} }, trusted_owner: fs.stat(root).uid, system: profile, lock_root: `${root}/locks`, maintenance_root: `${root}/maintenance` });
+	} }, extra_plugin_roots: [], trusted_owner: fs.stat(root).uid, system: profile, lock_root: `${root}/locks`, maintenance_root: `${root}/maintenance` });
 	const virtual = filter(dependency_host.inventory({ 'installed-library': '1.0' }), row => row.id == 'provider')[0];
 	check(virtual.state == 'available' && virtual.dependencies[0].available && package_queries == 1,
 		'virtual provider satisfies dependency without probing installed packages or executing factories');
 	dependency_host.release();
 	manifest.package_dependencies = ['missing-core']; write(path, sprintf('%J', manifest));
 	const absent_host = create(root, { adapter: { ...create_adapter(), package_available: () => false },
-		trusted_owner: fs.stat(root).uid, system: profile, lock_root: `${root}/locks`, maintenance_root: `${root}/maintenance` });
+		extra_plugin_roots: [], trusted_owner: fs.stat(root).uid, system: profile, lock_root: `${root}/locks`, maintenance_root: `${root}/maintenance` });
 	check(filter(absent_host.inventory({}), row => row.id == 'provider')[0].reason == 'plugin_dependency_missing',
 		'unsatisfied dependency still blocks readiness');
 	absent_host.release();
