@@ -1,0 +1,128 @@
+.netfleet-sitesync-plugin {
+  --nf-border: var(--border-color-medium, #d6dadd);
+  --nf-muted: var(--text-color-medium, #626970);
+  --nf-accent: var(--primary, var(--primary-color-high, #0284c7));
+  --nf-ok: #15803d;
+  --nf-err: #b91c1c;
+  color: var(--text-color-high, #202124);
+  max-width: 960px;
+  line-height: 1.5;
+}
+
+.netfleet-sitesync-plugin :is(button, input):focus-visible {
+  outline: 2px solid var(--nf-accent);
+  outline-offset: 2px;
+}
+
+.netfleet-sitesync-plugin .nf-ss-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--nf-border);
+}
+
+.netfleet-sitesync-plugin .nf-ss-head h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.netfleet-sitesync-plugin .nf-ss-sub {
+  margin: 0;
+  color: var(--nf-muted);
+  font-size: 13px;
+}
+
+.netfleet-sitesync-plugin .nf-ss-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--nf-border);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.netfleet-sitesync-plugin .nf-ss-badge.is-ok {
+  color: var(--nf-ok);
+  border-color: rgba(21, 128, 61, 0.35);
+}
+
+.netfleet-sitesync-plugin .nf-ss-alert {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--nf-border);
+  font-size: 13px;
+}
+
+.netfleet-sitesync-plugin .nf-ss-alert.is-error {
+  color: var(--nf-err);
+  border-color: rgba(185, 28, 28, 0.38);
+}
+
+.netfleet-sitesync-plugin .nf-ss-alert.is-ok {
+  color: var(--nf-ok);
+  border-color: rgba(21, 128, 61, 0.38);
+}
+
+.netfleet-sitesync-plugin .nf-ss-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(200px, 2fr);
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--nf-border);
+}
+
+.netfleet-sitesync-plugin .nf-ss-row input {
+  width: 100%;
+  min-width: 0;
+}
+
+.netfleet-sitesync-plugin small {
+  display: block;
+  margin-top: 4px;
+  color: var(--nf-muted);
+}
+
+.netfleet-sitesync-plugin .nf-ss-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.netfleet-sitesync-plugin .nf-ss-grid dt {
+  color: var(--nf-muted);
+  font-size: 12px;
+}
+
+.netfleet-sitesync-plugin .nf-ss-grid dd {
+  margin: 3px 0 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.netfleet-sitesync-plugin .nf-ss-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.netfleet-sitesync-plugin .nf-ss-foot {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--nf-border);
+  color: var(--nf-muted);
+  font-size: 12.5px;
+}
+
+@media (max-width: 720px) {
+  .netfleet-sitesync-plugin .nf-ss-row,
+  .netfleet-sitesync-plugin .nf-ss-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+}

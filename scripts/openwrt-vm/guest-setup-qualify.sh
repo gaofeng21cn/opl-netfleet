@@ -135,7 +135,7 @@ native_restored() {
 }
 legacy_native_migration() {
 	[ -n "$(jsonfilter -i "$work/legacy-fixture.json" -e '@.legacy.key_sha256')" ] || return 0
-	stage=legacy_native_prepare
+	guest_stage legacy_native_prepare
 	uclient-fetch -q -O /etc/apk/keys/netfleet-legacy-fixture.pem \
 		"$feed_url/components-fixtures/legacy/baseline.pem"
 	[ "$(digest /etc/apk/keys/netfleet-legacy-fixture.pem)" = \
@@ -173,13 +173,13 @@ legacy_native_migration() {
 		apk --no-network add mihomo-meta yq unzip $legacy_dependencies 9>&-
 	) >>"$work/packages.log" 2>&1
 	tar -czf "$work/legacy-private.tar.gz" -C / etc/config/netfleet etc/opl-netfleet
-	stage=legacy_native_baseline_install
+	guest_stage legacy_native_baseline_install
 	package_transaction del $product_packages
 	[ ! -e "$main" ]
 	direct_probe
 	package_transaction add $legacy_packages
 	tar -xzf "$work/legacy-private.tar.gz" -C /
-	stage=legacy_native_baseline_activate
+	guest_stage legacy_native_baseline_activate
 	/etc/init.d/opl-netfleet-core enable
 	/etc/init.d/opl-netfleet-core start
 	run_main disable >"$work/legacy-disable-result.json"
@@ -196,7 +196,7 @@ legacy_native_migration() {
 	native_restored
 	tar -czf "$work/legacy-private.tar.gz" -C / etc/config/netfleet etc/opl-netfleet
 
-	stage=legacy_native_failed_upgrade
+	guest_stage legacy_native_failed_upgrade
 	uclient-fetch -q -O /etc/apk/keys/netfleet-component-fixture.pem \
 		"$feed_url/components-fixtures/component-fixture.pem"
 	uclient-fetch -q -O "$candidate/incompatible-compatibility.apk" \
@@ -222,7 +222,7 @@ legacy_native_migration() {
 	[ -s /tmp/opl-netfleet-package-upgrade-state ]
 	direct_probe
 
-	stage=legacy_native_formal_package_rollback
+	guest_stage legacy_native_formal_package_rollback
 	if apk info -e opl-netfleet-https-compat >/dev/null 2>&1; then
 		# The legacy engine owns its own lock. Run its normal removal before the
 		# product transaction takes that lock, with the engine already bypassed.
@@ -253,7 +253,7 @@ legacy_native_migration() {
 	native_restored
 	rm -f /tmp/opl-netfleet-microkernel-migration
 
-	stage=legacy_native_successful_upgrade
+	guest_stage legacy_native_successful_upgrade
 	package_transaction add $current_packages
 	package_identity
 	native_restored
@@ -300,7 +300,7 @@ unconfigured() {
 	assert_json "$work/clean-result.json" '@.result.core_running' false
 }
 
-stage=dependencies
+guest_stage dependencies
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 ip route replace default via 192.168.1.2 dev br-lan
@@ -316,7 +316,7 @@ for attempt in 1 2 3; do
 	sleep "$((attempt * 2))"
 done
 if [ -n "$feed_url" ]; then
-	stage=signed_package_install
+	guest_stage signed_package_install
 	mkdir -p "$candidate"
 	for artifact in manifest.json install-netfleet.sh FILES.sha256; do
 		uclient-fetch -q -O "$candidate/$artifact" "$feed_url/$artifact"
@@ -388,7 +388,7 @@ fi
 cat /tmp/local-probe.crt >>/etc/ssl/certs/ca-certificates.crt
 printf '192.168.1.2 netfleet-probe.test www.gstatic.com www.cloudflare.com\n' >>/etc/hosts
 
-stage=real_upstream
+guest_stage real_upstream
 ip netns add nf-setup-upstream
 ip netns exec nf-setup-upstream ip link add nf-setup-peer type veth peer name nf-setup-uplink netns 1
 ip link set nf-setup-uplink up
@@ -475,14 +475,14 @@ for attempt in $(seq 1 10); do
 	sleep 1
 done
 
-stage=setup_read_only
+guest_stage setup_read_only
 unconfigured
 run_main native-setup-get >"$work/setup-get-result.json"
 assert_json "$work/setup-get-result.json" '@.ok' true
 assert_json "$work/setup-get-result.json" '@.result.ready' true
 unconfigured
 
-stage=failed_download_rollback
+guest_stage failed_download_rollback
 setup_request "$work/setup-get-result.json" "$work/missing-request.json" \
 	"https://192.168.1.2:$probe_port/native-subscriptions/missing?token=vm-only-credential"
 run_main native-setup-apply "$work/missing-request.json" >"$work/missing-result.json" || true
@@ -491,7 +491,7 @@ assert_json "$work/missing-result.json" '@.result.rollback.ok' true
 unconfigured
 direct_probe
 
-stage=successful_setup
+guest_stage successful_setup
 run_main native-setup-get >"$work/setup-retry-result.json"
 assert_json "$work/setup-retry-result.json" '@.result.ready' true
 setup_request "$work/setup-retry-result.json" "$work/setup-request.json" \
@@ -518,7 +518,7 @@ run_main onboarding-get >"$work/onboarding-get-result.json"
 assert_json "$work/onboarding-get-result.json" '@.result.ready' true
 assert_json "$work/onboarding-get-result.json" '@.result.required' true
 
-stage=shared_onboarding
+guest_stage shared_onboarding
 ucode -e '
 	import { readfile, writefile } from "fs";
 	const plan = json(readfile(ARGV[0]));
@@ -538,7 +538,7 @@ direct_probe
 
 if [ -n "$feed_url" ]; then
 	legacy_native_migration
-	stage=native_package_upgrade
+	guest_stage native_package_upgrade
 	profile_before=$(uci -q get netfleet.config.profile)
 	config_before=$(digest /etc/config/netfleet)
 	cache_before=$(digest /etc/opl-netfleet/native/subscriptions/setup.yaml)
@@ -562,28 +562,28 @@ if [ -n "$feed_url" ]; then
 	run_main probe >"$work/upgraded-probe-result.json"
 	assert_json "$work/upgraded-probe-result.json" '@.ok' true
 	curl -fsS --socks5-hostname 127.0.0.1:7890 --max-time 10 https://www.gstatic.com/generate_204
-	stage=component_update_transactions
+	guest_stage component_update_transactions
 	sh /tmp/guest-components-qualify.sh "$feed_url"
 	assert_json /tmp/netfleet-components-fixture/qualification.json '@.ok' true
 	package_identity
 fi
 
-stage=configuration_maintenance
+guest_stage configuration_maintenance
 sh /tmp/guest-maintenance-qualify.sh
 assert_json /tmp/netfleet-maintenance-fixture/qualification.json '@.ok' true
 
 if [ -n "$feed_url" ]; then
-	stage=luci_file_transfers
+	guest_stage luci_file_transfers
 	sh /tmp/guest-transfer-qualify.sh
 	assert_json /tmp/netfleet-transfer-fixture/qualification.json '@.ok' true
 fi
 
 if [ -f /tmp/netfleet-core-package/core-manifest.json ]; then
-  stage=core_architecture_variant
+  guest_stage core_architecture_variant
   sh /tmp/guest-core-package-qualify.sh >/tmp/netfleet-core-package/flow.log
 fi
 
-stage=disable_and_cleanup
+guest_stage disable_and_cleanup
 run_main disable >"$work/disable-result.json"
 assert_json "$work/disable-result.json" '@.ok' true
 [ "$(uci -q get netfleet.config.profile)" = subscription:setup ]
@@ -605,7 +605,7 @@ test ! -e /etc/init.d/nikki
 test ! -e /etc/config/nikki
 
 if [ -n "$feed_url" ]; then
-	stage=native_package_remove
+	guest_stage native_package_remove
 	source_before=$(uci -q get netfleet.setup.url)
 	[ -n "$source_before" ]
 	apk --timeout 300 del luci-app-netfleet opl-netfleet >>"$work/packages.log" 2>&1
@@ -628,7 +628,7 @@ if [ -n "$feed_url" ]; then
 	package_checks=',"signed_package_install":true,"installed_build_identity":true,"native_package_upgrade":true,"upgrade_preserves_private_state":true,"upgrade_gateway_ready":true,"component_versions":true,"component_check_worker":true,"component_rejects_wrong_candidate":true,"component_real_apk_upgrade":true,"component_rpcd_restart_continuity":true,"component_failed_upgrade_rollback":true,"component_failed_package_hook_rollback":true,"component_private_inputs_unchanged":true,"component_routes_restored":true,"component_mihomo_upgrade":true,"component_incompatible_core_rejected":true,"package_remove_clean":true,"remove_preserves_private_sources":true'
 fi
 
-stage=complete
+guest_stage complete
 printf '{"schema_version":1,"ok":true,"source_commit":"%s","source_tree":"%s","scope":"native-mihomo-first-install","production_ready":false,"checks":{"nikki_absent":true,"real_netifd_upstream":true,"get_read_only":true,"failed_download_rollback":true,"failed_setup_direct_usable":true,"native_setup":true,"gateway_ready":true,"shared_onboarding":true,"shared_probe":true,"proxy_traffic":true,"disable_restores_subscription":true,"stop_cleans_dataplane":true,"direct_after_stop":true,"foreign_nft_unchanged":true%s}}\n' \
 	"$source_commit" "$source_tree" "$package_checks$legacy_checks" >"$work/qualification.json"
 ucode -e 'import { readfile, writefile } from "fs";

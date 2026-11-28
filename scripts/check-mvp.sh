@@ -62,6 +62,7 @@ network_contract.uc
 maintenance_contract.uc
 dashboard_version_contract.uc
 components_contract.uc
+site_sync_contract.uc
 https_lifecycle_contract.uc"
 	if [ "$openwrt_host" = 1 ]; then
 		contracts="$contracts

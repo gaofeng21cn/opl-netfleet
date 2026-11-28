@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=opl-netfleet
-PKG_VERSION:=0.9.33
+PKG_VERSION:=0.9.34
 PKG_RELEASE:=
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=OPL NetFleet
@@ -13,7 +13,7 @@ define Package/opl-netfleet
   CATEGORY:=Network
   TITLE:=OPL NetFleet thin shell and Release Bundle runtime
   PROVIDES:=netfleet-plugin-api-v1
-  REPLACES:=opl-netfleet-kernel opl-netfleet-plugin-activation opl-netfleet-plugin-compilation opl-netfleet-plugin-components opl-netfleet-plugin-configuration opl-netfleet-plugin-dashboard opl-netfleet-plugin-events opl-netfleet-plugin-https-compat opl-netfleet-plugin-maintenance opl-netfleet-plugin-mihomo opl-netfleet-plugin-models opl-netfleet-plugin-network opl-netfleet-plugin-platform opl-netfleet-plugin-platform-openwrt opl-netfleet-plugin-platform-storage opl-netfleet-plugin-product-ui opl-netfleet-plugin-recovery opl-netfleet-plugin-refresh opl-netfleet-plugin-scheduler opl-netfleet-plugin-selection opl-netfleet-plugin-selection-algorithm opl-netfleet-plugin-setup opl-netfleet-plugin-status opl-netfleet-plugin-subscriptions
+  REPLACES:=opl-netfleet-kernel opl-netfleet-plugin-activation opl-netfleet-plugin-compilation opl-netfleet-plugin-components opl-netfleet-plugin-configuration opl-netfleet-plugin-dashboard opl-netfleet-plugin-events opl-netfleet-plugin-https-compat opl-netfleet-plugin-maintenance opl-netfleet-plugin-mihomo opl-netfleet-plugin-models opl-netfleet-plugin-network opl-netfleet-plugin-platform opl-netfleet-plugin-platform-openwrt opl-netfleet-plugin-platform-storage opl-netfleet-plugin-product-ui opl-netfleet-plugin-recovery opl-netfleet-plugin-refresh opl-netfleet-plugin-scheduler opl-netfleet-plugin-selection opl-netfleet-plugin-selection-algorithm opl-netfleet-plugin-setup opl-netfleet-plugin-site-sync opl-netfleet-plugin-status opl-netfleet-plugin-subscriptions
   DEPENDS:=+ucode +ucode-mod-fs +ucode-mod-uci +ucode-mod-ubus +ucode-mod-uloop +ucode-mod-socket +ucode-mod-digest +yq +curl +ca-bundle +flock +coreutils-timeout +unzip +ip-full +nftables-json +kmod-nft-socket +kmod-nft-tproxy +usign
   EXTRA_DEPENDS:=!opl-netfleet-https-compat (<0.1.8)
   PKGARCH:=all

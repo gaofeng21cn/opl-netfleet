@@ -1,0 +1,129 @@
+{
+  "schema": "opl-netfleet-service-plugin.v1",
+  "id": "site-sync",
+  "label": "Cloud site sync",
+  "version": "0.2.0",
+  "api_version": 1,
+  "package": "opl-netfleet-plugin-site-sync",
+  "services": {
+    "site-sync.control": {
+      "version": 1,
+      "module": "lib/control.uc",
+      "requires": {
+        "events.store": 1,
+        "mihomo.controller": 1,
+        "platform.credentials": 1,
+        "platform.process": 1,
+        "platform.storage": 1,
+        "platform.files": 1,
+        "refresh.control": 1
+      }
+    }
+  },
+  "commands": {
+    "site-sync-heartbeat": {
+      "service": "site-sync.control",
+      "method": "command_heartbeat",
+      "access": "write"
+    },
+    "site-sync-apply": {
+      "service": "site-sync.control",
+      "method": "command_apply",
+      "access": "write"
+    },
+    "site-sync-status": {
+      "service": "site-sync.control",
+      "method": "command_status",
+      "access": "read"
+    },
+    "site-sync-enroll": {
+      "service": "site-sync.control",
+      "method": "command_enroll",
+      "access": "write"
+    },
+    "site-sync-disconnect": {
+      "service": "site-sync.control",
+      "method": "command_disconnect",
+      "access": "write"
+    }
+  },
+  "actions": {
+    "status": {
+      "service": "site-sync.control",
+      "method": "action_status",
+      "access": "read",
+      "lock": "plugin"
+    },
+    "enroll": {
+      "service": "site-sync.control",
+      "method": "action_enroll",
+      "access": "write",
+      "lock": "plugin",
+      "params": {
+        "type": "object",
+        "required": [
+          "origin",
+          "email",
+          "password"
+        ],
+        "properties": {
+          "origin": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "site_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "disconnect": {
+      "service": "site-sync.control",
+      "method": "action_disconnect",
+      "access": "write",
+      "lock": "plugin"
+    },
+    "sync-now": {
+      "service": "site-sync.control",
+      "method": "action_sync_now",
+      "access": "write",
+      "lock": "plugin"
+    }
+  },
+  "configuration": {
+    "read": "status",
+    "write": "enroll"
+  },
+  "ui": [
+    {
+      "id": "settings",
+      "title": "云端站点同步",
+      "module": "resources/page.js",
+      "scope": "host",
+      "navigation": "plugin"
+    }
+  ],
+  "package_dependencies": [
+    "curl",
+    "ca-bundle"
+  ],
+  "presentation": {
+    "label": "云端站点同步",
+    "description": "登录 OPL Gateway 账号自动接入云端多站点面板，上报脱敏状态并按版本同步订阅"
+  },
+  "product": {
+    "required": false,
+    "unloadable": true,
+    "retained": false,
+    "owner": "site-sync"
+  }
+}

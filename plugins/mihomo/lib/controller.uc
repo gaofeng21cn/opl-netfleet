@@ -154,6 +154,13 @@ connections = function(secret, timeout_seconds) {
 	return payload == null ? null : project_connections(payload, 50);
 };
 
+function traffic_totals(secret, timeout_seconds) {
+	if (!secret) return null;
+	const value = api_json(secret, "/connections", timeout_seconds);
+	if (value == null) return null;
+	return { upload_bytes: value.uploadTotal, download_bytes: value.downloadTotal };
+}
+
 select = function(secret, group, choice) {
 	const body = sprintf("%J", { name: choice });
 	const response = http_request(API, {
@@ -291,5 +298,5 @@ direct_probes = function(policy, limit_seconds) {
 	return { ok: true, count: length(probes) };
 };
 
-return { test_profile, test_runtime, url_path_segment, proxies, controller_ready, controller_version, proxy_providers, test_group_path, project_connections, connections, select, unfix, protected_probes, direct_probes };
+return { test_profile, test_runtime, url_path_segment, proxies, controller_ready, controller_version, proxy_providers, test_group_path, project_connections, connections, traffic_totals, select, unfix, protected_probes, direct_probes };
 };

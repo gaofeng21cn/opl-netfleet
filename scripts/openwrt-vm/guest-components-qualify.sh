@@ -90,14 +90,22 @@ request() {
 	method=$1
 	version=${2:-}
 	component=${3:-netfleet}
-	if [ "$method" = components_check ]; then
-		ubus -t 20 call opl-netfleet "$method" '{}' >"$work/start-result.json"
-	else
-		ubus -t 20 call opl-netfleet "$method" "{\"component\":\"$component\",\"version\":\"$version\"}" >"$work/start-result.json"
+	payload='{}'
+	if [ "$method" != components_check ]; then
+		payload="{\"component\":\"$component\",\"version\":\"$version\"}"
 	fi
-	assert_json "$work/start-result.json" '@.ok' true
+	# The RPC rejects a held deployment lock before starting the request.
+	# Only that explicit response is safe to retry. Keep transport failures fatal.
+	deadline=$(($(operation_uptime) + 60))
+	while :; do
+		ubus -t 20 call opl-netfleet "$method" "$payload" >"$work/start-result.json" || return 1
+		if ! assert_json "$work/start-result.json" '@.error' mutation_busy; then break; fi
+		[ "$(operation_uptime)" -lt "$deadline" ] || return 1
+		sleep 1
+	done
+	assert_json "$work/start-result.json" '@.ok' true || return 1
 	id=$(jsonfilter -i "$work/start-result.json" -e '@.result.operation.id')
-	[ -n "$id" ]
+	[ -n "$id" ] || return 1
 	wait_operation "$id"
 }
 rpc_ready() {
@@ -110,7 +118,7 @@ rpc_ready() {
 	done
 	return 1
 }
-stage=actual_component_readback
+guest_stage actual_component_readback
 rpc_ready
 ucode /tmp/tests/components_device.uc "$owner" >"$work/contract.log"
 ucode /tmp/tests/extensions_device.uc >>"$work/contract.log"
@@ -128,11 +136,11 @@ ucode -e 'import { readfile, popen } from "fs";
 	}
 	if (filter(data.components, row => row.id == "mihomo")[0].running_version == null) exit(1);' "$work/get-result.json"
 snapshot "$work/before"
-stage=asynchronous_feed_check
+guest_stage asynchronous_feed_check
 request components_check
 assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
 unchanged
-stage=wrong_candidate_rejected
+guest_stage wrong_candidate_rejected
 request components_update 9999.0.0-r1
 assert_json "$work/operation-result.json" '@.result.packages.state' failed
 assert_json "$work/operation-result.json" '@.result.packages.error' candidate_changed
@@ -147,7 +155,7 @@ assert_json "$work/operation-result.json" '@.result.packages.state' failed
 assert_json "$work/operation-result.json" '@.result.packages.error' candidate_changed
 unchanged
 
-stage=fixture_feed
+guest_stage fixture_feed
 uclient-fetch -q -O "$work/fixture.json" "$feed_url/components-fixtures/fixture.json"
 uclient-fetch -q -O /etc/apk/keys/netfleet-component-fixture.pem "$feed_url/components-fixtures/component-fixture.pem"
 printf '%s\n' "$feed_url/components-fixtures/old/packages.adb" "$feed_url/components-fixtures/good/packages.adb" > /etc/apk/repositories.d/netfleet-component-fixture.list
@@ -180,11 +188,11 @@ for name in $product_packages; do
 	uclient-fetch -q -O "$work/$name-$old.apk" "$feed_url/components-fixtures/good/$name-$old.apk"
 	old_packages="$old_packages $work/$name-$old.apk"
 done
-stage=older_real_apk
+guest_stage older_real_apk
 install_fixture $old_packages >"$work/downgrade.log" 2>&1
 unchanged
 rpc_ready
-stage=installer_product_upgrade
+guest_stage installer_product_upgrade
 # Local APK files pin their checksum; a normal feed installation has no pin.
 restore_fixture_world
 for name in $product_packages; do
@@ -199,7 +207,7 @@ done
 unchanged
 install_fixture $old_packages >>"$work/downgrade.log" 2>&1
 restore_fixture_world
-stage=independent_plugin_update
+guest_stage independent_plugin_update
 printf '%s\n' "$feed_url/components-fixtures/good/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
 printf '%s\n' "$feed_url/components-fixtures/independent/packages.adb" >>/etc/apk/repositories.d/netfleet-component-fixture.list
 apk --timeout 30 --repositories-file /etc/apk/repositories.d/netfleet-component-fixture.list update >>"$work/rollback-feed.log" 2>&1
@@ -229,7 +237,7 @@ assert_json "$work/local-rejected.json" '@.error' unexpected_plugin_archive
 rm "$local_stage/old/unexpected.apk"
 # Hold a real reader lease. The update must defer before APK writes, and the
 # retained RPC owner must remain readable while the installed plugin drains.
-stage=bounded_update_preparation
+guest_stage bounded_update_preparation
 ucode -e 'import * as fs from "fs";
  const lock=fs.open("/var/lock/opl-netfleet-code/dashboard.lock","ae",0600);
  assert(lock.lock("s"));fs.writefile(ARGV[0]+"/reader-ready","ready");
@@ -246,7 +254,7 @@ assert_json "$work/operation-result.json" '@.result.packages.error' update_defer
 apk list --manifest | grep -Fqx "$plugin $prior"
 [ "$(pidof mihomo)" = "$core_pid_before" ]
 unchanged
-stage=cancel_update_before_replacement
+guest_stage cancel_update_before_replacement
 ucode "$owner" components-install "$local_stage" >"$work/cancel-start.json"
 assert_json "$work/cancel-start.json" '@.ok' true
 cancel_id=$(jsonfilter -i "$work/cancel-start.json" -e '@.result.operation.id')
@@ -268,7 +276,7 @@ touch "$work/reader-release"
 wait "$reader_pid"
 apk list --manifest | grep -Fqx "$plugin $prior"
 unchanged
-stage=independent_plugin_update
+guest_stage independent_plugin_update
 cp -R /usr/libexec/opl-netfleet/plugins/components "$local_stage/components"
 cp /tmp/observe-openwrt.uc "$local_stage/observe.uc"
 (cd "$local_stage" && sha256sum request.json old/* new/* components/manifest.json components/lib/control.uc observe.uc >SHA256SUMS)
@@ -294,7 +302,7 @@ rpc_ready
 # restoration completes before observing normal supervisor cycles.
 # Keep the shared plugin cohort at its compatible old versions. Select the
 # backend explicitly when its new dependency closure contains shared models.
-stage=shared_plugin_runtime_baseline
+guest_stage shared_plugin_runtime_baseline
 runtime_archives=
 for runtime_plugin in opl-netfleet opl-netfleet-kernel opl-netfleet-plugin-platform; do
  runtime_version=$(package_version "$runtime_plugin" current)
@@ -311,7 +319,7 @@ mkdir -m 700 -p "$local_stage/old" "$local_stage/new"
 printf '%s\n' '{"schema":"opl-netfleet-plugin-install.v1","packages":[]}' >"$local_stage/request.json"
 # Let the real APK batch plan supply the complete dependency closure for the
 # shared backend, models, UI and self-updating components cohort.
-stage=shared_plugin_dependency_plan
+guest_stage shared_plugin_dependency_plan
 shared_request=$(ucode -e 'import {readfile} from "fs";
  const versions=json(readfile(ARGV[0])).package_versions;
  const targets=["opl-netfleet-plugin-mihomo","opl-netfleet-plugin-models","opl-netfleet-plugin-product-ui","opl-netfleet-plugin-components"];
@@ -324,7 +332,7 @@ shared_packages=$(ucode -e 'import {readfile} from "fs";
   assert(index(names,name)>=0);
  print(join(" ",names));' "$work/shared-plan.json")
 # Also exercise self-updating components through its frozen transaction code.
-stage=shared_plugin_update
+guest_stage shared_plugin_update
 for extra in $shared_packages; do
  extra_prior=$(package_version "$extra" old)
  extra_next=$(package_version "$extra" current)
@@ -352,7 +360,7 @@ unchanged
 apk --no-network --repositories-file /dev/null del opl-netfleet-plugin-dashboard \
 	>"$work/independent-root-remove.log" 2>&1
 rpc_ready
-stage=required_plugin_feed_update
+guest_stage required_plugin_feed_update
 plugin=opl-netfleet-plugin-dashboard
 prior=$(package_version "$plugin" old)
 install_fixture "$work/$plugin-$prior.apk" >>"$work/independent.log" 2>&1
@@ -371,7 +379,7 @@ unchanged
 # The following product transaction must preserve that accepted world state.
 grep -Fxq "$plugin" /etc/apk/world
 cp /etc/apk/world "$work/update-world"
-stage=component_update_missing_system_dependency
+guest_stage component_update_missing_system_dependency
 # The synthetic old LuCI package predates this official dependency. Exercise
 # the real product solver/download path with an installed-but-absent dependency.
 apk --no-network del luci-app-attendedsysupgrade >"$work/remove-new-dependency.log" 2>&1
@@ -379,7 +387,7 @@ apk --no-network del luci-app-attendedsysupgrade >"$work/remove-new-dependency.l
 cp /etc/apk/world "$work/update-world"
 mv "$work/distfeeds.list" /etc/apk/repositories.d/distfeeds.list
 apk --timeout 30 update >"$work/new-dependency-feed.log" 2>&1
-stage=component_update
+guest_stage component_update
 apk --no-network query --from installed --format json --fields name,version 'opl-netfleet*' 'luci-app-netfleet' >"$work/dependency-installed.log"
 LC_ALL=C apk --timeout 10 --cache-max-age 1440 --simulate add "luci-app-netfleet=$(package_version luci-app-netfleet current)" >"$work/dependency-plan.log" 2>&1
 rpcd_before=$(pidof rpcd)
@@ -396,7 +404,7 @@ done
 rpc_ready
 [ "$(pidof rpcd)" != "$rpcd_before" ]
 unchanged
-stage=durable_terminal_reconcile
+guest_stage durable_terminal_reconcile
 terminal_core_pid=$(pidof mihomo)
 transaction=/etc/opl-netfleet/package-transactions
 saved_id=$(jsonfilter -i "$transaction/request.json" -e '@.id')
@@ -417,7 +425,7 @@ unchanged
 request components_check
 assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
 unchanged
-stage=component_failed_candidate_rollback
+guest_stage component_failed_candidate_rollback
 printf '%s\n' "$feed_url/components-fixtures/bad/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
 request components_update "$bad"
 assert_json "$work/operation-result.json" '@.result.packages.state' failed
@@ -434,7 +442,7 @@ for name in $product_packages; do
 done
 rpc_ready
 unchanged
-stage=component_failed_package_hook_rollback
+guest_stage component_failed_package_hook_rollback
 printf '%s\n' "$feed_url/components-fixtures/bad-hook/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
 request components_update "$current"
 assert_json "$work/operation-result.json" '@.result.packages.state' failed
@@ -451,7 +459,7 @@ done
 apk --no-network --simulate add opl-netfleet luci-app-netfleet >>"$work/post-hook-reconcile.log" 2>&1
 rpc_ready
 unchanged
-stage=interrupted_package_install_recovery
+guest_stage interrupted_package_install_recovery
 printf '%s\n' "$feed_url/components-fixtures/interrupted/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
 ubus -t 20 call opl-netfleet components_update "{\"component\":\"netfleet\",\"version\":\"$current\"}" >"$work/interrupted-start.json"
 assert_json "$work/interrupted-start.json" '@.ok' true
@@ -499,12 +507,12 @@ for name in $product_packages; do
 	[ "$name" != opl-netfleet-plugin-dashboard ] || expected=$independent
 	apk list --manifest | grep -Fqx "$name $expected"
 done
-stage=core_update
+guest_stage core_update
 printf '%s\n' "$feed_url/components-fixtures/good/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
 uclient-fetch -q -O "$work/mihomo-meta-$core_old.apk" "$feed_url/components-fixtures/good/mihomo-meta-$core_old.apk"
 install_fixture "$work/mihomo-meta-$core_old.apk" >"$work/core-downgrade.log" 2>&1
 unchanged
-stage=insufficient_core_space_rejected_before_stop
+guest_stage insufficient_core_space_rejected_before_stop
 core_pid_before=$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.core.pid')
 free_kb=$(df -Pk /usr/libexec | awk 'NR == 2 { print $4 }')
 fill_mb=$((free_kb / 1024 - 16))
@@ -516,12 +524,12 @@ assert_json "$work/operation-result.json" '@.result.packages.error' insufficient
 [ "$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.core.pid')" = "$core_pid_before" ]
 rm /root/netfleet-component-space-fixture
 unchanged
-stage=core_update
+guest_stage core_update
 request components_update "$core_current" mihomo
 assert_json "$work/operation-result.json" '@.result.packages.state' succeeded
 apk list --manifest | grep -Fqx "mihomo-meta $core_current"
 unchanged
-stage=upstream_signed_index_archive
+guest_stage upstream_signed_index_archive
 cp /etc/apk/repositories.d/netfleet-component-fixture.list "$work/saved-fixture-repositories"
 printf '%s\n' "$feed_url/components-fixtures/unsigned-core/packages.adb" >/etc/apk/repositories.d/netfleet-component-fixture.list
 printf '%s\n' "$feed_url/components-fixtures/core-current/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
@@ -551,7 +559,7 @@ fi
 mv "$work/untampered-core.apk" "$archive_dir/mihomo-meta-$core_old.apk"
 cp "$work/saved-fixture-repositories" /etc/apk/repositories.d/netfleet-component-fixture.list
 unchanged
-stage=incompatible_core_rejected_before_stop
+guest_stage incompatible_core_rejected_before_stop
 printf '%s\n' "$feed_url/components-fixtures/bad-core/packages.adb" >/etc/apk/repositories.d/opl-netfleet.list
 core_pid_before=$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.core.pid')
 request components_update "$core_bad" mihomo
@@ -560,7 +568,7 @@ assert_json "$work/operation-result.json" '@.result.packages.error' core_config_
 apk list --manifest | grep -Fqx "mihomo-meta $core_current"
 [ "$(ubus call service list '{"name":"opl-netfleet-core"}' | jsonfilter -e '@["opl-netfleet-core"].instances.core.pid')" = "$core_pid_before" ]
 unchanged
-stage=complete
+guest_stage complete
 if [ "$(jsonfilter -i "$work/fixture.json" -e '@.native_cohort[0].name')" ]; then
  . /tmp/scripts/openwrt-vm/guest-native-cohort.sh
 fi
