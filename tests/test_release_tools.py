@@ -999,6 +999,193 @@ echo '{"tagName":"v0.4.5"}'
                     self.assertIn(expected, result.stderr)
                     self.assertEqual(git("tag"), "")
 
+    def test_bundle_qualification_requires_all_four_gates_and_matching_release_bundle(self):
+        usign_spec = importlib.util.spec_from_file_location("netfleet_usign", ROOT / "scripts/netfleet_usign.py")
+        usign = importlib.util.module_from_spec(usign_spec)
+        usign_spec.loader.exec_module(usign)
+        bundle_spec = importlib.util.spec_from_file_location(
+            "netfleet_bundle_build", ROOT / "scripts/netfleet-bundle-build.py"
+        )
+        bundle_mod = importlib.util.module_from_spec(bundle_spec)
+        bundle_spec.loader.exec_module(bundle_mod)
+
+        def write_bundle_candidate(directory: Path, commit: str, tree: str, version: str = "0.4.5") -> None:
+            key = directory.parent / f"bundle-sign-{directory.name}.pem"
+            usign.generate_private_key(key)
+            bundle_summary = bundle_mod.build_bundle(
+                ROOT, directory, version=version, source_commit=commit, source_tree=tree, sign_key=key
+            )
+            packages = {
+                "opl-netfleet": f"opl-netfleet-{version}-r1.apk",
+                "luci-app-netfleet": f"luci-app-netfleet-{version}-r1.apk",
+            }
+            artifacts = []
+            for package, name in packages.items():
+                path = directory / name
+                path.write_text(f"{package}\n")
+                artifacts.append({
+                    "package": package,
+                    "version": version,
+                    "release": "1",
+                    "name": name,
+                    "sha256": sha256(path),
+                    "size": path.stat().st_size,
+                })
+            files_manifest = directory / "FILES.sha256"
+            files_manifest.write_text("0" * 64 + "  runtime/main.uc\n")
+            public_key = directory / "opl-netfleet-apk.pem"
+            public_key.write_text("fixture-public-key\n")
+            feed_index = directory / "packages.adb"
+            feed_index.write_bytes(b"fixture-feed-index\n")
+            feed_meta = directory / "index.json"
+            feed_meta.write_text(json.dumps({
+                "version": 2,
+                "architecture": "aarch64_generic",
+                "packages": {"opl-netfleet": f"{version}-r1", "luci-app-netfleet": f"{version}-r1"},
+            }))
+            bootstrap = directory / "install-netfleet.sh"
+            bootstrap.write_text("#!/bin/sh\nexit 0\n")
+            manifest = {
+                "schema": "opl-netfleet-package-manifest.v2",
+                "delivery_model": "release-bundle",
+                "source_commit": commit,
+                "source_tree": tree,
+                "package_version": version,
+                "package_release": "1",
+                "package_format": "apk",
+                "package_arch": "noarch",
+                "build_target_arch": "aarch64_generic",
+                "policy_schema": 2,
+                "runtime_payload_sha256": bundle_summary["runtime_payload_sha256"],
+                "files_manifest": {"name": files_manifest.name, "sha256": sha256(files_manifest)},
+                "artifacts": artifacts,
+                "artifact_files": packages,
+                "apk_public_key": {"name": public_key.name, "sha256": sha256(public_key)},
+                "feed_index": {"name": feed_index.name, "sha256": sha256(feed_index)},
+                "feed_metadata": {"name": feed_meta.name, "sha256": sha256(feed_meta)},
+                "feed_bootstrap": {"name": bootstrap.name, "sha256": sha256(bootstrap)},
+                "release_bundle": {
+                    "archive": bundle_summary["archive"],
+                    "archive_sha256": bundle_summary["archive_sha256"],
+                    "archive_size": bundle_summary["archive_size"],
+                    "manifest": "release-manifest.json",
+                    "manifest_sha256": bundle_summary["manifest_sha256"],
+                    "manifest_sig": "release-manifest.json.sig",
+                    "manifest_sig_sha256": bundle_summary["manifest_sig_sha256"],
+                    "public_key": "opl-netfleet-bundle.pub",
+                },
+            }
+            (directory / "manifest.json").write_text(json.dumps(manifest, sort_keys=True) + "\n")
+
+        def write_diag(path: Path, ver: str, lane: str, commit: str, tree: str, manifest_sha: str) -> None:
+            path.write_text(json.dumps({
+                "schema": "opl-netfleet-openwrt-vm-diagnostic.v1",
+                "diagnostic_passed": True,
+                "diagnostic_lane": lane,
+                "openwrt_version": ver,
+                "source_commit": commit,
+                "source_tree": tree,
+                "checks": {"boot": True, "ssh": True, "var_symlink": True, "ubus": True},
+                "lanes": {
+                    lane: {
+                        "ok": True,
+                        "source_commit": commit,
+                        "source_tree": tree,
+                        "manifest_sha256": manifest_sha,
+                        "checks": {"gate": True},
+                    }
+                },
+            }))
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+
+            def git(*args):
+                return subprocess.check_output(
+                    ["git", "-C", str(repo), *args], text=True, stderr=subprocess.DEVNULL
+                ).strip()
+
+            git("init", "-q", "-b", "main")
+            git("config", "user.email", "test@example.invalid")
+            git("config", "user.name", "Test")
+            scripts = repo / "scripts"
+            scripts.mkdir()
+            for source in (PUBLISHER, VERIFIER, ROOT / "scripts/netfleet_usign.py"):
+                shutil.copy2(source, scripts / source.name)
+            git("add", ".")
+            git("commit", "-qm", "qualified release-bundle candidate")
+            commit = git("rev-parse", "HEAD")
+            tree = git("rev-parse", f"{commit}^{{tree}}")
+            remote = root / "remote.git"
+            subprocess.run(["git", "clone", "--bare", str(repo), str(remote)], check=True, capture_output=True)
+            git("remote", "add", "origin", str(remote))
+
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            gh = bin_dir / "gh"
+            gh.write_text('''#!/bin/sh
+[ "$1 $2" = "release view" ] || exit 90
+echo '{"tagName":"v0.4.5"}'
+''')
+            gh.chmod(0o755)
+            env = {**os.environ, "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"]}
+
+            bundle_dir = root / "bundle-candidate"
+            bundle_dir.mkdir()
+            write_bundle_candidate(bundle_dir, commit, tree)
+            bundle_sha = sha256(bundle_dir / "manifest.json")
+            gates = [("24.10.2", "opkg"), ("24.10.2", "bundle"), ("25.12.5", "bundle"), ("25.12.5", "migrate-bundle")]
+            receipts = []
+            for idx, (ver, lane) in enumerate(gates):
+                p = root / f"diag-{idx}.json"
+                write_diag(p, ver, lane, commit, tree, bundle_sha)
+                receipts.append(p)
+
+            args_ok = [str(scripts / PUBLISHER.name), "--repo", "example/test", "--tag", "v0.4.5",
+                       "--candidate", str(bundle_dir)]
+            for r in receipts:
+                args_ok.extend(["--bundle-qualification", str(r)])
+            res_ok = subprocess.run(args_ok, env=env, capture_output=True, text=True)
+            self.assertNotEqual(res_ok.returncode, 0)
+            self.assertIn("release already exists and is immutable", res_ok.stderr)
+
+            args_missing = [str(scripts / PUBLISHER.name), "--repo", "example/test", "--tag", "v0.4.5",
+                            "--candidate", str(bundle_dir)]
+            for r in receipts[:-1]:
+                args_missing.extend(["--bundle-qualification", str(r)])
+            res_missing = subprocess.run(args_missing, env=env, capture_output=True, text=True)
+            self.assertNotEqual(res_missing.returncode, 0)
+            self.assertIn("missing required gates", res_missing.stderr)
+
+            bad_sha = root / "bad-sha.json"
+            write_diag(bad_sha, "25.12.5", "migrate-bundle", commit, tree, "f" * 64)
+            args_bad_sha = [str(scripts / PUBLISHER.name), "--repo", "example/test", "--tag", "v0.4.5",
+                            "--candidate", str(bundle_dir)]
+            for r in receipts[:-1] + [bad_sha]:
+                args_bad_sha.extend(["--bundle-qualification", str(r)])
+            res_bad_sha = subprocess.run(args_bad_sha, env=env, capture_output=True, text=True)
+            self.assertNotEqual(res_bad_sha.returncode, 0)
+            self.assertIn("bundle VM diagnostic qualification invalid", res_bad_sha.stderr)
+
+            legacy_dir = root / "legacy-candidate"
+            legacy_dir.mkdir()
+            write_release(legacy_dir, commit, tree)
+            legacy_sha = sha256(legacy_dir / "manifest.json")
+            legacy_receipts = []
+            for idx, (ver, lane) in enumerate(gates):
+                p = root / f"legacy-diag-{idx}.json"
+                write_diag(p, ver, lane, commit, tree, legacy_sha)
+                legacy_receipts.append(p)
+            args_legacy = [str(scripts / PUBLISHER.name), "--repo", "example/test", "--tag", "v0.4.5",
+                           "--candidate", str(legacy_dir)]
+            for r in legacy_receipts:
+                args_legacy.extend(["--bundle-qualification", str(r)])
+            res_legacy = subprocess.run(args_legacy, env=env, capture_output=True, text=True)
+            self.assertNotEqual(res_legacy.returncode, 0)
+            self.assertIn("--bundle-qualification requires a release-bundle candidate", res_legacy.stderr)
+
 
 class PackageLifecycleTests(unittest.TestCase):
     def setUp(self):

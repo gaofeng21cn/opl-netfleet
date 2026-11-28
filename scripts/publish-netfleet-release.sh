@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  printf '%s\n' 'Usage: scripts/publish-netfleet-release.sh --tag <tag> --candidate <dir> --qualification <receipt.json> [--repo <owner/name>] [--require-existing-tag <tag-object>]'
+  printf '%s\n' 'Usage: scripts/publish-netfleet-release.sh --tag <tag> --candidate <dir> (--qualification <receipt.json> | --bundle-qualification <receipt.json>...) [--repo <owner/name>] [--require-existing-tag <tag-object>]'
 }
 
 die() {
@@ -13,6 +13,7 @@ die() {
 tag=''
 candidate=''
 qualification=''
+bundle_qualifications=()
 repo=''
 expected_tag_object=''
 while (($#)); do
@@ -20,6 +21,7 @@ while (($#)); do
     --tag) (($# >= 2)) || die '--tag requires a value'; tag=$2; shift 2;;
     --candidate) (($# >= 2)) || die '--candidate requires a directory'; candidate=$2; shift 2;;
     --qualification) (($# >= 2)) || die '--qualification requires a receipt'; qualification=$2; shift 2;;
+    --bundle-qualification) (($# >= 2)) || die '--bundle-qualification requires a receipt'; bundle_qualifications+=("$2"); shift 2;;
     --repo) (($# >= 2)) || die '--repo requires owner/name'; repo=$2; shift 2;;
     --require-existing-tag)
       (($# >= 2)) && [[ "$2" =~ ^[0-9a-f]{40}$ ]] || die '--require-existing-tag requires a Git tag object ID'
@@ -33,9 +35,25 @@ done
 
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die 'tag must use vMAJOR.MINOR.PATCH'
 candidate=$(cd "$candidate" 2>/dev/null && pwd) || die 'candidate directory is unavailable'
-qualification=$(cd "$(dirname "$qualification")" 2>/dev/null && pwd)/$(basename "$qualification") ||
-  die 'qualification receipt is unavailable'
-[[ -f "$qualification" ]] || die 'qualification receipt is unavailable'
+if [[ -n "$qualification" && ${#bundle_qualifications[@]} -gt 0 ]]; then
+  die 'cannot combine --qualification and --bundle-qualification'
+fi
+if [[ -z "$qualification" && ${#bundle_qualifications[@]} -eq 0 ]]; then
+  die 'either --qualification or --bundle-qualification is required'
+fi
+if [[ -n "$qualification" ]]; then
+  qualification=$(cd "$(dirname "$qualification")" 2>/dev/null && pwd)/$(basename "$qualification") ||
+    die 'qualification receipt is unavailable'
+  [[ -f "$qualification" ]] || die 'qualification receipt is unavailable'
+else
+  resolved_bundle_qualifications=()
+  for item in "${bundle_qualifications[@]}"; do
+    resolved=$(cd "$(dirname "$item")" 2>/dev/null && pwd)/$(basename "$item") ||
+      die 'bundle qualification receipt is unavailable'
+    [[ -f "$resolved" ]] || die 'bundle qualification receipt is unavailable'
+    resolved_bundle_qualifications+=("$resolved")
+  done
+fi
 command -v gh >/dev/null 2>&1 || die 'gh is required'
 command -v git >/dev/null 2>&1 || die 'git is required'
 command -v curl >/dev/null 2>&1 || die 'curl is required'
@@ -67,7 +85,8 @@ read -r source_commit source_tree package_version extra <<<"$identity"
 "$repo_dir/scripts/verify-netfleet-release.py" \
   --directory "$candidate" --source-commit "$source_commit" --source-tree "$source_tree" >/dev/null
 manifest_sha=$(shasum -a 256 "$candidate/manifest.json" | awk '{print $1}')
-python3 - "$qualification" "$source_commit" "$source_tree" "$manifest_sha" <<'PY'
+if [[ -n "$qualification" ]]; then
+  python3 - "$qualification" "$source_commit" "$source_tree" "$manifest_sha" <<'PY'
 import json, sys
 from pathlib import Path
 r = json.loads(Path(sys.argv[1]).read_text())
@@ -83,6 +102,64 @@ if not (
 ):
     raise SystemExit("package VM qualification does not bind the candidate bytes")
 PY
+else
+  python3 - "$candidate/manifest.json" "$source_commit" "$source_tree" "$manifest_sha" "${resolved_bundle_qualifications[@]}" <<'PY'
+import json, sys
+from pathlib import Path
+
+manifest = json.loads(Path(sys.argv[1]).read_text())
+if manifest.get("delivery_model") != "release-bundle":
+    raise SystemExit("--bundle-qualification requires a release-bundle candidate")
+
+commit, tree, manifest_sha, *receipt_paths = sys.argv[2:]
+required = {
+    ("24.10.2", "opkg"),
+    ("24.10.2", "bundle"),
+    ("25.12.5", "bundle"),
+    ("25.12.5", "migrate-bundle"),
+}
+seen = set()
+for path_str in receipt_paths:
+    try:
+        r = json.loads(Path(path_str).read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"bundle VM diagnostic qualification is unreadable: {error}") from error
+    ver = r.get("openwrt_version") if isinstance(r, dict) else None
+    lane = r.get("diagnostic_lane") if isinstance(r, dict) else None
+    checks = r.get("checks") if isinstance(r, dict) else None
+    lanes = r.get("lanes") if isinstance(r, dict) else None
+    lane_result = lanes.get(lane) if isinstance(lanes, dict) else None
+    lane_checks = lane_result.get("checks") if isinstance(lane_result, dict) else None
+    if not (
+        isinstance(r, dict)
+        and r.get("schema") == "opl-netfleet-openwrt-vm-diagnostic.v1"
+        and r.get("diagnostic_passed") is True
+        and r.get("source_commit") == commit
+        and r.get("source_tree") == tree
+        and isinstance(ver, str)
+        and isinstance(lane, str)
+        and (ver, lane) in required
+        and isinstance(checks, dict)
+        and all(checks.get(key) is True for key in ("boot", "ssh", "var_symlink", "ubus"))
+        and isinstance(lane_result, dict)
+        and lane_result.get("ok") is True
+        and lane_result.get("source_commit") == commit
+        and lane_result.get("source_tree") == tree
+        and lane_result.get("manifest_sha256") == manifest_sha
+        and isinstance(lane_checks, dict)
+        and bool(lane_checks)
+        and all(val is True for val in lane_checks.values())
+    ):
+        raise SystemExit(f"bundle VM diagnostic qualification invalid for {(ver, lane)}")
+    if (ver, lane) in seen:
+        raise SystemExit(f"duplicate bundle VM diagnostic qualification for {(ver, lane)}")
+    seen.add((ver, lane))
+
+missing = sorted(required - seen)
+if missing:
+    raise SystemExit(f"bundle VM qualification missing required gates: {missing}")
+PY
+fi
 
 publication=$candidate
 upload_work=''
