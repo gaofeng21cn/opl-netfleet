@@ -590,7 +590,7 @@ export function snapshot_before(ctx) {
 		inputs: ctx.input_identity(private_inputs),
 		paths: private_inputs
 	};
-}
+};
 
 export function apply(ctx, request, work) {
 	ctx.operation.update("checking");

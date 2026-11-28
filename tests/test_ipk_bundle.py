@@ -318,6 +318,19 @@ exit 0
         plugin_host = (luci_root / "htdocs/luci-static/resources/netfleet/plugin-host.js").read_text(encoding="utf-8")
         self.assertIn("/luci-static/resources/netfleet/bundle/plugins", plugin_host)
 
+    def test_ucode_export_functions_have_trailing_semicolon(self):
+        missing = []
+        for uc_path in sorted((ROOT / "plugins").rglob("*.uc")):
+            in_export = False
+            for lineno, line in enumerate(uc_path.read_text(encoding="utf-8").splitlines(), 1):
+                if line.startswith("export function "):
+                    in_export = True
+                elif in_export and line.startswith("}"):
+                    if not line.startswith("};"):
+                        missing.append(f"{uc_path.relative_to(ROOT)}:{lineno}")
+                    in_export = False
+        self.assertEqual(missing, [], msg=f"OpenWrt 24.10 ucode requires '}};' on export function blocks: {missing}")
+
 
 if __name__ == "__main__":
     unittest.main()

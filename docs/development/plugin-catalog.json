@@ -39,7 +39,7 @@
       "services": [
         "components.control"
       ],
-      "version": "0.8.21"
+      "version": "0.8.22"
     },
     {
       "api_version": 1,
