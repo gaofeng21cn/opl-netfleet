@@ -91,6 +91,32 @@ class IpkBundleTests(unittest.TestCase):
             self.assertIn("share/build.json", names)
             self.assertIn("runtime/main.uc", names)
 
+    def test_bundle_reads_and_clamps_min_shell_version_from_product_version(self):
+        commit = "a" * 40
+        tree = "b" * 40
+        product_meta = json.loads((ROOT / "product-version.json").read_text(encoding="utf-8"))
+        out_default = self.root / "bundle-default"
+        BUNDLE.build_bundle(ROOT, out_default, source_commit=commit, source_tree=tree, sign_key=self.key)
+        mf_default = json.loads((out_default / "release-manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(mf_default["version"], product_meta["version"])
+        self.assertEqual(
+            mf_default["min_shell_version"],
+            product_meta.get("min_shell_version", product_meta["version"]),
+        )
+
+        out_older = self.root / "bundle-older"
+        BUNDLE.build_bundle(ROOT, out_older, version="0.4.5", source_commit=commit, source_tree=tree, sign_key=self.key)
+        mf_older = json.loads((out_older / "release-manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(mf_older["min_shell_version"], "0.4.5")
+
+        out_explicit = self.root / "bundle-explicit"
+        BUNDLE.build_bundle(
+            ROOT, out_explicit, version="0.9.40", min_shell_version="0.9.34",
+            source_commit=commit, source_tree=tree, sign_key=self.key,
+        )
+        mf_explicit = json.loads((out_explicit / "release-manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(mf_explicit["min_shell_version"], "0.9.34")
+
     def test_ipk_feed_build_and_archive_layout(self):
         feed = self.root / "feed"
         manifest = IPK.build_ipk_feed(

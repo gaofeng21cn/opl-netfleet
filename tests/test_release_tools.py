@@ -724,6 +724,7 @@ class ReleaseToolsTests(unittest.TestCase):
             (feed / 'opl-netfleet-apk.pem').write_text(
                 '-----BEGIN PUBLIC KEY-----\nfixture\n-----END PUBLIC KEY-----\n'
             )
+            (feed / 'packages.adb').write_bytes(b'fixture-index\n')
             (feed / 'product.json').write_text(json.dumps([{'depends': ['libc'], 'provides': ['netfleet-plugin-api-v1']}]))
             fetcher = bin_dir / 'uclient-fetch'
             fetcher.write_text(
@@ -748,7 +749,23 @@ class ReleaseToolsTests(unittest.TestCase):
                 '  case " $NETFLEET_INSTALLED " in *" $3 "*) exit 0 ;; *) exit 1 ;; esac\n'
                 'fi\n'
                 'printf "%s\\n" "$*" >>"$NETFLEET_APK_LOG"\n'
-                'case " $* " in *" query "*) cat "$NETFLEET_FIXTURE_FEED/product.json" ;; esac\n'
+                'case " $* " in\n'
+                '  *" query "*) cat "$NETFLEET_FIXTURE_FEED/product.json" ;;\n'
+                '  *" fetch "*)\n'
+                '    out=\n'
+                '    while [ "$#" -gt 0 ]; do\n'
+                '      case "$1" in\n'
+                '        --output) out=$2; shift 2 ;;\n'
+                '        --timeout) shift 2 ;;\n'
+                '        fetch|--*) shift ;;\n'
+                '        *) : >"$out/$1-0.9.36.apk"; shift ;;\n'
+                '      esac\n'
+                '    done\n'
+                '    ;;\n'
+                '  *" --simulate "*)\n'
+                '    [ "${NETFLEET_SIMULATE_FAIL:-0}" != 1 ]\n'
+                '    ;;\n'
+                'esac\n'
             )
             apk.chmod(0o755)
             uci = bin_dir / 'uci'
@@ -780,7 +797,6 @@ class ReleaseToolsTests(unittest.TestCase):
             }
             cases = [
                 ('fresh_native', '', missing_shell, missing_nikki, 'opl-netfleet luci-app-netfleet mihomo-meta', True),
-                ('existing_mihomo', 'opl-netfleet luci-app-netfleet mihomo-meta', present_shell, missing_nikki, 'opl-netfleet luci-app-netfleet', False),
                 ('existing_mihomo_only', 'mihomo-meta', missing_shell, missing_nikki, 'opl-netfleet luci-app-netfleet', True),
                 ('nikki_present', '', missing_shell, present_nikki, 'opl-netfleet luci-app-netfleet', True),
             ]
@@ -799,6 +815,40 @@ class ReleaseToolsTests(unittest.TestCase):
                     else:
                         self.assertFalse(any(' add ' in item for item in lines))
                     self.assertIn(f'--timeout 300 upgrade {expected_pkgs}', lines)
+
+            for label, sim_fail in (
+                ('existing_mihomo_offline', '0'),
+                ('existing_mihomo_missing_upstream_dep', '1'),
+            ):
+                with self.subTest(thin_shell=label):
+                    log.write_text('')
+                    res = subprocess.run(
+                        [str(INSTALLER)],
+                        env={
+                            **base_env,
+                            'NETFLEET_INSTALLED': 'opl-netfleet luci-app-netfleet mihomo-meta',
+                            'NETFLEET_SHELL_MANIFEST': str(present_shell),
+                            'NETFLEET_NIKKI_INIT': str(missing_nikki),
+                            'NETFLEET_SIMULATE_FAIL': sim_fail,
+                        },
+                        text=True, capture_output=True, check=False,
+                    )
+                    self.assertEqual(0, res.returncode, res.stderr)
+                    lines = log.read_text().splitlines()
+                    self.assertTrue(any(' fetch ' in line and line.endswith(' opl-netfleet luci-app-netfleet') for line in lines), lines)
+                    self.assertTrue(any(' verify ' in line and line.endswith('/opl-netfleet-0.9.36.apk') for line in lines), lines)
+                    self.assertTrue(any(' verify ' in line and line.endswith('/luci-app-netfleet-0.9.36.apk') for line in lines), lines)
+                    self.assertFalse(any(line.startswith('--timeout 300 upgrade ') for line in lines), lines)
+                    self.assertFalse(any('mihomo-meta' in line for line in lines if ' query ' not in line), lines)
+                    if sim_fail == '0':
+                        self.assertTrue(
+                            any(line.startswith('--no-network --repositories-file /dev/null --repository ')
+                                and line.endswith('/packages.adb add --upgrade opl-netfleet luci-app-netfleet')
+                                for line in lines),
+                            lines,
+                        )
+                    else:
+                        self.assertIn('--timeout 300 add --upgrade opl-netfleet luci-app-netfleet', lines)
 
     def test_feed_bootstrap_legacy_migration_preserves_mihomo_meta_in_world_unless_nikki_present(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1268,6 +1318,97 @@ echo '{"tagName":"v0.4.5"}'
             res_legacy = subprocess.run(args_legacy, env=env, capture_output=True, text=True)
             self.assertNotEqual(res_legacy.returncode, 0)
             self.assertIn("--bundle-qualification requires a release-bundle candidate", res_legacy.stderr)
+
+    def test_release_verifier_rejects_min_shell_above_version(self):
+        usign_spec = importlib.util.spec_from_file_location("netfleet_usign", ROOT / "scripts/netfleet_usign.py")
+        usign = importlib.util.module_from_spec(usign_spec)
+        usign_spec.loader.exec_module(usign)
+        bundle_spec = importlib.util.spec_from_file_location(
+            "netfleet_bundle_build", ROOT / "scripts/netfleet-bundle-build.py"
+        )
+        bundle_mod = importlib.util.module_from_spec(bundle_spec)
+        bundle_spec.loader.exec_module(bundle_mod)
+        commit = "a" * 40
+        tree = "b" * 40
+        version = "0.9.36"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            key = root / "bundle.pem"
+            usign.generate_private_key(key)
+            cand = root / "candidate"
+            cand.mkdir()
+            bundle_summary = bundle_mod.build_bundle(
+                ROOT, cand, version=version, source_commit=commit, source_tree=tree, sign_key=key
+            )
+            rmf_path = cand / "release-manifest.json"
+            rmf = json.loads(rmf_path.read_text())
+            rmf["min_shell_version"] = "99.0.0"
+            rmf_path.write_text(json.dumps(rmf, indent=2, sort_keys=True) + "\n")
+            sig_path = cand / "release-manifest.json.sig"
+            usign.sign_file(key, rmf_path, sig_path)
+            packages = {
+                "opl-netfleet": f"opl-netfleet-{version}-r1.apk",
+                "luci-app-netfleet": f"luci-app-netfleet-{version}-r1.apk",
+            }
+            artifacts = []
+            for package, name in packages.items():
+                path = cand / name
+                path.write_text(f"{package}\n")
+                artifacts.append({
+                    "package": package,
+                    "version": version,
+                    "release": "1",
+                    "name": name,
+                    "sha256": sha256(path),
+                    "size": path.stat().st_size,
+                })
+            files_manifest = cand / "FILES.sha256"
+            files_manifest.write_text("0" * 64 + "  runtime/main.uc\n")
+            (cand / "opl-netfleet-apk.pem").write_text("fixture-public-key\n")
+            (cand / "packages.adb").write_bytes(b"fixture-feed-index\n")
+            (cand / "index.json").write_text(json.dumps({
+                "version": 2,
+                "architecture": "aarch64_generic",
+                "packages": {"opl-netfleet": f"{version}-r1", "luci-app-netfleet": f"{version}-r1"},
+            }))
+            (cand / "install-netfleet.sh").write_text("#!/bin/sh\nexit 0\n")
+            manifest = {
+                "schema": "opl-netfleet-package-manifest.v2",
+                "delivery_model": "release-bundle",
+                "source_commit": commit,
+                "source_tree": tree,
+                "package_version": version,
+                "package_release": "1",
+                "package_format": "apk",
+                "package_arch": "noarch",
+                "build_target_arch": "aarch64_generic",
+                "policy_schema": 2,
+                "runtime_payload_sha256": bundle_summary["runtime_payload_sha256"],
+                "files_manifest": {"name": "FILES.sha256", "sha256": sha256(files_manifest)},
+                "artifacts": artifacts,
+                "artifact_files": packages,
+                "apk_public_key": {"name": "opl-netfleet-apk.pem", "sha256": sha256(cand / "opl-netfleet-apk.pem")},
+                "feed_index": {"name": "packages.adb", "sha256": sha256(cand / "packages.adb")},
+                "feed_metadata": {"name": "index.json", "sha256": sha256(cand / "index.json")},
+                "feed_bootstrap": {"name": "install-netfleet.sh", "sha256": sha256(cand / "install-netfleet.sh")},
+                "release_bundle": {
+                    "archive": bundle_summary["archive"],
+                    "archive_sha256": bundle_summary["archive_sha256"],
+                    "archive_size": bundle_summary["archive_size"],
+                    "manifest": "release-manifest.json",
+                    "manifest_sha256": sha256(rmf_path),
+                    "manifest_sig": "release-manifest.json.sig",
+                    "manifest_sig_sha256": sha256(sig_path),
+                    "public_key": "opl-netfleet-bundle.pub",
+                },
+            }
+            (cand / "manifest.json").write_text(json.dumps(manifest, sort_keys=True) + "\n")
+            res = subprocess.run(
+                [str(VERIFIER), "--directory", str(cand), "--source-commit", commit, "--source-tree", tree],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("min_shell_version is invalid", res.stderr)
 
 
 class PackageLifecycleTests(unittest.TestCase):

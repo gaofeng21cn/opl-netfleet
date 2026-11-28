@@ -1028,6 +1028,35 @@ test('components group versions and keep failures actionable', () => {
   assert(button(managed.components(owner), '检查更新').disabled);
 });
 
+test('release-bundle components surface shell details and non-disruptive copy', () => {
+  const owner = controller();
+  owner.componentsSection = 'software';
+  owner.components = {
+    supported: true,
+    delivery_mode: 'release-bundle',
+    architecture: 'aarch64_generic',
+    shell_version: '0.9.35',
+    min_shell_version: '0.9.35',
+    shell_upgrade_required: false,
+    rollback_available: true,
+    previous_version: '0.9.35',
+    feed: { configured: true, checked_at: 100, url: 'https://packages.example/netfleet' },
+    components: [
+      { id: 'netfleet', label: 'NetFleet', managed: true, update_available: true, reason: null, installed_version: '0.9.35', running_version: '0.9.35', available_version: '0.9.36' },
+      { id: 'luci', label: 'LuCI 接入组件', managed: false, update_available: false, reason: 'shell_package_managed', installed_version: '0.9.0', running_version: null, available_version: null },
+    ],
+    dependencies: [],
+    dashboard: { managed: true, available: true },
+  };
+  const managed = loadModule('managed.js', {});
+  const root = managed.components(owner);
+  const body = text(root);
+  assert(body.includes('系统安装壳：0.9.35'));
+  assert(body.includes('最低壳要求：0.9.35'));
+  assert(body.includes('签名发行包原子切换，核心转发保活，失败即时回退'));
+  assert(body.includes('随系统安装壳由系统包管理器维护'));
+});
+
 test('components follow user order and keep plugin actions in scope', () => {
   const owner = controller();
   owner.components = {

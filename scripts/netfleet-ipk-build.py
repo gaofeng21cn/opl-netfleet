@@ -635,7 +635,8 @@ def build_ipk_feed(
         version = json.loads((repo / "product-version.json").read_text(encoding="utf-8"))["version"]
     if not SEMVER_RE.fullmatch(version):
         raise ValueError(f"invalid version: {version}")
-    min_shell_version = min_shell_version or version
+    if min_shell_version is not None and not SEMVER_RE.fullmatch(min_shell_version):
+        raise ValueError(f"invalid min_shell_version: {min_shell_version}")
 
     if not source_commit or not source_tree:
         if existing_manifest is not None:

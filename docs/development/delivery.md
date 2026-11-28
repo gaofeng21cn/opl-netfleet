@@ -19,7 +19,7 @@ PR 与 `main` 更新运行 `NetFleet 双平台检查`。检查结果只证明所
 先完成本地验证，再进入主线。正式交付从干净、已吸收的源码构建，记录精确 commit/tree，
 不要把可移动的 `main` 名称当作永久身份。主线继续前进不表示已安装版本同步更新。
 
-产品版本由 `product-version.json` 维护，`scripts/prepare-product-release.py` 统一同步 `openwrt/Makefile`、macOS `desktop/app/Info.plist`（含 `CFBundleShortVersionString` 与单调递增的 `CFBundleVersion`）及 `docs/development/plugin-catalog.json`；OpenWrt 插件继续独立版本化。各平台制品使用同一个产品 tag 和源码身份，
+产品版本与最低系统壳要求均由 `product-version.json` 维护（含 `version` 与 `min_shell_version`），由 `scripts/prepare-product-release.py` 校验版本单调关系并统一同步 `openwrt/Makefile`、macOS `desktop/app/Info.plist`（含 `CFBundleShortVersionString` 与单调递增的 `CFBundleVersion`）及 `docs/development/plugin-catalog.json`，并由 `scripts/netfleet-bundle-build.py` 与 `scripts/netfleet-ipk-build.py` 消费；OpenWrt 插件继续独立版本化。各平台制品使用同一个产品 tag 和源码身份，
 安装情况以目标实际产物为准。某个平台待验收时保留该状态，修复后验证原候选。
 
 统一每日产品任务检测交付变化并经 PR/CI 准备版本。正式产品 tag 同时触发 OpenWrt 云端发布

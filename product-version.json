@@ -1,3 +1,4 @@
 {
-  "version": "0.9.36"
+  "version": "0.9.36",
+  "min_shell_version": "0.9.35"
 }

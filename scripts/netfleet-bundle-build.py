@@ -26,6 +26,10 @@ HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
 DEFAULT_SIGN_KEY = Path.home() / ".config/opl-netfleet/keys/netfleet-ed25519-private.pem"
 
 
+def _semver_tuple(value: str) -> tuple[int, int, int]:
+    return tuple(int(part) for part in value.split("."))
+
+
 def _load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
@@ -239,12 +243,21 @@ def build_bundle(
     output_dir.mkdir(parents=True, exist_ok=True)
     usign = _load_module("netfleet_usign", repo / "scripts/netfleet_usign.py")
 
+    product_meta = json.loads((repo / "product-version.json").read_text(encoding="utf-8"))
     if version is None:
-        version = json.loads((repo / "product-version.json").read_text(encoding="utf-8"))["version"]
+        version = product_meta["version"]
     if not SEMVER_RE.fullmatch(version):
         raise ValueError(f"invalid release bundle version: {version}")
     if min_shell_version is None:
-        min_shell_version = version
+        configured_min = product_meta.get("min_shell_version")
+        if configured_min is not None:
+            if not isinstance(configured_min, str) or not SEMVER_RE.fullmatch(configured_min):
+                raise ValueError(f"invalid min_shell_version in product-version.json: {configured_min}")
+            min_shell_version = (
+                configured_min if _semver_tuple(configured_min) <= _semver_tuple(version) else version
+            )
+        else:
+            min_shell_version = version
     if not SEMVER_RE.fullmatch(min_shell_version):
         raise ValueError(f"invalid min_shell_version: {min_shell_version}")
     if source_commit is None or source_tree is None:
