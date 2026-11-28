@@ -191,7 +191,8 @@ function refresh(policy, initiator) {
  const lock = storage.read_json(LOCK);
  if (config == null || initial_sets == null || initial_selectors == null || lock?.upstream?.repository != "MetaCubeX/meta-rules-dat" ||
   !match(lock.upstream.commit ?? "", /^[0-9a-f]{40}$/)) return record(false, "rule_data_inputs_invalid", null);
- const work = (files.mkdtemp ?? fs.mkdtemp)(ROOT + "/generation.XXXXXX");
+ const mkdtemp = files.mkdtemp ?? ((t) => fs.mkdtemp(t));
+ const work = mkdtemp(ROOT + "/generation.XXXXXX");
  if (!owned(work)) return record(false, "rule_data_stage_failed", null);
  let generation = null;
  try {
