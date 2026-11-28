@@ -49,8 +49,6 @@ def is_test_only_path(path: str) -> bool:
         path == "scripts/openwrt-vm.sh"
         or path == "scripts/openwrt-apk.py"
         or path == "scripts/netfleet-package-build.sh"
-        or path == "scripts/https-compat/qualify.py"
-        or path == "scripts/https-compat/canary-rollback.sh"
         or path == "scripts/update-openwrt-plugins.py"
         or path.startswith("scripts/openwrt-vm/")
         or path.startswith("tests/")

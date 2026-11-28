@@ -6,7 +6,7 @@
 [运行与恢复](../architecture/runtime-and-recovery.md)和[界面设计](../design/ui.md)拥有；本机构建、
 启动与验证的操作入口见[macOS 开发](../development/macos.md)。
 
-macOS 不复制选择算法，不包含透明 HTTPS 兼容插件或 LAN 网关管理。
+macOS 不复制选择算法，不包含 LAN 网关管理。
 
 ## 界面宿主与资源加载
 

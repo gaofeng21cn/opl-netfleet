@@ -24,7 +24,7 @@ OpenWrt 默认绑定在 `/usr/share/opl-netfleet/system.json`，私有覆盖在
 - **`/usr/share/opl-netfleet/` 不可变目录布局**：
   - `releases/<version>/`：包含当前版本的纯源码 `runtime/`（`kernel/`、`adapters/`、`plugins/<id>/`）与 `share/`（`build.json`、`system.json`、`nikki/`、`netfleet.config`、`LICENSE.Apache-2.0`）以及版本化前端资源 `www/`。
   - `current`、`previous`：分别通过同目录临时符号链接原子切换至有效 generation，并随 `current/share/{system.json,build.json,nikki,netfleet.config,LICENSE.Apache-2.0}` 暴露顶层固定读取入口；磁盘最多保留最近 2 个完整 generation。
-- **第三方与独立扩展插件**：继续在独立扩展目录 `/etc/opl-netfleet/extensions/` 或独立包空间 `/usr/libexec/opl-netfleet/plugins/<id>/` 中安装，微内核合并发现时保留独立启用状态，不受 Release Bundle 切换覆盖。需要原生二进制或内核依赖的可选组件（`opl-netfleet-https-compat`、`opl-netfleet-plugin-device-identity`、`mihomo-meta`）仍完全由系统包管理器（`.apk` / `.ipk`）拥有。服务组合与插件边界合同见[微内核与功能插件](../architecture/microkernel.md)。
+- **第三方与独立扩展插件**：继续在独立扩展目录 `/etc/opl-netfleet/extensions/` 或独立包空间 `/usr/libexec/opl-netfleet/plugins/<id>/` 中安装，微内核合并发现时保留独立启用状态，不受 Release Bundle 切换覆盖。需要原生二进制或内核依赖的组件（`mihomo-meta` 及独立扩展）仍由系统包管理器（`.apk` / `.ipk`）拥有。服务组合与插件边界合同见[微内核与功能插件](../architecture/microkernel.md)。
 
 ### 版本化分发
 
@@ -37,9 +37,9 @@ OpenWrt 默认绑定在 `/usr/share/opl-netfleet/system.json`，私有覆盖在
 
 NetFleet 自有包的 `PKG_VERSION` 使用[插件版本合同](../architecture/packaging.md#插件版本)中的三段数字、`PKG_RELEASE` 留空；发布清单完整记录 `source_commit`、`source_tree`、`artifacts`、`ipk_artifacts`、`dependency_artifacts`、`release_bundle`、`opkg_index` 与 `FILES.sha256`。
 
-`scripts/install-netfleet.sh` 根据目标机包管理器自动切换 `apk` 与 `opkg` 引导逻辑：安装签名公钥、写入可信源并完成最小产品集合安装或升级；对既有 `28` 包（`opl-netfleet-kernel` + 24 个内置服务插件）`apk` 安装执行单事务迁移：先预先抓取并验签薄壳安装包，快照服务启停状态并停止 `opl-netfleet`/`opl-netfleet-core`、确认干净退出后，通过 `/tmp/opl-netfleet-microkernel-migration` 标记与过渡保护包装隔离旧代 `prerm`/`postrm` 对已升级 UCode ABI 的重试死循环，再以 `apk add --upgrade opl-netfleet luci-app-netfleet !<legacy>...` 原子切换至薄系统包壳并恢复原服务状态。该脚本不写入 policy、订阅、Nikki mixin，也不隐式接管网络；旧单体无内核布局在改动源之前直接拒绝。
+`scripts/install-netfleet.sh` 根据目标机包管理器自动切换 `apk` 与 `opkg` 引导逻辑：安装签名公钥、写入可信源并完成最小产品集合安装或升级；对既有 `28` 包（`opl-netfleet-kernel` + 24 个内置服务插件）`apk` 安装执行单事务迁移：先预先抓取并验签薄壳安装包，快照服务启停状态并停止 `opl-netfleet`/`opl-netfleet-core`、确认干净退出后，通过 `/tmp/opl-netfleet-microkernel-migration` 标记与过渡保护包装隔离旧代 `prerm`/`postrm` 对已升级 UCode ABI 的重试死循环，再以 `apk add --upgrade opl-netfleet luci-app-netfleet !<legacy>...` 原子切换至薄系统包壳并恢复原服务状态。该脚本不写入 policy、订阅、Nikki mixin，也不隐式接管网络；当目标机已安装 `mihomo-meta` 或存在 `/etc/init.d/nikki` 宿主时，不主动升级或跨源替换既有核心；旧单体无内核布局在改动源之前直接拒绝。
 
-OpenWrt 默认 package lifecycle 会启动新安装或升级后的 init script；因此 `opl-netfleet` 首次安装显式停止并禁用服务，升级则预先快照并在 `postinst` 按服务就绪状态轮询恢复原 `enabled`/`running` 意图。`NETFLEET_INSTALL_PROFILE=full` 仅在受支持的 `apk` 目标机从 `compat-packages.adb` 验证并补装 `opl-netfleet-https-compat` 与 `opl-netfleet-plugin-device-identity`，缺项时直接失败。
+OpenWrt 默认 package lifecycle 会启动新安装或升级后的 init script；因此 `opl-netfleet` 首次安装显式停止并禁用服务，升级则预先快照并在 `postinst` 按服务就绪状态轮询恢复原 `enabled`/`running` 意图。
 
 ### 原生固件更新
 
@@ -48,7 +48,7 @@ NetFleet 代理运行命令。LuCI 的系统更新扩展复用已安装的 Atten
 官方构建服务，补充第三方 repository 与公钥；明确的系统更新权限与安装点击才允许刷写。
 包的普通安装、更新和 NetFleet 恢复命令不触发固件升级。
 
-APK Feed 同时提供从同一签名索引生成的 `index.json`（可选 Feed 为 `compat-index.json`），
+APK Feed 同时提供从同一签名索引生成的 `index.json`，
 供 owut 读取候选包版本。JSON 是发现投影，包信任仍由 APK 签名索引与受信任公钥建立。
 发送给公共构建服务的 repository 必须是无凭据的 HTTPS URL；私有输入留在设备备份中。
 
@@ -82,11 +82,11 @@ LuCI 的“插件与更新”及 CLI `components-*` 入口由设备端 `plugins/
    - 通过 `components_check`、`components_plan` 与 `components_apply` 执行七步原子事务：验签解压 staging（拒绝路径越界与非 regular 条目）-> 离线 `loadfile()` 编译校验及 `composition_report` 图验证 -> 按需保活交接（网关/启动脚本不变时保留核心与数据面持续运行，仅暂停持代码读锁的 supervisor/管理实例）-> 原子切换 `current` / `previous` 符号链接并同步 `rpcd` -> 有界就绪、构建身份及保护探针验证 -> 清理超出最近 2 版的历史 generation 并提交；
    - 任一预检或运行验证失败立即把 `current` 切回 `previous`、恢复原服务状态并清理 staging；写期中断或断电由 `/etc/init.d/opl-netfleet-update-recovery` 在重启后依据持久事务目录 `/etc/opl-netfleet/package-transactions/pending.json` 自动回退或补完；
    - 页面同时提供手动“回退到上一版本”入口，直接在有效 `previous` generation 之间秒级切换。
-2. **原生二进制、可选包与第三方插件包管理**：
-   - `mihomo-meta`（按 CPU 架构封装，先核验空间与配置 `mihomo -t` 再确认替换）、`opl-netfleet-https-compat` 与独立第三方 `opl-netfleet-plugin-*` 插件继续由系统包管理器拥有；
+2. **原生二进制与第三方插件包管理**：
+   - `mihomo-meta`（按 CPU 架构封装，先核验空间与配置 `mihomo -t` 再确认替换）与独立第三方 `opl-netfleet-plugin-*` 插件继续由系统包管理器拥有；
    - 在 `apk` 目标机上，`components_plugin_plan` 与 `components_plugin` 解析签名 APK 索引完成独立插件的预览、安装、升级、卸载、保活交接与失败回退；在 `opkg` 目标机上，`components-get` 明确报告受支持的 Release Bundle 更新通道与只读系统包状态，不假冒不存在的 `apk` 子命令。
 
-正在运行原生后端与 HTTPS 兼容引擎时的保留核心交接、私有事务快照隔离、以及取消控制（`components_cancel`）继续严格遵守[打包合同](../architecture/packaging.md#更新与恢复)定义的安全与 fail-open 边界。
+正在运行原生后端时的保留核心交接、私有事务快照隔离、以及取消控制（`components_cancel`）继续严格遵守[打包合同](../architecture/packaging.md#更新与恢复)定义的安全与 fail-open 边界。
 
 独立插件模式不要求开发机生成 deployment bundle。已有 Nikki 的设备可以复用当前原生
 Profile 和有效 subscription cache；空白设备则由原生后端维护订阅和配置。安装 package
@@ -123,22 +123,6 @@ package source。workflow 只产生短期候选，不直接创建 Release。候�
 报告发布成功；已有 Release 不允许覆盖资产。VM 的 HTTP feed 覆盖只允许用于本机受控资格
 验证，公开安装入口默认只接受 HTTPS。NetFleet 的 `noarch` 代码包可跨 CPU 架构复用，
 核心依赖仍按其真实架构匹配，发布验收以 manifest 中记录的 SDK 构建目标为准。
-
-正式产品 Release 同时提供默认包与可选 feed，保持两个 latest 索引来自同一个不可变发行版。
-候选工作流从固定源码与摘要绑定的既有发行版复用未变化的可选签名包；可选源码变化时先生成新的
-独立包，再更新该来源。正式发布前必须对精确默认候选与可选包执行组合资格。发布入口的
-`--compat-candidate`、`--compat-qualification`、`--apk` 参数复用已签名的 HTTPS 引擎和
-Device Identity APK；先验证可选模块生命周期资格、原生依赖回执、签名索引和精确包集合，
-再将两份 APK、`compat-public-key.pem`、`compat-packages.adb` 与最小公开清单
-`optional-packages.json` 加入发布目录。默认包 manifest 不重写，保留其精确 VM 资格绑定；
-公开清单仅包含包身份、源码身份、架构、摘要和默认 manifest 摘要，不发布私有资格回执、
-运行快照或设备信息。可选包跨产品版本复用只允许 HTTPS 实际 caller 的文件集合与摘要均
-等于已验收基础版本；caller 变化必须重新验收组合。公开回读同时校验默认包和可选 feed。
-
-`NETFLEET_INSTALL_PROFILE=full` 使用同一发布地址的可选 feed；独立镜像可显式设置
-`NETFLEET_COMPAT_FEED_BASE`。安装器在写入软件源前下载并验证可选签名索引，然后由 APK
-解析完整依赖，缺失时拒绝而不静默降级。首次安装只加载管理入口，不自动开启 HTTPS 拦截。
-仅发布默认包时不能宣称该 Release 支持完整安装。
 
 术语固定：OPL Instance 是用户私有 desired-configuration 权威；deployment bundle
 只是从该权威生成、供部署器消费的四文件产物，不是第二个 Instance，也不得手工维护。
@@ -180,8 +164,6 @@ rollback 和 owner readback。代码包与 deployment bundle 相同重放时不�
 deployment bundle 或刷新订阅。实际耗时以目标机包管理器与 owner 回读为准，完整 VM
 qualification 时间不是设备升级耗时。
 
-HTTPS 可选运行包通过已安装的 `extension.json` 模块 ID 与控制插件核对归属；组件目录包含该运行包，更新继续使用同一 APK 事务，不启动引擎读取版本。
-
 ## 运行后端、网关与迁移
 
 后端选择和 namespace 见[产品对象](../architecture/domain-model.md#后端与订阅归属)。两种后端
@@ -217,29 +199,12 @@ procd 直接持有 Mihomo 子进程，并提供有限 respawn。gateway 通过�
 本机 TCP Reset 若没有所属 socket，必须沿原始出口发送，不能被本机 TProxy 再次
 截获。否则旧上游连接收不到内核对无效 ACK 的 Reset，源端口复用时新连接可能一直
 重传 SYN。该例外只处理无 socket 的 Reset；有 socket 的 Reset 与正常 TCP/UDP
-仍遵循原有选路。规则由基础 gateway 的模板生成，不由 HTTPS 或其他可选插件维护，
-不修改 DSCP、用户规则或上游连接的业务内容。
+仍遵循原有选路。规则由基础 gateway 的模板生成，不修改 DSCP、用户规则或上游连接的业务内容。
 
 停止和失败收口先删除拦截，再撤销本 owner 的策略路由并恢复其修改的 bridge 参数。
 发现不明来源 table、身份不匹配或无法回读清理结果时报告失败，不清除其他 owner 的状态。
 服务正常退出、崩溃后的恢复与停止都必须取得实际运行或清理证据；不能用 procd 注册、
 配置文件或源码存在代替就绪。VM 只证明其隔离环境内的路径，真实设备与发布包另行验收。
-
-`mihomo.interception` 为可选协议插件提供受限 TCP 接管服务。插件提交固定服务实例与
-低权限账户声明，以及来源地址、目标网络和端口；接口拒绝脚本、路径、路由或 nft 命令。
-当前后端只有一个透明 TCP 槽位，监听 18443、回环验证端口 18445，第二个 owner 请求
-同一槽位时拒绝，不能替换已有 owner。接管限定于实际 LAN 接口，最多 4096 个双栈
-地址/目标/端口组合；来源必须是单一非回环、非组播、非链路本地地址。
-
-网关独立验证原生选路等价性、真实 procd PID、监听 socket 所属进程和低权限 UID，
-并将核心配置、UCI、ownership 与进程启动身份绑定为 epoch。申请和续期需要持有真实
-全局网络锁，旧 epoch 不能续期。nft 生成和写入属于该网关服务，最长十秒的内核许可
-只选择新连接；已有连接由 conntrack 保持归属。接管准入与 nft 原子事务由 ucode 网关服务
-执行，不依赖 Python；基础网关启动、观察与清理也不依赖协议插件的存活或响应。
-基础清理直接撤销该槽位接管并继续清理自身 DNS/TPROXY；插件自己的健康循环负责是否
-请求许可，不获准修改基础 Profile、DNS、默认路由或核心生命周期。
-HTTPS 引擎包直接依赖 `kmod-nf-conntrack-netlink`，供私有连接归属的读取和退出清理使用；
-不能依赖另一可选插件间接安装该模块，否则首次安装中的基础清理可能先于模块就绪。
 
 `mihomo.lifecycle` 持有该插件的更新交接：先保存原运行状态、Profile、可见选择和
 supervisor 状态，再退出核心及生命周期实例并回读清理；恢复时验证同一配置身份，
@@ -280,14 +245,12 @@ Nikki 路径到原生目录；不会从品牌名猜配置，也不靠重新下�
 
 ## OpenWrt 运行模式
 
-`activation` 的 `set-mode` 使用 `openwrt`、`mihomo`、`netfleet` 三个值，分别映射共享运行合同的直连、原生代理与增强代理。请求绑定当前模式、代码 revision、写权限和网络锁；重复选择已确认模式不重启核心。两个原生模式先排空 HTTPS 引擎、禁用其自启动；失败不得报告模式切换成功，规则和证书保留。增强模式不自动重启该增强插件。
+`activation` 的 `set-mode` 使用 `openwrt`、`mihomo`、`netfleet` 三个值，分别映射共享运行合同的直连、原生代理与增强代理。请求绑定当前模式、代码 revision、写权限和网络锁；重复选择已确认模式不重启核心。
 候选组缓存重置通过 Mihomo 官方 DELETE 接口执行。瞬时连接失败或服务暂不可用允许一次幂等重试；认证、缺失组及不支持的请求直接失败，不跳过失败组继续激活。失败详情保留候选组、HTTP 状态、传输错误码和尝试次数，禁止仅以通用重置错误丢弃断点证据。
 
 ## 故障清理与就绪检查
 
-- 基础 gateway 清理必须尝试撤销全部自身接管。可选 HTTPS 表删除失败要独立报告，
-  不能提前返回而跳过基础 DNS、TPROXY 和策略路由清理；基础清理成功也不能伪报
-  尚未确认的 HTTPS 清理成功。
+- 基础 gateway 清理必须尝试撤销全部自身接管，确保不遗留 DNS、TPROXY 或策略路由劫持。
 
 LAN ingress 以 effective `allow_lan`、TCP/UDP `7892` wildcard listener 和所选后端 nft TProxy rule 为准；DNS 接管以 effective `dns_enabled`、TCP/UDP DNS listener 与所选后端要求的 DNS redirect chains 为准。原生后端还通过进程内 UDP socket 在一秒内查询自身 DNS 端口：gateway 在生成配置中为保留命名空间 `health.opl-netfleet.invalid` 添加 `+.health.opl-netfleet.invalid: rcode://name_error` nameserver policy；该内部规则不进入用户可编辑的域名规则，TXT 查询经过正常 DNS resolver 并在本地返回 NXDOMAIN，不访问上游。探针校验响应 ID、问题与完整报文，只把该预期应答当作本地处理链健康；它不代表外部域名解析或业务成功。Nikki 后端仍使用保护探针域名经路由器 resolver 的解析证据。一次 backend 回读共享 `/proc/net` 监听快照和 nft table 快照，并直接调用既有 gateway service，不启动第二个宿主进程，也不复用跨轮缓存。
 
@@ -353,12 +316,6 @@ apply 必须明确确认。组件页的“服务组合”先读取私有覆盖�
 实例继承通过删除局部覆盖表达；界面不自行解析依赖或保存另一份组合。
 接口及安装切换合同见[模块与扩展](../architecture/extensions.md)和[微内核合同](../architecture/microkernel.md)。
 
-原生后端的可选 [HTTPS 兼容模块](../architecture/https-compatibility.md) 使用上述通用插件接口。
-自身 manifest 声明配置、启停、探测、公开 CA 和独立管理页面，内核将请求交给
-`https-compat.control` 服务，再调用组件 controller；该 controller 复用现有 mutation lock，不运行全局配置应用。
-返回值区分用户意图、实际接管、旁路原因、配置 revision 和验证结果。组件缺失时读取
-返回未安装，基础管理页仍然可用。公开 CA 下载需要 LuCI 读取权限，信任记录与接管
-变更需要写权限；浏览器不能下载 CA 私钥。
 组件页按插件的 `configuration` 和 `ui` 声明提供配置跳转，不硬编码插件 ID。
 
 `native_setup_get / native_setup_apply` 为没有已配置后端的设备提供首次接入：预检只读，
@@ -531,8 +488,7 @@ LuCI 的启用、单次选优、立即更新订阅、关闭和配置应用都必
 `components_get.extensions` 由 `components.control` 使用内核清单投影插件安装版本、
 代码 revision、服务与页面声明、实例、启用状态、接口 major 和依赖；`runtime` 区分 `service` 与 `process`。
 它不表示运行健康，不触发网络检查或启动引擎；Zashboard 的资源状态
-仍复用同一 `dashboard` 读取，避免重复探测。HTTPS `get` 额外投影 `managed` 和
-`management_reason`，不兼容时禁止新接管和编辑，保留关闭与排空。
+仍复用同一 `dashboard` 读取，避免重复探测。
 
 RPC 是调用设备 owner 的薄适配器，不维护第二份网络状态。`components_get` 只读已安装组件、
 实际运行核心版本、关键依赖、最近一次 Feed 检查及独立的 `dashboard` 资源状态；`components_check` 与 `components_update`
@@ -588,21 +544,6 @@ LuCI 同步 mutation 与 rpcd/uhttpd execution timeout 使用 300 秒有界预�
 
 #### 手动地区操作
 
-## 设备地址来源机制
-
-本地来源接受指定接口上可确认到达的直连邻居，并从本机 IPv6 连接跟踪表发现候选
-地址。候选 IP 不授予接入权限：插件在指定局域网接口发送有界的 IPv6 邻居请求，
-使用有界原生 C helper 的 Linux 二层套接字收发与解析报文，核对目标地址、跳数 255、请求响应标志、校验和以及
-以太网来源与目标链路地址一致。只有确认到已绑定 MAC 的地址才交给消费者。
-同一地址出现不同 MAC 时撤销该地址；不得把中间网关 MAC 当成客户端身份。
-每次最多验证 64 个候选，各接口最多等待 350 毫秒，不扫描地址空间，不读取业务正文。
-候选轮换不延长旧证据寿命；重新验证失败的地址立即撤销。
-
-跨路由部署需要让 NetFleet 的观察接口接到客户端局域网。虚拟机可使用已有局域网
-网桥上的独立虚拟网卡；观察接口不承担转发，不配置默认路由、DNS、DHCP 或 RA。
-插件不自行修改接口和拓扑，不依赖客户端任务或控制器账号。没有二层可达接口时，
-不能从前缀、主机名或流量相似性推断单台设备身份，未确认的地址继续原路径。
-
 ## 网络配置与维护机制
 
 ### 网络接入
@@ -639,7 +580,7 @@ mixin 中记录 `netfleet-replace-sniff`，网关据此替换该表并在输出�
 `override-destination` 设为 `true`。Mihomo 的反查缓存可能为共享 IP 保留另一域名；
 真实 TLS SNI 必须同时确定规则匹配和拨号目标，不能只更新嗅探域名却继续向反查别名拨号。
 此约束只作用于生成的运行配置，不修改原 Profile、私有 mixin 或其他协议；协议端口、
-`skip-domain` 等排除项仍由原配置决定，HTTPS 插件状态不参与该渲染。
+`skip-domain` 等排除项仍由原配置决定。
 嗅探协议表使用 Mihomo 的 `ports` 字段。此前保存的错误 `port` 字段在读取每一配置层时
 转换为 `ports`，再按原层次合并；已有 `ports` 优先，不改写私有输入。编辑器只接受并
 保存 `ports`，原生网关与网络编辑候选复用 Mihomo 插件内同一个纯投影，保证校验、

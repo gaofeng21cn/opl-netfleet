@@ -60,10 +60,6 @@ if (ARGV[2] != null) {
     restored:live?.running == true && sprintf('%J',live.command) == sprintf('%J',item.spec.command) };
    identity = identity && observers[id].restored;
   }
-  if (saved.retained_engine != null) {
-   const engine_stat = fs.readfile(`/proc/${saved.retained_engine.pid}/stat`);
-   identity = identity && engine_stat != null && split(replace(engine_stat, /^.*\) /, ''), /\s+/)[19] == saved.retained_engine.birth;
-  }
   retained = {ok:identity, core_unchanged:pid == saved.retained_core.pid && birth == saved.retained_core.birth, observers};
   healthy = healthy && identity;
  }

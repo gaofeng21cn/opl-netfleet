@@ -268,7 +268,7 @@ class ReleaseToolsTests(unittest.TestCase):
             shutil.copy2(ROOT / 'openwrt/plugin-packages.py', directory)
             plugins = directory / 'plugins'
             shutil.copytree(ROOT / 'plugins', plugins)
-            path = next(p for p in sorted(plugins.glob('*/manifest.json')) if p.parent.name != 'device-identity')
+            path = sorted(plugins.glob('*/manifest.json'))[0]
             manifest = json.loads(path.read_text())
             manifest['package_dependencies'] = ['bad$(shell command)']
             path.write_text(json.dumps(manifest))
@@ -688,33 +688,6 @@ class ReleaseToolsTests(unittest.TestCase):
                     expected.append('--timeout 300 upgrade opl-netfleet luci-app-netfleet '
                                     'opl-netfleet-kernel opl-netfleet-plugin-dashboard opl-netfleet-plugin-selection')
                     self.assertEqual(expected, log.read_text().splitlines())
-            (feed / 'compat-public-key.pem').write_bytes((feed / 'opl-netfleet-apk.pem').read_bytes())
-            # A full install must reject a missing optional index before changing
-            # package sources, rather than leaving a permanently broken feed.
-            log.write_text('')
-            original_repository = repository.read_bytes()
-            missing = subprocess.run([str(INSTALLER)], env={**env, 'NETFLEET_INSTALLED': '',
-                'NETFLEET_INSTALL_PROFILE': 'full'}, text=True, capture_output=True)
-            self.assertNotEqual(missing.returncode, 0)
-            self.assertEqual(repository.read_bytes(), original_repository)
-            self.assertEqual(log.read_text(), '')
-            (feed / 'compat-packages.adb').write_bytes(b'signed optional index')
-            log.write_text('')
-            result = subprocess.run([str(INSTALLER)], env={**env, 'NETFLEET_INSTALLED': '',
-                'NETFLEET_INSTALL_PROFILE': 'full'}, text=True, capture_output=True)
-            self.assertEqual(0, result.returncode, result.stderr)
-            commands = log.read_text().splitlines()
-            full_add = next(item for item in commands if ' --simulate add ' in item)
-            self.assertIn('opl-netfleet-https-compat opl-netfleet-plugin-device-identity', full_add)
-            self.assertIn(full_add.replace(' --simulate', ''), commands)
-            self.assertEqual(commands[-1], 'management-load')
-            log.write_text('')
-            repeated = subprocess.run([str(INSTALLER)], env={**env, 'NETFLEET_INSTALLED': 'opl-netfleet opl-netfleet-kernel opl-netfleet-plugin-https-compat', 'NETFLEET_INSTALL_PROFILE': 'full'}, text=True, capture_output=True)
-            self.assertEqual(repeated.returncode, 0, repeated.stderr)
-            self.assertNotIn('management-load', log.read_text())
-            self.assertEqual('https://fixture.invalid/release/compat-packages.adb\n',
-                (repository.parent / 'opl-netfleet-compat.list').read_text())
-            self.assertFalse(any('enable' in item for item in commands))
             self.assertEqual((feed / 'opl-netfleet-apk.pem').read_bytes(), (keys / 'opl-netfleet-apk.pem').read_bytes())
             self.assertEqual('https://fixture.invalid/release/packages.adb\n', repository.read_text())
             for failures in (1, 3):
@@ -738,6 +711,94 @@ class ReleaseToolsTests(unittest.TestCase):
                         self.assertNotEqual(0, result.returncode)
                         self.assertIn('package indexes unavailable', result.stderr)
                         self.assertEqual(['--timeout 300 update'] * 3, commands)
+
+    def test_feed_bootstrap_thin_shell_preserves_existing_mihomo_meta_and_nikki(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            feed = root / 'feed'
+            bin_dir = root / 'bin'
+            keys = root / 'keys'
+            repository = root / 'repositories.d' / 'opl-netfleet.list'
+            feed.mkdir()
+            bin_dir.mkdir()
+            (feed / 'opl-netfleet-apk.pem').write_text(
+                '-----BEGIN PUBLIC KEY-----\nfixture\n-----END PUBLIC KEY-----\n'
+            )
+            (feed / 'product.json').write_text(json.dumps([{'depends': ['libc'], 'provides': ['netfleet-plugin-api-v1']}]))
+            fetcher = bin_dir / 'uclient-fetch'
+            fetcher.write_text(
+                '#!/bin/sh\n'
+                'destination=\nurl=\n'
+                'while [ "$#" -gt 0 ]; do case "$1" in -q) shift ;; -O) destination=$2; shift 2 ;; *) url=$1; shift ;; esac; done\n'
+                'cp "$NETFLEET_FIXTURE_FEED/${url##*/}" "$destination"\n'
+            )
+            fetcher.chmod(0o755)
+            curl = bin_dir / 'curl'
+            curl.write_text(
+                '#!/bin/sh\n'
+                'destination=\nurl=\n'
+                'while [ "$#" -gt 0 ]; do case "$1" in --output|-o) destination=$2; shift 2 ;; --*) shift ;; *) url=$1; shift ;; esac; done\n'
+                'cp "$NETFLEET_FIXTURE_FEED/${url##*/}" "$destination"\n'
+            )
+            curl.chmod(0o755)
+            apk = bin_dir / 'apk'
+            apk.write_text(
+                '#!/bin/sh\n'
+                'if [ "$1" = info ]; then\n'
+                '  case " $NETFLEET_INSTALLED " in *" $3 "*) exit 0 ;; *) exit 1 ;; esac\n'
+                'fi\n'
+                'printf "%s\\n" "$*" >>"$NETFLEET_APK_LOG"\n'
+                'case " $* " in *" query "*) cat "$NETFLEET_FIXTURE_FEED/product.json" ;; esac\n'
+            )
+            apk.chmod(0o755)
+            uci = bin_dir / 'uci'
+            uci.write_text('#!/bin/sh\nexit 0\n')
+            uci.chmod(0o755)
+            jsonfilter = bin_dir / 'jsonfilter'
+            jsonfilter.write_text(
+                '#!/bin/sh\n'
+                'if printf "%s" "$*" | grep -Fq "provides"; then printf "netfleet-plugin-api-v1\\n"; else printf "libc\\n"; fi\n'
+            )
+            jsonfilter.chmod(0o755)
+            missing_nikki = root / 'missing-nikki'
+            present_nikki = root / 'present-nikki'
+            present_nikki.write_text('#!/bin/sh\nexit 0\n')
+            missing_shell = root / 'missing-shell.json'
+            present_shell = root / 'shell.json'
+            present_shell.write_text('{}\n')
+            clean_path = os.pathsep.join(p for p in os.environ['PATH'].split(os.pathsep) if not (Path(p) / 'mihomo').exists())
+            log = root / 'apk.log'
+            base_env = {
+                **os.environ,
+                'PATH': f'{bin_dir}:{clean_path}',
+                'NETFLEET_INSTALL_TESTING': '1',
+                'NETFLEET_FEED_BASE': 'https://fixture.invalid/release',
+                'NETFLEET_FIXTURE_FEED': str(feed),
+                'NETFLEET_APK_KEYS_DIR': str(keys),
+                'NETFLEET_APK_REPOSITORY_FILE': str(repository),
+                'NETFLEET_APK_LOG': str(log),
+            }
+            cases = [
+                ('fresh_native', '', missing_shell, missing_nikki, 'opl-netfleet luci-app-netfleet mihomo-meta', True),
+                ('existing_mihomo', 'opl-netfleet luci-app-netfleet mihomo-meta', present_shell, missing_nikki, 'opl-netfleet luci-app-netfleet', False),
+                ('existing_mihomo_only', 'mihomo-meta', missing_shell, missing_nikki, 'opl-netfleet luci-app-netfleet', True),
+                ('nikki_present', '', missing_shell, present_nikki, 'opl-netfleet luci-app-netfleet', True),
+            ]
+            for label, installed, shell_file, nikki_init, expected_pkgs, expect_add in cases:
+                with self.subTest(thin_shell=label):
+                    log.write_text('')
+                    res = subprocess.run(
+                        [str(INSTALLER)],
+                        env={**base_env, 'NETFLEET_INSTALLED': installed, 'NETFLEET_SHELL_MANIFEST': str(shell_file), 'NETFLEET_NIKKI_INIT': str(nikki_init)},
+                        text=True, capture_output=True, check=False,
+                    )
+                    self.assertEqual(0, res.returncode, res.stderr)
+                    lines = log.read_text().splitlines()
+                    if expect_add:
+                        self.assertIn(f'--timeout 300 add {expected_pkgs}', lines)
+                    else:
+                        self.assertFalse(any(' add ' in item for item in lines))
+                    self.assertIn(f'--timeout 300 upgrade {expected_pkgs}', lines)
 
     def test_feed_bootstrap_rejects_invalid_key_before_package_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -856,8 +917,7 @@ class PublisherSourceAdmissionTests(unittest.TestCase):
         artifact = {"id": 20, "expired": False, "name": f"netfleet-openwrt-candidate-{source}", "digest": digest,
                     "workflow_run": {"id": 10, "head_branch": tag, "head_sha": source,
                                      "repository_id": 30, "head_repository_id": 30}}
-        tools_name = f"netfleet-openwrt-publish-tools-{source}-1"
-        for failure in (None, "release", "fork", "failed-build", "digest", "artifact-run", "missing-tools"):
+        for failure in (None, "release", "fork", "failed-build", "digest", "artifact-run"):
             with self.subTest(failure=failure):
                 def request(path):
                     if "/releases/tags/" in path:
@@ -866,9 +926,6 @@ class PublisherSourceAdmissionTests(unittest.TestCase):
                         raise HTTPError(path, 404, "missing", None, None)
                     if "/jobs?" in path:
                         return {"jobs": []} if failure == "failed-build" else jobs
-                    if path.endswith(f"/artifacts?name={tools_name}"):
-                        tools = {"name": tools_name, "expired": False, "digest": "sha256:" + "d" * 64}
-                        return {"artifacts": [] if failure == "missing-tools" else [tools]}
                     if "/actions/runs/" in path:
                         return {**run, "head_repository": {}} if failure == "fork" else run
                     if failure == "digest":
@@ -882,7 +939,7 @@ class PublisherSourceAdmissionTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         recovery.verify_candidate(*args)
                 else:
-                    self.assertEqual(recovery.verify_candidate(*args), tools_name)
+                    self.assertEqual(recovery.verify_candidate(*args), "")
 
     def test_frozen_main_candidate_survives_main_advance_but_unmerged_source_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -941,110 +998,6 @@ echo '{"tagName":"v0.4.5"}'
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn(expected, result.stderr)
                     self.assertEqual(git("tag"), "")
-
-
-class OptionalReleaseTests(unittest.TestCase):
-    def test_full_publication_binds_packages_and_excludes_private_receipts(self):
-        import importlib.util
-        directory = ROOT / 'scripts/https-compat'
-        with mock.patch.object(sys, 'path', [str(directory), *sys.path]):
-            import qualify as qualification_tools
-            spec = importlib.util.spec_from_file_location('optional_release', directory / 'release.py')
-            release = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(release)
-        for failure in (None, 'caller', 'artifact', 'signature', 'index', 'index-bytes', 'qualification',
-                        'composition-ok', 'composition-base', 'composition-feed', 'composition-diagnostic',
-                        'composition-check', 'composition-incomplete'):
-            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
-                root = Path(temporary)
-                packages, candidate, output = root / 'base', root / 'optional', root / 'public'
-                packages.mkdir(); candidate.mkdir()
-                commit, tree = 'a' * 40, 'b' * 40
-                write_release(packages, commit, tree)
-                base = {'schema': 'opl-netfleet-openwrt-vm-qualification.v2',
-                    'qualified': True, 'package_qualified': True,
-                    'source_commit': commit, 'source_tree': tree,
-                    'package': {'manifest_sha256': sha256(packages / 'manifest.json')}}
-                base_path = root / 'base-proof.json'
-                base_path.write_text(json.dumps(base))
-                rows = []
-                for name, filename in [('opl-netfleet-https-compat', 'compat-manifest.json'),
-                                       ('opl-netfleet-plugin-device-identity', 'device-identity-manifest.json')]:
-                    path = candidate / f'{name}-1.0.0.apk'
-                    path.write_bytes(name.encode())
-                    rows.append({'artifact': path.name, 'sha256': sha256(path),
-                                 'source_commit': commit, 'source_tree': tree})
-                if str(failure).startswith('composition-'):
-                    rows[0].update(source_commit='d'*40,source_tree='e'*40)
-                native = candidate / 'native-runtime.json'
-                native.write_text(json.dumps({'ok': True, 'packages': rows}))
-                rows[0].update(architecture='aarch64_generic',
-                    native_runtime={'name': native.name, 'sha256': sha256(native)})
-                for row, filename in zip(rows, ('compat-manifest.json', 'device-identity-manifest.json')):
-                    (candidate / filename).write_text(json.dumps(row))
-                (candidate / 'compat-public-key.pem').write_text('-----BEGIN PUBLIC KEY-----\nfixture\n')
-                (candidate / 'compat-packages.adb').write_bytes(b'fixture signed index')
-                (candidate / 'private-device-receipt.json').write_text('{"private": "must never publish"}')
-                callers = {'/usr/libexec/opl-netfleet/main.uc': 'c' * 64}
-                proof = {'schema': 'opl-netfleet-https-plugin-qualification.v1', 'plugin_qualified': True,
-                    'source_commit': commit, 'source_tree': tree, 'engine': rows[0], 'identity': rows[1],
-                    'base': {'runtime_sha256': callers},
-                    'checks': {name: True for name in ('engine_package_cycle', 'uninstall_reinstall',
-                              'dual_stack_probe_faults', 'native_dependency_closure', 'user_disable')}}
-                if failure == 'caller': proof['base'] = {'runtime_sha256': {}}
-                if failure == 'qualification': proof['plugin_qualified'] = False
-                if failure == 'artifact': (candidate / rows[0]['artifact']).write_text('changed')
-                proof_path = root / 'private-proof.json'
-                if str(failure).startswith('composition-'):
-                    fixed = {'source_commit':commit,'source_tree':tree,
-                             'manifest_sha256':sha256(packages/'manifest.json'),
-                             'qualification_sha256':sha256(base_path),'runtime_sha256':callers}
-                    request = {'schema':qualification_tools.COMPOSITION_SCHEMA,'base':fixed,
-                               'engine':rows[0],'identity':rows[1],
-                               'feed_sha256':{name:sha256(candidate/name) for name in
-                                   ('compat-public-key.pem','compat-packages.adb',rows[0]['artifact'],rows[1]['artifact'])}}
-                    checks = dict.fromkeys(qualification_tools.COMPOSITION_CHECKS,True)
-                    diagnostic = proof_path.with_suffix('.diagnostic.json')
-                    wire = {'diagnostic_passed':True,'source_commit':commit,'source_tree':tree,'base':fixed,
-                            'lanes':{'compatibility':{'ok':True,'source_commit':commit,'source_tree':tree,
-                                     'composition':request,'checks':checks}}}
-                    diagnostic.write_text(json.dumps(wire))
-                    proof = {'schema':qualification_tools.COMPOSITION_QUALIFICATION,'composition_qualified':True,
-                             'source_commit':commit,'source_tree':tree,'composition':request,'checks':checks,
-                             'diagnostic_sha256':sha256(diagnostic)}
-                    if failure=='composition-base':request['base']['manifest_sha256']='0'*64
-                    if failure=='composition-feed':request['feed_sha256']['compat-packages.adb']='0'*64
-                    if failure=='composition-diagnostic':diagnostic.write_text('changed evidence')
-                    if failure=='composition-check':proof['checks']={**checks,'real_gateway_h2':False}
-                    if failure=='composition-incomplete':proof['composition_qualified']=False
-                proof_path.write_text(json.dumps(proof))
-                index = [{'name': name, 'version': '1.0.0', 'arch': 'aarch64_generic'} for name in
-                         ('opl-netfleet-https-compat', 'opl-netfleet-plugin-device-identity')]
-                if failure == 'index': index.pop()
-                expected_index = json.dumps({'packages': index})
-                if failure == 'index-bytes': index[0]['hashes'] = 'stale APK bytes'
-                with mock.patch.object(release, 'runtime_files', return_value=callers), \
-                     mock.patch.object(release.subprocess, 'run', side_effect=(
-                         subprocess.CalledProcessError(1, 'apk verify') if failure == 'signature' else None)), \
-                     mock.patch.object(release.subprocess, 'check_output', side_effect=[
-                         json.dumps({'packages': index}), expected_index]):
-                    if failure not in (None, 'composition-ok'):
-                        with self.assertRaises((ValueError, subprocess.CalledProcessError)):
-                            release.prepare(packages, base_path, candidate, proof_path, Path('/apk'), output)
-                        self.assertFalse(output.exists())
-                    else:
-                        result = release.prepare(packages, base_path, candidate, proof_path, Path('/apk'), output)
-                        self.assertTrue(result['ok'])
-                        self.assertEqual((packages / 'manifest.json').read_bytes(), (output / 'manifest.json').read_bytes())
-                        self.assertFalse((output / 'private-device-receipt.json').exists())
-                        self.assertFalse((output / 'private-proof.json').exists())
-                        self.assertTrue((output / 'optional-packages.json').exists())
-                        (output / 'compat-packages.adb').write_text('changed after publication')
-                        verifier_spec = importlib.util.spec_from_file_location('optional_readback_verifier', VERIFIER)
-                        verifier = importlib.util.module_from_spec(verifier_spec)
-                        verifier_spec.loader.exec_module(verifier)
-                        with self.assertRaisesRegex(ValueError, 'optional feed bytes'):
-                            verifier.verify(output, commit, tree)
 
 
 class PackageLifecycleTests(unittest.TestCase):

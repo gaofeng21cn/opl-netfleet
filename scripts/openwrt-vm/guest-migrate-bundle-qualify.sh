@@ -202,7 +202,7 @@ NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 \
 
 stage=verify_migrated_state
 ! apk info -e opl-netfleet-kernel >/dev/null 2>&1
-if apk info 2>/dev/null | grep -E '^opl-netfleet-plugin-' | grep -qv '^opl-netfleet-plugin-device-identity$'; then
+if apk info 2>/dev/null | grep -Eq '^opl-netfleet-plugin-'; then
 	echo "Legacy built-in plugin packages remain installed after migration" >&2
 	apk info | grep -E '^opl-netfleet' >&2
 	exit 1

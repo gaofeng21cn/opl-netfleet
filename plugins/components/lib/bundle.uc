@@ -495,10 +495,6 @@ function stop_for_switch(ctx, work, before) {
 			ctx.run_command(`ubus call service delete '${sprintf("%J", { name: ctx.SERVICE, instance: "lifecycle" })}'`, work);
 			if (watch.pid != null) ctx.run_command(`kill -KILL ${int(watch.pid)}`, work);
 		}
-		if (before.compat_manager != null) {
-			ctx.run_command(`ubus call service delete '${sprintf("%J", { name: "opl-netfleet-compat", instance: "manager" })}'`, work);
-			if (before.compat_manager.pid != null) ctx.run_command(`kill -KILL ${int(before.compat_manager.pid)}`, work);
-		}
 		return true;
 	}
 	if (before.core && ctx.service_running(ctx.SERVICE) && !ctx.run_command(`/etc/init.d/${ctx.SERVICE} stop`, work)) return false;
@@ -512,9 +508,6 @@ function resume_after_switch(ctx, work, before) {
 		if (core_now?.pid != before.core_pid || core_now?.birth != before.core_birth) return false;
 		if (before.watch_spec != null) {
 			ctx.run_command(`ubus call service add ${ctx.q(sprintf("%J", { name: ctx.SERVICE, instances: { lifecycle: before.watch_spec } }))}`, work);
-		}
-		if (before.compat_manager?.spec != null) {
-			ctx.run_command(`ubus call service add ${ctx.q(sprintf("%J", { name: "opl-netfleet-compat", instances: { manager: before.compat_manager.spec } }))}`, work);
 		}
 	} else if (before.core && !ctx.service_running(ctx.SERVICE)) {
 		if (!ctx.run_command(`NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/${ctx.SERVICE} start`, work)) return false;
@@ -571,20 +564,13 @@ function snapshot_before(ctx) {
 	const cur = current_info(ctx);
 	const core_running = ctx.service_running(ctx.SERVICE);
 	const retain_core = ctx.KIND == "native-mihomo" && core_running && before_status?.active == true;
-	let core_id = null, watch_spec = null, compat_manager = null;
+	let core_id = null, watch_spec = null;
 	if (retain_core) {
 		core_id = ctx.native_identity();
 		const svc = ctx.parsed(`ubus call service list '${sprintf("%J", { name: ctx.SERVICE })}'`)?.[ctx.SERVICE]?.instances?.lifecycle;
 		if (svc?.running == true && type(svc.command) == "array") {
 			watch_spec = { command: svc.command, term_timeout: svc.term_timeout ?? 5, stdout: true, stderr: true };
 			if (svc.respawn != null) watch_spec.respawn = [svc.respawn.threshold, svc.respawn.timeout, svc.respawn.retry];
-		}
-		const csvc = ctx.parsed(`ubus call service list '{"name":"opl-netfleet-compat"}'`)?.["opl-netfleet-compat"]?.instances?.manager;
-		if (csvc?.running == true && type(csvc.command) == "array") {
-			compat_manager = {
-				pid: csvc.pid,
-				spec: { command: csvc.command, term_timeout: csvc.term_timeout ?? 5 }
-			};
 		}
 	}
 	const private_inputs = ctx.private_paths();
@@ -599,7 +585,6 @@ function snapshot_before(ctx) {
 		core_pid: core_id?.pid ?? null,
 		core_birth: core_id?.birth ?? null,
 		watch_spec: watch_spec,
-		compat_manager: compat_manager,
 		supervisor: ctx.service_running("opl-netfleet"),
 		inputs: ctx.input_identity(private_inputs),
 		paths: private_inputs

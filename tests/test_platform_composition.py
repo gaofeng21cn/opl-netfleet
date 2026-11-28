@@ -122,8 +122,6 @@ class PlatformCompositionTests(unittest.TestCase):
         for root in (ROOT, DESKTOP_ROOT):
             for manifest in sorted((root / "plugins").glob("*/manifest.json")):
                 data = json.loads(manifest.read_text())
-                if root == ROOT and manifest.parent.name == "device-identity":
-                    continue
                 label = manifest.relative_to(ROOT)
                 self.assertEqual(PLUGIN_SCHEMA, data.get("schema"), label)
                 self.assertEqual(self.api_version, data.get("api_version"), label)

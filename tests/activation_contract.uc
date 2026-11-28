@@ -98,16 +98,15 @@ function test_operating_mode() {
 	const operation = operation_factory(operation_context);
 	let phases = [], finished = 0;
 	const output = loadfile(root + "events/lib/output.uc")()({ use: () => ({ finish: () => { finished++; } }) });
-	let state, writes, starts, stops, compilation_error, activation_error, restore_error, cleanup_error, compatibility_error, policy, enable_failures;
+	let state, writes, starts, stops, compilation_error, activation_error, restore_error, cleanup_error, policy, enable_failures;
 	function check(value, message) { if (!value) die(message); }
 	function reset(mode) {
 		state = { profile: mode == "netfleet" ? "file:OPL-NetFleet.json" : "subscription:original",
 			enabled: mode != "openwrt", running: mode != "openwrt", present: mode == "netfleet",
-			supervisor: { installed: true, enabled: mode == "netfleet", running: mode == "netfleet" },
-			compatibility: { installed: false, enabled: false, running: false } };
+			supervisor: { installed: true, enabled: mode == "netfleet", running: mode == "netfleet" } };
 		writes = 0; starts = 0; stops = 0; phases = [];
 		enable_failures = [];
-		compilation_error = false; activation_error = false; restore_error = false; cleanup_error = false; compatibility_error = false;
+		compilation_error = false; activation_error = false; restore_error = false; cleanup_error = false;
 		policy = { recovery_profile: { ref: "subscription:recovery" } };
 	}
 	const services = {
@@ -130,13 +129,10 @@ function test_operating_mode() {
 		"platform.credentials": { api_secret: () => "fixture" },
 		"platform.documents": { load_policy: () => policy, load_evidence: () => ({}) },
 		"platform.service": {
-			service_state: name => ({ ...(name == "opl-netfleet-compat" ? state.compatibility : state.supervisor) }),
-			set_service_state: (desired, name) => {
+			service_state: () => ({ ...state.supervisor }),
+			set_service_state: (desired) => {
 				writes++;
-				if (name == "opl-netfleet-compat") {
-					if (compatibility_error) return { ok: false };
-					state.compatibility = { installed: true, ...desired };
-				} else state.supervisor = { installed: true, ...desired };
+				state.supervisor = { installed: true, ...desired };
 				return { ok: true };
 			}
 		},
@@ -214,17 +210,6 @@ function test_operating_mode() {
 		check(reset_failure.failure_detail.http_status == 404 && reset_failure.failure_detail.attempts == 1 &&
 			reset_failure.failure_detail.secret == null && reset_failure.failure_detail.output == null,
 			"candidate failure keeps useful controller evidence without private command or response fields");
-		for (let target in ["openwrt", "mihomo"]) {
-			reset("mihomo"); state.compatibility = { installed: true, enabled: true, running: true };
-			check(mode.get().result.mode == null, "optional engine prevents native-mode confirmation");
-			check(mode.set({ mode: target, expected_mode: null }).ok && !state.compatibility.running && !state.compatibility.enabled,
-				"native modes must stop optional engine persistently");
-		}
-		reset("netfleet"); state.compatibility = { installed: true, enabled: true, running: true }; compatibility_error = true;
-		check(!mode.set({ mode: "openwrt", expected_mode: "netfleet" }).ok && stops == 0 && state.supervisor.running,
-			"failed optional drain preserves core and does not claim direct mode");
-		check(operation.get("mode").state == "failed" && operation.get("mode").recovery == "unchanged" &&
-			operation.get("mode").actual_mode == "netfleet", "rejected drain reports the mode that remains confirmed");
 	} catch (error) {
 		fs.unlink(operation_directory + "/opl-netfleet-operation-mode.json");
 		fs.rmdir(operation_directory);
@@ -317,17 +302,6 @@ function test_path_activation() {
 		"shared path/guard probe must not re-probe preferred selector twice");
 	splice(calls, 0, length(calls));
 	print("path activation contracts passed\n");
-
-	const policy_factory = loadfile(`${plugins_root}/mihomo/lib/interception-policy.uc`)()();
-	const starting = {
-		backend: 'native-mihomo', ready: true, compatibility_ownership_guard: true,
-		router_proxy: true, lan_proxy: true, custom_lan_access: true, listener_identity_ready: false
-	};
-	check(policy_factory.admission({ rules: [] }, starting) == 'engine_starting', 'unready engine must not masquerade as a LAN policy conflict');
-	starting.listener_identity_ready = true;
-	check(policy_factory.admission({ rules: [] }, starting) == 'lan_access_not_equivalent', 'real policy conflicts remain rejected');
-	starting.custom_lan_access = false;
-	check(policy_factory.admission({ rules: [] }, starting) == null, 'ready equivalent gateway admitted');
 
 	let measures = 0, selected_leaf = 'leaf';
 	services['mihomo.latency'].measure = (secret, group, checks) => {
@@ -442,15 +416,6 @@ function test_path_activation() {
 	const failure = {};
 	check(!cold_paths.restore_runtime_selections('fixture', cold_manifest, manual, policy, failure, true) &&
 		failure.error == 'protected_probe_failed', 'failed startup protection still requires lifecycle cleanup');
-
-	for (let mode in ['off', 'strict', 'always', null]) {
-		const profile = { rules: ['PROCESS-NAME,haproxy,REJECT', 'MATCH,DIRECT'] };
-		if (mode != null) profile['find-process-mode'] = mode;
-		check(policy_factory.admission(profile, starting) == (mode == 'off' ? null : 'source_or_unsupported_routing_rule'),
-			'only explicitly disabled process lookup preserves relay routing');
-	}
-	check(policy_factory.admission({ 'find-process-mode': 'off', rules: ['PROCESS-NAME,,REJECT'] }, starting) != null,
-		'empty process matcher remains unproven');
 }
 
 try {

@@ -11,40 +11,6 @@ from urllib.parse import urlsplit, parse_qs
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
 
-    def do_POST(self):
-        if not self.path.startswith('/compat-wire/echo'):
-            self.send_error(404)
-            return
-        digest, size = hashlib.sha256(), 0
-        chunked = self.headers.get('Transfer-Encoding', '').lower() == 'chunked'
-        remaining = int(self.headers.get('Content-Length', '0'))
-        while chunked or remaining:
-            if chunked:
-                remaining = int(self.rfile.readline(128).split(b';')[0], 16)
-                if remaining == 0:
-                    while self.rfile.readline(8192).strip():
-                        pass
-                    break
-            while remaining:
-                data = self.rfile.read(min(65536, remaining))
-                if not data:
-                    return
-                digest.update(data)
-                size += len(data)
-                remaining -= len(data)
-                if size > 32 * 1024 * 1024:
-                    self.send_error(413)
-                    return
-            if chunked and self.rfile.read(2) != b'\r\n':
-                return
-        body = json.dumps({'bytes': size, 'sha256': digest.hexdigest(), 'path': self.path,
-                           'content_type': self.headers.get('Content-Type'), 'method': self.command}).encode()
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
     # Mihomo URLTest uses HEAD; curl business probes use GET.
     def do_HEAD(self):
         self.send_response(200 if urlsplit(self.path).path == '/robots.txt' else 204)
@@ -81,27 +47,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(event)
                 self.wfile.flush()
                 time.sleep(1)
-            return
-        if url.path in ('/compat-wire/events', '/compat-wire/drain-events', '/compat-wire/long-events'):
-            events = [f'data: {number}\n\n'.encode() for number in range(360 if url.path.endswith('/long-events') else 30)]
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/event-stream')
-            self.send_header('Cache-Control', 'no-cache')
-            self.send_header('Content-Length', str(sum(map(len, events))))
-            self.end_headers()
-            try:
-                for event in events:
-                    self.wfile.write(event)
-                    self.wfile.flush()
-                    time.sleep(0.5 if url.path.endswith(('/drain-events', '/long-events')) else 0.1)
-            except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
-                pass
-            return
-        if url.path in ('/compat-wire/401', '/compat-wire/429'):
-            self.send_response(int(url.path.rsplit('/', 1)[1]))
-            self.send_header('Retry-After', '7')
-            self.send_header('Content-Length', '0')
-            self.end_headers()
             return
         if url.path.startswith("/native-subscriptions/"):
             if parse_qs(url.query).get("token") != ["vm-only-credential"]:

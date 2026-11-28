@@ -44,7 +44,7 @@ if not match or not 1 <= int(match[1]) <= 65535:
     raise SystemExit('VM package mirror must be a port on the isolated guest host alias')
 PY
 fi
-case "$lane_mode" in all|native|setup|migration|runtime|package|compatibility|opkg|bundle|migrate-bundle) ;; *) echo 'Unknown VM lane' >&2; exit 1 ;; esac
+case "$lane_mode" in all|native|setup|migration|runtime|package|opkg|bundle|migrate-bundle) ;; *) echo 'Unknown VM lane' >&2; exit 1 ;; esac
 [ "$lane_mode" != package ] && [ "$lane_mode" != opkg ] && [ "$lane_mode" != bundle ] && [ "$lane_mode" != migrate-bundle ] || [ -n "$package_archive" ] || { echo 'Package lane requires candidate' >&2; exit 1; }
 if [ -n "$release_fixture_sha" ]; then
 	case "$lane_mode" in
@@ -204,7 +204,6 @@ done <"$work/ruleset-assets.tsv"
 tar -cf "$work/runtime-source.tar" -C "$workspace" \
 	LICENSE openwrt/Makefile \
 	openwrt/plugin_payload.py \
-	openwrt/https-compat \
 	openwrt/files/usr/libexec/opl-netfleet \
 	openwrt/files/usr/libexec/opl-netfleet-plugin-package \
 	openwrt/files/usr/libexec/rpcd/opl-netfleet \
@@ -218,7 +217,7 @@ tar -cf "$work/runtime-source.tar" -C "$workspace" \
 	openwrt/files/etc/opl-netfleet/policy.example.json \
 	openwrt/files/etc/opl-netfleet/policy-sources/base-v1.json \
 	openwrt/files/etc/opl-netfleet/rulesets.lock.json examples/plugins plugins tests scripts/update-openwrt-plugins-remote.sh scripts/observe-openwrt.uc \
-	scripts/https-compat/canary-rollback.sh \
+	scripts/openwrt-vm/canary-rollback.sh \
 	scripts/openwrt-vm/guest-native-cohort.sh \
 	-C "$work" runtime-rulesets
 openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
@@ -268,62 +267,6 @@ if [ -n "$package_archive" ]; then
 		echo "OpenWrt qualification package manifest mismatch" >&2
 		exit 1
 	}
-	if [ "$lane_mode" = compatibility ] && [ -n "${NETFLEET_COMPAT_PACKAGE:-}" ] &&
-		[ -f "$NETFLEET_COMPAT_PACKAGE/native-runtime.json" ]; then
-		# Exercise the real full bootstrap at one URL. Only public optional assets
-		# join this feed; rollback files, receipts and colliding native metadata do not.
-		python3 - "$feed_dir" "$NETFLEET_COMPAT_PACKAGE" "$source_commit" "$source_tree" <<'PY'
-import hashlib, json, os, re, shutil, sys
-from pathlib import Path
-feed, candidate = map(Path, sys.argv[1:3])
-def digest(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-names = ['compat-public-key.pem', 'compat-packages.adb']
-composition = json.loads((candidate / 'composition.json').read_text()) if (candidate / 'composition.json').is_file() else None
-if composition:
-    base = json.loads(os.environ.get('NETFLEET_COMPAT_BASE_IDENTITY') or '{}')
-    if (composition.get('schema') != 'opl-netfleet-https-composition.v1' or composition.get('base') != base
-            or tuple(composition.get('test_source', base).get(key) for key in ('source_commit', 'source_tree')) != tuple(sys.argv[3:5])):
-        raise SystemExit('Optional composition base identity mismatch')
-for filename, package in [('compat-manifest.json', 'opl-netfleet-https-compat'),
-                          ('device-identity-manifest.json', 'opl-netfleet-plugin-device-identity')]:
-    manifest = json.loads((candidate / filename).read_text())
-    name = manifest['artifact']
-    if not re.fullmatch(re.escape(package) + r'-[0-9]+\.[0-9]+\.[0-9]+(-r[0-9]+)?\.apk', name):
-        raise SystemExit('Invalid optional feed artifact name')
-    if digest(candidate / name) != manifest['sha256']:
-        raise SystemExit('Optional feed artifact digest mismatch')
-    if filename == 'compat-manifest.json':
-        if composition and manifest != composition.get('engine'):
-            raise SystemExit('Optional composition engine mismatch')
-        if not composition and (manifest['source_commit'], manifest['source_tree']) != tuple(sys.argv[3:5]):
-            raise SystemExit('Optional feed source identity mismatch')
-        native = manifest.get('native_runtime', {})
-        if native.get('name') != 'native-runtime.json' or native.get('sha256') != digest(candidate / 'native-runtime.json'):
-            raise SystemExit('Optional feed native runtime identity mismatch')
-    elif os.environ.get('NETFLEET_COMPAT_DEVICE_IDENTITY'):
-        if manifest != json.loads(os.environ['NETFLEET_COMPAT_DEVICE_IDENTITY']):
-            raise SystemExit('Optional feed retained identity mismatch')
-    if composition and filename == 'device-identity-manifest.json' and manifest != composition.get('identity'):
-        raise SystemExit('Optional composition device identity mismatch')
-    names.append(name)
-if composition and composition.get('feed_sha256') != {name: digest(candidate / name) for name in names}:
-    raise SystemExit('Optional composition feed identity mismatch')
-for name in names:
-    path = candidate / name
-    if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
-        raise SystemExit('Optional feed requires regular nonempty public assets')
-    existing = feed / name
-    if existing.is_symlink() or (existing.exists() and (not existing.is_file() or digest(existing) != digest(path))):
-        raise SystemExit('Optional feed would overwrite an existing asset with different bytes')
-key = (candidate / 'compat-public-key.pem').read_bytes()
-if b'PRIVATE KEY' in key or not key.startswith(b'-----BEGIN PUBLIC KEY-----'):
-    raise SystemExit('Optional feed key is not a public key')
-for name in names:
-    if not (feed / name).exists():
-        shutil.copyfile(candidate / name, feed / name)
-PY
-	fi
 	if [ "$lane_mode" = bundle ]; then
 		python3 "$workspace/scripts/openwrt-vm/bundle-fixtures.py" "$feed_dir" "$feed_dir/bundle-fixtures" --sign-key "${NETFLEET_BUNDLE_SIGN_KEY:?}"
 	fi
@@ -398,7 +341,7 @@ disk_size=512M
 # Core update qualification keeps archives, an extracted core and rollback bytes.
 # Its explicit disk-fill fixture still verifies rejection before stopping the core.
 if [ -n "$release_fixture_sha" ] || [ "$lane_mode" = all ] ||
-	[ "$lane_mode" = setup ] || [ "$lane_mode" = compatibility ] || [ "$lane_mode" = opkg ]; then
+	[ "$lane_mode" = setup ] || [ "$lane_mode" = opkg ]; then
 	root_size=512M
 	disk_size=768M
 fi
@@ -439,10 +382,6 @@ image_elapsed_ms=$((image_elapsed_ms + $(now_ms) - image_started_ms))
 boot_started_ms=$(now_ms)
 
 vm_memory=512
-# The compatibility engine is qualified against the supported Home target
-# class. Its measured TLS workload can exceed 600 MiB alongside OpenWrt's
-# base services, so the VM must provide the same 2 GiB headroom as Home.
-[ "$lane_mode" != compatibility ] || vm_memory=2048
 qemu-system-aarch64 \
 	-accel "${NETFLEET_QEMU_ACCELERATOR:?}" \
 	-machine virt \
@@ -541,7 +480,7 @@ transfer_started_ms=$(now_ms)
 tar --format=ustar -cf "$work/guest-inputs.tar" -C "$workspace/scripts" deploy-openwrt-remote.sh update-openwrt-plugins-remote.sh observe-openwrt.uc \
 	-C "$workspace/scripts/openwrt-vm" guest-common.sh guest-qualify.sh guest-runtime-qualify.sh guest-package-qualify.sh \
 	guest-native-qualify.sh guest-setup-qualify.sh guest-migration-qualify.sh guest-components-qualify.sh \
-	guest-compatibility-native-qualify.sh guest-opkg-qualify.sh guest-bundle-qualify.sh guest-migrate-bundle-qualify.sh \
+	canary-rollback.sh guest-opkg-qualify.sh guest-bundle-qualify.sh guest-migrate-bundle-qualify.sh \
 	guest-maintenance-qualify.sh guest-network-management-qualify.sh guest-rules-dashboard-qualify.sh guest-transfer-qualify.sh \
 	-C "$work" runtime-source.tar local-probe.crt "$mihomo_name" "$yq_name"
 ssh $ssh_common root@127.0.0.1 'tar -C /tmp -xf -' <"$work/guest-inputs.tar"
@@ -557,7 +496,7 @@ expected_transfer=$(printf '%s\n' \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-setup-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-migration-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-components-qualify.sh")" \
-	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-compatibility-native-qualify.sh")" \
+	"$(sha256_file "$workspace/scripts/openwrt-vm/canary-rollback.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-opkg-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-bundle-qualify.sh")" \
 	"$(sha256_file "$workspace/scripts/openwrt-vm/guest-migrate-bundle-qualify.sh")" \
@@ -570,7 +509,7 @@ expected_transfer=$(printf '%s\n' \
 	"$(sha256_file "$work/$mihomo_name")" \
 	"$(sha256_file "$work/$yq_name")")
 actual_transfer=$(ssh $ssh_common root@127.0.0.1 \
-	"sha256sum /tmp/deploy-openwrt-remote.sh /tmp/update-openwrt-plugins-remote.sh /tmp/observe-openwrt.uc /tmp/guest-common.sh /tmp/guest-qualify.sh /tmp/guest-runtime-qualify.sh /tmp/guest-package-qualify.sh /tmp/guest-native-qualify.sh /tmp/guest-setup-qualify.sh /tmp/guest-migration-qualify.sh /tmp/guest-components-qualify.sh /tmp/guest-compatibility-native-qualify.sh /tmp/guest-opkg-qualify.sh /tmp/guest-bundle-qualify.sh /tmp/guest-migrate-bundle-qualify.sh /tmp/guest-maintenance-qualify.sh /tmp/guest-network-management-qualify.sh /tmp/guest-rules-dashboard-qualify.sh /tmp/guest-transfer-qualify.sh /tmp/runtime-source.tar /tmp/local-probe.crt /tmp/$mihomo_name /tmp/$yq_name | awk '{print \$1}'")
+	"sha256sum /tmp/deploy-openwrt-remote.sh /tmp/update-openwrt-plugins-remote.sh /tmp/observe-openwrt.uc /tmp/guest-common.sh /tmp/guest-qualify.sh /tmp/guest-runtime-qualify.sh /tmp/guest-package-qualify.sh /tmp/guest-native-qualify.sh /tmp/guest-setup-qualify.sh /tmp/guest-migration-qualify.sh /tmp/guest-components-qualify.sh /tmp/canary-rollback.sh /tmp/guest-opkg-qualify.sh /tmp/guest-bundle-qualify.sh /tmp/guest-migrate-bundle-qualify.sh /tmp/guest-maintenance-qualify.sh /tmp/guest-network-management-qualify.sh /tmp/guest-rules-dashboard-qualify.sh /tmp/guest-transfer-qualify.sh /tmp/runtime-source.tar /tmp/local-probe.crt /tmp/$mihomo_name /tmp/$yq_name | awk '{print \$1}'")
 [ "$actual_transfer" = "$expected_transfer" ] || {
 	echo "OpenWrt qualification source transfer mismatch" >&2
 	exit 1
@@ -603,7 +542,6 @@ run_guest() {
 	case "$guest_kind" in
 		management) guest_script=guest-qualify.sh; guest_arguments= ;;
 		package|opkg|bundle|migrate-bundle) guest_arguments="'$package_manifest_sha' '$probe_port' '$feed_url'" ;;
-		compatibility) guest_script=guest-compatibility-native-qualify.sh; guest_arguments="'$feed_url' '$probe_port'" ;;
 		native|setup|migration)
 			ssh $ssh_common root@127.0.0.1 "touch /tmp/netfleet-${guest_kind}-vm-authorized" ;;
 	esac
@@ -616,8 +554,8 @@ run_guest() {
 	guest_source_commit=$source_commit
     guest_source_tree=$source_tree
     if [ "$guest_kind" = setup ] && [ -n "${NETFLEET_CORE_PACKAGE:-}" ]; then
-      guest_source_commit=$(python3 -c 'import json,os;print(json.loads(os.environ["NETFLEET_COMPAT_BASE_IDENTITY"])["source_commit"])')
-      guest_source_tree=$(python3 -c 'import json,os;print(json.loads(os.environ["NETFLEET_COMPAT_BASE_IDENTITY"])["source_tree"])')
+      guest_source_commit=$(python3 -c 'import json,os;print(json.loads(os.environ["NETFLEET_BASE_IDENTITY"])["source_commit"])')
+      guest_source_tree=$(python3 -c 'import json,os;print(json.loads(os.environ["NETFLEET_BASE_IDENTITY"])["source_tree"])')
     fi
 	# Leave guest diagnostics connected to the runner so they survive a job
 	# timeout. Only stdout belongs to the lane's JSON result.
@@ -636,26 +574,6 @@ run_guest() {
 if [ "$lane_mode" = all ] || [ "$lane_mode" = native ]; then
 	boot_clean_vm
 	run_guest native native
-fi
-if [ "$lane_mode" = compatibility ]; then
-	boot_clean_vm
-	stage=compatibility_transfer
-	COPYFILE_DISABLE=1 tar -cf "$work/compat-runtime.tar" -C "${NETFLEET_COMPAT_PACKAGE:?}" .
-	compat_runtime_sha=$(sha256_file "$work/compat-runtime.tar")
-	ssh $ssh_common root@127.0.0.1 'cat >/tmp/compat-runtime.tar' <"$work/compat-runtime.tar"
-	actual_sha=$(ssh $ssh_common root@127.0.0.1 'sha256sum /tmp/compat-runtime.tar' | awk '{print $1}')
-	[ "$actual_sha" = "$compat_runtime_sha" ] || exit 1
-	ssh $ssh_common root@127.0.0.1 'mkdir -p /tmp/compat-runtime && tar -xf /tmp/compat-runtime.tar -C /tmp/compat-runtime && rm /tmp/compat-runtime.tar'
-	if [ -n "${NETFLEET_COMPAT_BASE_IDENTITY:-}" ]; then
-		printf '%s\n' "$NETFLEET_COMPAT_BASE_IDENTITY" | ssh $ssh_common root@127.0.0.1 'cat >/tmp/compat-base-identity.json'
-	fi
-	if [ -n "${NETFLEET_COMPAT_DEVICE_IDENTITY:-}" ]; then
-		printf '%s\n' "$NETFLEET_COMPAT_DEVICE_IDENTITY" | ssh $ssh_common root@127.0.0.1 'cat >/tmp/compat-device-identity.json'
-	fi
-	if [ "${NETFLEET_COMPAT_BENCHMARK:-0}" = 1 ]; then
-		ssh $ssh_common root@127.0.0.1 'touch /tmp/netfleet-compat-benchmark'
-	fi
-	run_guest compatibility compatibility
 fi
 if [ "$lane_mode" = all ] || [ "$lane_mode" = setup ]; then
 	boot_clean_vm
@@ -712,7 +630,6 @@ required = {
     "runtime": {"management", "runtime"},
     "migration": {"management", "runtime", "migration"},
     "package": {"package-management", "package-runtime", "package"},
-    "compatibility": {"compatibility"},
     "opkg": {"opkg"},
     "bundle": {"bundle"},
     "migrate-bundle": {"migrate-bundle"},
@@ -725,7 +642,7 @@ for name in sorted(required):
     checks = result.get("checks")
     expected={'source_commit':sys.argv[2], 'source_tree':sys.argv[3]}
     if name=='setup' and os.environ.get('NETFLEET_CORE_PACKAGE'):
-        expected=json.loads(os.environ['NETFLEET_COMPAT_BASE_IDENTITY'])
+        expected=json.loads(os.environ['NETFLEET_BASE_IDENTITY'])
     if not (result.get("ok") is True
             and result.get("source_commit") == expected["source_commit"]
             and result.get("source_tree") == expected["source_tree"]
@@ -794,8 +711,8 @@ elif mode != "all":
                  diagnostic_lane=mode)
 if os.environ.get("NETFLEET_VM_RELEASE_HARNESS_IDENTITY"):
     value["release_harness"] = json.loads(os.environ["NETFLEET_VM_RELEASE_HARNESS_IDENTITY"])
-if os.environ.get('NETFLEET_COMPAT_BASE_IDENTITY'):
-    value['base'] = json.loads(os.environ['NETFLEET_COMPAT_BASE_IDENTITY'])
+if os.environ.get('NETFLEET_BASE_IDENTITY'):
+    value['base'] = json.loads(os.environ['NETFLEET_BASE_IDENTITY'])
 if os.environ.get('NETFLEET_CORE_PACKAGE'):
     core=json.loads((work/'core-result.json').read_text())
     manifest=json.loads((Path(os.environ['NETFLEET_CORE_PACKAGE'])/'core-manifest.json').read_text())

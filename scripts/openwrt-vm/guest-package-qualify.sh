@@ -176,14 +176,6 @@ mv "$saved_runtime/configuration" /etc/opl-netfleet
 mv "$saved_runtime/package-helper" /usr/libexec/opl-netfleet-plugin-package
 rmdir "$saved_runtime"
 
-# The preceding source-runtime lane loads all plugin sources for contracts.
-# First package installation starts without the optional management plugin;
-# keep its unowned fixture sources out of the installed-file assertions.
-! "$real_apk" info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1
-cmp /usr/libexec/opl-netfleet/plugins/https-compat/manifest.json \
-	/tmp/plugins/https-compat/manifest.json
-mv /usr/libexec/opl-netfleet/plugins/https-compat "$fixture/optional-management-source"
-
 # Source deployments predate package ownership and exercise APK's protected
 # /etc path migration. The configuration plugin must promote only these package
 # baselines while leaving the user policy outside its write set.
@@ -239,7 +231,7 @@ printf '%s\n' "$installed_manifest" >>"$fixture/package-manager.log"
 ucode -e '
 	import { readfile } from "fs";
 	for (let artifact in json(readfile(ARGV[0])).artifacts)
-		if (artifact.package != "opl-netfleet-plugin-https-compat") printf("%s %s%s\n", artifact.package, artifact.version,
+		printf("%s %s%s\n", artifact.package, artifact.version,
             artifact.release != null ? "-r" + artifact.release : "");
 ' "$candidate/manifest.json" >"$fixture/product-packages.txt"
 : >"$fixture/package-info.after"
@@ -289,10 +281,6 @@ stage=installed_bytes
 while read -r expected path extra; do
 	[ -n "$expected" ] || continue
 	[ -z "${extra:-}" ]
-	case "$path" in
-		usr/libexec/opl-netfleet/plugins/https-compat/*|www/luci-static/resources/netfleet/plugins/https-compat/*)
-			if ! apk info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1; then [ ! -e "/$path" ]; continue; fi ;;
-	esac
 	[ -f "/$path" ] || { echo "Package file missing: /$path" >&2; exit 1; }
 	[ "$(sha256sum "/$path" | awk '{print $1}')" = "$expected" ] || {
 		echo "Package file mismatch: /$path" >&2
@@ -624,15 +612,7 @@ grep -Fq '"select_region"' "$fixture/rpc-methods-after.txt"
 grep -Eq '"request"[[:space:]]*:[[:space:]]*"Table"' "$fixture/rpc-methods-after.txt"
 [ "$(cat /var/run/nikki/mihomo.pid)" = "$core_before" ]
 
-stage=optional_management_removal
-! "$real_apk" info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1
-core_before=$(cat /var/run/nikki/mihomo.pid)
-owner_locked "$real_apk" add opl-netfleet-plugin-https-compat >>"$fixture/package-manager.log" 2>&1
-"$real_apk" info -e opl-netfleet-plugin-https-compat >/dev/null
-owner_locked "$real_apk" del opl-netfleet-plugin-https-compat >>"$fixture/package-manager.log" 2>&1
-! "$real_apk" info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1
-"$real_apk" info -e opl-netfleet opl-netfleet-kernel >/dev/null
-[ "$(cat /var/run/nikki/mihomo.pid)" = "$core_before" ]
+stage=installer_reinstall
 # The active synthetic routing fixture has no public HTTPS egress. Dependencies
 # are already installed; exercise reinstall against only the signed local feed.
 mv /etc/apk/repositories.d/distfeeds.list "$fixture/distfeeds.saved"
@@ -640,7 +620,6 @@ installer_status=0
 NETFLEET_FEED_BASE="$feed_url" NETFLEET_ALLOW_INSECURE_FEED=1 sh "$candidate/install-netfleet.sh" >>"$fixture/package-manager.log" 2>&1 || installer_status=$?
 mv "$fixture/distfeeds.saved" /etc/apk/repositories.d/distfeeds.list
 [ "$installer_status" = 0 ]
-! "$real_apk" info -e opl-netfleet-plugin-https-compat >/dev/null 2>&1
 ubus call opl-netfleet probe '{}' >"$fixture/package-probe.json"
 [ "$(jsonfilter -i "$fixture/package-probe.json" -e '@.result.ok')" = true ]
 
@@ -679,7 +658,7 @@ if [ "$(jsonfilter -i "$fixture/lifecycle-fixture.json" -e '@.legacy.key_sha256'
 		[ "$(sha256sum "$candidate/$filename" | awk '{print $1}')" = "$expected" ]
 		legacy_packages="$legacy_packages $candidate/$filename"
 	done <"$fixture/legacy-files.txt"
-	legacy_dependencies=$(jsonfilter -i "$fixture/lifecycle-fixture.json" -e '@.legacy.system_dependencies[*]')
+	legacy_dependencies=$(jsonfilter -i "$fixture/lifecycle-fixture.json" -e '@.legacy.system_dependencies[*]' 2>/dev/null || true)
 	if [ -n "$legacy_dependencies" ]; then
 		owner_locked "$real_apk" --no-network add $legacy_dependencies >>"$fixture/package-manager.log" 2>&1
 	fi
@@ -721,10 +700,6 @@ if [ "$(jsonfilter -i "$fixture/lifecycle-fixture.json" -e '@.legacy.key_sha256'
 		"$real_apk" list --manifest | grep -Fqx "$package_name $package_version"
 	done <"$fixture/product-packages.txt"
 	owner_locked ucode "$main" disable >"$fixture/lifecycle-legacy-disable.json"
-	if "$real_apk" info -e opl-netfleet-https-compat >/dev/null 2>&1; then
-		! nft list table inet netfleet_compat >/dev/null 2>&1
-		timeout 60 "$real_apk" --no-network del opl-netfleet-https-compat >>"$fixture/package-manager.log" 2>&1
-	fi
 	product_packages=$(awk '{print $1}' "$fixture/product-packages.txt")
 	"$real_apk" del $product_packages >>"$fixture/package-manager.log" 2>&1
 	[ ! -e "$main" ]
@@ -733,5 +708,5 @@ if [ "$(jsonfilter -i "$fixture/lifecycle-fixture.json" -e '@.legacy.key_sha256'
 fi
 
 stage=complete
-printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","lifecycle":{"legacy_monolith_upgrade":%s,"legacy_source_commit":"%s","legacy_source_tree":"%s","legacy_artifacts":%s},"checks":{"manifest":true,"signing_key":true,"kernel_only_package_install":true,"kernel_only_service_lifecycle":true,"feed_bootstrap":true,"feed_install":true,"feed_install_inactive":true,"feed_upgrade_transaction":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"probe_rpc":true,"independent_plugin_upgrade":true,"independent_plugin_keeps_owners_running":true,"kernel_upgrade":true,"optional_management_removal":true,"rpc_method_upgrade":true,"lifecycle_restores_routes_and_private_inputs":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
+printf '{"ok":true,"source_commit":"%s","source_tree":"%s","manifest_sha256":"%s","package_version":"%s","package_format":"apk","package_arch":"noarch","build_target_arch":"aarch64_generic","lifecycle":{"legacy_monolith_upgrade":%s,"legacy_source_commit":"%s","legacy_source_tree":"%s","legacy_artifacts":%s},"checks":{"manifest":true,"signing_key":true,"kernel_only_package_install":true,"kernel_only_service_lifecycle":true,"feed_bootstrap":true,"feed_install":true,"feed_install_inactive":true,"feed_upgrade_transaction":true,"package_database":true,"package_metadata":true,"installed_bytes":true,"package_build_identity":true,"package_identity_precedence":true,"luci_menu":true,"rpcd_acl":true,"rpcd_methods":true,"onboarding_get":true,"onboarding_apply":true,"probe_rpc":true,"independent_plugin_upgrade":true,"independent_plugin_keeps_owners_running":true,"kernel_upgrade":true,"installer_reinstall":true,"rpc_method_upgrade":true,"lifecycle_restores_routes_and_private_inputs":true,"disable_native":true,"uninstall":true,"active_artifact_removed":true}}\n' \
 	"$source_commit" "$source_tree" "$manifest_sha" "$version" "$legacy_upgraded" "$legacy_source_commit" "$legacy_source_tree" "$legacy_artifacts"

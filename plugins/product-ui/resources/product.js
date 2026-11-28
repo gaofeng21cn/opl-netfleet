@@ -41,7 +41,7 @@ function diagnose(status, snapshot, query, error, stale) {
 				: status.active && (lan.dns_ready === false || lan.transparent_proxy_ready === false)
 					? '检查网络接入配置与接管状态；此处不能判断具体域名是否解析成功。'
 					: host && !matches.length ? '在发生问题的设备上再次访问目标，然后重新读取；更多连接请打开 Zashboard。'
-						: '对照下方实际规则与链路；涉及协议或长连接时，可继续查看 HTTPS 兼容诊断。';
+						: '对照下方实际规则与链路；需要更多连接细节时，可打开 Zashboard 查看。';
 	return { host: host, matches: matches, checks: checks, message: message, next: next, truncated: snapshot.truncated, readAt: snapshot.read_at };
 }
 

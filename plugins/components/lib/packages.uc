@@ -34,7 +34,6 @@ export function validate(changed, request, installed, product, owned, native_bac
 			targets[item.name] = item.version;
 			push(target_names, item.name);
 		}
-		const has_compat = targets['opl-netfleet-https-compat'] != null && owned['opl-netfleet-https-compat'] == 'https-compat';
 		const has_mihomo = targets['opl-netfleet-plugin-mihomo'] != null;
 		const names = [], candidates = {};
 		for (let row in changed) {
@@ -43,8 +42,7 @@ export function validate(changed, request, installed, product, owned, native_bac
 				if (row.action != 'Upgrading' || row.version != targets[row.name]) die('candidate_changed');
 			} else {
 				const retained_dependency = native_backend === true && installed[row.name] != null && row.action == 'Upgrading' &&
-					((has_compat && index(['opl-netfleet-plugin-mihomo', 'opl-netfleet'], row.name) >= 0) ||
-					 (has_mihomo && row.name == 'opl-netfleet'));
+					(has_mihomo && row.name == 'opl-netfleet');
 				if (index(['Installing', 'Upgrading'], row.action) < 0 ||
 					(index(['opl-netfleet', 'opl-netfleet-kernel', 'mihomo-meta', 'opl-netfleet-plugin-mihomo'], row.name) >= 0 && !retained_dependency) ||
 					(installed[row.name] != null && row.name != 'luci-app-netfleet' && !owned[row.name] &&
@@ -76,13 +74,10 @@ export function validate(changed, request, installed, product, owned, native_bac
 				if (row.version != request.version || index(['Installing', 'Upgrading'], row.action) < 0)
 					die('candidate_changed');
 			} else {
-				// The native HTTPS dependency closure can retain its data plane;
-				// the transaction separately verifies both payload contracts before writes.
+				// Retained data-plane transitions keep only the base host when updating the backend plugin.
 				const retained_dependency = native_backend === true && request.action == 'update' &&
 					installed[row.name] != null && row.action == 'Upgrading' &&
-					(request.name == 'opl-netfleet-https-compat' && owned[request.name] == 'https-compat' &&
-					 index(['opl-netfleet-plugin-mihomo', 'opl-netfleet'], row.name) >= 0 ||
-					 request.name == 'opl-netfleet-plugin-mihomo' && row.name == 'opl-netfleet');
+					request.name == 'opl-netfleet-plugin-mihomo' && row.name == 'opl-netfleet';
 				if (index(['Installing', 'Upgrading'], row.action) < 0 ||
 					index(['opl-netfleet', 'opl-netfleet-kernel', 'mihomo-meta', 'opl-netfleet-plugin-mihomo'], row.name) >= 0 && !retained_dependency ||
 					(installed[row.name] != null && row.name != 'luci-app-netfleet' && !owned[row.name] && !match(row.name, /^opl-netfleet-plugin-[a-z][a-z0-9-]*$/) && !retained_dependency))

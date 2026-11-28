@@ -32,7 +32,7 @@ class PluginUpdateTests(unittest.TestCase):
         selected = mod.package_selection(manifest, ['opl-netfleet-plugin-models'])
         self.assertEqual(selected, [{'package': 'opl-netfleet-plugin-models'}])
         self.assertEqual(mod.package_selection(manifest, ['luci-app-netfleet']), [{'package': 'luci-app-netfleet'}])
-        for names in [[], ['opl-netfleet'], ['luci-app-nikki'], ['mihomo-meta'], ['opl-netfleet-https-compat'], ['opl-netfleet-plugin-models'] * 2]:
+        for names in [[], ['opl-netfleet'], ['luci-app-nikki'], ['mihomo-meta'], ['opl-netfleet-kernel'], ['opl-netfleet-plugin-models'] * 2]:
             with self.assertRaises(ValueError): mod.package_selection(manifest, names)
 
     def test_unchanged_packages_need_no_transport_or_rollback_archive(self):

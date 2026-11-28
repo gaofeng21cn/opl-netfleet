@@ -17,13 +17,11 @@ Options:
   --test-ref <ref>  Use revised VM tests with identical product source
   --packages <dir>  Also install and qualify the exact APK or IPK candidate directory
   --openwrt-version <ver>  Official OpenWrt VM image version (25.12.5 or 24.10.2; default 25.12.5)
-  --diagnostic <lane>  Run native, setup, migration, runtime, package, compatibility, opkg, bundle, or migrate-bundle diagnostics
+  --diagnostic <lane>  Run native, setup, migration, runtime, package, opkg, bundle, or migrate-bundle diagnostics
   --release-lane <lane>  Run one isolated release lane (native, setup, migration, or package)
   --release-harness <commit>  Use the named VM runner and guest tests for release recovery
   --core-package <dir>  Qualify a same-binary core architecture variant against --base-qualification
-  --compat-package <dir>  Signed optional APK candidate; requires --packages
-  --base-qualification <file>  Reuse an unchanged qualified base for HTTPS diagnostics
-  --benchmark     Measure four HTTPS scenes, 3 x 300 seconds each, in the guest
+  --base-qualification <file>  Reuse an unchanged qualified base for core-package setup diagnostics
   --plugin-packages <dir>  Signed plugin tests in the full suite or native diagnostic lane
   --output <path>   Qualification receipt path outside the repository
   -h, --help        Show this help
@@ -43,11 +41,9 @@ packages=""
 diagnostic=all
 release_lane=""
 release_harness=""
-compat_package=""
 core_package=""
 plugin_packages=""
 base_qualification=""
-benchmark=0
 while (($#)); do
 	case "$1" in
 		--ref)
@@ -79,7 +75,7 @@ while (($#)); do
 		--diagnostic)
 			(($# >= 2)) || die "--diagnostic requires a lane"
 			diagnostic=$2
-			case "$diagnostic" in native|setup|migration|runtime|package|compatibility|opkg|bundle|migrate-bundle) ;; *) die "unknown diagnostic lane: $diagnostic" ;; esac
+			case "$diagnostic" in native|setup|migration|runtime|package|opkg|bundle|migrate-bundle) ;; *) die "unknown diagnostic lane: $diagnostic" ;; esac
 			shift 2
 			;;
 		--release-lane)
@@ -96,11 +92,6 @@ while (($#)); do
 		--core-package)
 			(($# >= 2)) || die "--core-package requires a directory"
 			core_package=$(cd "$2" && pwd); shift 2 ;;
-		--compat-package)
-			(($# >= 2)) || die "--compat-package requires a directory"
-			compat_package=$(cd "$2" && pwd)
-			shift 2
-			;;
 		--plugin-packages)
 			(($# >= 2)) || die "--plugin-packages requires a directory"
 			plugin_packages=$(cd "$2" && pwd)
@@ -111,7 +102,6 @@ while (($#)); do
 			base_qualification=$2
 			shift 2
 			;;
-		--benchmark) benchmark=1; shift ;;
 		-h|--help)
 			usage
 			exit 0
@@ -121,25 +111,22 @@ while (($#)); do
 done
 
 [[ -n "$output" ]] || die "--output is required"
-[[ "$benchmark" == 0 || "$diagnostic" == compatibility ]] || die 'benchmark requires compatibility diagnostics'
-[[ -z "$base_qualification" || -n "$packages" && ( "$diagnostic" == compatibility && -n "$compat_package" || "$diagnostic" == setup && -n "$core_package" ) ]] || die 'base qualification requires signed compatibility diagnostics'
+[[ -z "$base_qualification" || -n "$packages" && "$diagnostic" == setup && -n "$core_package" ]] || die 'base qualification requires core-package setup diagnostics'
 [[ -z "$core_package" || "$diagnostic" == setup && -f "$base_qualification" ]] || die "core variants require a qualified unchanged base and setup lane"
-[[ "$diagnostic" != compatibility || -f "$compat_package/compat-manifest.json" ]] || die "compatibility diagnostic requires --compat-package"
-[[ -z "$compat_package" || "$diagnostic" == compatibility && -n "$packages" ]] || die "--compat-package requires compatibility diagnostic and --packages"
 [[ -z "$plugin_packages" || "$diagnostic" == all || "$diagnostic" == native ]] || die "plugin packages require the full suite or native diagnostic lane"
 [[ "$diagnostic" != package || -n "$packages" ]] || die "package diagnostic requires --packages"
 [[ "$diagnostic" != opkg || -n "$packages" ]] || die "opkg diagnostic requires --packages"
 [[ "$diagnostic" != bundle || -n "$packages" ]] || die "bundle diagnostic requires --packages"
 [[ "$diagnostic" != migrate-bundle || -n "$packages" ]] || die "migrate-bundle diagnostic requires --packages"
-[[ "$diagnostic" == all || "$diagnostic" == package || "$diagnostic" == setup || "$diagnostic" == compatibility || "$diagnostic" == opkg || "$diagnostic" == bundle || "$diagnostic" == migrate-bundle || -z "$packages" ]] || die "this diagnostic does not accept --packages"
+[[ "$diagnostic" == all || "$diagnostic" == package || "$diagnostic" == setup || "$diagnostic" == opkg || "$diagnostic" == bundle || "$diagnostic" == migrate-bundle || -z "$packages" ]] || die "this diagnostic does not accept --packages"
 if [[ -n "$release_lane" ]]; then
 	[[ "$diagnostic" == all && -z "$test_ref$plugin_packages" ]] ||
 		die 'release lanes require the candidate source and cannot be combined with diagnostics or plugin tests'
 	[[ -n "$packages" && -n "${NETFLEET_VM_COMPONENT_FIXTURES:-}" ]] ||
 		die 'release lanes require the signed candidate and its sealed component fixtures'
 	diagnostic=$release_lane
-elif [[ -n "$release_harness" && ( "$diagnostic" != compatibility || -z "$base_qualification" || -n "$test_ref" ) ]]; then
-	die '--release-harness requires a release lane or its exact compatibility composition'
+elif [[ -n "$release_harness" ]]; then
+	die '--release-harness requires a release lane'
 fi
 [[ "$source_ref" != -* ]] || die "source ref cannot begin with '-'"
 case "$(uname -s):$(uname -m)" in
@@ -197,7 +184,6 @@ git -c tar.umask=0022 -C "$repo_dir" archive "$source_commit" \
 	LICENSE openwrt/Makefile \
 	openwrt/plugin_payload.py \
 	openwrt/mihomo-meta/source.json \
-	openwrt/https-compat \
 	openwrt/files/usr/libexec/opl-netfleet \
 	openwrt/files/usr/libexec/opl-netfleet-plugin-package \
 	openwrt/files/usr/libexec/rpcd/opl-netfleet \
@@ -213,7 +199,6 @@ git -c tar.umask=0022 -C "$repo_dir" archive "$source_commit" \
 	openwrt/files/etc/opl-netfleet/rulesets.lock.json \
 	scripts/deploy-openwrt-remote.sh \
 	scripts/update-openwrt-plugins-remote.sh scripts/observe-openwrt.uc \
-	scripts/https-compat/canary-rollback.sh \
 	scripts/openwrt-vm \
 	scripts/openwrt-apk.py \
 	scripts/install-netfleet.sh \
@@ -241,17 +226,6 @@ if [[ -n "$release_harness" ]]; then
 	rm "$work_dir/harness.tar"
 	release_harness_identity=$(python3 -c 'import json,sys;print(json.dumps(dict(source_commit=sys.argv[1],source_tree=sys.argv[2])))' \
 		"$release_harness" "$release_harness_tree")
-	if [[ "$diagnostic" == compatibility ]]; then
-		python3 - "$base_qualification" "$release_harness_identity" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-receipt = json.loads(Path(sys.argv[1]).read_text())
-if receipt.get('release_harness') != json.loads(sys.argv[2]):
-    raise SystemExit('openwrt-vm: release harness does not match the base qualification')
-PY
-	fi
 fi
 
 test_identity=""
@@ -264,12 +238,10 @@ if [[ -n "$test_ref" ]]; then
     git -C "$repo_dir" diff --quiet "$source_commit" "$test_commit" -- . \
         ':(exclude)scripts/openwrt-vm' ':(exclude)scripts/openwrt-vm.sh' \
         ':(exclude)scripts/openwrt-apk.py' ':(exclude)scripts/netfleet-package-build.sh' \
-        ':(exclude)scripts/https-compat/qualify.py' \
-        ':(exclude)scripts/https-compat/canary-rollback.sh' \
         ':(exclude)scripts/update-openwrt-plugins.py' \
         ':(exclude)tests' ':(exclude)desktop/tests' ':(exclude)docs' || die "test ref changes product inputs"
     rm -rf "$source_dir/scripts/openwrt-vm" "$source_dir/tests"
-    git -c tar.umask=0022 -C "$repo_dir" archive "$test_commit" scripts/openwrt-vm scripts/openwrt-apk.py scripts/https-compat tests >"$work_dir/tests.tar"
+    git -c tar.umask=0022 -C "$repo_dir" archive "$test_commit" scripts/openwrt-vm scripts/openwrt-apk.py tests >"$work_dir/tests.tar"
     tar -C "$source_dir" -xf "$work_dir/tests.tar"
     rm "$work_dir/tests.tar"
     test_identity=$(python3 -c 'import json,sys;print(json.dumps(dict(source_commit=sys.argv[1],source_tree=sys.argv[2])))' "$test_commit" "$test_tree")
@@ -279,13 +251,11 @@ package_archive=""
 package_manifest_sha=""
 release_fixture_sha=""
 base_identity=""
-device_identity=""
 if [[ -n "$packages" ]]; then
 	packages=$(cd "$packages" 2>/dev/null && pwd) || die "package candidate directory is unavailable"
 	package_commit=$source_commit
 	package_tree=$source_tree
 	if [[ -n "$base_qualification" ]]; then
-		if [[ -n "$core_package" ]]; then
         base_identity=$(python3 - "$packages/manifest.json" "$base_qualification" "$core_package/core-manifest.json" "$source_commit" "$repo_dir" <<'PYBASE'
 import hashlib,json,subprocess,sys
 m=json.load(open(sys.argv[1])); r=json.load(open(sys.argv[2])); c=json.load(open(sys.argv[3]))
@@ -300,25 +270,8 @@ assert all(c['upstream'][k]==old[k] for k in ['version','sha256','filename','sou
 print(json.dumps({k:m[k] for k in ['source_commit','source_tree']}))
 PYBASE
 )
-        else
-		retained_args=()
-		[[ ! -d "$compat_package/retained-base" ]] || retained_args=(--retained-base "$compat_package/retained-base")
-		base_identity=$(python3 "$repo_dir/scripts/https-compat/base.py" --packages "$packages" --qualification "$base_qualification" --ref "$source_commit" "${retained_args[@]}")
-		fi
 		package_commit=$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["source_commit"])' "$base_identity")
 		package_tree=$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["source_tree"])' "$base_identity")
-	fi
-	if [[ -n "$compat_package" ]]; then
-		device_identity=$(python3 - "$repo_dir" "$compat_package" "$package_commit" <<'PY'
-import json, sys
-from pathlib import Path
-sys.path.insert(0, str(Path(sys.argv[1])/'scripts/https-compat'))
-from qualify import artifact, identity_matches_base
-identity = artifact(Path(sys.argv[2]), 'device-identity-manifest.json')
-identity_matches_base(identity, {'source_commit':sys.argv[3]})
-print(json.dumps(identity))
-PY
-)
 	fi
 	if [[ "$diagnostic" == opkg || ( "$diagnostic" == bundle && "$openwrt_version" == 24.10.2 ) ]]; then
 		python3 - "$packages" "$repo_dir/scripts/netfleet_usign.py" "$package_commit" "$package_tree" <<'PY'
@@ -390,10 +343,7 @@ NETFLEET_QEMU_CPU=$qemu_cpu \
 	NETFLEET_VM_LANE=$diagnostic \
 	NETFLEET_VM_RELEASE_FIXTURE_SHA256="$release_fixture_sha" \
 	NETFLEET_VM_RELEASE_HARNESS_IDENTITY="$release_harness_identity" \
-	NETFLEET_COMPAT_PACKAGE="$compat_package" \
-	NETFLEET_COMPAT_BASE_IDENTITY="$base_identity" \
-	NETFLEET_COMPAT_DEVICE_IDENTITY="$device_identity" \
-	NETFLEET_COMPAT_BENCHMARK="$benchmark" \
+	NETFLEET_BASE_IDENTITY="$base_identity" \
 	NETFLEET_PLUGIN_PACKAGES="$plugin_packages" \
 	NETFLEET_PACKAGE_ARCHIVE="$package_archive" \
 	NETFLEET_PACKAGE_MANIFEST_SHA256="$package_manifest_sha" \

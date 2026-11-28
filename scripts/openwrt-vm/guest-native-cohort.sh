@@ -39,7 +39,7 @@ while IFS="$(printf '\t')" read -r name old new; do
  cp "$cohort/old/$old" "$guard/old/"
  cp "$cohort/new/$new" "$guard/new/"
 done <"$cohort/packages.tsv"
-cp /tmp/scripts/https-compat/canary-rollback.sh "$guard/guard.sh"
+cp /tmp/canary-rollback.sh "$guard/guard.sh"
 cp "$cohort/runtime.before" "$guard/private.sha256"
 sha256sum /etc/config/netfleet /etc/opl-netfleet/policy.json /etc/opl-netfleet/backend.json >>"$guard/private.sha256"
 for archive in "$guard"/new/*.apk; do apk extract --destination "$cohort/extracted" "$archive" >>"$cohort/archives.log" 2>&1; done

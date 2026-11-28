@@ -92,24 +92,6 @@
     },
     {
       "api_version": 1,
-      "id": "https-compat",
-      "label": "HTTPS compatibility",
-      "optional": true,
-      "package": "opl-netfleet-plugin-https-compat",
-      "package_dependencies": [
-        "coreutils-timeout",
-        "ucode-mod-digest",
-        "ucode-mod-socket",
-        "ucode-mod-uloop"
-      ],
-      "services": [
-        "https-compat.control",
-        "https-compat.lease"
-      ],
-      "version": "0.9.9"
-    },
-    {
-      "api_version": 1,
       "id": "maintenance",
       "label": "Profiles and maintenance",
       "optional": false,
@@ -148,7 +130,6 @@
         "mihomo.backend",
         "mihomo.controller",
         "mihomo.gateway",
-        "mihomo.interception",
         "mihomo.latency",
         "mihomo.lifecycle",
         "mihomo.paths",

@@ -128,7 +128,7 @@ export function create() {
 
 export function stage_runtime(target) {
 	const repo = fs.realpath(replace(sourcepath(), /[^/]+$/, '..'));
-	const script = `rm -rf ${q(target)} && mkdir -p ${q(target)}/plugins && cp -R ${q(repo + '/openwrt/files/usr/libexec/opl-netfleet')}/. ${q(target)}/ && for p in ${q(repo + '/plugins')}/*; do [ -f "$p/manifest.json" ] || continue; [ "$(basename "$p")" = "device-identity" ] || cp -R "$p" ${q(target)}/plugins/; done && chmod -R u+rwX,go-w ${q(target)}`;
+	const script = `rm -rf ${q(target)} && mkdir -p ${q(target)}/plugins && cp -R ${q(repo + '/openwrt/files/usr/libexec/opl-netfleet')}/. ${q(target)}/ && for p in ${q(repo + '/plugins')}/*; do [ -f "$p/manifest.json" ] || continue; cp -R "$p" ${q(target)}/plugins/; done && chmod -R u+rwX,go-w ${q(target)}`;
 	if (system(script) != 0) die('stage_runtime_failed');
 	return target;
 };

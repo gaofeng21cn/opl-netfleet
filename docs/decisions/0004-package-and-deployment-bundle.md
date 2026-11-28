@@ -9,7 +9,7 @@
 
 OpenWrt 代码交付采用「薄系统包壳 + 签名纯源码 Release Bundle + 原子符号链接切换」架构，并与实例配置彻底分离：
 
-- **薄系统包壳（`opl-netfleet`、`luci-app-netfleet`）**：只声明系统依赖、稳定 init/rpcd/LuCI 入口及 Bundle 验签公钥；跨版本发布纯解释型 `noarch` `.apk`（OpenWrt 25.12+）与零 SDK 确定性构建的 `all` `.ipk`（OpenWrt 24.10 / iStoreOS）。原生二进制与内核依赖（如 `mihomo-meta`、`opl-netfleet-https-compat`、`opl-netfleet-device-identity`）及第三方扩展包继续由系统包管理器独立拥有。
+- **薄系统包壳（`opl-netfleet`、`luci-app-netfleet`）**：只声明系统依赖、稳定 init/rpcd/LuCI 入口及 Bundle 验签公钥；跨版本发布纯解释型 `noarch` `.apk`（OpenWrt 25.12+）与零 SDK 确定性构建的 `all` `.ipk`（OpenWrt 24.10 / iStoreOS）。原生二进制与内核依赖（如 `mihomo-meta`）及第三方扩展包继续由系统包管理器独立拥有。
 - **签名纯源码 Release Bundle**：纯 `.uc`/`.js`/配置模板与默认服务插件打入单一签名归档（`opl-netfleet-bundle-<ver>.tar.gz` + `release-manifest.json` + `.sig`），绑定精确源码身份与 `min_shell_version`，在设备 `/usr/share/opl-netfleet/releases/<ver>/` 下解压校验，并通过 `current` / `previous` POSIX 原子符号链接在 `apk` 与 `opkg` 设备上共用同一更新、预检、即时回滚与崩溃恢复引擎。
 - **配置权威分离**：private OPL Instance 是用户 desired configuration 的唯一权威；deployment bundle 只是从它生成的四文件投影，由部署器消费，不进入软件包、Release Bundle 或 Git。
 

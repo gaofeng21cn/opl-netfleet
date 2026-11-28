@@ -40,7 +40,6 @@ jobs:
       recovery: ${{ steps.source.outputs.recovery }}
       harness: ${{ steps.source.outputs.harness }}
       harness_tree: ${{ steps.source.outputs.harness_tree }}
-      publish_tools_name: ${{ steps.source.outputs.publish_tools_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -159,12 +158,12 @@ jobs:
           if-no-files-found: error
           overwrite: true
           retention-days: 7
-  qualify-optional:
-    name: OpenWrt optional composition qualification
+  qualify-receipt:
+    name: OpenWrt release receipt validation
     needs: [identity, candidate, qualify-base]
     if: ${{ !cancelled() && needs.qualify-base.result == 'success' }}
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 120
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -201,34 +200,17 @@ jobs:
             --fixture-manifest "$RUNNER_TEMP/candidate/netfleet-vm-components/fixture.json" \
             --lane-receipts "$RUNNER_TEMP/lanes/"*.json \
             --output "$RUNNER_TEMP/qualification/receipt.json" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Prepare the isolated ARM64 QEMU host
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-utils qemu-efi-aarch64 gdisk e2fsprogs mtools
-      - name: Qualify the exact complete installation composition
-        env:
-          HARNESS: ${{ needs.identity.outputs.harness }}
-        run: |
-          args=()
-          if [[ -n "$HARNESS" ]]; then args+=(--release-harness "$HARNESS"); fi
-          python3 scripts/https-compat/qualify.py --composition --preflight \
-            "${args[@]}" \
-            --packages "$RUNNER_TEMP/candidate/netfleet-output" \
-            --base-qualification "$RUNNER_TEMP/qualification/receipt.json" \
-            --candidate "$RUNNER_TEMP/candidate/netfleet-optional" \
-            --output "$RUNNER_TEMP/qualification/optional.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: netfleet-release-qualification-${{ needs.identity.outputs.source }}
-          path: |
-            ${{ runner.temp }}/qualification/receipt.json
-            ${{ runner.temp }}/qualification/optional.json
-            ${{ runner.temp }}/qualification/optional.diagnostic.json
+          path: ${{ runner.temp }}/qualification/receipt.json
           if-no-files-found: error
           overwrite: true
           retention-days: 7
   publish:
     name: Publish the qualified OpenWrt Feed
-    needs: [identity, candidate, qualify-optional]
-    if: ${{ !cancelled() && needs.qualify-optional.result == 'success' }}
+    needs: [identity, candidate, qualify-receipt]
+    if: ${{ !cancelled() && needs.qualify-receipt.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -251,14 +233,6 @@ jobs:
         with:
           name: netfleet-release-qualification-${{ needs.identity.outputs.source }}
           path: ${{ runner.temp }}/qualification
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        if: needs.identity.outputs.recovery == 'false' || needs.identity.outputs.publish_tools_name != ''
-        with:
-          name: ${{ needs.identity.outputs.publish_tools_name || needs.candidate.outputs.publish_tools_name }}
-          run-id: ${{ inputs.candidate_run || github.run_id }}
-          github-token: ${{ needs.identity.outputs.recovery == 'true' && github.token || '' }}
-          digest-mismatch: error
-          path: ${{ runner.temp }}/publish-tools
       - name: Publish and verify the public OpenWrt Feed
         env:
           GH_TOKEN: ${{ github.token }}
@@ -267,18 +241,11 @@ jobs:
           HARNESS: ${{ needs.identity.outputs.harness }}
           RECOVERY: ${{ needs.identity.outputs.recovery }}
         run: |
-          mkdir "$RUNNER_TEMP/apk-tools"
-          tools="$RUNNER_TEMP/publish-tools/netfleet-apk-tools.tar.gz"
           args=()
           if [[ "$RECOVERY" == true ]]; then
-            if [[ ! -f "$tools" ]]; then tools="$RUNNER_TEMP/candidate/netfleet-apk-tools.tar.gz"; fi
             git show "$HARNESS:scripts/publish-netfleet-release.sh" > scripts/publish-netfleet-release.sh
             args+=(--require-existing-tag "$TAG_OBJECT")
           fi
-          tar -xzf "$tools" -C "$RUNNER_TEMP/apk-tools"
           scripts/publish-netfleet-release.sh --tag "$RELEASE_TAG" "${args[@]}" \
             --candidate "$RUNNER_TEMP/candidate/netfleet-output" \
-            --qualification "$RUNNER_TEMP/qualification/receipt.json" \
-            --compat-candidate "$RUNNER_TEMP/candidate/netfleet-optional" \
-            --compat-qualification "$RUNNER_TEMP/qualification/optional.json" \
-            --apk "$RUNNER_TEMP/apk-tools/bin/apk"
+            --qualification "$RUNNER_TEMP/qualification/receipt.json"
