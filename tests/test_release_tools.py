@@ -800,6 +800,89 @@ class ReleaseToolsTests(unittest.TestCase):
                         self.assertFalse(any(' add ' in item for item in lines))
                     self.assertIn(f'--timeout 300 upgrade {expected_pkgs}', lines)
 
+    def test_feed_bootstrap_legacy_migration_preserves_mihomo_meta_in_world_unless_nikki_present(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            feed = root / 'feed'
+            bin_dir = root / 'bin'
+            keys = root / 'keys'
+            repository = root / 'repositories.d' / 'opl-netfleet.list'
+            feed.mkdir()
+            bin_dir.mkdir()
+            (feed / 'opl-netfleet-apk.pem').write_text(
+                '-----BEGIN PUBLIC KEY-----\nfixture\n-----END PUBLIC KEY-----\n'
+            )
+            (feed / 'product.json').write_text(json.dumps([{'depends': ['libc'], 'provides': ['netfleet-plugin-api-v1']}]))
+            fetcher = bin_dir / 'uclient-fetch'
+            fetcher.write_text(
+                '#!/bin/sh\n'
+                'destination=\nurl=\n'
+                'while [ "$#" -gt 0 ]; do case "$1" in -q) shift ;; -O) destination=$2; shift 2 ;; *) url=$1; shift ;; esac; done\n'
+                'cp "$NETFLEET_FIXTURE_FEED/${url##*/}" "$destination"\n'
+            )
+            fetcher.chmod(0o755)
+            curl = bin_dir / 'curl'
+            curl.write_text(
+                '#!/bin/sh\n'
+                'destination=\nurl=\n'
+                'while [ "$#" -gt 0 ]; do case "$1" in --output|-o) destination=$2; shift 2 ;; --*) shift ;; *) url=$1; shift ;; esac; done\n'
+                'cp "$NETFLEET_FIXTURE_FEED/${url##*/}" "$destination"\n'
+            )
+            curl.chmod(0o755)
+            apk = bin_dir / 'apk'
+            apk.write_text(
+                '#!/bin/sh\n'
+                'if [ "$1" = info ]; then\n'
+                '  if [ "$#" -eq 1 ]; then printf "%s\\n" "$NETFLEET_INSTALLED" | tr " " "\\n"; exit 0; fi\n'
+                '  case " $NETFLEET_INSTALLED " in *" $3 "*) exit 0 ;; *) exit 1 ;; esac\n'
+                'fi\n'
+                'printf "%s\\n" "$*" >>"$NETFLEET_APK_LOG"\n'
+                'case " $* " in *" query "*) cat "$NETFLEET_FIXTURE_FEED/product.json" ;; *" fetch "*) exit 1 ;; esac\n'
+            )
+            apk.chmod(0o755)
+            uci = bin_dir / 'uci'
+            uci.write_text('#!/bin/sh\nexit 0\n')
+            uci.chmod(0o755)
+            jsonfilter = bin_dir / 'jsonfilter'
+            jsonfilter.write_text(
+                '#!/bin/sh\n'
+                'if printf "%s" "$*" | grep -Fq "provides"; then printf "netfleet-plugin-api-v1\\n"; else printf "libc\\n"; fi\n'
+            )
+            jsonfilter.chmod(0o755)
+            missing_nikki = root / 'missing-nikki'
+            present_nikki = root / 'present-nikki'
+            present_nikki.write_text('#!/bin/sh\nexit 0\n')
+            clean_path = os.pathsep.join(p for p in os.environ['PATH'].split(os.pathsep) if not (Path(p) / 'mihomo').exists())
+            log = root / 'apk.log'
+            installed = 'opl-netfleet opl-netfleet-kernel opl-netfleet-plugin-mihomo luci-app-netfleet mihomo-meta'
+            base_env = {
+                **os.environ,
+                'PATH': f'{bin_dir}:{clean_path}',
+                'NETFLEET_INSTALL_TESTING': '1',
+                'NETFLEET_FEED_BASE': 'https://fixture.invalid/release',
+                'NETFLEET_FIXTURE_FEED': str(feed),
+                'NETFLEET_APK_KEYS_DIR': str(keys),
+                'NETFLEET_APK_REPOSITORY_FILE': str(repository),
+                'NETFLEET_APK_LOG': str(log),
+                'NETFLEET_INSTALLED': installed,
+            }
+            for label, nikki_init, expected_suffix in (
+                ('legacy_native_keeps_mihomo_meta', missing_nikki, 'opl-netfleet luci-app-netfleet mihomo-meta'),
+                ('legacy_nikki_skips_mihomo_meta', present_nikki, 'opl-netfleet luci-app-netfleet'),
+            ):
+                with self.subTest(legacy_migration=label):
+                    log.write_text('')
+                    res = subprocess.run(
+                        [str(INSTALLER)],
+                        env={**base_env, 'NETFLEET_NIKKI_INIT': str(nikki_init)},
+                        text=True, capture_output=True, check=False,
+                    )
+                    self.assertNotEqual(0, res.returncode)
+                    self.assertIn('failed to fetch thin-shell packages', res.stderr)
+                    fetch_lines = [line for line in log.read_text().splitlines() if ' fetch ' in line]
+                    self.assertEqual(1, len(fetch_lines), log.read_text())
+                    self.assertTrue(fetch_lines[0].endswith(' ' + expected_suffix), fetch_lines[0])
+
     def test_feed_bootstrap_rejects_invalid_key_before_package_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

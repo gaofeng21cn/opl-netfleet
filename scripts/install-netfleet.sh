@@ -248,8 +248,12 @@ if [ "$has_legacy" = 0 ]; then
 		esac
 	done
 	[ "$is_thin_shell" = 1 ] || die 'product package dependencies are missing'
-	if ! apk info -e mihomo-meta >/dev/null 2>&1 \
-		&& [ ! -e "$nikki_init" ] \
+	migrating_from_legacy=0
+	if apk info -e opl-netfleet-kernel >/dev/null 2>&1; then
+		migrating_from_legacy=1
+	fi
+	if [ ! -e "$nikki_init" ] \
+		&& { [ "$migrating_from_legacy" = 1 ] || ! apk info -e mihomo-meta >/dev/null 2>&1; } \
 		&& { { ! command -v mihomo >/dev/null 2>&1 && [ ! -e /usr/bin/mihomo ]; } || { [ -L /usr/bin/mihomo ] && [ "$(readlink /usr/bin/mihomo 2>/dev/null || true)" = /usr/libexec/mihomo ]; }; }; then
 		set -- "$@" mihomo-meta
 	fi
