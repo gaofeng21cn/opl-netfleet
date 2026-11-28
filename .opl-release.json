@@ -1,0 +1,67 @@
+{
+  "schema_version": "opl.release.v1",
+  "subject_id": "opl-netfleet",
+  "kind": "product",
+  "repository": "gaofeng21cn/opl-netfleet",
+  "schedule": "daily_patch",
+  "trigger": "tag",
+  "tag_prefix": "v",
+  "delivery_paths": [
+    "openwrt",
+    "plugins",
+    "ui",
+    "desktop",
+    "scripts",
+    ":(exclude,glob)scripts/openwrt-vm/guest-*.sh",
+    "sdk",
+    "product-version.json",
+    ".github/workflows/release.yml",
+    ".github/workflows/netfleet-openwrt-candidate.yml",
+    ".github/workflows/macos-sparkle-release.yml",
+    ".github/workflows/macos-sparkle-publish.yml"
+  ],
+  "version_files": [
+    {
+      "path": "product-version.json",
+      "kind": "json"
+    },
+    {
+      "path": "desktop/app/Info.plist",
+      "kind": "plist_bundle"
+    }
+  ],
+  "prepare": [
+    [
+      "python3",
+      "scripts/prepare-product-release.py"
+    ]
+  ],
+  "verify": [],
+  "lanes": [
+    {
+      "lane": "openwrt",
+      "workflow": "release.yml",
+      "primary": true,
+      "title_from_tag": "OpenWrt release {tag}",
+      "channel": {
+        "kind": "github_release"
+      }
+    },
+    {
+      "lane": "macos-candidate",
+      "workflow": "macos-sparkle-release.yml",
+      "primary": false,
+      "match": "tag"
+    },
+    {
+      "lane": "macos-stable",
+      "workflow": "macos-sparkle-publish.yml",
+      "primary": false,
+      "channel": {
+        "kind": "sparkle_appcast",
+        "asset": "appcast.xml",
+        "release_tag": "macos-stable"
+      }
+    }
+  ]
+}
