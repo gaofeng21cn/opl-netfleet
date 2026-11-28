@@ -111,6 +111,24 @@
   margin-top: 14px;
 }
 
+.netfleet-sitesync-plugin .nf-ss-advanced {
+  margin-top: 12px;
+  border: 1px solid var(--nf-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.netfleet-sitesync-plugin .nf-ss-advanced summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--nf-muted);
+  user-select: none;
+}
+
+.netfleet-sitesync-plugin .nf-ss-advanced-body {
+  margin-top: 8px;
+}
+
 .netfleet-sitesync-plugin .nf-ss-foot {
   margin-top: 16px;
   padding-top: 12px;

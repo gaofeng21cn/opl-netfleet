@@ -1,6 +1,12 @@
 #!/usr/bin/ucode
 
-import { default_site_name, project, selected_sources } from "../plugins/site-sync/lib/projection.uc";
+import {
+	default_site_name,
+	project,
+	selected_sources,
+	valid_dispatched_origin,
+	valid_origin
+} from "../plugins/site-sync/lib/projection.uc";
 
 function check(value, message) {
 	if (!value) die(message);
@@ -8,6 +14,40 @@ function check(value, message) {
 
 check(default_site_name("router-edge\n") == "router-edge", "default site name trims newline");
 check(default_site_name("   \n") == "OpenWrt", "default site name falls back on empty hostname");
+
+for (let allowed in [
+	"https://cloud.medopl.com",
+	"https://netfleet.medopl.com",
+	"https://edge.example.com:8443",
+]) {
+	check(valid_origin(allowed), `valid_origin must accept ${allowed}`);
+	check(valid_dispatched_origin(allowed), `valid_dispatched_origin must accept ${allowed}`);
+}
+
+for (let bad in [
+	"http://netfleet.medopl.com",
+	"https://netfleet.medopl.com/",
+	"https://netfleet.medopl.com/path",
+	"https://user@netfleet.medopl.com",
+	"https://netfleet.medopl.com:0",
+	"https://netfleet.medopl.com:70000",
+	"https://-bad.example.com",
+	"https://127.0.0.1",
+	"https://169.254.169.254",
+	"https://10.0.0.1",
+	"https://192.168.1.1",
+	"https://172.16.0.1",
+	"https://100.64.0.1",
+	"https://2130706433",
+	"https://[::1]",
+	"https://localhost",
+	"https://router.local",
+	"https://svc.internal",
+	"https://box.lan",
+	"https://gw.home.arpa",
+]) {
+	check(!valid_dispatched_origin(bad), `valid_dispatched_origin must reject ${bad}`);
+}
 
 const digest = value => sprintf("%064x", length(value));
 const status = {

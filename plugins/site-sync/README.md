@@ -1,7 +1,7 @@
 # Site sync
 
-This default-installed UCode plugin connects an OpenWrt OPL NetFleet node to an optional `opl-netfleet-cloud` control plane (idle and fail-open until paired).
+This default-installed UCode plugin connects an OpenWrt OPL NetFleet node to a multi-tenant `opl-netfleet-cloud` control plane (idle and fail-open until paired).
 
-- **Zero-touch Gateway pairing (`site-sync-enroll` / LuCI `云端站点同步`)**: signs in once via OPL Gateway email and password (`/api/v1/agent/enroll`), stores only the returned single-site `device_token` (SHA-256 hashed on the server) and stable `device_id` in `0600` `/etc/opl-netfleet/site-sync/config.json`, and **never** persists the user password on the router.
+- **Zero-URL Gateway pairing (`site-sync-enroll` / LuCI `云端站点同步`)**: authenticates once with OPL Gateway email and password (plus optional 2FA code) against OPL Cloud discovery (`/api/v2/client/service-grant`) to obtain the entitled service origin and a short-lived Ed25519 grant token (`device:enroll`), exchanges that grant at `/api/v1/agent/enroll` for a single-site `device_token`, stores only `device_token` (SHA-256 hashed on the server) and `device_id` in `0600` `/etc/opl-netfleet/site-sync/config.json`, and **never** persists the user password or grant token on the router. Self-hosted instances can override `cloud_origin` or `origin` under collapsible advanced settings.
 - **Unenroll (`site-sync-disconnect`)**: revokes the device token via `/api/v1/agent/unenroll` and clears local sync credentials cleanly.
 - **Fail-open telemetry & subscription sync**: sends only the bounded status projection accepted by the cloud heartbeat schema outside the network mutation lock, auto-derives valid UCI section IDs when `auto_sections` is enabled (or uses explicit `sections` mappings), and routes updates through `subscriptions-set` and `subscriptions-refresh`. Cloud failures or invalid responses leave local profiles and subscriptions untouched.

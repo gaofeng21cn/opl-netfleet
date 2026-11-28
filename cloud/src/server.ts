@@ -73,14 +73,12 @@ async function route(request: IncomingMessage, response: ServerResponse) {
     });
     if (method === "POST" && path === "/api/v1/auth/login") {
       const login = await app.login(await body(request));
-      return login
-        ? json(
-            response,
-            200,
-            { ok: true, user: login.user },
-            cookie(login.session, 3600),
-          )
-        : json(response, 401, { error: "unauthorized" });
+      return json(
+        response,
+        login.status,
+        login.body,
+        login.session ? cookie(login.session, 3600) : {},
+      );
     }
     if (method === "POST" && path === "/api/v1/auth/logout")
       return json(response, 200, { ok: true }, cookie("", 0));
@@ -95,7 +93,7 @@ async function route(request: IncomingMessage, response: ServerResponse) {
     if (method === "GET" && path === "/api/v1/auth/me")
       result = await app.me(headers);
     else if (method === "POST" && path === "/api/v1/agent/enroll")
-      result = await app.enroll(await body(request));
+      result = await app.enroll(headers, await body(request));
     else if (method === "POST" && path === "/api/v1/agent/unenroll")
       result = await app.unenroll(headers);
     else if (method === "POST" && path === "/api/v1/agent/heartbeat")

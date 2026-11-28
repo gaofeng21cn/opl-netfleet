@@ -2,7 +2,7 @@ import type { Snapshot, Trend } from "../contracts.js";
 
 export type AuthUser = {
   email: string;
-  role: "owner" | "admin";
+  role: "owner" | "admin" | "user";
 };
 
 export type Site = {
@@ -29,11 +29,14 @@ export type ViewMode = "table" | "cards";
 export type SiteHealth = "online" | "attention" | "offline";
 
 const ERROR_MESSAGES: Record<string, string> = {
-  unauthorized: "账号、密码校验未通过，或当前用户不在管理员白名单内，或会话已过期。",
+  unauthorized: "账号、密码或验证码校验未通过，或会话已过期。",
+  service_not_entitled:
+    "当前 OPL Gateway 账号尚未开通 OPL NetFleet Cloud 服务权限，请联系平台管理员在 OPL Cloud 控制台开通。",
+  rate_limited: "登录尝试过于频繁，请稍后再试。",
   origin_forbidden: "同源策略已拦截跨站状态修改请求。",
   invalid_site: "站点 ID 须符合 ^[a-z][a-z0-9-]{1,47}$，显示名称须为 1–120 个可打印字符。",
   site_exists: "该站点 ID 已存在。",
-  site_limit: "已达到单实例最大纳管站点数量限制（64）。",
+  site_limit: "已达到当前账号允许纳管的最大站点数量上限。",
   site_not_found: "未找到该站点，或当前账号无权操作。",
   invalid_subscription: "请填写规范的小写订阅 ID、名称与 HTTPS 订阅链接。",
   subscription_exists: "该订阅 ID 已存在。",

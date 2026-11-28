@@ -2,7 +2,7 @@
   "schema": "opl-netfleet-service-plugin.v1",
   "id": "site-sync",
   "label": "Cloud site sync",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "api_version": 1,
   "package": "opl-netfleet-plugin-site-sync",
   "services": {
@@ -62,11 +62,13 @@
       "params": {
         "type": "object",
         "required": [
-          "origin",
           "email",
           "password"
         ],
         "properties": {
+          "cloud_origin": {
+            "type": "string"
+          },
           "origin": {
             "type": "string"
           },
@@ -74,6 +76,9 @@
             "type": "string"
           },
           "password": {
+            "type": "string"
+          },
+          "totp_code": {
             "type": "string"
           },
           "name": {

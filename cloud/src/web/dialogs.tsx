@@ -168,9 +168,9 @@ export function ConnectDeviceDialog({
     () =>
       [
         "printf 'OPL Gateway 邮箱: '; read -r E; printf '密码: '; stty -echo; read -r P; stty echo; echo",
-        `printf '{"origin":"%s","email":"%s","password":"%s"}\\n' "${origin}" "$E" "$P" | ucode /usr/libexec/opl-netfleet/main.uc site-sync-enroll`,
+        `printf '{"email":"%s","password":"%s"}\\n' "$E" "$P" | ucode /usr/libexec/opl-netfleet/main.uc site-sync-enroll`,
       ].join("\n"),
-    [origin],
+    [],
   );
 
   useEffect(() => {
@@ -221,9 +221,9 @@ export function ConnectDeviceDialog({
       <div className="modal-body form-stack">
         <div className="callout is-info">
           <span>
-            无需预先在云端创建站点。在 OpenWrt 路由器端使用您的{" "}
+            无需预先在云端创建站点，也无需手动输入云端网址。在 OpenWrt 路由器端直接使用您的{" "}
             <strong>OPL Gateway 账号与密码</strong>{" "}
-            登录配对后，站点将自动注册、认领并立即出现在当前面板；路由器不落盘保存账号密码。
+            登录即可自动发现当前服务并完成认领；路由器不落盘保存账号密码。
           </span>
         </div>
 
@@ -235,8 +235,10 @@ export function ConnectDeviceDialog({
             <div className="connect-step-body">
               <strong>在 LuCI 界面一键登录配对（推荐）</strong>
               <p className="muted">
-                打开设备 LuCI 中的「服务 → OPL NetFleet → 云端站点同步」，填入下方云端服务地址，并使用当前{" "}
-                OPL Gateway 邮箱与密码登录即可。
+                打开设备 LuCI 中的「服务 → OPL NetFleet → 云端站点同步」，直接输入当前 OPL Gateway 邮箱与密码登录即可。
+              </p>
+              <p className="field-hint">
+                如使用自建私有实例，可在插件「高级设置」中指定以下控制面地址：
               </p>
               <div className="origin-copy-bar">
                 <code className="origin-copy-url">{origin}</code>
@@ -258,7 +260,7 @@ export function ConnectDeviceDialog({
             <div className="connect-step-body">
               <strong>或通过 OpenWrt SSH 终端交互配对</strong>
               <p className="muted">
-                命令会通过隐藏输入读取密码并经标准输入一次性交换设备 Token，避免凭据进入进程列表或 Shell 历史：
+                命令会通过隐藏输入读取密码并经标准输入一次性交换短期授权与设备 Token，避免凭据进入进程列表或 Shell 历史：
               </p>
               <div className="terminal-panel">
                 <div className="terminal-bar">

@@ -1,7 +1,10 @@
 export type Identity = {
   subject: string;
   email: string;
-  role: "owner" | "admin";
+  role: "owner" | "admin" | "user";
+  limits?: {
+    max_sites?: number;
+  };
 };
 export type Traffic = Partial<
   Record<
@@ -56,15 +59,22 @@ export type Catalog = {
   subscriptions: Record<string, Subscription>;
 };
 export type Change<T> = { result: T; write?: true; removeSnapshot?: string };
+export type DeviceTokenBinding = {
+  owner: string;
+  site_id: string;
+};
 export interface Store {
-  catalog(): Promise<Catalog>;
-  change<T>(fn: (catalog: Catalog) => Change<T>): Promise<T>;
-  snapshots(ids: string[]): Promise<(Snapshot | null)[]>;
+  catalog(ownerId: string): Promise<Catalog>;
+  change<T>(ownerId: string, fn: (catalog: Catalog) => Change<T>): Promise<T>;
+  snapshots(ownerId: string, ids: string[]): Promise<(Snapshot | null)[]>;
   heartbeat<T>(
-    id: string,
+    ownerId: string,
+    siteId: string,
     fn: (
       catalog: Catalog,
       old: Snapshot | null,
     ) => { result: T; snapshot?: Snapshot },
   ): Promise<T>;
+  resolveDeviceToken(tokenHash: string): Promise<DeviceTokenBinding | null>;
+  listTenantIds(): Promise<string[]>;
 }

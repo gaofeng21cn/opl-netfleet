@@ -6,6 +6,37 @@ export function counter(value) {
 	return type(value) == "int" && value >= 0 && value <= 9007199254740991;
 };
 
+export function valid_origin(origin) {
+	if (type(origin) != "string" || !length(origin) || length(origin) > 253) return false;
+	if (match(origin, /^https:\/\/[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*(:[0-9]{1,5})?$/) == null) return false;
+	const port_match = match(origin, /:([0-9]{1,5})$/);
+	if (port_match != null) {
+		const port = int(port_match[1]);
+		if (port < 1 || port > 65535) return false;
+	}
+	return true;
+};
+
+export function valid_dispatched_origin(origin) {
+	if (!valid_origin(origin)) return false;
+	const parts = match(origin, /^https:\/\/([A-Za-z0-9.-]+)/);
+	if (parts == null) return false;
+	const host = lc(parts[1]);
+	const labels = split(host, ".");
+	if (length(labels) < 2) return false;
+	for (let label in labels) {
+		if (!match(label, /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/)) return false;
+	}
+	const tld = labels[length(labels) - 1];
+	if (!match(tld, /^[a-z]{2,63}$/)) return false;
+	if (host == "localhost" ||
+		match(host, /\.(localhost|local|internal|lan|localdomain)$/) != null ||
+		match(host, /(^|\.)home\.arpa$/) != null) {
+		return false;
+	}
+	return true;
+};
+
 export function default_site_name(hostname) {
 	if (type(hostname) != "string") return "OpenWrt";
 	const cleaned = replace(trim(hostname), /[[:cntrl:]]/, "");

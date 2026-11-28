@@ -1,6 +1,15 @@
 import * as fs from "fs";
 
-import { counter, default_site_name, project, selected_sources } from "./projection.uc";
+import {
+	counter,
+	default_site_name,
+	project,
+	selected_sources,
+	valid_dispatched_origin,
+	valid_origin
+} from "./projection.uc";
+
+const DEFAULT_CLOUD_ORIGIN = "https://cloud.medopl.com";
 
 return function(context) {
 	const process = context.use("platform.process");
@@ -21,9 +30,9 @@ return function(context) {
 	const receipt_file = runtime + "/receipt.json";
 	const network_lock = "/var/lock/opl-netfleet-deploy.lock";
 
-	function valid_origin(origin) {
-		return type(origin) == "string" && length(origin) <= 253 &&
-			match(origin, /^https:\/\/[A-Za-z0-9.-]+(:[0-9]{1,5})?$/) != null;
+	function valid_bearer(bearer) {
+		return type(bearer) == "string" && length(bearer) > 0 && length(bearer) <= 4096 &&
+			match(bearer, /^[A-Za-z0-9._-]+$/) != null;
 	}
 
 	function device_hostname() {
@@ -66,6 +75,9 @@ return function(context) {
 	}
 
 	function http_request(origin, path, body, bearer) {
+		if (bearer != null && !valid_bearer(bearer)) {
+			return { status_code: 0, payload: null };
+		}
 		const scratch = fs.mkdtemp("/tmp/netfleet-site-sync.XXXXXX");
 		if (scratch == null) return { status_code: 0, payload: null };
 		fs.chmod(scratch, 0700);
@@ -75,7 +87,7 @@ return function(context) {
 			if (body != null && !files.write_private(input, sprintf("%J", body))) die("sync_request_write_failed");
 			const options = (bearer ? 'header = "Authorization: Bearer ' + bearer + '"\n' : "") +
 				(body == null ? "" : 'data-binary = "@' + input + '"\nheader = "Content-Type: application/json"\n');
-			const result = process.capture("curl -q --config - --silent --proto '=https' --noproxy '*' " +
+			const result = process.capture("curl -q --config - --silent --proto '=https' --max-redirs 0 --noproxy '*' " +
 				"--connect-timeout 6 --max-time 15 --max-filesize 65536 --output " + q(output) +
 				" --write-out '%{http_code}' " + q(origin + path), 18, options);
 			status_code = int(result.output ?? "0");
@@ -202,14 +214,17 @@ return function(context) {
 
 	function enroll_device(params) {
 		if (type(params) != "object") return { ok: false, error: "invalid_enroll_params" };
-		const origin = trim(params.origin ?? "");
+		const direct_origin = trim(params.origin ?? "");
+		const cloud_origin = trim(params.cloud_origin ?? "");
 		const email = trim(params.email ?? "");
-		const password = type(params.password) == "string" ? params.password : "";
+		let password = type(params.password) == "string" ? params.password : "";
+		const totp_code = trim(params.totp_code ?? "");
 		const site_name = trim(params.name ?? "") || device_hostname();
 		const site_id = trim(params.site_id ?? "");
-		if (!valid_origin(origin)) return { ok: false, error: "invalid_cloud_origin" };
 		if (!length(email) || length(email) > 254 || !length(password) || length(password) > 512)
 			return { ok: false, error: "credentials_required" };
+		if (length(totp_code) > 0 && (length(totp_code) > 16 || !match(totp_code, /^[0-9]{6,8}$/)))
+			return { ok: false, error: "invalid_totp_code" };
 		if (length(site_name) > 120 || match(site_name, /[[:cntrl:]]/))
 			return { ok: false, error: "invalid_site_name" };
 		if (length(site_id) > 0 && !match(site_id, /^[a-z][a-z0-9-]{1,47}$/))
@@ -218,12 +233,54 @@ return function(context) {
 		if (dev_id == null) return { ok: false, error: "unsafe_sync_storage" };
 
 		const existing = configuration();
-		const body = { email, password, name: site_name, device_id: dev_id };
-		if (length(site_id) > 0) body.site_id = site_id;
+		let origin = "";
+		let reply;
+		if (length(direct_origin) > 0) {
+			if (!valid_origin(direct_origin)) return { ok: false, error: "invalid_cloud_origin" };
+			origin = direct_origin;
+			const body = { email, password, name: site_name, device_id: dev_id };
+			if (length(site_id) > 0) body.site_id = site_id;
+			reply = http_request(origin, "/api/v1/agent/enroll", body, null);
+			password = "";
+			delete body.password;
+		} else {
+			const discovery = length(cloud_origin) > 0 ? cloud_origin : DEFAULT_CLOUD_ORIGIN;
+			if (!valid_origin(discovery)) return { ok: false, error: "invalid_cloud_origin" };
+			const grant_req = {
+				email,
+				password,
+				service: "netfleet_cloud",
+				scope: "device:enroll",
+			};
+			if (length(totp_code) > 0) grant_req.totp_code = totp_code;
+			const grant_reply = http_request(discovery, "/api/v2/client/service-grant", grant_req, null);
+			password = "";
+			delete grant_req.password;
+			const gd = grant_reply.payload;
+			const grant_code = gd?.code ?? gd?.error;
+			if (grant_reply.status_code == 0) return { ok: false, error: "cloud_discovery_unreachable" };
+			if (grant_reply.status_code == 401) return { ok: false, error: "enroll_unauthorized" };
+			if (grant_reply.status_code == 403)
+				return { ok: false, error: grant_code == "service_not_entitled" ? "service_not_entitled" : "enroll_forbidden" };
+			if (grant_reply.status_code == 429) return { ok: false, error: "rate_limited" };
+			if (grant_reply.status_code == 200 && gd?.requires_2fa == true)
+				return { ok: false, error: "requires_2fa" };
+			if (grant_reply.status_code != 200 || gd?.enabled != true || !valid_bearer(gd?.grant_token)) {
+				return { ok: false, error: type(grant_code) == "string" ? grant_code : "enroll_rejected" };
+			}
+			const dispatched = trim(gd.origin ?? "");
+			if (!valid_dispatched_origin(dispatched)) {
+				return { ok: false, error: "invalid_dispatched_origin" };
+			}
+			origin = dispatched;
+			const enroll_body = { name: site_name, device_id: dev_id };
+			if (length(site_id) > 0) enroll_body.site_id = site_id;
+			reply = http_request(origin, "/api/v1/agent/enroll", enroll_body, gd.grant_token);
+		}
 
-		const reply = http_request(origin, "/api/v1/agent/enroll", body, null);
 		if (reply.status_code == 0) return { ok: false, error: "cloud_unreachable" };
 		if (reply.status_code == 401) return { ok: false, error: "enroll_unauthorized" };
+		if (reply.status_code == 403) return { ok: false, error: reply.payload?.error ?? "enroll_forbidden" };
 		if (reply.status_code == 409) return { ok: false, error: reply.payload?.error ?? "site_conflict" };
 		const data = reply.payload;
 		if (reply.status_code != 200 || data?.ok != true ||

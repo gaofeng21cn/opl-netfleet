@@ -44,23 +44,27 @@ import {
 export function LoginView({
   busy,
   error,
+  needsTotp,
   onLogin,
 }: {
   busy: boolean;
   error: string;
-  onLogin: (email: string, password: string) => Promise<void>;
+  needsTotp: boolean;
+  onLogin: (email: string, password: string, totpCode?: string) => Promise<void>;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [totpCode, setTotpCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = email.trim();
     if (!trimmed || !password) return;
-    const submittedPassword = password;
-    setPassword("");
-    await onLogin(trimmed, submittedPassword);
+    const submittedTotp = needsTotp ? totpCode.trim() : undefined;
+    if (needsTotp && !submittedTotp) return;
+    if (needsTotp) setTotpCode("");
+    await onLogin(trimmed, password, submittedTotp);
   }
 
   return (
@@ -110,17 +114,34 @@ export function LoginView({
               </button>
             </div>
             <p className="field-hint">
-              通过 OPL Gateway 校验身份与管理员白名单；登录成功后仅签发短期{" "}
+              通过 OPL Cloud 统一验证 OPL Gateway 身份与服务开通权限；各账号站点与订阅严格隔离，登录成功后仅签发短期{" "}
               <code>HttpOnly; SameSite=Lax</code> 会话 Cookie，服务端不保留登录密码。
             </p>
           </div>
+          {needsTotp && (
+            <div className="field-group">
+              <label htmlFor="gateway-totp">两步验证码</label>
+              <input
+                id="gateway-totp"
+                name="totp_code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={16}
+                required
+                value={totpCode}
+                onChange={(event) => setTotpCode(event.target.value)}
+                placeholder="输入 6 位动态验证码"
+              />
+            </div>
+          )}
           {error && (
             <p className="inline-error" role="alert">
               {error}
             </p>
           )}
           <button type="submit" className="btn primary btn-full" disabled={busy}>
-            {busy ? "正在验证身份…" : "登录"}
+            {busy ? "正在验证身份…" : needsTotp ? "验证并登录" : "登录"}
           </button>
         </form>
       </section>

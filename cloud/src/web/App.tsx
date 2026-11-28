@@ -92,6 +92,7 @@ export function App() {
     source: null,
   });
   const [issuedToken, setIssuedToken] = useState<{ id: string; device_token: string } | null>(null);
+  const [needsTotp, setNeedsTotp] = useState(false);
   const [confirmState, setConfirmState] = useState<{
     title: string;
     message: string;
@@ -152,6 +153,7 @@ export function App() {
     setConfirmState(null);
     setConnectOpen(false);
     setRenameSiteTarget(null);
+    setNeedsTotp(false);
   }, []);
 
   const report = useCallback(
@@ -238,11 +240,29 @@ export function App() {
     }
   }
 
-  async function handleLogin(email: string, password: string) {
+  async function handleLogin(
+    email: string,
+    password: string,
+    totpCode?: string,
+  ) {
     setBusy(true);
     setError("");
     try {
-      await api("/auth/login", "POST", { email, password });
+      const result = await api<{ ok?: boolean; requires_2fa?: boolean }>(
+        "/auth/login",
+        "POST",
+        {
+          email,
+          password,
+          ...(totpCode ? { totp_code: totpCode } : {}),
+        },
+      );
+      if (result?.requires_2fa) {
+        setNeedsTotp(true);
+        setError("该账号已开启两步验证，请输入 6 位动态验证码后继续登录。");
+        return;
+      }
+      setNeedsTotp(false);
       await load();
     } catch (cause) {
       report(cause);
@@ -436,7 +456,14 @@ export function App() {
   }
 
   if (auth === "signed-out") {
-    return <LoginView busy={busy} error={error} onLogin={handleLogin} />;
+    return (
+      <LoginView
+        busy={busy}
+        error={error}
+        needsTotp={needsTotp}
+        onLogin={handleLogin}
+      />
+    );
   }
 
   const onlineSites = sites.filter((s) => s.online).length;

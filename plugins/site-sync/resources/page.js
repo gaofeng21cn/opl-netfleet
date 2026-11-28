@@ -1,10 +1,17 @@
 const ERRORS = {
-  invalid_cloud_origin: "请输入完整的 https:// 云端控制面地址（不可带尾部斜杠或路径）。",
+  invalid_cloud_origin: "请输入完整的 https:// 控制面地址（不可带尾部斜杠或路径）。",
+  invalid_dispatched_origin: "云端下发的服务地址不符合安全校验规则，已拒绝接入。",
   credentials_required: "请填写 OPL Gateway 账号（邮箱）与密码。",
-  enroll_unauthorized: "OPL Gateway 邮箱或密码验证失败，或该账号不在云端管理员白名单内。",
-  cloud_unreachable: "无法连接云端控制面，请检查网关网络连通性与云端地址是否正确。",
+  invalid_totp_code: "请输入 6–8 位数字动态验证码。",
+  requires_2fa: "该 OPL Gateway 账号已开启两步验证，请输入 6 位动态验证码后继续接入。",
+  service_not_entitled: "当前 OPL Gateway 账号尚未开通 OPL NetFleet Cloud 服务权限，请联系平台管理员在 OPL Cloud 控制台开通。",
+  rate_limited: "登录尝试过于频繁，请稍后再试。",
+  cloud_discovery_unreachable: "无法连接 OPL Cloud 服务发现入口，请检查路由器网络连通性或确认高级设置中的地址。",
+  enroll_unauthorized: "OPL Gateway 邮箱、密码或动态验证码校验失败，或账号状态未激活。",
+  enroll_forbidden: "当前账号无权接入该云端控制面。",
+  cloud_unreachable: "无法连接云端控制面，请检查网关网络连通性与目标服务状态。",
   site_conflict: "该站点 ID 已被其他账号占用，请清空或更换自定义站点 ID。",
-  site_limit: "云端纳管站点数量已达上限（64）。",
+  site_limit: "已达到当前账号允许纳管的云端站点数量上限。",
   unsafe_sync_storage: "路由器本地私有存储目录权限异常，请检查 /etc/opl-netfleet 权限。",
   heartbeat_failed: "云端心跳上报未成功，请检查云端地址与本机联网状态。",
 };
@@ -34,16 +41,25 @@ export async function mount(context) {
     loading: true,
     busy: false,
     showReenroll: false,
+    needsTotp: false,
     status: null,
     notice: null,
     error: "",
-    draftOrigin: "",
+    draftEmail: "",
+    draftPassword: "",
     draftName: "",
+    draftCloudOrigin: "",
+    draftOrigin: "",
   };
 
   function clearFeedback() {
     state.error = "";
     state.notice = null;
+  }
+
+  function clearSensitiveDraft() {
+    state.draftPassword = "";
+    state.needsTotp = false;
   }
 
   async function refresh() {
@@ -52,7 +68,6 @@ export async function mount(context) {
       if (context.signal.aborted) return;
       state.status = data;
       state.loading = false;
-      if (!state.draftOrigin && data?.origin) state.draftOrigin = data.origin;
       if (!state.draftName) state.draftName = data?.name || data?.hostname || "";
       render();
     } catch (err) {
@@ -69,28 +84,42 @@ export async function mount(context) {
     clearFeedback();
     const form = event.currentTarget;
     const fields = new FormData(form);
-    const origin = String(fields.get("origin") || "").trim().replace(/\/+$/, "");
     const email = String(fields.get("email") || "").trim();
     const password = String(fields.get("password") || "");
+    const totpCode = String(fields.get("totp_code") || "").trim();
     const name = String(fields.get("name") || "").trim();
+    const cloudOrigin = String(fields.get("cloud_origin") || "").trim().replace(/\/+$/, "");
+    const origin = String(fields.get("origin") || "").trim().replace(/\/+$/, "");
 
-    state.draftOrigin = origin;
+    state.draftEmail = email;
     state.draftName = name;
+    state.draftCloudOrigin = cloudOrigin;
+    state.draftOrigin = origin;
     state.busy = true;
     render();
     try {
-      const res = await context.api.call("enroll", {
-        origin,
+      const payload = {
         email,
         password,
+        ...(totpCode ? { totp_code: totpCode } : {}),
         ...(name ? { name } : {}),
-      });
+        ...(cloudOrigin ? { cloud_origin: cloudOrigin } : {}),
+        ...(origin ? { origin } : {}),
+      };
+      const res = await context.api.call("enroll", payload);
       if (context.signal.aborted) return;
+      clearSensitiveDraft();
       state.showReenroll = false;
       state.notice = `已成功接入云端站点「${res?.name || res?.site_id || ""}」，设备独立凭据已安全保存，密码未留存。`;
       await refresh();
     } catch (err) {
       if (context.signal.aborted) return;
+      if (err?.message === "requires_2fa") {
+        state.needsTotp = true;
+        state.draftPassword = password;
+      } else {
+        clearSensitiveDraft();
+      }
       state.error = errorText(err);
     } finally {
       state.busy = false;
@@ -123,6 +152,7 @@ export async function mount(context) {
       return;
     }
     clearFeedback();
+    clearSensitiveDraft();
     state.busy = true;
     render();
     try {
@@ -142,22 +172,8 @@ export async function mount(context) {
 
   function renderForm() {
     const disabled = state.busy || context.readOnly;
+    const advancedOpen = !!(state.draftCloudOrigin || state.draftOrigin);
     return E("form", { class: "nf-ss-form", submit: submitEnroll }, [
-      E("div", { class: "nf-ss-row" }, [
-        E("label", { for: "nf-ss-origin" }, "云端控制面地址"),
-        E("div", {}, [
-          E("input", {
-            id: "nf-ss-origin",
-            name: "origin",
-            type: "url",
-            required: true,
-            disabled,
-            value: state.draftOrigin,
-            placeholder: "https://your-cloud-origin",
-          }),
-          E("small", {}, "填写你的 opl-netfleet-cloud 访问地址（仅 HTTPS 协议，不含末尾斜杠）。"),
-        ]),
-      ]),
       E("div", { class: "nf-ss-row" }, [
         E("label", { for: "nf-ss-email" }, "OPL Gateway 账号（邮箱）"),
         E("div", {}, [
@@ -168,8 +184,10 @@ export async function mount(context) {
             required: true,
             disabled,
             autocomplete: "username",
+            value: state.draftEmail,
             placeholder: "name@example.com",
           }),
+          E("small", {}, "无需输入云端网址；系统将向 OPL Cloud 自动核验服务权限并下发所属 NetFleet Cloud 地址。"),
         ]),
       ]),
       E("div", { class: "nf-ss-row" }, [
@@ -182,11 +200,31 @@ export async function mount(context) {
             required: true,
             disabled,
             autocomplete: "current-password",
+            value: state.draftPassword,
             placeholder: "输入 OPL Gateway 登录密码",
           }),
           E("small", {}, "仅用于本次在线验证并换发当前路由器专属的单站 Device Token，密码绝不写入磁盘。"),
         ]),
       ]),
+      state.needsTotp
+        ? E("div", { class: "nf-ss-row" }, [
+            E("label", { for: "nf-ss-totp" }, "两步验证码"),
+            E("div", {}, [
+              E("input", {
+                id: "nf-ss-totp",
+                name: "totp_code",
+                type: "text",
+                inputmode: "numeric",
+                autocomplete: "one-time-code",
+                maxlength: "16",
+                required: true,
+                disabled,
+                placeholder: "输入 6 位动态验证码",
+              }),
+              E("small", {}, "该账号启用了两步验证，请输入验证器当前显示的动态口令。"),
+            ]),
+          ])
+        : null,
       E("div", { class: "nf-ss-row" }, [
         E("label", { for: "nf-ss-name" }, "云端展示名称（可选）"),
         E("div", {}, [
@@ -202,6 +240,39 @@ export async function mount(context) {
           E("small", {}, "留空则默认使用当前路由器主机名；连接后也可随时在云端控制台重命名。"),
         ]),
       ]),
+      E("details", { class: "nf-ss-advanced", ...(advancedOpen ? { open: "" } : {}) }, [
+        E("summary", {}, "高级设置（自建 OPL Cloud / 私有 NetFleet Cloud 地址，可选）"),
+        E("div", { class: "nf-ss-advanced-body" }, [
+          E("div", { class: "nf-ss-row" }, [
+            E("label", { for: "nf-ss-cloud-origin" }, "OPL Cloud 发现入口（可选）"),
+            E("div", {}, [
+              E("input", {
+                id: "nf-ss-cloud-origin",
+                name: "cloud_origin",
+                type: "url",
+                disabled,
+                value: state.draftCloudOrigin,
+                placeholder: "https://cloud.medopl.com",
+              }),
+              E("small", {}, "仅当使用自建 OPL Cloud 控制面时填写（仅 HTTPS，不含末尾斜杠）。"),
+            ]),
+          ]),
+          E("div", { class: "nf-ss-row" }, [
+            E("label", { for: "nf-ss-origin" }, "直连私有控制面（可选）"),
+            E("div", {}, [
+              E("input", {
+                id: "nf-ss-origin",
+                name: "origin",
+                type: "url",
+                disabled,
+                value: state.draftOrigin,
+                placeholder: "https://your-self-hosted-netfleet-cloud",
+              }),
+              E("small", {}, "仅自建独立部署且不经 OPL Cloud 下发地址时填写；填写后将跳过统一服务发现。"),
+            ]),
+          ]),
+        ]),
+      ]),
       E("div", { class: "nf-ss-actions" }, [
         state.showReenroll
           ? E("button", {
@@ -209,6 +280,7 @@ export async function mount(context) {
               class: "cbi-button cbi-button-reset",
               disabled: state.busy,
               click: () => {
+                clearSensitiveDraft();
                 state.showReenroll = false;
                 render();
               },
@@ -218,7 +290,7 @@ export async function mount(context) {
           type: "submit",
           class: "cbi-button cbi-button-action",
           disabled,
-        }, state.busy ? "正在登录配对…" : "登录并接入云端"),
+        }, state.busy ? "正在登录配对…" : state.needsTotp ? "验证并接入云端" : "登录并接入云端"),
       ]),
     ]);
   }
@@ -231,7 +303,7 @@ export async function mount(context) {
     const header = E("div", { class: "nf-ss-head" }, [
       E("div", {}, [
         E("h3", {}, "云端站点同步（OPL NetFleet Cloud）"),
-        E("p", { class: "nf-ss-sub" }, "通过 OPL Gateway 账号直接认领本路由器，集中监视出口质量并按授权子集自动同步订阅。"),
+        E("p", { class: "nf-ss-sub" }, "仅需输入 OPL Gateway 账号密码即可自动发现并认领本路由器，集中监视出口质量并按授权子集同步订阅。"),
       ]),
       E("span", { class: connected ? "nf-ss-badge is-ok" : "nf-ss-badge" }, connected ? "已接入" : "未接入"),
     ]);
@@ -267,6 +339,7 @@ export async function mount(context) {
             class: "cbi-button cbi-button-neutral",
             disabled: state.busy || context.readOnly,
             click: () => {
+              clearSensitiveDraft();
               state.showReenroll = true;
               render();
             },
@@ -290,6 +363,7 @@ export async function mount(context) {
   }
 
   context.scope.effect(() => {
+    clearSensitiveDraft();
     style.remove();
     root.remove();
   });

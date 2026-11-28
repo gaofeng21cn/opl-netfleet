@@ -1,7 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { Identity, Subscription, Store } from "./contracts.js";
+import type { Identity, Site, Store, Subscription } from "./contracts.js";
 import {
-  OplGatewayIdentityProvider,
+  createIdentityProviderFromEnv,
+  type AuthOutcome,
   type IdentityProvider,
 } from "./identity.js";
 import { open, randomToken, readKey, seal, sha256 } from "./crypto.js";
@@ -26,6 +27,7 @@ const validDeviceId = (value: unknown): value is string =>
 const timeout = Number(
   process.env.OPL_NETFLEET_CLOUD_HEARTBEAT_TIMEOUT_MS ?? 180000,
 );
+const DEFAULT_MAX_SITES = 64;
 
 function deriveSiteId(
   name: string,
@@ -72,23 +74,36 @@ const unauthorized = { status: 401, body: { error: "unauthorized" } };
 
 const asObject = (value: unknown): Record<string, unknown> | null =>
   record(value) ? value : null;
+
 export class CloudApp {
   constructor(
     private readonly store: Store,
-    private readonly identity: IdentityProvider = new OplGatewayIdentityProvider(
-      process.env.OPL_NETFLEET_CLOUD_GATEWAY_ORIGIN,
-      (process.env.OPL_NETFLEET_CLOUD_ADMIN_EMAILS ?? "")
-        .split(",")
-        .map((value) => value.trim().toLowerCase())
-        .filter(Boolean),
-    ),
+    private readonly identity: IdentityProvider = createIdentityProviderFromEnv(),
   ) {}
+
   private owner(identity: Identity) {
-    return sha256(identity.subject);
+    if (!/^[A-Za-z0-9_-]{1,100}$/.test(identity.subject)) {
+      throw new Error("invalid_identity_subject");
+    }
+    return identity.subject;
   }
+
+  private maxSitesFor(identity: Identity) {
+    const raw = identity.limits?.max_sites;
+    if (typeof raw !== "number" || !Number.isFinite(raw)) {
+      return DEFAULT_MAX_SITES;
+    }
+    return Math.min(DEFAULT_MAX_SITES, Math.max(1, Math.trunc(raw)));
+  }
+
+  private subscriptionAad(ownerId: string, id: string) {
+    return `tenant:${ownerId}:subscription:${id}`;
+  }
+
   private sessionKey() {
     return readKey(process.env.OPL_NETFLEET_CLOUD_SESSION_KEY_FILE);
   }
+
   session(identity: Identity) {
     const payload = Buffer.from(
       JSON.stringify({ identity, exp: Date.now() + 3600000 }),
@@ -98,6 +113,7 @@ export class CloudApp {
       .digest("base64url");
     return `${payload}.${mac}`;
   }
+
   async human(headers: Headers) {
     const authorization = headers.get("authorization");
     const bearer = bearerToken(authorization);
@@ -134,51 +150,135 @@ export class CloudApp {
       return null;
     }
   }
-  async device(headers: Headers) {
+
+  async device(
+    headers: Headers,
+  ): Promise<{ owner: string; site: Site } | null> {
     const token = bearerToken(headers.get("authorization"));
     if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
-    const catalog = await this.store.catalog();
-    return (
-      Object.values(catalog.sites).find(
-        (site) => site.token_hash === sha256(token),
-      ) ?? null
-    );
+    const tokenHash = sha256(token);
+    const binding = await this.store.resolveDeviceToken(tokenHash);
+    if (!binding) return null;
+    const catalog = await this.store.catalog(binding.owner);
+    const site = catalog.sites[binding.site_id];
+    if (!site || site.owner !== binding.owner || site.token_hash !== tokenHash) {
+      return null;
+    }
+    return { owner: binding.owner, site };
   }
-  async login(body: unknown) {
+
+  private loginResponse(outcome: AuthOutcome): {
+    status: number;
+    body: Record<string, unknown>;
+    session?: string;
+  } {
+    switch (outcome.status) {
+      case "ok":
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            user: {
+              email: outcome.identity.email,
+              role: outcome.identity.role,
+            },
+          },
+          session: this.session(outcome.identity),
+        };
+      case "requires_2fa":
+        return {
+          status: 200,
+          body: { ok: false, requires_2fa: true },
+        };
+      case "not_entitled":
+        return { status: 403, body: { error: "service_not_entitled" } };
+      case "rate_limited":
+        return { status: 429, body: { error: "rate_limited" } };
+      case "unavailable":
+        return { status: 503, body: { error: "service_unavailable" } };
+      default:
+        return unauthorized;
+    }
+  }
+
+  async login(body: unknown): Promise<{
+    status: number;
+    body: Record<string, unknown>;
+    session?: string;
+  }> {
     const input = asObject(body);
-    if (!input) return null;
-    let identity: Identity | null = null;
-    if ("email" in input || "password" in input) {
+    if (!input) return unauthorized;
+
+    if ("email" in input || "password" in input || "totp_code" in input) {
       if (
-        only(input, ["email", "password"]) &&
-        typeof input.email === "string" &&
-        typeof input.password === "string" &&
-        input.email.trim().length > 0 &&
-        input.email.length <= 254 &&
-        input.password.length > 0 &&
-        input.password.length <= 512 &&
-        this.identity.authenticatePassword
+        !only(input, ["email", "password", "totp_code"]) ||
+        typeof input.email !== "string" ||
+        typeof input.password !== "string" ||
+        !input.email.trim() ||
+        input.email.length > 254 ||
+        !input.password ||
+        input.password.length > 512 ||
+        (input.totp_code !== undefined &&
+          (typeof input.totp_code !== "string" ||
+            input.totp_code.trim().length > 16))
       ) {
-        identity = await this.identity.authenticatePassword(
-          input.email,
-          input.password,
+        return unauthorized;
+      }
+      const totp =
+        typeof input.totp_code === "string" && input.totp_code.trim()
+          ? input.totp_code.trim()
+          : undefined;
+      if (this.identity.authenticatePasswordDetailed) {
+        return this.loginResponse(
+          await this.identity.authenticatePasswordDetailed(
+            input.email,
+            input.password,
+            totp,
+          ),
         );
       }
-    } else if (
+      if (this.identity.authenticatePassword) {
+        const identity = await this.identity.authenticatePassword(
+          input.email,
+          input.password,
+          totp,
+        );
+        return this.loginResponse(
+          identity ? { status: "ok", identity } : { status: "unauthorized" },
+        );
+      }
+      return unauthorized;
+    }
+
+    if (only(input, ["grant_token"]) && typeof input.grant_token === "string") {
+      const identity = this.identity.verifyGrant
+        ? await this.identity.verifyGrant(input.grant_token, "console:login")
+        : null;
+      return this.loginResponse(
+        identity ? { status: "ok", identity } : { status: "unauthorized" },
+      );
+    }
+
+    if (
       only(input, ["token"]) &&
       typeof input.token === "string" &&
       input.token.length > 0 &&
       input.token.length <= 4096
     ) {
-      identity = await this.identity.authenticate(input.token);
+      if (this.identity.authenticateBearerDetailed) {
+        return this.loginResponse(
+          await this.identity.authenticateBearerDetailed(input.token),
+        );
+      }
+      const identity = await this.identity.authenticate(input.token);
+      return this.loginResponse(
+        identity ? { status: "ok", identity } : { status: "unauthorized" },
+      );
     }
-    return identity
-      ? {
-          session: this.session(identity),
-          user: { email: identity.email, role: identity.role },
-        }
-      : null;
+
+    return unauthorized;
   }
+
   async me(headers: Headers) {
     const auth = await this.human(headers);
     return auth
@@ -188,20 +288,50 @@ export class CloudApp {
         }
       : unauthorized;
   }
-  async enroll(body: unknown) {
+
+  async enroll(headers: Headers, body: unknown) {
     const input = asObject(body);
-    if (
-      !input ||
-      !only(input, ["email", "password", "name", "site_id", "device_id"]) ||
-      typeof input.email !== "string" ||
-      !input.email.trim() ||
-      input.email.length > 254 ||
-      typeof input.password !== "string" ||
-      !input.password ||
-      input.password.length > 512
-    ) {
+    if (!input) {
       return { status: 400, body: { error: "invalid_enroll_request" } };
     }
+
+    const authorization = headers.get("authorization");
+    let identity: Identity | null = null;
+    if (authorization !== null) {
+      const grantToken = bearerToken(authorization);
+      if (!grantToken) return unauthorized;
+      if (!only(input, ["name", "site_id", "device_id"])) {
+        return { status: 400, body: { error: "invalid_enroll_request" } };
+      }
+      identity = this.identity.verifyGrant
+        ? await this.identity.verifyGrant(grantToken, "device:enroll")
+        : null;
+      if (!identity) return unauthorized;
+    } else {
+      if (
+        !only(input, ["email", "password", "name", "site_id", "device_id"]) ||
+        typeof input.email !== "string" ||
+        !input.email.trim() ||
+        input.email.length > 254 ||
+        typeof input.password !== "string" ||
+        !input.password ||
+        input.password.length > 512
+      ) {
+        return { status: 400, body: { error: "invalid_enroll_request" } };
+      }
+      if (
+        this.identity.mode === "cloud" ||
+        !this.identity.authenticatePassword
+      ) {
+        return unauthorized;
+      }
+      identity = await this.identity.authenticatePassword(
+        input.email,
+        input.password,
+      );
+      if (!identity) return unauthorized;
+    }
+
     const hasName = input.name !== undefined && input.name !== "";
     if (hasName && !validName(input.name)) {
       return { status: 400, body: { error: "invalid_site" } };
@@ -220,16 +350,14 @@ export class CloudApp {
     if (deviceId !== undefined && !validDeviceId(deviceId)) {
       return { status: 400, body: { error: "invalid_device_id" } };
     }
-    const identity = this.identity.authenticatePassword
-      ? await this.identity.authenticatePassword(input.email, input.password)
-      : null;
-    if (!identity) return unauthorized;
+
     const owner = this.owner(identity);
+    const maxSites = this.maxSitesFor(identity);
     const plain = randomToken();
     const tokenHash = sha256(plain);
     const customName = hasName ? (input.name as string).trim() : undefined;
     try {
-      const enrolled = await this.store.change((catalog) => {
+      const enrolled = await this.store.change(owner, (catalog) => {
         const byDevice = deviceId
           ? Object.values(catalog.sites).find(
               (site) => site.owner === owner && site.device_id === deviceId,
@@ -259,7 +387,7 @@ export class CloudApp {
             write: true,
           };
         }
-        if (Object.keys(catalog.sites).length >= 64) {
+        if (Object.keys(catalog.sites).length >= maxSites) {
           throw new Error("site_limit");
         }
         const displayName = customName || requestedSiteId || "Managed Gateway";
@@ -296,62 +424,72 @@ export class CloudApp {
       return { status: 409, body: { error: error.message } };
     }
   }
+
   async unenroll(headers: Headers) {
-    const site = await this.device(headers);
-    if (!site) return unauthorized;
-    const removed = await this.store.change((catalog) => {
-      const current = catalog.sites[site.id];
-      if (!current || current.token_hash !== site.token_hash) {
+    const auth = await this.device(headers);
+    if (!auth) return unauthorized;
+    const removed = await this.store.change(auth.owner, (catalog) => {
+      const current = catalog.sites[auth.site.id];
+      if (!current || current.token_hash !== auth.site.token_hash) {
         return { result: false };
       }
       delete current.token_hash;
       return { result: true, write: true };
     });
     return removed
-      ? { status: 200, body: { ok: true, site_id: site.id } }
+      ? { status: 200, body: { ok: true, site_id: auth.site.id } }
       : unauthorized;
   }
+
   async heartbeat(headers: Headers, body: unknown) {
-    const site = await this.device(headers);
-    if (!site) return { status: 401, body: { error: "unauthorized" } };
-    if (!validHeartbeat(body) || body.site_id !== site.id)
+    const auth = await this.device(headers);
+    if (!auth) return unauthorized;
+    if (!validHeartbeat(body) || body.site_id !== auth.site.id)
       return { status: 400, body: { error: "invalid_heartbeat" } };
-    const result = await this.store.heartbeat(site.id, (catalog, old) => {
-      const current = catalog.sites[site.id];
-      if (!current || current.token_hash !== site.token_hash)
-        return { result: null };
-      const now = Date.now();
-      return {
-        result: {
-          ok: true,
-          desired_revision: current.revision,
-          server_time: new Date(now).toISOString(),
-        },
-        snapshot: snapshot(old, body, now),
-      };
-    });
-    return result
-      ? { status: 200, body: result }
-      : { status: 401, body: { error: "unauthorized" } };
+    const result = await this.store.heartbeat(
+      auth.owner,
+      auth.site.id,
+      (catalog, old) => {
+        const current = catalog.sites[auth.site.id];
+        if (!current || current.token_hash !== auth.site.token_hash)
+          return { result: null };
+        const now = Date.now();
+        return {
+          result: {
+            ok: true,
+            desired_revision: current.revision,
+            server_time: new Date(now).toISOString(),
+          },
+          snapshot: snapshot(old, body, now),
+        };
+      },
+    );
+    return result ? { status: 200, body: result } : unauthorized;
   }
+
   async subscriptions(headers: Headers) {
-    const site = await this.device(headers);
-    if (!site) return { status: 401, body: { error: "unauthorized" } };
-    const catalog = await this.store.catalog();
+    const auth = await this.device(headers);
+    if (!auth) return unauthorized;
+    const catalog = await this.store.catalog(auth.owner);
     const key = readKey(process.env.OPL_NETFLEET_CLOUD_MASTER_KEY_FILE);
-    const current = catalog.sites[site.id];
-    if (!current || current.token_hash !== site.token_hash)
-      return { status: 401, body: { error: "unauthorized" } };
+    const current = catalog.sites[auth.site.id];
+    if (
+      !current ||
+      current.owner !== auth.owner ||
+      current.token_hash !== auth.site.token_hash
+    ) {
+      return unauthorized;
+    }
     const rows = current.grants
       .map((id) => catalog.subscriptions[id])
-      .filter((item) => item?.owner === current.owner)
+      .filter((item) => item?.owner === auth.owner)
       .map((subscription) => ({
         id: subscription.id,
         name: subscription.name,
         url: open(
           subscription.envelope,
           key,
-          `subscription:${subscription.id}`,
+          this.subscriptionAad(auth.owner, subscription.id),
         ),
       }));
     return {
@@ -359,6 +497,7 @@ export class CloudApp {
       body: { revision: current.revision, subscriptions: rows },
     };
   }
+
   async watchdog(headers: Headers) {
     const provided = bearerToken(headers.get("authorization"));
     const path = process.env.OPL_NETFLEET_CLOUD_WATCHDOG_SECRET_FILE;
@@ -370,22 +509,36 @@ export class CloudApp {
         Buffer.from(sha256(readKey(path).toString("base64url")), "hex"),
       )
     )
-      return { status: 401, body: { error: "unauthorized" } };
-    const catalog = await this.store.catalog();
-    const ids = Object.keys(catalog.sites);
-    const snapshots = await this.store.snapshots(ids);
+      return unauthorized;
     const cutoff = Date.now() - timeout;
-    const sites = ids
-      .map((id, index) => {
+    const tenantIds = await this.store.listTenantIds();
+    const sites: Array<{
+      owner_actor_id: string;
+      site_id: string;
+      last_seen_at: string | null;
+      overdue: boolean;
+      recovering: boolean;
+    }> = [];
+    for (const ownerId of tenantIds) {
+      const catalog = await this.store.catalog(ownerId);
+      const ids = Object.keys(catalog.sites);
+      if (!ids.length) continue;
+      const snapshots = await this.store.snapshots(ownerId, ids);
+      ids.forEach((id, index) => {
         const seen = snapshots[index]?.last_seen_at ?? null;
-        return {
-          site_id: id,
-          last_seen_at: seen,
-          overdue: !seen || Date.parse(seen) < cutoff,
-          recovering: snapshots[index]?.latest.recovery === true,
-        };
-      })
-      .filter((site) => site.overdue || site.recovering);
+        const overdue = !seen || Date.parse(seen) < cutoff;
+        const recovering = snapshots[index]?.latest.recovery === true;
+        if (overdue || recovering) {
+          sites.push({
+            owner_actor_id: ownerId,
+            site_id: id,
+            last_seen_at: seen,
+            overdue,
+            recovering,
+          });
+        }
+      });
+    }
     return {
       status: 200,
       body: {
@@ -395,14 +548,15 @@ export class CloudApp {
       },
     };
   }
+
   async overview(headers: Headers) {
     const auth = await this.human(headers);
-    if (!auth) return { status: 401, body: { error: "unauthorized" } };
-    const catalog = await this.store.catalog();
+    if (!auth) return unauthorized;
+    const catalog = await this.store.catalog(auth.owner);
     const ids = Object.values(catalog.sites)
       .filter((site) => site.owner === auth.owner)
       .map((site) => site.id);
-    const snapshots = await this.store.snapshots(ids);
+    const snapshots = await this.store.snapshots(auth.owner, ids);
     return {
       status: 200,
       body: {
@@ -425,10 +579,11 @@ export class CloudApp {
       },
     };
   }
+
   async createSite(headers: Headers, body: unknown) {
     const auth = await this.human(headers);
     const input = asObject(body);
-    if (!auth) return { status: 401, body: { error: "unauthorized" } };
+    if (!auth) return unauthorized;
     if (
       !input ||
       !only(input, ["id", "name"]) ||
@@ -436,11 +591,12 @@ export class CloudApp {
       !validName(input.name)
     )
       return { status: 400, body: { error: "invalid_site" } };
+    const maxSites = this.maxSitesFor(auth.identity);
     try {
-      await this.store.change((catalog) => {
+      await this.store.change(auth.owner, (catalog) => {
         if (Object.hasOwn(catalog.sites, input.id as string))
           throw new Error("site_exists");
-        if (Object.keys(catalog.sites).length >= 64)
+        if (Object.keys(catalog.sites).length >= maxSites)
           throw new Error("site_limit");
         catalog.sites[input.id as string] = {
           id: input.id as string,
@@ -461,12 +617,13 @@ export class CloudApp {
       return { status: 409, body: { error: error.message } };
     }
   }
+
   async rotateToken(headers: Headers, id: string) {
     const auth = await this.human(headers);
-    if (!auth) return { status: 401, body: { error: "unauthorized" } };
+    if (!auth) return unauthorized;
     const plain = randomToken();
     try {
-      await this.store.change((catalog) => {
+      await this.store.change(auth.owner, (catalog) => {
         const site = catalog.sites[id];
         if (!site || site.owner !== auth.owner)
           throw new Error("site_not_found");
@@ -480,11 +637,12 @@ export class CloudApp {
       return { status: 404, body: { error: "site_not_found" } };
     }
   }
+
   async revokeToken(headers: Headers, id: string) {
     const auth = await this.human(headers);
-    if (!auth) return { status: 401, body: { error: "unauthorized" } };
+    if (!auth) return unauthorized;
     try {
-      await this.store.change((catalog) => {
+      await this.store.change(auth.owner, (catalog) => {
         const site = catalog.sites[id];
         if (!site || site.owner !== auth.owner)
           throw new Error("site_not_found");
@@ -498,6 +656,7 @@ export class CloudApp {
       return { status: 404, body: { error: "site_not_found" } };
     }
   }
+
   async renameSite(headers: Headers, id: string, body: unknown) {
     const auth = await this.human(headers);
     if (!auth) return unauthorized;
@@ -506,7 +665,7 @@ export class CloudApp {
       return { status: 400, body: { error: "invalid_site" } };
     }
     const name = input.name.trim();
-    const updated = await this.store.change((catalog) => {
+    const updated = await this.store.change(auth.owner, (catalog) => {
       const site = catalog.sites[id];
       if (!site || site.owner !== auth.owner) return { result: null };
       site.name = name;
@@ -516,11 +675,12 @@ export class CloudApp {
       ? { status: 200, body: updated }
       : { status: 404, body: { error: "site_not_found" } };
   }
+
   async deleteSite(headers: Headers, id: string) {
     const auth = await this.human(headers);
-    if (!auth) return { status: 401, body: { error: "unauthorized" } };
+    if (!auth) return unauthorized;
     try {
-      await this.store.change((catalog) => {
+      await this.store.change(auth.owner, (catalog) => {
         const site = catalog.sites[id];
         if (!site || site.owner !== auth.owner)
           throw new Error("site_not_found");
@@ -534,10 +694,11 @@ export class CloudApp {
       return { status: 404, body: { error: "site_not_found" } };
     }
   }
+
   async listSubscriptions(headers: Headers) {
     const auth = await this.human(headers);
-    if (!auth) return { status: 401, body: { error: "unauthorized" } };
-    const catalog = await this.store.catalog();
+    if (!auth) return unauthorized;
+    const catalog = await this.store.catalog(auth.owner);
     return {
       status: 200,
       body: {
@@ -547,10 +708,11 @@ export class CloudApp {
       },
     };
   }
+
   async createSubscription(headers: Headers, body: unknown) {
     const auth = await this.human(headers);
     const input = asObject(body);
-    if (!auth) return { status: 401, body: { error: "unauthorized" } };
+    if (!auth) return unauthorized;
     if (
       !input ||
       !only(input, ["id", "name", "url"]) ||
@@ -567,10 +729,14 @@ export class CloudApp {
       name: input.name.trim(),
       owner: auth.owner,
       fingerprint: sha256(input.url).slice(0, 12),
-      envelope: seal(input.url, key, `subscription:${input.id}`),
+      envelope: seal(
+        input.url,
+        key,
+        this.subscriptionAad(auth.owner, input.id),
+      ),
     };
     try {
-      await this.store.change((catalog) => {
+      await this.store.change(auth.owner, (catalog) => {
         if (Object.hasOwn(catalog.subscriptions, subscription.id))
           throw new Error("subscription_exists");
         if (Object.keys(catalog.subscriptions).length >= 64)
@@ -595,11 +761,12 @@ export class CloudApp {
       return { status: 409, body: { error: error.message } };
     }
   }
+
   async deleteSubscription(headers: Headers, id: string) {
     const auth = await this.human(headers);
-    if (!auth) return { status: 401, body: { error: "unauthorized" } };
+    if (!auth) return unauthorized;
     try {
-      await this.store.change((catalog) => {
+      await this.store.change(auth.owner, (catalog) => {
         const subscription = catalog.subscriptions[id];
         if (!subscription || subscription.owner !== auth.owner)
           throw new Error("subscription_not_found");
@@ -624,6 +791,7 @@ export class CloudApp {
       return { status: 404, body: { error: "subscription_not_found" } };
     }
   }
+
   async updateSubscription(headers: Headers, id: string, body: unknown) {
     const auth = await this.human(headers);
     if (!auth) return unauthorized;
@@ -639,7 +807,7 @@ export class CloudApp {
     }
     const name = body.name.trim();
     const url = typeof body.url === "string" ? body.url : "";
-    const updated = await this.store.change((catalog) => {
+    const updated = await this.store.change(auth.owner, (catalog) => {
       const item = catalog.subscriptions[id];
       if (item?.owner !== auth.owner) return { result: null };
       item.name = name;
@@ -648,7 +816,7 @@ export class CloudApp {
         item.envelope = seal(
           url,
           readKey(process.env.OPL_NETFLEET_CLOUD_MASTER_KEY_FILE),
-          `subscription:${id}`,
+          this.subscriptionAad(auth.owner, id),
         );
         for (const site of Object.values(catalog.sites)) {
           if (site.owner === auth.owner && site.grants.includes(id))
@@ -664,10 +832,11 @@ export class CloudApp {
       ? { status: 200, body: updated }
       : { status: 404, body: { error: "subscription_not_found" } };
   }
+
   async grants(headers: Headers, id: string, body: unknown) {
     const auth = await this.human(headers);
     const input = asObject(body);
-    if (!auth) return { status: 401, body: { error: "unauthorized" } };
+    if (!auth) return unauthorized;
     if (
       !input ||
       !only(input, ["subscription_ids"]) ||
@@ -677,7 +846,7 @@ export class CloudApp {
     )
       return { status: 400, body: { error: "invalid_grants" } };
     try {
-      const revision = await this.store.change((catalog) => {
+      const revision = await this.store.change(auth.owner, (catalog) => {
         const site = catalog.sites[id];
         if (!site || site.owner !== auth.owner)
           throw new Error("site_not_found");
