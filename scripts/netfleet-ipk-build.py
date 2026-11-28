@@ -398,7 +398,17 @@ else
 \tprintf '%s\\n' 'opl-netfleet: package upgrade state is missing' >&2
 \texit 1
 fi
-[ ! -x /etc/init.d/rpcd ] || /etc/init.d/rpcd restart >/dev/null 2>&1 || true
+if [ -x /etc/init.d/rpcd ]; then
+	old_rpcd=$(pidof rpcd 2>/dev/null || true)
+	/etc/init.d/rpcd restart >/dev/null 2>&1 || true
+	for _ in 1 2 3 4 5 6 7 8 9 10; do
+		cur_rpcd=$(pidof rpcd 2>/dev/null || true)
+		if [ -n "$cur_rpcd" ] && [ "$cur_rpcd" != "$old_rpcd" ] && ubus -v list opl-netfleet >/dev/null 2>&1; then
+			break
+		fi
+		sleep 1
+	done
+fi
 exit 0
 """
     prerm = """#!/bin/sh
@@ -532,7 +542,17 @@ if [ "$changed" = 1 ]; then
 fi
 rm -f /tmp/luci-indexcache.*
 rm -rf /tmp/luci-modulecache/
-[ ! -x /etc/init.d/rpcd ] || /etc/init.d/rpcd restart >/dev/null 2>&1 || true
+if [ -x /etc/init.d/rpcd ]; then
+	old_rpcd=$(pidof rpcd 2>/dev/null || true)
+	/etc/init.d/rpcd restart >/dev/null 2>&1 || true
+	for _ in 1 2 3 4 5 6 7 8 9 10; do
+		cur_rpcd=$(pidof rpcd 2>/dev/null || true)
+		if [ -n "$cur_rpcd" ] && [ "$cur_rpcd" != "$old_rpcd" ] && ubus -v list opl-netfleet >/dev/null 2>&1; then
+			break
+		fi
+		sleep 1
+	done
+fi
 [ "$changed" = 1 ] || exit 0
 [ ! -x /etc/init.d/uhttpd ] || /etc/init.d/uhttpd restart >/dev/null 2>&1 || true
 exit 0
