@@ -557,12 +557,13 @@ function rollback_switch(ctx, work, state, reason) {
 	return rolled_error;
 }
 
-function snapshot_before(ctx) {
+export function snapshot_before(ctx) {
+	const policy_path = ctx.paths?.POLICY_PATH ?? "/etc/opl-netfleet/policy.json";
 	const before_status = ctx.parsed(`ucode ${ctx.q(ctx.MAIN)} status`)?.result;
-	const unconfigured = fs.lstat("/etc/opl-netfleet/policy.json") == null && !ctx.service_running(ctx.SERVICE);
+	const unconfigured = fs.lstat(policy_path) == null && (ctx.KIND == "nikki-mihomo" || !ctx.service_running(ctx.SERVICE));
 	if (before_status == null && !unconfigured) ctx.fail("runtime_readback_failed");
 	const cur = current_info(ctx);
-	const core_running = ctx.service_running(ctx.SERVICE);
+	const core_running = unconfigured ? false : ctx.service_running(ctx.SERVICE);
 	const retain_core = ctx.KIND == "native-mihomo" && core_running && before_status?.active == true;
 	let core_id = null, watch_spec = null;
 	if (retain_core) {

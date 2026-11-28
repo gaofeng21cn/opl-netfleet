@@ -613,6 +613,31 @@ function test_bundle_engine() {
 		check(sig_err == 'bundle_signature_invalid' || sig_err == 'bundle_stage_invalid', 'bundle.apply returns deterministic error code, got: ' + sig_err);
 		check(match('a/b/c.uc', /[\r\t]/) == null && index('a/b/c.uc', '\x00') < 0, 'clean archive path passes regex/NUL guard');
 		check(index('a\x00b', '\x00') >= 0 && match('a\tb', /[\r\t]/) != null, 'control/NUL chars rejected');
+		const nikki_ctx = {
+			...ctx,
+			MAIN: '/usr/libexec/opl-netfleet/main.uc',
+			KIND: 'nikki-mihomo',
+			SERVICE: 'nikki',
+			paths: { ...paths, POLICY_PATH: root + '/missing-policy.json' },
+			parsed: () => ({ ok: false, error: 'policy_unreadable' }),
+			service_running: name => name == 'nikki',
+			private_paths: () => [],
+			input_identity: () => ({})
+		};
+		const nikki_before = bundle.snapshot_before(nikki_ctx);
+		check(nikki_before.unconfigured == true && nikki_before.core == false,
+			'snapshot_before treats running external nikki without policy as unconfigured');
+
+		const native_ctx = {
+			...nikki_ctx,
+			KIND: 'native-mihomo',
+			SERVICE: 'opl-netfleet-core',
+			service_running: () => true
+		};
+		let native_err = null;
+		try { bundle.snapshot_before(native_ctx); } catch (e) { native_err = e.message; }
+		check(native_err == 'runtime_readback_failed',
+			'snapshot_before still rejects running native core without policy, got: ' + native_err);
 	} catch (e) {
 		err = e;
 	}
