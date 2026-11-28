@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -304,6 +305,18 @@ exit 0
             server.shutdown()
             server.server_close()
             thread.join(timeout=3)
+
+    def test_luci_menu_view_version_matches_makefile(self):
+        luci_root = ROOT / "openwrt/luci-app-netfleet"
+        makefile = (luci_root / "Makefile").read_text(encoding="utf-8")
+        match = re.search(r"(?m)^PKG_VERSION:=(\S+)$", makefile)
+        self.assertIsNotNone(match)
+        expected_path = f"netfleet/overview-v{match.group(1).replace('.', '_')}"
+        menu = json.loads((luci_root / "root/usr/share/luci/menu.d/luci-app-netfleet.json").read_text(encoding="utf-8"))
+        paths = [entry["action"]["path"] for entry in menu.values() if isinstance(entry, dict) and isinstance(entry.get("action"), dict)]
+        self.assertEqual(paths, [expected_path, expected_path])
+        plugin_host = (luci_root / "htdocs/luci-static/resources/netfleet/plugin-host.js").read_text(encoding="utf-8")
+        self.assertIn("/luci-static/resources/netfleet/bundle/plugins", plugin_host)
 
 
 if __name__ == "__main__":
