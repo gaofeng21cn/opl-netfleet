@@ -171,6 +171,12 @@ if [ "$pkg_mgr" = opkg ]; then
 	if [ -n "$to_upgrade" ]; then
 		opkg upgrade $to_upgrade
 	fi
+	if [ "${NETFLEET_INSTALL_TESTING:-0}" != 1 ] && ! ucode -e 'require("uloop"); require("socket"); require("digest");' >/dev/null 2>&1; then
+		libucode_pkg=$(opkg list-installed 'libucode*' 2>/dev/null | awk 'NR==1 {print $1}')
+		opkg upgrade ${libucode_pkg:-} ucode ucode-mod-fs ucode-mod-ubus ucode-mod-uci >/dev/null 2>&1 || true
+		ucode -e 'require("uloop"); require("socket"); require("digest");' >/dev/null 2>&1 ||
+			die 'installed ucode runtime cannot load required ucode modules'
+	fi
 	printf 'NetFleet packages installed from %s; open LuCI to review and confirm first takeover.\n' "$feed_base"
 	exit 0
 fi
