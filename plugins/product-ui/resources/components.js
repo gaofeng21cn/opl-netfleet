@@ -503,13 +503,13 @@ function componentsPage(controller) {
 		}, active) : '';
 		const current = [ E('strong', {}, component.id === 'mihomo' ? component.running_version ? displayVersion(component.running_version) : '核心运行版本暂不可读取' : component.installed_version ? displayVersion(component.installed_version) : '未安装') ];
 		if (component.id === 'mihomo' && component.installed_version) current.push(E('small', {}, '安装记录 ' + displayVersion(component.installed_version)));
-		current.push(E('details', {}, [E('summary', {}, '版本详情'), E('small', {}, '完整包版本：' + (component.installed_version || '未安装')), component.running_version ? E('small', {}, '运行版本：' + component.running_version) : '', component.available_version ? E('small', {}, '候选包版本：' + component.available_version) : '']));
+		current.push(E('details', {}, [E('summary', {}, '版本详情'), E('small', {}, '完整包版本：' + (component.installed_version || '未安装')), component.running_version ? E('small', {}, '运行版本：' + component.running_version) : '', component.available_version ? E('small', {}, '候选包版本：' + component.available_version) : '', bundleMode && component.id === 'netfleet' && snapshot.shell_version ? E('small', {}, '系统安装壳：' + snapshot.shell_version) : '', bundleMode && component.id === 'netfleet' && snapshot.min_shell_version ? E('small', {}, '最低壳要求：' + snapshot.min_shell_version) : '']));
 		if (component.id === 'netfleet' && controller.status && controller.status.build && controller.status.build.source_commit)
 			current.push(E('details', {}, [ E('summary', {}, '构建来源'), E('small', {}, controller.status.build.source_commit) ]));
 		if (mismatch) current.push(E('span', { 'class': 'is-warning' }, '运行版本与安装记录不一致'));
 		if (component.reason) current.push(E('small', {}, errorLabel(component.reason)));
 		const available = component.available_version && !feed.error ? [ uiOnly ? '界面可更新至 ' + displayVersion(luci.available_version) : hasUpdate ? '候选版本 ' + displayVersion(component.available_version) : '当前更新源暂无新版' ] : [];
-		if (hasUpdate && !feed.error) available.push(E('small', {}, component.id === 'mihomo' ? '更新核心会中断已有代理连接' : '基础包更新会停止并恢复服务，私有配置保留'));
+		if (hasUpdate && !feed.error) available.push(E('small', {}, component.id === 'mihomo' ? '更新核心会中断已有代理连接' : bundleMode ? '签名发行包原子切换，核心转发保活，失败即时回退' : '基础包更新会停止并恢复服务，私有配置保留'));
 		const rollback = bundleMode && component.id === 'netfleet' && snapshot.rollback_available && snapshot.previous_version ? button('回退上一版', function() {
 			ui.showModal('回退 NetFleet 版本', [ E('p', {}, '将原子切换回上一版签名发行包（' + displayVersion(snapshot.previous_version) + '），原生核心运行期间不中断代理转发。'),
 				E('div', { 'class': 'right' }, [ button('取消', ui.hideModal), ' ', button('确认回退', function() { ui.hideModal(); return startPackageOperation(controller, component, 'rollback'); }) ]) ]);
@@ -520,7 +520,7 @@ function componentsPage(controller) {
 	if (luci) rows.splice(1, 0, E('tr', {}, [ E('td', {}, [ E('strong', {}, 'LuCI 接入组件'), E('small', {}, '提供 LuCI 菜单、权限与插件页面加载；业务页面由 product-ui 提供') ]),
 		E('td', {}, [E('strong', {}, luci.installed_version ? displayVersion(luci.installed_version) : '未安装'), E('details', {}, [E('summary', {}, '版本详情'), E('small', {}, '完整包版本：' + (luci.installed_version || '未安装')), luci.available_version ? E('small', {}, '候选包版本：' + luci.available_version) : ''])]),
 		E('td', {}, [ luci.available_version && !feed.error ? (luci.update_available ? '候选版本 ' + displayVersion(luci.available_version) : '当前更新源暂无新版') : '',
-			E('small', {}, '由 NetFleet 更新入口管理') ]) ]));
+			E('small', {}, bundleMode ? '随系统安装壳由系统包管理器维护' : '由 NetFleet 更新入口管理') ]) ]));
 	const moduleRows = [];
 	(snapshot.extensions || []).filter(function(extension) { return extension.kind === 'plugin'; }).forEach(function(plugin) {
 		const config = (plugin.ui || []).map(function(page) { return button(plugin.ui.length === 1 ? (plugin.configuration ? '配置' : '打开页面') : page.title, function() {

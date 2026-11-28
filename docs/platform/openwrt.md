@@ -37,7 +37,7 @@ OpenWrt 默认绑定在 `/usr/share/opl-netfleet/system.json`，私有覆盖在
 
 NetFleet 自有包的 `PKG_VERSION` 使用[插件版本合同](../architecture/packaging.md#插件版本)中的三段数字、`PKG_RELEASE` 留空；发布清单完整记录 `source_commit`、`source_tree`、`artifacts`、`ipk_artifacts`、`dependency_artifacts`、`release_bundle`、`opkg_index` 与 `FILES.sha256`。
 
-`scripts/install-netfleet.sh` 根据目标机包管理器自动切换 `apk` 与 `opkg` 引导逻辑：安装签名公钥、写入可信源并完成最小产品集合安装或升级；对既有 `28` 包（`opl-netfleet-kernel` + 24 个内置服务插件）`apk` 安装执行单事务迁移：先预先抓取并验签薄壳安装包，快照服务启停状态并停止 `opl-netfleet`/`opl-netfleet-core`、确认干净退出后，通过 `/tmp/opl-netfleet-microkernel-migration` 标记与过渡保护包装隔离旧代 `prerm`/`postrm` 对已升级 UCode ABI 的重试死循环，再以 `apk add --upgrade opl-netfleet luci-app-netfleet !<legacy>...` 原子切换至薄系统包壳并恢复原服务状态。该脚本不写入 policy、订阅、Nikki mixin，也不隐式接管网络；当目标机已安装 `mihomo-meta` 或存在 `/etc/init.d/nikki` 宿主时，不主动升级或跨源替换既有核心；旧单体无内核布局在改动源之前直接拒绝。
+`scripts/install-netfleet.sh` 根据目标机包管理器自动切换 `apk` 与 `opkg` 引导逻辑：安装签名公钥、写入可信源并完成最小产品集合安装或升级；薄壳 `apk` 升级与 `28` 包（`opl-netfleet-kernel` + 24 个内置服务插件）单事务迁移均先预下载并验签目标 `.apk` 与签名索引 `packages.adb` 到临时签名本地仓库再执行 `--no-network` 离线升级，防止 `native-mihomo` 设备在 `pre-upgrade` 停核后断流，同时清理历史 `/etc/apk/world` 校验和 pin（若缺少新增系统依赖则自动回退到标准联网解析）；迁移前快照服务启停状态并停止 `opl-netfleet`/`opl-netfleet-core`、确认干净退出后，通过 `/tmp/opl-netfleet-microkernel-migration` 标记与过渡保护包装隔离旧代 `prerm`/`postrm` 对已升级 UCode ABI 的重试死循环，再以 `apk add --upgrade opl-netfleet luci-app-netfleet !<legacy>...` 原子切换至薄系统包壳并恢复原服务状态。该脚本不写入 policy、订阅、Nikki mixin，也不隐式接管网络；当目标机已安装 `mihomo-meta` 或存在 `/etc/init.d/nikki` 宿主时，不主动升级或跨源替换既有核心；旧单体无内核布局在改动源之前直接拒绝。
 
 OpenWrt 默认 package lifecycle 会启动新安装或升级后的 init script；因此 `opl-netfleet` 首次安装显式停止并禁用服务，升级则预先快照并在 `postinst` 按服务就绪状态轮询恢复原 `enabled`/`running` 意图。
 

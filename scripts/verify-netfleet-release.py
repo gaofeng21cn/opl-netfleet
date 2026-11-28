@@ -293,6 +293,13 @@ def verify(directory: Path, source_commit: str, source_tree: str) -> dict[str, o
         if not usign.verify_file(files[bpub_name], files[mf_name], files[sig_name]):
             fail("release bundle signature verification failed")
         rmf = json.loads(files[mf_name].read_text())
+        rmf_min_shell = rmf.get("min_shell_version")
+        try:
+            min_shell_tuple = version_tuple(rmf_min_shell)
+        except ValueError:
+            fail("release manifest min_shell_version is invalid")
+        if min_shell_tuple > parsed_version:
+            fail("release manifest min_shell_version is invalid")
         if (rmf.get("schema") != "opl-netfleet-release-bundle.v1"
                 or rmf.get("version") != package_version
                 or rmf.get("archive") != archive_name

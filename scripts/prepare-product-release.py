@@ -7,8 +7,13 @@ import re
 import subprocess
 
 root = Path(__file__).resolve().parents[1]
-version = json.loads((root / 'product-version.json').read_text())['version']
+product_meta = json.loads((root / 'product-version.json').read_text())
+version = product_meta['version']
 assert re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', version)
+if 'min_shell_version' in product_meta:
+    min_shell = product_meta['min_shell_version']
+    assert isinstance(min_shell, str) and re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', min_shell)
+    assert tuple(int(p) for p in min_shell.split('.')) <= tuple(int(p) for p in version.split('.'))
 
 makefile_path = root / 'openwrt/Makefile'
 text, count = re.subn(r'(?m)^PKG_VERSION:=.*$', 'PKG_VERSION:=' + version, makefile_path.read_text())

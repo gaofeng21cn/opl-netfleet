@@ -276,6 +276,8 @@ if [ "$has_legacy" = 0 ] && apk info -e opl-netfleet-kernel >/dev/null 2>&1; the
 		apk --no-network verify "$pkg_file" >/dev/null ||
 			die 'thin-shell package signature verification failed; existing installation was not changed'
 	done
+	fetch "$feed_base/packages.adb" "$work/apks/packages.adb" ||
+		die 'failed to fetch signed APK index; existing installation was not changed'
 	upgrade_state=/tmp/opl-netfleet-package-upgrade-state
 	[ ! -e "$upgrade_state" ] || die 'previous package upgrade state is incomplete; refusing migration'
 	backend=nikki-mihomo
@@ -342,24 +344,42 @@ SHIM
 		chmod 0755 "$work/plugin-package.shim"
 		mv -f "$work/plugin-package.shim" "$pkg_hook" || die 'cannot install migration-guarded plugin helper'
 	fi
-	if ! apk --timeout 300 add --upgrade "$@" $negated; then
-		if ! apk --no-network add --upgrade "$work/apks"/*.apk $negated; then
-			if apk info -e opl-netfleet-kernel >/dev/null 2>&1 && [ -f "$work/plugin-package.orig" ]; then
-				mv -f "$work/plugin-package.orig" "$pkg_hook" >/dev/null 2>&1 || true
-				rm -f /tmp/opl-netfleet-microkernel-migration "$upgrade_state"
-				if [ "$backend" = native-mihomo ] && [ "$core_running" = 1 ] && [ -x /etc/init.d/opl-netfleet-core ]; then
-					NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet-core restart >/dev/null 2>&1 || true
+	if ! apk --no-network --repositories-file /dev/null --repository "$work/apks/packages.adb" add --upgrade "$@" $negated; then
+		if ! apk --timeout 300 add --upgrade "$@" $negated; then
+			if ! apk --no-network add --upgrade "$work/apks"/*.apk $negated; then
+				if apk info -e opl-netfleet-kernel >/dev/null 2>&1 && [ -f "$work/plugin-package.orig" ]; then
+					mv -f "$work/plugin-package.orig" "$pkg_hook" >/dev/null 2>&1 || true
+					rm -f /tmp/opl-netfleet-microkernel-migration "$upgrade_state"
+					if [ "$backend" = native-mihomo ] && [ "$core_running" = 1 ] && [ -x /etc/init.d/opl-netfleet-core ]; then
+						NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet-core restart >/dev/null 2>&1 || true
+					fi
+					if [ "$was_running" = 1 ] && [ -x /etc/init.d/opl-netfleet ]; then
+						NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet restart >/dev/null 2>&1 || true
+					fi
 				fi
-				if [ "$was_running" = 1 ] && [ -x /etc/init.d/opl-netfleet ]; then
-					NETFLEET_PACKAGE_RESTORE=1 /etc/init.d/opl-netfleet restart >/dev/null 2>&1 || true
-				fi
+				die 'failed to migrate 28-pkg installation to thin shell'
 			fi
-			die 'failed to migrate 28-pkg installation to thin shell'
 		fi
 	fi
 	rm -f /tmp/opl-netfleet-microkernel-migration
 	[ ! -e "$upgrade_state" ] && [ -e /usr/share/opl-netfleet/shell.json ] && [ -f /usr/share/opl-netfleet/current/runtime/kernel/host.uc ] ||
 		die 'thin-shell migration post-install layout verification failed'
+elif [ "$has_legacy" = 0 ] && apk info -e opl-netfleet >/dev/null 2>&1 && apk info -e luci-app-netfleet >/dev/null 2>&1; then
+	mkdir -p "$work/local-repo"
+	apk --timeout 300 fetch --output "$work/local-repo" "$@" >/dev/null ||
+		die 'failed to fetch thin-shell packages; existing installation was not changed'
+	for pkg_file in "$work/local-repo"/*.apk; do
+		[ -f "$pkg_file" ] || die 'thin-shell package download missing; existing installation was not changed'
+		apk --no-network verify "$pkg_file" >/dev/null ||
+			die 'thin-shell package signature verification failed; existing installation was not changed'
+	done
+	fetch "$feed_base/packages.adb" "$work/local-repo/packages.adb" ||
+		die 'failed to fetch signed APK index; existing installation was not changed'
+	if apk --no-network --repositories-file /dev/null --repository "$work/local-repo/packages.adb" add --upgrade --simulate "$@" >/dev/null 2>&1; then
+		apk --no-network --repositories-file /dev/null --repository "$work/local-repo/packages.adb" add --upgrade "$@"
+	else
+		apk --timeout 300 add --upgrade "$@"
+	fi
 elif ! apk info -e opl-netfleet >/dev/null 2>&1 || ! apk info -e luci-app-netfleet >/dev/null 2>&1; then
 	apk --timeout 300 add "$@"
 	apk --timeout 300 upgrade "$@"

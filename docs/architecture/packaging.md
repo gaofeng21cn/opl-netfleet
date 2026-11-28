@@ -13,7 +13,7 @@
 ## 平台交付与版本身份
 
 两个平台共享主线、产品版本与 annotated `vX.Y.Z` 源码 tag。`product-version.json`
-是产品版本来源；发布准备同步 OpenWrt 产品包和 macOS Info.plist。插件按实际内容
+同时维护产品版本 `version` 与最低薄壳要求 `min_shell_version`（仅在薄壳宿主、init、rpcd 或系统依赖合同发生不兼容变更时递增，使常规 Release Bundle 更新保持核心转发无扰保活）；发布准备同步 OpenWrt 产品包和 macOS Info.plist。插件按实际内容
 独立版本化，macOS 内部构建序号递增。各平台分别验收自己的制品，未通过的平台
 保持待验收；已经发布的制品通过同一 tag 追溯。发布不触发安装或网络接管。
 
