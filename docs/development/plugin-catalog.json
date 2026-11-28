@@ -11,7 +11,7 @@
         "activation.control",
         "activation.mode"
       ],
-      "version": "0.7.10"
+      "version": "0.7.11"
     },
     {
       "api_version": 1,
@@ -39,7 +39,7 @@
       "services": [
         "components.control"
       ],
-      "version": "0.8.19"
+      "version": "0.8.20"
     },
     {
       "api_version": 1,
@@ -139,7 +139,7 @@
         "mihomo.readback",
         "mihomo.runtime"
       ],
-      "version": "0.9.18"
+      "version": "0.9.19"
     },
     {
       "api_version": 1,
@@ -161,7 +161,7 @@
         "models.subscription",
         "models.subscriptions"
       ],
-      "version": "0.7.20"
+      "version": "0.7.21"
     },
     {
       "api_version": 1,
@@ -193,7 +193,7 @@
         "platform.runtime",
         "platform.service"
       ],
-      "version": "0.8.11"
+      "version": "0.8.12"
     },
     {
       "api_version": 1,
@@ -251,7 +251,7 @@
         "opl-netfleet-plugin-subscriptions"
       ],
       "services": [],
-      "version": "0.10.24"
+      "version": "0.10.25"
     },
     {
       "api_version": 1,
@@ -357,7 +357,7 @@
         "status.control",
         "status.events"
       ],
-      "version": "0.8.12"
+      "version": "0.8.13"
     },
     {
       "api_version": 1,
