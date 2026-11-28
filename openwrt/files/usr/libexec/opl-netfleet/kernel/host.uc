@@ -243,7 +243,7 @@ function describe(plugins_dir, id, owner, asset_scope) {
 };
 function describe_any(resolved_root, id, options) {
 	const roots = [`${resolved_root}/plugins`, ...(options.extra_plugin_roots ?? options.adapter?.extra_plugin_roots ?? [])];
-	const primary_scope = fs.lstat(`${resolved_root}/../release-manifest.json`) != null ? 'bundle' : 'external';
+	const primary_scope = (fs.lstat(`${resolved_root}/../release-manifest.json`) != null || fs.lstat(`${resolved_root}/../share/build.json`) != null) ? 'bundle' : 'external';
 	for (let dir in roots) {
 		if (type(dir) != 'string' || fs.lstat(`${dir}/${id}`) == null) continue;
 		return describe(dir, id, options.trusted_owner, dir == `${resolved_root}/plugins` ? primary_scope : 'external');
@@ -296,7 +296,7 @@ create = function(root, options) {
 	const delegated = adapter.coordinator_parent(`${maintenance_root}/.coordinator`);
 	let closed = false;
 	let inventory;
-	const bundle_mode = fs.lstat(`${root}/../release-manifest.json`) != null;
+	const bundle_mode = fs.lstat(`${root}/../release-manifest.json`) != null || fs.lstat(`${root}/../share/build.json`) != null;
 	const primary_dir = `${root}/plugins`;
 	const plugin_roots = [{ dir: primary_dir, scope: bundle_mode ? 'bundle' : 'external' }];
 	for (let extra_dir in (options.extra_plugin_roots ?? adapter.extra_plugin_roots ?? []))

@@ -671,6 +671,8 @@ def build_ipk_feed(
                     if not clean or member.islnk() or member.issym() or clean.startswith("/") or ".." in Path(clean).parts:
                         raise ValueError(f"unsafe existing bundle archive entry: {member.name}")
                 tf.extractall(expanded_bundle, filter="data")
+            _copy_file(existing_rmf, expanded_bundle / "release-manifest.json", 0o644)
+            _copy_file(existing_rsig, expanded_bundle / "release-manifest.json.sig", 0o644)
             runtime_payload_hasher = hashlib.sha256()
             for rel in sorted(rmf.get("files", {})):
                 meta = rmf["files"][rel]

@@ -121,6 +121,7 @@ class IpkBundleTests(unittest.TestCase):
             with tarfile.open(fileobj=io.BytesIO(data_bytes), mode="r:gz") as data:
                 names = set(data.getnames())
                 self.assertIn("./usr/share/opl-netfleet/releases/0.9.32/release-manifest.json", names)
+                self.assertIn("./usr/share/opl-netfleet/releases/0.9.32/release-manifest.json.sig", names)
                 self.assertIn("./usr/share/opl-netfleet/shell.json", names)
                 self.assertIn("./usr/share/opl-netfleet/keys/release-bundle.pub", names)
 
@@ -130,6 +131,25 @@ class IpkBundleTests(unittest.TestCase):
                 bundle_link = data.getmember("./www/luci-static/resources/netfleet/bundle")
                 self.assertTrue(bundle_link.issym())
                 self.assertEqual(bundle_link.linkname, "/usr/share/opl-netfleet/current/www")
+
+    def test_ipk_feed_merge_manifest_preserves_release_manifest(self):
+        feed = self.root / "merged-feed"
+        commit = "a" * 40
+        tree = "b" * 40
+        BUNDLE.build_bundle(
+            ROOT, feed, version="0.9.32", source_commit=commit, source_tree=tree, sign_key=self.key
+        )
+        manifest = IPK.build_ipk_feed(
+            ROOT, feed, version="0.9.32", skip_core=True, sign_key=self.key,
+            merge_manifest=True, source_commit=commit, source_tree=tree,
+        )
+        shell_ipk = feed / manifest["artifact_files"]["opl-netfleet"]
+        with tarfile.open(shell_ipk, "r:gz") as outer:
+            data_bytes = outer.extractfile("./data.tar.gz").read()
+            with tarfile.open(fileobj=io.BytesIO(data_bytes), mode="r:gz") as data:
+                names = set(data.getnames())
+                self.assertIn("./usr/share/opl-netfleet/releases/0.9.32/release-manifest.json", names)
+                self.assertIn("./usr/share/opl-netfleet/releases/0.9.32/release-manifest.json.sig", names)
 
     def test_install_script_opkg_flow_and_signature_guard(self):
         feed = self.root / "feed"
